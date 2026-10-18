@@ -1,0 +1,14 @@
+[package]
+name = "c2-parity"
+description = "Format/logic parity harness against the original game"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+c2-formats.workspace = true

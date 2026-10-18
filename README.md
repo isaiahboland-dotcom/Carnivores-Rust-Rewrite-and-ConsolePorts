@@ -17,6 +17,7 @@ The original C++ source (made available on Assembla in 2013) is used **as a refe
 - Faithful vanilla Carnivores 2 gameplay, loading **original game data supplied by the user**.
 - Data-driven engine: no hardcoded dino/weapon/area slot limits.
 - Automatic mod merging via a layered virtual filesystem + manifests + conflict resolver.
+- Targets **add-on mods**: small, data-only mods that layer on vanilla and merge cleanly.
 - **Recipes**: shareable modpack definitions that reference mods by hash, so users fetch the mod files themselves and nothing third-party is redistributed.
 - A PC-side **cooker** that converts a merged pack into 3DS-ready data.
 - One shared core crate; platform crates stay thin.
@@ -261,7 +262,7 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
 
 **M4 — Mod system**
 - VFS layers, manifest auto-detect, resolver, merger, merge report.
-- Test with 2–3 real data-only mods locally (user picks them).
+- Test with 2–3 real data-only add-on mods locally (user picks them).
 - ✅ Done when: multiple mods load together with a correct merge report.
 
 **M5 — Recipes**
@@ -304,13 +305,13 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
 
 ## Status
 
-- [x] M0 Setup — workspace, CI (fmt/clippy/test + 3DS-target build of `c2-formats`), `.gitignore`.
+- [x] M0 Setup — workspace, MIT license, CI (fmt/clippy/test + 3DS-target build of `c2-formats`), `.gitignore`.
       Building the original C++ is deferred: byte-exact round-trip replaces the JSON shim for now (DECISIONS.md).
 - [ ] M1 Formats — **in progress**
   - [x] `docs/FORMATS.md`
   - [x] `_RES.TXT`, `.CAR`, `.3DF`, `.MAP`, `.RSC` parsers + writers
   - [x] synthetic round-trip tests
-  - [x] all 42 vanilla files (and 368 mod files) parse and round-trip byte-for-byte via `c2-parity scan`
+  - [x] all 42 vanilla files parse and round-trip byte-for-byte via `c2-parity scan`
   - [ ] `.TGA`, `.WAV`, menu `.RAW`, saves
   - [ ] `strstr`-faithful `_RES.TXT` diff check
 - [ ] M2 Viewer

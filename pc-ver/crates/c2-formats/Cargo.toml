@@ -1,0 +1,13 @@
+[package]
+name = "c2-formats"
+description = "Parsers and writers for Carnivores 2 data files"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror.workspace = true
