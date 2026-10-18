@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  pc:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pc-ver
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: pc-ver
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  # Keeps the shared format crate portable to the 3DS target.
+  formats-3ds:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pc-ver
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      - run: cargo build -p c2-formats --target armv6k-nintendo-3ds -Z build-std=std,panic_abort

@@ -1,0 +1,17 @@
+[package]
+name = "c2-pc"
+description = "PC backend and binary"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+c2-core.workspace = true
+c2-platform.workspace = true

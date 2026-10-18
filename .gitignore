@@ -1,0 +1,33 @@
+# --- Local reference material: never commit (see README §2) ---
+/source/
+
+# --- Game / mod data, anywhere in the tree ---
+HUNTDAT/
+*.[cC][aA][rR]
+*.3[dD][fF]
+*.[mM][aA][pP]
+*.[rR][sS][cC]
+*.[tT][gG][aA]
+*.[wW][aA][vV]
+*.[rR][aA][wW]
+*.[sS][aA][vV]
+*.[eE][xX][eE]
+*.[dD][lL][lL]
+*.[rR][eE][nN]
+*.zip
+*.7z
+*.rar
+
+# ReShade / wrapper DLL configs that ship alongside some installs
+reshade-shaders/
+dxgi.ini
+d3d9.ini
+opengl32.ini
+*.log
+
+# --- Build output ---
+target/
+/out/
+*.3dsx
+*.smdh
+*.elf

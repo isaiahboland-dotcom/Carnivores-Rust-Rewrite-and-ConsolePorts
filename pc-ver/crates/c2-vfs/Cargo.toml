@@ -1,0 +1,13 @@
+[package]
+name = "c2-vfs"
+description = "Layered, case-insensitive virtual filesystem with provenance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror.workspace = true

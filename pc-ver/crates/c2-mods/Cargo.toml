@@ -1,0 +1,15 @@
+[package]
+name = "c2-mods"
+description = "Mod manifests, recipes, resolver and merger"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror.workspace = true
+c2-formats.workspace = true
+c2-vfs.workspace = true
