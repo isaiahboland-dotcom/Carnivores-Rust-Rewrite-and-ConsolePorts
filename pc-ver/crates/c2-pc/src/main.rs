@@ -13,6 +13,7 @@ mod input;
 mod keys;
 mod menu;
 mod model_view;
+mod mods_cli;
 mod png;
 mod render;
 mod save;
@@ -26,8 +27,10 @@ use anyhow::{bail, Context, Result};
 use c2_core::area::TimeOfDay;
 
 const USAGE: &str = "usage:
-  c2-pc play  <GAME_DIR> [--screen main|stats|hunt|options|credits|register|quit]
+  c2-pc play  <GAME_DIR> [--mod MOD_DIR]... [--screen main|stats|hunt|options|credits|register|quit]
               [--script 'X,Y;'TEXT;enter;esc'] [--shot out.png]
+  c2-pc mod detect <MOD_DIR>... --base <GAME_DIR> [--write]
+  c2-pc mod build  <MOD_DIR>... --base <GAME_DIR> --out <DIR>
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
   c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--shot out.png]
   c2-pc hunt  <AREA.MAP|TROPHY.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all]
@@ -35,7 +38,9 @@ const USAGE: &str = "usage:
 
 model: drag to orbit, wheel zoom, [ ] next/prev file, N/P next/prev animation, Space pause
 area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distance
-play:  the menus; a hunt returns to them
+play:  the menus; a hunt returns to them. --mod (repeatable) plays vanilla plus those add-on mods,
+       combined into the data dir (see MERGE_REPORT.md there)
+mod:   detect prints (or --write saves) an inferred mod.toml; build writes a combined game folder
 hunt:  click to capture mouse; keys follow the player's bindings (default WASD move, mouse look,
        LMB fire, E show/hide weapon, 1-6 choose weapon, Shift toggles run, X crouch, Space jump/swim,
        arrows turn/look, B binoculars, Tab map, Alt call, C change call),
@@ -44,7 +49,7 @@ hunt:  click to capture mouse; keys follow the player's bindings (default WASD m
 /// Flags followed by a value (`--flag VALUE`).
 const VALUE_FLAGS: &[&str] = &[
     "anim", "time", "yaw", "shot", "cam", "view", "sim", "ship", "weapon", "target", "fire",
-    "screen", "player", "script",
+    "screen", "player", "script", "mod", "base", "out",
 ];
 
 struct Opts {
@@ -73,6 +78,15 @@ impl Opts {
 
     fn has(&self, f: &str) -> bool {
         self.flags.iter().any(|(k, _)| k == f)
+    }
+
+    /// Every value of a repeatable flag.
+    fn values(&self, f: &str) -> Vec<&str> {
+        self.flags
+            .iter()
+            .filter(|(k, _)| k == f)
+            .filter_map(|(_, v)| v.as_deref())
+            .collect()
     }
 
     fn value(&self, f: &str) -> Option<&str> {
@@ -112,6 +126,14 @@ fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
     let cmd = args.next().unwrap_or_default();
     let o = Opts::parse(args);
+    if cmd == "mod" {
+        return mods_cli::run(
+            &o.positional,
+            o.value("base"),
+            o.value("out"),
+            o.has("write"),
+        );
+    }
     let Some(path) = o.positional.first().map(PathBuf::from) else {
         bail!("{USAGE}");
     };
@@ -234,6 +256,15 @@ fn main() -> Result<()> {
             let screen = o.value("screen").map(str::to_owned);
             // --script: canvas clicks / typing / keys, applied before the shot.
             let script = o.value("script").map(str::to_owned);
+            // --mod DIR (repeatable): play a combined game from the data dir.
+            let mods: Vec<PathBuf> = o.values("mod").into_iter().map(PathBuf::from).collect();
+            let path = if mods.is_empty() {
+                path
+            } else {
+                let out = mods_cli::pack_dir(&mods);
+                mods_cli::build_pack(&path, &mods, &out)?;
+                out
+            };
             Box::new(move |g| {
                 let mut m = menu::Menu::new(g, &path, None)?;
                 if let Some(s) = &screen {

@@ -90,6 +90,7 @@ Area viewer: `WASD` + `Q`/`E` to fly, drag to look, wheel = speed, `Shift` = fas
 **Play:** `cargo run --release -p c2-pc -- play ../source/c2-original` — register a hunter (or pick one copied
 from your install), then Hunt / Options / Trophy / Statistics / Credits as in the original. The keys in the
 hunt follow the player's bindings (Options > Controls).
+Add-on mods: append `--mod path/to/mod` (repeatable); see `docs/MODDING.md`.
 
 Hunt mode directly (debugging): `cargo run --release -p c2-pc -- hunt ../source/c2-original/HUNTDAT/AREAS/AREA1.MAP` —
 click to capture the mouse, `WASD` move, mouse look, `LMB` fire, `E` show/hide weapon, `1`-`6` choose weapon,
@@ -197,9 +198,11 @@ adds = ["HUNTDAT/DINO/NEWRAPTOR.CAR"]
 replaces = ["HUNTDAT/MENU/MENUM.TGA"]
 
 [res]
-# _RES.TXT entries this mod adds or modifies, by entry ID
+# _RES.TXT entries this mod adds or modifies, by entry ID (the entry's name, lower case)
 adds_dinos = ["newraptor"]
 modifies_dinos = []
+adds_weapons = []
+modifies_weapons = []
 
 [deps]
 requires = []
@@ -355,13 +358,18 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
   - [x] trophy room (`TrophyMode`): trophies on display with plaques, `R` removes; kill plaque during hunts
   - [x] pause (`Pause`/`P`, `PAUSE.TGA`), brightness option (`BrightenTexture`), health recovery (`ProcessSyncro`)
   - [ ] side-by-side check against the retail game (needs the owner's eyes; see DECISIONS for what to compare)
-- [ ] M4 Mod system
+- [ ] M4 Mod system — **in progress**
+  - [x] `c2-vfs`: layered, case-insensitive VFS with provenance (directory + in-memory backends)
+  - [x] `c2-mods`: `mod.toml`, auto-detect against vanilla (full-copy mods reduce to their real changes),
+        load order with requires/conflicts, file merge (last wins) and `_RES.TXT` merge by entry, merge report
+  - [x] `c2-pc mod detect|build`, `c2-pc play GAME --mod DIR...` (combined game in the data dir, linked not copied)
+  - [ ] test with 2-3 real add-on mods (owner to pick); zip backend (needs a zip crate — owner to approve)
 - [ ] M5 Recipes
 - [ ] M6 Cooker + 3DS boot
 - [ ] M7 Vanilla 3DS
 - [ ] M8 Modded 3DS
 
-_Last updated: 2026-10-18 — M3: the game is playable from the menus (register, set up a hunt, hunt, trophy room, options); next: a retail comparison pass, then M4 mods._
+_Last updated: 2026-10-18 — M4: mod system built and tested on synthetic mods; next: real add-on mods from the owner, zip support, then M5 recipes._
 
 
 note from user: quick headsup, the carnivores 2 datafile is copied direct from my library and includes re-shade files as well, please do not port the re-shade files to 3ds or the rust re-write as that would overcomplicate things dramatically

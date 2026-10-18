@@ -13,3 +13,5 @@ workspace = true
 thiserror.workspace = true
 c2-formats.workspace = true
 c2-vfs.workspace = true
+serde.workspace = true
+toml.workspace = true

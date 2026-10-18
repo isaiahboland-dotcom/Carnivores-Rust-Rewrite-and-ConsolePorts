@@ -2,6 +2,33 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-18 — M4: mod system
+
+**Combined games are materialised, not read through the VFS at run time.**
+`c2-mods` layers vanilla and the mods in a `c2-vfs` VFS (provenance, merge
+report), then writes the result as a folder of symlinks (hard links or copies
+where symlinks fail) plus generated files (the merged `_RES.TXT`) in the data
+dir. The engine keeps loading from a plain game folder, the folder is easy to
+inspect, and the 3DS cooker (M6) can start from the same VFS. A folder is only
+ever replaced if it carries our `.c2rs-pack` marker.
+
+**Only `HUNTDAT/` counts as mod data**, minus logs/backups and map-editor
+side files. Files byte-identical to vanilla are dropped, which turns
+"full copy of the game" mods into their real changes.
+
+**`_RES.TXT` is merged by entry**: blocks matched by `name`; a renamed block
+in a slot vanilla no longer has by name replaces that slot (slots matter to
+saves and the menu); otherwise appended. `prices` by key + occurrence.
+Conflicting changes: later mod wins, reported. Identical changes from two mods
+are not conflicts.
+
+**Manifest extensions:** `[res]` gains `adds_weapons` / `modifies_weapons`
+(README §5 updated). `[files]` empty means detect.
+
+**Dependencies:** `serde` + `toml` for `mod.toml` (the format the spec
+names). Zip support is not in yet: it needs the `zip` crate (with its
+deflate dependencies), which per §8 waits for the owner's OK.
+
 ## 2026-10-18 — M3: menus and the trophy room
 
 **The menus are reconstructed.** The released source is only the game; the
