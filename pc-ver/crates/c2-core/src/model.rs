@@ -68,7 +68,8 @@ impl PreparedModel {
             image_to_rgba8(&texels[..TEXTURE_WIDTH * MODEL_TEXTURE_SIZE], opacity);
         // Padding rows are never meant to be visible.
         for px in texture_rgba[mesh.texture.len().min(TEXTURE_WIDTH * MODEL_TEXTURE_SIZE) * 4..]
-            .chunks_exact_mut(4)
+            .as_chunks_mut::<4>()
+            .0
         {
             px[3] = 0;
         }

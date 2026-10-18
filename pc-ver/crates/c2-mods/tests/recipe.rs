@@ -16,6 +16,19 @@ fn write(root: &Path, files: &[(&str, &[u8])]) {
     }
 }
 
+/// A zip with the mod one folder down, as mods are often shipped.
+fn write_zip(path: &Path, files: &[(&str, &[u8])]) {
+    use std::io::Write as _;
+    std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+    let mut w = zip::ZipWriter::new(std::fs::File::create(path).expect("create"));
+    for (p, d) in files {
+        w.start_file(*p, zip::write::SimpleFileOptions::default())
+            .expect("start");
+        w.write_all(d).expect("write");
+    }
+    w.finish().expect("finish");
+}
+
 fn tmp(name: &str) -> PathBuf {
     let d = std::env::temp_dir().join(format!("c2-recipe-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
@@ -75,7 +88,7 @@ fn recipe_round_trip() {
     let rpath = rdir.join("menus.toml");
     let r = Recipe::load(&rpath).expect("load");
 
-    // Someone else's download folder, with different folder names.
+    // Someone else's download folder, with different names; Blue is zipped.
     let downloads = tmp("downloads");
     write(
         &downloads,
@@ -85,8 +98,11 @@ fn recipe_round_trip() {
                 "red_menu_v1/HUNTDAT/_RES.TXT",
                 RES.replace("power = 1", "power = 2").as_bytes(),
             ),
-            ("blue-menu/HUNTDAT/MENU/MENUM.TGA", b"blue"),
         ],
+    );
+    write_zip(
+        &downloads.join("Blue Menu.zip"),
+        &[("Blue Menu/HUNTDAT/MENU/MENUM.TGA", b"blue")],
     );
     let found = locate(&r, &downloads);
     assert!(found.iter().all(|l| l.complete()), "{found:?}");
@@ -105,9 +121,9 @@ fn recipe_round_trip() {
     assert!(report.contains("patch `patches/power.patch`"), "{report}");
 
     // A changed file is reported, with where to get the right one.
-    write(
-        &downloads,
-        &[("blue-menu/HUNTDAT/MENU/MENUM.TGA", b"BLUE v2")],
+    write_zip(
+        &downloads.join("Blue Menu.zip"),
+        &[("Blue Menu/HUNTDAT/MENU/MENUM.TGA", b"BLUE v2")],
     );
     let found = locate(&r, &downloads);
     assert_eq!(found[1].mismatched.len(), 1);

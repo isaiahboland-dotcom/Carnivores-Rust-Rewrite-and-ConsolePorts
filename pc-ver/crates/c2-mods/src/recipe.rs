@@ -9,11 +9,11 @@ use std::path::{Component, Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use c2_vfs::{key, Backend, DirBackend, Vfs};
+use c2_vfs::{key, Backend, Vfs};
 
 use crate::detect::{is_data, read_res, RES_TXT};
 use crate::manifest::{slug, Manifest};
-use crate::pack::{find_root, BuildOptions, ModSource};
+use crate::pack::{mod_root, open_root, BuildOptions, ModSource};
 use crate::res_merge::diff;
 use crate::ModError;
 
@@ -145,7 +145,7 @@ impl Located {
     }
 }
 
-fn check(m: &RecipeMod, root: &Path, dir: &DirBackend) -> Located {
+fn check(m: &RecipeMod, root: &Path, dir: &dyn Backend) -> Located {
     let index: BTreeMap<String, String> = dir.files().into_iter().map(|f| (key(&f), f)).collect();
     let mut l = Located {
         id: m.id.clone(),
@@ -175,23 +175,26 @@ fn check(m: &RecipeMod, root: &Path, dir: &DirBackend) -> Located {
 /// Finds each recipe mod under `mods_dir`: the folder named by `folder` or
 /// like the id, else the folder where most listed files match their hashes.
 pub fn locate(r: &Recipe, mods_dir: &Path) -> Vec<Located> {
-    let mut cands: Vec<(String, PathBuf, DirBackend)> = Vec::new();
+    let mut cands: Vec<(String, PathBuf, Box<dyn Backend>)> = Vec::new();
     let mut dirs = vec![mods_dir.to_path_buf()];
     if let Ok(rd) = std::fs::read_dir(mods_dir) {
         let mut subs: Vec<PathBuf> = rd
             .flatten()
             .map(|e| e.path())
-            .filter(|p| p.is_dir())
+            .filter(|p| p.is_dir() || p.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")))
             .collect();
         subs.sort();
         dirs.extend(subs);
     }
     for d in dirs {
-        let Some(root) = find_root(&d) else { continue };
-        let name = d
-            .file_name()
-            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-        if let Ok(b) = DirBackend::new(&root) {
+        let Some(root) = mod_root(&d) else { continue };
+        let name = if d.is_file() {
+            d.file_stem()
+        } else {
+            d.file_name()
+        }
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+        if let Ok(b) = open_root(&root) {
             cands.push((name, root, b));
         }
     }
@@ -202,11 +205,11 @@ pub fn locate(r: &Recipe, mods_dir: &Path) -> Vec<Located> {
                 (!m.folder.is_empty() && n.eq_ignore_ascii_case(&m.folder)) || slug(n) == m.id
             });
             if let Some((_, root, b)) = named {
-                return check(m, root, b);
+                return check(m, root, b.as_ref());
             }
             cands
                 .iter()
-                .map(|(_, root, b)| check(m, root, b))
+                .map(|(_, root, b)| check(m, root, b.as_ref()))
                 .filter(|l| !l.ok.is_empty())
                 .max_by_key(|l| l.ok.len())
                 .unwrap_or_else(|| Located {
@@ -279,7 +282,7 @@ pub fn new_recipe(
         ..Default::default()
     };
     for m in mods {
-        let dir = DirBackend::new(&m.root)?;
+        let dir = open_root(&m.root)?;
         let mut files = BTreeMap::new();
         let mut used = m.files.clone();
         if !m.res_changes.is_empty() {
@@ -295,12 +298,14 @@ pub fn new_recipe(
             id: info.id.clone(),
             credit: info.authors.join(", "),
             url: info.source_url.clone(),
-            folder: m
-                .root
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .filter(|n| slug(n) != info.id && !n.eq_ignore_ascii_case("huntdat"))
-                .unwrap_or_default(),
+            folder: if m.root.is_file() {
+                m.root.file_stem()
+            } else {
+                m.root.file_name()
+            }
+            .map(|n| n.to_string_lossy().into_owned())
+            .filter(|n| slug(n) != info.id && !n.eq_ignore_ascii_case("huntdat"))
+            .unwrap_or_default(),
             files,
         });
         r.load_order.order.push(info.id.clone());
@@ -340,7 +345,7 @@ pub fn prepare(
     let mut sources = Vec::new();
     for (m, l) in r.mods.iter().zip(located) {
         let Some(root) = &l.root else { continue };
-        let dir = DirBackend::new(root)?;
+        let dir = open_root(root)?;
         let mut files = Vec::new();
         let mut res_changes = Vec::new();
         for f in l.ok.values() {

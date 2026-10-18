@@ -6,7 +6,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use c2_formats::res_txt::ResTxt;
-use c2_vfs::{key, Backend, DirBackend, MemBackend, Vfs, VfsError};
+use c2_vfs::{key, Backend, DirBackend, MemBackend, Vfs, VfsError, ZipBackend};
 
 use crate::detect::{detect, is_data, read_res, RES_TXT};
 use crate::manifest::{slug, Manifest};
@@ -43,9 +43,33 @@ pub fn find_root(dir: &Path) -> Option<PathBuf> {
     }
 }
 
-/// Only some files of a directory.
+fn is_zip(p: &Path) -> bool {
+    p.is_file() && p.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip"))
+}
+
+/// Where a mod's game data is: a `.zip` (its `HUNTDAT` found inside when
+/// opened), else the folder holding `HUNTDAT` (see [`find_root`]).
+pub fn mod_root(path: &Path) -> Option<PathBuf> {
+    if is_zip(path) {
+        return Some(path.to_path_buf());
+    }
+    find_root(path)
+}
+
+/// The files of a [`mod_root`].
+pub fn open_root(root: &Path) -> Result<Box<dyn Backend>, ModError> {
+    if is_zip(root) {
+        return match ZipBackend::find(root, "huntdat")? {
+            Some(z) => Ok(Box::new(z)),
+            None => Err(ModError::NoHuntdat(root.to_path_buf())),
+        };
+    }
+    Ok(Box::new(DirBackend::new(root)?))
+}
+
+/// Only some files of a layer.
 struct Subset {
-    dir: DirBackend,
+    dir: Box<dyn Backend>,
     keep: Vec<String>,
 }
 
@@ -78,7 +102,7 @@ pub struct ModSource {
 pub fn vanilla(base: &Path) -> Result<Vfs, ModError> {
     let root = find_root(base).ok_or_else(|| ModError::NoHuntdat(base.to_path_buf()))?;
     // Only the game data: not the executables, DLLs or wrapper files next to it.
-    let dir = DirBackend::new(root)?;
+    let dir: Box<dyn Backend> = Box::new(DirBackend::new(root)?);
     let keep = dir
         .files()
         .into_iter()
@@ -89,25 +113,43 @@ pub fn vanilla(base: &Path) -> Result<Vfs, ModError> {
     Ok(v)
 }
 
-/// Reads a mod folder: its `mod.toml` if any (an empty `[files]` is filled
-/// in by detection), and its `_RES.TXT` changes.
+/// Reads a mod folder or `.zip`: its `mod.toml` if any (an empty `[files]`
+/// is filled in by detection), and its `_RES.TXT` changes.
 pub fn load_mod(vanilla: &Vfs, dir: &Path) -> Result<ModSource, ModError> {
-    let root = find_root(dir).ok_or_else(|| ModError::NoHuntdat(dir.to_path_buf()))?;
-    let backend = DirBackend::new(&root)?;
-    let name = dir
-        .file_name()
-        .map_or_else(|| "mod".into(), |n| n.to_string_lossy().into_owned());
-    let d = detect(vanilla, &backend, &name)?;
-    let toml_path = ["mod.toml", "MOD.TOML"]
-        .iter()
-        .map(|n| dir.join(n))
-        .find(|p| p.is_file());
-    let (mut manifest, inferred) = match toml_path {
-        Some(p) => {
-            let text = std::fs::read_to_string(&p).map_err(|source| ModError::Io {
-                path: p.clone(),
-                source,
-            })?;
+    let root = mod_root(dir).ok_or_else(|| ModError::NoHuntdat(dir.to_path_buf()))?;
+    let backend = open_root(&root)?;
+    let name = if is_zip(dir) {
+        dir.file_stem()
+    } else {
+        dir.file_name()
+    }
+    .map_or_else(|| "mod".into(), |n| n.to_string_lossy().into_owned());
+    let d = detect(vanilla, backend.as_ref(), &name)?;
+    // mod.toml beside HUNTDAT inside a zip, or in the given folder.
+    let toml_text = if is_zip(&root) {
+        backend
+            .files()
+            .into_iter()
+            .find(|f| key(f) == "mod.toml")
+            .map(|f| {
+                let data = backend.read(&f)?;
+                Ok::<_, ModError>((root.join(&f), String::from_utf8_lossy(&data).into_owned()))
+            })
+            .transpose()?
+    } else {
+        ["mod.toml", "MOD.TOML"]
+            .iter()
+            .map(|n| dir.join(n))
+            .find(|p| p.is_file())
+            .map(|p| {
+                std::fs::read_to_string(&p)
+                    .map(|t| (p.clone(), t))
+                    .map_err(|source| ModError::Io { path: p, source })
+            })
+            .transpose()?
+    };
+    let (mut manifest, inferred) = match toml_text {
+        Some((p, text)) => {
             let m = Manifest::parse(&text).map_err(|e| ModError::Manifest {
                 path: p,
                 message: e.to_string(),
@@ -218,7 +260,7 @@ pub fn build_with(
         vfs.push(
             m.manifest.info.id.clone(),
             Box::new(Subset {
-                dir: DirBackend::new(&m.root)?,
+                dir: open_root(&m.root)?,
                 keep: m.files.clone(),
             }),
         );

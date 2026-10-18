@@ -27,12 +27,16 @@ impl Clip {
     /// From raw 16-bit little-endian mono PCM (as stored in `.CAR`/`.RSC`).
     pub fn from_pcm(pcm: &[u8], sample_rate: u32, channels: u16) -> Option<Self> {
         let samples: Vec<f32> = pcm
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|b| f32::from(i16::from_le_bytes([b[0], b[1]])) / 32768.0)
             .collect();
         let frames: Arc<[Frame]> = if channels == 2 {
             samples
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|s| Frame::new(s[0], s[1]))
                 .collect()
         } else {

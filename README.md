@@ -365,7 +365,8 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
   - [x] `c2-mods`: `mod.toml`, auto-detect against vanilla (full-copy mods reduce to their real changes),
         load order with requires/conflicts, file merge (last wins) and `_RES.TXT` merge by entry, merge report
   - [x] `c2-pc mod detect|build`, `c2-pc play GAME --mod DIR...` (combined game in the data dir, linked not copied)
-  - [ ] test with 2-3 real add-on mods (owner to pick); zip backend (needs a zip crate — owner to approve)
+  - [x] zip backend: a mod can be a `.zip` (its `HUNTDAT` at the top or one folder down), for `--mod`, `mod`, `recipe`
+  - [ ] test with 2-3 real add-on mods (owner to pick)
 - [ ] M5 Recipes — **in progress**
   - [x] recipe schema (§6) with `folder` hint and `[[resolve]] entry = "section:name"`; SHA-256 pinning
   - [x] `c2-pc recipe verify|build|new|base`, `play --recipe`; unified-diff patches; `recipes/example.toml`,

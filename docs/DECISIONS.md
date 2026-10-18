@@ -2,6 +2,16 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-18 — Zip mods
+Owner approved the `zip` crate (9.0.5, deflate only via pure-Rust zlib-rs;
+no bzip2/lzma/zstd/AES, which old Carnivores mods don't use). It sits behind
+`c2-vfs`'s `zip` feature, so the 3DS build doesn't carry it. zip 9 needs Rust
+1.88, so the workspace MSRV went 1.85 → 1.88. A zip's `HUNTDAT` may be at the
+top or one folder down, like a mod folder; a zip's `mod.toml` is read from
+beside `HUNTDAT`. Files from a zip are copied (not linked) into a built pack.
+`recipe verify` looks at `.zip` files in `--mods` as well as folders, and a
+zip's name without `.zip` counts as its folder name.
+
 ## 2026-10-18 — M5: recipes
 
 **A recipe pins exactly the files it uses** (`sha256:` per file) and the

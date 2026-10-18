@@ -8,6 +8,11 @@
 //! Paths are relative, `/`-separated (`HUNTDAT/AREAS/AREA1.MAP`); `\` is
 //! accepted and normalised.
 
+#[cfg(feature = "zip")]
+mod zip;
+#[cfg(feature = "zip")]
+pub use zip::ZipBackend;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
