@@ -89,7 +89,7 @@ Model viewer: drag to orbit, wheel to zoom, `[` `]` previous/next file, `N`/`P` 
 Area viewer: `WASD` + `Q`/`E` to fly, drag to look, wheel = speed, `Shift` = fast, `+`/`-` view distance.
 Hunt mode (M3, in progress): `cargo run --release -p c2-pc -- hunt ../source/c2-original/HUNTDAT/AREAS/AREA1.MAP` —
 click to capture the mouse, `WASD` move, mouse look, `LMB` fire, `E` show/hide weapon, `1`-`6` choose weapon,
-`Shift` toggles run, `X` crouch, `Space` jump/swim, arrows turn/look, `Esc` exit prompt (`Y` leave and save, `R` restart).
+`B` binoculars (`+`/`-` power), `Shift` toggles run, `X` crouch, `Space` jump/swim, arrows turn/look, `Esc` exit prompt (`Y` leave and save, `R` restart).
 Saves go to `~/.local/share/c2rs/trophy00.sav` (first run copies your game's `trophy00.sav`; the game folder is never written).
 Add `--shot out.png` to render one frame to a file instead of opening a window.
 
@@ -340,14 +340,15 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
   - [x] detection: sight (line of sight + cover), smell (wind), gunshot noise; being eaten, drowning, death camera
   - [x] pickup ship, trophy scoring, exit prompt (Esc, Y leave, R restart), trophy save (own copy in the user data dir)
   - [x] sound (kira): animal, weapon, ship, footstep and death sounds, zone ambience, random wildlife, underwater
-  - [ ] calls/scent/camo/radar accessories, binoculars + scope, map, blood/particles, menus + trophy room
+  - [x] binoculars (B, +/- power, life-form readout) and sniper scope (3x, cross-hairs)
+  - [ ] calls/scent/camo/radar accessories, map, blood/particles, menus + trophy room
 - [ ] M4 Mod system
 - [ ] M5 Recipes
 - [ ] M6 Cooker + 3DS boot
 - [ ] M7 Vanilla 3DS
 - [ ] M8 Modded 3DS
 
-_Last updated: 2026-10-18 — M3: core hunt loop playable (move, hunt, shoot, die, ship pickup, scoring, save); next: binoculars/scope/map, calls, effects, menus._
+_Last updated: 2026-10-18 — M3: core hunt loop playable (move, hunt, shoot, die, ship pickup, scoring, save); next: map, calls, effects, menus._
 
 
 note from user: quick headsup, the carnivores 2 datafile is copied direct from my library and includes re-shade files as well, please do not port the re-shade files to 3ds or the rust re-write as that would overcomplicate things dramatically

@@ -22,3 +22,4 @@ glam.workspace = true
 bytemuck.workspace = true
 pollster.workspace = true
 kira.workspace = true
+font8x8.workspace = true

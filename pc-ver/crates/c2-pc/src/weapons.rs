@@ -21,6 +21,11 @@ pub struct WeaponAssets {
     renderer: ModelRenderer,
     /// HUD image id of each weapon's bullet icon.
     bullets: Vec<Option<usize>>,
+    /// `BINOCUL.3DF`, drawn with texture layer `cars.len()`.
+    binoculars: Option<(PreparedModel, GpuModel)>,
+    /// World position of the view model's last vertex: the scope's aim point
+    /// (`DrawOpticCross(VCount-1)`).
+    pub aim_point: Option<[f32; 3]>,
 }
 
 /// `(info, [draw, fire, hide, reload] ms, assets)` for every `_RES.TXT` weapon.
@@ -73,14 +78,22 @@ pub fn load_weapons(
             (c, p)
         }));
     }
+    let bino = find_file(huntdat, "BINOCUL.3DF").and_then(|p| {
+        let m = c2_formats::three_df::parse(&std::fs::read(&p).ok()?).ok()?;
+        Some(PreparedModel::from_mesh(&m.mesh))
+    });
     let blank = vec![0u8; 256 * 256 * 4];
-    let textures: Vec<&[u8]> = cars
+    let mut textures: Vec<&[u8]> = cars
         .iter()
         .map(|c| {
             c.as_ref()
                 .map_or(blank.as_slice(), |(_, p)| p.texture_rgba.as_slice())
         })
         .collect();
+    textures.push(
+        bino.as_ref()
+            .map_or(blank.as_slice(), |p| p.texture_rgba.as_slice()),
+    );
     let fallback: [&[u8]; 1] = [&blank];
     let renderer = ModelRenderer::near(
         gpu,
@@ -103,6 +116,11 @@ pub fn load_weapons(
             models,
             renderer,
             bullets,
+            binoculars: bino.map(|p| {
+                let m = GpuModel::new(gpu, &p, Vec::new());
+                (p, m)
+            }),
+            aim_point: None,
         },
     )
 }
@@ -116,6 +134,7 @@ impl WeaponAssets {
     }
 
     /// The view model, posed in camera space and moved into the world.
+    #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &mut self,
         gpu: &Gpu,
@@ -124,8 +143,37 @@ impl WeaponAssets {
         hunt: &Hunt,
         view: Mat4,
         light: f32,
+        aspect: f32,
     ) {
+        // The binocular and scope frames are drawn for 4:3; widen them to
+        // cover wider screens.
+        let widen = (aspect / (4.0 / 3.0)).max(1.0);
+        self.aim_point = None;
         if hunt.death.is_some() {
+            return;
+        }
+        let inv = view.inverse();
+        // Binoculars (`RenderNearModel(Binocular, 0, 0, 2*(216-72*power), 192)`).
+        if hunt.bin_mode {
+            if let Some((p, m)) = &self.binoculars {
+                let z0 = 2.0 * (216.0 - 72.0 * hunt.bin_power);
+                let world: Vec<[f32; 3]> = p
+                    .positions
+                    .iter()
+                    .map(|v| {
+                        inv.transform_point3(Vec3::new(v[0] * widen, v[1], v[2] + z0))
+                            .to_array()
+                    })
+                    .collect();
+                m.set_pose(gpu, &world);
+                let inst = [Instance {
+                    offset: [0.0; 3],
+                    turns: 0.0,
+                    light: 192.0 / 255.0,
+                    layer: self.cars.len() as u32,
+                }];
+                self.renderer.draw(gpu, pass, globals, &[(m, &inst)]);
+            }
             return;
         }
         let w = &hunt.weapons;
@@ -149,18 +197,20 @@ impl WeaponAssets {
         let (da, db) = w.sway(hunt.real_time);
         let (sa, ca) = (-da).sin_cos();
         let (sb, cb) = (-db).sin_cos();
-        let inv = view.inverse();
+        let wx = if w.optic_mode { widen } else { 1.0 };
         let world: Vec<[f32; 3]> = verts
             .iter()
             .map(|v| {
-                let x = v[0] * ca + v[2] * sa;
-                let vz = v[2] * ca - v[0] * sa;
+                let vx = v[0] * wx;
+                let x = vx * ca + v[2] * sa;
+                let vz = v[2] * ca - vx * sa;
                 let y = v[1] * cb - vz * sb;
                 let z = vz * cb + v[1] * sb;
                 inv.transform_point3(Vec3::new(x, y, z)).to_array()
             })
             .collect();
         model.set_pose(gpu, &world);
+        self.aim_point = world.last().copied();
         let inst = [Instance {
             offset: [0.0; 3],
             turns: 0.0,
@@ -186,12 +236,12 @@ impl WeaponAssets {
         let mut y = 5.0 * scale;
         let row = |n: i32, y: f32, out: &mut Vec<Sprite>| {
             for b in 0..n.max(0) {
-                out.push(Sprite {
-                    image: *img,
-                    x: (6.0 + (b as u32 * im.w) as f32) * scale,
+                out.push(Sprite::new(
+                    *img,
+                    (6.0 + (b as u32 * im.w) as f32) * scale,
                     y,
                     scale,
-                });
+                ));
             }
         };
         if w.ammo_mag.get(w.current).copied().unwrap_or(0) > 0 {

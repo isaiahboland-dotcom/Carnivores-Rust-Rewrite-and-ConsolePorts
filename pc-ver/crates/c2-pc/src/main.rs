@@ -25,7 +25,7 @@ use c2_core::area::TimeOfDay;
 const USAGE: &str = "usage:
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
   c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--shot out.png]
-  c2-pc hunt  <AREA.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--weapon] [--shot out.png]
+  c2-pc hunt  <AREA.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--weapon N] [--bino] [--shot out.png]
 
 model: drag to orbit, wheel zoom, [ ] next/prev file, N/P next/prev animation, Space pause
 area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distance
@@ -49,7 +49,7 @@ impl Opts {
             if let Some(f) = a.strip_prefix("--") {
                 let takes_value = matches!(
                     f,
-                    "anim" | "time" | "yaw" | "shot" | "cam" | "view" | "sim" | "ship"
+                    "anim" | "time" | "yaw" | "shot" | "cam" | "view" | "sim" | "ship" | "weapon"
                 );
                 let v = if takes_value { it.next() } else { None };
                 o.flags.push((f.to_string(), v));
@@ -123,7 +123,13 @@ fn main() -> Result<()> {
         }
         "hunt" => {
             let time = time_of_day(&o);
-            let weapon = o.has("weapon");
+            // --weapon N (1-based): draw that weapon; --bino: binoculars up.
+            let weapon = o
+                .value("weapon")
+                .map(|v| v.parse::<usize>().map(|n| n.saturating_sub(1)))
+                .transpose()
+                .context("--weapon N")?;
+            let bino = o.has("bino");
             // --ship AI,MS[,DIST]: bag an animal, wait, look at the ship.
             let ship: Option<Vec<f32>> = o
                 .value("ship")
@@ -150,8 +156,11 @@ fn main() -> Result<()> {
                         s.get(3).copied().unwrap_or(0.0) as u32,
                     );
                 }
-                if weapon {
-                    h.draw_weapon();
+                if let Some(w) = weapon {
+                    h.draw_weapon(w);
+                }
+                if bino {
+                    h.raise_binoculars();
                 }
                 if let Some(v) = &ship {
                     h.watch_ship(

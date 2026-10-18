@@ -236,6 +236,11 @@ pub struct HuntInput {
     pub toggle_weapon: bool,
     /// Weapon number key pressed (0-based).
     pub select_weapon: Option<usize>,
+    /// Binoculars key pressed.
+    pub toggle_binoculars: bool,
+    /// Binocular zoom keys held.
+    pub zoom_in: bool,
+    pub zoom_out: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -301,6 +306,20 @@ pub struct Hunt {
     /// Random sounds allowed per zone (night drops flagged ones).
     amb_sounds: Vec<Vec<c2_formats::rsc::RandomSoundRef>>,
     current_ambient: Option<Option<usize>>,
+    /// Looking through the binoculars (`BINMODE`) and their power (1.5..=3).
+    pub bin_mode: bool,
+    pub bin_power: f32,
+}
+
+/// What the binoculars show about the animal in the cross-hairs.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LifeInfo {
+    pub index: usize,
+    pub name: String,
+    /// Tonnes (`Mass * scale^2`).
+    pub weight: f32,
+    /// World units.
+    pub distance: f32,
 }
 
 /// How a hunt ended.
@@ -360,6 +379,8 @@ impl Hunt {
             amb_rnd,
             amb_sounds,
             current_ambient: None,
+            bin_mode: false,
+            bin_power: 2.5,
             player,
             herd,
             weapons,
@@ -427,6 +448,7 @@ impl Hunt {
             }
             self.weapon_input(area, cars, input, out);
             self.ambience(area, dt, out);
+            self.binoculars(input, dt);
             self.path += dt as f32 * self.player.vspeed / 128.0;
             self.time_s += dt as f32 / 1000.0;
         }
@@ -601,6 +623,7 @@ impl Hunt {
                 return;
             }
             w.optic_mode = w.info.get(w.current).is_some_and(|i| i.optic);
+            self.bin_mode = false;
             out.push(GameEvent::WeaponSound {
                 weapon: w.current,
                 slot: weapon_anim::DRAW,
@@ -969,6 +992,7 @@ impl Hunt {
             return;
         }
         self.health = 0;
+        self.bin_mode = false;
         self.weapons.optic_mode = false;
         let (cam, alpha, beta) = self.camera();
         let mut body = Character {
@@ -1148,6 +1172,94 @@ impl Hunt {
             pos,
             volume: r.volume,
         });
+    }
+
+    /// `ToggleBinocular` and the +/- power keys.
+    fn binoculars(&mut self, input: &HuntInput, dt: i32) {
+        if input.toggle_binoculars
+            && self.weapons.state == WeaponState::Hidden
+            && !self.player.underwater
+            && self.health > 0
+        {
+            self.bin_mode = !self.bin_mode;
+        }
+        if self.player.underwater {
+            self.bin_mode = false;
+        }
+        if self.bin_mode {
+            let k = self.bin_power * dt as f32 / 4000.0;
+            if input.zoom_in {
+                self.bin_power += k;
+            }
+            if input.zoom_out {
+                self.bin_power -= k;
+            }
+            self.bin_power = self.bin_power.clamp(1.5, 3.0);
+        }
+    }
+
+    /// Field-of-view magnification: binoculars, or the sniper scope while a
+    /// scoped weapon is out.
+    pub fn zoom(&self) -> f32 {
+        if self.bin_mode {
+            self.bin_power
+        } else if self.weapons.optic_mode
+            && self.weapons.state != WeaponState::Hidden
+            && self.death.is_none()
+        {
+            3.0
+        } else {
+            1.0
+        }
+    }
+
+    /// `ScanLifeForms`: the nearest visible animal close to the view centre.
+    pub fn life_info(&self, area: &Area) -> Option<LifeInfo> {
+        if !self.bin_mode {
+            return None;
+        }
+        let (cam, alpha, beta) = self.camera();
+        let (sa, ca) = alpha.sin_cos();
+        let (sb, cb) = beta.sin_cos();
+        let view_r = self.opts.view_r as f32 * 256.0;
+        let mut best: Option<(usize, f32)> = None;
+        for (i, c) in self.herd.chars.iter().enumerate() {
+            if c.health == 0 {
+                continue;
+            }
+            // RotateVector: into camera space.
+            let (x, y, z) = (c.pos[0] - cam[0], c.pos[1] - cam[1], c.pos[2] - cam[2]);
+            let rx = x * ca + z * sa;
+            let vz = z * ca - x * sa;
+            let ry = y * cb - vz * sb;
+            let rz = vz * cb + y * sb;
+            if rz > -512.0 {
+                continue;
+            }
+            let d = (rx * rx + ry * ry + rz * rz).sqrt();
+            if d > view_r || (rx.abs() + ry.abs()) / d > 0.15 {
+                continue;
+            }
+            if best.is_some_and(|(_, bd)| d >= bd) {
+                continue;
+            }
+            if trace_look(area, [c.pos[0], c.pos[1] + 220.0, c.pos[2]], cam).0 {
+                continue;
+            }
+            best = Some((i, d));
+        }
+        let (i, _) = best?;
+        let c = &self.herd.chars[i];
+        let info = &self.herd.species.get(c.ctype)?.info;
+        let p = &self.player;
+        let distance =
+            ((c.pos[0] - p.x).powi(2) + (c.pos[1] - p.y).powi(2) + (c.pos[2] - p.z).powi(2)).sqrt();
+        Some(LifeInfo {
+            index: i,
+            name: info.name.clone(),
+            weight: info.mass * c.scale * c.scale,
+            distance,
+        })
     }
 
     /// Escape: toggle the exit prompt.

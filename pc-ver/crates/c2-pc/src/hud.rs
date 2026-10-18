@@ -10,6 +10,7 @@ use crate::gpu::{Gpu, DEPTH_FORMAT};
 struct Vertex {
     pos: [f32; 2],
     uv: [f32; 2],
+    color: [f32; 4],
 }
 
 pub struct Image {
@@ -27,6 +28,9 @@ pub struct Hud {
     images: Vec<Image>,
     vbuf: wgpu::Buffer,
     capacity: usize,
+    /// The 8x8 font atlas and a 1x1 white image (ids).
+    font: Option<usize>,
+    white: Option<usize>,
 }
 
 /// An image placed on screen, in pixels.
@@ -36,6 +40,52 @@ pub struct Sprite {
     pub x: f32,
     pub y: f32,
     pub scale: f32,
+    /// Source rectangle in UV space (u0, v0, u1, v1).
+    pub uv: [f32; 4],
+    /// Size on screen in pixels; `None` = source size times `scale`.
+    pub size: Option<[f32; 2]>,
+    /// Multiplied with the texel (RGBA).
+    pub color: [f32; 4],
+}
+
+impl Sprite {
+    /// A whole image at `scale`.
+    pub fn new(image: usize, x: f32, y: f32, scale: f32) -> Self {
+        Self {
+            image,
+            x,
+            y,
+            scale,
+            uv: [0.0, 0.0, 1.0, 1.0],
+            size: None,
+            color: [1.0; 4],
+        }
+    }
+}
+
+/// ASCII 32..=127 in a 16 x 6 grid of 8 x 8 cells.
+const FONT_COLS: u32 = 16;
+const FONT_ROWS: u32 = 6;
+
+fn font_atlas() -> Vec<u8> {
+    use font8x8::{UnicodeFonts, BASIC_FONTS};
+    let (w, h) = (FONT_COLS * 8, FONT_ROWS * 8);
+    let mut px = vec![0u8; (w * h * 4) as usize];
+    for code in 32u32..128 {
+        let Some(glyph) = char::from_u32(code).and_then(|c| BASIC_FONTS.get(c)) else {
+            continue;
+        };
+        let (cx, cy) = ((code - 32) % FONT_COLS * 8, (code - 32) / FONT_COLS * 8);
+        for (row, bits) in glyph.iter().enumerate() {
+            for col in 0..8 {
+                if bits & (1 << col) != 0 {
+                    let i = (((cy + row as u32) * w + cx + col) * 4) as usize;
+                    px[i..i + 4].copy_from_slice(&[255; 4]);
+                }
+            }
+        }
+    }
+    px
 }
 
 impl Hud {
@@ -98,7 +148,7 @@ impl Hud {
             label: Some("hud"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/hud.wgsl").into()),
         });
-        let attrs = wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2];
+        let attrs = wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32x4];
         let pipeline = d.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("hud"),
             layout: Some(&pl),
@@ -107,7 +157,7 @@ impl Hud {
                 entry_point: Some("vs"),
                 compilation_options: Default::default(),
                 buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: 16,
+                    array_stride: std::mem::size_of::<Vertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &attrs,
                 })],
@@ -137,7 +187,7 @@ impl Hud {
         let sampler = gpu.sampler(false, false);
         let capacity = 64;
         let vbuf = Self::buffer(gpu, capacity);
-        Self {
+        let mut hud = Self {
             pipeline,
             layout,
             screen,
@@ -146,7 +196,12 @@ impl Hud {
             images: Vec::new(),
             vbuf,
             capacity,
-        }
+            font: None,
+            white: None,
+        };
+        hud.font = Some(hud.add_image(gpu, FONT_COLS * 8, FONT_ROWS * 8, &font_atlas()));
+        hud.white = Some(hud.add_image(gpu, 1, 1, &[255; 4]));
+        hud
     }
 
     fn buffer(gpu: &Gpu, sprites: usize) -> wgpu::Buffer {
@@ -198,6 +253,40 @@ impl Hud {
         self.images.len() - 1
     }
 
+    /// Text in the 8x8 font (`ddTextOut`); one sprite per glyph.
+    pub fn text(&self, x: f32, y: f32, scale: f32, color: [f32; 4], text: &str) -> Vec<Sprite> {
+        let (Some(font), cw, ch) = (self.font, 1.0 / FONT_COLS as f32, 1.0 / FONT_ROWS as f32)
+        else {
+            return Vec::new();
+        };
+        text.chars()
+            .enumerate()
+            .filter_map(|(i, c)| {
+                let code = c as u32;
+                if !(33..128).contains(&code) {
+                    return None;
+                }
+                let (col, row) = ((code - 32) % FONT_COLS, (code - 32) / FONT_COLS);
+                let (u, v) = (col as f32 * cw, row as f32 * ch);
+                Some(Sprite {
+                    uv: [u, v, u + cw, v + ch],
+                    color,
+                    ..Sprite::new(font, x + i as f32 * 8.0 * scale, y, scale)
+                })
+            })
+            .collect()
+    }
+
+    /// A solid rectangle (crosshair lines).
+    pub fn rect(&self, x: f32, y: f32, w: f32, h: f32, color: [f32; 4]) -> Option<Sprite> {
+        let white = self.white?;
+        Some(Sprite {
+            size: Some([w, h]),
+            color,
+            ..Sprite::new(white, x, y, 1.0)
+        })
+    }
+
     pub fn image(&self, id: usize) -> Option<&Image> {
         self.images.get(id)
     }
@@ -228,19 +317,25 @@ impl Hud {
         let mut verts = Vec::with_capacity(sprites.len() * 6);
         for s in &sprites {
             let im = &self.images[s.image];
-            let (x0, y0) = (s.x, s.y);
-            let (x1, y1) = (x0 + im.w as f32 * s.scale, y0 + im.h as f32 * s.scale);
+            let [u0, v0, u1, v1] = s.uv;
+            let [w, h] = s.size.unwrap_or([
+                im.w as f32 * (u1 - u0) * s.scale,
+                im.h as f32 * (v1 - v0) * s.scale,
+            ]);
+            let (x0, y0, x1, y1) = (s.x, s.y, s.x + w, s.y + h);
+            let c = s.color;
             let v = |x, y, u, w| Vertex {
                 pos: [x, y],
                 uv: [u, w],
+                color: c,
             };
             verts.extend_from_slice(&[
-                v(x0, y0, 0.0, 0.0),
-                v(x1, y0, 1.0, 0.0),
-                v(x1, y1, 1.0, 1.0),
-                v(x0, y0, 0.0, 0.0),
-                v(x1, y1, 1.0, 1.0),
-                v(x0, y1, 0.0, 1.0),
+                v(x0, y0, u0, v0),
+                v(x1, y0, u1, v0),
+                v(x1, y1, u1, v1),
+                v(x0, y0, u0, v0),
+                v(x1, y1, u1, v1),
+                v(x0, y1, u0, v1),
             ]);
         }
         gpu.queue

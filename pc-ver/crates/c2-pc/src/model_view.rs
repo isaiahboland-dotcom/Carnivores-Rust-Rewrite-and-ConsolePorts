@@ -230,7 +230,7 @@ impl Scene for ModelView {
             gpu,
             &FrameParams {
                 view: self.cam.view(),
-                proj: projection(aspect, self.cam.dist * 10.0 + 1000.0),
+                proj: projection(aspect, self.cam.dist * 10.0 + 1000.0, 1.0),
                 eye: self.cam.eye(),
                 fog_rgb: [0.0; 3],
                 fog: (1e9, 2e9),

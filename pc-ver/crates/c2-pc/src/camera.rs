@@ -6,9 +6,13 @@ use glam::{Mat4, Vec3};
 use crate::input::Input;
 use winit::keyboard::KeyCode;
 
-pub fn projection(aspect: f32, far: f32) -> Mat4 {
+/// The original's view: `CameraW = VideoCX * 1.25` with the 4:3 aspect
+/// correction gives a vertical half-angle tangent of 0.6 (about 62 degrees);
+/// `zoom` divides it (binoculars, scope).
+pub fn projection(aspect: f32, far: f32, zoom: f32) -> Mat4 {
+    let fov = 2.0 * (0.6 / zoom.max(0.1)).atan();
     // wgpu clip space is D3D-style (depth 0..1).
-    glam::camera::rh::proj::directx::perspective(60f32.to_radians(), aspect, 16.0, far)
+    glam::camera::rh::proj::directx::perspective(fov, aspect, 16.0, far)
 }
 
 pub struct FlyCam {

@@ -92,6 +92,8 @@ pub struct AreaView {
     pub cam: FlyCam,
     /// Free-fly controls; off when another scene drives the camera.
     pub fly: bool,
+    /// Field-of-view magnification (binoculars, scope).
+    pub zoom: f32,
     pub radius: u32,
     start: Instant,
     pub fps: f32,
@@ -208,6 +210,7 @@ impl AreaView {
             chunks,
             cam,
             fly: true,
+            zoom: 1.0,
             radius: 74,
             start: Instant::now(),
             fps: 0.0,
@@ -250,10 +253,10 @@ impl Scene for AreaView {
         if self.fly {
             self.cam.update(dt, input);
         }
-        if input.pressed(KeyCode::Equal) || input.pressed(KeyCode::NumpadAdd) {
+        if self.fly && (input.pressed(KeyCode::Equal) || input.pressed(KeyCode::NumpadAdd)) {
             self.radius = (self.radius * 2).min(512);
         }
-        if input.pressed(KeyCode::Minus) || input.pressed(KeyCode::NumpadSubtract) {
+        if self.fly && (input.pressed(KeyCode::Minus) || input.pressed(KeyCode::NumpadSubtract)) {
             self.radius = (self.radius / 2).max(16);
         }
         // CreateMorphedObject: all instances of an animated object share one pose.
@@ -298,7 +301,7 @@ impl AreaView {
             gpu,
             &FrameParams {
                 view,
-                proj: projection(aspect, far * 1.5),
+                proj: projection(aspect, far * 1.5, self.zoom),
                 eye: self.cam.pos,
                 fog_rgb: self.clear_color().map(|c| c as f32),
                 fog: (far * 0.6, far),

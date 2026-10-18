@@ -2,6 +2,18 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-18 — Field of view, binoculars, scope, HUD text
+
+**FOV matches the original:** `CameraW = VideoCX * 1.25` with its 4:3
+correction gives a vertical half-angle tangent of 0.6 (61.9 degrees); the
+binoculars (1.5x-3x) and scope (3x) divide it. On screens wider than 4:3 the
+binocular and scope frames are stretched horizontally to cover the view (they
+were drawn for 4:3); the zoom itself is unchanged.
+
+**HUD text** uses the public-domain 8x8 font from the `font8x8` crate (MIT);
+the original used Windows GDI fonts, which the game data doesn't include.
+Units follow the save's `OptSys` (imperial when set).
+
 ## 2026-10-18 — Audio
 
 **kira 0.12** (owner's choice), default features off except `cpal` (we only

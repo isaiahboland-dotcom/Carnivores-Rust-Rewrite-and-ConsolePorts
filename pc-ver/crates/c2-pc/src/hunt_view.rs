@@ -267,9 +267,22 @@ impl HuntView {
         self.prev_cam = self.hunt.camera().0;
     }
 
-    /// Draws the weapon right away (screenshots).
-    pub fn draw_weapon(&mut self) {
-        self.hunt.hide_weapon(&mut self.events);
+    /// Raises the binoculars right away (screenshots).
+    pub fn raise_binoculars(&mut self) {
+        let input = HuntInput {
+            toggle_binoculars: true,
+            ..Default::default()
+        };
+        self.step(&input);
+    }
+
+    /// Draws weapon `w` right away (screenshots).
+    pub fn draw_weapon(&mut self, w: usize) {
+        let input = HuntInput {
+            select_weapon: Some(w),
+            ..Default::default()
+        };
+        self.step(&input);
         for _ in 0..200 {
             self.step(&HuntInput::default());
         }
@@ -448,9 +461,14 @@ impl Scene for HuntView {
         if let Some(w) = DIGITS.iter().position(|&k| input.pressed(k)) {
             self.pending.select_weapon = Some(w);
         }
+        if input.pressed(KeyCode::KeyB) {
+            self.pending.toggle_binoculars = true;
+        }
         let mut hin = HuntInput {
             controls: self.controls(input),
             fire: input.grabbed && input.mouse_down,
+            zoom_in: input.held(KeyCode::Equal) || input.held(KeyCode::NumpadAdd),
+            zoom_out: input.held(KeyCode::Minus) || input.held(KeyCode::NumpadSubtract),
             ..self.pending
         };
 
@@ -461,6 +479,7 @@ impl Scene for HuntView {
             hin.controls.mouse = (0.0, 0.0);
             hin.toggle_weapon = false;
             hin.select_weapon = None;
+            hin.toggle_binoculars = false;
             self.pending = HuntInput::default();
             self.acc_ms -= TICK_MS as f32;
         }
@@ -491,6 +510,7 @@ impl Scene for HuntView {
         // Original yaw/pitch conventions are mirrored relative to the fly cam.
         self.view.cam.yaw = -alpha;
         self.view.cam.pitch = -beta;
+        self.view.zoom = self.hunt.zoom();
         self.audio.set_camera(pos, alpha);
         let ship = &self.hunt.ship;
         let engine = (ship.state != -1).then_some(ship.pos);
@@ -523,12 +543,57 @@ impl Scene for HuntView {
         self.view
             .draw_with(gpu, pass, aspect, &mut |gpu, pass, globals| {
                 dinos.draw(gpu, pass, globals, &hunt.herd, &hunt.ship, eye, max);
-                weapons.draw(gpu, pass, globals, hunt, view, light);
+                weapons.draw(gpu, pass, globals, hunt, view, light, aspect);
             });
 
         // HUD at an integer scale of the original's 640x480 layout.
         let scale = (screen.1 as f32 / 480.0).floor().max(1.0);
         let mut sprites = self.weapons.hud_sprites(&self.hud, &self.hunt, scale);
+        // Binoculars: what's in the cross-hairs (`Render_LifeInfo`).
+        if let Some(li) = self.hunt.life_info(self.view.area()) {
+            let green = [0.0, 0.69, 0.0, 1.0];
+            let x = screen.0 as f32 / 2.0 + screen.0 as f32 / 64.0;
+            let y = screen.1 as f32 / 2.0 + screen.1 as f32 / 6.8;
+            let imperial = self.hunt.room.options.sys != 0;
+            let lines = if imperial {
+                [
+                    li.name.clone(),
+                    format!("Weight: {:.2}t", li.weight / 0.907),
+                    format!("Distance: {}ft", (li.distance * 3.0 / 64.0) as i32),
+                ]
+            } else {
+                [
+                    li.name.clone(),
+                    format!("Weight: {:.2}T", li.weight),
+                    format!("Distance: {}m", (li.distance * 3.0 / 64.0) as i32 / 3),
+                ]
+            };
+            for (i, l) in lines.iter().enumerate() {
+                sprites.extend(
+                    self.hud
+                        .text(x, y + 16.0 * scale * i as f32, scale, green, l),
+                );
+            }
+        }
+        // Scope cross-hairs at the view model's aim point (`DrawOpticCross`).
+        if self.hunt.zoom() > 1.0 && !self.hunt.bin_mode {
+            if let Some(p) = self.weapons.aim_point {
+                let far = self.view.radius as f32 * c2_core::CELL;
+                let vp = crate::camera::projection(aspect, far * 1.5, self.hunt.zoom()) * view;
+                let c = vp * glam::Vec4::new(p[0], p[1], p[2], 1.0);
+                if c.w > 0.0 {
+                    let sx = (c.x / c.w + 1.0) * 0.5 * screen.0 as f32;
+                    let sy = (1.0 - c.y / c.w) * 0.5 * screen.1 as f32;
+                    let (cx, cy) = (screen.0 as f32 / 2.0, screen.1 as f32 / 2.0);
+                    if (cx - sx).abs() <= cx && (cy - sy).abs() <= cy / 2.0 {
+                        let w = screen.0 as f32 / 12.0;
+                        let col = [0.0, 0.0, 0.0625, 0.5];
+                        sprites.extend(self.hud.rect(sx - w, sy, 2.0 * w, scale, col));
+                        sprites.extend(self.hud.rect(sx, sy - w, scale, 2.0 * w, col));
+                    }
+                }
+            }
+        }
         if self.hunt.show_exit() {
             if let Some((id, w, h)) = self
                 .exit_img
@@ -536,12 +601,7 @@ impl Scene for HuntView {
             {
                 let x = (screen.0 as f32 - w as f32 * scale) / 2.0;
                 let y = (screen.1 as f32 - h as f32 * scale) / 2.0;
-                sprites.push(Sprite {
-                    image: id,
-                    x,
-                    y,
-                    scale,
-                });
+                sprites.push(Sprite::new(id, x, y, scale));
             }
         }
         self.hud.draw(gpu, pass, screen, &sprites);
