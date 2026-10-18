@@ -260,15 +260,20 @@ impl Gpu {
         })
     }
 
-    pub fn sampler(&self, linear: bool) -> wgpu::Sampler {
+    pub fn sampler(&self, linear: bool, repeat: bool) -> wgpu::Sampler {
         let f = if linear {
             wgpu::FilterMode::Linear
         } else {
             wgpu::FilterMode::Nearest
         };
+        let a = if repeat {
+            wgpu::AddressMode::Repeat
+        } else {
+            wgpu::AddressMode::ClampToEdge
+        };
         self.device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_u: a,
+            address_mode_v: a,
             mag_filter: f,
             min_filter: f,
             ..Default::default()

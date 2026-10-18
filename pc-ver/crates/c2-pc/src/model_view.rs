@@ -11,7 +11,7 @@ use winit::keyboard::KeyCode;
 use crate::camera::{projection, OrbitCam};
 use crate::gpu::Gpu;
 use crate::input::Input;
-use crate::render::{Globals, GpuModel, Instance, ModelRenderer};
+use crate::render::{FrameParams, Globals, GpuModel, Instance, ModelRenderer};
 use crate::scene::Scene;
 
 struct Loaded {
@@ -105,7 +105,9 @@ impl ModelView {
         })();
         match result {
             Ok((car, prepared)) => {
-                let gpu_model = GpuModel::new(gpu, &prepared);
+                // Characters get no CalcLights in the original (commented out in
+                // LoadCharacterInfo), so they are unlit here too.
+                let gpu_model = GpuModel::new(gpu, &prepared, Vec::new());
                 let renderer = ModelRenderer::new(gpu, &self.globals, &[&prepared.texture_rgba]);
                 if car.as_ref().is_none_or(|c| self.anim >= c.animations.len()) {
                     self.anim = 0;
@@ -223,9 +225,18 @@ impl Scene for ModelView {
 
     fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, aspect: f32) {
         let Some(l) = &mut self.loaded else { return };
-        let vp = projection(aspect, self.cam.dist * 10.0 + 1000.0) * self.cam.view();
-        self.globals
-            .write(gpu, vp, self.cam.eye(), [0.0; 3], (1e9, 2e9));
+        self.globals.write(
+            gpu,
+            &FrameParams {
+                view: self.cam.view(),
+                proj: projection(aspect, self.cam.dist * 10.0 + 1000.0),
+                eye: self.cam.eye(),
+                fog_rgb: [0.0; 3],
+                fog: (1e9, 2e9),
+                night_vision: false,
+                time_s: 0.0,
+            },
+        );
         let inst = [Instance {
             offset: [0.0; 3],
             turns: 0.0,

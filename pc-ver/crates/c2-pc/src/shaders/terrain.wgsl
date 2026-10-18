@@ -8,6 +8,10 @@ struct Params {
     // Window width in cells.
     width: u32,
     layers: u32,
+    // RealTime in ms, for cloud shadows.
+    time_ms: u32,
+    clouds: u32,
+    _pad: vec2<u32>,
 };
 
 // cells[i].x = height | light << 8 | water << 16
@@ -18,6 +22,8 @@ struct Params {
 @group(1) @binding(2) var<uniform> params: Params;
 @group(1) @binding(3) var tex: texture_2d_array<f32>;
 @group(1) @binding(4) var samp: sampler;
+// The RSC's 128x128 cloud map, 4 bytes per u32.
+@group(1) @binding(5) var<storage, read> sky_map: array<u32>;
 
 const MAP: i32 = 1024;
 const FM_REVERSE: u32 = 0x10u;
@@ -64,6 +70,24 @@ fn rotate_uv(d: vec2<f32>, dir: u32) -> vec2<f32> {
     }
 }
 
+fn sky_at(x: i32, y: i32) -> i32 {
+    let i = u32((y & 127) * 128 + (x & 127));
+    return i32((sky_map[i / 4u] >> ((i % 4u) * 8u)) & 0xffu);
+}
+
+// Hunt2.cpp: cloud shadow for map vertex (x, y). The cloud map scrolls one
+// cell every 512 ms diagonally, interpolated with kx = ky = SKYDTime & 255.
+fn cloud_shadow(x: i32, y: i32) -> i32 {
+    let t = i32(params.time_ms >> 1u);
+    let k = t & 255;
+    let dt = t >> 8;
+    let sx = x + dt;
+    let sy = y + dt;
+    let db = ((sky_at(sx, sy) * (256 - k) + sky_at(sx + 1, sy) * k) * (256 - k)
+        + (sky_at(sx, sy + 1) * (256 - k) + sky_at(sx + 1, sy + 1) * k) * k) >> 17u;
+    return clamp(db - 40, 0, 48);
+}
+
 fn window_cell(vid: u32) -> vec2<i32> {
     let ci = vid / 6u;
     return params.origin + vec2<i32>(i32(ci % params.width), i32(ci / params.width));
@@ -88,7 +112,11 @@ fn vs_ground(@builtin(vertex_index) vid: u32) -> VOut {
     var o: VOut;
     o.clip = g.view_proj * vec4<f32>(p, 1.0);
     o.uv = mix(vec2<f32>(TC_MIN), vec2<f32>(TC_MAX), rotate_uv(vec2<f32>(d), flags & 3u));
-    o.light = f32((vc.x >> 8u) & 0xffu) / 255.0;
+    var light = i32((vc.x >> 8u) & 0xffu);
+    if (params.clouds != 0u) {
+        light = max(64, light - cloud_shadow(v.x, v.y));
+    }
+    o.light = f32(light) / 255.0;
     o.layer = min(here.y & 0xffffu, params.layers - 1u);
     o.dist = distance(p, g.cam_pos.xyz);
     o.alpha = 1.0;
@@ -127,5 +155,5 @@ fn vs_water(@builtin(vertex_index) vid: u32) -> VOut {
 @fragment
 fn fs(i: VOut) -> @location(0) vec4<f32> {
     let c = textureSample(tex, samp, i.uv, i.layer);
-    return vec4<f32>(fogged(c.rgb * i.light, i.dist), i.alpha);
+    return vec4<f32>(fogged(texel(c.rgb) * i.light, i.dist), i.alpha);
 }

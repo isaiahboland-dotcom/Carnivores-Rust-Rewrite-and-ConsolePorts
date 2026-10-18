@@ -33,6 +33,23 @@ pub enum TimeOfDay {
     Night = 2,
 }
 
+impl TimeOfDay {
+    /// `Sun3dPos`: sun (moon at night) offset from the camera (`Game.cpp`).
+    pub fn sun_pos(self) -> [f32; 3] {
+        match self {
+            TimeOfDay::Day => [-4048.0, 2048.0, -4048.0],
+            TimeOfDay::Dusk => [-2048.0, 4048.0, -2048.0],
+            TimeOfDay::Night => [3048.0, 3048.0, 3048.0],
+        }
+    }
+
+    /// Night hunts are seen through night vision: `BrightenTexture` turns
+    /// every texel into `(G/8, G, G/8)`.
+    pub fn night_vision(self) -> bool {
+        self == TimeOfDay::Night
+    }
+}
+
 /// One placed object instance.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Placement {

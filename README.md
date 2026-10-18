@@ -325,10 +325,10 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
   - [x] `.TGA`, `.WAV` (all 64 + 41 vanilla files match the original loaders)
   - [x] `strstr`-faithful `_RES.TXT` diff check: no differences
   - [ ] menu `.RAW`, saves (deferred to M3, where they're used)
-- [ ] M2 Viewer — **mostly done**: all 29 vanilla models and all 6 areas render (terrain, texture rotation, water, objects, object animation, fog)
-  - [ ] sky dome + clouds, sun/moon (additive), distant object billboards
-  - [ ] per-vertex model lighting (`CalcLights`/`VLight`) — objects use the flat `_RenderObject` light for now
-  - [ ] side-by-side check against the retail game (blend factor of `sfTransparent` faces, object rotation direction)
+- [x] M2 Viewer — all 29 vanilla models and all 6 areas render: terrain, texture rotation, water, objects
+      with `CalcLights` shading, object animation, fog, scrolling sky plane, cloud shadows, sun/moon, night vision
+  - [ ] later polish: distant object billboards (needed for 3DS perf anyway), `RandomMap` light jitter,
+        per-vertex ground light, side-by-side check vs retail (`sfTransparent` blend, object rotation direction)
 - [ ] M3 Vanilla PC
 - [ ] M4 Mod system
 - [ ] M5 Recipes
@@ -336,7 +336,7 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
 - [ ] M7 Vanilla 3DS
 - [ ] M8 Modded 3DS
 
-_Last updated: 2026-10-18 — M1 done except menu RAW/saves (M3); M2 viewer renders everything; next: finish M2 sky/lighting, then M3._
+_Last updated: 2026-10-18 — M2 done; next: M3 (hunter movement, then dinosaurs)._
 
 
 note from user: quick headsup, the carnivores 2 datafile is copied direct from my library and includes re-shade files as well, please do not port the re-shade files to 3ds or the rust re-write as that would overcomplicate things dramatically

@@ -5,17 +5,19 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use c2_core::area::{Area, Placement, TimeOfDay};
-use c2_core::model::{pose_object, PreparedModel};
+use c2_core::model::{pose_object, vertex_lights, PreparedModel};
 use c2_core::CELL;
 use c2_formats::rsc::object_flags;
-use c2_formats::{map, rsc};
+use c2_formats::{map, rsc, three_df};
 use glam::Vec3;
 use winit::keyboard::KeyCode;
 
 use crate::camera::{projection, FlyCam};
 use crate::gpu::Gpu;
 use crate::input::Input;
-use crate::render::{Globals, GpuModel, Instance, ModelRenderer, TerrainRenderer};
+use crate::render::{
+    FrameParams, Globals, GpuModel, Instance, ModelRenderer, SkyRenderer, TerrainRenderer,
+};
 use crate::scene::Scene;
 
 const CHUNK: usize = 32;
@@ -43,11 +45,46 @@ pub fn sibling(path: &Path, ext: &str) -> Result<PathBuf> {
     anyhow::bail!("no {stem}.{ext} next to {}", path.display())
 }
 
+/// Finds `name` in `dir`, ignoring case.
+fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
+    std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| {
+            p.file_name()
+                .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(name))
+        })
+}
+
+/// `Hunt2.cpp`: MOON.3DF at night, SUN2.3DF otherwise, from `HUNTDAT/`
+/// (the parent of the `AREAS` folder).
+fn load_sun(map_path: &Path, time: TimeOfDay) -> Option<PreparedModel> {
+    let huntdat = map_path.parent()?.parent()?;
+    let name = if time == TimeOfDay::Night {
+        "MOON.3DF"
+    } else {
+        "SUN2.3DF"
+    };
+    let path = find_file(huntdat, name)?;
+    match std::fs::read(&path)
+        .map_err(anyhow::Error::from)
+        .and_then(|d| Ok(three_df::parse(&d)?))
+    {
+        Ok(m) => Some(PreparedModel::from_mesh(&m.mesh)),
+        Err(e) => {
+            tracing::warn!("{}: {e:#}", path.display());
+            None
+        }
+    }
+}
+
 pub struct AreaView {
     name: String,
     area: Area,
     globals: Globals,
     terrain: TerrainRenderer,
+    sky: SkyRenderer,
     models: Vec<GpuModel>,
     renderer: ModelRenderer,
     /// Placements bucketed by chunk, with their precomputed light.
@@ -62,10 +99,13 @@ pub struct AreaView {
 fn object_light(area: &Area, p: &Placement) -> f32 {
     let o = &area.rsc.objects[usize::from(p.model)];
     let i = usize::from(p.cell.1) * map::MAP_SIZE + usize::from(p.cell.0);
+    // Ground-lit objects take the light of the ground under each vertex
+    // (CalcModelGroundLight: 128 + LandLt - 128). Approximated per object.
+    if o.info.flags & object_flags::GROUND_LIGHT != 0 {
+        return f32::from(area.light_map()[i]) / 255.0;
+    }
     let l = if o.info.flags & object_flags::DEF_LIGHT != 0 {
         o.info.default_light
-    } else if o.info.flags & object_flags::GROUND_LIGHT != 0 {
-        128
     } else {
         i32::from(area.light_map()[i] >> 1) + 96
     };
@@ -102,7 +142,24 @@ impl AreaView {
             .iter()
             .map(|o| PreparedModel::from_mesh(&o.model.mesh))
             .collect();
-        let models = prepared.iter().map(|p| GpuModel::new(gpu, p)).collect();
+        // CalcLights runs for every RSC object; NOLIGHT zeroes it and
+        // ground-lit objects replace it with ground light.
+        let sun = time.sun_pos();
+        let models = prepared
+            .iter()
+            .zip(&area.rsc.objects)
+            .map(|(p, o)| {
+                let unlit = object_flags::NO_LIGHT | object_flags::GROUND_LIGHT;
+                let vl = if o.info.flags & unlit != 0 {
+                    Vec::new()
+                } else {
+                    vertex_lights(&o.model.mesh, sun)
+                };
+                GpuModel::new(gpu, p, vl)
+            })
+            .collect();
+        let sky_rgba = c2_core::color::image_to_rgba8(&area.rsc.skies[time as usize], false);
+        let sky = SkyRenderer::new(gpu, &globals, &sky_rgba, load_sun(map_path, time).as_ref());
         let textures: Vec<&[u8]> = prepared.iter().map(|p| p.texture_rgba.as_slice()).collect();
         let fallback = vec![0u8; 256 * 256 * 4];
         let textures = if textures.is_empty() {
@@ -143,6 +200,7 @@ impl AreaView {
             area,
             globals,
             terrain,
+            sky,
             models,
             renderer,
             chunks,
@@ -200,10 +258,29 @@ impl Scene for AreaView {
 
     fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, aspect: f32) {
         let far = self.radius as f32 * CELL;
-        let vp = projection(aspect, far * 1.5) * self.cam.view();
-        let sky = self.clear_color().map(|c| c as f32);
-        self.globals
-            .write(gpu, vp, self.cam.pos, sky, (far * 0.6, far));
+        let view = self.cam.view();
+        let time = self.area.time;
+        let t = self.start.elapsed();
+        self.globals.write(
+            gpu,
+            &FrameParams {
+                view,
+                proj: projection(aspect, far * 1.5),
+                eye: self.cam.pos,
+                fog_rgb: self.clear_color().map(|c| c as f32),
+                fog: (far * 0.6, far),
+                night_vision: time.night_vision(),
+                time_s: t.as_secs_f32(),
+            },
+        );
+        self.sky.draw(
+            gpu,
+            pass,
+            &self.globals,
+            view,
+            time.sun_pos(),
+            time == TimeOfDay::Night,
+        );
 
         let center = self.cam_cell();
         self.terrain.set_window(
@@ -211,6 +288,7 @@ impl Scene for AreaView {
             center,
             self.radius,
             self.area.rsc.textures.len() as u32,
+            t.as_millis() as u32,
         );
         self.terrain.draw_ground(pass, &self.globals);
 

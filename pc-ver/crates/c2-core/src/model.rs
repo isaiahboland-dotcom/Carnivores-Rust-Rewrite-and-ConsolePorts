@@ -88,6 +88,69 @@ impl PreparedModel {
     }
 }
 
+/// `mathematics.cpp: CalcLights`: per-vertex sun shading for each of the
+/// four object rotations, in the original's light units (added to the
+/// object's base light, 0..255). Computed from file-space vertices, as the
+/// original calls it before the load-time scaling.
+pub fn vertex_lights(mesh: &Mesh, sun_pos: [f32; 3]) -> Vec<[f32; 4]> {
+    let norm = |v: [f32; 3]| {
+        let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        if l > 0.0 {
+            [v[0] / l, v[1] / l, v[2] / l]
+        } else {
+            v
+        }
+    };
+    let slight = norm([-sun_pos[0], -sun_pos[1] / 2.0, -sun_pos[2]]);
+    let n = mesh.vertices.len();
+    let pos = |i: i32| {
+        mesh.vertices
+            .get(usize::try_from(i).ok()?)
+            .map(|v| [v.x, v.y, v.z])
+    };
+    let mut sums = vec![[0.0f32; 3]; n];
+    let mut used = vec![false; n];
+    for f in &mesh.faces {
+        let (Some(a), Some(b), Some(c)) = (pos(f.v[0]), pos(f.v[1]), pos(f.v[2])) else {
+            continue;
+        };
+        if f.flags & face_flags::DOUBLE_SIDE != 0 {
+            continue;
+        }
+        let (u, w) = (
+            [b[0] - a[0], b[1] - a[1], b[2] - a[2]],
+            [c[0] - a[0], c[1] - a[1], c[2] - a[2]],
+        );
+        let nv = norm([
+            u[1] * w[2] - u[2] * w[1],
+            u[2] * w[0] - u[0] * w[2],
+            u[0] * w[1] - u[1] * w[0],
+        ]);
+        for &i in &f.v {
+            let i = i as usize;
+            for k in 0..3 {
+                sums[i][k] += nv[k];
+            }
+            used[i] = true;
+        }
+    }
+    (0..n)
+        .map(|v| {
+            let mut out = [0.0; 4];
+            if used[v] {
+                let nv = norm(sums[v]);
+                for (vt, o) in out.iter_mut().enumerate() {
+                    let a = vt as f32 * std::f32::consts::FRAC_PI_2;
+                    let (ca, sa) = (a.cos(), a.sin());
+                    let rv = [nv[0] * sa + nv[2] * ca, nv[1], nv[2] * sa - nv[0] * ca];
+                    *o = (rv[0] * slight[0] + rv[1] * slight[1] + rv[2] * slight[2]) * 64.0;
+                }
+            }
+            out
+        })
+        .collect()
+}
+
 /// Duration in ms of a `.CAR` animation (`FramesCount * 1000 / aniKPS`).
 pub fn car_anim_duration_ms(a: &Animation) -> u32 {
     if a.kps <= 0 {

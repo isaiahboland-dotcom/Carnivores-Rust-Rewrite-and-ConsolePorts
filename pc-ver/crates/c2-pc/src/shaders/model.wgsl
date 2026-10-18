@@ -7,10 +7,12 @@
 struct VIn {
     @location(0) pos: vec3<f32>,
     @location(1) uv: vec2<f32>,
-    @location(2) offset: vec3<f32>,
-    @location(3) turns: f32,
-    @location(4) light: f32,
-    @location(5) layer: u32,
+    // CalcLights: per-vertex sun term for each quarter turn (0..255 units).
+    @location(2) vlight: vec4<f32>,
+    @location(3) offset: vec3<f32>,
+    @location(4) turns: f32,
+    @location(5) light: f32,
+    @location(6) layer: u32,
 };
 
 struct VOut {
@@ -30,7 +32,9 @@ fn vs(v: VIn) -> VOut {
     var o: VOut;
     o.clip = g.view_proj * vec4<f32>(p, 1.0);
     o.uv = v.uv;
-    o.light = v.light;
+    // RenderModel: vertex colour = object light + VLight[VT][v].
+    let vt = u32(v.turns) & 3u;
+    o.light = clamp(v.light + v.vlight[vt] / 255.0, 0.0, 1.0);
     o.layer = v.layer;
     o.dist = distance(p, g.cam_pos.xyz);
     return o;
@@ -42,7 +46,7 @@ fn fs_opaque(i: VOut) -> @location(0) vec4<f32> {
     if (c.a < 0.5) {
         discard;
     }
-    return vec4<f32>(fogged(c.rgb * i.light, i.dist), 1.0);
+    return vec4<f32>(fogged(texel(c.rgb) * i.light, i.dist), 1.0);
 }
 
 // sfTransparent faces: blended. The exact original factor is still to be
@@ -50,5 +54,5 @@ fn fs_opaque(i: VOut) -> @location(0) vec4<f32> {
 @fragment
 fn fs_blend(i: VOut) -> @location(0) vec4<f32> {
     let c = textureSample(tex, samp, i.uv, i.layer);
-    return vec4<f32>(fogged(c.rgb * i.light, i.dist), c.a * 0.5);
+    return vec4<f32>(fogged(texel(c.rgb) * i.light, i.dist), c.a * 0.5);
 }

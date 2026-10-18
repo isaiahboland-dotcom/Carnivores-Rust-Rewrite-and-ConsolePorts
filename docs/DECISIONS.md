@@ -24,10 +24,17 @@ the 3DS will need cooked meshes instead (M6).
 **Load-time fixups live in `c2-core::area`** (`CreateTMap` hardware path,
 `GetLandH`, `GetObjectH`, landing list, trophy ring), so the cooker can reuse them.
 
-**Known approximations in the viewer** (to check against the retail game):
-objects use the flat `_RenderObject` light without `RandomMap` jitter or
-per-vertex `VLight`; `sfTransparent` faces blend at 50%; object quarter-turn
-direction is unverified; no sky dome, sun/moon or distant billboards yet.
+**Sky, sun and lighting** follow `RenderSkyPlane`, `RenderSun`, `CalcLights`
+and the cloud-shadow code in `Hunt2.cpp`. Night is rendered as the original
+does it: `BrightenTexture` maps every texel to `(G/8, G, G/8)`, i.e. night
+vision. The sun/moon is drawn additively (the original's black quad corners
+are invisible in-game).
+
+**Known approximations** (to check against the retail game): no `RandomMap`
+light jitter; ground-lit objects use one light value per object instead of
+per vertex; `sfTransparent` faces blend at 50%; object quarter-turn direction
+is unverified; no distant billboards (`bmpmodel`) yet; sun is not occluded
+by terrain (`SkyTraceK` = 1).
 
 ## 2026-10-17 — TGA/WAV: read the header instead of assuming it
 
