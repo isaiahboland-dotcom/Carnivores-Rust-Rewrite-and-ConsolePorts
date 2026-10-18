@@ -14,7 +14,9 @@ use crate::dino::{
 };
 use crate::player::{Controls, Player, PlayerEvent};
 use crate::rng::MsRand;
+use crate::ship::{Ship, ShipEvent};
 use crate::trace::{trace_look, trace_shot, Hit};
+use c2_formats::sav::{Save, TrophyItem};
 
 /// `MAX_HEALTH`.
 pub const MAX_HEALTH: i32 = 128_000;
@@ -174,12 +176,21 @@ pub enum GameEvent {
     HunterDied {
         kind: i32,
     },
+    Ship(ShipEvent),
+    /// A trophy was registered (slot in the trophy room).
+    Trophy {
+        slot: usize,
+        score: i32,
+    },
     Message(String),
 }
 
 /// Hunt options (from the menu / save file).
 #[derive(Debug, Clone, Copy)]
 pub struct HuntOptions {
+    /// Bit `ai` set for each species chosen as a target (`TargetDino`).
+    pub targets: u32,
+    pub radar: bool,
     pub opt_agres: i32,
     pub opt_sens: i32,
     pub view_r: i32,
@@ -191,6 +202,8 @@ pub struct HuntOptions {
 impl Default for HuntOptions {
     fn default() -> Self {
         Self {
+            targets: 0,
+            radar: false,
             opt_agres: 128,
             opt_sens: 128,
             view_r: 74,
@@ -256,21 +269,57 @@ pub struct Hunt {
     /// Shots fired / animals bagged this hunt (`TrophyRoom.Last`).
     pub shots_made: u32,
     pub successes: u32,
+    pub ship: Ship,
+    /// Length of the ship's landing animation (ms).
+    pub ship_anim_ms: i32,
+    /// The player's trophy room; trophies and score are added to it.
+    pub room: Save,
+    /// Local date and time for trophy records: (year, month, day, hour, minute).
+    pub clock: (i32, i32, i32, i32, i32),
+    /// The exit prompt is showing (`EXITMODE`).
+    pub exit_prompt: bool,
+    /// Countdown to leaving after confirming (`ExitTime`), ms.
+    exit_time: i32,
+    outcome: Option<Outcome>,
+    /// Distance walked / time spent this hunt (`TrophyRoom.Last.path/time`).
+    pub path: f32,
+    pub time_s: f32,
+}
+
+/// How a hunt ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    /// Left alive: the trophy room should be saved.
+    Exited,
+    /// Died (or quit while dead): this hunt's trophies are discarded.
+    Died,
 }
 
 impl Hunt {
     pub fn new(
+        area: &Area,
         player: Player,
         herd: Herd,
         weapons: Weapons,
         mut rng: MsRand,
         opts: HuntOptions,
+        room: Save,
     ) -> Self {
         let wind = Wind {
             alpha: rng.r_rand(1024) as f32 * 2.0 * PI / 1024.0,
             speed: 10.0,
         };
+        let ship = Ship::new(area, (player.x, player.z));
         Self {
+            ship,
+            ship_anim_ms: 1,
+            room,
+            clock: (2026, 1, 1, 12, 0),
+            exit_prompt: false,
+            exit_time: 0,
+            outcome: None,
+            path: 0.0,
+            time_s: 0.0,
             player,
             herd,
             weapons,
@@ -337,6 +386,8 @@ impl Hunt {
                 }
             }
             self.weapon_input(area, cars, input, out);
+            self.path += dt as f32 * self.player.vspeed / 128.0;
+            self.time_s += dt as f32 / 1000.0;
         }
         self.weapon_step(dt, out);
 
@@ -368,6 +419,104 @@ impl Hunt {
         }
         self.wind.speed = self.wind.speed.clamp(4.0, 18.0);
         self.check_afraid(area);
+        self.exit_step(dt);
+
+        let mut sev = Vec::new();
+        let player = [self.player.x, self.player.y, self.player.z];
+        let (view_r, rt, anim) = (self.opts.view_r, self.real_time, self.ship_anim_ms);
+        self.ship
+            .step(area, &mut self.herd, player, view_r, rt, dt, anim, &mut sev);
+        for e in sev {
+            if let ShipEvent::Removed { index } = e {
+                self.remove_character(index);
+            }
+            out.push(GameEvent::Ship(e));
+        }
+    }
+
+    /// `RemoveCharacter`, fixing up every index that refers past it.
+    fn remove_character(&mut self, index: usize) {
+        if index >= self.herd.chars.len() {
+            return;
+        }
+        self.herd.chars.remove(index);
+        self.ship.character_removed(index);
+        if let Some(d) = &mut self.herd.demo_index {
+            if *d > index {
+                *d -= 1;
+            }
+        }
+        if let Some(d) = &mut self.death {
+            if d.body > index {
+                d.body -= 1;
+            }
+        }
+    }
+
+    /// `AddShipTask`: call the ship for a trophy and record it.
+    fn add_ship_task(&mut self, area: &Area, index: usize, out: &mut Vec<GameEvent>) {
+        let Some(c) = self.herd.chars.get(index) else {
+            return;
+        };
+        let water = area.land_up_h(c.pos[0], c.pos[2]) - area.land_height(c.pos[0], c.pos[2]);
+        if water < 100.0 && !self.opts.tranq {
+            self.ship.tasks.push_back(index);
+            let slot = crate::ship::ship_sound::CALL;
+            out.push(GameEvent::Ship(ShipEvent::Sound { slot, at: None }));
+        }
+        let t = self
+            .room
+            .bodies
+            .iter()
+            .take(23)
+            .position(|b| b.ctype == 0)
+            .unwrap_or(23);
+        let base = self
+            .herd
+            .species
+            .get(c.ctype)
+            .map_or(0, |s| s.info.base_score);
+        let mut score = base as f32;
+        if self.successes > 1 {
+            score *= 1.0 + self.successes as f32 / 10.0;
+        }
+        if self.opts.targets & 1u32.checked_shl(c.ai as u32).unwrap_or(0) == 0 {
+            score /= 2.0;
+        }
+        for (on, k) in [
+            (self.opts.tranq, 1.25),
+            (self.opts.radar, 0.70),
+            (self.opts.scent, 0.80),
+            (self.opts.camo, 0.85),
+        ] {
+            if on {
+                score *= k;
+            }
+        }
+        self.room.score += score as i32;
+        if !self.opts.tranq {
+            let (y, mo, d, h, mi) = self.clock;
+            let p = &self.player;
+            let range =
+                ((c.pos[0] - p.x).powi(2) + (c.pos[1] - p.y).powi(2) + (c.pos[2] - p.z).powi(2))
+                    .sqrt()
+                    / 64.0;
+            self.room.bodies[t] = TrophyItem {
+                ctype: c.ctype as i32,
+                scale: c.scale,
+                weapon: self.weapons.current as i32,
+                score: score as i32,
+                phase: self.real_time & 3,
+                time: (h << 10) + mi,
+                date: (y << 20) + (mo << 10) + d,
+                range,
+                ..Default::default()
+            };
+            out.push(GameEvent::Trophy {
+                slot: t,
+                score: score as i32,
+            });
+        }
     }
 
     // ------------------------------------------------------------ weapons
@@ -607,12 +756,12 @@ impl Hunt {
         c.health = c.health.max(0);
         if c.health == 0 {
             let trophy = c.ai >= 10;
+            let ct = c.ctype;
+            out.push(GameEvent::Killed { index, trophy });
             if trophy {
                 self.successes += 1;
-            }
-            out.push(GameEvent::Killed { index, trophy });
-            if c.ai < 10 {
-                let ct = c.ctype;
+                self.add_ship_task(area, index, out);
+            } else {
                 self.add_secondary_one(area, ct);
             }
         } else {
@@ -877,14 +1026,85 @@ impl Hunt {
         self.death = Some(d);
     }
 
-    /// The hunt is over (12 s after death, as the original).
-    pub fn finished(&self) -> bool {
-        self.death.is_some_and(|d| d.time > 12_000)
+    /// How the hunt ended, once it has (death: 12 s after dying).
+    pub fn outcome(&self) -> Option<Outcome> {
+        if self.death.is_some_and(|d| d.time > 12_000) {
+            return Some(Outcome::Died);
+        }
+        self.outcome
     }
 
-    /// Show the exit prompt (6 s after death).
+    /// Show the exit prompt (`EXITMODE`, or 6 s after death).
     pub fn show_exit(&self) -> bool {
-        self.death.is_some_and(|d| d.time > 6_000)
+        self.exit_prompt || self.death.is_some_and(|d| d.time > 6_000)
+    }
+
+    /// Debug helper (screenshots, tools): kill character `index` outright as
+    /// if by a vital shot, scoring it and calling the ship.
+    pub fn debug_bag(&mut self, area: &Area, index: usize, out: &mut Vec<GameEvent>) {
+        let Some(c) = self.herd.chars.get_mut(index) else {
+            return;
+        };
+        if c.health == 0 {
+            return;
+        }
+        c.health = 0;
+        let trophy = c.ai >= 10;
+        out.push(GameEvent::Killed { index, trophy });
+        if trophy {
+            self.successes += 1;
+            self.add_ship_task(area, index, out);
+        }
+    }
+
+    /// Escape: toggle the exit prompt.
+    pub fn press_escape(&mut self) {
+        if self.exit_time == 0 {
+            self.exit_prompt = !self.exit_prompt;
+        }
+    }
+
+    /// Y / Enter at the prompt: leave (in 4 s if alive).
+    pub fn confirm_exit(&mut self) {
+        if self.show_exit() && self.exit_time == 0 {
+            self.exit_time = if self.health > 0 { 4000 } else { 1 };
+            self.exit_prompt = false;
+        }
+    }
+
+    /// Counts down a confirmed exit; on leaving alive, folds this hunt into
+    /// the totals and updates the rank (`AnimateProcesses`, `SaveTrophy`).
+    fn exit_step(&mut self, dt: i32) {
+        if self.exit_time == 0 || self.outcome.is_some() {
+            return;
+        }
+        self.exit_time -= dt;
+        if self.exit_time > 0 {
+            return;
+        }
+        if self.health > 0 {
+            let r = &mut self.room;
+            r.last = c2_formats::sav::Stats {
+                shots_made: self.shots_made as i32,
+                success: self.successes as i32,
+                path: self.path,
+                time: self.time_s,
+            };
+            r.total.shots_made += r.last.shots_made;
+            r.total.success += r.last.success;
+            r.total.path += r.last.path;
+            r.total.time += r.last.time;
+            r.rank = if r.score >= 300 {
+                2
+            } else if r.score >= 100 {
+                1
+            } else {
+                0
+            };
+            self.outcome = Some(Outcome::Exited);
+        } else {
+            self.outcome = Some(Outcome::Died);
+        }
     }
 }
 
@@ -975,6 +1195,19 @@ mod tests {
         }
     }
 
+    fn blank_save() -> Save {
+        Save {
+            player_name_raw: [0; 128],
+            reg_number: 0,
+            score: 0,
+            rank: 0,
+            last: Default::default(),
+            total: Default::default(),
+            bodies: [TrophyItem::default(); 24],
+            options: Default::default(),
+        }
+    }
+
     /// Hunter at the map centre looking -z; a Stegosaurus-AI target 2000 ahead.
     fn setup(mortal: bool) -> (Area, Hunt, Car) {
         let area = Area::flat(10);
@@ -999,11 +1232,9 @@ mod tests {
         c.reset(&herd.species[1], &mut rng, 128);
         herd.chars.push(c);
         let weapons = Weapons::new(vec![rifle()], vec![[100, 100, 100, 100]], 1, false);
-        (
-            area,
-            Hunt::new(player, herd, weapons, rng, HuntOptions::default()),
-            car,
-        )
+        let opts = HuntOptions::default();
+        let hunt = Hunt::new(&area, player, herd, weapons, rng, opts, blank_save());
+        (area, hunt, car)
     }
 
     /// Ticks without stepping the herd (keeps the target still).
@@ -1164,5 +1395,58 @@ mod tests {
         assert_eq!(c.health, 1, "5 - power 4");
         assert_eq!(c.state, 2, "alarmed");
         assert!(c.afraid_time > 0 && c.blood_ttime > 0);
+    }
+
+    #[test]
+    fn trophy_is_recorded_and_the_ship_takes_the_body() {
+        let (area, mut h, car) = setup(true);
+        let cars = [Some(&car), Some(&car)];
+        h.ship_anim_ms = 2000;
+        let mut ev = Vec::new();
+        weapon_ticks(
+            &mut h,
+            &area,
+            &cars,
+            HuntInput {
+                toggle_weapon: true,
+                ..Default::default()
+            },
+            1,
+            &mut ev,
+        );
+        weapon_ticks(&mut h, &area, &cars, HuntInput::default(), 12, &mut ev);
+        weapon_ticks(
+            &mut h,
+            &area,
+            &cars,
+            HuntInput {
+                fire: true,
+                ..Default::default()
+            },
+            1,
+            &mut ev,
+        );
+        assert_eq!(h.ship.tasks.len(), 1);
+        // Base score 1, halved for a non-target species.
+        assert!(
+            ev.contains(&GameEvent::Trophy { slot: 0, score: 0 }),
+            "{ev:?}"
+        );
+        assert_eq!(h.room.bodies[0].ctype, 1);
+        let n = h.herd.chars.len();
+        let mut removed = false;
+        for _ in 0..12_000 {
+            ev.clear();
+            h.tick(&area, &cars, &HuntInput::default(), 10, &mut ev);
+            if ev
+                .iter()
+                .any(|e| matches!(e, GameEvent::Ship(ShipEvent::Removed { .. })))
+            {
+                removed = true;
+                break;
+            }
+        }
+        assert!(removed, "ship state {} at {:?}", h.ship.state, h.ship.pos);
+        assert_eq!(h.herd.chars.len(), n - 1);
     }
 }

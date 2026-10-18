@@ -17,6 +17,7 @@ pub mod map;
 pub mod model;
 pub mod res_txt;
 pub mod rsc;
+pub mod sav;
 pub mod tga;
 pub mod three_df;
 pub mod wav;

@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::Result;
 use c2_core::area::TimeOfDay;
 use c2_core::dino::{Herd, PlaceOptions};
-use c2_core::game::{GameEvent, Hunt, HuntInput, HuntOptions, WeaponInfo, Weapons};
+use c2_core::game::{GameEvent, Hunt, HuntInput, HuntOptions, Outcome, WeaponInfo, Weapons};
 use c2_core::player::{Controls, Player};
 use c2_core::rng::MsRand;
 use c2_formats::car::Car;
@@ -16,7 +16,7 @@ use glam::Vec3;
 use winit::keyboard::KeyCode;
 
 use crate::area_view::{find_file, AreaView};
-use crate::dinos::{load_res, load_species, DinoAssets};
+use crate::dinos::{load_res, load_ship, load_species, DinoAssets};
 use crate::gpu::Gpu;
 use crate::hud::{load_tga, Hud, Sprite};
 use crate::input::Input;
@@ -49,6 +49,10 @@ pub struct HuntView {
     events: Vec<GameEvent>,
     message: Option<(String, f32)>,
     seed: u32,
+    /// The game install (for the first-run save copy).
+    game_dir: std::path::PathBuf,
+    /// The hunt was left alive and saved: close the window.
+    done: bool,
 }
 
 impl HuntView {
@@ -80,8 +84,20 @@ impl HuntView {
             .and_then(|m| find_file(&m, "EXIT.TGA"))
             .and_then(|p| load_tga(&p).ok())
             .map(|(w, h, rgba)| hud.add_image(gpu, w, h, &rgba));
-        let dinos = DinoAssets::new(gpu, view.globals(), cars);
-        let hunt = Self::new_hunt(&view, species, &weapon_infos, &weapon_anims, seed);
+        let dinos = DinoAssets::new(gpu, view.globals(), cars, load_ship(huntdat));
+        let game_dir = huntdat
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .to_path_buf();
+        let mut hunt = Self::new_hunt(
+            &view,
+            species,
+            &weapon_infos,
+            &weapon_anims,
+            seed,
+            &game_dir,
+        );
+        hunt.ship_anim_ms = dinos.ship_anim_ms();
         let prev_cam = hunt.camera().0;
         Ok(Self {
             view,
@@ -99,6 +115,8 @@ impl HuntView {
             events: Vec::new(),
             message: None,
             seed,
+            game_dir,
+            done: false,
         })
     }
 
@@ -109,6 +127,7 @@ impl HuntView {
         infos: &[WeaponInfo],
         anims: &[[i32; 4]],
         seed: u32,
+        game_dir: &std::path::Path,
     ) -> Hunt {
         let area = view.area();
         let cell = area.landings[seed as usize % area.landings.len().max(1)];
@@ -127,7 +146,18 @@ impl HuntView {
         herd.place(area, (player.x, player.z), &mut rng, opts);
         tracing::info!("placed {} characters", herd.chars.len());
         let weapons = Weapons::new(infos.to_vec(), anims.to_vec(), ALL_WEAPONS, false);
-        Hunt::new(player, herd, weapons, rng, HuntOptions::default())
+        let room = crate::save::load(game_dir);
+        let mut hunt = Hunt::new(
+            area,
+            player,
+            herd,
+            weapons,
+            rng,
+            HuntOptions::default(),
+            room,
+        );
+        hunt.clock = local_clock();
+        hunt
     }
 
     fn controls(&self, input: &Input) -> Controls {
@@ -185,6 +215,37 @@ impl HuntView {
         self.prev_cam = self.hunt.camera().0;
     }
 
+    /// Debug/screenshot helper: bag the first animal with AI `ai_id`, run
+    /// `ms`, then look at the ship from `dist` away.
+    pub fn watch_ship(&mut self, ai_id: i32, ms: u32, dist: f32) {
+        if let Some(i) = self
+            .hunt
+            .herd
+            .chars
+            .iter()
+            .position(|c| c.ai == ai_id && c.health > 0)
+        {
+            self.hunt.debug_bag(self.view.area(), i, &mut self.events);
+        }
+        for _ in 0..ms / TICK_MS {
+            self.step(&HuntInput::default());
+        }
+        let s = self.hunt.ship.pos;
+        tracing::info!(
+            "ship state {} at {:?} alpha {:.2}",
+            self.hunt.ship.state,
+            s,
+            self.hunt.ship.alpha
+        );
+        let p = &mut self.hunt.player;
+        p.x = s[0] + dist;
+        p.z = s[2];
+        p.y = s[1] - 400.0;
+        p.alpha = -std::f32::consts::FRAC_PI_2;
+        p.beta = 0.0;
+        self.prev_cam = self.hunt.camera().0;
+    }
+
     /// Draws the weapon right away (screenshots).
     pub fn draw_weapon(&mut self) {
         self.hunt.hide_weapon(&mut self.events);
@@ -209,6 +270,23 @@ impl HuntView {
             TICK_MS as i32,
             &mut self.events,
         );
+    }
+
+    /// A fresh hunt on the same area, reloading the saved trophy room.
+    fn restart(&mut self) {
+        self.seed = self.seed.wrapping_mul(1_103_515_245).wrapping_add(12345);
+        let species = std::mem::take(&mut self.hunt.herd.species);
+        let ship_ms = self.hunt.ship_anim_ms;
+        self.hunt = Self::new_hunt(
+            &self.view,
+            species,
+            &self.weapon_infos,
+            &self.weapon_anims,
+            self.seed,
+            &self.game_dir,
+        );
+        self.hunt.ship_anim_ms = ship_ms;
+        self.prev_cam = self.hunt.camera().0;
     }
 
     fn handle_events(&mut self) {
@@ -273,6 +351,15 @@ impl Scene for HuntView {
         if input.pressed(KeyCode::ShiftLeft) || input.pressed(KeyCode::ShiftRight) {
             self.run = !self.run;
         }
+        if input.pressed(KeyCode::Escape) {
+            self.hunt.press_escape();
+        }
+        if input.pressed(KeyCode::KeyY) || input.pressed(KeyCode::Enter) {
+            self.hunt.confirm_exit();
+        }
+        if input.pressed(KeyCode::KeyR) && self.hunt.show_exit() {
+            self.restart();
+        }
         if input.pressed(KeyCode::KeyE) {
             self.pending.toggle_weapon = true;
         }
@@ -311,18 +398,17 @@ impl Scene for HuntView {
             }
         }
 
-        if self.hunt.finished() {
-            // No menu yet: start a new hunt on the same area.
-            self.seed = self.seed.wrapping_mul(1_103_515_245).wrapping_add(12345);
-            let species = std::mem::take(&mut self.hunt.herd.species);
-            self.hunt = Self::new_hunt(
-                &self.view,
-                species,
-                &self.weapon_infos,
-                &self.weapon_anims,
-                self.seed,
-            );
-            self.prev_cam = self.hunt.camera().0;
+        match self.hunt.outcome() {
+            Some(Outcome::Exited) if !self.done => {
+                if let Err(e) = crate::save::store(&self.hunt.room) {
+                    tracing::error!("{e:#}");
+                }
+                self.done = true;
+            }
+            // No menu yet: after dying, start a new hunt on the same area
+            // (this hunt's trophies are discarded, as in the original).
+            Some(Outcome::Died) => self.restart(),
+            _ => {}
         }
 
         let (pos, alpha, beta) = self.hunt.camera();
@@ -357,7 +443,7 @@ impl Scene for HuntView {
         let max = self.view.radius as f32 * c2_core::CELL;
         self.view
             .draw_with(gpu, pass, aspect, &mut |gpu, pass, globals| {
-                dinos.draw(gpu, pass, globals, &hunt.herd, eye, max);
+                dinos.draw(gpu, pass, globals, &hunt.herd, &hunt.ship, eye, max);
                 weapons.draw(gpu, pass, globals, hunt, view, light);
             });
 
@@ -385,4 +471,39 @@ impl Scene for HuntView {
     fn grab_cursor(&self) -> bool {
         true
     }
+
+    fn handles_escape(&self) -> bool {
+        true
+    }
+
+    fn wants_exit(&self) -> bool {
+        self.done
+    }
+}
+
+/// Local-ish date and time for trophy records (UTC; no timezone database).
+fn local_clock() -> (i32, i32, i32, i32, i32) {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400);
+    // Civil-from-days (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    (
+        y as i32,
+        m as i32,
+        d as i32,
+        (rem / 3600) as i32,
+        (rem % 3600 / 60) as i32,
+    )
 }

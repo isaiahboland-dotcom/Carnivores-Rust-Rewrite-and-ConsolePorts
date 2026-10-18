@@ -204,9 +204,18 @@ assumes **16-bit mono 22050 Hz**, which all 41 vanilla files are.
 present (as `ReadFile` would), and also reports the `fmt ` chunk so the cooker
 can flag or resample anything else.
 
+## `trophy0N.sav` — trophy room + options (`LoadTrophy`, `SaveTrophy`)
+1660 bytes: `TTrophyRoom` (1516: `char PlayerName[128]`, `i32 RegNumber, Score,
+Rank`, `TStats Last, Total` (`i32 smade, success; f32 path, time`), 24 ×
+`TTrophyItem` (`i32 ctype, weapon, phase, height, weight, score, date, time;
+f32 scale, range; i32 r1..r4`)), then 10 option ints (`OptAgres, OptDens,
+OptSens, OptRes, FOGENABLE, OptText, OptViewR, SHADOWS3D, OptMsSens,
+OptBrightness`), `KeyMap` (17 virtual-key ints), `REVERSEMS`, `ScentMode,
+CamoMode, RadarMode, Tranq, OPT_ALPHA_COLORKEY, OptSys, OptSound, OptRender`.
+Dates are `(year<<20)+(month<<10)+day`, times `(hour<<10)+minute`.
+
 ## Not yet parsed
 - `MENU/*.RAW` — menu hit-maps. M3.
-- `trophy*.sav` — saves. M3.
 - Map-editor side files in some mods (`.grp .lai .mtc .prj`) — not loaded by the game.
 
 ## Verifying against your own data

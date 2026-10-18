@@ -11,6 +11,14 @@ pub trait Scene {
     fn grab_cursor(&self) -> bool {
         false
     }
+    /// The scene uses Escape itself (otherwise it releases the cursor / quits).
+    fn handles_escape(&self) -> bool {
+        false
+    }
+    /// The scene is done; close the window.
+    fn wants_exit(&self) -> bool {
+        false
+    }
 }
 
 /// Renders one frame of `scene` into `view`.

@@ -128,7 +128,7 @@ impl ApplicationHandler for App {
                 if let PhysicalKey::Code(k) = event.physical_key {
                     let down = event.state == ElementState::Pressed;
                     // Escape releases a captured cursor first, then quits.
-                    if k == KeyCode::Escape && down && !event.repeat {
+                    if k == KeyCode::Escape && down && !event.repeat && !r.scene.handles_escape() {
                         if r.input.grabbed {
                             r.input.grabbed = grab(&r.window, false);
                         } else {
@@ -187,6 +187,9 @@ impl ApplicationHandler for App {
                 };
                 let view = tex.texture.create_view(&Default::default());
                 render(&r.gpu, r.scene.as_mut(), &view, &r.frame);
+                if r.scene.wants_exit() {
+                    el.exit();
+                }
                 r.gpu.queue.present(tex);
                 r.window.set_title(&r.scene.title());
             }

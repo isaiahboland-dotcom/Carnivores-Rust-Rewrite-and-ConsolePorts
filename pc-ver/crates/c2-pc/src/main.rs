@@ -11,6 +11,7 @@ mod input;
 mod model_view;
 mod png;
 mod render;
+mod save;
 mod scene;
 mod weapons;
 
@@ -27,7 +28,8 @@ const USAGE: &str = "usage:
 model: drag to orbit, wheel zoom, [ ] next/prev file, N/P next/prev animation, Space pause
 area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distance
 hunt:  click to capture mouse, WASD move, mouse look, LMB fire, E show/hide weapon, 1-6 choose weapon,
-       Shift toggles run, X crouch, Space jump/swim, arrows turn/look, Esc release/quit";
+       Shift toggles run, X crouch, Space jump/swim, arrows turn/look,
+       Esc exit prompt (Y leave and save, R restart)";
 
 struct Opts {
     positional: Vec<String>,
@@ -43,8 +45,10 @@ impl Opts {
         let mut it = args.peekable();
         while let Some(a) = it.next() {
             if let Some(f) = a.strip_prefix("--") {
-                let takes_value =
-                    matches!(f, "anim" | "time" | "yaw" | "shot" | "cam" | "view" | "sim");
+                let takes_value = matches!(
+                    f,
+                    "anim" | "time" | "yaw" | "shot" | "cam" | "view" | "sim" | "ship"
+                );
                 let v = if takes_value { it.next() } else { None };
                 o.flags.push((f.to_string(), v));
             } else {
@@ -118,6 +122,12 @@ fn main() -> Result<()> {
         "hunt" => {
             let time = time_of_day(&o);
             let weapon = o.has("weapon");
+            // --ship AI,MS[,DIST]: bag an animal, wait, look at the ship.
+            let ship: Option<Vec<f32>> = o
+                .value("ship")
+                .map(|v| v.split(',').map(str::parse).collect::<Result<_, _>>())
+                .transpose()
+                .context("--ship AI,MS[,DIST]")?;
             // --sim MS[,AI[,DIST[,AFTER]]]: fixed seed, run the AI, then watch an
             // animal; AFTER ms more pass with the camera fixed (screenshots).
             let sim: Option<Vec<f32>> = o
@@ -140,6 +150,13 @@ fn main() -> Result<()> {
                 }
                 if weapon {
                     h.draw_weapon();
+                }
+                if let Some(v) = &ship {
+                    h.watch_ship(
+                        v[0] as i32,
+                        v[1] as u32,
+                        v.get(2).copied().unwrap_or(3000.0),
+                    );
                 }
                 Ok(Box::new(h) as Box<dyn scene::Scene>)
             })

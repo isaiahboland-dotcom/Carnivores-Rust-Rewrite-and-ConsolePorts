@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 mod strstr;
 
 use anyhow::{bail, Context, Result};
-use c2_formats::{car, map, res_txt::ResTxt, rsc, tga, three_df, wav};
+use c2_formats::{car, map, res_txt::ResTxt, rsc, sav, tga, three_df, wav};
 
 #[derive(Default)]
 struct Tally {
@@ -116,6 +116,17 @@ fn check(path: &Path) -> Result<Option<String>> {
                 ));
             }
             s
+        }
+        Some("sav") => {
+            let d = data()?;
+            let s = sav::parse(&d)?;
+            roundtrip(&d, sav::write(&s))?;
+            format!(
+                "player {:?}, score {}, {} trophies",
+                s.player_name(),
+                s.score,
+                s.bodies.iter().filter(|b| b.ctype != 0).count()
+            )
         }
         Some("wav") => {
             let d = data()?;
