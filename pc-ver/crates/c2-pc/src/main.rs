@@ -5,12 +5,14 @@ mod area_view;
 mod camera;
 mod dinos;
 mod gpu;
+mod hud;
 mod hunt_view;
 mod input;
 mod model_view;
 mod png;
 mod render;
 mod scene;
+mod weapons;
 
 use std::path::PathBuf;
 
@@ -20,11 +22,12 @@ use c2_core::area::TimeOfDay;
 const USAGE: &str = "usage:
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
   c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--shot out.png]
-  c2-pc hunt  <AREA.MAP> [--dusk|--night] [--shot out.png]
+  c2-pc hunt  <AREA.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--weapon] [--shot out.png]
 
 model: drag to orbit, wheel zoom, [ ] next/prev file, N/P next/prev animation, Space pause
 area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distance
-hunt:  click to capture mouse, WASD move, Shift run (R toggles), C crouch, Space jump/swim, Esc release/quit";
+hunt:  click to capture mouse, WASD move, mouse look, LMB fire, E show/hide weapon, 1-6 choose weapon,
+       Shift toggles run, X crouch, Space jump/swim, arrows turn/look, Esc release/quit";
 
 struct Opts {
     positional: Vec<String>,
@@ -114,6 +117,7 @@ fn main() -> Result<()> {
         }
         "hunt" => {
             let time = time_of_day(&o);
+            let weapon = o.has("weapon");
             // --sim MS[,AI[,DIST[,AFTER]]]: fixed seed, run the AI, then watch an
             // animal; AFTER ms more pass with the camera fixed (screenshots).
             let sim: Option<Vec<f32>> = o
@@ -133,6 +137,9 @@ fn main() -> Result<()> {
                         dist,
                         s.get(3).copied().unwrap_or(0.0) as u32,
                     );
+                }
+                if weapon {
+                    h.draw_weapon();
                 }
                 Ok(Box::new(h) as Box<dyn scene::Scene>)
             })

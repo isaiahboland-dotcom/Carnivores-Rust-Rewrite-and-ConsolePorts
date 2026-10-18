@@ -276,6 +276,7 @@ fn dinos_sim(map_path: &Path, seconds: u32) -> Result<()> {
     let mut herd = Herd {
         species,
         chars: Vec::new(),
+        demo_index: None,
     };
     herd.place(
         &area,

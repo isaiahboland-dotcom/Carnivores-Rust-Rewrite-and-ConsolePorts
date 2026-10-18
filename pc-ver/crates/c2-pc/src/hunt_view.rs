@@ -1,39 +1,54 @@
-//! `c2-pc hunt <AREA.MAP>`: walk an area as the hunter (M3, in progress).
+//! `c2-pc hunt <AREA.MAP>`: hunting an area (M3, in progress).
+//!
+//! The simulation lives in `c2_core::game::Hunt`; this file maps input,
+//! drives fixed ticks and draws the world, animals, weapon and HUD.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
 use c2_core::area::TimeOfDay;
-use c2_core::dino::{Ctx, DinoEvent, Herd, HunterView, PlaceOptions};
-use c2_core::player::{Controls, Player, PlayerEvent};
+use c2_core::dino::{Herd, PlaceOptions};
+use c2_core::game::{GameEvent, Hunt, HuntInput, HuntOptions, WeaponInfo, Weapons};
+use c2_core::player::{Controls, Player};
 use c2_core::rng::MsRand;
+use c2_formats::car::Car;
 use glam::Vec3;
 use winit::keyboard::KeyCode;
 
-use crate::area_view::AreaView;
-use crate::dinos::{load_species, DinoAssets};
+use crate::area_view::{find_file, AreaView};
+use crate::dinos::{load_res, load_species, DinoAssets};
 use crate::gpu::Gpu;
+use crate::hud::{load_tga, Hud, Sprite};
 use crate::input::Input;
 use crate::scene::Scene;
+use crate::weapons::{load_weapons, WeaponAssets};
 
 /// Simulation step. The original runs on variable `TimeDt`; a fixed step keeps
 /// the simulation deterministic (needed for logic parity later).
 const TICK_MS: u32 = 10;
 
+/// Weapons carried. The loadout menu doesn't exist yet: take them all.
+const ALL_WEAPONS: u32 = u32::MAX;
+
 pub struct HuntView {
     view: AreaView,
-    player: Player,
-    /// Eye position before the latest tick, for interpolation.
-    prev_eye: [f32; 3],
-    acc_ms: f32,
-    run: bool,
-    events: Vec<PlayerEvent>,
-    herd: Herd,
+    hunt: Hunt,
     dinos: DinoAssets,
-    rng: MsRand,
-    dino_events: Vec<DinoEvent>,
-    /// `RealTime`, ms since the hunt started.
-    real_time: i32,
+    weapons: WeaponAssets,
+    weapon_infos: Vec<WeaponInfo>,
+    weapon_anims: Vec<[i32; 4]>,
+    hud: Hud,
+    exit_img: Option<usize>,
+    /// Camera position before the latest tick, for interpolation.
+    prev_cam: [f32; 3],
+    acc_ms: f32,
+    /// `RunMode` (toggled with Shift, as the original's run key).
+    run: bool,
+    /// Key presses seen this frame, applied on the next tick.
+    pending: HuntInput,
+    events: Vec<GameEvent>,
+    message: Option<(String, f32)>,
+    seed: u32,
 }
 
 impl HuntView {
@@ -46,27 +61,63 @@ impl HuntView {
     ) -> Result<Self> {
         let mut view = AreaView::load(gpu, map, time)?;
         view.fly = false;
-        // PlaceHunter: a random landing spot (the original uses timeGetTime()).
         let seed = seed.unwrap_or_else(|| {
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.subsec_nanos())
                 .unwrap_or(0)
         });
-        let area = view.area();
-        let cell = area.landings[seed as usize % area.landings.len().max(1)];
-        let player = Player::new(area, cell);
-        let prev_eye = player.eye();
-
         let huntdat = map
             .parent()
             .and_then(|p| p.parent())
             .unwrap_or(std::path::Path::new("."));
-        let (species, cars) = load_species(huntdat)?;
+        let res = load_res(huntdat)?;
+        let (species, cars) = load_species(huntdat, &res)?;
+        let mut hud = Hud::new(gpu);
+        let (weapon_infos, weapon_anims, weapons) =
+            load_weapons(gpu, view.globals(), &mut hud, huntdat, &res.weapons);
+        let exit_img = find_file(huntdat, "MENU")
+            .and_then(|m| find_file(&m, "EXIT.TGA"))
+            .and_then(|p| load_tga(&p).ok())
+            .map(|(w, h, rgba)| hud.add_image(gpu, w, h, &rgba));
+        let dinos = DinoAssets::new(gpu, view.globals(), cars);
+        let hunt = Self::new_hunt(&view, species, &weapon_infos, &weapon_anims, seed);
+        let prev_cam = hunt.camera().0;
+        Ok(Self {
+            view,
+            hunt,
+            dinos,
+            weapons,
+            weapon_infos,
+            weapon_anims,
+            hud,
+            exit_img,
+            prev_cam,
+            acc_ms: 0.0,
+            run: false,
+            pending: HuntInput::default(),
+            events: Vec::new(),
+            message: None,
+            seed,
+        })
+    }
+
+    /// `ReInitGame`: hunter at a random landing spot, a freshly placed herd.
+    fn new_hunt(
+        view: &AreaView,
+        species: Vec<c2_core::dino::Species>,
+        infos: &[WeaponInfo],
+        anims: &[[i32; 4]],
+        seed: u32,
+    ) -> Hunt {
+        let area = view.area();
+        let cell = area.landings[seed as usize % area.landings.len().max(1)];
+        let player = Player::new(area, cell);
         let mut rng = MsRand::new(seed);
         let mut herd = Herd {
             species,
             chars: Vec::new(),
+            demo_index: None,
         };
         let opts = PlaceOptions {
             density: 128,
@@ -75,120 +126,137 @@ impl HuntView {
         };
         herd.place(area, (player.x, player.z), &mut rng, opts);
         tracing::info!("placed {} characters", herd.chars.len());
-        let dinos = DinoAssets::new(gpu, view.globals(), cars);
-        Ok(Self {
-            view,
-            player,
-            prev_eye,
-            acc_ms: 0.0,
-            run: false,
-            events: Vec::new(),
-            herd,
-            dinos,
-            rng,
-            dino_events: Vec::new(),
-            real_time: 0,
-        })
+        let weapons = Weapons::new(infos.to_vec(), anims.to_vec(), ALL_WEAPONS, false);
+        Hunt::new(player, herd, weapons, rng, HuntOptions::default())
     }
 
     fn controls(&self, input: &Input) -> Controls {
         let k = |a: KeyCode, b: KeyCode| input.held(a) || input.held(b);
         Controls {
-            forward: k(KeyCode::KeyW, KeyCode::ArrowUp),
-            backward: k(KeyCode::KeyS, KeyCode::ArrowDown),
+            forward: input.held(KeyCode::KeyW),
+            backward: input.held(KeyCode::KeyS),
             strafe_left: input.held(KeyCode::KeyA),
             strafe_right: input.held(KeyCode::KeyD),
             turn_left: input.held(KeyCode::ArrowLeft),
             turn_right: input.held(KeyCode::ArrowRight),
-            crouch: k(KeyCode::KeyC, KeyCode::ControlLeft),
+            look_up: input.held(KeyCode::ArrowUp),
+            look_down: input.held(KeyCode::ArrowDown),
+            crouch: k(KeyCode::KeyX, KeyCode::KeyC),
             jump: input.held(KeyCode::Space),
-            run: self.run ^ input.held(KeyCode::ShiftLeft),
+            run: self.run,
             mouse: input.mouse_delta,
             mouse_sens: 128.0,
         }
     }
 
     /// Debug/screenshot helper: simulate `ms` with no input, then stand the
-    /// hunter `dist` units from the first animal with AI `ai_id`, facing it.
+    /// hunter `dist` units from the first animal with AI `ai_id`, facing it;
+    /// `after_ms` more pass with the camera fixed.
     pub fn spectate(&mut self, ms: u32, ai_id: i32, dist: f32, after_ms: u32) {
-        let c = Controls::default();
+        let idle = HuntInput::default();
         for _ in 0..ms / TICK_MS {
-            self.tick(&c);
+            self.step(&idle);
         }
-        let Some(d) = self.herd.chars.iter().find(|ch| ch.ai == ai_id) else {
+        let Some(d) = self
+            .hunt
+            .herd
+            .chars
+            .iter()
+            .find(|ch| ch.ai == ai_id)
+            .cloned()
+        else {
             tracing::warn!("no character with ai {ai_id}");
             return;
         };
         let (x, z) = (d.pos[0] + d.lookz * dist, d.pos[2] - d.lookx * dist);
-        let p = &mut self.player;
+        let area = self.view.area();
+        let p = &mut self.hunt.player;
         p.x = x;
         p.z = z;
-        p.y = self.view.area().land_qh(x, z, f32::MAX);
+        p.y = area.land_qh(x, z, f32::MAX);
         p.alpha = f32::atan2(d.pos[0] - x, -(d.pos[2] - z));
         p.beta = 0.1;
-        self.prev_eye = p.eye();
-        // Keep the world running with the camera fixed (to see which way
-        // animals move).
-        let (px, py, pz, pa, pb) = (p.x, p.y, p.z, p.alpha, p.beta);
-        let idx = self
-            .herd
-            .chars
-            .iter()
-            .position(|ch| ch.ai == ai_id)
-            .unwrap_or(0);
-        let log = |h: &Herd| {
-            let d = &h.chars[idx];
-            tracing::debug!("watch #{idx}: pos ({:.0}, {:.0}) alpha {:.2} look ({:.2}, {:.2}) phase {} vspeed {:.2}", d.pos[0], d.pos[2], d.alpha, d.lookx, d.lookz, d.phase, d.vspeed);
-        };
-        log(&self.herd);
-        tracing::debug!("camera at ({px:.0}, {pz:.0}) alpha {pa:.2}");
+        let keep = (p.x, p.y, p.z, p.alpha, p.beta);
         for _ in 0..after_ms / TICK_MS {
-            self.tick(&c);
-            let p = &mut self.player;
-            (p.x, p.y, p.z, p.alpha, p.beta) = (px, py, pz, pa, pb);
+            self.step(&idle);
+            let p = &mut self.hunt.player;
+            (p.x, p.y, p.z, p.alpha, p.beta) = keep;
         }
-        log(&self.herd);
-        self.prev_eye = self.player.eye();
+        self.prev_cam = self.hunt.camera().0;
     }
 
-    /// One fixed simulation step: hunter, then characters.
-    fn tick(&mut self, c: &Controls) {
-        self.prev_eye = self.player.eye();
-        self.player
-            .tick(self.view.area(), c, TICK_MS, &mut self.events);
-        self.real_time += TICK_MS as i32;
-        let p = &self.player;
-        let mut ctx = Ctx {
-            area: self.view.area(),
-            rng: &mut self.rng,
-            dt: TICK_MS as i32,
-            real_time: self.real_time,
-            hunter: HunterView {
-                alpha: p.alpha,
-                x: p.x,
-                y: p.y,
-                z: p.z,
-                head_y: p.head_y,
-                alive: true,
-                underwater: p.underwater,
-            },
-            opt_agres: 128,
-            tranq: false,
-            view_r: 74,
-            events: &mut self.dino_events,
-        };
-        self.herd.step(&mut ctx);
+    /// Draws the weapon right away (screenshots).
+    pub fn draw_weapon(&mut self) {
+        self.hunt.hide_weapon(&mut self.events);
+        for _ in 0..200 {
+            self.step(&HuntInput::default());
+        }
+        self.prev_cam = self.hunt.camera().0;
+    }
+
+    fn step(&mut self, input: &HuntInput) {
+        let cars: Vec<Option<&Car>> = self
+            .dinos
+            .cars
+            .iter()
+            .map(|c| c.as_ref().map(|(c, _)| c))
+            .collect();
+        self.prev_cam = self.hunt.camera().0;
+        self.hunt.tick(
+            self.view.area(),
+            &cars,
+            input,
+            TICK_MS as i32,
+            &mut self.events,
+        );
+    }
+
+    fn handle_events(&mut self) {
+        for e in self.events.drain(..) {
+            match e {
+                GameEvent::Message(m) => self.message = Some((m, 2.0)),
+                GameEvent::HunterDied { kind } => {
+                    let how = ["eaten", "drowned", "fell", "killed"];
+                    let m = format!("You were {}.", how.get(kind as usize).unwrap_or(&"killed"));
+                    self.message = Some((m, 6.0));
+                }
+                GameEvent::Killed { trophy: true, .. } => {
+                    self.message = Some(("Trophy!".into(), 2.0));
+                }
+                _ => {} // sounds and effects come later
+            }
+        }
     }
 }
 
 impl Scene for HuntView {
     fn title(&self) -> String {
-        let p = &self.player;
+        let h = &self.hunt;
+        let p = &h.player;
+        let w = &h.weapons;
+        let weapon = match w.pose() {
+            Some(_) => format!(
+                " — {} ({} left)",
+                w.info[w.current].name, w.shots_left[w.current]
+            ),
+            None => String::new(),
+        };
+        let msg = self
+            .message
+            .as_ref()
+            .map(|(m, _)| format!(" — {m}"))
+            .unwrap_or_default();
         format!(
-            "c2rs hunt {} — {:.0} fps — {} animals — WASD move, mouse look, Shift run (R toggles), C crouch, Space jump/swim{}{}",
+            "c2rs hunt {} — {:.0} fps — {} animals, {} bagged{}{}{}{}",
             self.view.name(),
             self.view.fps,
-            self.herd.chars.len(),
+            h.herd
+                .chars
+                .iter()
+                .filter(|c| c.health > 0 && c.ai >= 10)
+                .count(),
+            h.successes,
+            weapon,
             if self.run { " — RUN" } else { "" },
             if p.underwater {
                 " — UNDERWATER"
@@ -197,30 +265,72 @@ impl Scene for HuntView {
             } else {
                 ""
             },
+            msg,
         )
     }
 
     fn update(&mut self, gpu: &Gpu, dt: f32, input: &Input) {
-        if input.pressed(KeyCode::KeyR) {
+        if input.pressed(KeyCode::ShiftLeft) || input.pressed(KeyCode::ShiftRight) {
             self.run = !self.run;
         }
-        let mut c = self.controls(input);
-        self.acc_ms += dt * 1000.0;
-        // Don't try to catch up after a long stall (window drag, breakpoint).
-        self.acc_ms = self.acc_ms.min(250.0);
+        if input.pressed(KeyCode::KeyE) {
+            self.pending.toggle_weapon = true;
+        }
+        const DIGITS: [KeyCode; 6] = [
+            KeyCode::Digit1,
+            KeyCode::Digit2,
+            KeyCode::Digit3,
+            KeyCode::Digit4,
+            KeyCode::Digit5,
+            KeyCode::Digit6,
+        ];
+        if let Some(w) = DIGITS.iter().position(|&k| input.pressed(k)) {
+            self.pending.select_weapon = Some(w);
+        }
+        let mut hin = HuntInput {
+            controls: self.controls(input),
+            fire: input.grabbed && input.mouse_down,
+            ..self.pending
+        };
+
+        self.acc_ms = (self.acc_ms + dt * 1000.0).min(250.0);
         while self.acc_ms >= TICK_MS as f32 {
-            self.tick(&c);
-            c.mouse = (0.0, 0.0); // mouse motion applies once
+            self.step(&hin);
+            // One-shot inputs apply to the first tick only.
+            hin.controls.mouse = (0.0, 0.0);
+            hin.toggle_weapon = false;
+            hin.select_weapon = None;
+            self.pending = HuntInput::default();
             self.acc_ms -= TICK_MS as f32;
         }
-        self.events.clear(); // sounds come later
-        self.dino_events.clear();
+        self.handle_events();
+        if let Some((_, t)) = &mut self.message {
+            *t -= dt;
+            if *t <= 0.0 {
+                self.message = None;
+            }
+        }
+
+        if self.hunt.finished() {
+            // No menu yet: start a new hunt on the same area.
+            self.seed = self.seed.wrapping_mul(1_103_515_245).wrapping_add(12345);
+            let species = std::mem::take(&mut self.hunt.herd.species);
+            self.hunt = Self::new_hunt(
+                &self.view,
+                species,
+                &self.weapon_infos,
+                &self.weapon_anims,
+                self.seed,
+            );
+            self.prev_cam = self.hunt.camera().0;
+        }
+
+        let (pos, alpha, beta) = self.hunt.camera();
         let t = self.acc_ms / TICK_MS as f32;
-        let eye = Vec3::from(self.prev_eye).lerp(Vec3::from(self.player.eye()), t);
-        self.view.cam.pos = eye;
+        self.view.cam.pos = Vec3::from(self.prev_cam).lerp(Vec3::from(pos), t);
         // Original yaw/pitch conventions are mirrored relative to the fly cam.
-        self.view.cam.yaw = -self.player.alpha;
-        self.view.cam.pitch = -self.player.beta;
+        self.view.cam.yaw = -alpha;
+        self.view.cam.pitch = -beta;
         self.view.update(gpu, dt, input);
     }
 
@@ -228,14 +338,48 @@ impl Scene for HuntView {
         self.view.clear_color()
     }
 
-    fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, aspect: f32) {
-        let (herd, dinos) = (&self.herd, &mut self.dinos);
+    fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, screen: (u32, u32)) {
+        let aspect = screen.0.max(1) as f32 / screen.1.max(1) as f32;
+        // Weapon light: 96 + ground light / 4 (`wpnlight`).
+        let p = &self.hunt.player;
+        let cell = c2_formats::map::MAP_SIZE * (p.z / 256.0) as usize + (p.x / 256.0) as usize;
+        let ground = self
+            .view
+            .area()
+            .light_map()
+            .get(cell)
+            .copied()
+            .unwrap_or(128);
+        let light = (96.0 + f32::from(ground) / 4.0) / 255.0;
+        let (dinos, weapons, hunt) = (&mut self.dinos, &mut self.weapons, &self.hunt);
         let eye = self.view.cam.pos.to_array();
+        let view = self.view.cam.view();
         let max = self.view.radius as f32 * c2_core::CELL;
         self.view
             .draw_with(gpu, pass, aspect, &mut |gpu, pass, globals| {
-                dinos.draw(gpu, pass, globals, herd, eye, max)
+                dinos.draw(gpu, pass, globals, &hunt.herd, eye, max);
+                weapons.draw(gpu, pass, globals, hunt, view, light);
             });
+
+        // HUD at an integer scale of the original's 640x480 layout.
+        let scale = (screen.1 as f32 / 480.0).floor().max(1.0);
+        let mut sprites = self.weapons.hud_sprites(&self.hud, &self.hunt, scale);
+        if self.hunt.show_exit() {
+            if let Some((id, w, h)) = self
+                .exit_img
+                .and_then(|i| self.hud.image(i).map(|im| (i, im.w, im.h)))
+            {
+                let x = (screen.0 as f32 - w as f32 * scale) / 2.0;
+                let y = (screen.1 as f32 - h as f32 * scale) / 2.0;
+                sprites.push(Sprite {
+                    image: id,
+                    x,
+                    y,
+                    scale,
+                });
+            }
+        }
+        self.hud.draw(gpu, pass, screen, &sprites);
     }
 
     fn grab_cursor(&self) -> bool {

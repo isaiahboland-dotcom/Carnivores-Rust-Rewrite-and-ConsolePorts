@@ -22,6 +22,9 @@ pub struct Controls {
     pub strafe_right: bool,
     pub turn_left: bool,
     pub turn_right: bool,
+    /// `kfLookUp` / `kfLookDn` (keyboard pitch).
+    pub look_up: bool,
+    pub look_down: bool,
     pub crouch: bool,
     pub jump: bool,
     /// `RunMode` (toggled with the run key in the original).
@@ -60,6 +63,8 @@ pub struct Player {
     /// Head bob (`stepdy`) and its last delta (`stepdd`).
     stepdy: f32,
     stepdd: f32,
+    /// Recoil kick (`HeadBackR`): pushes the camera back and up, then settles.
+    pub head_back_r: f32,
     pub swim: bool,
     pub underwater: bool,
     pub on_water: bool,
@@ -89,6 +94,7 @@ impl Player {
             rbv: 0.0,
             stepdy: 0.0,
             stepdd: 0.0,
+            head_back_r: 0.0,
             swim: false,
             underwater: false,
             on_water: false,
@@ -96,9 +102,21 @@ impl Player {
         }
     }
 
-    /// Eye position (`CameraX/Y/Z`).
+    /// Eye position (`CameraX/Y/Z`), including the recoil push-back.
     pub fn eye(&self) -> [f32; 3] {
-        [self.x, self.y + self.head_y + self.stepdy, self.z]
+        let (sa, ca) = self.alpha.sin_cos();
+        [
+            self.x - sa * self.head_back_r,
+            self.y + self.head_y + self.stepdy,
+            self.z + ca * self.head_back_r,
+        ]
+    }
+
+    /// Camera yaw and pitch (`CameraAlpha/Beta`), including recoil tilt.
+    pub fn camera_angles(&self) -> (f32, f32) {
+        let a = self.alpha + self.head_back_r / 20000.0;
+        let b = (self.beta - self.head_back_r / 10000.0).clamp(-1.26, 1.46);
+        (a, b)
     }
 
     /// Advances `dt_ms` milliseconds.
@@ -172,6 +190,12 @@ impl Player {
         }
         if c.turn_left {
             self.alpha -= delta_t * 1.5;
+        }
+        if c.look_up {
+            self.beta -= delta_t;
+        }
+        if c.look_down {
+            self.beta += delta_t;
         }
 
         let (sa, ca) = self.alpha.sin_cos();
@@ -247,6 +271,12 @@ impl Player {
     }
 
     fn vertical(&mut self, area: &Area, c: &Controls, delta_t: f32, events: &mut Vec<PlayerEvent>) {
+        if self.head_back_r != 0.0 {
+            self.head_back_r -= delta_t * (80.0 + (32.0 - (self.head_back_r - 32.0).abs()) * 4.0);
+            if self.head_back_r <= 0.0 {
+                self.head_back_r = 0.0;
+            }
+        }
         // Crouch / stand.
         if c.crouch || self.underwater {
             self.head_y = self.head_y.max(HEAD_CROUCH);

@@ -367,6 +367,15 @@ const INSTANCE_ATTRS: [wgpu::VertexAttribute; 4] =
 impl ModelRenderer {
     /// `textures`: one 256x256 RGBA8 texture per model, indexed by `Instance::layer`.
     pub fn new(gpu: &Gpu, globals: &Globals, textures: &[&[u8]]) -> Self {
+        Self::with_entry(gpu, globals, textures, "vs")
+    }
+
+    /// For the first-person weapon (always in front of the world).
+    pub fn near(gpu: &Gpu, globals: &Globals, textures: &[&[u8]]) -> Self {
+        Self::with_entry(gpu, globals, textures, "vs_near")
+    }
+
+    fn with_entry(gpu: &Gpu, globals: &Globals, textures: &[&[u8]], vs: &str) -> Self {
         let size = MODEL_TEXTURE_SIZE as u32;
         let view = gpu.texture_array("model textures", size, size, textures);
         let (tex_layout, group) = texture_group(gpu, "model tex", &view, &gpu.sampler(true, false));
@@ -388,7 +397,7 @@ impl ModelRenderer {
             label,
             module: &module,
             layout: &layout,
-            vs: "vs",
+            vs,
             fs,
             buffers: &buffers,
             blend,

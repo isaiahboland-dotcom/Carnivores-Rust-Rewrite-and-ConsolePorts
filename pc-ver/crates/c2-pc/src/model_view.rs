@@ -223,7 +223,8 @@ impl Scene for ModelView {
         [0.18, 0.2, 0.24]
     }
 
-    fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, aspect: f32) {
+    fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, screen: (u32, u32)) {
+        let aspect = screen.0.max(1) as f32 / screen.1.max(1) as f32;
         let Some(l) = &mut self.loaded else { return };
         self.globals.write(
             gpu,

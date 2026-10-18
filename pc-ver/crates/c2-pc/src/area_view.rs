@@ -273,7 +273,8 @@ impl Scene for AreaView {
             .map(|c| f64::from(c.clamp(0, 255)) / 255.0)
     }
 
-    fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, aspect: f32) {
+    fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, screen: (u32, u32)) {
+        let aspect = screen.0.max(1) as f32 / screen.1.max(1) as f32;
         self.draw_with(gpu, pass, aspect, &mut |_, _, _| {});
     }
 }

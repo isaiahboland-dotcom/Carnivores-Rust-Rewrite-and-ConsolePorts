@@ -688,12 +688,25 @@ impl Character {
 pub struct Herd {
     pub species: Vec<Species>,
     pub chars: Vec<Character>,
+    /// `DemoPoint.CIndex`: who the death camera watches (the hunter's body,
+    /// or the T-Rex carrying it).
+    pub demo_index: Option<usize>,
 }
 
 impl Herd {
     /// `AnimateCharacters`.
     pub fn step(&mut self, ctx: &mut Ctx<'_>) {
         for i in 0..self.chars.len() {
+            let carrier = self
+                .demo_index
+                .and_then(|d| self.chars.get(d))
+                .filter(|t| t.ai == ai::TREX)
+                .map(|t| dead::Carrier {
+                    pos: t.pos,
+                    ftime: t.ftime,
+                    beta: t.beta,
+                    gamma: t.gamma,
+                });
             let c = &mut self.chars[i];
             if c.state_f == 0xff {
                 continue;
@@ -720,7 +733,7 @@ impl Herd {
             let alive = c.health != 0;
             const LOOK: (f32, f32) = (100.0, 96.0);
             match c.ai {
-                ai::HUNTER => {} // the hunter's body: driven by the game layer
+                ai::HUNTER => dead::animate_hunter(c, i, sp, ctx, carrier),
                 ai::BRACH => brachi::animate(c, i, sp, ctx),
                 ai::DIMOR | ai::PTERA if alive => flyer::animate(c, i, sp, ctx),
                 ai::DIMOR | ai::PTERA => flyer::animate_dead(c, i, sp, ctx),
@@ -763,7 +776,14 @@ mod tests {
         let car = Car {
             name_raw: [0; 32],
             mesh: Default::default(),
-            animations: (0..n).map(|_| Animation { name_raw: [0; 32], kps: 2, frames: 2, data: vec![0; 6] }).collect(),
+            animations: (0..n)
+                .map(|_| Animation {
+                    name_raw: [0; 32],
+                    kps: 2,
+                    frames: 2,
+                    data: vec![0; 6],
+                })
+                .collect(),
             sounds: vec![],
             anim_sounds: None,
         };
@@ -791,7 +811,17 @@ mod tests {
         let mut rng = MsRand::new(3);
         let mut events = Vec::new();
         for t in 0..ms / 10 {
-            let mut ctx = Ctx { area, rng: &mut rng, dt: 10, real_time: t * 10, hunter, opt_agres: 128, tranq: false, view_r: 74, events: &mut events };
+            let mut ctx = Ctx {
+                area,
+                rng: &mut rng,
+                dt: 10,
+                real_time: t * 10,
+                hunter,
+                opt_agres: 128,
+                tranq: false,
+                view_r: 74,
+                events: &mut events,
+            };
             herd.step(&mut ctx);
         }
         events
@@ -799,8 +829,17 @@ mod tests {
 
     fn herd_with(area: &Area, ai_id: i32, n_anims: usize, pos: [f32; 3]) -> Herd {
         let mut rng = MsRand::new(1);
-        let mut herd = Herd { species: vec![species(ai_id, n_anims)], chars: vec![] };
-        let mut c = Character { pos, tgx: pos[0], tgz: pos[2], ..Default::default() };
+        let mut herd = Herd {
+            species: vec![species(ai_id, n_anims)],
+            chars: vec![],
+            demo_index: None,
+        };
+        let mut c = Character {
+            pos,
+            tgx: pos[0],
+            tgz: pos[2],
+            ..Default::default()
+        };
         c.reset(&herd.species[0], &mut rng, 128);
         c.pos[1] = area.land_height(pos[0], pos[2]);
         herd.chars.push(c);
@@ -814,29 +853,62 @@ mod tests {
     #[test]
     fn parasaurolophus_flees_a_close_hunter() {
         let area = Area::flat(10);
-        let hunter = HunterView { x: 512.0 * 256.0, z: 512.0 * 256.0, y: 640.0, head_y: 220.0, alive: true, ..Default::default() };
+        let hunter = HunterView {
+            x: 512.0 * 256.0,
+            z: 512.0 * 256.0,
+            y: 640.0,
+            head_y: 220.0,
+            alive: true,
+            ..Default::default()
+        };
         let mut herd = herd_with(&area, ai::PARA, 6, [hunter.x + 800.0, 0.0, hunter.z]);
         let d0 = dist(&herd.chars[0], &hunter);
         run(&mut herd, &area, hunter, 5000);
         let c = &herd.chars[0];
         assert_eq!(c.state, 1, "alarmed");
-        assert!(dist(c, &hunter) > d0 + 2000.0, "ran from {d0} to {}", dist(c, &hunter));
+        assert!(
+            dist(c, &hunter) > d0 + 2000.0,
+            "ran from {d0} to {}",
+            dist(c, &hunter)
+        );
         assert!(c.pos.iter().all(|v| v.is_finite()));
     }
 
     #[test]
     fn hunting_trex_kills_at_close_range() {
         let area = Area::flat(10);
-        let hunter = HunterView { x: 512.0 * 256.0, z: 512.0 * 256.0, y: 640.0, head_y: 220.0, alive: true, ..Default::default() };
+        let hunter = HunterView {
+            x: 512.0 * 256.0,
+            z: 512.0 * 256.0,
+            y: 640.0,
+            head_y: 220.0,
+            alive: true,
+            ..Default::default()
+        };
         let mut herd = herd_with(&area, ai::TREX, 11, [hunter.x + 3000.0, 0.0, hunter.z]);
         herd.chars[0].state = 1; // already hunting
         let events = run(&mut herd, &area, hunter, 10_000);
-        assert!(events.iter().any(|e| matches!(e, DinoEvent::KillHunter { kind: hunt::KILL, .. })), "no kill in {events:?}");
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                DinoEvent::KillHunter {
+                    kind: hunt::KILL,
+                    ..
+                }
+            )),
+            "no kill in {events:?}"
+        );
     }
 
     #[test]
     fn find_vector_alpha_matches_atan2() {
-        for (x, y) in [(1.0, 0.0), (0.0, 1.0), (-1.0, 0.5), (-0.3, -2.0), (4.0, -1.0)] {
+        for (x, y) in [
+            (1.0, 0.0),
+            (0.0, 1.0),
+            (-1.0, 0.5),
+            (-0.3, -2.0),
+            (4.0, -1.0),
+        ] {
             let want = f32::atan2(y, x).rem_euclid(2.0 * PI);
             assert!((find_vector_alpha(x, y) - want).abs() < 0.002, "{x},{y}");
         }

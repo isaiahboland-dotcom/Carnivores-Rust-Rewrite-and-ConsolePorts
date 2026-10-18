@@ -23,8 +23,7 @@ struct VOut {
     @location(3) dist: f32,
 };
 
-@vertex
-fn vs(v: VIn) -> VOut {
+fn transform(v: VIn) -> VOut {
     let a = v.turns * 1.5707964;
     let c = cos(a);
     let s = sin(a);
@@ -37,6 +36,21 @@ fn vs(v: VIn) -> VOut {
     o.light = clamp(v.light + v.vlight[vt] / 255.0, 0.0, 1.0);
     o.layer = v.layer;
     o.dist = distance(p, g.cam_pos.xyz);
+    return o;
+}
+
+@vertex
+fn vs(v: VIn) -> VOut {
+    return transform(v);
+}
+
+// First-person weapon: squeeze depth toward the near plane so it always draws
+// in front of the world (the original renders it with the z-buffer off) while
+// still sorting its own faces correctly.
+@vertex
+fn vs_near(v: VIn) -> VOut {
+    var o = transform(v);
+    o.clip.z = o.clip.z * 0.02;
     return o;
 }
 

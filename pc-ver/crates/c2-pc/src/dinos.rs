@@ -5,7 +5,7 @@ use std::path::Path;
 use c2_core::dino::{pose, Character, DinoInfo, Herd, Species};
 use c2_core::model::PreparedModel;
 use c2_formats::car::{self, Car};
-use c2_formats::res_txt::ResTxt;
+use c2_formats::res_txt::{ResData, ResTxt};
 
 use crate::area_view::find_file;
 use crate::gpu::Gpu;
@@ -25,11 +25,18 @@ pub struct DinoAssets {
     models: Vec<Option<GpuModel>>,
 }
 
-/// Reads `HUNTDAT/_RES.TXT` and every character `.CAR` it names.
-pub fn load_species(huntdat: &Path) -> anyhow::Result<(Vec<Species>, Vec<Option<LoadedCar>>)> {
+/// Reads `HUNTDAT/_RES.TXT`.
+pub fn load_res(huntdat: &Path) -> anyhow::Result<ResData> {
     let res_path = find_file(huntdat, "_RES.TXT")
         .ok_or_else(|| anyhow::anyhow!("no _RES.TXT in {}", huntdat.display()))?;
-    let res = ResTxt::parse(&String::from_utf8_lossy(&std::fs::read(&res_path)?))?.to_data();
+    Ok(ResTxt::parse(&String::from_utf8_lossy(&std::fs::read(&res_path)?))?.to_data())
+}
+
+/// Reads every character `.CAR` named in `_RES.TXT`.
+pub fn load_species(
+    huntdat: &Path,
+    res: &ResData,
+) -> anyhow::Result<(Vec<Species>, Vec<Option<LoadedCar>>)> {
     let mut species = Vec::new();
     let mut cars = Vec::new();
     for def in &res.characters {

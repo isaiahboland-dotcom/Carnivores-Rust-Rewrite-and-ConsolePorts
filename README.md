@@ -88,7 +88,8 @@ cargo run --release -p c2-pc -- area  ../source/c2-original/HUNTDAT/AREAS/AREA1.
 Model viewer: drag to orbit, wheel to zoom, `[` `]` previous/next file, `N`/`P` animation, `Space` pause.
 Area viewer: `WASD` + `Q`/`E` to fly, drag to look, wheel = speed, `Shift` = fast, `+`/`-` view distance.
 Hunt mode (M3, in progress): `cargo run --release -p c2-pc -- hunt ../source/c2-original/HUNTDAT/AREAS/AREA1.MAP` —
-click to capture the mouse, `WASD` move, `Shift` run (`R` toggles), `C` crouch, `Space` jump/swim, `Esc` release/quit.
+click to capture the mouse, `WASD` move, mouse look, `LMB` fire, `E` show/hide weapon, `1`-`6` choose weapon,
+`Shift` toggles run, `X` crouch, `Space` jump/swim, arrows turn/look, `Esc` release/quit.
 Add `--shot out.png` to render one frame to a file instead of opening a window.
 
 ---
@@ -334,14 +335,17 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
 - [ ] M3 Vanilla PC — **in progress**
   - [x] hunter movement: walk/run/crouch/jump, slope slide, object + bound-box collision, swimming/diving (`c2-pc hunt`)
   - [x] dinosaur AI: all 15 vanilla species, placement, animation blending, death animations
-  - [ ] weapons + shooting, detection (sight/smell/noise), calls/scent/camo, HUD + map, scoring, trophies/saves, menus, audio
+  - [x] weapons (draw/fire/hide/reload, ammo, crossbow drop), ray-traced shots with vital zones, damage
+  - [x] detection: sight (line of sight + cover), smell (wind), gunshot noise; being eaten, drowning, death camera
+  - [ ] calls/scent/camo/radar accessories, binoculars + scope, map, sounds, blood/particles, ship pickup,
+        scoring + trophies + saves, menus
 - [ ] M4 Mod system
 - [ ] M5 Recipes
 - [ ] M6 Cooker + 3DS boot
 - [ ] M7 Vanilla 3DS
 - [ ] M8 Modded 3DS
 
-_Last updated: 2026-10-18 — M3: hunter movement and dinosaur AI done; next: detection (CheckAfraid), weapons and shooting._
+_Last updated: 2026-10-18 — M3: movement, AI, weapons, detection and death done; next: sounds, effects, accessories, scoring._
 
 
 note from user: quick headsup, the carnivores 2 datafile is copied direct from my library and includes re-shade files as well, please do not port the re-shade files to 3ds or the rust re-write as that would overcomplicate things dramatically

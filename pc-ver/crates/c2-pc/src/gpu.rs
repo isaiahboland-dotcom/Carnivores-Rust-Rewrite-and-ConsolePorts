@@ -52,10 +52,6 @@ impl Frame {
             .create_view(&Default::default());
         Self { size, depth }
     }
-
-    pub fn aspect(&self) -> f32 {
-        self.size.0.max(1) as f32 / self.size.1.max(1) as f32
-    }
 }
 
 fn instance(display: Option<winit::event_loop::OwnedDisplayHandle>) -> wgpu::Instance {

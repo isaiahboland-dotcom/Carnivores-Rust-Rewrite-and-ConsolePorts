@@ -6,7 +6,7 @@ pub trait Scene {
     fn update(&mut self, gpu: &Gpu, dt: f32, input: &Input);
     fn clear_color(&self) -> [f64; 3];
     /// Records the frame. Called once per frame.
-    fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, aspect: f32);
+    fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, screen: (u32, u32));
     /// Capture and hide the cursor for mouse-look.
     fn grab_cursor(&self) -> bool {
         false
@@ -44,7 +44,7 @@ pub fn render(
             }),
             ..Default::default()
         });
-        scene.draw(gpu, &mut pass, frame.aspect());
+        scene.draw(gpu, &mut pass, frame.size);
     }
     gpu.queue.submit([enc.finish()]);
 }

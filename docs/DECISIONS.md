@@ -2,6 +2,25 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-18 — M3: weapons, detection, death
+
+`c2-core::game::Hunt` holds a whole hunt (player, herd, weapons, wind,
+health) so every frontend runs identical logic. Ported: `ProcessShoot`,
+`MakeShot` (incl. the crossbow's three falling segments), `TraceShot`
+(ground, water, objects, posed characters; `sfMortal` faces kill outright),
+`MakeNoise`, `CheckAfraid` (sight with `TraceLook` and cover, smell with
+wind), the weapon state machine from `DrawPostObjects`, `AddDeadBody`,
+`AnimateHuntDead` and `ProcessDemoMovement` (death camera).
+
+Quirks kept: `TraceModel` rotates objects by eighth turns (`(FMap>>2)&7`)
+though they render in quarter turns; `ObjectsOnLook` carries over between
+animals as the original's global does.
+
+Deviations: weapon animation advances in the simulation tick (the original
+advances it while drawing). Key bindings default to the owner's saved
+`KeyMap` (W/S/A/D, LMB fire, E weapon, Shift run toggle, X crouch, Space
+jump). The loadout menu doesn't exist yet, so every weapon is carried.
+
 ## 2026-10-18 — M3: dinosaur AI
 
 All 15 `Animate*` routines from `Characters.cpp` are ported, plus
