@@ -46,7 +46,7 @@ pub fn sibling(path: &Path, ext: &str) -> Result<PathBuf> {
 }
 
 /// Finds `name` in `dir`, ignoring case.
-fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
+pub fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
     std::fs::read_dir(dir)
         .ok()?
         .flatten()
@@ -214,6 +214,10 @@ impl AreaView {
         })
     }
 
+    pub fn globals(&self) -> &Globals {
+        &self.globals
+    }
+
     pub fn area(&self) -> &Area {
         &self.area
     }
@@ -270,6 +274,21 @@ impl Scene for AreaView {
     }
 
     fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, aspect: f32) {
+        self.draw_with(gpu, pass, aspect, &mut |_, _, _| {});
+    }
+}
+
+/// Extra drawing hooked in after objects and before water.
+pub type ExtraDraw<'a> = dyn FnMut(&Gpu, &mut wgpu::RenderPass<'_>, &Globals) + 'a;
+
+impl AreaView {
+    pub fn draw_with(
+        &mut self,
+        gpu: &Gpu,
+        pass: &mut wgpu::RenderPass<'_>,
+        aspect: f32,
+        extra: &mut ExtraDraw<'_>,
+    ) {
         let far = self.radius as f32 * CELL;
         let view = self.cam.view();
         let time = self.area.time;
@@ -340,6 +359,7 @@ impl Scene for AreaView {
             .map(|(m, i)| (m, i.as_slice()))
             .collect();
         self.renderer.draw(gpu, pass, &self.globals, &batches);
+        extra(gpu, pass, &self.globals);
         self.terrain.draw_water(pass, &self.globals);
     }
 }

@@ -3,6 +3,7 @@
 mod app;
 mod area_view;
 mod camera;
+mod dinos;
 mod gpu;
 mod hunt_view;
 mod input;
@@ -39,7 +40,8 @@ impl Opts {
         let mut it = args.peekable();
         while let Some(a) = it.next() {
             if let Some(f) = a.strip_prefix("--") {
-                let takes_value = matches!(f, "anim" | "time" | "yaw" | "shot" | "cam" | "view");
+                let takes_value =
+                    matches!(f, "anim" | "time" | "yaw" | "shot" | "cam" | "view" | "sim");
                 let v = if takes_value { it.next() } else { None };
                 o.flags.push((f.to_string(), v));
             } else {
@@ -112,8 +114,27 @@ fn main() -> Result<()> {
         }
         "hunt" => {
             let time = time_of_day(&o);
+            // --sim MS[,AI[,DIST[,AFTER]]]: fixed seed, run the AI, then watch an
+            // animal; AFTER ms more pass with the camera fixed (screenshots).
+            let sim: Option<Vec<f32>> = o
+                .value("sim")
+                .map(|v| v.split(',').map(str::parse).collect::<Result<_, _>>())
+                .transpose()
+                .context("--sim MS[,AI[,DIST]]")?;
             Box::new(move |g| {
-                Ok(Box::new(hunt_view::HuntView::load(g, &path, time)?) as Box<dyn scene::Scene>)
+                let seed = sim.as_ref().map(|_| 1);
+                let mut h = hunt_view::HuntView::load(g, &path, time, seed)?;
+                if let Some(s) = sim {
+                    let ai = s.get(1).copied().unwrap_or(12.0) as i32;
+                    let dist = s.get(2).copied().unwrap_or(1500.0);
+                    h.spectate(
+                        s[0] as u32,
+                        ai,
+                        dist,
+                        s.get(3).copied().unwrap_or(0.0) as u32,
+                    );
+                }
+                Ok(Box::new(h) as Box<dyn scene::Scene>)
             })
         }
         "area" => {

@@ -2,6 +2,35 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-18 — M3: dinosaur AI
+
+All 15 `Animate*` routines from `Characters.cpp` are ported, plus
+`PlaceCharacters`, `ReplaceCharacterForward`, `CreateChMorphedModel` and the
+death animations. Where routines are copies with different constants they share
+one parameterized function (`herbivore`: Par/Anky/Steg/Chasmo, `carnivore`:
+Allo/Velo/Spino/Cerato, `small`: Mosh/Dimet/Gall); the parameter tables list
+the original's constants and phase numbers per species.
+
+**`MoveCharacter` runs its body.** In the released source its first line is
+`return;`, so no dinosaur would ever move — clearly a debugging leftover, as
+every dinosaur walks in the retail game. We port the body as written below it.
+
+**Kept original quirks** (they affect behaviour subtly but faithfully):
+- `StateF &= (!csONWATER)` (logical not) clears the whole field, not one bit.
+- Herbivores test `State & csONWATER` (never set) instead of `StateF`.
+- `PlaceCharacters` lifts Dimetrodon (not Dimorphodon) by 2048 at spawn.
+- Raw phase-index comparisons (`_Phase <= 2`) differ in meaning per species.
+- T-Rex and Ceratosaurus only spawn when chosen as hunt targets.
+
+`AnimatePac` (Pachycephalosaurus) is not dispatched by `AnimateCharacters`;
+it's a Carnivores 1 leftover and isn't ported.
+
+The AI uses an exact port of MSVC's `rand()` (same LCG), so random decisions
+come from the same kind of sequence as the original's.
+
+`c2-parity dinos <AREA.MAP> [seconds]` places and runs the herd headlessly.
+`c2-pc hunt ... --sim MS,AI,DIST,AFTER --shot x.png` renders a chosen animal.
+
 ## 2026-10-18 — M3: hunter movement
 
 **Fixed 10 ms simulation tick** instead of the original's variable `TimeDt`.

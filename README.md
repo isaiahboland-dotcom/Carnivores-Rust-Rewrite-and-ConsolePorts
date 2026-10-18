@@ -333,14 +333,15 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
         per-vertex ground light, side-by-side check vs retail (`sfTransparent` blend, object rotation direction)
 - [ ] M3 Vanilla PC — **in progress**
   - [x] hunter movement: walk/run/crouch/jump, slope slide, object + bound-box collision, swimming/diving (`c2-pc hunt`)
-  - [ ] weapons + shooting, dinosaur AI, calls/scent/camo, HUD + map, scoring, trophies/saves, menus, audio
+  - [x] dinosaur AI: all 15 vanilla species, placement, animation blending, death animations
+  - [ ] weapons + shooting, detection (sight/smell/noise), calls/scent/camo, HUD + map, scoring, trophies/saves, menus, audio
 - [ ] M4 Mod system
 - [ ] M5 Recipes
 - [ ] M6 Cooker + 3DS boot
 - [ ] M7 Vanilla 3DS
 - [ ] M8 Modded 3DS
 
-_Last updated: 2026-10-18 — M2 done, M3 hunter movement done; next: weapons, then dinosaur AI._
+_Last updated: 2026-10-18 — M3: hunter movement and dinosaur AI done; next: detection (CheckAfraid), weapons and shooting._
 
 
 note from user: quick headsup, the carnivores 2 datafile is copied direct from my library and includes re-shade files as well, please do not port the re-shade files to 3ds or the rust re-write as that would overcomplicate things dramatically

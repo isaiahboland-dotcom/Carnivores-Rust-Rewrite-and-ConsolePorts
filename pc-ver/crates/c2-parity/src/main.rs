@@ -228,8 +228,136 @@ fn walk_sim(map_path: &Path, seconds: u32) -> Result<()> {
     Ok(())
 }
 
+/// `c2-parity dinos <AREA.MAP> [seconds]`: places the herd and runs the AI
+/// headlessly with the hunter standing still, logging herbivore behaviour.
+fn dinos_sim(map_path: &Path, seconds: u32) -> Result<()> {
+    use c2_core::area::{Area, TimeOfDay};
+    use c2_core::dino::{ai, Ctx, DinoInfo, Herd, HunterView, PlaceOptions, Species};
+    use c2_core::rng::MsRand;
+    let dir = map_path.parent().unwrap_or(Path::new("."));
+    let huntdat = dir.parent().unwrap_or(Path::new("."));
+    let find = |d: &Path, name: &str| -> Option<PathBuf> {
+        std::fs::read_dir(d)
+            .ok()?
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| {
+                p.file_name()
+                    .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(name))
+            })
+    };
+    let stem = map_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let rsc_path = find(dir, &format!("{stem}.rsc")).context("no .RSC")?;
+    let area = Area::new(
+        map::parse(&std::fs::read(map_path)?)?,
+        rsc::parse(&std::fs::read(rsc_path)?)?,
+        TimeOfDay::Day,
+    );
+    let res = ResTxt::parse(&String::from_utf8_lossy(&std::fs::read(
+        find(huntdat, "_RES.TXT").context("no _RES.TXT")?,
+    )?))?
+    .to_data();
+    let mut species = Vec::new();
+    for d in &res.characters {
+        let info = DinoInfo::from_def(d);
+        let c = car::parse(&std::fs::read(
+            find(huntdat, &info.file).with_context(|| info.file.clone())?,
+        )?)?;
+        species.push(Species::new(info, &c));
+    }
+    let mut rng = MsRand::new(12345);
+    let (hx, hz) = (
+        f32::from(area.landings[0].0) * 256.0 + 128.0,
+        f32::from(area.landings[0].1) * 256.0 + 128.0,
+    );
+    let mut herd = Herd {
+        species,
+        chars: Vec::new(),
+    };
+    herd.place(
+        &area,
+        (hx, hz),
+        &mut rng,
+        PlaceOptions {
+            density: 128,
+            opt_agres: 128,
+            targets: 0,
+        },
+    );
+    println!("placed {}:", herd.chars.len());
+    for (i, c) in herd.chars.iter().enumerate() {
+        println!(
+            "  #{i} {} (ai {}) at cell ({}, {})",
+            herd.species[c.ctype].info.name,
+            c.ai,
+            (c.pos[0] / 256.0) as i32,
+            (c.pos[2] / 256.0) as i32
+        );
+    }
+    let ported = |a: i32| a != ai::HUNTER;
+    let start: Vec<[f32; 3]> = herd.chars.iter().map(|c| c.pos).collect();
+    let mut events = Vec::new();
+    let hunter = HunterView {
+        alpha: 0.0,
+        x: hx,
+        y: area.land_height(hx, hz),
+        z: hz,
+        head_y: 220.0,
+        alive: true,
+        underwater: false,
+    };
+    for t in 0..seconds * 100 {
+        let mut ctx = Ctx {
+            area: &area,
+            rng: &mut rng,
+            dt: 10,
+            real_time: (t * 10) as i32,
+            hunter,
+            opt_agres: 128,
+            tranq: false,
+            view_r: 74,
+            events: &mut events,
+        };
+        herd.step(&mut ctx);
+        for c in &herd.chars {
+            if !c.pos.iter().all(|v| v.is_finite()) {
+                bail!("t={}ms: non-finite position for ai {}", t * 10, c.ai);
+            }
+        }
+        if (t + 1) % 1000 == 0 {
+            println!("t={}s", (t + 1) / 100);
+            for (i, c) in herd.chars.iter().enumerate().filter(|(_, c)| ported(c.ai)) {
+                let d =
+                    ((c.pos[0] - start[i][0]).powi(2) + (c.pos[2] - start[i][2]).powi(2)).sqrt();
+                println!(
+                    "  #{i:<2} {:<16} phase {} speed {:.2} alpha {:.2} beta {:+.2} gamma {:+.2} travelled {:>6.0} state {}",
+                    herd.species[c.ctype].info.name, c.phase, c.vspeed, c.alpha, c.beta, c.gamma, d, c.state
+                );
+            }
+        }
+    }
+    println!(
+        "sound events: {}",
+        events
+            .iter()
+            .filter(|e| matches!(e, c2_core::dino::DinoEvent::Sound { .. }))
+            .count()
+    );
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("dinos") {
+        let path = args
+            .get(1)
+            .context("usage: c2-parity dinos <AREA.MAP> [seconds]")?;
+        let secs = args.get(2).map(|s| s.parse()).transpose()?.unwrap_or(30);
+        return dinos_sim(Path::new(path), secs);
+    }
     if args.first().map(String::as_str) == Some("walk") {
         let path = args
             .get(1)
