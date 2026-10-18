@@ -13,6 +13,7 @@ mod error;
 mod reader;
 
 pub mod car;
+pub mod cooked;
 pub mod map;
 pub mod model;
 pub mod res_txt;

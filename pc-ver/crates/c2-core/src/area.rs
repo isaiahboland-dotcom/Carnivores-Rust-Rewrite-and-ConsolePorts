@@ -191,6 +191,30 @@ impl Area {
             })
     }
 
+    /// Object brightness 0..1, `renderd3d.cpp: _RenderObject` (`RandomMap`
+    /// jitter omitted).
+    pub fn object_light(&self, p: &Placement) -> f32 {
+        let Some(o) = self.rsc.objects.get(usize::from(p.model)) else {
+            return 0.5;
+        };
+        let l = self
+            .light_map()
+            .get(idx(usize::from(p.cell.0), usize::from(p.cell.1)))
+            .copied()
+            .unwrap_or(128);
+        // Ground-lit objects take the light of the ground under each vertex
+        // (CalcModelGroundLight: 128 + LandLt - 128). Approximated per object.
+        if o.info.flags & object_flags::GROUND_LIGHT != 0 {
+            return f32::from(l) / 255.0;
+        }
+        let l = if o.info.flags & object_flags::DEF_LIGHT != 0 {
+            o.info.default_light
+        } else {
+            i32::from(l >> 1) + 96
+        };
+        l.clamp(64, 192) as f32 / 255.0
+    }
+
     /// Sky fade colour for the current time of day (`FadeRGB`), 0..=255.
     pub fn sky_rgb(&self) -> [i32; 3] {
         let c = self.rsc.fade_rgb[self.time as usize];

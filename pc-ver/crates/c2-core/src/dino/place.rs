@@ -21,7 +21,16 @@ impl Herd {
         self.species.iter().position(|s| s.info.ai == ai_id)
     }
 
-    fn spawn(&mut self, ctype: usize, pos: [f32; 3], rng: &mut MsRand, opt_agres: i32) {
+    /// Adds a character, unless its species has no model (a cooked pack
+    /// with only some species, or a `.CAR` that failed to load).
+    fn spawn(&mut self, ctype: usize, pos: [f32; 3], rng: &mut MsRand, opt_agres: i32) -> bool {
+        if self
+            .species
+            .get(ctype)
+            .is_some_and(|s| s.ani_time.is_empty())
+        {
+            return false;
+        }
         let mut c = Character {
             ctype,
             pos,
@@ -34,6 +43,7 @@ impl Herd {
             c.reset(sp, rng, opt_agres);
         }
         self.chars.push(c);
+        true
     }
 
     /// Places ambient animals near the hunter, brachiosaurs in shallow water
@@ -65,10 +75,12 @@ impl Herd {
                     break p;
                 }
             };
-            self.spawn(ctype, pos, rng, o.opt_agres);
-            let last = self.chars.len() - 1;
-            if matches!(self.chars[last].ai, ai::DIMET | ai::PTERA) {
-                self.chars[last].pos[1] += 2048.0;
+            if self.spawn(ctype, pos, rng, o.opt_agres) {
+                if let Some(last) = self.chars.last_mut() {
+                    if matches!(last.ai, ai::DIMET | ai::PTERA) {
+                        last.pos[1] += 2048.0;
+                    }
+                }
             }
         }
 

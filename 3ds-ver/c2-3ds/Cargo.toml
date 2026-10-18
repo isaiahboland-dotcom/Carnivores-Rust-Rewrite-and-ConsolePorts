@@ -1,0 +1,25 @@
+[package]
+name = "c2-3ds"
+description = "Carnivores 2 for the Nintendo 3DS (homebrew)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints.rust]
+# The GPU is driven through citro3d's C API.
+unsafe_code = "allow"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+
+[dependencies]
+anyhow.workspace = true
+c2-formats.workspace = true
+c2-vfs.workspace = true
+c2-core.workspace = true
+glam = { version = "0.33", default-features = false, features = ["std"] }
+# rust3ds crates are not on crates.io; Cargo.lock pins the commits.
+ctru-rs = { git = "https://github.com/rust3ds/ctru-rs" }
+ctru-sys = { git = "https://github.com/rust3ds/ctru-rs" }
+citro3d-sys = { git = "https://github.com/rust3ds/citro3d-rs" }

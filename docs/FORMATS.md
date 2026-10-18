@@ -226,6 +226,45 @@ Regions in vanilla: `MAIN_MAP` 1 Hunt, 2 Options, 3 Trophy, 4 Credits, 5 Quit,
 `MD_MAP` (delete) 1-2 = the two buttons, left to right. Read by
 `c2-pc/src/menu.rs`; no parser in `c2-formats` (it's raw bytes).
 
+## `.c2pk` — cooked 3DS pack (ours, `c2_formats::cooked`)
+Written by `c2-cook`, read by `c2-3ds` through `c2_vfs::PackBackend`. Not an
+original format. All values little-endian.
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | `[u8; 4]` | `"C2PK"` |
+| 4 | `u32` | version (1) |
+| 8 | `u32` | entry count |
+| 12 | `u32` | index length in bytes |
+| 16 | index | per entry: `u16` name length, name (UTF-8, `/`-separated), `u32` offset from file start, `u32` size |
+| … | data | entries, each starting on a 16-byte boundary |
+
+Entries:
+- `HUNTDAT/...`: game files exactly as the engine reads them (merged
+  `_RES.TXT`, the area's `.MAP`/`.RSC`, the chosen `.CAR`s).
+- `C2RS/INFO.TXT`: `key = value` lines: `target`, `area` (e.g. `AREA1`),
+  `time`, `dinos` / `weapons` (`_RES.TXT` indices), `terrain_tile`,
+  `atlas_cols`, `view`, `object_view` (cells), `ram_kb` (the estimate).
+- `C2RS/TERRAIN.TX`: every terrain texture in one atlas, `terrain_tile`
+  pixels square, `atlas_cols` per row, in texture order.
+- `C2RS/OBJn.TX`, `C2RS/CHARn.TX`, `C2RS/WPNn.TX`: the texture of RSC object
+  `n`, `_RES.TXT` character `n`, weapon `n`.
+
+### `.TX` — cooked texture
+| Offset | Type | Field |
+|---|---|---|
+| 0 | `[u8; 4]` | `"C2TX"` |
+| 4 | `u16`, `u16` | width, height (powers of two, 8..=1024) |
+| 8 | `u8` | PICA200 format: 2 = RGBA5551, 3 = RGB565 (`GPU_TEXCOLOR`) |
+| 9 | 3 bytes | padding |
+| 12 | texels | 2 bytes each, in the GPU's tiled order |
+
+Tiled order: 8x8 tiles left to right, tile rows starting from the **bottom**
+of the image; inside a tile, texels in Morton (Z) order (bit 0 = x0, bit 1 =
+y0, bit 2 = x1, …, y counted upwards). The GPU then samples it with `t` equal to the image's
+`v` (0 = top), as checked in an emulator. Cut-out alpha is 1 bit (texel colour 0 in an `sfOpacity`
+model, as `GenerateAlphaFlags`).
+
 ## Not yet parsed
 - Map-editor side files in some mods (`.grp .lai .mtc .prj`) — not loaded by the game.
 

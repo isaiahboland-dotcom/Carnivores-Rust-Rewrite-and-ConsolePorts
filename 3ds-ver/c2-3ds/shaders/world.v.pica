@@ -1,0 +1,60 @@
+; c2rs vertex shader for everything in the 3D world: terrain, water,
+; objects, animals and the view model.
+;   v0: position (world or model units)
+;   v1: texture coordinate
+;   v2: light, 4 bytes; the one picked by `lsel` is added to `light.x`
+;       (terrain: the light map value; objects: CalcLights per quarter turn)
+; Out colour: rgb = light, a = fog amount (by distance from the eye, as the
+; PC does; the combiner mixes in the fog colour).
+
+.fvec projection[4], modelView[4]
+; x: base light, 0..1
+.fvec light
+; light selector, already divided by 255
+.fvec lsel
+; fog factor = distance * x + y, clamped to 0..1 (0 = none)
+.fvec fog
+
+.constf consts(1.0, 0.0, 0.5, 0.0)
+
+.out outpos position
+.out outtc0 texcoord0
+.out outclr color
+
+.alias inpos v0
+.alias intex v1
+.alias inlit v2
+
+.proc main
+	mov r0.xyz, inpos
+	mov r0.w, consts.x
+
+	dp4 r1.x, modelView[0], r0
+	dp4 r1.y, modelView[1], r0
+	dp4 r1.z, modelView[2], r0
+	dp4 r1.w, modelView[3], r0
+
+	dp4 outpos.x, projection[0], r1
+	dp4 outpos.y, projection[1], r1
+	dp4 outpos.z, projection[2], r1
+	dp4 outpos.w, projection[3], r1
+
+	mov outtc0, intex
+
+	dp4 r2.x, lsel, inlit
+	add r2.x, light.x, r2.x
+	max r2.x, consts.y, r2.x
+	min r2.x, consts.x, r2.x
+	mov r3.xyz, r2.xxx
+
+	dp3 r4.x, r1, r1
+	rsq r4.y, r4.x
+	mul r4.x, r4.x, r4.y
+	mul r4.x, fog.x, r4.x
+	add r4.x, fog.y, r4.x
+	max r4.x, consts.y, r4.x
+	min r4.x, consts.x, r4.x
+	mov r3.w, r4.x
+	mov outclr, r3
+	end
+.end

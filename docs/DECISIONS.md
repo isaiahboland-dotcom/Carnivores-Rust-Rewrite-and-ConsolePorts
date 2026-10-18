@@ -2,6 +2,31 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-18 — M6: cooker and first 3DS build
+- **Layout**: `3ds-ver/` is one nightly workspace holding `c2-cook` (host
+  tool) and `c2-3ds`, as the README tree says; `default-members` is the cooker.
+  rust3ds crates come from git (not on crates.io), pinned by `Cargo.lock`.
+- **Pack = original files + GPU textures.** The 3DS runs the same `c2-core`,
+  which needs the `.MAP`/`.RSC`/`.CAR` data anyway, so the pack carries them
+  unchanged plus textures pre-tiled for the PICA200 (RGB565 terrain atlas,
+  RGBA5551 models, scaled per profile). After loading, the 3DS frees what
+  only the PC uses (≈ heap 16.6 MiB in use for the default pack).
+- **Partial species sets**: the pack keeps the full `_RES.TXT` (character and
+  weapon indices drive placement and AI) but only the chosen `.CAR`s.
+  `Herd::spawn` now skips a species with no animations instead of placing an
+  invisible animal; with every `.CAR` present nothing changes.
+- **Gameplay view range on 3DS** is 42 cells (`ctViewR` at the original's
+  lowest view option); only drawing distance depends on the profile.
+- **Fog in the vertex shader**: the GPU's fog table is indexed by depth-buffer
+  values, which at ~10 000 units of view put the whole fog ramp into one
+  table entry. The shader computes distance fog like the PC, and a second
+  combiner stage mixes in the fog colour.
+- **Texture orientation** (found in the emulator): with our tiling (bottom
+  image row first), the hardware's `t` equals the image's `v` directly.
+- `unsafe` is allowed in `c2-3ds` only (citro3d is a C API).
+- The test-script hook (`autotest.txt`) and L+SELECT screenshots exist so
+  builds can be checked in an emulator and bug reports can carry pictures.
+
 ## 2026-10-18 — Zip mods
 Owner approved the `zip` crate (9.0.5, deflate only via pure-Rust zlib-rs;
 no bzip2/lzma/zstd/AES, which old Carnivores mods don't use). It sits behind

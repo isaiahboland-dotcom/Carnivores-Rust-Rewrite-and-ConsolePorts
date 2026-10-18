@@ -1,0 +1,18 @@
+[package]
+name = "c2-cook"
+description = "Cooks a game (vanilla or modded) into a 3DS pack"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+c2-formats.workspace = true
+c2-vfs.workspace = true
+c2-mods.workspace = true
+c2-core.workspace = true

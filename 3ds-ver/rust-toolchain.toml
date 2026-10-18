@@ -1,0 +1,4 @@
+# The 3DS target needs nightly (build-std). Tested with nightly 2026-10-16.
+[toolchain]
+channel = "nightly"
+components = ["rust-src"]

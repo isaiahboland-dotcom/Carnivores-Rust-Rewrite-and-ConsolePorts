@@ -17,3 +17,4 @@ zip = ["dep:zip"]
 [dependencies]
 thiserror.workspace = true
 zip = { workspace = true, optional = true }
+c2-formats.workspace = true

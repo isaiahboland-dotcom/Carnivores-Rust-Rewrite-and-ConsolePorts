@@ -309,6 +309,7 @@ version = "0.0.1"
 name = "c2-vfs"
 version = "0.0.1"
 dependencies = [
+ "c2-formats",
  "thiserror 2.0.21",
  "zip",
 ]

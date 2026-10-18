@@ -8,6 +8,9 @@
 //! Paths are relative, `/`-separated (`HUNTDAT/AREAS/AREA1.MAP`); `\` is
 //! accepted and normalised.
 
+mod cooked;
+pub use cooked::PackBackend;
+
 #[cfg(feature = "zip")]
 mod zip;
 #[cfg(feature = "zip")]

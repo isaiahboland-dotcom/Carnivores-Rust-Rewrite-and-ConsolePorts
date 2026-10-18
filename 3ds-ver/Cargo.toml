@@ -1,0 +1,34 @@
+# The 3DS port: `c2-cook` (runs on your PC) and `c2-3ds` (the 3DS app).
+# Shared crates come from ../pc-ver/crates by path.
+#
+#   cargo run --release -p c2-cook -- --game ../source/c2-original --out c2rs.c2pk
+#   cargo 3ds build --release -p c2-3ds
+[workspace]
+resolver = "2"
+members = ["c2-cook", "c2-3ds"]
+default-members = ["c2-cook"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+c2-formats = { path = "../pc-ver/crates/c2-formats" }
+c2-vfs = { path = "../pc-ver/crates/c2-vfs" }
+c2-mods = { path = "../pc-ver/crates/c2-mods" }
+c2-core = { path = "../pc-ver/crates/c2-core" }
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+
+[profile.release]
+opt-level = 3
+lto = "thin"

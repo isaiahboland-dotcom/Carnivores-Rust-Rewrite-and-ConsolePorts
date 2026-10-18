@@ -17,6 +17,8 @@ HUNTDAT/
 *.zip
 *.7z
 *.rar
+# Cooked 3DS packs (built from your game files)
+*.c2pk
 
 # ReShade / wrapper DLL configs that ship alongside some installs
 reshade-shaders/

@@ -1,7 +1,11 @@
-# 3ds-ver — Nintendo 3DS backend
+# 3ds-ver — Nintendo 3DS port
 
-Starts at milestone M6, once the PC port (`../pc-ver`) is playable.
+A separate Cargo workspace (nightly, see `rust-toolchain.toml`) reusing the
+shared crates in `../pc-ver/crates/` by path:
 
-This will be a separate Cargo workspace (nightly, `armv6k-nintendo-3ds`) that
-depends on the shared crates in `../pc-ver/crates/` by path, and loads only
-data cooked by `c2-cook`. See `../docs/3DS.md`.
+- `c2-cook/` — runs on your PC: turns your game (plus add-on mods or a
+  recipe) into one `.c2pk` pack for the 3DS.
+- `c2-3ds/` — the 3DS app (`cargo 3ds build --release -p c2-3ds`).
+
+Build steps, controls, testing in an emulator and memory notes:
+`../docs/3DS.md`.

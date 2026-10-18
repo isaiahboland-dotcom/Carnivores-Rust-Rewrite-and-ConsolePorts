@@ -101,23 +101,6 @@ pub struct AreaView {
     pub fps: f32,
 }
 
-/// Object brightness, `renderd3d.cpp: _RenderObject` (`RandomMap` jitter omitted).
-fn object_light(area: &Area, p: &Placement) -> f32 {
-    let o = &area.rsc.objects[usize::from(p.model)];
-    let i = usize::from(p.cell.1) * map::MAP_SIZE + usize::from(p.cell.0);
-    // Ground-lit objects take the light of the ground under each vertex
-    // (CalcModelGroundLight: 128 + LandLt - 128). Approximated per object.
-    if o.info.flags & object_flags::GROUND_LIGHT != 0 {
-        return f32::from(area.light_map()[i]) / 255.0;
-    }
-    let l = if o.info.flags & object_flags::DEF_LIGHT != 0 {
-        o.info.default_light
-    } else {
-        i32::from(area.light_map()[i] >> 1) + 96
-    };
-    l.clamp(64, 192) as f32 / 255.0
-}
-
 impl AreaView {
     pub fn load(gpu: &Gpu, map_path: &Path, time: TimeOfDay) -> Result<Self> {
         let rsc_path = sibling(map_path, "rsc")?;
@@ -178,7 +161,7 @@ impl AreaView {
         let mut chunks = vec![Vec::new(); CHUNKS * CHUNKS];
         for p in area.placements() {
             let c = usize::from(p.cell.1) / CHUNK * CHUNKS + usize::from(p.cell.0) / CHUNK;
-            let l = object_light(&area, &p);
+            let l = area.object_light(&p);
             chunks[c].push((p, l));
         }
 
