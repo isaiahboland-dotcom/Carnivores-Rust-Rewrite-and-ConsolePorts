@@ -25,7 +25,7 @@ use c2_core::area::TimeOfDay;
 const USAGE: &str = "usage:
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
   c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--shot out.png]
-  c2-pc hunt  <AREA.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--weapon N] [--bino] [--shot out.png]
+  c2-pc hunt  <AREA.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all] [--weapon N] [--bino] [--shot out.png]
 
 model: drag to orbit, wheel zoom, [ ] next/prev file, N/P next/prev animation, Space pause
 area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distance
@@ -49,7 +49,16 @@ impl Opts {
             if let Some(f) = a.strip_prefix("--") {
                 let takes_value = matches!(
                     f,
-                    "anim" | "time" | "yaw" | "shot" | "cam" | "view" | "sim" | "ship" | "weapon"
+                    "anim"
+                        | "time"
+                        | "yaw"
+                        | "shot"
+                        | "cam"
+                        | "view"
+                        | "sim"
+                        | "ship"
+                        | "weapon"
+                        | "target"
                 );
                 let v = if takes_value { it.next() } else { None };
                 o.flags.push((f.to_string(), v));
@@ -130,6 +139,24 @@ fn main() -> Result<()> {
                 .transpose()
                 .context("--weapon N")?;
             let bino = o.has("bino");
+            let map = o.has("map");
+            // --target AI[,AI...] or `all`: hunt targets (no menu yet). Calls,
+            // placement of T-Rex/Cerato and score depend on them.
+            let targets = match o.value("target") {
+                None => 0,
+                Some("all") => (10..=18).fold(0u32, |m, a| m | 1 << a),
+                Some(v) => v
+                    .split(',')
+                    .map(|a| {
+                        a.trim()
+                            .parse::<u32>()
+                            .map(|a| 1u32.checked_shl(a).unwrap_or(0))
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                    .context("--target AI[,AI...]")?
+                    .into_iter()
+                    .fold(0, |m, b| m | b),
+            };
             // --ship AI,MS[,DIST]: bag an animal, wait, look at the ship.
             let ship: Option<Vec<f32>> = o
                 .value("ship")
@@ -145,7 +172,7 @@ fn main() -> Result<()> {
                 .context("--sim MS[,AI[,DIST]]")?;
             Box::new(move |g| {
                 let seed = sim.as_ref().map(|_| 1);
-                let mut h = hunt_view::HuntView::load(g, &path, time, seed)?;
+                let mut h = hunt_view::HuntView::load(g, &path, time, seed, targets)?;
                 if let Some(s) = sim {
                     let ai = s.get(1).copied().unwrap_or(12.0) as i32;
                     let dist = s.get(2).copied().unwrap_or(1500.0);
@@ -161,6 +188,9 @@ fn main() -> Result<()> {
                 }
                 if bino {
                     h.raise_binoculars();
+                }
+                if map {
+                    h.open_map();
                 }
                 if let Some(v) = &ship {
                     h.watch_ship(

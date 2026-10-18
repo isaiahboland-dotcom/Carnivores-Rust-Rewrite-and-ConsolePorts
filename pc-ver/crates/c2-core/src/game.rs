@@ -185,6 +185,13 @@ pub enum GameEvent {
         volume: i32,
     },
     /// A one-off RSC random sound (`RandSound[sound]`) near the hunter.
+    /// A hunting call: `call` is the target AI (10..), `variant` 0..=2 picks
+    /// `CALL{call-9}_A/B/C.WAV`; `pos = None` is the hunter's own call.
+    Call {
+        call: i32,
+        variant: usize,
+        pos: Option<[f32; 3]>,
+    },
     RandomSound {
         sound: usize,
         pos: [f32; 3],
@@ -241,6 +248,12 @@ pub struct HuntInput {
     /// Binocular zoom keys held.
     pub zoom_in: bool,
     pub zoom_out: bool,
+    /// Call key pressed (`kfCall`).
+    pub call: bool,
+    /// Change-call key pressed.
+    pub change_call: bool,
+    /// Map key pressed.
+    pub toggle_map: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -309,6 +322,15 @@ pub struct Hunt {
     /// Looking through the binoculars (`BINMODE`) and their power (1.5..=3).
     pub bin_mode: bool,
     pub bin_power: f32,
+    /// The map is showing (`MapMode`).
+    pub map_mode: bool,
+    /// Selected call (`TargetCall`, an AI number) and how long its icon shows.
+    pub target_call: i32,
+    pub call_icon_time: i32,
+    call_lock: i32,
+    next_call: i32,
+    /// A pending answer to a call: (time left, position, call).
+    answer: Option<(i32, [f32; 3], i32)>,
 }
 
 /// What the binoculars show about the animal in the cross-hairs.
@@ -381,6 +403,12 @@ impl Hunt {
             current_ambient: None,
             bin_mode: false,
             bin_power: 2.5,
+            map_mode: false,
+            target_call: (10..30).find(|a| opts.targets & (1 << a) != 0).unwrap_or(0),
+            call_icon_time: 0,
+            call_lock: 0,
+            next_call: 0,
+            answer: None,
             player,
             herd,
             weapons,
@@ -449,6 +477,17 @@ impl Hunt {
             self.weapon_input(area, cars, input, out);
             self.ambience(area, dt, out);
             self.binoculars(input, dt);
+            self.calls(input, dt, out);
+            if input.toggle_map
+                && self.health > 0
+                && !self.bin_mode
+                && self.weapons.state == WeaponState::Hidden
+            {
+                self.map_mode = !self.map_mode;
+            }
+            if self.weapons.state != WeaponState::Hidden || self.bin_mode {
+                self.map_mode = false;
+            }
             self.path += dt as f32 * self.player.vspeed / 128.0;
             self.time_s += dt as f32 / 1000.0;
         }
@@ -1172,6 +1211,152 @@ impl Hunt {
             pos,
             volume: r.volume,
         });
+    }
+
+    /// `MakeCall`, `ChangeCall` and the delayed answer (`AnimateProcesses`).
+    fn calls(&mut self, input: &HuntInput, dt: i32, out: &mut Vec<GameEvent>) {
+        self.call_lock = (self.call_lock - dt).max(0);
+        self.call_icon_time = (self.call_icon_time - dt).max(0);
+        if let Some((t, pos, call)) = &mut self.answer {
+            *t -= dt;
+            if *t <= 0 {
+                let variant = (self.rng.r_rand(128) % 3) as usize;
+                out.push(GameEvent::Call {
+                    call: *call,
+                    variant,
+                    pos: Some(*pos),
+                });
+                self.answer = None;
+            }
+        }
+        let targets = self.opts.targets;
+        if input.change_call && targets != 0 {
+            if self.call_icon_time > 0 {
+                for _ in 0..32 {
+                    self.target_call += 1;
+                    if self.target_call > 32 {
+                        self.target_call = 10;
+                    }
+                    if self.target_call < 32 && targets & (1 << self.target_call) != 0 {
+                        break;
+                    }
+                }
+            }
+            self.call_icon_time = 2048;
+        }
+        if !input.call || targets == 0 || self.player.underwater || self.call_lock > 0 {
+            return;
+        }
+        self.call_lock = 1024 * 3;
+        self.next_call = (self.next_call + (self.real_time % 2) + 1) % 3;
+        out.push(GameEvent::Call {
+            call: self.target_call,
+            variant: self.next_call as usize,
+            pos: None,
+        });
+
+        let danger = self
+            .herd
+            .species
+            .iter()
+            .find(|s| s.info.ai == self.target_call)
+            .is_some_and(|s| s.info.danger_call);
+        let p = [self.player.x, self.player.y, self.player.z];
+        let mut best: Option<(usize, f32)> = None;
+        let range = self.opts.view_r as f32 * 400.0;
+        for i in 0..self.herd.chars.len() {
+            if danger && self.herd.chars[i].ai < 10 {
+                let t = (10 + self.rng.r_rand(5)) * 1024;
+                let c = &mut self.herd.chars[i];
+                c.state = 2;
+                c.afraid_time = t;
+            }
+            let c = &self.herd.chars[i];
+            if c.ai != self.target_call || c.afraid_time != 0 || c.state != 0 {
+                continue;
+            }
+            let d =
+                ((p[0] - c.pos[0]).powi(2) + (p[1] - c.pos[1]).powi(2) + (p[2] - c.pos[2]).powi(2))
+                    .sqrt();
+            if d < range {
+                if self.rng.r_rand(128) > 32 && best.is_none_or(|(_, bd)| d < bd) {
+                    best = Some((i, d));
+                }
+                let (tx, tz) = (
+                    p[0] + self.rng.si_rand(1800) as f32,
+                    p[2] + self.rng.si_rand(1800) as f32,
+                );
+                let c = &mut self.herd.chars[i];
+                c.tgx = tx;
+                c.tgz = tz;
+            }
+        }
+        if let Some((i, _)) = best {
+            // The answer comes from a third of the way toward the animal.
+            let c = self.herd.chars[i].pos;
+            let pos = [
+                p[0] + (c[0] - p[0]) / 3.0,
+                p[1] + (c[1] - p[1]) / 3.0,
+                p[2] + (c[2] - p[2]) / 3.0,
+            ];
+            self.answer = Some((2000 + self.rng.r_rand(2000), pos, self.target_call));
+        }
+    }
+
+    /// `GenerateMapImage`: the 256x256 overview (1 pixel per 4 cells) made
+    /// from each cell's texture at the 32x32 mip level (16x16 for water).
+    pub fn map_image(area: &Area) -> Vec<u16> {
+        let mip = |src: &[u16], l: usize| -> Vec<u16> {
+            // GenerateMipMap: average 2x2 per 5-bit channel, rounded.
+            let mut d = vec![0u16; l * l];
+            for y in 0..l {
+                for x in 0..l {
+                    let at = |dx: usize, dy: usize| {
+                        u32::from(
+                            src.get((y * 2 + dy) * l * 2 + x * 2 + dx)
+                                .copied()
+                                .unwrap_or(0),
+                        )
+                    };
+                    let px = [at(0, 0), at(1, 0), at(0, 1), at(1, 1)];
+                    let ch = |sh: u32| {
+                        ((px.iter().map(|p| (p >> sh) & 31).sum::<u32>() + 2) >> 2) as u16
+                    };
+                    d[y * l + x] = (ch(10) << 10) | (ch(5) << 5) | ch(0);
+                }
+            }
+            d
+        };
+        let mips: Vec<(Vec<u16>, Vec<u16>)> = area
+            .rsc
+            .textures
+            .iter()
+            .map(|t| {
+                let b = mip(t, 64);
+                let c = mip(&b, 32);
+                let d = mip(&c, 16);
+                (c, d)
+            })
+            .collect();
+        let mut out = vec![0u16; 256 * 256];
+        for y in 0..256 {
+            for x in 0..256 {
+                let i = (y << 2) * c2_formats::map::MAP_SIZE + (x << 2);
+                let px = if area.map.flags[i] & crate::area::cell_flags::WATER != 0 {
+                    let t = area
+                        .rsc
+                        .waters
+                        .get(usize::from(area.map.water[i]))
+                        .map_or(0, |w| w.texture_index.max(0) as usize);
+                    mips.get(t).map_or(0, |(_, d)| d[(y & 15) * 16 + (x & 15)])
+                } else {
+                    let t = usize::from(area.map.texture1[i]);
+                    mips.get(t).map_or(0, |(c, _)| c[(y & 31) * 32 + (x & 31)])
+                };
+                out[y * 256 + x] = px;
+            }
+        }
+        out
     }
 
     /// `ToggleBinocular` and the +/- power keys.

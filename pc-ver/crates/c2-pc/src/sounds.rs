@@ -19,6 +19,8 @@ pub struct SoundBank {
     pub steps: Vec<Option<Clip>>,
     pub steps_water: Vec<Option<Clip>>,
     pub screams: Vec<Option<Clip>>,
+    /// Hunting calls by AI 10.. : `CALLS/CALL{n}_A/B/C.WAV`.
+    pub calls: Vec<Vec<Option<Clip>>>,
 }
 
 fn car_sounds(car: Option<&Car>) -> Vec<Option<Clip>> {
@@ -80,6 +82,17 @@ impl SoundBank {
                     "HUM_DIE4.WAV",
                 ],
             ),
+            calls: {
+                let dir = fx.as_deref().and_then(|d| find_file(d, "CALLS"));
+                (1..=10)
+                    .map(|n| {
+                        ["A", "B", "C"]
+                            .iter()
+                            .map(|v| wav(dir.as_deref(), &format!("CALL{n}_{v}.WAV")))
+                            .collect()
+                    })
+                    .collect()
+            },
         };
         let n = |v: &[Option<Clip>]| v.iter().filter(|c| c.is_some()).count();
         let nn = |v: &[Vec<Option<Clip>>]| v.iter().map(|x| n(x)).sum::<usize>();

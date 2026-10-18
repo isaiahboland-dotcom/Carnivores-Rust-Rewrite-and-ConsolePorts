@@ -44,6 +44,10 @@ pub struct HuntView {
     weapon_anims: Vec<[i32; 4]>,
     hud: Hud,
     exit_img: Option<usize>,
+    map_img: Option<usize>,
+    call_imgs: Vec<Option<usize>>,
+    /// Hunt targets (`TargetDino` bits by AI).
+    targets: u32,
     /// Camera position before the latest tick, for interpolation.
     prev_cam: [f32; 3],
     acc_ms: f32,
@@ -69,6 +73,7 @@ impl HuntView {
         map: &std::path::Path,
         time: TimeOfDay,
         seed: Option<u32>,
+        targets: u32,
     ) -> Result<Self> {
         let mut view = AreaView::load(gpu, map, time)?;
         view.fly = false;
@@ -91,6 +96,32 @@ impl HuntView {
             .and_then(|m| find_file(&m, "EXIT.TGA"))
             .and_then(|p| load_tga(&p).ok())
             .map(|(w, h, rgba)| hud.add_image(gpu, w, h, &rgba));
+        // The map: the frame with the area overview painted in at (11, 23).
+        let map_img = find_file(huntdat, "MENU")
+            .and_then(|m| find_file(&m, "MAPFRAME.TGA"))
+            .and_then(|p| c2_formats::tga::parse(&std::fs::read(p).ok()?).ok())
+            .map(|mut frame| {
+                let px = Hunt::map_image(view.area());
+                for y in 0..256 {
+                    for x in 0..256 {
+                        let (fx, fy) = (x + 11, y + 23);
+                        if fx < frame.width && fy < frame.height {
+                            frame.pixels[fy * frame.width + fx] = px[y * 256 + x];
+                        }
+                    }
+                }
+                let rgba = c2_core::color::image_to_rgba8(&frame.pixels, false);
+                hud.add_image(gpu, frame.width as u32, frame.height as u32, &rgba)
+            });
+        // Call icons (`MENU/PICS/CALLn.TGA`), by AI 10..=19.
+        let pics = find_file(huntdat, "MENU").and_then(|m| find_file(&m, "PICS"));
+        let call_imgs: Vec<Option<usize>> = (1..=10)
+            .map(|n| {
+                let p = find_file(pics.as_deref()?, &format!("CALL{n}.TGA"))?;
+                let (w, h, rgba) = load_tga(&p).ok()?;
+                Some(hud.add_image(gpu, w, h, &rgba))
+            })
+            .collect();
         let dinos = DinoAssets::new(gpu, view.globals(), cars, load_ship(huntdat));
         let species_cars: Vec<Option<&Car>> = dinos
             .cars
@@ -115,6 +146,7 @@ impl HuntView {
             &weapon_anims,
             seed,
             &game_dir,
+            targets,
         );
         hunt.ship_anim_ms = dinos.ship_anim_ms();
         let prev_cam = hunt.camera().0;
@@ -127,6 +159,9 @@ impl HuntView {
             weapon_anims,
             hud,
             exit_img,
+            map_img,
+            call_imgs,
+            targets,
             prev_cam,
             acc_ms: 0.0,
             run: false,
@@ -149,6 +184,7 @@ impl HuntView {
         anims: &[[i32; 4]],
         seed: u32,
         game_dir: &std::path::Path,
+        targets: u32,
     ) -> Hunt {
         let area = view.area();
         let cell = area.landings[seed as usize % area.landings.len().max(1)];
@@ -162,7 +198,7 @@ impl HuntView {
         let opts = PlaceOptions {
             density: 128,
             opt_agres: 128,
-            targets: 0,
+            targets,
         };
         herd.place(area, (player.x, player.z), &mut rng, opts);
         tracing::info!("placed {} characters", herd.chars.len());
@@ -174,7 +210,10 @@ impl HuntView {
             herd,
             weapons,
             rng,
-            HuntOptions::default(),
+            HuntOptions {
+                targets,
+                ..HuntOptions::default()
+            },
             room,
         );
         hunt.clock = local_clock();
@@ -182,7 +221,6 @@ impl HuntView {
     }
 
     fn controls(&self, input: &Input) -> Controls {
-        let k = |a: KeyCode, b: KeyCode| input.held(a) || input.held(b);
         Controls {
             forward: input.held(KeyCode::KeyW),
             backward: input.held(KeyCode::KeyS),
@@ -192,7 +230,7 @@ impl HuntView {
             turn_right: input.held(KeyCode::ArrowRight),
             look_up: input.held(KeyCode::ArrowUp),
             look_down: input.held(KeyCode::ArrowDown),
-            crouch: k(KeyCode::KeyX, KeyCode::KeyC),
+            crouch: input.held(KeyCode::KeyX),
             jump: input.held(KeyCode::Space),
             run: self.run,
             mouse: input.mouse_delta,
@@ -267,6 +305,15 @@ impl HuntView {
         self.prev_cam = self.hunt.camera().0;
     }
 
+    /// Opens the map right away (screenshots).
+    pub fn open_map(&mut self) {
+        let input = HuntInput {
+            toggle_map: true,
+            ..Default::default()
+        };
+        self.step(&input);
+    }
+
     /// Raises the binoculars right away (screenshots).
     pub fn raise_binoculars(&mut self) {
         let input = HuntInput {
@@ -319,6 +366,7 @@ impl HuntView {
             &self.weapon_anims,
             self.seed,
             &self.game_dir,
+            self.targets,
         );
         self.hunt.ship_anim_ms = ship_ms;
         self.prev_cam = self.hunt.camera().0;
@@ -380,6 +428,13 @@ impl HuntView {
                 }
                 GameEvent::RandomSound { sound, pos, volume } => {
                     a.play(get(&snd.random, *sound), Some(*pos), *volume)
+                }
+                GameEvent::Call { call, variant, pos } => {
+                    let clip = snd
+                        .calls
+                        .get((*call - 10).max(0) as usize)
+                        .and_then(|c| get(c, *variant));
+                    a.play(clip, *pos, 256);
                 }
                 GameEvent::Ambient { zone, volume } => {
                     let clip = match zone {
@@ -464,6 +519,15 @@ impl Scene for HuntView {
         if input.pressed(KeyCode::KeyB) {
             self.pending.toggle_binoculars = true;
         }
+        if input.pressed(KeyCode::Tab) {
+            self.pending.toggle_map = true;
+        }
+        if input.pressed(KeyCode::AltLeft) || input.pressed(KeyCode::AltRight) {
+            self.pending.call = true;
+        }
+        if input.pressed(KeyCode::KeyC) {
+            self.pending.change_call = true;
+        }
         let mut hin = HuntInput {
             controls: self.controls(input),
             fire: input.grabbed && input.mouse_down,
@@ -480,6 +544,9 @@ impl Scene for HuntView {
             hin.toggle_weapon = false;
             hin.select_weapon = None;
             hin.toggle_binoculars = false;
+            hin.toggle_map = false;
+            hin.call = false;
+            hin.change_call = false;
             self.pending = HuntInput::default();
             self.acc_ms -= TICK_MS as f32;
         }
@@ -592,6 +659,76 @@ impl Scene for HuntView {
                         sprites.extend(self.hud.rect(sx, sy - w, scale, 2.0 * w, col));
                     }
                 }
+            }
+        }
+        // Map (`DrawHMap`): view range circle, the hunter, radar blips.
+        if self.hunt.map_mode {
+            if let Some((id, mw, mh)) = self
+                .map_img
+                .and_then(|i| self.hud.image(i).map(|im| (i, im.w as f32, im.h as f32)))
+            {
+                let (cx, cy) = (screen.0 as f32 / 2.0, screen.1 as f32 / 2.0);
+                let (fx, fy) = (cx - mw * scale / 2.0, cy - (mh / 2.0 + 6.0) * scale);
+                sprites.push(Sprite::new(id, fx, fy, scale));
+                let (ox, oy) = (fx + 11.0 * scale, fy + 23.0 * scale);
+                let p = &self.hunt.player;
+                // CCX = (x / 512) * 2; one map pixel per 4 cells.
+                let ccx = ((p.x as i32 / 512) * 2) as f32 / 4.0;
+                let ccy = ((p.z as i32 / 512) * 2) as f32 / 4.0;
+                let dot = |x: f32, y: f32, c: [f32; 4]| {
+                    self.hud
+                        .rect(ox + x * scale, oy + y * scale, 2.0 * scale, 2.0 * scale, c)
+                };
+                let r = self.hunt.opts.view_r as f32 / 4.0;
+                for i in 0..48 {
+                    let a = i as f32 / 48.0 * std::f32::consts::TAU;
+                    let (px, py) = (ccx + a.cos() * r, ccy + a.sin() * r);
+                    sprites.extend(self.hud.rect(
+                        ox + (px + 1.0) * scale,
+                        oy + (py + 1.0) * scale,
+                        scale,
+                        scale,
+                        [0.0, 0.12, 0.0, 1.0],
+                    ));
+                    sprites.extend(self.hud.rect(
+                        ox + px * scale,
+                        oy + py * scale,
+                        scale,
+                        scale,
+                        [0.0, 0.56, 0.0, 1.0],
+                    ));
+                }
+                sprites.extend(dot(ccx + 1.0, ccy + 1.0, [0.25, 0.0, 0.0, 1.0]));
+                sprites.extend(dot(ccx, ccy, [0.97, 0.0, 0.0, 1.0]));
+                if self.hunt.opts.radar {
+                    for c in &self.hunt.herd.chars {
+                        if c.ai >= 10 && c.health > 0 && self.targets & (1 << c.ai) != 0 {
+                            sprites.extend(dot(
+                                c.pos[0] / 1024.0,
+                                c.pos[2] / 1024.0,
+                                [0.0, 0.97, 0.0, 1.0],
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        // The selected call's icon (top right) after pressing change-call.
+        if self.hunt.call_icon_time > 0 {
+            let i = (self.hunt.target_call - 10).max(0) as usize;
+            if let Some((id, w)) = self
+                .call_imgs
+                .get(i)
+                .copied()
+                .flatten()
+                .and_then(|id| self.hud.image(id).map(|im| (id, im.w as f32)))
+            {
+                sprites.push(Sprite::new(
+                    id,
+                    screen.0 as f32 - (10.0 + w) * scale,
+                    7.0 * scale,
+                    scale,
+                ));
             }
         }
         if self.hunt.show_exit() {
