@@ -255,8 +255,10 @@ patch = "patches/ultimate-c2/res-balance.patch"
 
 Workflow:
 1. User downloads the listed mods into `source/mods/` (or any folder).
-2. `c2rs recipe verify recipes/ultimate-c2.toml --mods <dir>` → reports missing/mismatched files with the URL to get each.
-3. `c2rs recipe build …` → merged pack (PC) or `c2-cook` → cooked pack (3DS).
+2. `c2-pc recipe verify recipes/ultimate-c2.toml --base <game> --mods <dir>` → reports missing/mismatched files with the URL to get each.
+3. `c2-pc recipe build …` / `c2-pc play <game> --recipe … --mods <dir>` → merged pack (PC) or `c2-cook` → cooked pack (3DS).
+
+Optional per mod: `folder = "..."` (folder name hint). `[[resolve]]` takes `path` (a file) or `entry = "characters:T-Rex"` (a `_RES.TXT` entry).
 
 ---
 
@@ -364,12 +366,16 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
         load order with requires/conflicts, file merge (last wins) and `_RES.TXT` merge by entry, merge report
   - [x] `c2-pc mod detect|build`, `c2-pc play GAME --mod DIR...` (combined game in the data dir, linked not copied)
   - [ ] test with 2-3 real add-on mods (owner to pick); zip backend (needs a zip crate — owner to approve)
-- [ ] M5 Recipes
+- [ ] M5 Recipes — **in progress**
+  - [x] recipe schema (§6) with `folder` hint and `[[resolve]] entry = "section:name"`; SHA-256 pinning
+  - [x] `c2-pc recipe verify|build|new|base`, `play --recipe`; unified-diff patches; `recipes/example.toml`,
+        `recipes/bases/c2-vanilla.toml` (hashes only)
+  - [ ] a first real recipe (needs real add-on mods, see M4)
 - [ ] M6 Cooker + 3DS boot
 - [ ] M7 Vanilla 3DS
 - [ ] M8 Modded 3DS
 
-_Last updated: 2026-10-18 — M4: mod system built and tested on synthetic mods; next: real add-on mods from the owner, zip support, then M5 recipes._
+_Last updated: 2026-10-18 — M5: recipes work end to end on synthetic mods; next: real add-on mods from the owner (M4/M5 sign-off), then M6 (cooker + 3DS boot)._
 
 
 note from user: quick headsup, the carnivores 2 datafile is copied direct from my library and includes re-shade files as well, please do not port the re-shade files to 3ds or the rust re-write as that would overcomplicate things dramatically

@@ -3,8 +3,8 @@
 This build supports **add-on mods**: data-only mods that add or replace files
 under `HUNTDAT/` and/or change `_RES.TXT` entries on top of vanilla (new or
 reworked dinosaurs, weapons, areas, textures, menus). Whole-game total
-conversions are out of scope. Recipes (sharing a mod combination by URL and
-file hash) arrive in M5.
+conversions are out of scope. A mod combination can be shared as a
+**recipe**: credits, download URLs and file hashes, never the mods themselves.
 
 ## Installing a mod
 Put each mod in its own folder (for example under `source/mods/`). The folder
@@ -77,6 +77,36 @@ conflicts = ["bad-mod-id"]      # refuse to load together
 [engine]
 features = []                   # reserved for exe-patch features
 ```
+
+## Recipes
+A recipe (`recipes/*.toml`, format in `recipes/example.toml`) names each mod
+with its credit, URL and the SHA-256 of every file it uses, plus the load
+order, explicit conflict winners and optional text patches of our own.
+
+```
+# You: make a recipe from mods you have (pins every file they use)
+cargo run --release -p c2-pc -- recipe new MOD_DIR... --base ../source/c2-original --id my-pack --out ../recipes/my-pack.toml
+# Anyone: download the listed mods into one folder, then
+cargo run --release -p c2-pc -- recipe verify ../recipes/my-pack.toml --base ../source/c2-original --mods DOWNLOADS
+cargo run --release -p c2-pc -- play ../source/c2-original --recipe ../recipes/my-pack.toml --mods DOWNLOADS
+```
+`verify` finds each mod by its `folder` hint, a folder named like its id, or
+the folder whose files match the hashes, and lists every missing or different
+file with the URL to get it. Only the listed files are used, so a recipe
+builds the same game everywhere. `recipe build ... --out DIR` writes the
+combined game to a folder instead of playing it.
+
+- `[[resolve]] path = "HUNTDAT/..."`, `winner = "mod-id"`: that mod's copy of
+  the file wins regardless of load order.
+- `[[resolve]] entry = "characters:T-Rex"`, `winner = "mod-id"`: only that
+  mod's change to the `_RES.TXT` entry applies.
+- `[[patches]] target = "_RES.TXT"`, `patch = "patches/x.patch"`: a unified
+  diff (`diff -u`, `git diff`) applied after merging; line endings don't
+  matter and hunks may have moved. Patches must sit inside the recipe folder.
+
+`base = "c2-vanilla"` is checked against `recipes/bases/c2-vanilla.toml`
+(hashes of every vanilla `HUNTDAT` file, from `recipe base`). A different
+game release only produces a warning.
 
 ## Checking a mod's files
 `c2-parity scan <dir>` parses every `.CAR`, `.3DF`, `.MAP`, `.RSC` and

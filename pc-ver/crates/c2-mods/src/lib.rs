@@ -1,17 +1,19 @@
 //! Add-on mods: manifests (`mod.toml`), auto-detection against vanilla,
-//! load order, file and `_RES.TXT` merging, the merge report, and building
-//! a combined game folder. Recipes come in M5.
+//! load order, file and `_RES.TXT` merging, the merge report, combined game
+//! folders, and recipes (mod combinations shared as URLs and file hashes).
 
 pub mod detect;
 pub mod manifest;
 pub mod pack;
+pub mod patch;
+pub mod recipe;
 pub mod res_merge;
 pub mod resolve;
 
 use std::path::PathBuf;
 
 pub use manifest::Manifest;
-pub use pack::{build, load_mod, materialize, vanilla, ModSource, Pack};
+pub use pack::{build, build_with, load_mod, materialize, vanilla, BuildOptions, ModSource, Pack};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ModError {
@@ -33,6 +35,8 @@ pub enum ModError {
     MissingFile(PathBuf),
     #[error(transparent)]
     Resolve(#[from] resolve::ResolveError),
+    #[error("recipe: {0}")]
+    Recipe(String),
     #[error("{0} is not empty and was not built by c2rs; refusing to overwrite it")]
     NotAPack(PathBuf),
 }

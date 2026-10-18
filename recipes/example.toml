@@ -1,0 +1,44 @@
+# An example recipe: the format, not a real mod pack. A recipe lists mods by
+# credit, download URL and the SHA-256 of each file it uses; it never contains
+# mod files. See docs/MODDING.md.
+#
+#   c2-pc recipe verify ../recipes/example.toml --base ../source/c2-original --mods ../source/mods
+#   c2-pc play ../source/c2-original --recipe ../recipes/example.toml --mods ../source/mods
+
+[recipe]
+id = "example"
+name = "Example pack"
+version = "0.1"
+base = "c2-vanilla"          # checked against bases/c2-vanilla.toml
+
+[[mods]]
+id = "example-raptors"
+credit = "Original Author"
+url = "https://example.com/mod-page"
+# folder = "Raptor Pack v2"  # optional: the folder name under --mods
+files = { "HUNTDAT/VELO2.CAR" = "sha256:0000000000000000000000000000000000000000000000000000000000000000" }
+
+[[mods]]
+id = "example-textures"
+credit = "Other Author"
+url = "https://example.com/textures"
+files = { "HUNTDAT/MENU/MENUM.TGA" = "sha256:0000000000000000000000000000000000000000000000000000000000000000" }
+
+[load_order]
+order = ["example-textures", "example-raptors"]
+
+# Both mods could provide the same file; this one picks the winner.
+[[resolve]]
+path = "HUNTDAT/MENU/MENUM.TGA"
+winner = "example-textures"
+
+# A _RES.TXT entry changed by two mods: keep one mod's version.
+# [[resolve]]
+# entry = "characters:Velociraptor"
+# winner = "example-raptors"
+
+# Our own small edit, applied after merging (a unified diff, path relative to
+# this file).
+# [[patches]]
+# target = "_RES.TXT"
+# patch = "patches/example/res-balance.patch"

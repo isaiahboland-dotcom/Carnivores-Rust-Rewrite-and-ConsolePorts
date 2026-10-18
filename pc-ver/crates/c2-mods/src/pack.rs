@@ -10,7 +10,7 @@ use c2_vfs::{key, Backend, DirBackend, MemBackend, Vfs, VfsError};
 
 use crate::detect::{detect, is_data, read_res, RES_TXT};
 use crate::manifest::{slug, Manifest};
-use crate::res_merge::{merge, Change, Merged};
+use crate::res_merge::{block_id, merge, Change, Merged};
 use crate::resolve::order;
 use crate::ModError;
 
@@ -148,18 +148,72 @@ pub struct Pack {
     pub vfs: Vfs,
     pub vanilla_res: ResTxt,
     pub merged: Merged,
-    /// Mods in load order.
+    /// Mods in load order (VFS layers `1..=mods.len()`; later layers are
+    /// generated files).
     pub mods: Vec<ModSource>,
+    /// Recipe resolutions and patches, for the report.
+    pub notes: Vec<String>,
+}
+
+/// Recipe decisions applied while building.
+#[derive(Debug, Clone, Default)]
+pub struct BuildOptions {
+    /// `(path, mod id)`: this mod's copy of the file wins.
+    pub file_winners: Vec<(String, String)>,
+    /// `(section, entry name, mod id)`: only this mod's change to the entry applies.
+    pub res_winners: Vec<(String, String, String)>,
+    /// `(target path, patch name, unified diff)`, applied in order after merging.
+    pub patches: Vec<(String, String, String)>,
 }
 
 /// Layers the mods (in dependency order) over vanilla and merges `_RES.TXT`.
 pub fn build(base: &Path, mods: Vec<ModSource>) -> Result<Pack, ModError> {
+    build_with(base, mods, &BuildOptions::default())
+}
+
+/// [`build`] with a recipe's resolutions and patches.
+pub fn build_with(
+    base: &Path,
+    mods: Vec<ModSource>,
+    opts: &BuildOptions,
+) -> Result<Pack, ModError> {
     let mut vfs = vanilla(base)?;
+    let mut notes = Vec::new();
     let vanilla_res = read_res(&vfs.read(RES_TXT)?)?;
     let manifests: Vec<Manifest> = mods.iter().map(|m| m.manifest.clone()).collect();
     let ord = order(&manifests)?;
     let mut slots: Vec<Option<ModSource>> = mods.into_iter().map(Some).collect();
-    let mods: Vec<ModSource> = ord.into_iter().filter_map(|i| slots[i].take()).collect();
+    let mut mods: Vec<ModSource> = ord.into_iter().filter_map(|i| slots[i].take()).collect();
+    // File winners: drop the file from every other mod.
+    for (path, winner) in &opts.file_winners {
+        let k = key(path);
+        let has = |m: &ModSource| m.files.iter().any(|f| key(f) == k);
+        let Some(w) = mods.iter().find(|m| &m.manifest.info.id == winner) else {
+            return Err(ModError::Recipe(format!(
+                "resolve {path}: no mod '{winner}'"
+            )));
+        };
+        if !has(w) {
+            return Err(ModError::Recipe(format!(
+                "resolve {path}: '{winner}' does not provide it"
+            )));
+        }
+        let mut losers = Vec::new();
+        for m in mods.iter_mut().filter(|m| &m.manifest.info.id != winner) {
+            if has(m) {
+                m.files.retain(|f| key(f) != k);
+                losers.push(m.manifest.info.id.clone());
+            }
+        }
+        notes.push(format!(
+            "file `{path}`: `{winner}` chosen by the recipe over {}",
+            if losers.is_empty() {
+                "nobody".into()
+            } else {
+                losers.join(", ")
+            }
+        ));
+    }
     for m in &mods {
         vfs.push(
             m.manifest.info.id.clone(),
@@ -169,21 +223,64 @@ pub fn build(base: &Path, mods: Vec<ModSource>) -> Result<Pack, ModError> {
             }),
         );
     }
-    let changes: Vec<(String, Vec<Change>)> = mods
+    let mut changes: Vec<(String, Vec<Change>)> = mods
         .iter()
         .map(|m| (m.manifest.info.id.clone(), m.res_changes.clone()))
         .collect();
+    // Entry winners: drop other mods' changes to that entry.
+    for (section, name, winner) in &opts.res_winners {
+        let sec = section.to_ascii_lowercase();
+        let id = name.trim().to_ascii_lowercase();
+        let mut targets = vec![(sec.clone(), format!("+{id}"))];
+        if let Some(i) = vanilla_res.section(section).and_then(|s| {
+            s.blocks
+                .iter()
+                .position(|b| block_id(b).as_deref() == Some(&id))
+        }) {
+            targets.push((sec.clone(), format!("#{i}")));
+        }
+        if !changes.iter().any(|(m, _)| m == winner) {
+            return Err(ModError::Recipe(format!(
+                "resolve {section}:{name}: no mod '{winner}'"
+            )));
+        }
+        for (m, cs) in changes.iter_mut().filter(|(m, _)| m != winner) {
+            let before = cs.len();
+            cs.retain(|c| !targets.contains(&c.target()));
+            if cs.len() != before {
+                notes.push(format!(
+                    "`_RES.TXT` {section} '{name}': `{winner}` chosen by the recipe over `{m}`"
+                ));
+            }
+        }
+    }
     let merged = merge(&vanilla_res, &changes);
     if changes.iter().any(|(_, c)| !c.is_empty()) {
         let mut mem = MemBackend::new();
         mem.insert("HUNTDAT/_RES.TXT", merged.res.write().into_bytes());
-        vfs.push("merged _RES.TXT", Box::new(mem));
+        vfs.push("(merged _RES.TXT)", Box::new(mem));
+    }
+    for (target, name, diff) in &opts.patches {
+        let path = if key(target).starts_with("huntdat/") {
+            target.clone()
+        } else {
+            format!("HUNTDAT/{target}")
+        };
+        let text = String::from_utf8_lossy(&vfs.read(&path)?).into_owned();
+        let patched = crate::patch::apply(&text, diff)
+            .map_err(|e| ModError::Recipe(format!("patch {name} on {path}: {e}")))?;
+        let spelled = vfs.resolve(&path).map_or(path.clone(), |r| r.path.clone());
+        let mut mem = MemBackend::new();
+        mem.insert(&spelled, patched.into_bytes());
+        vfs.push(format!("(patch {name})"), Box::new(mem));
+        notes.push(format!("patch `{name}` applied to `{spelled}`"));
     }
     Ok(Pack {
         vfs,
         vanilla_res,
         merged,
         mods,
+        notes,
     })
 }
 
@@ -197,7 +294,7 @@ impl Pack {
                 let mods: Vec<String> = r
                     .providers
                     .iter()
-                    .filter(|&&l| l > 0 && layers[l].name != "merged _RES.TXT")
+                    .filter(|&&l| l > 0 && l <= self.mods.len())
                     .map(|&l| layers[l].name.clone())
                     .collect();
                 (mods.len() > 1).then(|| (r.path.clone(), mods))
@@ -262,6 +359,12 @@ impl Pack {
                 c.mods.last().map_or("", String::as_str)
             );
         }
+        if !self.notes.is_empty() {
+            let _ = writeln!(s, "\n## Recipe decisions\n");
+            for n in &self.notes {
+                let _ = writeln!(s, "- {n}");
+            }
+        }
         let _ = writeln!(s, "\n## `_RES.TXT` changes\n");
         if self.merged.applied.is_empty() {
             let _ = writeln!(s, "None (vanilla `_RES.TXT`).");
@@ -273,7 +376,7 @@ impl Pack {
         let layers = self.vfs.layers();
         let mut any = false;
         for (_, r) in self.vfs.files() {
-            if r.layer == 0 || layers[r.layer].name == "merged _RES.TXT" {
+            if r.layer == 0 || r.layer > self.mods.len() {
                 continue;
             }
             any = true;

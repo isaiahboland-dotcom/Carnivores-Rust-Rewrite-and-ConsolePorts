@@ -2,6 +2,29 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-18 — M5: recipes
+
+**A recipe pins exactly the files it uses** (`sha256:` per file) and the
+build takes only those from each mod, so the same recipe produces the same
+game for everyone, whatever else their download contains. `recipe new`
+pins a mod's changed files plus its `_RES.TXT` when that changes anything.
+
+**Finding mods:** `folder` hint, then a folder whose name slugs to the id,
+then the folder with the most hash matches. Download folder names vary;
+hashes don't.
+
+**Base check only warns.** `recipes/bases/c2-vanilla.toml` holds the SHA-256
+of the owner's 192 vanilla `HUNTDAT` files (hashes, no content). Other
+releases of the game will differ in places; mods still apply.
+
+**Schema additions** (README §6 updated): optional `folder` per mod, and
+`[[resolve]] entry = "section:name"` for `_RES.TXT` conflicts (the README
+only had file paths). Patches are unified diffs, matched without `\r` and
+allowed to drift from their header line; they must live inside the recipe
+folder. Our own small applier, not a crate (≈100 lines, tested).
+
+**Dependency:** `sha2` (RustCrypto) for SHA-256.
+
 ## 2026-10-18 — M4: mod system
 
 **Combined games are materialised, not read through the VFS at run time.**
