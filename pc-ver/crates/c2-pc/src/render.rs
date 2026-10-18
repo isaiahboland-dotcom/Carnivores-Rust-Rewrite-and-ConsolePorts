@@ -37,6 +37,8 @@ pub struct FrameParams {
     pub fog: (f32, f32),
     pub night_vision: bool,
     pub time_s: f32,
+    /// `(OptBrightness + 128) / 256`, applied to every texture.
+    pub brightness: f32,
 }
 
 pub struct Globals {
@@ -77,7 +79,12 @@ impl Globals {
             cam_pos: f.eye.extend(1.0).to_array(),
             fog_color: [f.fog_rgb[0], f.fog_rgb[1], f.fog_rgb[2], 1.0],
             fog: [f.fog.0, f.fog.1, 0.0, 0.0],
-            misc: [f32::from(u8::from(f.night_vision)), f.time_s, 0.0, 0.0],
+            misc: [
+                f32::from(u8::from(f.night_vision)),
+                f.time_s,
+                f.brightness,
+                0.0,
+            ],
         };
         gpu.queue.write_buffer(&self.buf, 0, bytemuck::bytes_of(&d));
     }

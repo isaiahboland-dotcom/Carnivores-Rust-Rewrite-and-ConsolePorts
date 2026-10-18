@@ -33,7 +33,7 @@ data dir; on first run every `trophy0N.sav` in the game folder is copied
 there (the game folder is never written). Key bindings, mouse sensitivity,
 reverse mouse, units, aggressiveness, density, sensitivity and view range come
 from the save and can be changed in Options; `ctViewR = 42 + OptViewR/8*2`.
-Options the port doesn't use (resolution, textures, fog, shadows, brightness,
+Options the port doesn't use (resolution, textures, fog, shadows,
 renderer, sound device) are kept in the file but not shown.
 
 **Trophy room** is the original's `TrophyMode` (`TROPHY.MAP`): trophies stand
@@ -48,6 +48,13 @@ in a hunt the plaque (`TROPHY_G.TGA`) shows for 20 s, as in the original.
 machine in `c2-core`). It is tied to the PC art and mouse; the parts the 3DS
 needs (budget, choices, player list) move to `c2-core` in M6/M7, when a
 second front end shows what is actually shared.
+
+**Brightness** is `BrightenTexture` done in the shader: each 5-bit channel
+times `(OptBrightness + 128) / 256`, floored and capped, plus the same factor
+on the sky/fog colour. **Pause** is `VK_PAUSE`, and `P` unless a binding uses
+it (many keyboards have no Pause key). **Health recovery** (`MyHealth +=
+TimeDt * 4` while alive and not paused) was missing until now; without it
+drowning was 1.5x too fast.
 
 **Death returns to the menu** (discarding the hunt's trophies, as the
 original's `LoadTrophy` on exit does) when started from the menu; `c2-pc hunt`

@@ -315,6 +315,8 @@ pub struct Hunt {
     pub clock: (i32, i32, i32, i32, i32),
     /// The exit prompt is showing (`EXITMODE`).
     pub exit_prompt: bool,
+    /// `PAUSE`: nothing moves while the hunter is alive.
+    pub paused: bool,
     /// Countdown to leaving after confirming (`ExitTime`), ms.
     exit_time: i32,
     outcome: Option<Outcome>,
@@ -407,6 +409,7 @@ impl Hunt {
             room,
             clock: (2026, 1, 1, 12, 0),
             exit_prompt: false,
+            paused: false,
             exit_time: 0,
             outcome: None,
             path: 0.0,
@@ -474,8 +477,16 @@ impl Hunt {
         dt: i32,
         out: &mut Vec<GameEvent>,
     ) {
+        // The main loop skips processing while paused, unless dead.
+        if self.paused && self.health > 0 {
+            return;
+        }
         self.real_time += dt;
         self.takt = self.takt.wrapping_add(1);
+        // ProcessSyncro: health recovers 4 per ms while alive.
+        if self.health > 0 {
+            self.health = (self.health + dt * 4).min(MAX_HEALTH);
+        }
 
         if let Some(d) = self.death {
             self.death_cam(area, d, dt);
@@ -1614,6 +1625,10 @@ impl Hunt {
             self.outcome = Some(Outcome::Exited);
             return;
         }
+        if self.paused {
+            self.paused = false;
+            return;
+        }
         if self.exit_time == 0 {
             self.exit_prompt = !self.exit_prompt;
         }
@@ -1625,6 +1640,12 @@ impl Hunt {
             self.exit_time = if self.health > 0 { 4000 } else { 1 };
             self.exit_prompt = false;
         }
+    }
+
+    /// The pause key: toggle `PAUSE`, closing the exit prompt.
+    pub fn toggle_pause(&mut self) {
+        self.paused = !self.paused;
+        self.exit_prompt = false;
     }
 
     /// `ProcessTrophy`: the plaque of the trophy the hunter stands in front
@@ -2108,5 +2129,21 @@ mod tests {
         h.press_escape();
         assert_eq!(h.outcome(), Some(Outcome::Exited));
         assert_eq!(h.room.total.time, 0.0);
+    }
+
+    #[test]
+    fn pause_freezes_and_health_recovers() {
+        let (area, mut h, _car) = setup(true);
+        let mut ev = Vec::new();
+        h.health = MAX_HEALTH - 100;
+        h.tick(&area, &[], &HuntInput::default(), 10, &mut ev);
+        assert_eq!(h.health, MAX_HEALTH - 60);
+        h.toggle_pause();
+        let (t, pos) = (h.real_time, h.herd.chars[0].pos);
+        h.tick(&area, &[], &HuntInput::default(), 10, &mut ev);
+        assert_eq!((h.real_time, h.health), (t, MAX_HEALTH - 60));
+        assert_eq!(h.herd.chars[0].pos, pos);
+        h.press_escape();
+        assert!(!h.paused && !h.exit_prompt);
     }
 }

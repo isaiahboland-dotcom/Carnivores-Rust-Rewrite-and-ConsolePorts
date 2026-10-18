@@ -82,6 +82,7 @@ pub struct HuntView {
     /// The trophy plaque (`TROPHY.TGA` in the room, `TROPHY_G.TGA` after a
     /// kill) and the room's "Esc to exit" banner (`TROPHY_E.TGA`).
     plaque_img: Option<usize>,
+    pause_img: Option<usize>,
     trophy_exit_img: Option<usize>,
     setup: HuntSetup,
     /// Camera position before the latest tick, for interpolation.
@@ -140,6 +141,7 @@ impl HuntView {
             },
         );
         let trophy_exit_img = menu_pic(&mut hud, gpu, &huntdat, "TROPHY_E.TGA");
+        let pause_img = menu_pic(&mut hud, gpu, &huntdat, "PAUSE.TGA");
         // The map: the frame with the area overview painted in at (11, 23).
         let map_img = find_file(&huntdat, "MENU")
             .and_then(|m| find_file(&m, "MAPFRAME.TGA"))
@@ -182,6 +184,7 @@ impl HuntView {
         let mut hunt = Self::new_hunt(&view, species, &weapon_infos, &weapon_anims, seed, &setup);
         hunt.ship_anim_ms = dinos.ship_anim_ms();
         view.radius = hunt.opts.view_r as u32;
+        view.brightness = (hunt.room.options.brightness + 128) as f32 / 256.0;
         let prev_cam = hunt.camera().0;
         let effects = EffectsView::new(gpu, view.globals(), &huntdat);
         Ok(Self {
@@ -196,6 +199,7 @@ impl HuntView {
             map_img,
             call_imgs,
             plaque_img,
+            pause_img,
             trophy_exit_img,
             setup,
             prev_cam,
@@ -650,6 +654,33 @@ impl Scene for HuntView {
         if input.pressed(KeyCode::KeyY) || input.pressed(KeyCode::Enter) {
             self.hunt.confirm_exit();
         }
+        // Pause; P too (laptops lack the key) unless P is bound to something.
+        let p_bound = {
+            let k = &self.hunt.room.options.keys;
+            [
+                k.forward,
+                k.backward,
+                k.up,
+                k.down,
+                k.left,
+                k.right,
+                k.fire,
+                k.show,
+                k.strafe_left,
+                k.strafe_right,
+                k.strafe,
+                k.jump,
+                k.run,
+                k.crouch,
+                k.call,
+                k.change_call,
+                k.binoculars,
+            ]
+            .contains(&80)
+        };
+        if input.pressed(KeyCode::Pause) || (!p_bound && input.pressed(KeyCode::KeyP)) {
+            self.hunt.toggle_pause();
+        }
         if input.pressed(KeyCode::KeyN) {
             self.hunt.exit_prompt = false;
         }
@@ -926,6 +957,16 @@ impl Scene for HuntView {
                 };
                 sprites.push(Sprite::new(id, x, y, scale));
                 sprites.extend(self.plaque_text(slot, x, y, scale));
+            }
+        }
+        if self.hunt.paused {
+            if let Some((id, w, h)) = self
+                .pause_img
+                .and_then(|i| self.hud.image(i).map(|im| (i, im.w, im.h)))
+            {
+                let x = (screen.0 as f32 - w as f32 * scale) / 2.0;
+                let y = (screen.1 as f32 - h as f32 * scale) / 2.0;
+                sprites.push(Sprite::new(id, x, y, scale));
             }
         }
         if self.hunt.show_exit() {

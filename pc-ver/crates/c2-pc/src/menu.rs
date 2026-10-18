@@ -181,7 +181,10 @@ const GAME_OPTS: [Opt; 4] = [
     Opt::Toggle("Measurement", ["Metric", "US"], |s| &mut s.options.sys),
 ];
 
-const VIDEO_OPTS: [Opt; 1] = [Opt::Slider("View range", |s| &mut s.options.view_r)];
+const VIDEO_OPTS: [Opt; 2] = [
+    Opt::Slider("View range", |s| &mut s.options.view_r),
+    Opt::Slider("Brightness", |s| &mut s.options.brightness),
+];
 
 const MOUSE_OPTS: [Opt; 2] = [
     Opt::Slider("Mouse sensitivity", |s| &mut s.options.mouse_sens),

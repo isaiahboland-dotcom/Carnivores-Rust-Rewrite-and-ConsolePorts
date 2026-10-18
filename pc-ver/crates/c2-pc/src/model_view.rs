@@ -236,6 +236,7 @@ impl Scene for ModelView {
                 fog: (1e9, 2e9),
                 night_vision: false,
                 time_s: 0.0,
+                brightness: 1.0,
             },
         );
         let inst = [Instance {

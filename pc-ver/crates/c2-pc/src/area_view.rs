@@ -95,6 +95,8 @@ pub struct AreaView {
     /// Field-of-view magnification (binoculars, scope).
     pub zoom: f32,
     pub radius: u32,
+    /// `(OptBrightness + 128) / 256`: textures, sky and fog colour.
+    pub brightness: f32,
     start: Instant,
     pub fps: f32,
 }
@@ -212,6 +214,7 @@ impl AreaView {
             fly: true,
             zoom: 1.0,
             radius: 74,
+            brightness: 1.0,
             start: Instant::now(),
             fps: 0.0,
         })
@@ -271,9 +274,12 @@ impl Scene for AreaView {
     }
 
     fn clear_color(&self) -> [f64; 3] {
-        self.area
-            .sky_rgb()
-            .map(|c| f64::from(c.clamp(0, 255)) / 255.0)
+        self.area.sky_rgb().map(|c| {
+            (f64::from(c) * f64::from(self.brightness))
+                .clamp(0.0, 255.0)
+                .floor()
+                / 255.0
+        })
     }
 
     fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, screen: (u32, u32)) {
@@ -307,6 +313,7 @@ impl AreaView {
                 fog: (far * 0.6, far),
                 night_vision: time.night_vision(),
                 time_s: t.as_secs_f32(),
+                brightness: self.brightness,
             },
         );
         self.sky.draw(

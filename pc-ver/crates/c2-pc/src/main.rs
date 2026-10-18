@@ -39,7 +39,7 @@ play:  the menus; a hunt returns to them
 hunt:  click to capture mouse; keys follow the player's bindings (default WASD move, mouse look,
        LMB fire, E show/hide weapon, 1-6 choose weapon, Shift toggles run, X crouch, Space jump/swim,
        arrows turn/look, B binoculars, Tab map, Alt call, C change call),
-       Esc exit prompt (Y leave and save, R restart); trophy room: R removes a trophy, Esc leaves";
+       Pause/P pause, Esc exit prompt (Y leave and save, R restart); trophy room: R removes a trophy, Esc leaves";
 
 /// Flags followed by a value (`--flag VALUE`).
 const VALUE_FLAGS: &[&str] = &[

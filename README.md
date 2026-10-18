@@ -93,7 +93,7 @@ hunt follow the player's bindings (Options > Controls).
 
 Hunt mode directly (debugging): `cargo run --release -p c2-pc -- hunt ../source/c2-original/HUNTDAT/AREAS/AREA1.MAP` —
 click to capture the mouse, `WASD` move, mouse look, `LMB` fire, `E` show/hide weapon, `1`-`6` choose weapon,
-`B` binoculars (`+`/`-` power), `Tab` map, `Alt` call (`C` switch call), `Shift` toggles run, `X` crouch, `Space` jump/swim, arrows turn/look, `Esc` exit prompt (`Y` leave and save, `R` restart).
+`B` binoculars (`+`/`-` power), `Tab` map, `Alt` call (`C` switch call), `Shift` toggles run, `X` crouch, `Space` jump/swim, arrows turn/look, `Pause`/`P` pause, `Esc` exit prompt (`Y` leave and save, `R` restart).
 Without the menu, pick hunt targets with `--target 18` (AI numbers, comma-separated, or `all`), the hunter with `--player N`;
 `hunt .../TROPHY.MAP` opens the trophy room (`R` removes the trophy in front of you, `Esc` leaves).
 Saves go to `~/.local/share/c2rs/trophy0N.sav` (first run copies your game's saves; the game folder is never written).
@@ -353,7 +353,8 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
         hunt setup (area, time, targets, weapons, equipment, tranquilizer, observer; price budget), options (game,
         view range, key bindings, mouse), credits, quit; `c2-pc play`
   - [x] trophy room (`TrophyMode`): trophies on display with plaques, `R` removes; kill plaque during hunts
-  - [ ] side-by-side check against the retail game; pause; brightness option
+  - [x] pause (`Pause`/`P`, `PAUSE.TGA`), brightness option (`BrightenTexture`), health recovery (`ProcessSyncro`)
+  - [ ] side-by-side check against the retail game (needs the owner's eyes; see DECISIONS for what to compare)
 - [ ] M4 Mod system
 - [ ] M5 Recipes
 - [ ] M6 Cooker + 3DS boot
