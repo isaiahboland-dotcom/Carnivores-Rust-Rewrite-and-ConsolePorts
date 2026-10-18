@@ -6,8 +6,10 @@
 
 use std::path::{Path, PathBuf};
 
+mod strstr;
+
 use anyhow::{bail, Context, Result};
-use c2_formats::{car, map, res_txt::ResTxt, rsc, three_df};
+use c2_formats::{car, map, res_txt::ResTxt, rsc, tga, three_df, wav};
 
 #[derive(Default)]
 struct Tally {
@@ -96,6 +98,33 @@ fn check(path: &Path) -> Result<Option<String>> {
                 r.ambients.len()
             )
         }
+        Some("tga") => {
+            let d = data()?;
+            let p = tga::parse(&d)?;
+            let mut s = format!("{}x{}", p.width, p.height);
+            // For the vanilla encoding, our pixels must equal exactly what
+            // LoadPictureTGA reads: raw u16s from offset 18, rows flipped.
+            if d.get(..3) == Some(&[0, 0, 2]) && d.get(16) == Some(&16) && d[17] & 0x20 == 0 {
+                let ours = tga::write(&p);
+                if d.get(18..ours.len()) != ours.get(18..) {
+                    bail!("pixels differ from the original loader's reading");
+                }
+            } else {
+                s.push_str(&format!(
+                    " (NON-VANILLA encoding: type {}, {}-bit)",
+                    d[2], d[16]
+                ));
+            }
+            s
+        }
+        Some("wav") => {
+            let d = data()?;
+            let w = wav::parse(&d)?;
+            match w.format {
+                Some(f) if f == wav::WavFormat::VANILLA => format!("{} bytes PCM", w.pcm.len()),
+                f => format!("{} bytes PCM, NON-VANILLA format {f:?}", w.pcm.len()),
+            }
+        }
         Some("txt")
             if path
                 .file_name()
@@ -109,11 +138,15 @@ fn check(path: &Path) -> Result<Option<String>> {
                 bail!("re-parse of written _RES.TXT differs");
             }
             let data = r.to_data();
+            let faithful = strstr::parse(&String::from_utf8_lossy(&d));
             let mut s = format!(
                 "{} weapons, {} characters",
                 data.weapons.len(),
                 data.characters.len()
             );
+            for w in strstr::diff(&data, &faithful) {
+                s.push_str(&format!("\n      strstr-diff: {w}"));
+            }
             for w in &r.warnings {
                 s.push_str(&format!("\n      warning: {w}"));
             }
@@ -144,7 +177,11 @@ fn main() -> Result<()> {
                 Ok(None) => {}
                 Ok(Some(s)) => {
                     t.ok += 1;
-                    if verbose {
+                    if verbose
+                        || s.contains("NON-VANILLA")
+                        || s.contains("warning")
+                        || s.contains("strstr-diff")
+                    {
                         println!("ok   {}: {s}", f.display());
                     }
                 }

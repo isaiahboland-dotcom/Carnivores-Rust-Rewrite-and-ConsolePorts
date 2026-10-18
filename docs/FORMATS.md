@@ -163,7 +163,9 @@ Original parsing rules (and how `c2-formats` matches them):
   text between the first and last quote. **Equivalent on all known data.**
 - Keys are matched with `strstr` (substring). We match exact keys plus the
   aliases the substring rule produced in practice (`hearK`→`hear`,
-  `lookK`→`look`). **Deviation**, see `DECISIONS.md`.
+  `lookK`→`look`). **Deviation**, see `DECISIONS.md`. `c2-parity` includes a
+  substring-faithful copy of the original reader and diffs every field; no
+  known file differs.
 - `danger` is true if the line exists at all (`danger = FALSE` is still true).
   **Matched.**
 - `trace` is stored as `value - 1` (`TraceC`). We keep the written value.
@@ -182,10 +184,27 @@ mods that add their own keys survive a parse/merge/write cycle.
 
 ---
 
+## `.TGA` — images (`LoadPictureTGA`)
+The original reads `u16 width, height` at offset 12, then `width × height`
+raw `u16` pixels from offset 18, and always flips rows (assumes bottom-up). It
+ignores the ID length, image type, bit depth and origin bit.
+
+All 64 vanilla files are type 2 (uncompressed), 16-bit, no ID field,
+bottom-up (descriptor 0 or 1). For those, `c2_formats::tga` produces exactly
+the original's pixels (checked by `c2-parity scan`). It also honours the
+header for other encodings (ID field, top-left origin, RLE type 10, 24/32-bit),
+which the original would have misread. Pixels are `ARRRRRGGGGGBBBBB`; the top
+bit is kept as stored (the D3D path drops it in `conv_565`).
+
+## `.WAV` — sounds (`LoadWav`)
+The original seeks to offset 36, scans byte-by-byte for `data`, reads an
+`i32` length and that many PCM bytes. It never reads `fmt `; the audio layer
+assumes **16-bit mono 22050 Hz**, which all 41 vanilla files are.
+`c2_formats::wav` does the same scan, clamps an over-long length to the bytes
+present (as `ReadFile` would), and also reports the `fmt ` chunk so the cooker
+can flag or resample anything else.
+
 ## Not yet parsed
-- `.TGA` — 16-bit uncompressed; the original skips straight to offset 18
-  (ignores the ID field) and flips rows (`LoadPictureTGA`). M2.
-- `.WAV` — the original scans for the `data` chunk from offset 36 (`LoadWav`). M2/M3.
 - `MENU/*.RAW` — menu hit-maps. M3.
 - `trophy*.sav` — saves. M3.
 - Map-editor side files in some mods (`.grp .lai .mtc .prj`) — not loaded by the game.

@@ -2,6 +2,16 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-17 — TGA/WAV: read the header instead of assuming it
+
+The original TGA loader assumes 16-bit uncompressed bottom-up and ignores the
+header; the WAV loader assumes 16-bit mono 22050 Hz and ignores `fmt `. For
+every vanilla file our output is identical to the original's (checked by
+`c2-parity scan`). For files in other encodings (seen in some mods: 24/32-bit,
+RLE and ID-field TGAs, a stereo 16 kHz WAV) we decode correctly instead of
+reproducing the original's garbage, and report the format so the cooker can
+convert it. This only changes behaviour for files the original misread.
+
 ## 2026-10-17 — Add-on scope; MIT license
 
 **The public build targets add-on mods**: small, data-only mods that layer
@@ -40,9 +50,9 @@ matched against the retail `carn2.exe` by observation, and noted here.
 `strstr(line, "ai")` etc., so any line containing the substring sets the field
 — e.g. a character named `'Maiasaura'` would have `ai` reset to 0. We match
 whole keys, plus the aliases the substring rule actually made work in shipped
-data (`hearK`, `lookK`). TODO: diff a `strstr`-faithful parse against ours
-over all known `_RES.TXT` files to confirm no shipped data relies on other
-substring matches. Unknown keys are preserved (`extra`) so mod data survives merge/write.
+data (`hearK`, `lookK`). Verified: `c2-parity` carries a faithful `strstr`
+copy of the original reader and diffs every typed field; no `_RES.TXT` we
+have produces any difference, and none would trigger the original's halt. Unknown keys are preserved (`extra`) so mod data survives merge/write.
 
 **Parsers return on-disk values; transforms live in the engine.** Vertex
 `*2`/z-flip, `BrightenTexture`, face re-sorting, `TraceC = trace - 1`, and

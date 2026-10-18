@@ -312,8 +312,9 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
   - [x] `_RES.TXT`, `.CAR`, `.3DF`, `.MAP`, `.RSC` parsers + writers
   - [x] synthetic round-trip tests
   - [x] all 42 vanilla files parse and round-trip byte-for-byte via `c2-parity scan`
-  - [ ] `.TGA`, `.WAV`, menu `.RAW`, saves
-  - [ ] `strstr`-faithful `_RES.TXT` diff check
+  - [x] `.TGA`, `.WAV` (all 64 + 41 vanilla files match the original loaders)
+  - [x] `strstr`-faithful `_RES.TXT` diff check: no differences
+  - [ ] menu `.RAW`, saves (deferred to M3, where they're used)
 - [ ] M2 Viewer
 - [ ] M3 Vanilla PC
 - [ ] M4 Mod system
@@ -322,7 +323,7 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
 - [ ] M7 Vanilla 3DS
 - [ ] M8 Modded 3DS
 
-_Last updated: 2026-10-17 — M0 done, M1 binary formats done; next: TGA/WAV, then M2 viewer._
+_Last updated: 2026-10-17 — M1 formats done except menu RAW/saves (M3); next: M2 viewer._
 
 
 note from user: quick headsup, the carnivores 2 datafile is copied direct from my library and includes re-shade files as well, please do not port the re-shade files to 3ds or the rust re-write as that would overcomplicate things dramatically
