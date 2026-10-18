@@ -69,9 +69,11 @@ pub struct Area {
     pub landings: Vec<(u16, u16)>,
     /// `OMap` entries naming a model the RSC doesn't have (the original halts).
     pub bad_object_cells: usize,
+    /// Collision data per RSC object, in world units.
+    pub shapes: Vec<crate::collide::ObjectShape>,
 }
 
-fn idx(x: usize, y: usize) -> usize {
+pub(crate) fn idx(x: usize, y: usize) -> usize {
     y * MAP_SIZE + x
 }
 
@@ -80,7 +82,13 @@ impl Area {
         let mut landings = Vec::new();
         let mut bad = 0;
         create_tmap(&mut map, &rsc, &mut landings, &mut bad);
+        let shapes = rsc
+            .objects
+            .iter()
+            .map(crate::collide::ObjectShape::new)
+            .collect();
         Self {
+            shapes,
             map,
             rsc,
             time,
@@ -106,6 +114,36 @@ impl Area {
             l.push((66, 84 - i * 3));
         }
         self.landings = l;
+    }
+
+    /// A flat, empty 1024x1024 area at height `h` (tests and tools).
+    pub fn flat(h: u8) -> Self {
+        use c2_formats::map::{CELLS, HALF_CELLS};
+        let map = Map {
+            height: vec![h; CELLS],
+            texture1: vec![0; CELLS],
+            texture2: vec![0; CELLS],
+            objects: vec![NO_OBJECT; CELLS],
+            flags: vec![0; CELLS],
+            light: [vec![128; CELLS], vec![128; CELLS], vec![128; CELLS]],
+            water: vec![NO_WATER; CELLS],
+            object_height: vec![0; CELLS],
+            fogs: vec![0; HALF_CELLS],
+            ambient: vec![0; HALF_CELLS],
+        };
+        let rsc = Rsc {
+            fade_rgb: [[0; 3]; 3],
+            trans_rgb: [[0; 3]; 3],
+            textures: vec![],
+            objects: vec![],
+            skies: [vec![], vec![], vec![]],
+            sky_map: vec![],
+            fogs: vec![],
+            random_sounds: vec![],
+            ambients: vec![],
+            waters: vec![],
+        };
+        Self::new(map, rsc, TimeOfDay::Day)
     }
 
     pub fn light_map(&self) -> &[u8] {

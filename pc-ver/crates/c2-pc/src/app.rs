@@ -26,6 +26,22 @@ struct Running {
     last: Instant,
 }
 
+/// Captures (or releases) the cursor; returns whether it is now captured.
+fn grab(window: &Window, on: bool) -> bool {
+    use winit::window::CursorGrabMode;
+    if !on {
+        let _ = window.set_cursor_grab(CursorGrabMode::None);
+        window.set_cursor_visible(true);
+        return false;
+    }
+    let ok = window
+        .set_cursor_grab(CursorGrabMode::Locked)
+        .or_else(|_| window.set_cursor_grab(CursorGrabMode::Confined))
+        .is_ok();
+    window.set_cursor_visible(!ok);
+    ok
+}
+
 struct App {
     make: Option<MakeScene>,
     running: Option<Running>,
@@ -61,13 +77,17 @@ impl App {
         let frame = Frame::new(&gpu, (size.width, size.height));
         let scene = make(&gpu)?;
         window.set_title(&scene.title());
+        let mut input = Input::default();
+        if scene.grab_cursor() {
+            input.grabbed = grab(&window, true);
+        }
         self.running = Some(Running {
             window,
             gpu,
             target,
             frame,
             scene,
-            input: Input::default(),
+            input,
             last: Instant::now(),
         });
         Ok(())
@@ -93,7 +113,7 @@ impl ApplicationHandler for App {
         event: DeviceEvent,
     ) {
         if let (Some(r), DeviceEvent::MouseMotion { delta }) = (&mut self.running, event) {
-            if r.input.dragging {
+            if r.input.dragging || r.input.grabbed {
                 r.input.mouse_delta.0 += delta.0 as f32;
                 r.input.mouse_delta.1 += delta.1 as f32;
             }
@@ -106,17 +126,33 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => el.exit(),
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(k) = event.physical_key {
-                    if k == KeyCode::Escape {
-                        el.exit();
+                    let down = event.state == ElementState::Pressed;
+                    // Escape releases a captured cursor first, then quits.
+                    if k == KeyCode::Escape && down && !event.repeat {
+                        if r.input.grabbed {
+                            r.input.grabbed = grab(&r.window, false);
+                        } else {
+                            el.exit();
+                        }
                     }
-                    r.input.key(k, event.state == ElementState::Pressed);
+                    r.input.key(k, down);
                 }
             }
             WindowEvent::MouseInput {
                 button: MouseButton::Left,
                 state,
                 ..
-            } => r.input.dragging = state == ElementState::Pressed,
+            } => {
+                let down = state == ElementState::Pressed;
+                r.input.dragging = down;
+                r.input.mouse_down = down;
+                if down && !r.input.grabbed && r.scene.grab_cursor() {
+                    r.input.grabbed = grab(&r.window, true);
+                }
+            }
+            WindowEvent::Focused(false) if r.input.grabbed => {
+                r.input.grabbed = grab(&r.window, false);
+            }
             WindowEvent::MouseWheel { delta, .. } => {
                 r.input.scroll += match delta {
                     MouseScrollDelta::LineDelta(_, y) => y,

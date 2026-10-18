@@ -4,6 +4,7 @@ mod app;
 mod area_view;
 mod camera;
 mod gpu;
+mod hunt_view;
 mod input;
 mod model_view;
 mod png;
@@ -18,9 +19,11 @@ use c2_core::area::TimeOfDay;
 const USAGE: &str = "usage:
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
   c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--shot out.png]
+  c2-pc hunt  <AREA.MAP> [--dusk|--night] [--shot out.png]
 
 model: drag to orbit, wheel zoom, [ ] next/prev file, N/P next/prev animation, Space pause
-area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distance";
+area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distance
+hunt:  click to capture mouse, WASD move, Shift run (R toggles), C crouch, Space jump/swim, Esc release/quit";
 
 struct Opts {
     positional: Vec<String>,
@@ -67,6 +70,16 @@ impl Opts {
     }
 }
 
+fn time_of_day(o: &Opts) -> TimeOfDay {
+    if o.has("night") {
+        TimeOfDay::Night
+    } else if o.has("dusk") {
+        TimeOfDay::Dusk
+    } else {
+        TimeOfDay::Day
+    }
+}
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -97,14 +110,14 @@ fn main() -> Result<()> {
                 )
             })
         }
+        "hunt" => {
+            let time = time_of_day(&o);
+            Box::new(move |g| {
+                Ok(Box::new(hunt_view::HuntView::load(g, &path, time)?) as Box<dyn scene::Scene>)
+            })
+        }
         "area" => {
-            let time = if o.has("night") {
-                TimeOfDay::Night
-            } else if o.has("dusk") {
-                TimeOfDay::Dusk
-            } else {
-                TimeOfDay::Day
-            };
+            let time = time_of_day(&o);
             let cam = o
                 .value("cam")
                 .map(|c| {

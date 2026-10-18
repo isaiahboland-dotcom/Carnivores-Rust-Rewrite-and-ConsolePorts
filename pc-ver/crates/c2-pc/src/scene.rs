@@ -7,6 +7,10 @@ pub trait Scene {
     fn clear_color(&self) -> [f64; 3];
     /// Records the frame. Called once per frame.
     fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, aspect: f32);
+    /// Capture and hide the cursor for mouse-look.
+    fn grab_cursor(&self) -> bool {
+        false
+    }
 }
 
 /// Renders one frame of `scene` into `view`.

@@ -157,8 +157,86 @@ fn check(path: &Path) -> Result<Option<String>> {
     Ok(Some(summary))
 }
 
+/// `c2-parity walk <AREA.MAP> <seconds>`: headless hunter simulation that
+/// walks/runs forward from the first landing spot, turning gently, and
+/// prints the trajectory. A quick sanity check for movement and collision.
+fn walk_sim(map_path: &Path, seconds: u32) -> Result<()> {
+    use c2_core::area::{Area, TimeOfDay};
+    use c2_core::player::{Controls, Player};
+    let stem = map_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let dir = map_path.parent().unwrap_or(Path::new("."));
+    let rsc_path = std::fs::read_dir(dir)?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| {
+            p.file_stem()
+                .is_some_and(|s| s.to_string_lossy().eq_ignore_ascii_case(&stem))
+                && p.extension().is_some_and(|e| e.eq_ignore_ascii_case("rsc"))
+        })
+        .context("no matching .RSC")?;
+    let area = Area::new(
+        map::parse(&std::fs::read(map_path)?)?,
+        rsc::parse(&std::fs::read(rsc_path)?)?,
+        TimeOfDay::Day,
+    );
+    let mut p = Player::new(&area, area.landings[0]);
+    let mut events = Vec::new();
+    let mut c = Controls {
+        forward: true,
+        run: true,
+        mouse_sens: 128.0,
+        ..Default::default()
+    };
+    let (mut blocked, mut last) = (0u32, (p.x, p.z));
+    for t in 0..seconds * 100 {
+        c.mouse = (if (t / 300) % 2 == 0 { 1.0 } else { -1.0 }, 0.0);
+        c.jump = t % 700 == 0;
+        p.tick(&area, &c, 10, &mut events);
+        let ground = area.land_qh_no_obj(p.x, p.z);
+        if p.y < ground - 81.0 {
+            bail!(
+                "t={}ms: fell through the ground (y {:.0} < ground {:.0})",
+                t * 10,
+                p.y,
+                ground
+            );
+        }
+        if t % 100 == 99 {
+            let moved = ((p.x - last.0).powi(2) + (p.z - last.1).powi(2)).sqrt();
+            if moved < 50.0 {
+                blocked += 1;
+            }
+            last = (p.x, p.z);
+            println!(
+                "t={:>3}s pos=({:>7.0},{:>6.0},{:>7.0}) yaw={:.2} cell=({},{}) speed={:.2} moved={:>5.0}/s head={:.0}{}{}",
+                (t + 1) / 100, p.x, p.y, p.z, p.alpha, (p.x / 256.0) as i32, (p.z / 256.0) as i32,
+                p.vspeed, moved, p.head_y,
+                if p.swim { " swim" } else { "" },
+                if p.underwater { " underwater" } else { "" }
+            );
+        }
+    }
+    let n: std::collections::HashMap<String, usize> =
+        events.iter().fold(Default::default(), |mut m, e| {
+            *m.entry(format!("{e:?}")).or_default() += 1;
+            m
+        });
+    println!("events: {n:?}; seconds mostly blocked: {blocked}");
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("walk") {
+        let path = args
+            .get(1)
+            .context("usage: c2-parity walk <AREA.MAP> [seconds]")?;
+        let secs = args.get(2).map(|s| s.parse()).transpose()?.unwrap_or(30);
+        return walk_sim(Path::new(path), secs);
+    }
     let (Some("scan"), dirs) = (args.first().map(String::as_str), &args[1.min(args.len())..])
     else {
         bail!("usage: c2-parity scan <dir>...");

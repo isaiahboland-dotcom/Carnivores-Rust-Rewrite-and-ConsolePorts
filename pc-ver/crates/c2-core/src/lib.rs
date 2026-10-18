@@ -4,8 +4,10 @@
 //! ([`color`], [`model`], [`area`]). Gameplay arrives in M3.
 
 pub mod area;
+pub mod collide;
 pub mod color;
 pub mod model;
+pub mod player;
 
 /// Height-map units to world units (`Hunt.h: ctHScale`).
 pub const H_SCALE: f32 = 64.0;

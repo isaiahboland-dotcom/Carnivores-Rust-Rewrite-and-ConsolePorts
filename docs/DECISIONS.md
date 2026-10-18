@@ -2,6 +2,20 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-18 — M3: hunter movement
+
+**Fixed 10 ms simulation tick** instead of the original's variable `TimeDt`.
+The movement code is a direct port (it already scales by `TimeDt` and
+sub-steps collision every 16 ms), so behaviour is the same at any frame rate,
+and a fixed step makes runs reproducible for the planned logic-parity harness.
+Rendering interpolates the eye position between ticks.
+
+**Functions that read the global `PlayerY` take it as a parameter**
+(`land_qh`, `land_ceil_h`, `check_collision`) so they can serve dinosaurs too.
+
+`c2-parity walk <AREA.MAP> [seconds]` runs the hunter headlessly over real
+terrain and prints the path: a quick regression check for movement/collision.
+
 ## 2026-10-18 — M2 viewer
 
 **Stack: `winit` 0.30 + `wgpu` 30** (owner's choice), plus `glam` (maths),

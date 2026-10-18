@@ -90,9 +90,11 @@ pub struct AreaView {
     /// Placements bucketed by chunk, with their precomputed light.
     chunks: Vec<Vec<(Placement, f32)>>,
     pub cam: FlyCam,
+    /// Free-fly controls; off when another scene drives the camera.
+    pub fly: bool,
     pub radius: u32,
     start: Instant,
-    fps: f32,
+    pub fps: f32,
 }
 
 /// Object brightness, `renderd3d.cpp: _RenderObject` (`RandomMap` jitter omitted).
@@ -205,10 +207,19 @@ impl AreaView {
             renderer,
             chunks,
             cam,
+            fly: true,
             radius: 74,
             start: Instant::now(),
             fps: 0.0,
         })
+    }
+
+    pub fn area(&self) -> &Area {
+        &self.area
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     fn cam_cell(&self) -> (i32, i32) {
@@ -232,7 +243,9 @@ impl Scene for AreaView {
         if dt > 0.0 {
             self.fps = self.fps * 0.95 + (1.0 / dt) * 0.05;
         }
-        self.cam.update(dt, input);
+        if self.fly {
+            self.cam.update(dt, input);
+        }
         if input.pressed(KeyCode::Equal) || input.pressed(KeyCode::NumpadAdd) {
             self.radius = (self.radius * 2).min(512);
         }

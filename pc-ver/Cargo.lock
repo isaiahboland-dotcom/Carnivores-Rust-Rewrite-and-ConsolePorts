@@ -234,6 +234,7 @@ name = "c2-parity"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "c2-core",
  "c2-formats",
 ]
 

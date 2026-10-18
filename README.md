@@ -87,6 +87,8 @@ cargo run --release -p c2-pc -- area  ../source/c2-original/HUNTDAT/AREAS/AREA1.
 ```
 Model viewer: drag to orbit, wheel to zoom, `[` `]` previous/next file, `N`/`P` animation, `Space` pause.
 Area viewer: `WASD` + `Q`/`E` to fly, drag to look, wheel = speed, `Shift` = fast, `+`/`-` view distance.
+Hunt mode (M3, in progress): `cargo run --release -p c2-pc -- hunt ../source/c2-original/HUNTDAT/AREAS/AREA1.MAP` —
+click to capture the mouse, `WASD` move, `Shift` run (`R` toggles), `C` crouch, `Space` jump/swim, `Esc` release/quit.
 Add `--shot out.png` to render one frame to a file instead of opening a window.
 
 ---
@@ -329,14 +331,16 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
       with `CalcLights` shading, object animation, fog, scrolling sky plane, cloud shadows, sun/moon, night vision
   - [ ] later polish: distant object billboards (needed for 3DS perf anyway), `RandomMap` light jitter,
         per-vertex ground light, side-by-side check vs retail (`sfTransparent` blend, object rotation direction)
-- [ ] M3 Vanilla PC
+- [ ] M3 Vanilla PC — **in progress**
+  - [x] hunter movement: walk/run/crouch/jump, slope slide, object + bound-box collision, swimming/diving (`c2-pc hunt`)
+  - [ ] weapons + shooting, dinosaur AI, calls/scent/camo, HUD + map, scoring, trophies/saves, menus, audio
 - [ ] M4 Mod system
 - [ ] M5 Recipes
 - [ ] M6 Cooker + 3DS boot
 - [ ] M7 Vanilla 3DS
 - [ ] M8 Modded 3DS
 
-_Last updated: 2026-10-18 — M2 done; next: M3 (hunter movement, then dinosaurs)._
+_Last updated: 2026-10-18 — M2 done, M3 hunter movement done; next: weapons, then dinosaur AI._
 
 
 note from user: quick headsup, the carnivores 2 datafile is copied direct from my library and includes re-shade files as well, please do not port the re-shade files to 3ds or the rust re-write as that would overcomplicate things dramatically

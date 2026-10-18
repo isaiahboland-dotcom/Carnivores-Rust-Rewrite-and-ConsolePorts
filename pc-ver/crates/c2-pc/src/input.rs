@@ -6,10 +6,14 @@ use winit::keyboard::KeyCode;
 pub struct Input {
     held: HashSet<KeyCode>,
     pressed: HashSet<KeyCode>,
-    /// Pixels moved while the left mouse button was held, this frame.
+    /// Raw mouse motion this frame, while dragging or while the cursor is grabbed.
     pub mouse_delta: (f32, f32),
     pub scroll: f32,
     pub dragging: bool,
+    /// Cursor is captured for mouse-look (hunt mode).
+    pub grabbed: bool,
+    /// Left mouse button is held (fire).
+    pub mouse_down: bool,
 }
 
 impl Input {
