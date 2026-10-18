@@ -178,6 +178,8 @@ enum Blend {
     Background,
     /// `dst + src` without depth testing (sun, moon).
     Additive,
+    /// `dst + src`, depth-tested but not written (water rings).
+    AdditiveDepth,
 }
 
 struct PipelineDesc<'a> {
@@ -211,6 +213,7 @@ fn pipeline(gpu: &Gpu, d: PipelineDesc<'_>) -> wgpu::RenderPipeline {
             depth_state(false, Always),
         ),
         Blend::Additive => (Some(additive), depth_state(false, Always)),
+        Blend::AdditiveDepth => (Some(additive), depth_state(false, Less)),
     };
     gpu.device
         .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -354,9 +357,25 @@ impl GpuModel {
 pub struct ModelRenderer {
     opaque: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
+    tex_layout: wgpu::BindGroupLayout,
     textures: wgpu::BindGroup,
     instances: wgpu::Buffer,
     capacity: usize,
+}
+
+fn model_buffers() -> [Option<wgpu::VertexBufferLayout<'static>>; 2] {
+    [
+        Some(wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<ModelVertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &VERTEX_ATTRS,
+        }),
+        Some(wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Instance>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &INSTANCE_ATTRS,
+        }),
+    ]
 }
 
 const VERTEX_ATTRS: [wgpu::VertexAttribute; 3] =
@@ -375,24 +394,45 @@ impl ModelRenderer {
         Self::with_entry(gpu, globals, textures, "vs_near")
     }
 
+    /// Additive, depth-tested (water rings).
+    pub fn additive(gpu: &Gpu, globals: &Globals, textures: &[&[u8]]) -> Self {
+        let mut r = Self::with_entry(gpu, globals, textures, "vs");
+        r.opaque = r.blend_variant(gpu, globals, "fs_add", Blend::AdditiveDepth);
+        r.blend = r.blend_variant(gpu, globals, "fs_add", Blend::AdditiveDepth);
+        r
+    }
+
+    fn blend_variant(
+        &self,
+        gpu: &Gpu,
+        globals: &Globals,
+        fs: &str,
+        blend: Blend,
+    ) -> wgpu::RenderPipeline {
+        let layout = pipeline_layout(gpu, "model", &[&globals.layout, &self.tex_layout]);
+        let module = shader(gpu, "model", include_str!("shaders/model.wgsl"));
+        let buffers = model_buffers();
+        pipeline(
+            gpu,
+            PipelineDesc {
+                label: "model additive",
+                module: &module,
+                layout: &layout,
+                vs: "vs",
+                fs,
+                buffers: &buffers,
+                blend,
+            },
+        )
+    }
+
     fn with_entry(gpu: &Gpu, globals: &Globals, textures: &[&[u8]], vs: &str) -> Self {
         let size = MODEL_TEXTURE_SIZE as u32;
         let view = gpu.texture_array("model textures", size, size, textures);
         let (tex_layout, group) = texture_group(gpu, "model tex", &view, &gpu.sampler(true, false));
         let layout = pipeline_layout(gpu, "model", &[&globals.layout, &tex_layout]);
         let module = shader(gpu, "model", include_str!("shaders/model.wgsl"));
-        let buffers = [
-            Some(wgpu::VertexBufferLayout {
-                array_stride: std::mem::size_of::<ModelVertex>() as u64,
-                step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &VERTEX_ATTRS,
-            }),
-            Some(wgpu::VertexBufferLayout {
-                array_stride: std::mem::size_of::<Instance>() as u64,
-                step_mode: wgpu::VertexStepMode::Instance,
-                attributes: &INSTANCE_ATTRS,
-            }),
-        ];
+        let buffers = model_buffers();
         let desc = |label, fs, blend| PipelineDesc {
             label,
             module: &module,
@@ -409,6 +449,7 @@ impl ModelRenderer {
         Self {
             opaque,
             blend,
+            tex_layout,
             textures: group,
             instances,
             capacity,
@@ -785,5 +826,88 @@ impl SkyRenderer {
         pass.set_pipeline(&self.sun);
         pass.set_vertex_buffer(0, self.sun_buf.slice(..));
         pass.draw(0..verts.len() as u32, 0..1);
+    }
+}
+
+// ---------------------------------------------------------------- particles
+
+/// One disc: centre, world radius, centre and edge colour (RGBA 0..1).
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
+pub struct Disc {
+    pub center: [f32; 3],
+    pub radius: f32,
+    pub c0: [f32; 4],
+    pub c1: [f32; 4],
+}
+
+const DISC_ATTRS: [wgpu::VertexAttribute; 4] =
+    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32, 2 => Float32x4, 3 => Float32x4];
+
+pub struct DiscRenderer {
+    pipeline: wgpu::RenderPipeline,
+    buf: wgpu::Buffer,
+    capacity: usize,
+}
+
+impl DiscRenderer {
+    pub fn new(gpu: &Gpu, globals: &Globals) -> Self {
+        let layout = pipeline_layout(gpu, "discs", &[&globals.layout]);
+        let module = shader(gpu, "particles", include_str!("shaders/particles.wgsl"));
+        let buffers = [Some(wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Disc>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &DISC_ATTRS,
+        })];
+        let pipeline = pipeline(
+            gpu,
+            PipelineDesc {
+                label: "discs",
+                module: &module,
+                layout: &layout,
+                vs: "vs",
+                fs: "fs",
+                buffers: &buffers,
+                blend: Blend::Alpha,
+            },
+        );
+        let capacity = 256;
+        let buf = Self::buffer(gpu, capacity);
+        Self {
+            pipeline,
+            buf,
+            capacity,
+        }
+    }
+
+    fn buffer(gpu: &Gpu, n: usize) -> wgpu::Buffer {
+        gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("discs"),
+            size: (n * std::mem::size_of::<Disc>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
+    }
+
+    pub fn draw(
+        &mut self,
+        gpu: &Gpu,
+        pass: &mut wgpu::RenderPass<'_>,
+        globals: &Globals,
+        discs: &[Disc],
+    ) {
+        if discs.is_empty() {
+            return;
+        }
+        if discs.len() > self.capacity {
+            self.capacity = discs.len().next_power_of_two();
+            self.buf = Self::buffer(gpu, self.capacity);
+        }
+        gpu.queue
+            .write_buffer(&self.buf, 0, bytemuck::cast_slice(discs));
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &globals.group, &[]);
+        pass.set_vertex_buffer(0, self.buf.slice(..));
+        pass.draw(0..6, 0..discs.len() as u32);
     }
 }

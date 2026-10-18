@@ -18,6 +18,7 @@ use winit::keyboard::KeyCode;
 use crate::area_view::{find_file, AreaView};
 use crate::audio::Audio;
 use crate::dinos::{load_res, load_ship, load_species, DinoAssets};
+use crate::effects_view::EffectsView;
 use crate::gpu::Gpu;
 use crate::hud::{load_tga, Hud, Sprite};
 use crate::input::Input;
@@ -63,6 +64,7 @@ pub struct HuntView {
     /// The hunt was left alive and saved: close the window.
     done: bool,
     audio: Audio,
+    effects: EffectsView,
     sounds: SoundBank,
 }
 
@@ -150,6 +152,7 @@ impl HuntView {
         );
         hunt.ship_anim_ms = dinos.ship_anim_ms();
         let prev_cam = hunt.camera().0;
+        let effects = EffectsView::new(gpu, view.globals(), huntdat);
         Ok(Self {
             view,
             hunt,
@@ -172,6 +175,7 @@ impl HuntView {
             game_dir,
             done: false,
             audio: Audio::new(),
+            effects,
             sounds,
         })
     }
@@ -302,6 +306,18 @@ impl HuntView {
         p.y = s[1] - 400.0;
         p.alpha = -std::f32::consts::FRAC_PI_2;
         p.beta = 0.0;
+        self.prev_cam = self.hunt.camera().0;
+    }
+
+    /// Fires once, then runs `ms` (screenshots).
+    pub fn fire_and_wait(&mut self, ms: u32) {
+        self.step(&HuntInput {
+            fire: true,
+            ..Default::default()
+        });
+        for _ in 0..ms / TICK_MS {
+            self.step(&HuntInput::default());
+        }
         self.prev_cam = self.hunt.camera().0;
     }
 
@@ -603,13 +619,19 @@ impl Scene for HuntView {
             .copied()
             .unwrap_or(128);
         let light = (96.0 + f32::from(ground) / 4.0) / 255.0;
-        let (dinos, weapons, hunt) = (&mut self.dinos, &mut self.weapons, &self.hunt);
+        let (dinos, weapons, hunt, effects) = (
+            &mut self.dinos,
+            &mut self.weapons,
+            &self.hunt,
+            &mut self.effects,
+        );
         let eye = self.view.cam.pos.to_array();
         let view = self.view.cam.view();
         let max = self.view.radius as f32 * c2_core::CELL;
         self.view
             .draw_with(gpu, pass, aspect, &mut |gpu, pass, globals| {
                 dinos.draw(gpu, pass, globals, &hunt.herd, &hunt.ship, eye, max);
+                effects.draw(gpu, pass, globals, &hunt.effects);
                 weapons.draw(gpu, pass, globals, hunt, view, light, aspect);
             });
 

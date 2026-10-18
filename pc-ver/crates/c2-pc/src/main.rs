@@ -5,6 +5,7 @@ mod area_view;
 mod audio;
 mod camera;
 mod dinos;
+mod effects_view;
 mod gpu;
 mod hud;
 mod hunt_view;
@@ -33,6 +34,11 @@ hunt:  click to capture mouse, WASD move, mouse look, LMB fire, E show/hide weap
        Shift toggles run, X crouch, Space jump/swim, arrows turn/look,
        Esc exit prompt (Y leave and save, R restart)";
 
+/// Flags followed by a value (`--flag VALUE`).
+const VALUE_FLAGS: &[&str] = &[
+    "anim", "time", "yaw", "shot", "cam", "view", "sim", "ship", "weapon", "target", "fire",
+];
+
 struct Opts {
     positional: Vec<String>,
     flags: Vec<(String, Option<String>)>,
@@ -47,19 +53,7 @@ impl Opts {
         let mut it = args.peekable();
         while let Some(a) = it.next() {
             if let Some(f) = a.strip_prefix("--") {
-                let takes_value = matches!(
-                    f,
-                    "anim"
-                        | "time"
-                        | "yaw"
-                        | "shot"
-                        | "cam"
-                        | "view"
-                        | "sim"
-                        | "ship"
-                        | "weapon"
-                        | "target"
-                );
+                let takes_value = VALUE_FLAGS.contains(&f);
                 let v = if takes_value { it.next() } else { None };
                 o.flags.push((f.to_string(), v));
             } else {
@@ -140,6 +134,11 @@ fn main() -> Result<()> {
                 .context("--weapon N")?;
             let bino = o.has("bino");
             let map = o.has("map");
+            let fire = o
+                .value("fire")
+                .map(str::parse::<u32>)
+                .transpose()
+                .context("--fire MS")?;
             // --target AI[,AI...] or `all`: hunt targets (no menu yet). Calls,
             // placement of T-Rex/Cerato and score depend on them.
             let targets = match o.value("target") {
@@ -191,6 +190,9 @@ fn main() -> Result<()> {
                 }
                 if map {
                     h.open_map();
+                }
+                if let Some(ms) = fire {
+                    h.fire_and_wait(ms);
                 }
                 if let Some(v) = &ship {
                     h.watch_ship(

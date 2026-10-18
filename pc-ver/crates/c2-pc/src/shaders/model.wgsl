@@ -70,3 +70,11 @@ fn fs_blend(i: VOut) -> @location(0) vec4<f32> {
     let c = textureSample(tex, samp, i.uv, i.layer);
     return vec4<f32>(fogged(texel(c.rgb) * i.light, i.dist), c.a * 0.5);
 }
+
+// Water rings (`RenderWCircles`): added on top (`D3DBLEND_ONE`); the fade is
+// folded into the light.
+@fragment
+fn fs_add(i: VOut) -> @location(0) vec4<f32> {
+    let c = textureSample(tex, samp, i.uv, i.layer);
+    return vec4<f32>(texel(c.rgb) * i.light * c.a, 1.0);
+}

@@ -324,6 +324,8 @@ pub struct Hunt {
     pub bin_power: f32,
     /// The map is showing (`MapMode`).
     pub map_mode: bool,
+    /// Particles, blood trails and water rings.
+    pub effects: crate::effects::Effects,
     /// Selected call (`TargetCall`, an AI number) and how long its icon shows.
     pub target_call: i32,
     pub call_icon_time: i32,
@@ -404,6 +406,7 @@ impl Hunt {
             bin_mode: false,
             bin_power: 2.5,
             map_mode: false,
+            effects: Default::default(),
             target_call: (10..30).find(|a| opts.targets & (1 << a) != 0).unwrap_or(0),
             call_icon_time: 0,
             call_lock: 0,
@@ -466,6 +469,7 @@ impl Hunt {
         } else {
             let mut pev = Vec::new();
             self.player.tick(area, &input.controls, dt as u32, &mut pev);
+            self.player_effects(area, &pev);
             out.extend(pev.into_iter().map(GameEvent::Player));
             if self.player.underwater && self.health > 0 {
                 // Drowning.
@@ -508,11 +512,62 @@ impl Hunt {
         };
         self.herd.step(&mut ctx);
         for e in dev {
-            if let DinoEvent::KillHunter { index, kind } = e {
-                self.kill_hunter(area, Some(index), kind, out);
+            match e {
+                DinoEvent::KillHunter { index, kind } => {
+                    self.kill_hunter(area, Some(index), kind, out)
+                }
+                DinoEvent::BloodTrail { pos } => self.effects.blood_trail(area, &mut self.rng, pos),
+                DinoEvent::Splash { pos } => {
+                    // AnimateDimorDead hitting the water: five rings.
+                    for sc in [2.0, 2.5, 3.0, 3.5, 3.0] {
+                        let (x, z) = (
+                            pos[0] + self.rng.si_rand(128) as f32,
+                            pos[2] + self.rng.si_rand(128) as f32,
+                        );
+                        self.effects.ring(area, x, z, sc);
+                    }
+                }
+                DinoEvent::Spray { pos } => {
+                    let a = self.camera().1;
+                    for _ in 0..3 {
+                        let p = [
+                            pos[0] + self.rng.si_rand(128) as f32,
+                            pos[1],
+                            pos[2] + self.rng.si_rand(128) as f32,
+                        ];
+                        self.effects.add(
+                            area,
+                            &mut self.rng,
+                            p,
+                            crate::effects::Part::Bubble,
+                            10,
+                            a,
+                        );
+                    }
+                }
+                _ => {}
             }
             out.push(GameEvent::Dino(e));
         }
+        // AnimateProcesses: now and then, bubbles rise in deep water ahead.
+        if self.takt & 63 == 0 {
+            let (cam, a, _) = self.camera();
+            let al = a + self.rng.si_rand(60) as f32 * PI / 180.0;
+            let l = (1024 + self.rng.r_rand(3120)) as f32;
+            let (x, z) = (cam[0] + al.sin() * l, cam[2] - al.cos() * l);
+            if area.land_up_h(x, z) > area.land_height(x, z) + 256.0 {
+                let n = 6 + self.rng.r_rand(6);
+                self.effects.add(
+                    area,
+                    &mut self.rng,
+                    [x, area.land_height(x, z), z],
+                    crate::effects::Part::Bubble,
+                    n,
+                    a,
+                );
+            }
+        }
+        self.effects.step(area, dt, self.takt);
 
         // AnimateProcesses: wind drifts every other frame.
         if self.takt & 1 != 0 {
@@ -844,6 +899,39 @@ impl Hunt {
         };
         let Some((hit, pos)) = res else { return };
         out.push(GameEvent::Impact { hit, pos });
+        // AddElements per surface (MakeShot).
+        let a = self.camera().1;
+        let pw = info.power as i32;
+        match hit {
+            Hit::Ground | Hit::Model => self.effects.add(
+                area,
+                &mut self.rng,
+                pos,
+                crate::effects::Part::Ground,
+                6 + pw * 4,
+                a,
+            ),
+            Hit::Water => {
+                self.effects.add(
+                    area,
+                    &mut self.rng,
+                    pos,
+                    crate::effects::Part::Water,
+                    4 + pw * 3,
+                    a,
+                );
+                self.effects.ring(area, pos[0], pos[2], 1.2);
+                self.effects.ring(area, pos[0], pos[2], 1.2);
+            }
+            Hit::Character { .. } => self.effects.add(
+                area,
+                &mut self.rng,
+                pos,
+                crate::effects::Part::Blood,
+                4 + pw * 4,
+                a,
+            ),
+        }
         let Hit::Character { index, mortal } = hit else {
             return;
         };
@@ -1357,6 +1445,23 @@ impl Hunt {
             }
         }
         out
+    }
+
+    /// Ripples from the hunter: wading, diving in or out, swimming.
+    fn player_effects(&mut self, area: &Area, events: &[PlayerEvent]) {
+        let [cx, _, cz] = self.player.eye();
+        for e in events {
+            match e {
+                PlayerEvent::StepWater => self.effects.ring(area, cx, cz, 1.2),
+                PlayerEvent::WaterIn | PlayerEvent::WaterOut => {
+                    self.effects.ring(area, cx, cz, 2.0)
+                }
+                _ => {}
+            }
+        }
+        if self.player.swim && self.takt & 31 == 0 {
+            self.effects.ring(area, cx, cz, 1.5);
+        }
     }
 
     /// `ToggleBinocular` and the +/- power keys.
