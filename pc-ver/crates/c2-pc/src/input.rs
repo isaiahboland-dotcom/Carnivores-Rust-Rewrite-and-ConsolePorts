@@ -12,8 +12,18 @@ pub struct Input {
     pub dragging: bool,
     /// Cursor is captured for mouse-look (hunt mode).
     pub grabbed: bool,
-    /// Left mouse button is held (fire).
+    /// Left / right mouse button is held.
     pub mouse_down: bool,
+    pub right_down: bool,
+    /// The left / right button went down this frame.
+    pub clicked: bool,
+    pub right_clicked: bool,
+    /// Cursor position in window pixels.
+    pub cursor: Option<(f32, f32)>,
+    /// Text typed this frame (name entry).
+    pub typed: String,
+    /// The last key that went down this frame (key binding).
+    pub last_pressed: Option<KeyCode>,
 }
 
 impl Input {
@@ -30,6 +40,7 @@ impl Input {
         if down {
             if self.held.insert(k) {
                 self.pressed.insert(k);
+                self.last_pressed = Some(k);
             }
         } else {
             self.held.remove(&k);
@@ -40,5 +51,18 @@ impl Input {
         self.pressed.clear();
         self.mouse_delta = (0.0, 0.0);
         self.scroll = 0.0;
+        self.clicked = false;
+        self.right_clicked = false;
+        self.typed.clear();
+        self.last_pressed = None;
+    }
+
+    /// Forget held keys (after switching scenes).
+    pub fn release_all(&mut self) {
+        self.held.clear();
+        self.pressed.clear();
+        self.mouse_down = false;
+        self.right_down = false;
+        self.dragging = false;
     }
 }

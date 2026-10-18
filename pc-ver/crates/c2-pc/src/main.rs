@@ -1,4 +1,4 @@
-//! c2rs PC frontend. For now: the M2 model and area viewers.
+//! c2rs PC frontend: the game (`play`) plus model, area and hunt viewers.
 
 mod app;
 mod area_view;
@@ -10,6 +10,8 @@ mod gpu;
 mod hud;
 mod hunt_view;
 mod input;
+mod keys;
+mod menu;
 mod model_view;
 mod png;
 mod render;
@@ -24,19 +26,25 @@ use anyhow::{bail, Context, Result};
 use c2_core::area::TimeOfDay;
 
 const USAGE: &str = "usage:
+  c2-pc play  <GAME_DIR> [--screen main|stats|hunt|options|credits|register|quit]
+              [--script 'X,Y;'TEXT;enter;esc'] [--shot out.png]
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
   c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--shot out.png]
-  c2-pc hunt  <AREA.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all] [--weapon N] [--bino] [--shot out.png]
+  c2-pc hunt  <AREA.MAP|TROPHY.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all]
+              [--weapon N] [--bino] [--observer] [--player N] [--shot out.png]
 
 model: drag to orbit, wheel zoom, [ ] next/prev file, N/P next/prev animation, Space pause
 area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distance
-hunt:  click to capture mouse, WASD move, mouse look, LMB fire, E show/hide weapon, 1-6 choose weapon,
-       Shift toggles run, X crouch, Space jump/swim, arrows turn/look,
-       Esc exit prompt (Y leave and save, R restart)";
+play:  the menus; a hunt returns to them
+hunt:  click to capture mouse; keys follow the player's bindings (default WASD move, mouse look,
+       LMB fire, E show/hide weapon, 1-6 choose weapon, Shift toggles run, X crouch, Space jump/swim,
+       arrows turn/look, B binoculars, Tab map, Alt call, C change call),
+       Esc exit prompt (Y leave and save, R restart); trophy room: R removes a trophy, Esc leaves";
 
 /// Flags followed by a value (`--flag VALUE`).
 const VALUE_FLAGS: &[&str] = &[
     "anim", "time", "yaw", "shot", "cam", "view", "sim", "ship", "weapon", "target", "fire",
+    "screen", "player", "script",
 ];
 
 struct Opts {
@@ -169,9 +177,27 @@ fn main() -> Result<()> {
                 .map(|v| v.split(',').map(str::parse).collect::<Result<_, _>>())
                 .transpose()
                 .context("--sim MS[,AI[,DIST]]")?;
+            let game_dir = path
+                .parent()
+                .and_then(|p| p.parent())
+                .and_then(|p| p.parent())
+                .unwrap_or(std::path::Path::new("."))
+                .to_path_buf();
+            let setup = hunt_view::HuntSetup {
+                game_dir,
+                map: path.clone(),
+                time,
+                seed: sim.as_ref().map(|_| 1),
+                targets,
+                // Without the menu, carry every weapon.
+                weapons: u32::MAX,
+                double_ammo: false,
+                observer: o.has("observer"),
+                reg: o.num("player", 0i32)?,
+                from_menu: false,
+            };
             Box::new(move |g| {
-                let seed = sim.as_ref().map(|_| 1);
-                let mut h = hunt_view::HuntView::load(g, &path, time, seed, targets)?;
+                let mut h = hunt_view::HuntView::load(g, setup)?;
                 if let Some(s) = sim {
                     let ai = s.get(1).copied().unwrap_or(12.0) as i32;
                     let dist = s.get(2).copied().unwrap_or(1500.0);
@@ -202,6 +228,21 @@ fn main() -> Result<()> {
                     );
                 }
                 Ok(Box::new(h) as Box<dyn scene::Scene>)
+            })
+        }
+        "play" => {
+            let screen = o.value("screen").map(str::to_owned);
+            // --script: canvas clicks / typing / keys, applied before the shot.
+            let script = o.value("script").map(str::to_owned);
+            Box::new(move |g| {
+                let mut m = menu::Menu::new(g, &path, None)?;
+                if let Some(s) = &screen {
+                    m.show(s)?;
+                }
+                if let Some(s) = &script {
+                    m.script(g, s)?;
+                }
+                Ok(Box::new(m) as Box<dyn scene::Scene>)
             })
         }
         "area" => {

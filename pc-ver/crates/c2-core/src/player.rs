@@ -70,6 +70,8 @@ pub struct Player {
     pub on_water: bool,
     /// Milliseconds since the hunt started (`RealTime`).
     pub time_ms: u32,
+    /// Extra round obstacles `(x, z, radius)`: the trophy room's animals.
+    pub obstacles: Vec<[f32; 3]>,
 }
 
 impl Player {
@@ -99,6 +101,7 @@ impl Player {
             underwater: false,
             on_water: false,
             time_ms: 0,
+            obstacles: Vec::new(),
         }
     }
 
@@ -221,6 +224,7 @@ impl Player {
             self.x -= sz / n;
             self.z += sx / n;
             area.check_collision(&mut self.x, &mut self.z, self.y);
+            self.push_out_of_obstacles();
             if self.y <= area.land_qh_no_obj(self.x, self.z) + 16.0 {
                 self.slide(area);
                 self.slide(area);
@@ -229,6 +233,17 @@ impl Player {
         if self.y <= area.land_qh_no_obj(self.x, self.z) + 16.0 {
             self.slide(area);
             self.slide(area);
+        }
+    }
+
+    /// The tail of `CheckCollision` in the trophy room.
+    fn push_out_of_obstacles(&mut self) {
+        for &[ox, oz, cr] in &self.obstacles {
+            let r = ((ox - self.x).powi(2) + (oz - self.z).powi(2)).sqrt();
+            if r < cr && r > 0.0 {
+                self.x -= (ox - self.x) * (cr - r) / r;
+                self.z -= (oz - self.z) * (cr - r) / r;
+            }
         }
     }
 

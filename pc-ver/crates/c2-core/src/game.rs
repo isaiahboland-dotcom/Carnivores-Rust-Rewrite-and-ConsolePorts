@@ -177,7 +177,6 @@ pub enum GameEvent {
         kind: i32,
     },
     Ship(ShipEvent),
-    /// A trophy was registered (slot in the trophy room).
     /// The looping ambience changed: `zone` = RSC ambient index, `None` =
     /// underwater loop. `volume` is `AVolume` (0..=256).
     Ambient {
@@ -197,6 +196,7 @@ pub enum GameEvent {
         pos: [f32; 3],
         volume: i32,
     },
+    /// A trophy was registered (slot in the trophy room).
     Trophy {
         slot: usize,
         score: i32,
@@ -216,6 +216,11 @@ pub struct HuntOptions {
     pub camo: bool,
     pub scent: bool,
     pub tranq: bool,
+    /// Observer mode (`-observ`): no weapons or calls, animals ignore you.
+    pub observer: bool,
+    /// The trophy room (`TrophyMode`): the area is `TROPHY.MAP` and the
+    /// animals are the saved trophies, standing still.
+    pub trophy: bool,
 }
 
 impl Default for HuntOptions {
@@ -229,6 +234,8 @@ impl Default for HuntOptions {
             camo: false,
             scent: false,
             tranq: false,
+            observer: false,
+            trophy: false,
         }
     }
 }
@@ -333,6 +340,10 @@ pub struct Hunt {
     next_call: i32,
     /// A pending answer to a call: (time left, position, call).
     answer: Option<(i32, [f32; 3], i32)>,
+    /// The trophy slot whose plaque is showing (`TrophyBody`), and for how
+    /// much longer after a kill (`TrophyTime`, ms; 0 = while in range).
+    pub trophy_body: Option<usize>,
+    pub trophy_time: i32,
 }
 
 /// What the binoculars show about the animal in the cross-hairs.
@@ -412,6 +423,8 @@ impl Hunt {
             call_lock: 0,
             next_call: 0,
             answer: None,
+            trophy_body: None,
+            trophy_time: 0,
             player,
             herd,
             weapons,
@@ -467,6 +480,21 @@ impl Hunt {
         if let Some(d) = self.death {
             self.death_cam(area, d, dt);
         } else {
+            if self.opts.trophy {
+                let sp = &self.herd.species;
+                self.player.obstacles = self
+                    .herd
+                    .chars
+                    .iter()
+                    .map(|c| {
+                        [
+                            c.pos[0],
+                            c.pos[2],
+                            sp.get(c.ctype).map_or(0.0, |s| s.info.radius),
+                        ]
+                    })
+                    .collect();
+            }
             let mut pev = Vec::new();
             self.player.tick(area, &input.controls, dt as u32, &mut pev);
             self.player_effects(area, &pev);
@@ -483,6 +511,7 @@ impl Hunt {
             self.binoculars(input, dt);
             self.calls(input, dt, out);
             if input.toggle_map
+                && !self.opts.trophy
                 && self.health > 0
                 && !self.bin_mode
                 && self.weapons.state == WeaponState::Hidden
@@ -492,8 +521,10 @@ impl Hunt {
             if self.weapons.state != WeaponState::Hidden || self.bin_mode {
                 self.map_mode = false;
             }
-            self.path += dt as f32 * self.player.vspeed / 128.0;
-            self.time_s += dt as f32 / 1000.0;
+            if !self.opts.trophy {
+                self.path += dt as f32 * self.player.vspeed / 128.0;
+                self.time_s += dt as f32 / 1000.0;
+            }
         }
         self.weapon_step(dt, out);
 
@@ -510,7 +541,9 @@ impl Hunt {
             view_r: self.opts.view_r,
             events: &mut dev,
         };
-        self.herd.step(&mut ctx);
+        if !self.opts.trophy {
+            self.herd.step(&mut ctx);
+        }
         for e in dev {
             match e {
                 DinoEvent::KillHunter { index, kind } => {
@@ -576,7 +609,19 @@ impl Hunt {
         }
         self.wind.speed = self.wind.speed.clamp(4.0, 18.0);
         self.check_afraid(area);
+        if self.opts.trophy {
+            self.process_trophy();
+        } else if self.trophy_time > 0 {
+            self.trophy_time -= dt;
+            if self.trophy_time <= 0 {
+                self.trophy_time = 0;
+                self.trophy_body = None;
+            }
+        }
         self.exit_step(dt);
+        if (self.opts.observer || self.opts.trophy) && self.health > 0 {
+            self.health = MAX_HEALTH;
+        }
 
         let mut sev = Vec::new();
         let player = [self.player.x, self.player.y, self.player.z];
@@ -669,6 +714,8 @@ impl Hunt {
                 range,
                 ..Default::default()
             };
+            self.trophy_time = 20 * 1000;
+            self.trophy_body = Some(t);
             out.push(GameEvent::Trophy {
                 slot: t,
                 score: score as i32,
@@ -710,6 +757,9 @@ impl Hunt {
     pub fn hide_weapon(&mut self, out: &mut Vec<GameEvent>) {
         let w = &mut self.weapons;
         if self.player.underwater && w.state == WeaponState::Hidden {
+            return;
+        }
+        if self.opts.observer || self.opts.trophy {
             return;
         }
         if w.state == WeaponState::Hidden {
@@ -1033,7 +1083,7 @@ impl Hunt {
 
     /// `CheckAfraid`: can each big animal see or smell the hunter?
     fn check_afraid(&mut self, area: &Area) {
-        if self.health <= 0 || self.player.underwater {
+        if self.health <= 0 || self.opts.trophy || self.opts.observer || self.player.underwater {
             return;
         }
         let p = &self.player;
@@ -1332,7 +1382,13 @@ impl Hunt {
             }
             self.call_icon_time = 2048;
         }
-        if !input.call || targets == 0 || self.player.underwater || self.call_lock > 0 {
+        if !input.call
+            || targets == 0
+            || self.player.underwater
+            || self.opts.observer
+            || self.opts.trophy
+            || self.call_lock > 0
+        {
             return;
         }
         self.call_lock = 1024 * 3;
@@ -1552,8 +1608,12 @@ impl Hunt {
         })
     }
 
-    /// Escape: toggle the exit prompt.
+    /// Escape: toggle the exit prompt; the trophy room is left at once.
     pub fn press_escape(&mut self) {
+        if self.opts.trophy {
+            self.outcome = Some(Outcome::Exited);
+            return;
+        }
         if self.exit_time == 0 {
             self.exit_prompt = !self.exit_prompt;
         }
@@ -1565,6 +1625,46 @@ impl Hunt {
             self.exit_time = if self.health > 0 { 4000 } else { 1 };
             self.exit_prompt = false;
         }
+    }
+
+    /// `ProcessTrophy`: the plaque of the trophy the hunter stands in front
+    /// of (2.5 cells ahead of its nose, within 148 units).
+    fn process_trophy(&mut self) {
+        let p = [self.player.x, self.player.y, self.player.z];
+        self.trophy_body = None;
+        for c in &self.herd.chars {
+            let x = c.pos[0] + c.lookx * 256.0 * 2.5;
+            let z = c.pos[2] + c.lookz * 256.0 * 2.5;
+            let d = ((x - p[0]).powi(2) + (c.pos[1] - p[1]).powi(2) + (z - p[2]).powi(2)).sqrt();
+            if d < 148.0 {
+                self.trophy_body = Some(c.state as usize);
+            }
+        }
+    }
+
+    /// `RemoveCurrentTrophy` (R in the trophy room): delete the trophy whose
+    /// plaque is showing.
+    pub fn remove_current_trophy(&mut self) {
+        if !self.opts.trophy {
+            return;
+        }
+        let Some(slot) = self.trophy_body else {
+            return;
+        };
+        if self.room.bodies.get(slot).is_none_or(|b| b.ctype == 0) {
+            return;
+        }
+        self.room.bodies[slot].ctype = 0;
+        if let Some(i) = self
+            .herd
+            .chars
+            .iter()
+            .position(|c| c.state as usize == slot)
+        {
+            self.herd.chars.remove(i);
+        }
+        self.trophy_time = 0;
+        self.trophy_body = None;
     }
 
     /// Counts down a confirmed exit; on leaving alive, folds this hunt into
@@ -1943,5 +2043,70 @@ mod tests {
         }
         assert!(removed, "ship state {} at {:?}", h.ship.state, h.ship.pos);
         assert_eq!(h.herd.chars.len(), n - 1);
+    }
+
+    #[test]
+    fn trophy_room_shows_plaques_and_removes_trophies() {
+        let mut area = Area::flat(10);
+        area.set_trophy_mode();
+        let car = target_car(true);
+        let mut room = blank_save();
+        room.bodies[0] = TrophyItem {
+            ctype: 1,
+            scale: 1.0,
+            ..Default::default()
+        };
+        room.bodies[7] = TrophyItem {
+            ctype: 1,
+            scale: 0.8,
+            ..Default::default()
+        };
+        let mut rng = MsRand::new(5);
+        let mut herd = Herd {
+            species: vec![
+                Species::new(info(0), &car),
+                Species::new(info(ai::STEGO), &car),
+            ],
+            chars: vec![],
+            demo_index: None,
+        };
+        herd.place_trophies(&area, &room, &mut rng);
+        assert_eq!(herd.chars.len(), 2);
+        assert_eq!((herd.chars[1].state, herd.chars[1].scale), (7, 0.8));
+        // Slot 0 is cell (69, 66), facing +z (look = (cos a, sin a)); stand
+        // 2.5 cells ahead of it.
+        let mut player = Player::new(&area, (69, 68));
+        player.z = 66.0 * 256.0 + 128.0 + 640.0;
+        let weapons = Weapons::new(vec![rifle()], vec![[100; 4]], 0, false);
+        let opts = HuntOptions {
+            trophy: true,
+            ..Default::default()
+        };
+        let mut h = Hunt::new(&area, player, herd, weapons, rng, opts, room);
+        let mut ev = Vec::new();
+        h.tick(&area, &[], &HuntInput::default(), 10, &mut ev);
+        assert_eq!(h.trophy_body, Some(0));
+        h.remove_current_trophy();
+        assert_eq!(h.room.bodies[0].ctype, 0);
+        assert_eq!(h.herd.chars.len(), 1);
+        h.tick(&area, &[], &HuntInput::default(), 10, &mut ev);
+        assert_eq!(h.trophy_body, None);
+        // No weapons, no map; Escape leaves without touching the stats.
+        h.tick(
+            &area,
+            &[],
+            &HuntInput {
+                toggle_weapon: true,
+                toggle_map: true,
+                ..Default::default()
+            },
+            10,
+            &mut ev,
+        );
+        assert_eq!(h.weapons.state, WeaponState::Hidden);
+        assert!(!h.map_mode);
+        h.press_escape();
+        assert_eq!(h.outcome(), Some(Outcome::Exited));
+        assert_eq!(h.room.total.time, 0.0);
     }
 }

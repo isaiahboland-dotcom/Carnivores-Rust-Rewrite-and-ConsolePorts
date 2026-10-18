@@ -2,6 +2,57 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-18 — M3: menus and the trophy room
+
+**The menus are reconstructed.** The released source is only the game; the
+original menu was a separate front end that started it with command-line
+arguments (`prj= din= wep= dtm= -double -observ`, see `Game.cpp`). We rebuild
+the screens from the shipped art: each picture, its `*_ON.TGA` lit version and
+its `*_MAP.RAW` hit map (`docs/FORMATS.md`). Player registration, the waiver,
+deleting a player, main menu, statistics, hunt setup, options, credits and the
+quit prompt all follow the pictures. List layout, fonts (the 8x8 font, scaled)
+and wording of the statistics are our own.
+
+**Prices are a budget, not a payment.** `_RES.TXT` `prices` gives `start`
+(a new hunter's score) and a price per area, dinosaur, weapon and accessory.
+The account shows the score and what is left after the current choices; a
+choice that would go below zero is refused. Nothing is deducted: hunting a
+5-point Parasaurolophus with a 10-point licence could never pay off otherwise,
+and the shipped saves (scores 104/114) fit this reading. Observer mode is free
+and needs no targets or weapons. No rank locks.
+
+**Menu mapping.** Dawn/Day/Night = `TimeOfDay::Dusk/Day/Night` (the code
+calls the first time "dusk", the menu "dawn"); dinosaur *n* = AI `9 + n`;
+equipment = Camouflage, Radar, Cover Scent, Double Ammo (`EQUIP1-4`, the
+`.NFO` texts). Camouflage, radar, scent and tranquilizer are kept in the save
+as the game does (`CamoMode` etc.); other choices start fresh each visit.
+Info texts are re-flowed to the panel width.
+
+**Players.** Each registered hunter is a `trophy0N.sav` (N = 0..9) in our
+data dir; on first run every `trophy0N.sav` in the game folder is copied
+there (the game folder is never written). Key bindings, mouse sensitivity,
+reverse mouse, units, aggressiveness, density, sensitivity and view range come
+from the save and can be changed in Options; `ctViewR = 42 + OptViewR/8*2`.
+Options the port doesn't use (resolution, textures, fog, shadows, brightness,
+renderer, sound device) are kept in the file but not shown.
+
+**Trophy room** is the original's `TrophyMode` (`TROPHY.MAP`): trophies stand
+on the landing ring in their first animation frame, the hunter collides with
+them, a plaque shows when 2.5 cells in front of one, `R` removes it, `Esc`
+saves and leaves at once; no weapons, calls, map or AI. **Deviation:** the
+original's exit path adds `Last` to `Total` again when leaving the room
+(stats inflate on every visit); we leave the stats untouched. After a kill
+in a hunt the plaque (`TROPHY_G.TGA`) shows for 20 s, as in the original.
+
+**Menu logic lives in `c2-pc` for now** (README §4 puts the menus' state
+machine in `c2-core`). It is tied to the PC art and mouse; the parts the 3DS
+needs (budget, choices, player list) move to `c2-core` in M6/M7, when a
+second front end shows what is actually shared.
+
+**Death returns to the menu** (discarding the hunt's trophies, as the
+original's `LoadTrophy` on exit does) when started from the menu; `c2-pc hunt`
+still restarts.
+
 ## 2026-10-18 — Field of view, binoculars, scope, HUD text
 
 **FOV matches the original:** `CameraW = VideoCX * 1.25` with its 4:3

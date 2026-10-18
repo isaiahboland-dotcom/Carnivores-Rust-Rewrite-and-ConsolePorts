@@ -25,12 +25,18 @@ pub struct Hud {
     screen: wgpu::Buffer,
     screen_group: wgpu::BindGroup,
     sampler: wgpu::Sampler,
+    linear: wgpu::Sampler,
     images: Vec<Image>,
     vbuf: wgpu::Buffer,
     capacity: usize,
     /// The 8x8 font atlas and a 1x1 white image (ids).
     font: Option<usize>,
+    /// The same atlas, linearly filtered (text at non-integer scales).
+    font_smooth: Option<usize>,
     white: Option<usize>,
+    /// Per glyph (ASCII 32..128): first lit column and advance, for
+    /// proportional text.
+    metrics: Vec<(u8, u8)>,
 }
 
 /// An image placed on screen, in pixels.
@@ -66,6 +72,23 @@ impl Sprite {
 /// ASCII 32..=127 in a 16 x 6 grid of 8 x 8 cells.
 const FONT_COLS: u32 = 16;
 const FONT_ROWS: u32 = 6;
+
+fn font_metrics() -> Vec<(u8, u8)> {
+    use font8x8::{UnicodeFonts, BASIC_FONTS};
+    (32u32..128)
+        .map(|code| {
+            let bits = char::from_u32(code)
+                .and_then(|c| BASIC_FONTS.get(c))
+                .map_or(0u8, |g| g.iter().fold(0, |m, b| m | b));
+            if bits == 0 {
+                return (0, 4);
+            }
+            let first = bits.trailing_zeros() as u8;
+            let last = 7 - bits.leading_zeros() as u8;
+            (first, last - first + 2)
+        })
+        .collect()
+}
 
 fn font_atlas() -> Vec<u8> {
     use font8x8::{UnicodeFonts, BASIC_FONTS};
@@ -185,6 +208,7 @@ impl Hud {
             cache: None,
         });
         let sampler = gpu.sampler(false, false);
+        let linear = gpu.sampler(true, false);
         let capacity = 64;
         let vbuf = Self::buffer(gpu, capacity);
         let mut hud = Self {
@@ -193,13 +217,19 @@ impl Hud {
             screen,
             screen_group,
             sampler,
+            linear,
             images: Vec::new(),
             vbuf,
             capacity,
             font: None,
+            font_smooth: None,
             white: None,
+            metrics: font_metrics(),
         };
-        hud.font = Some(hud.add_image(gpu, FONT_COLS * 8, FONT_ROWS * 8, &font_atlas()));
+        let atlas = font_atlas();
+        hud.font = Some(hud.add_image(gpu, FONT_COLS * 8, FONT_ROWS * 8, &atlas));
+        hud.font_smooth =
+            Some(hud.add_image_filtered(gpu, FONT_COLS * 8, FONT_ROWS * 8, &atlas, true));
         hud.white = Some(hud.add_image(gpu, 1, 1, &[255; 4]));
         hud
     }
@@ -215,6 +245,18 @@ impl Hud {
 
     /// Adds an RGBA8 image; returns its id.
     pub fn add_image(&mut self, gpu: &Gpu, w: u32, h: u32, rgba: &[u8]) -> usize {
+        self.add_image_filtered(gpu, w, h, rgba, false)
+    }
+
+    /// Adds an RGBA8 image sampled with `linear` filtering (scaled menus).
+    pub fn add_image_filtered(
+        &mut self,
+        gpu: &Gpu,
+        w: u32,
+        h: u32,
+        rgba: &[u8],
+        linear: bool,
+    ) -> usize {
         let tex = gpu.device.create_texture_with_data(
             &gpu.queue,
             &wgpu::TextureDescriptor {
@@ -245,7 +287,11 @@ impl Hud {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    resource: wgpu::BindingResource::Sampler(if linear {
+                        &self.linear
+                    } else {
+                        &self.sampler
+                    }),
                 },
             ],
         });
@@ -275,6 +321,49 @@ impl Hud {
                 })
             })
             .collect()
+    }
+
+    /// Proportionally spaced text `px` pixels tall.
+    pub fn label(&self, x: f32, y: f32, px: f32, color: [f32; 4], text: &str) -> Vec<Sprite> {
+        let k = px / 8.0;
+        let font = if k.fract() == 0.0 {
+            self.font
+        } else {
+            self.font_smooth
+        };
+        let Some(font) = font else {
+            return Vec::new();
+        };
+        let (cw, ch) = (1.0 / FONT_COLS as f32, 1.0 / FONT_ROWS as f32);
+        let mut out = Vec::new();
+        let mut cx = x;
+        for c in text.chars() {
+            let code = (c as u32).clamp(32, 127);
+            let (first, adv) = self.metrics[(code - 32) as usize];
+            if code > 32 {
+                let (col, row) = ((code - 32) % FONT_COLS, (code - 32) / FONT_COLS);
+                let u = (col as f32 + f32::from(first) / 8.0) * cw;
+                let w = f32::from(adv - 1) / 8.0 * cw;
+                let v = row as f32 * ch;
+                out.push(Sprite {
+                    uv: [u, v, u + w, v + ch],
+                    size: Some([f32::from(adv - 1) * k, px]),
+                    color,
+                    ..Sprite::new(font, cx.round(), y.round(), k)
+                });
+            }
+            cx += f32::from(adv) * k;
+        }
+        out
+    }
+
+    /// Width of [`Hud::label`] text.
+    pub fn label_width(&self, px: f32, text: &str) -> f32 {
+        text.chars()
+            .map(|c| f32::from(self.metrics[((c as u32).clamp(32, 127) - 32) as usize].1))
+            .sum::<f32>()
+            * px
+            / 8.0
     }
 
     /// A solid rectangle (crosshair lines).

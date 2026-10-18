@@ -3,6 +3,7 @@
 //! The simulation lives in `c2_core::game::Hunt`; this file maps input,
 //! drives fixed ticks and draws the world, animals, weapon and HUD.
 
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
@@ -22,6 +23,7 @@ use crate::effects_view::EffectsView;
 use crate::gpu::Gpu;
 use crate::hud::{load_tga, Hud, Sprite};
 use crate::input::Input;
+use crate::keys;
 use crate::scene::Scene;
 use crate::sounds::{get, SoundBank};
 use crate::weapons::{load_weapons, WeaponAssets};
@@ -33,8 +35,38 @@ use c2_core::ship::{ship_sound, ShipEvent};
 /// the simulation deterministic (needed for logic parity later).
 const TICK_MS: u32 = 10;
 
-/// Weapons carried. The loadout menu doesn't exist yet: take them all.
-const ALL_WEAPONS: u32 = u32::MAX;
+/// What to hunt with. The original menu passes these to the game on its
+/// command line (`prj=`, `din=`, `wep=`, `dtm=`, `-double`, `-observ`); the
+/// accessories come from the player's save.
+#[derive(Debug, Clone)]
+pub struct HuntSetup {
+    /// The game install (`HUNTDAT`'s parent).
+    pub game_dir: PathBuf,
+    /// `HUNTDAT/AREAS/AREAn.MAP`, or `TROPHY.MAP` for the trophy room.
+    pub map: PathBuf,
+    pub time: TimeOfDay,
+    /// Fixed RNG seed (reproducible runs); `None` = from the clock.
+    pub seed: Option<u32>,
+    /// `TargetDino`: bit per AI.
+    pub targets: u32,
+    /// `WeaponPres`: bit per `_RES.TXT` weapon.
+    pub weapons: u32,
+    pub double_ammo: bool,
+    pub observer: bool,
+    /// The player (`trophy0N.sav`).
+    pub reg: i32,
+    /// Return to the menu afterwards (otherwise close the window).
+    pub from_menu: bool,
+}
+
+impl HuntSetup {
+    /// The original enables trophy mode when the project name contains "trophy".
+    pub fn trophy(&self) -> bool {
+        self.map
+            .file_stem()
+            .is_some_and(|s| s.to_string_lossy().to_ascii_lowercase().contains("trophy"))
+    }
+}
 
 pub struct HuntView {
     view: AreaView,
@@ -47,59 +79,69 @@ pub struct HuntView {
     exit_img: Option<usize>,
     map_img: Option<usize>,
     call_imgs: Vec<Option<usize>>,
-    /// Hunt targets (`TargetDino` bits by AI).
-    targets: u32,
+    /// The trophy plaque (`TROPHY.TGA` in the room, `TROPHY_G.TGA` after a
+    /// kill) and the room's "Esc to exit" banner (`TROPHY_E.TGA`).
+    plaque_img: Option<usize>,
+    trophy_exit_img: Option<usize>,
+    setup: HuntSetup,
     /// Camera position before the latest tick, for interpolation.
     prev_cam: [f32; 3],
     acc_ms: f32,
-    /// `RunMode` (toggled with Shift, as the original's run key).
+    /// `RunMode` (toggled with the run key).
     run: bool,
     /// Key presses seen this frame, applied on the next tick.
     pending: HuntInput,
     events: Vec<GameEvent>,
     message: Option<(String, f32)>,
     seed: u32,
-    /// The game install (for the first-run save copy).
-    game_dir: std::path::PathBuf,
-    /// The hunt was left alive and saved: close the window.
+    /// The hunt is over (saved if left alive).
     done: bool,
     audio: Audio,
     effects: EffectsView,
     sounds: SoundBank,
 }
 
+fn menu_pic(hud: &mut Hud, gpu: &Gpu, huntdat: &Path, name: &str) -> Option<usize> {
+    let p = find_file(&find_file(huntdat, "MENU")?, name)?;
+    let (w, h, rgba) = load_tga(&p).ok()?;
+    Some(hud.add_image(gpu, w, h, &rgba))
+}
+
 impl HuntView {
-    /// `seed`: fixed RNG seed (reproducible runs); `None` = from the clock.
-    pub fn load(
-        gpu: &Gpu,
-        map: &std::path::Path,
-        time: TimeOfDay,
-        seed: Option<u32>,
-        targets: u32,
-    ) -> Result<Self> {
-        let mut view = AreaView::load(gpu, map, time)?;
+    pub fn load(gpu: &Gpu, setup: HuntSetup) -> Result<Self> {
+        let mut view = AreaView::load(gpu, &setup.map, setup.time)?;
         view.fly = false;
-        let seed = seed.unwrap_or_else(|| {
+        let seed = setup.seed.unwrap_or_else(|| {
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.subsec_nanos())
                 .unwrap_or(0)
         });
-        let huntdat = map
+        let huntdat = setup
+            .map
             .parent()
             .and_then(|p| p.parent())
-            .unwrap_or(std::path::Path::new("."));
-        let res = load_res(huntdat)?;
-        let (species, cars) = load_species(huntdat, &res)?;
+            .unwrap_or(Path::new("."))
+            .to_path_buf();
+        let res = load_res(&huntdat)?;
+        let (species, cars) = load_species(&huntdat, &res)?;
         let mut hud = Hud::new(gpu);
         let (weapon_infos, weapon_anims, weapons) =
-            load_weapons(gpu, view.globals(), &mut hud, huntdat, &res.weapons);
-        let exit_img = find_file(huntdat, "MENU")
-            .and_then(|m| find_file(&m, "EXIT.TGA"))
-            .and_then(|p| load_tga(&p).ok())
-            .map(|(w, h, rgba)| hud.add_image(gpu, w, h, &rgba));
+            load_weapons(gpu, view.globals(), &mut hud, &huntdat, &res.weapons);
+        let exit_img = menu_pic(&mut hud, gpu, &huntdat, "EXIT.TGA");
+        let plaque_img = menu_pic(
+            &mut hud,
+            gpu,
+            &huntdat,
+            if setup.trophy() {
+                "TROPHY.TGA"
+            } else {
+                "TROPHY_G.TGA"
+            },
+        );
+        let trophy_exit_img = menu_pic(&mut hud, gpu, &huntdat, "TROPHY_E.TGA");
         // The map: the frame with the area overview painted in at (11, 23).
-        let map_img = find_file(huntdat, "MENU")
+        let map_img = find_file(&huntdat, "MENU")
             .and_then(|m| find_file(&m, "MAPFRAME.TGA"))
             .and_then(|p| c2_formats::tga::parse(&std::fs::read(p).ok()?).ok())
             .map(|mut frame| {
@@ -116,7 +158,7 @@ impl HuntView {
                 hud.add_image(gpu, frame.width as u32, frame.height as u32, &rgba)
             });
         // Call icons (`MENU/PICS/CALLn.TGA`), by AI 10..=19.
-        let pics = find_file(huntdat, "MENU").and_then(|m| find_file(&m, "PICS"));
+        let pics = find_file(&huntdat, "MENU").and_then(|m| find_file(&m, "PICS"));
         let call_imgs: Vec<Option<usize>> = (1..=10)
             .map(|n| {
                 let p = find_file(pics.as_deref()?, &format!("CALL{n}.TGA"))?;
@@ -124,35 +166,24 @@ impl HuntView {
                 Some(hud.add_image(gpu, w, h, &rgba))
             })
             .collect();
-        let dinos = DinoAssets::new(gpu, view.globals(), cars, load_ship(huntdat));
+        let dinos = DinoAssets::new(gpu, view.globals(), cars, load_ship(&huntdat));
         let species_cars: Vec<Option<&Car>> = dinos
             .cars
             .iter()
             .map(|c| c.as_ref().map(|(c, _)| c))
             .collect();
         let sounds = SoundBank::load(
-            huntdat,
+            &huntdat,
             &species_cars,
             &weapons.cars(),
             dinos.ship_car(),
             &view.area().rsc,
         );
-        let game_dir = huntdat
-            .parent()
-            .unwrap_or(std::path::Path::new("."))
-            .to_path_buf();
-        let mut hunt = Self::new_hunt(
-            &view,
-            species,
-            &weapon_infos,
-            &weapon_anims,
-            seed,
-            &game_dir,
-            targets,
-        );
+        let mut hunt = Self::new_hunt(&view, species, &weapon_infos, &weapon_anims, seed, &setup);
         hunt.ship_anim_ms = dinos.ship_anim_ms();
+        view.radius = hunt.opts.view_r as u32;
         let prev_cam = hunt.camera().0;
-        let effects = EffectsView::new(gpu, view.globals(), huntdat);
+        let effects = EffectsView::new(gpu, view.globals(), &huntdat);
         Ok(Self {
             view,
             hunt,
@@ -164,7 +195,9 @@ impl HuntView {
             exit_img,
             map_img,
             call_imgs,
-            targets,
+            plaque_img,
+            trophy_exit_img,
+            setup,
             prev_cam,
             acc_ms: 0.0,
             run: false,
@@ -172,7 +205,6 @@ impl HuntView {
             events: Vec::new(),
             message: None,
             seed,
-            game_dir,
             done: false,
             audio: Audio::new(),
             effects,
@@ -180,65 +212,89 @@ impl HuntView {
         })
     }
 
-    /// `ReInitGame`: hunter at a random landing spot, a freshly placed herd.
+    /// `ReInitGame`: the saved trophy room is (re)loaded, the hunter put at a
+    /// random landing spot and the herd placed (or the trophies, in the room).
     fn new_hunt(
         view: &AreaView,
         species: Vec<c2_core::dino::Species>,
         infos: &[WeaponInfo],
         anims: &[[i32; 4]],
         seed: u32,
-        game_dir: &std::path::Path,
-        targets: u32,
+        setup: &HuntSetup,
     ) -> Hunt {
         let area = view.area();
-        let cell = area.landings[seed as usize % area.landings.len().max(1)];
-        let player = Player::new(area, cell);
+        let room = crate::save::load(&setup.game_dir, setup.reg);
+        let o = &room.options;
+        let trophy = setup.trophy();
         let mut rng = MsRand::new(seed);
+        let player = if trophy {
+            Player::new(area, (76, 70))
+        } else {
+            let cell = area.landings[seed as usize % area.landings.len().max(1)];
+            Player::new(area, cell)
+        };
         let mut herd = Herd {
             species,
             chars: Vec::new(),
             demo_index: None,
         };
-        let opts = PlaceOptions {
-            density: 128,
-            opt_agres: 128,
-            targets,
-        };
-        herd.place(area, (player.x, player.z), &mut rng, opts);
+        if trophy {
+            herd.place_trophies(area, &room, &mut rng);
+        } else {
+            let opts = PlaceOptions {
+                density: o.dens,
+                opt_agres: o.agres,
+                targets: setup.targets,
+            };
+            herd.place(area, (player.x, player.z), &mut rng, opts);
+        }
         tracing::info!("placed {} characters", herd.chars.len());
-        let weapons = Weapons::new(infos.to_vec(), anims.to_vec(), ALL_WEAPONS, false);
-        let room = crate::save::load(game_dir);
-        let mut hunt = Hunt::new(
-            area,
-            player,
-            herd,
-            weapons,
-            rng,
-            HuntOptions {
-                targets,
-                ..HuntOptions::default()
-            },
-            room,
-        );
+        let carried = if trophy { 0 } else { setup.weapons };
+        let weapons = Weapons::new(infos.to_vec(), anims.to_vec(), carried, setup.double_ammo);
+        let opts = HuntOptions {
+            targets: setup.targets,
+            radar: o.radar != 0,
+            opt_agres: o.agres,
+            opt_sens: o.sens,
+            // ctViewR: 42 + OptViewR / 8 * 2 cells; 60 in the trophy room.
+            view_r: if trophy { 60 } else { 42 + o.view_r / 8 * 2 },
+            camo: o.camo != 0,
+            scent: o.scent != 0,
+            tranq: o.tranq != 0,
+            observer: setup.observer,
+            trophy,
+        };
+        let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
         hunt.clock = local_clock();
         hunt
     }
 
+    /// Controls from the player's key bindings (`ProcessControls`).
     fn controls(&self, input: &Input) -> Controls {
+        let o = &self.hunt.room.options;
+        let k = &o.keys;
+        let held = |vk| keys::held(input, vk);
+        // The strafe key turns the turn keys into side-steps.
+        let strafe = held(k.strafe);
+        let mouse = if o.reverse_mouse != 0 {
+            (input.mouse_delta.0, -input.mouse_delta.1)
+        } else {
+            input.mouse_delta
+        };
         Controls {
-            forward: input.held(KeyCode::KeyW),
-            backward: input.held(KeyCode::KeyS),
-            strafe_left: input.held(KeyCode::KeyA),
-            strafe_right: input.held(KeyCode::KeyD),
-            turn_left: input.held(KeyCode::ArrowLeft),
-            turn_right: input.held(KeyCode::ArrowRight),
-            look_up: input.held(KeyCode::ArrowUp),
-            look_down: input.held(KeyCode::ArrowDown),
-            crouch: input.held(KeyCode::KeyX),
-            jump: input.held(KeyCode::Space),
+            forward: held(k.forward),
+            backward: held(k.backward),
+            strafe_left: held(k.strafe_left) || (strafe && held(k.left)),
+            strafe_right: held(k.strafe_right) || (strafe && held(k.right)),
+            turn_left: !strafe && held(k.left),
+            turn_right: !strafe && held(k.right),
+            look_up: held(k.up),
+            look_down: held(k.down),
+            crouch: held(k.crouch),
+            jump: held(k.jump),
             run: self.run,
-            mouse: input.mouse_delta,
-            mouse_sens: 128.0,
+            mouse,
+            mouse_sens: o.mouse_sens as f32,
         }
     }
 
@@ -261,7 +317,13 @@ impl HuntView {
             tracing::warn!("no character with ai {ai_id}");
             return;
         };
-        let (x, z) = (d.pos[0] + d.lookz * dist, d.pos[2] - d.lookx * dist);
+        // Beside it; in the trophy room, where its plaque shows (2.5 cells
+        // in front of it).
+        let (x, z) = if self.hunt.opts.trophy {
+            (d.pos[0] + d.lookx * 640.0, d.pos[2] + d.lookz * 640.0)
+        } else {
+            (d.pos[0] + d.lookz * dist, d.pos[2] - d.lookx * dist)
+        };
         let area = self.view.area();
         let p = &mut self.hunt.player;
         p.x = x;
@@ -381,8 +443,7 @@ impl HuntView {
             &self.weapon_infos,
             &self.weapon_anims,
             self.seed,
-            &self.game_dir,
-            self.targets,
+            &self.setup,
         );
         self.hunt.ship_anim_ms = ship_ms;
         self.prev_cam = self.hunt.camera().0;
@@ -465,6 +526,78 @@ impl HuntView {
     }
 }
 
+impl HuntView {
+    /// `DrawTrophyText`: the trophy's record on its plaque.
+    fn plaque_text(&self, slot: usize, x0: f32, y0: f32, scale: f32) -> Vec<Sprite> {
+        let Some(b) = self.hunt.room.bodies.get(slot) else {
+            return Vec::new();
+        };
+        let info = self
+            .hunt
+            .herd
+            .species
+            .get(b.ctype.max(0) as usize)
+            .map(|s| &s.info);
+        let (name, mass, length) = info.map_or((String::new(), 0.0, 0.0), |i| {
+            (i.name.clone(), i.mass, i.length)
+        });
+        let weapon = self
+            .weapon_infos
+            .get(b.weapon.max(0) as usize)
+            .map_or("", |w| w.name.as_str());
+        let us = self.hunt.room.options.sys != 0;
+        let (sc, date, time) = (b.scale, b.date, b.time);
+        let (weight, len, range) = if us {
+            (
+                format!("{:.2}t", mass * sc * sc / 0.907),
+                format!("{:.2}ft", length * sc / 0.3),
+                format!("{:.1}ft", b.range / 0.3),
+            )
+        } else {
+            (
+                format!("{:.2}T", mass * sc * sc),
+                format!("{:.2}m", length * sc),
+                format!("{:.1}m", b.range),
+            )
+        };
+        let (d, m, y) = (date & 255, (date >> 10) & 255, date >> 20);
+        let date = if us {
+            format!("{m}.{d}.{y}")
+        } else {
+            format!("{d}.{m}.{y}")
+        };
+        let time = format!("{}:{:02}", (time >> 10) & 255, time & 255);
+        let lines: [&[(&str, String)]; 5] = [
+            &[("Name: ", name)],
+            &[("Weight: ", weight + " "), ("Length: ", len)],
+            &[
+                ("Weapon: ", format!("{weapon}    ")),
+                ("Score: ", b.score.to_string()),
+            ],
+            &[("Range of kill: ", range)],
+            &[("Date: ", date + "   "), ("Time: ", time)],
+        ];
+        let (grey, yellow) = ([0.75, 0.75, 0.75, 1.0], [0.75, 0.75, 0.0, 1.0]);
+        let px = 8.0 * scale;
+        let mut out = Vec::new();
+        for (i, parts) in lines.iter().enumerate() {
+            let y = y0 + (18.0 + 16.0 * i as f32) * scale;
+            let mut x = x0 + 16.0 * scale;
+            for (label, value) in parts.iter() {
+                for (t, c) in [(*label, grey), (value.as_str(), yellow)] {
+                    out.extend(
+                        self.hud
+                            .label(x + scale, y + scale, px, [0.0, 0.0, 0.0, 1.0], t),
+                    );
+                    out.extend(self.hud.label(x, y, px, c, t));
+                    x += self.hud.label_width(px, t);
+                }
+            }
+        }
+        out
+    }
+}
+
 impl Scene for HuntView {
     fn title(&self) -> String {
         let h = &self.hunt;
@@ -506,7 +639,9 @@ impl Scene for HuntView {
     }
 
     fn update(&mut self, gpu: &Gpu, dt: f32, input: &Input) {
-        if input.pressed(KeyCode::ShiftLeft) || input.pressed(KeyCode::ShiftRight) {
+        let k = self.hunt.room.options.keys;
+        let pressed = |vk| keys::pressed(input, vk);
+        if pressed(k.run) {
             self.run = !self.run;
         }
         if input.pressed(KeyCode::Escape) {
@@ -515,10 +650,17 @@ impl Scene for HuntView {
         if input.pressed(KeyCode::KeyY) || input.pressed(KeyCode::Enter) {
             self.hunt.confirm_exit();
         }
-        if input.pressed(KeyCode::KeyR) && self.hunt.show_exit() {
-            self.restart();
+        if input.pressed(KeyCode::KeyN) {
+            self.hunt.exit_prompt = false;
         }
-        if input.pressed(KeyCode::KeyE) {
+        if input.pressed(KeyCode::KeyR) {
+            if self.hunt.opts.trophy {
+                self.hunt.remove_current_trophy();
+            } else if self.hunt.show_exit() {
+                self.restart();
+            }
+        }
+        if pressed(k.show) {
             self.pending.toggle_weapon = true;
         }
         const DIGITS: [KeyCode; 6] = [
@@ -532,21 +674,21 @@ impl Scene for HuntView {
         if let Some(w) = DIGITS.iter().position(|&k| input.pressed(k)) {
             self.pending.select_weapon = Some(w);
         }
-        if input.pressed(KeyCode::KeyB) {
+        if pressed(k.binoculars) {
             self.pending.toggle_binoculars = true;
         }
         if input.pressed(KeyCode::Tab) {
             self.pending.toggle_map = true;
         }
-        if input.pressed(KeyCode::AltLeft) || input.pressed(KeyCode::AltRight) {
+        if pressed(k.call) {
             self.pending.call = true;
         }
-        if input.pressed(KeyCode::KeyC) {
+        if pressed(k.change_call) {
             self.pending.change_call = true;
         }
         let mut hin = HuntInput {
             controls: self.controls(input),
-            fire: input.grabbed && input.mouse_down,
+            fire: keys::held(input, k.fire),
             zoom_in: input.held(KeyCode::Equal) || input.held(KeyCode::NumpadAdd),
             zoom_out: input.held(KeyCode::Minus) || input.held(KeyCode::NumpadSubtract),
             ..self.pending
@@ -579,11 +721,19 @@ impl Scene for HuntView {
                 if let Err(e) = crate::save::store(&self.hunt.room) {
                     tracing::error!("{e:#}");
                 }
+                self.audio.stop_all();
                 self.done = true;
             }
-            // No menu yet: after dying, start a new hunt on the same area
-            // (this hunt's trophies are discarded, as in the original).
-            Some(Outcome::Died) => self.restart(),
+            // Dying discards this hunt's trophies (the save isn't written).
+            // From the menu, go back to it; otherwise start over.
+            Some(Outcome::Died) if !self.done => {
+                if self.setup.from_menu {
+                    self.audio.stop_all();
+                    self.done = true;
+                } else {
+                    self.restart();
+                }
+            }
             _ => {}
         }
 
@@ -724,7 +874,8 @@ impl Scene for HuntView {
                 sprites.extend(dot(ccx, ccy, [0.97, 0.0, 0.0, 1.0]));
                 if self.hunt.opts.radar {
                     for c in &self.hunt.herd.chars {
-                        if c.ai >= 10 && c.health > 0 && self.targets & (1 << c.ai) != 0 {
+                        let t = self.hunt.opts.targets;
+                        if c.ai >= 10 && c.health > 0 && t & (1 << c.ai) != 0 {
                             sprites.extend(dot(
                                 c.pos[0] / 1024.0,
                                 c.pos[2] / 1024.0,
@@ -753,6 +904,30 @@ impl Scene for HuntView {
                 ));
             }
         }
+        if self.hunt.opts.trophy {
+            if let Some((id, w)) = self
+                .trophy_exit_img
+                .and_then(|i| self.hud.image(i).map(|im| (i, im.w as f32)))
+            {
+                let x = (screen.0 as f32 - w * scale) / 2.0;
+                sprites.push(Sprite::new(id, x, 2.0 * scale, scale));
+            }
+        }
+        if let Some(slot) = self.hunt.trophy_body {
+            if let Some((id, w, h)) = self
+                .plaque_img
+                .and_then(|i| self.hud.image(i).map(|im| (i, im.w as f32, im.h as f32)))
+            {
+                let y = screen.1 as f32 - (h + 12.0) * scale;
+                let x = if self.hunt.opts.trophy {
+                    screen.0 as f32 - (w + 16.0) * scale
+                } else {
+                    (screen.0 as f32 - w * scale) / 2.0
+                };
+                sprites.push(Sprite::new(id, x, y, scale));
+                sprites.extend(self.plaque_text(slot, x, y, scale));
+            }
+        }
         if self.hunt.show_exit() {
             if let Some((id, w, h)) = self
                 .exit_img
@@ -775,7 +950,17 @@ impl Scene for HuntView {
     }
 
     fn wants_exit(&self) -> bool {
-        self.done
+        self.done && !self.setup.from_menu
+    }
+
+    fn next(&mut self) -> Option<crate::scene::MakeScene> {
+        if !(self.done && self.setup.from_menu) {
+            return None;
+        }
+        let (game_dir, reg) = (self.setup.game_dir.clone(), self.setup.reg);
+        Some(Box::new(move |gpu| {
+            Ok(Box::new(crate::menu::Menu::new(gpu, &game_dir, Some(reg))?) as Box<dyn Scene>)
+        }))
     }
 }
 

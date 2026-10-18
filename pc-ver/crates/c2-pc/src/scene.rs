@@ -1,6 +1,9 @@
 use crate::gpu::Gpu;
 use crate::input::Input;
 
+/// Builds a scene once the GPU exists.
+pub type MakeScene = Box<dyn FnOnce(&Gpu) -> anyhow::Result<Box<dyn Scene>>>;
+
 pub trait Scene {
     fn title(&self) -> String;
     fn update(&mut self, gpu: &Gpu, dt: f32, input: &Input);
@@ -18,6 +21,10 @@ pub trait Scene {
     /// The scene is done; close the window.
     fn wants_exit(&self) -> bool {
         false
+    }
+    /// Switch to another scene (checked after each frame is shown).
+    fn next(&mut self) -> Option<MakeScene> {
+        None
     }
 }
 

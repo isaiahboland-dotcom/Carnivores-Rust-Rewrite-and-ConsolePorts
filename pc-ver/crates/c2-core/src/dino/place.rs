@@ -3,6 +3,7 @@
 use super::{ai, check_place_collision_p, Character, Herd};
 use crate::area::{Area, TimeOfDay};
 use crate::rng::MsRand;
+use c2_formats::sav::Save;
 
 /// Hunt options that affect placement.
 #[derive(Debug, Clone, Copy)]
@@ -125,6 +126,40 @@ impl Herd {
             if let Some(ct) = ctype.filter(|&t| t < self.species.len()) {
                 self.spawn(ct, pos, rng, o.opt_agres);
             }
+        }
+    }
+
+    /// `PlaceTrophy`: each saved trophy stands on its slot of the trophy
+    /// room's landing ring (`Area::set_trophy_mode`), facing inwards.
+    /// `state` holds the slot.
+    pub fn place_trophies(&mut self, area: &Area, room: &Save, rng: &mut MsRand) {
+        use std::f32::consts::PI;
+        self.chars.clear();
+        for (slot, b) in room.bodies.iter().enumerate().take(24) {
+            let ctype = b.ctype as usize;
+            if b.ctype <= 0 || ctype >= self.species.len() {
+                continue;
+            }
+            let Some(&(cx, cz)) = area.landings.get(slot) else {
+                continue;
+            };
+            let alpha = match slot {
+                0..6 => PI / 2.0,
+                6..12 => PI,
+                12..18 => PI * 3.0 / 2.0,
+                _ => 0.0,
+            };
+            let (x, z) = (f32::from(cx) * 256.0 + 128.0, f32::from(cz) * 256.0 + 128.0);
+            let mut c = Character {
+                ctype,
+                alpha,
+                pos: [x, area.land_height(x, z), z],
+                ..Default::default()
+            };
+            c.reset(&self.species[ctype], rng, 128);
+            c.state = slot as i32;
+            c.scale = b.scale;
+            self.chars.push(c);
         }
     }
 }

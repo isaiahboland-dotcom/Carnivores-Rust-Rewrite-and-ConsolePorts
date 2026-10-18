@@ -87,11 +87,16 @@ cargo run --release -p c2-pc -- area  ../source/c2-original/HUNTDAT/AREAS/AREA1.
 ```
 Model viewer: drag to orbit, wheel to zoom, `[` `]` previous/next file, `N`/`P` animation, `Space` pause.
 Area viewer: `WASD` + `Q`/`E` to fly, drag to look, wheel = speed, `Shift` = fast, `+`/`-` view distance.
-Hunt mode (M3, in progress): `cargo run --release -p c2-pc -- hunt ../source/c2-original/HUNTDAT/AREAS/AREA1.MAP` —
+**Play:** `cargo run --release -p c2-pc -- play ../source/c2-original` — register a hunter (or pick one copied
+from your install), then Hunt / Options / Trophy / Statistics / Credits as in the original. The keys in the
+hunt follow the player's bindings (Options > Controls).
+
+Hunt mode directly (debugging): `cargo run --release -p c2-pc -- hunt ../source/c2-original/HUNTDAT/AREAS/AREA1.MAP` —
 click to capture the mouse, `WASD` move, mouse look, `LMB` fire, `E` show/hide weapon, `1`-`6` choose weapon,
 `B` binoculars (`+`/`-` power), `Tab` map, `Alt` call (`C` switch call), `Shift` toggles run, `X` crouch, `Space` jump/swim, arrows turn/look, `Esc` exit prompt (`Y` leave and save, `R` restart).
-Until menus exist, pick hunt targets with `--target 18` (AI numbers, comma-separated, or `all`); calls and the T-Rex/Ceratosaurus need targets.
-Saves go to `~/.local/share/c2rs/trophy00.sav` (first run copies your game's `trophy00.sav`; the game folder is never written).
+Without the menu, pick hunt targets with `--target 18` (AI numbers, comma-separated, or `all`), the hunter with `--player N`;
+`hunt .../TROPHY.MAP` opens the trophy room (`R` removes the trophy in front of you, `Esc` leaves).
+Saves go to `~/.local/share/c2rs/trophy0N.sav` (first run copies your game's saves; the game folder is never written).
 Add `--shot out.png` to render one frame to a file instead of opening a window.
 
 ---
@@ -329,7 +334,7 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
   - [x] all 42 vanilla files parse and round-trip byte-for-byte via `c2-parity scan`
   - [x] `.TGA`, `.WAV` (all 64 + 41 vanilla files match the original loaders)
   - [x] `strstr`-faithful `_RES.TXT` diff check: no differences
-  - [ ] menu `.RAW`, saves (deferred to M3, where they're used)
+  - [x] menu `.RAW` hit-maps (read by the menus), saves
 - [x] M2 Viewer — all 29 vanilla models and all 6 areas render: terrain, texture rotation, water, objects
       with `CalcLights` shading, object animation, fog, scrolling sky plane, cloud shadows, sun/moon, night vision
   - [ ] later polish: distant object billboards (needed for 3DS perf anyway), `RandomMap` light jitter,
@@ -344,14 +349,18 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
   - [x] binoculars (B, +/- power, life-form readout) and sniper scope (3x, cross-hairs)
   - [x] map (Tab) with view circle and radar blips; hunting calls (Alt, C to switch) with answers; `--target` hunt targets
   - [x] effects: blood sprays and trails, dirt/water/bubble particles, water rings
-  - [ ] menus (main, hunt setup with area/targets/weapons/accessories, options, trophy room) — the released source lacks them
+  - [x] menus, rebuilt from the art and hit-maps (the released source lacks them): registration, main, statistics,
+        hunt setup (area, time, targets, weapons, equipment, tranquilizer, observer; price budget), options (game,
+        view range, key bindings, mouse), credits, quit; `c2-pc play`
+  - [x] trophy room (`TrophyMode`): trophies on display with plaques, `R` removes; kill plaque during hunts
+  - [ ] side-by-side check against the retail game; pause; brightness option
 - [ ] M4 Mod system
 - [ ] M5 Recipes
 - [ ] M6 Cooker + 3DS boot
 - [ ] M7 Vanilla 3DS
 - [ ] M8 Modded 3DS
 
-_Last updated: 2026-10-18 — M3: core hunt loop playable (move, hunt, shoot, die, ship pickup, scoring, save); next: menus and the trophy room._
+_Last updated: 2026-10-18 — M3: the game is playable from the menus (register, set up a hunt, hunt, trophy room, options); next: a retail comparison pass, then M4 mods._
 
 
 note from user: quick headsup, the carnivores 2 datafile is copied direct from my library and includes re-shade files as well, please do not port the re-shade files to 3ds or the rust re-write as that would overcomplicate things dramatically

@@ -14,7 +14,7 @@ use crate::gpu::{Frame, Gpu, Target};
 use crate::input::Input;
 use crate::scene::{render, Scene};
 
-pub type MakeScene = Box<dyn FnOnce(&Gpu) -> Result<Box<dyn Scene>>>;
+pub use crate::scene::MakeScene;
 
 struct Running {
     window: Arc<Window>,
@@ -137,6 +137,23 @@ impl ApplicationHandler for App {
                     }
                     r.input.key(k, down);
                 }
+                if event.state == ElementState::Pressed {
+                    if let Some(t) = &event.text {
+                        r.input.typed.extend(t.chars().filter(|c| !c.is_control()));
+                    }
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                r.input.cursor = Some((position.x as f32, position.y as f32));
+            }
+            WindowEvent::MouseInput {
+                button: MouseButton::Right,
+                state,
+                ..
+            } => {
+                let down = state == ElementState::Pressed;
+                r.input.right_down = down;
+                r.input.right_clicked |= down;
             }
             WindowEvent::MouseInput {
                 button: MouseButton::Left,
@@ -146,6 +163,7 @@ impl ApplicationHandler for App {
                 let down = state == ElementState::Pressed;
                 r.input.dragging = down;
                 r.input.mouse_down = down;
+                r.input.clicked |= down;
                 if down && !r.input.grabbed && r.scene.grab_cursor() {
                     r.input.grabbed = grab(&r.window, true);
                 }
@@ -191,6 +209,21 @@ impl ApplicationHandler for App {
                     el.exit();
                 }
                 r.gpu.queue.present(tex);
+                if let Some(make) = r.scene.next() {
+                    match make(&r.gpu) {
+                        Ok(scene) => {
+                            r.scene = scene;
+                            r.input.release_all();
+                            r.input.grabbed = grab(&r.window, r.scene.grab_cursor());
+                            r.last = Instant::now();
+                        }
+                        Err(e) => {
+                            self.error = Some(e);
+                            el.exit();
+                            return;
+                        }
+                    }
+                }
                 r.window.set_title(&r.scene.title());
             }
             _ => {}
@@ -215,6 +248,13 @@ pub fn screenshot(size: (u32, u32), out: &std::path::Path, make: MakeScene) -> R
     scene.update(&gpu, 0.0, &Input::default());
     let view = texture.create_view(&Default::default());
     render(&gpu, scene.as_mut(), &view, &frame);
+    // Follow scene changes (menu -> loading -> hunt).
+    for _ in 0..4 {
+        let Some(next) = scene.next() else { break };
+        scene = next(&gpu)?;
+        scene.update(&gpu, 0.0, &Input::default());
+        render(&gpu, scene.as_mut(), &view, &frame);
+    }
     let rgba = gpu.read_rgba(texture)?;
     std::fs::write(out, crate::png::encode_rgba(size.0, size.1, &rgba))?;
     println!("{}: {}", out.display(), scene.title());

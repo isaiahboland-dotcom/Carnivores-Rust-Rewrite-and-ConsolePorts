@@ -213,9 +213,20 @@ OptSens, OptRes, FOGENABLE, OptText, OptViewR, SHADOWS3D, OptMsSens,
 OptBrightness`), `KeyMap` (17 virtual-key ints), `REVERSEMS`, `ScentMode,
 CamoMode, RadarMode, Tranq, OPT_ALPHA_COLORKEY, OptSys, OptSound, OptRender`.
 Dates are `(year<<20)+(month<<10)+day`, times `(hour<<10)+minute`.
+`KeyMap` entries are Windows virtual-key codes (`1`/`2` = left/right mouse).
+
+## `MENU/*_MAP.RAW` — menu hit-maps
+120000 bytes: 400 × 300, top-down, one byte per pixel = clickable region id
+(0 = none), at half the 800 × 600 resolution of the screen picture it
+belongs to. A region's lit look is the same pixels of the screen's `*_ON.TGA`.
+Regions in vanilla: `MAIN_MAP` 1 Hunt, 2 Options, 3 Trophy, 4 Credits, 5 Quit,
+6 Statistics; `M2_MAP` (hunt setup) 1-3 Dawn/Day/Night, 4 (blank box),
+5 Tranquilizer, 6 Observer mode, 7 Back, 8 Hunt; `OPT_MAP` 1 Game, 2 Controls,
+3 Video, 4 Back; `MQ_MAP` (quit) / `ML_MAP` (waiver) / `MR_MAP` (register) /
+`MD_MAP` (delete) 1-2 = the two buttons, left to right. Read by
+`c2-pc/src/menu.rs`; no parser in `c2-formats` (it's raw bytes).
 
 ## Not yet parsed
-- `MENU/*.RAW` — menu hit-maps. M3.
 - Map-editor side files in some mods (`.grp .lai .mtc .prj`) — not loaded by the game.
 
 ## Verifying against your own data

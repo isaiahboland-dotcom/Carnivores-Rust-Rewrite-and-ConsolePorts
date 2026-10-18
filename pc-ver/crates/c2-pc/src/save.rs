@@ -1,10 +1,14 @@
-//! Where the port keeps its own trophy save. The game folder is never written:
-//! on first run the original `trophy00.sav` is copied as the starting point.
+//! Where the port keeps its own player saves (`trophy0N.sav`, one per
+//! registered hunter). The game folder is never written: on first run the
+//! original saves are copied as the starting point.
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use c2_formats::sav::{self, Save, TrophyItem};
+use c2_formats::sav::{self, KeyMap, Options, Save, TrophyItem};
+
+/// Save slots (`trophy0%d.sav` has room for one digit).
+pub const MAX_PLAYERS: i32 = 10;
 
 /// Per-user data directory: `$XDG_DATA_HOME/c2rs` (`~/.local/share/c2rs`),
 /// `%APPDATA%\c2rs` on Windows, `~/Library/Application Support/c2rs` on macOS.
@@ -24,54 +28,146 @@ pub fn data_dir() -> PathBuf {
     base.unwrap_or_else(|| PathBuf::from(".")).join("c2rs")
 }
 
-pub fn save_path() -> PathBuf {
-    data_dir().join("trophy00.sav")
+pub fn slot_path(reg: i32) -> PathBuf {
+    data_dir().join(format!("trophy0{reg}.sav"))
 }
 
-fn blank() -> Save {
+/// The original's controls: WASD, arrows, LMB fire, E, Ctrl strafe, Space,
+/// Shift run, X crouch, Alt call, C change call, B binoculars.
+pub fn default_keys() -> KeyMap {
+    KeyMap {
+        forward: 87,
+        backward: 83,
+        up: 38,
+        down: 40,
+        left: 37,
+        right: 39,
+        fire: 1,
+        show: 69,
+        strafe_left: 65,
+        strafe_right: 68,
+        strafe: 17,
+        jump: 32,
+        run: 16,
+        crouch: 88,
+        call: 18,
+        change_call: 67,
+        binoculars: 66,
+    }
+}
+
+pub fn default_options() -> Options {
+    Options {
+        agres: 128,
+        dens: 128,
+        sens: 128,
+        res: 1,
+        fog: 1,
+        text: 1,
+        view_r: 128,
+        shadows: 1,
+        mouse_sens: 128,
+        brightness: 128,
+        keys: default_keys(),
+        ..Default::default()
+    }
+}
+
+/// A newly registered hunter with `score` points to spend.
+pub fn new_player(name: &str, reg: i32, score: i32) -> Save {
+    let mut raw = [0u8; 128];
+    for (d, b) in raw.iter_mut().zip(name.bytes().take(127)) {
+        *d = b;
+    }
     Save {
-        player_name_raw: [0; 128],
-        reg_number: 0,
-        score: 0,
+        player_name_raw: raw,
+        reg_number: reg,
+        score,
         rank: 0,
         last: Default::default(),
         total: Default::default(),
         bodies: [TrophyItem::default(); 24],
-        options: Default::default(),
+        options: default_options(),
     }
 }
 
-/// Our save, or (first run) a copy of the game's `trophy00.sav`, or blank.
-pub fn load(game_dir: &Path) -> Save {
-    let ours = save_path();
-    let read = |p: &Path| std::fs::read(p).ok().and_then(|d| sav::parse(&d).ok());
-    if let Some(s) = read(&ours) {
-        return s;
-    }
-    let original = std::fs::read_dir(game_dir).ok().and_then(|d| {
-        d.flatten().map(|e| e.path()).find(|p| {
-            p.file_name()
-                .is_some_and(|n| n.eq_ignore_ascii_case("trophy00.sav"))
-        })
-    });
-    match original.as_deref().and_then(read) {
-        Some(s) => {
-            tracing::info!(
-                "starting from the game's trophy00.sav (copied to {})",
-                ours.display()
-            );
-            s
+fn read(p: &Path) -> Option<Save> {
+    sav::parse(&std::fs::read(p).ok()?).ok()
+}
+
+/// `trophy0N.sav` files in `dir` (case-insensitive), by slot.
+fn find_saves(dir: &Path) -> Vec<(i32, PathBuf)> {
+    let mut out = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return out;
+    };
+    for p in entries.flatten().map(|e| e.path()) {
+        let Some(n) = p.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let n = n.to_ascii_lowercase();
+        if let Some(d) = n
+            .strip_prefix("trophy0")
+            .and_then(|r| r.strip_suffix(".sav"))
+            .and_then(|d| d.parse::<i32>().ok())
+        {
+            if (0..MAX_PLAYERS).contains(&d) {
+                out.push((d, p));
+            }
         }
-        None => blank(),
     }
+    out.sort();
+    out
+}
+
+/// First run: copy the game's saves into our data dir.
+fn import(game_dir: &Path) {
+    if !find_saves(&data_dir()).is_empty() {
+        return;
+    }
+    for (reg, p) in find_saves(game_dir) {
+        if let Some(mut s) = read(&p) {
+            s.reg_number = reg;
+            match store(&s) {
+                Ok(()) => tracing::info!("imported {}", p.display()),
+                Err(e) => tracing::warn!("{e:#}"),
+            }
+        }
+    }
+}
+
+/// Every registered hunter, by slot.
+pub fn players(game_dir: &Path) -> Vec<Save> {
+    import(game_dir);
+    find_saves(&data_dir())
+        .into_iter()
+        .filter_map(|(reg, p)| {
+            let mut s = read(&p)?;
+            s.reg_number = reg;
+            Some(s)
+        })
+        .collect()
+}
+
+/// Hunter `reg`, or a blank one.
+pub fn load(game_dir: &Path, reg: i32) -> Save {
+    players(game_dir)
+        .into_iter()
+        .find(|s| s.reg_number == reg)
+        .unwrap_or_else(|| new_player("", reg, 0))
 }
 
 pub fn store(s: &Save) -> Result<()> {
-    let p = save_path();
+    let p = slot_path(s.reg_number);
     if let Some(dir) = p.parent() {
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
     std::fs::write(&p, sav::write(s)).with_context(|| format!("writing {}", p.display()))?;
     tracing::info!("saved {}", p.display());
     Ok(())
+}
+
+pub fn delete(reg: i32) -> Result<()> {
+    let p = slot_path(reg);
+    std::fs::remove_file(&p).with_context(|| format!("deleting {}", p.display()))
 }
