@@ -339,14 +339,15 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
   - [x] weapons (draw/fire/hide/reload, ammo, crossbow drop), ray-traced shots with vital zones, damage
   - [x] detection: sight (line of sight + cover), smell (wind), gunshot noise; being eaten, drowning, death camera
   - [x] pickup ship, trophy scoring, exit prompt (Esc, Y leave, R restart), trophy save (own copy in the user data dir)
-  - [ ] calls/scent/camo/radar accessories, binoculars + scope, map, sounds, blood/particles, menus + trophy room
+  - [x] sound (kira): animal, weapon, ship, footstep and death sounds, zone ambience, random wildlife, underwater
+  - [ ] calls/scent/camo/radar accessories, binoculars + scope, map, blood/particles, menus + trophy room
 - [ ] M4 Mod system
 - [ ] M5 Recipes
 - [ ] M6 Cooker + 3DS boot
 - [ ] M7 Vanilla 3DS
 - [ ] M8 Modded 3DS
 
-_Last updated: 2026-10-18 — M3: core hunt loop playable (move, hunt, shoot, die, ship pickup, scoring, save); next: audio, binoculars/scope/map, effects, menus._
+_Last updated: 2026-10-18 — M3: core hunt loop playable (move, hunt, shoot, die, ship pickup, scoring, save); next: binoculars/scope/map, calls, effects, menus._
 
 
 note from user: quick headsup, the carnivores 2 datafile is copied direct from my library and includes re-shade files as well, please do not port the re-shade files to 3ds or the rust re-write as that would overcomplicate things dramatically

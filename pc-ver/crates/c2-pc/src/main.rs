@@ -2,6 +2,7 @@
 
 mod app;
 mod area_view;
+mod audio;
 mod camera;
 mod dinos;
 mod gpu;
@@ -13,6 +14,7 @@ mod png;
 mod render;
 mod save;
 mod scene;
+mod sounds;
 mod weapons;
 
 use std::path::PathBuf;

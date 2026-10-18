@@ -178,6 +178,18 @@ pub enum GameEvent {
     },
     Ship(ShipEvent),
     /// A trophy was registered (slot in the trophy room).
+    /// The looping ambience changed: `zone` = RSC ambient index, `None` =
+    /// underwater loop. `volume` is `AVolume` (0..=256).
+    Ambient {
+        zone: Option<usize>,
+        volume: i32,
+    },
+    /// A one-off RSC random sound (`RandSound[sound]`) near the hunter.
+    RandomSound {
+        sound: usize,
+        pos: [f32; 3],
+        volume: i32,
+    },
     Trophy {
         slot: usize,
         score: i32,
@@ -284,6 +296,11 @@ pub struct Hunt {
     /// Distance walked / time spent this hunt (`TrophyRoom.Last.path/time`).
     pub path: f32,
     pub time_s: f32,
+    /// Countdown to each ambient zone's next random sound (`RndTime`).
+    amb_rnd: Vec<i32>,
+    /// Random sounds allowed per zone (night drops flagged ones).
+    amb_sounds: Vec<Vec<c2_formats::rsc::RandomSoundRef>>,
+    current_ambient: Option<Option<usize>>,
 }
 
 /// How a hunt ended.
@@ -310,6 +327,26 @@ impl Hunt {
             speed: 10.0,
         };
         let ship = Ship::new(area, (player.x, player.z));
+        // LoadResources: random sounds per ambient zone; at night those with
+        // flags set are removed; the first countdown is randomized.
+        let night = area.time == crate::area::TimeOfDay::Night;
+        let mut amb_rnd = Vec::new();
+        let mut amb_sounds = Vec::new();
+        for a in &area.rsc.ambients {
+            let n = (a.random_count.max(0) as usize).min(a.random.len());
+            let list: Vec<_> = a.random[..n]
+                .iter()
+                .copied()
+                .filter(|r| !night || r.flags == 0)
+                .collect();
+            let freq = a.random[0].freq;
+            amb_rnd.push(if n > 0 {
+                (freq / 2 + rng.r_rand(freq)) * 1000
+            } else {
+                0
+            });
+            amb_sounds.push(list);
+        }
         Self {
             ship,
             ship_anim_ms: 1,
@@ -320,6 +357,9 @@ impl Hunt {
             outcome: None,
             path: 0.0,
             time_s: 0.0,
+            amb_rnd,
+            amb_sounds,
+            current_ambient: None,
             player,
             herd,
             weapons,
@@ -386,6 +426,7 @@ impl Hunt {
                 }
             }
             self.weapon_input(area, cars, input, out);
+            self.ambience(area, dt, out);
             self.path += dt as f32 * self.player.vspeed / 128.0;
             self.time_s += dt as f32 / 1000.0;
         }
@@ -1055,6 +1096,58 @@ impl Hunt {
             self.successes += 1;
             self.add_ship_task(area, index, out);
         }
+    }
+
+    /// Ambient loop by zone and random wildlife sounds (`ProcessControls`).
+    fn ambience(&mut self, area: &Area, dt: i32, out: &mut Vec<GameEvent>) {
+        let [cx, cy, cz] = self.player.eye();
+        let (ax, az) = (
+            ((cx as i32) >> 9).clamp(0, 511) as usize,
+            ((cz as i32) >> 9).clamp(0, 511) as usize,
+        );
+        let zone = usize::from(area.map.ambient.get(az * 512 + ax).copied().unwrap_or(0));
+        let want = if self.player.underwater {
+            None
+        } else {
+            Some(zone)
+        };
+        if self.current_ambient != Some(want) {
+            self.current_ambient = Some(want);
+            let volume = match want {
+                None => 240,
+                Some(z) => area.rsc.ambients.get(z).map_or(0, |a| a.volume),
+            };
+            out.push(GameEvent::Ambient { zone: want, volume });
+        }
+        let Some(z) = want else { return };
+        let (Some(t), Some(list), Some(amb)) = (
+            self.amb_rnd.get_mut(z),
+            self.amb_sounds.get(z),
+            area.rsc.ambients.get(z),
+        ) else {
+            return;
+        };
+        if list.is_empty() {
+            return;
+        }
+        *t -= dt;
+        if *t > 0 {
+            return;
+        }
+        let freq = amb.random[0].freq;
+        *t = (freq / 2 + self.rng.r_rand(freq)) * 1000;
+        let rr = self.rng.rand() as usize % list.len();
+        let r = list[rr];
+        let pos = [
+            cx + self.rng.si_rand(4096) as f32,
+            cy + self.rng.si_rand(256) as f32,
+            cz + self.rng.si_rand(4096) as f32,
+        ];
+        out.push(GameEvent::RandomSound {
+            sound: r.number.max(0) as usize,
+            pos,
+            volume: r.volume,
+        });
     }
 
     /// Escape: toggle the exit prompt.

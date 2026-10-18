@@ -108,6 +108,13 @@ pub fn load_weapons(
 }
 
 impl WeaponAssets {
+    pub fn cars(&self) -> Vec<Option<&car::Car>> {
+        self.cars
+            .iter()
+            .map(|c| c.as_ref().map(|(c, _)| c))
+            .collect()
+    }
+
     /// The view model, posed in camera space and moved into the world.
     pub fn draw(
         &mut self,

@@ -126,6 +126,10 @@ impl DinoAssets {
         }
     }
 
+    pub fn ship_car(&self) -> Option<&Car> {
+        self.ship.as_ref().map(|((c, _), _)| c)
+    }
+
     /// Length of the ship's landing animation (`Animation[0]`).
     pub fn ship_anim_ms(&self) -> i32 {
         self.ship

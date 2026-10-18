@@ -16,12 +16,17 @@ use glam::Vec3;
 use winit::keyboard::KeyCode;
 
 use crate::area_view::{find_file, AreaView};
+use crate::audio::Audio;
 use crate::dinos::{load_res, load_ship, load_species, DinoAssets};
 use crate::gpu::Gpu;
 use crate::hud::{load_tga, Hud, Sprite};
 use crate::input::Input;
 use crate::scene::Scene;
+use crate::sounds::{get, SoundBank};
 use crate::weapons::{load_weapons, WeaponAssets};
+use c2_core::dino::{hunt, DinoEvent};
+use c2_core::player::PlayerEvent;
+use c2_core::ship::{ship_sound, ShipEvent};
 
 /// Simulation step. The original runs on variable `TimeDt`; a fixed step keeps
 /// the simulation deterministic (needed for logic parity later).
@@ -53,6 +58,8 @@ pub struct HuntView {
     game_dir: std::path::PathBuf,
     /// The hunt was left alive and saved: close the window.
     done: bool,
+    audio: Audio,
+    sounds: SoundBank,
 }
 
 impl HuntView {
@@ -85,6 +92,18 @@ impl HuntView {
             .and_then(|p| load_tga(&p).ok())
             .map(|(w, h, rgba)| hud.add_image(gpu, w, h, &rgba));
         let dinos = DinoAssets::new(gpu, view.globals(), cars, load_ship(huntdat));
+        let species_cars: Vec<Option<&Car>> = dinos
+            .cars
+            .iter()
+            .map(|c| c.as_ref().map(|(c, _)| c))
+            .collect();
+        let sounds = SoundBank::load(
+            huntdat,
+            &species_cars,
+            &weapons.cars(),
+            dinos.ship_car(),
+            &view.area().rsc,
+        );
         let game_dir = huntdat
             .parent()
             .unwrap_or(std::path::Path::new("."))
@@ -117,6 +136,8 @@ impl HuntView {
             seed,
             game_dir,
             done: false,
+            audio: Audio::new(),
+            sounds,
         })
     }
 
@@ -274,6 +295,7 @@ impl HuntView {
 
     /// A fresh hunt on the same area, reloading the saved trophy room.
     fn restart(&mut self) {
+        self.audio.stop_all();
         self.seed = self.seed.wrapping_mul(1_103_515_245).wrapping_add(12345);
         let species = std::mem::take(&mut self.hunt.herd.species);
         let ship_ms = self.hunt.ship_anim_ms;
@@ -290,6 +312,7 @@ impl HuntView {
     }
 
     fn handle_events(&mut self) {
+        self.play_sounds();
         for e in self.events.drain(..) {
             match e {
                 GameEvent::Message(m) => self.message = Some((m, 2.0)),
@@ -301,7 +324,58 @@ impl HuntView {
                 GameEvent::Killed { trophy: true, .. } => {
                     self.message = Some(("Trophy!".into(), 2.0));
                 }
-                _ => {} // sounds and effects come later
+                _ => {}
+            }
+        }
+    }
+
+    /// Plays the sounds for this frame's events (`AddVoice*` call sites).
+    fn play_sounds(&mut self) {
+        let snd = &self.sounds;
+        let a = &mut self.audio;
+        let h = &self.hunt;
+        let r3 = (h.real_time % 3) as usize;
+        for e in &self.events {
+            match e {
+                GameEvent::WeaponSound { weapon, slot } => a.play(
+                    snd.weapons.get(*weapon).and_then(|w| get(w, *slot)),
+                    None,
+                    256,
+                ),
+                GameEvent::Dino(DinoEvent::Sound { index, sound, pos }) => {
+                    let ct = h.herd.chars.get(*index).map_or(usize::MAX, |c| c.ctype);
+                    a.play(
+                        snd.species.get(ct).and_then(|s| get(s, *sound)),
+                        Some(*pos),
+                        256,
+                    );
+                }
+                GameEvent::Player(PlayerEvent::Step) => {
+                    let v = 24 + (h.player.vspeed * 50.0) as i32;
+                    a.play(get(&snd.steps, r3), None, v);
+                }
+                GameEvent::Player(PlayerEvent::StepWater) => {
+                    let v = 64 + (h.player.vspeed * 30.0) as i32;
+                    a.play(get(&snd.steps_water, r3), None, v);
+                }
+                GameEvent::Player(PlayerEvent::Land) => a.play(get(&snd.steps, r3), None, 64),
+                GameEvent::HunterDied { kind } if *kind != hunt::BREATH => {
+                    a.play(get(&snd.screams, (h.real_time % 4) as usize), None, 256)
+                }
+                GameEvent::Ship(ShipEvent::Sound { slot, at }) => {
+                    a.play(get(&snd.ship, *slot), *at, 256)
+                }
+                GameEvent::RandomSound { sound, pos, volume } => {
+                    a.play(get(&snd.random, *sound), Some(*pos), *volume)
+                }
+                GameEvent::Ambient { zone, volume } => {
+                    let clip = match zone {
+                        Some(z) => get(&snd.ambients, *z),
+                        None => snd.underwater.as_ref(),
+                    };
+                    a.set_ambient(clip, *volume);
+                }
+                _ => {}
             }
         }
     }
@@ -417,6 +491,11 @@ impl Scene for HuntView {
         // Original yaw/pitch conventions are mirrored relative to the fly cam.
         self.view.cam.yaw = -alpha;
         self.view.cam.pitch = -beta;
+        self.audio.set_camera(pos, alpha);
+        let ship = &self.hunt.ship;
+        let engine = (ship.state != -1).then_some(ship.pos);
+        self.audio
+            .set_engine(get(&self.sounds.ship, ship_sound::ENGINE), engine);
         self.view.update(gpu, dt, input);
     }
 

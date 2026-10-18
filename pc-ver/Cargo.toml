@@ -23,6 +23,7 @@ winit = "0.30.13"
 glam = { version = "0.33", features = ["bytemuck"] }
 bytemuck = { version = "1.25", features = ["derive"] }
 pollster = "1.0.1"
+kira = { version = "0.12.5", default-features = false, features = ["cpal"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

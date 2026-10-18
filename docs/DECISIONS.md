@@ -2,6 +2,20 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-18 — Audio
+
+**kira 0.12** (owner's choice), default features off except `cpal` (we only
+play raw PCM; no file decoders needed). We don't use kira's spatial model:
+the original's mixer (`Audio.cpp`) gives each voice left/right gains from
+`CalcLRVolumes` (falloff `1224/(1224+d)` past 512 units, fading out between
+6000 and 10000, its own pan law) and positioned voices stay where they were
+emitted. We compute those gains and map them exactly onto kira's volume and
+constant-power panning, re-panning every frame. 16-voice limit (extra sounds
+dropped), ambience crossfades over ~0.74 s, as the original's 16 x 1024-sample
+ramp. The jump and water in/out sounds are never loaded in the released
+source, so they stay silent. Ambience zones and random sounds are game logic
+in `c2-core`.
+
 ## 2026-10-18 — M3: weapons, detection, death
 
 `c2-core::game::Hunt` holds a whole hunt (player, herd, weapons, wind,
