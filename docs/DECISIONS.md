@@ -2,6 +2,33 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-18 — M2 viewer
+
+**Stack: `winit` 0.30 + `wgpu` 30** (owner's choice), plus `glam` (maths),
+`bytemuck`, `pollster`. Versions picked at least two weeks old. No image crate:
+screenshots use a ~60-line stored-deflate PNG writer.
+
+**Colour maths stay in the original's space.** The original lights
+(`D3DTBLEND_MODULATE` with a grey vertex colour) and fogs raw 16-bit colour
+values. We use non-sRGB textures and surfaces so `texel * light` gives the same
+numbers. The owner's saves use `OptBrightness = 128`, which makes
+`BrightenTexture` a no-op, so it's skipped for now.
+
+**Terrain is generated in the vertex shader** from a per-cell storage buffer
+(height, light, water, texture, flags) instead of building meshes on the CPU.
+Each cell is 6 vertices; triangulation follows `fmReverse`, and the 4
+`TDirection` UV tables in `DrawTPlane` reduce to rotating the corner, which
+is how the shader does it. The PC draws a square window around the camera;
+the 3DS will need cooked meshes instead (M6).
+
+**Load-time fixups live in `c2-core::area`** (`CreateTMap` hardware path,
+`GetLandH`, `GetObjectH`, landing list, trophy ring), so the cooker can reuse them.
+
+**Known approximations in the viewer** (to check against the retail game):
+objects use the flat `_RenderObject` light without `RandomMap` jitter or
+per-vertex `VLight`; `sfTransparent` faces blend at 50%; object quarter-turn
+direction is unverified; no sky dome, sun/moon or distant billboards yet.
+
 ## 2026-10-17 — TGA/WAV: read the header instead of assuming it
 
 The original TGA loader assumes 16-bit uncompressed bottom-up and ignores the

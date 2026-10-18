@@ -79,6 +79,16 @@ The original C++ source (made available on Assembla in 2013) is used **as a refe
 
 ReShade or other wrapper DLLs in your install are ignored (see `docs/DECISIONS.md`).
 
+### Viewer (M2)
+```
+cd pc-ver
+cargo run --release -p c2-pc -- model ../source/c2-original/HUNTDAT            # browse every .CAR/.3DF
+cargo run --release -p c2-pc -- area  ../source/c2-original/HUNTDAT/AREAS/AREA1.MAP [--dusk|--night]
+```
+Model viewer: drag to orbit, wheel to zoom, `[` `]` previous/next file, `N`/`P` animation, `Space` pause.
+Area viewer: `WASD` + `Q`/`E` to fly, drag to look, wheel = speed, `Shift` = fast, `+`/`-` view distance.
+Add `--shot out.png` to render one frame to a file instead of opening a window.
+
 ---
 
 ## 4. Crate responsibilities
@@ -315,7 +325,10 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
   - [x] `.TGA`, `.WAV` (all 64 + 41 vanilla files match the original loaders)
   - [x] `strstr`-faithful `_RES.TXT` diff check: no differences
   - [ ] menu `.RAW`, saves (deferred to M3, where they're used)
-- [ ] M2 Viewer
+- [ ] M2 Viewer — **mostly done**: all 29 vanilla models and all 6 areas render (terrain, texture rotation, water, objects, object animation, fog)
+  - [ ] sky dome + clouds, sun/moon (additive), distant object billboards
+  - [ ] per-vertex model lighting (`CalcLights`/`VLight`) — objects use the flat `_RenderObject` light for now
+  - [ ] side-by-side check against the retail game (blend factor of `sfTransparent` faces, object rotation direction)
 - [ ] M3 Vanilla PC
 - [ ] M4 Mod system
 - [ ] M5 Recipes
@@ -323,7 +336,7 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
 - [ ] M7 Vanilla 3DS
 - [ ] M8 Modded 3DS
 
-_Last updated: 2026-10-17 — M1 formats done except menu RAW/saves (M3); next: M2 viewer._
+_Last updated: 2026-10-18 — M1 done except menu RAW/saves (M3); M2 viewer renders everything; next: finish M2 sky/lighting, then M3._
 
 
 note from user: quick headsup, the carnivores 2 datafile is copied direct from my library and includes re-shade files as well, please do not port the re-shade files to 3ds or the rust re-write as that would overcomplicate things dramatically

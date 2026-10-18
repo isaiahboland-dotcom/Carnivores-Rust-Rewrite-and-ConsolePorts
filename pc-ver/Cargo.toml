@@ -18,6 +18,11 @@ thiserror = "2"
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+wgpu = "30.0.1"
+winit = "0.30.13"
+glam = { version = "0.33", features = ["bytemuck"] }
+bytemuck = { version = "1.25", features = ["derive"] }
+pollster = "1.0.1"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
