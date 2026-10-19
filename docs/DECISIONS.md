@@ -2,6 +2,33 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-19 — M9: dialect hunts on PC (menus, spawning; interim AIs)
+- **Menu**: `_MENU.TXT` / `.c2map` lists (`c2_formats::menu_txt`); a
+  huntable's menu slot, not its AI, is what a hunt passes on.
+- **Resolution**: `c2_formats::mee::resolve` / `Tables::read` apply a
+  hunt's `overwrite` / `addition` blocks with the engine's substring rules
+  (so `area10` also matches area 1, and in the trophy room every block
+  applies, as in `ReadCharacters`). The area number comes from the map name
+  the way the engine reads its launch path (`area_of`).
+- **Placement**: `Herd::place_mee` follows the modernized fork's
+  `PlaceCharacters` / `spawnMapAmbient` (pack types, ratio picking in turn
+  or at random, regions, avoid areas, the 40-cell distance, water depths,
+  the density option), capped at the engine's 256 characters. Deviation:
+  the engine halts past 256; we stop placing.
+- **Targets**: `Hunt::is_target` uses a species' `radar` flag when the data
+  sets it, else the chosen-AI bits (scoring halves non-targets).
+- **Interim AIs** (until step 4 implements the families): the dialect's
+  AIs run as the closest original one (`c2_core::mee::family`: Ice Age
+  grazers as Parasaurolophus/Stegosaurus/Ankylosaurus, wolf and Micro as
+  Velociraptor, Smilodon and bear as Allosaurus, Titan as Ceratosaurus,
+  Ichthyornis as Pteranodon, the brachiosaur variants as the brachiosaur);
+  fish, Mosasaurus, poacher and dog are not placed. Per-species animation
+  slots and speeds (`runAnim`, `runspd`, `deathtype`, the first
+  `idlegroup`) override the family's (`dino::Tuning`).
+- **Weapons**: the renamed keys (`land_power`, `land_prec`, `land_fall`,
+  `pic1`) are read as the original ones; the dialect's extra weapon
+  features are not implemented yet.
+
 ## 2026-10-19 — Modder's Edition Engine data in scope (M9)
 Owner's decision. Many full-game mods are made for the community Modder's
 Edition Engine (MEE) rather than the original executable; they need its

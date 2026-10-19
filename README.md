@@ -394,9 +394,13 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
   - [ ] hunter name entry / several hunters, options screen
   - [ ] trophy room, scope cross-hairs, Old 3DS performance pass
 - [ ] M8 Modded 3DS
-- [ ] M9 Modder's Edition Engine data — **started**: reference sources in `source/`, generic parsing fixes
+- [ ] M9 Modder's Edition Engine data — **in progress**
+  - [x] nested `_RES.TXT` blocks; `_MENU.TXT` / `.c2map` menu lists; `overwrite` / `addition` resolution
+  - [x] spawn / pack tables and placement on PC (dialect game folders hunt with their own rosters and spawns)
+  - [ ] the dialect's AI families (interim: run as the closest original AI; aquatic ones not placed)
+  - [ ] extended weapons, trophy table, survival mode, weather; 3DS cooking and menus
 
-_Last updated: 2026-10-18 — M7 in progress: whole-game packs, touch menu and saves, sound, touch bottom screen. Next: owner tests on Old 3DS/2DS (pause screen shows per-part ms), then performance, trophy room checks, scope cross-hairs._
+_Last updated: 2026-10-19 — M9: Modder's Edition game folders show their menus and spawn their rosters on PC (interim AIs). Next: the dialect's AI families, then weapons/trophies and the 3DS side._
 
 
 note from user: quick headsup, the carnivores 2 datafile is copied direct from my library and includes re-shade files as well, please do not port the re-shade files to 3ds or the rust re-write as that would overcomplicate things dramatically

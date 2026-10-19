@@ -10,6 +10,7 @@ pub mod dino;
 pub mod effects;
 pub mod game;
 pub mod load;
+pub mod mee;
 pub mod model;
 pub mod player;
 pub mod profile;

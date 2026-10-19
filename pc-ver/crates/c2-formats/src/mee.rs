@@ -27,7 +27,8 @@ use crate::res_txt::{c_atof, c_atoi, Block, Entry, ResTxt, Sub};
 /// What a hunt is: the conditions blocks are tested against.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Hunt {
-    /// 1-based area number (10 = the tenth); `None` = the trophy room.
+    /// 1-based area number (10 = the tenth; 0 = a map whose name gives
+    /// none, so no `area` condition matches); `None` = the trophy room.
     pub area: Option<u32>,
     /// 0 dawn, 1 day, 2 night.
     pub time: u8,
@@ -75,7 +76,7 @@ pub fn applies(header: &str, h: &Hunt) -> bool {
     let Some(area) = h.area else {
         return true;
     };
-    if header.contains("area") && !header.contains(&format!("area{}", area % 10)) {
+    if header.contains("area") && (area == 0 || !header.contains(&format!("area{}", area % 10))) {
         return false;
     }
     if header.contains("time") && !header.contains(&format!("time{}", h.time)) {
@@ -230,6 +231,29 @@ pub struct Tables {
     pub pack_groups: Vec<PackGroup>,
     /// In `characters` order (the character type index).
     pub characters: Vec<Character>,
+}
+
+/// The area a map is, as the engine reads it from the launch path
+/// (`huntdat/areas/<name>`, the character after `area`): `areaN` is N,
+/// `area1x...` the tenth, `trophy...` the trophy room (`None`); the sixth
+/// slot may be `external`; anything else matches no area (0).
+pub fn area_of(map_stem: &str) -> Option<u32> {
+    let s = map_stem.to_ascii_lowercase();
+    if s.starts_with("trophy") {
+        return None;
+    }
+    if s == "external" {
+        return Some(6);
+    }
+    let rest = s.strip_prefix("area").unwrap_or("");
+    let mut chars = rest.chars();
+    Some(
+        match (chars.next().and_then(|c| c.to_digit(10)), chars.next()) {
+            (Some(1), Some(_)) => 10,
+            (Some(d), _) if d > 0 => d,
+            _ => 0,
+        },
+    )
 }
 
 /// Whether `_RES.TXT` uses the dialect (any of its tables, or nested

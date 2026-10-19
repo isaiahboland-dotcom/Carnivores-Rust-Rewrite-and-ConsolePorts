@@ -102,3 +102,14 @@ fn tables_link_groups_packs_and_characters() {
     assert_eq!(t2.spawn_groups[1].regions[0].xmin, 1);
     assert!(is_dialect(&r));
 }
+
+#[test]
+fn area_numbers_come_from_the_map_name() {
+    use c2_formats::mee::area_of;
+    assert_eq!(area_of("AREA3"), Some(3));
+    assert_eq!(area_of("area10"), Some(10));
+    assert_eq!(area_of("TROPHY"), None);
+    assert_eq!(area_of("external"), Some(6));
+    assert_eq!(area_of("valley"), Some(0));
+    assert!(!applies("overwrite area1", &hunt(0, 1, 0)));
+}

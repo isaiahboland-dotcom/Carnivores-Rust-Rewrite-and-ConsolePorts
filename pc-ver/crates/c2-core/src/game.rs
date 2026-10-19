@@ -724,7 +724,7 @@ impl Hunt {
         if self.successes > 1 {
             score *= 1.0 + self.successes as f32 / 10.0;
         }
-        if self.opts.targets & 1u32.checked_shl(c.ai as u32).unwrap_or(0) == 0 {
+        if !self.is_target(c) {
             score /= 2.0;
         }
         for (on, k) in [
@@ -1607,6 +1607,17 @@ impl Hunt {
     }
 
     /// `ScanLifeForms`: the nearest visible animal close to the view centre.
+    /// Whether `c` is one of the hunted species: chosen in the menu
+    /// (`TargetDino` bit of its AI), or, in Modder's Edition data, marked
+    /// `radar = TRUE` for this hunt.
+    pub fn is_target(&self, c: &crate::dino::Character) -> bool {
+        self.herd
+            .species
+            .get(c.ctype)
+            .and_then(|s| s.tuning.radar)
+            .unwrap_or_else(|| self.opts.targets & 1u32.checked_shl(c.ai as u32).unwrap_or(0) != 0)
+    }
+
     pub fn life_info(&self, area: &Area) -> Option<LifeInfo> {
         if !self.bin_mode {
             return None;

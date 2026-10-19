@@ -96,10 +96,90 @@ impl DinoInfo {
     }
 }
 
+/// Per-species settings the Modder's Edition dialect allows over an AI
+/// family's built-in ones (`runAnim`, `runspd`, `deathtype{ dieAnim }`, ...).
+/// `None` keeps the family's.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Tuning {
+    pub run: Option<usize>,
+    pub walk: Option<usize>,
+    pub swim: Option<usize>,
+    pub jump: Option<usize>,
+    pub slide: Option<usize>,
+    pub die: Option<usize>,
+    pub sleep: Option<usize>,
+    /// Idle animations (the first `idlegroup`'s).
+    pub idles: Vec<usize>,
+    pub run_speed: Option<f32>,
+    pub walk_speed: Option<f32>,
+    pub swim_speed: Option<f32>,
+    pub jump_speed: Option<f32>,
+    /// Shown on the radar / counted as a target (`radar = TRUE`); `None`:
+    /// the hunt's chosen targets decide, as in the original.
+    pub radar: Option<bool>,
+    /// The dialect's own AI number (`info.ai` holds the family it runs as).
+    pub mee_ai: Option<i32>,
+    /// Fish / mosasaur depth limits (`mindepth`, `maxdepth`).
+    pub depth: Option<(i32, i32)>,
+}
+
+impl Tuning {
+    pub fn herbivore(&self, mut p: HerbivoreParams) -> HerbivoreParams {
+        p.run = self.run.unwrap_or(p.run);
+        p.walk = self.walk.unwrap_or(p.walk);
+        p.die = self.die.unwrap_or(p.die);
+        p.slp = self.sleep.unwrap_or(p.slp);
+        if let Some(&first) = self.idles.iter().min() {
+            p.idle1 = first;
+            p.n_idles = self.idles.len();
+        }
+        p.run_speed = self.run_speed.unwrap_or(p.run_speed);
+        p.walk_speed = self.walk_speed.unwrap_or(p.walk_speed);
+        p
+    }
+
+    pub fn carnivore(&self, mut p: CarnivoreParams) -> CarnivoreParams {
+        p.run = self.run.unwrap_or(p.run);
+        p.walk = self.walk.unwrap_or(p.walk);
+        p.swim = self.swim.unwrap_or(p.swim);
+        p.jump = self.jump.unwrap_or(p.jump);
+        p.slide = self.slide.unwrap_or(p.slide);
+        p.die = self.die.unwrap_or(p.die);
+        p.slp = self.sleep.unwrap_or(p.slp);
+        if !self.idles.is_empty() {
+            p.n_idles = self.idles.len().min(p.idles.len());
+            for (d, s) in p.idles.iter_mut().zip(&self.idles) {
+                *d = *s;
+            }
+        }
+        p.run_speed = self.run_speed.unwrap_or(p.run_speed);
+        p.walk_speed = self.walk_speed.unwrap_or(p.walk_speed);
+        p.swim_speed = self.swim_speed.unwrap_or(p.swim_speed);
+        p.jump_speed = self.jump_speed.unwrap_or(p.jump_speed);
+        p
+    }
+
+    pub fn small(&self, mut p: SmallParams) -> SmallParams {
+        p.run = self.run.unwrap_or(p.run);
+        p.walk = self.walk.unwrap_or(p.walk);
+        p.die = self.die.unwrap_or(p.die);
+        p.slp = self.sleep.unwrap_or(p.slp);
+        if let [a, rest @ ..] = self.idles.as_slice() {
+            p.idle1 = *a;
+            p.idle2 = rest.first().copied().unwrap_or(*a);
+        }
+        p.run_speed = self.run_speed.unwrap_or(p.run_speed);
+        p.walk_speed = self.walk_speed.unwrap_or(p.walk_speed);
+        p
+    }
+}
+
 /// What the AI needs from a `.CAR`: per-animation length and sound map.
 #[derive(Debug, Clone)]
 pub struct Species {
     pub info: DinoInfo,
+    /// Dialect overrides (default: none).
+    pub tuning: Tuning,
     /// `AniTime` per animation, ms (at least 1 so `%` is safe).
     pub ani_time: Vec<i32>,
     /// Frames per animation.
@@ -119,6 +199,7 @@ impl Species {
         let anifx = car.anim_sounds.map_or_else(|| vec![-1; 64], |t| t.to_vec());
         Self {
             info,
+            tuning: Tuning::default(),
             ani_time,
             frames,
             anifx,
@@ -358,11 +439,26 @@ fn near_big_object(area: &Area, x: f32, z: f32, ccx: i32, ccz: i32) -> bool {
 
 /// `CheckPlaceCollisionP`: is this a bad spot to place/target a character?
 pub fn check_place_collision_p(area: &Area, v: &mut [f32; 3]) -> bool {
+    place_collision(area, v, false)
+}
+
+/// `CheckPlaceCollisionP(v, aquatic)` as the Modder's Edition Engine has it
+/// (`Game/CharacterCollision.cpp`): an aquatic animal may stand in water.
+pub fn check_place_collision_aquatic(area: &Area, v: &mut [f32; 3]) -> bool {
+    place_collision(area, v, true)
+}
+
+fn place_collision(area: &Area, v: &mut [f32; 3], aquatic: bool) -> bool {
     let (ccx, ccz) = (cell_of(v[0]), cell_of(v[2]));
     if !(4..=1008).contains(&ccx) || !(4..=1008).contains(&ccz) {
         return true;
     }
-    if flags_around(area, ccx, ccz) & (cell_flags::WATER | cell_flags::NO_WAY) != 0 {
+    let blocked = if aquatic {
+        cell_flags::NO_WAY
+    } else {
+        cell_flags::WATER | cell_flags::NO_WAY
+    };
+    if flags_around(area, ccx, ccz) & blocked != 0 {
         return true;
     }
     let h = area.land_height(v[0], v[2]);
@@ -743,19 +839,20 @@ impl Herd {
                 ai::TREX if alive => trex::animate(c, i, sp, ctx),
                 ai::TREX => dead::animate(c, i, sp, ctx, trex::DIE, None, (200.0, 196.0)),
                 a => {
-                    if let Some(p) = HerbivoreParams::for_ai(a) {
+                    let t = &sp.tuning;
+                    if let Some(p) = HerbivoreParams::for_ai(a).map(|p| t.herbivore(p)) {
                         if alive {
                             herbivore::animate(c, i, sp, ctx, &p);
                         } else {
                             dead::animate(c, i, sp, ctx, p.die, Some(p.slp), LOOK);
                         }
-                    } else if let Some(p) = CarnivoreParams::for_ai(a) {
+                    } else if let Some(p) = CarnivoreParams::for_ai(a).map(|p| t.carnivore(p)) {
                         if alive {
                             carnivore::animate(c, i, sp, ctx, &p);
                         } else {
                             dead::animate(c, i, sp, ctx, p.die, Some(p.slp), LOOK);
                         }
-                    } else if let Some(p) = SmallParams::for_ai(a) {
+                    } else if let Some(p) = SmallParams::for_ai(a).map(|p| t.small(p)) {
                         if alive {
                             small::animate(c, i, sp, ctx, &p);
                         } else {
@@ -849,6 +946,79 @@ mod tests {
         c.pos[1] = area.land_height(pos[0], pos[2]);
         herd.chars.push(c);
         herd
+    }
+
+    #[test]
+    fn mee_placement_follows_groups_and_packs() {
+        use c2_formats::mee::{
+            Character as MeeChar, PackGroup, PackLink, Region, SpawnGroup, SpawnLink, Tables,
+        };
+        let area = Area::flat(10);
+        let region = Region {
+            xmin: 300,
+            xmax: 900,
+            ymin: 300,
+            ymax: 900,
+        };
+        let group = |n: i32| SpawnGroup {
+            min: n,
+            max: n,
+            regions: vec![region],
+            ..Default::default()
+        };
+        let link = |g: usize| SpawnLink {
+            group: g,
+            ratio: 1.0,
+        };
+        let t = Tables {
+            spawn_groups: vec![group(3), group(2)],
+            pack_groups: vec![PackGroup {
+                min: 3,
+                max: 3,
+                density: 0.0,
+                spawn: vec![link(1)],
+            }],
+            characters: vec![
+                MeeChar::default(),
+                MeeChar {
+                    spawn: vec![link(0)],
+                    ..Default::default()
+                },
+                MeeChar {
+                    packs: vec![PackLink {
+                        group: 0,
+                        ratio: 1.0,
+                    }],
+                    ..Default::default()
+                },
+            ],
+        };
+        let mut herd = Herd {
+            species: vec![
+                species(ai::HUNTER, 2),
+                species(ai::PARA, 8),
+                species(ai::VELO, 8),
+            ],
+            chars: vec![],
+            demo_index: None,
+        };
+        let mut rng = MsRand::new(7);
+        let hunter = (50.0 * 256.0, 50.0 * 256.0);
+        herd.place_mee(&area, hunter, &mut rng, &t, 128);
+        let count = |h: &Herd, ct: usize| h.chars.iter().filter(|c| c.ctype == ct).count();
+        // Three solo parasaurs; two packs of three raptors.
+        assert_eq!((count(&herd, 1), count(&herd, 2)), (3, 6));
+        for c in &herd.chars {
+            assert!(
+                c.pos[0] > 300.0 * 256.0 && c.pos[0] < 900.0 * 256.0,
+                "{:?}",
+                c.pos
+            );
+        }
+        // A family with no AI here yet is never placed.
+        herd.species[1].info.ai = -1;
+        herd.place_mee(&area, hunter, &mut rng, &t, 128);
+        assert_eq!(count(&herd, 1), 0);
     }
 
     fn dist(c: &Character, h: &HunterView) -> f32 {

@@ -99,6 +99,27 @@ pub struct HuntView {
     audio: Audio,
     effects: EffectsView,
     sounds: SoundBank,
+    /// Modder's Edition data: the hunt's spawn tables (`None`: original data).
+    mee: Option<c2_formats::mee::Tables>,
+}
+
+/// The Modder's Edition hunt conditions for `setup` (area from the map
+/// name, dawn/day/night, the menu slots picked).
+fn mee_hunt(setup: &HuntSetup) -> c2_formats::mee::Hunt {
+    let stem = setup
+        .map
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    c2_formats::mee::Hunt {
+        area: c2_formats::mee::area_of(&stem),
+        time: match setup.time {
+            TimeOfDay::Dusk => 0,
+            TimeOfDay::Day => 1,
+            TimeOfDay::Night => 2,
+        },
+        picked: (setup.targets >> 10) & 0x3ff,
+    }
 }
 
 fn menu_pic(hud: &mut Hud, gpu: &Gpu, huntdat: &Path, name: &str) -> Option<usize> {
@@ -123,8 +144,24 @@ impl HuntView {
             .and_then(|p| p.parent())
             .unwrap_or(Path::new("."))
             .to_path_buf();
-        let res = load_res(&huntdat)?;
-        let (species, cars) = load_species(&huntdat, &res)?;
+        // Modder's Edition data is resolved for this hunt first (per-area
+        // models, spawn tables); original data is read as it is.
+        let res_txt = find_file(&huntdat, "_RES.TXT")
+            .and_then(|p| std::fs::read(p).ok())
+            .map(|d| c2_formats::res_txt::ResTxt::parse(&String::from_utf8_lossy(&d)))
+            .transpose()?
+            .filter(c2_formats::mee::is_dialect);
+        let (res, mee) = match res_txt {
+            Some(r) => {
+                let m = c2_core::mee::read(&r, &mee_hunt(&setup));
+                (m.res, Some(m.tables))
+            }
+            None => (load_res(&huntdat)?, None),
+        };
+        let (mut species, cars) = load_species(&huntdat, &res)?;
+        if let Some(t) = &mee {
+            c2_core::mee::tune(&mut species, t);
+        }
         let mut hud = Hud::new(gpu);
         let (weapon_infos, weapon_anims, weapons) =
             load_weapons(gpu, view.globals(), &mut hud, &huntdat, &res.weapons);
@@ -180,7 +217,15 @@ impl HuntView {
             dinos.ship_car(),
             &view.area().rsc,
         );
-        let mut hunt = Self::new_hunt(&view, species, &weapon_infos, &weapon_anims, seed, &setup);
+        let mut hunt = Self::new_hunt(
+            &view,
+            species,
+            &weapon_infos,
+            &weapon_anims,
+            seed,
+            &setup,
+            mee.as_ref(),
+        );
         hunt.ship_anim_ms = dinos.ship_anim_ms();
         view.radius = hunt.opts.view_r as u32;
         view.brightness = (hunt.room.options.brightness + 128) as f32 / 256.0;
@@ -212,6 +257,7 @@ impl HuntView {
             audio: Audio::new(),
             effects,
             sounds,
+            mee,
         })
     }
 
@@ -224,6 +270,7 @@ impl HuntView {
         anims: &[[i32; 4]],
         seed: u32,
         setup: &HuntSetup,
+        mee: Option<&c2_formats::mee::Tables>,
     ) -> Hunt {
         let area = view.area();
         let room = crate::save::load(&setup.game_dir, setup.reg);
@@ -243,6 +290,8 @@ impl HuntView {
         };
         if trophy {
             herd.place_trophies(area, &room, &mut rng);
+        } else if let Some(t) = mee {
+            herd.place_mee(area, (player.x, player.z), &mut rng, t, o.dens);
         } else {
             let opts = PlaceOptions {
                 density: o.dens,
@@ -450,6 +499,7 @@ impl HuntView {
             &self.weapon_anims,
             self.seed,
             &self.setup,
+            self.mee.as_ref(),
         );
         self.hunt.ship_anim_ms = ship_ms;
         self.prev_cam = self.hunt.camera().0;
