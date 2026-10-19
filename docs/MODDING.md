@@ -3,7 +3,9 @@
 This build supports **add-on mods**: data-only mods that add or replace files
 under `HUNTDAT/` and/or change `_RES.TXT` entries on top of vanilla (new or
 reworked dinosaurs, weapons, areas, textures, menus). Whole-game total
-conversions are out of scope. A mod combination can be shared as a
+conversions are out of scope, except game folders made for the Modder's
+Edition Engine, which are being supported as their own dialect (README
+M9). A mod combination can be shared as a
 **recipe**: credits, download URLs and file hashes, never the mods themselves.
 
 ## Installing a mod

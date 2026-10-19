@@ -18,13 +18,14 @@ The original C++ source (made available on Assembla in 2013) is used **as a refe
 - Data-driven engine: no hardcoded dino/weapon/area slot limits.
 - Automatic mod merging via a layered virtual filesystem + manifests + conflict resolver.
 - Targets **add-on mods**: small, data-only mods that layer on vanilla and merge cleanly.
+- Plays game folders made for the community **Modder's Edition Engine** (MEE), whose `_RES.TXT` dialect (spawn / pack / trophy tables, `overwrite` sections, new AI families, extended weapons) many full-game mods use. Reimplemented from its public source and manual, read as reference only (like the original source).
 - **Recipes**: shareable modpack definitions that reference mods by hash, so users fetch the mod files themselves and nothing third-party is redistributed.
 - A PC-side **cooker** that converts a merged pack into 3DS-ready data.
 - One shared core crate; platform crates stay thin.
 
 ### Non-goals (for now)
 - Carnivores 1 / Ice Age / Cityscape support (keep formats extensible, but don't build it yet).
-- Supporting mods that depend on patched executables. Instead, reimplement the *feature* those patches added when it's worth it, behind a manifest flag.
+- Supporting mods that depend on patched executables (other than the Modder's Edition Engine above). Instead, reimplement the *feature* those patches added when it's worth it, behind a manifest flag.
 - Multiplayer, online features, new renderer effects beyond what's needed.
 
 ---
@@ -301,6 +302,13 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
 **M7 — Vanilla game on 3DS**
 - Full gameplay, controls, bottom-screen UI, perf tuning, Old 3DS profile.
 
+**M9 — Modder's Edition Engine data** (after M7; can overlap M8)
+- Parse the MEE `_RES.TXT` dialect; menus and hunt lists from its tables.
+- Spawning (spawn / pack tables, regions, variants, map ambients), `overwrite` / `addition`.
+- Its AI families and weapon features, one at a time, checked against its source.
+- Cook such game folders for the 3DS; variant and ambient pickers in the 3DS menu.
+- ✅ Done when: MEE game folders play on PC and 3DS with their own rosters and spawns.
+
 **M8 — Modded packs on 3DS**
 - Pack picker at boot, budget reports enforced, test the example recipe on hardware.
 
@@ -386,6 +394,7 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
   - [ ] hunter name entry / several hunters, options screen
   - [ ] trophy room, scope cross-hairs, Old 3DS performance pass
 - [ ] M8 Modded 3DS
+- [ ] M9 Modder's Edition Engine data — **started**: reference sources in `source/`, generic parsing fixes
 
 _Last updated: 2026-10-18 — M7 in progress: whole-game packs, touch menu and saves, sound, touch bottom screen. Next: owner tests on Old 3DS/2DS (pause screen shows per-part ms), then performance, trophy room checks, scope cross-hairs._
 

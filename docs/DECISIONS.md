@@ -2,6 +2,20 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-19 — Modder's Edition Engine data in scope (M9)
+Owner's decision. Many full-game mods are made for the community Modder's
+Edition Engine (MEE) rather than the original executable; they need its
+`_RES.TXT` dialect and features. They are now supported in the public
+crates as a dialect of the game data, reimplemented in Rust:
+- Reference only, never committed, under gitignored `source/`: the
+  upstream engine (`Carnivores-CPE`, branch `Map-Amb-Demo-2`, no licence
+  file, so read and cite only, like the original source) with its
+  *Modders Edition 1.2 Manual*, and the MIT "Modernized" fork. Code
+  comments cite their file / function as they do for the original.
+- No game or mod data in fixtures; tests stay synthetic.
+- The vanilla path stays as the original: the dialect only applies to
+  data that uses it.
+
 ## 2026-10-18 — Reading more modded game folders
 Found by scanning a batch of mods (all game folders now parse):
 - `_RES.TXT`: a `{ ... }` block outside any section is kept as an unnamed
