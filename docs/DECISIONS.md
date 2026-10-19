@@ -2,6 +2,18 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-18 — M7: 3DS sound
+- `c2_core::sound` now holds what used to be the PC's `play_sounds` and
+  `lr_gains`: which `SoundId` an event plays (`commands`) and
+  `CalcLRVolumes`. Both front ends map ids to their own samples.
+- Packs carry sounds as raw 16-bit mono at 22050 Hz (`C2RS/SND/*.PCM`,
+  names in `c2-cook`'s `Cooker::car` / `wav` calls). They take the samples
+  out of the slimmed `.CAR`/`.RSC`. They load into linear memory, which
+  went from 16 to 20 MiB. The o3ds heap budget went from 40 to 38 MiB, the
+  linear budget from 12 to 16 MiB. The vanilla test pack needs 7 MiB for
+  sounds.
+- No DSP firmware means no sound and a message, not an error.
+
 ## 2026-10-18 — M7: 3DS bottom screen
 The owner's design: a **touch weapon picker on the left, the map in the
 middle, a call picker on the right**, replacing the PC's number keys,

@@ -8,6 +8,7 @@
 mod gpu;
 mod hunt;
 mod shot;
+mod sound;
 mod ui;
 mod world;
 
@@ -62,12 +63,12 @@ fn wait_for_start(apt: &Apt, hid: &mut Hid, gfx: &Gfx) {
     }
 }
 
-/// libctru: linear (GPU-visible) memory to reserve at start; the rest of the
-/// app's memory becomes the heap. libctru's default is 32 MiB, which leaves
-/// an Old 3DS only ~30 MiB of heap; the GPU data needs well under 16
-/// (`c2-cook` checks each pack).
+/// libctru: linear (GPU- and DSP-visible) memory to reserve at start; the
+/// rest of the app's memory becomes the heap. libctru's default is 32 MiB,
+/// which leaves an Old 3DS only ~30 MiB of heap; textures, vertex buffers
+/// and sounds need under 16 (`c2-cook` checks each pack).
 #[no_mangle]
-static mut __ctru_linear_heap_size: u32 = 16 << 20;
+static mut __ctru_linear_heap_size: u32 = 20 << 20;
 
 /// Out of memory: say so and wait, instead of the default abort (which the
 /// system shows as a crash and restarts the console).
@@ -227,6 +228,10 @@ fn run(pack: &Path, apt: &Apt, hid: &mut Hid, console: &Console) -> Result<()> {
         &game.weapon_cars,
     );
     let mut ui = Ui::new(&vfs, &game);
+    let (mut sound, sound_err) = match sound::Sound::new(&vfs, game.info.sound_rate) {
+        Ok(s) => (Some(s), None),
+        Err(e) => (None, Some(e)),
+    };
     game.trim();
     drop(vfs);
     println!(
@@ -241,7 +246,7 @@ fn run(pack: &Path, apt: &Apt, hid: &mut Hid, console: &Console) -> Result<()> {
     let mut last = ticks();
     let mut fps = 0.0f32;
     let mut frame = 0u32;
-    let mut message: Option<(String, u32)> = None;
+    let mut message: Option<(String, u32)> = sound_err.map(|e| (e, 600));
     let mut shot_n = 0;
     while apt.main_loop() {
         hid.scan_input();
@@ -281,6 +286,9 @@ fn run(pack: &Path, apt: &Apt, hid: &mut Hid, console: &Console) -> Result<()> {
             fps = fps * 0.9 + (1.0 / dt) * 0.1;
         }
         game.update(&pad, dt.min(0.1));
+        if let Some(s) = sound.as_mut() {
+            s.update(&game.events, &game.hunt, dt.min(0.1));
+        }
         for e in game.events.drain(..) {
             if let GameEvent::Message(m) = e {
                 message = Some((m, frame + 180));
@@ -288,7 +296,12 @@ fn run(pack: &Path, apt: &Apt, hid: &mut Hid, console: &Console) -> Result<()> {
         }
         match game.hunt.outcome() {
             Some(Outcome::Exited) => break,
-            Some(Outcome::Died) => game.restart(),
+            Some(Outcome::Died) => {
+                if let Some(s) = sound.as_mut() {
+                    s.stop_all();
+                }
+                game.restart();
+            }
             None => {}
         }
 
@@ -311,10 +324,13 @@ fn run(pack: &Path, apt: &Apt, hid: &mut Hid, console: &Console) -> Result<()> {
             .filter(|m| m.1 > frame)
             .map(|m| m.0.clone());
         let debug = format!(
-            "{} {fps:.0}fps cmd {:.0}% {}",
+            "{} {fps:.0}fps cmd {:.0}% {}\n{}",
             game.info.target,
             gpu.cmdbuf_usage() * 100.0,
-            mem_line()
+            mem_line(),
+            sound
+                .as_ref()
+                .map_or("no sound".into(), sound::Sound::status)
         );
         ui.new_frame();
         ui.draw_top(&mut gpu, &game, &game.hunt, &debug);

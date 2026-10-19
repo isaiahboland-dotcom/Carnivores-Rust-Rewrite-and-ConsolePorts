@@ -439,7 +439,9 @@ impl Ui {
         if hunt.paused {
             self.text_c(gpu, cx, 104.0, 2.0, WHITE, "PAUSED");
             self.text_c(gpu, cx, 128.0, 1.0, WHITE, "SELECT to resume");
-            self.text(gpu, 4.0, 4.0, 1.0, WHITE, debug);
+            for (i, l) in debug.lines().enumerate() {
+                self.text(gpu, 4.0, 4.0 + 10.0 * i as f32, 1.0, WHITE, l);
+            }
         }
         if hunt.show_exit() {
             self.text_c(gpu, cx, 104.0, 2.0, WHITE, "Leave the hunt?");

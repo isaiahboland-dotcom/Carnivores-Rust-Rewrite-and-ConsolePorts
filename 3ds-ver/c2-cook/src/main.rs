@@ -19,6 +19,7 @@ use c2_core::color::image_to_rgba8;
 use c2_core::dino::DinoInfo;
 use c2_core::game::WeaponInfo;
 use c2_core::model::PreparedModel;
+use c2_core::sound::SAMPLE_RATE;
 use c2_formats::cooked::{tile, write_pack, write_texture, TexFormat};
 use c2_vfs::{MemBackend, Vfs};
 
@@ -48,8 +49,10 @@ struct Profile {
     object_view: u32,
     /// Main memory (heap) the app may use while loading, KiB.
     heap_kb: usize,
-    /// GPU (linear) memory for textures and vertex buffers, KiB.
+    /// GPU (linear) memory for textures, vertex buffers and sounds, KiB.
     linear_kb: usize,
+    /// Sound sample rate (the originals are 22050 Hz).
+    sound_rate: u32,
 }
 
 const N3DS: Profile = Profile {
@@ -58,9 +61,10 @@ const N3DS: Profile = Profile {
     model_tex: 128,
     view: 42,
     object_view: 28,
-    // ~124 MiB for the app: 16 MiB linear (`c2-3ds` sets it), code, slack.
+    // ~124 MiB for the app: 20 MiB linear (`c2-3ds` sets it), code, slack.
     heap_kb: 96 * 1024,
-    linear_kb: 12 * 1024,
+    linear_kb: 16 * 1024,
+    sound_rate: SAMPLE_RATE,
 };
 
 const O3DS: Profile = Profile {
@@ -69,9 +73,10 @@ const O3DS: Profile = Profile {
     model_tex: 64,
     view: 26,
     object_view: 18,
-    // 64 MiB for the app: 16 MiB linear, code, slack.
-    heap_kb: 40 * 1024,
-    linear_kb: 12 * 1024,
+    // 64 MiB for the app: 20 MiB linear, code, slack.
+    heap_kb: 38 * 1024,
+    linear_kb: 16 * 1024,
+    sound_rate: SAMPLE_RATE,
 };
 
 /// Counts heap use, so the cooker can measure what loading a pack takes.
@@ -304,6 +309,42 @@ fn font() -> Vec<u8> {
     px
 }
 
+/// 16-bit mono PCM at `rate` from `pcm` in format (`rate0`, `channels`,
+/// `bits`): channels averaged, resampled linearly.
+fn to_mono16(pcm: &[u8], rate0: u32, channels: u16, bits: u16, rate: u32) -> Vec<u8> {
+    let ch = usize::from(channels.max(1));
+    let samples: Vec<f32> = if bits == 8 {
+        pcm.iter()
+            .map(|&b| (f32::from(b) - 128.0) * 256.0)
+            .collect()
+    } else {
+        pcm.as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| f32::from(i16::from_le_bytes(*b)))
+            .collect()
+    };
+    let mono: Vec<f32> = samples
+        .chunks(ch)
+        .map(|f| f.iter().sum::<f32>() / f.len() as f32)
+        .collect();
+    if mono.is_empty() {
+        return Vec::new();
+    }
+    let step = f64::from(rate0.max(1)) / f64::from(rate.max(1));
+    let n = (mono.len() as f64 / step) as usize;
+    let mut out = Vec::with_capacity(n * 2);
+    for i in 0..n {
+        let t = i as f64 * step;
+        let (k, f) = (t as usize, (t.fract()) as f32);
+        let a = mono[k.min(mono.len() - 1)];
+        let b = mono[(k + 1).min(mono.len() - 1)];
+        let v = (a + (b - a) * f).clamp(-32768.0, 32767.0) as i16;
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    out
+}
+
 /// `BrightenTexture` at night: every texel becomes `(G/8, G, G/8)`.
 fn night_vision(rgba: &mut [u8]) {
     for p in rgba.as_chunks_mut::<4>().0 {
@@ -319,6 +360,8 @@ struct Cooker {
     entries: Vec<(String, Vec<u8>)>,
     /// Estimated 3DS GPU memory by kind, KiB.
     linear: BTreeMap<&'static str, usize>,
+    /// Sounds go in as 16-bit mono at this rate.
+    sound_rate: u32,
 }
 
 impl Cooker {
@@ -334,17 +377,42 @@ impl Cooker {
     }
 
     /// A model file without what the 3DS gets elsewhere: its texture (now a
-    /// `.TX`) and its sounds' samples (kept as empty sounds, so indices hold).
-    fn car(&mut self, vfs: &Vfs, path: &str) -> Result<Vec<u8>> {
+    /// `.TX`) and its sounds' samples (kept as empty sounds, so indices
+    /// hold; the samples go to `C2RS/SND/{snd}{k}.PCM`).
+    fn car(&mut self, vfs: &Vfs, path: &str, snd: &str) -> Result<Vec<u8>> {
         let mut car =
             c2_formats::car::parse(&vfs.read(path)?).with_context(|| format!("parsing {path}"))?;
         let rgba = PreparedModel::from_mesh(&car.mesh).texture_rgba;
         car.mesh.texture = Vec::new();
-        for s in &mut car.sounds {
-            s.pcm = Vec::new();
+        for (k, s) in car.sounds.iter_mut().enumerate() {
+            let pcm = std::mem::take(&mut s.pcm);
+            self.sound(&format!("{snd}{k}"), &pcm, SAMPLE_RATE, 1, 16);
         }
         self.add(path, c2_formats::car::write(&car));
         Ok(rgba)
+    }
+
+    /// A sound as `C2RS/SND/{name}.PCM` (raw 16-bit mono at `sound_rate`).
+    fn sound(&mut self, name: &str, pcm: &[u8], rate: u32, channels: u16, bits: u16) {
+        let out = to_mono16(pcm, rate, channels, bits, self.sound_rate);
+        if out.is_empty() {
+            return;
+        }
+        *self.linear.entry("sounds").or_default() += out.len() / 1024;
+        self.add(format!("C2RS/SND/{name}.PCM"), out);
+    }
+
+    /// A `.WAV` from the game, if there.
+    fn wav(&mut self, vfs: &Vfs, path: &str, name: &str) {
+        let Some(w) = vfs
+            .read(path)
+            .ok()
+            .and_then(|d| c2_formats::wav::parse(&d).ok())
+        else {
+            return;
+        };
+        let f = w.format.unwrap_or(c2_formats::wav::WavFormat::VANILLA);
+        self.sound(name, &w.pcm, f.sample_rate, f.channels, f.bits);
     }
 
     /// A 2D picture, already sized, as an RGBA5551 texture.
@@ -410,6 +478,7 @@ fn main() -> Result<()> {
         night: time == TimeOfDay::Night,
         entries: Vec::new(),
         linear: BTreeMap::new(),
+        sound_rate: profile.sound_rate,
     };
 
     // Which animals: the hunter (his body after a death), the chosen
@@ -442,7 +511,7 @@ fn main() -> Result<()> {
     for (file, tx) in [("SHIP2A.CAR", "SHIP"), ("WCIRCLE2.CAR", "RING")] {
         let path = format!("HUNTDAT/{file}");
         if vfs.resolve(&path).is_some() {
-            let rgba = c.car(&vfs, &path)?;
+            let rgba = c.car(&vfs, &path, &format!("{tx}_"))?;
             c.model_texture(format!("C2RS/{tx}.TX"), &rgba);
         }
     }
@@ -473,11 +542,19 @@ fn main() -> Result<()> {
         c.night = night;
     }
     for &i in &chars {
-        let rgba = c.car(&vfs, &format!("HUNTDAT/{}", infos[i].file))?;
+        let rgba = c.car(
+            &vfs,
+            &format!("HUNTDAT/{}", infos[i].file),
+            &format!("C{i}_"),
+        )?;
         c.model_texture(format!("C2RS/CHAR{i}.TX"), &rgba);
     }
     for &i in &weapons {
-        let rgba = c.car(&vfs, &format!("HUNTDAT/WEAPONS/{}", winfos[i].file))?;
+        let rgba = c.car(
+            &vfs,
+            &format!("HUNTDAT/WEAPONS/{}", winfos[i].file),
+            &format!("W{i}_"),
+        )?;
         c.model_texture(format!("C2RS/WPN{i}.TX"), &rgba);
     }
 
@@ -575,11 +652,44 @@ fn main() -> Result<()> {
     for o in &mut rsc.objects {
         o.model.mesh.texture = Vec::new();
     }
-    for s in &mut rsc.random_sounds {
-        *s = Vec::new();
+    for (k, s) in rsc.random_sounds.iter_mut().enumerate() {
+        let pcm = std::mem::take(s);
+        c.sound(&format!("R{k}"), &pcm, SAMPLE_RATE, 1, 16);
     }
-    for amb in &mut rsc.ambients {
-        amb.pcm = Vec::new();
+    for (k, amb) in rsc.ambients.iter_mut().enumerate() {
+        let pcm = std::mem::take(&mut amb.pcm);
+        c.sound(&format!("A{k}"), &pcm, SAMPLE_RATE, 1, 16);
+    }
+    // SOUNDFX: underwater, steps, screams, the chosen animals' calls.
+    c.wav(&vfs, "HUNTDAT/SOUNDFX/A_UNDERW.WAV", "U");
+    for n in 1..=3 {
+        c.wav(
+            &vfs,
+            &format!("HUNTDAT/SOUNDFX/STEPS/HWALK{n}.WAV"),
+            &format!("F{}", n - 1),
+        );
+        c.wav(
+            &vfs,
+            &format!("HUNTDAT/SOUNDFX/STEPS/FOOTW{n}.WAV"),
+            &format!("FW{}", n - 1),
+        );
+    }
+    for n in 1..=4 {
+        c.wav(
+            &vfs,
+            &format!("HUNTDAT/SOUNDFX/HUM_DIE{n}.WAV"),
+            &format!("H{}", n - 1),
+        );
+    }
+    for &i in &dinos {
+        let ai = infos[i].ai;
+        for (v, l) in ["A", "B", "C"].iter().enumerate() {
+            c.wav(
+                &vfs,
+                &format!("HUNTDAT/SOUNDFX/CALLS/CALL{}_{l}.WAV", ai - 9),
+                &format!("K{ai}_{v}"),
+            );
+        }
     }
     c.add(
         format!("HUNTDAT/AREAS/{area_name}.RSC"),
@@ -592,13 +702,14 @@ fn main() -> Result<()> {
     let info = format!(
         "pack = 2\ntarget = {}\narea = {area_name}\ntime = {}\ndinos = {}\nweapons = {}\n\
          terrain_tile = {t}\natlas_cols = {cols}\nterrain_count = {n}\nview = {}\n\
-         object_view = {}\n",
+         object_view = {}\nsound_rate = {}\n",
         profile.name,
         a.time.as_deref().unwrap_or("day"),
         list(&dinos),
         list(&weapons),
         profile.view,
         profile.object_view,
+        profile.sound_rate,
     );
     c.entries.push(("C2RS/INFO.TXT".into(), info.into_bytes()));
 

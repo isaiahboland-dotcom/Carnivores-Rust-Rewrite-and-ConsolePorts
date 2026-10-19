@@ -105,25 +105,40 @@ quit
   written to per-character GPU buffers.
 
 ## Memory budget
-- An Old 3DS app gets 64 MiB, a New 3DS app 124 MiB. The app keeps 16 MiB as
-  linear (GPU) memory and the rest is heap: about 47 MiB on Old, 107 on New.
+- An Old 3DS app gets 64 MiB, a New 3DS app 124 MiB. The app keeps 20 MiB as
+  linear memory (what the GPU and the DSP read: textures, vertex buffers,
+  sounds) and the rest is heap: about 43 MiB on Old, 103 on New.
   Start the Homebrew Launcher through a game or Download Play (title
   takeover). Started as an applet, it has much less memory.
 - `c2-cook` loads each pack the way the 3DS does, measures the peak heap,
-  and refuses packs over the target's budget (heap: o3ds 40 MiB, n3ds 96;
-  GPU: 12 MiB) unless `--force`.
+  and refuses packs over the target's budget (heap: o3ds 38 MiB, n3ds 96;
+  linear: 16 MiB) unless `--force`.
 - Packs carry the `.RSC`/`.CAR` without textures or sounds. The app reads
   one light map from the `.MAP` and frees the rest of what only the PC uses
   after loading.
-- Vanilla AREA1, two hunted species + hunter, two weapons: pack 17 MiB (o3ds)
-  / 18 MiB (n3ds), loading peak 23 MiB. In the emulator the heap then sits
-  at 15 MiB; GPU memory used is 4–7 MiB.
+- Vanilla AREA1, two hunted species + hunter, two weapons: pack 25 MiB (o3ds),
+  loading peak 23 MiB. In the emulator the heap then sits at 15 MiB; linear
+  memory used is ~12 MiB, of which sounds are 7.
 - **Hardware (owner, 2026-10-18)**: Old 3DS / Old 2DS, o3ds pack: loads,
   ~58 fps, heap 15.1 MiB in use while hunting.
 - Out of memory shows a message (press START) instead of crashing.
 - The loading screen and the bottom screen show heap used/total and free
   linear memory.
 
+## Sound
+Sounds play on the DSP, which needs the console's DSP firmware dump at
+`sdmc:/3ds/dspfirm.cdc`. Most homebrew setups have it; if not, run the
+**DSP1** homebrew app once. Without it the game runs silently and says so
+on the bottom screen. In Azahar, any file at that path works (it emulates
+the DSP).
+
+The cooker writes every sound a hunt can play as 16-bit mono at 22050 Hz:
+the chosen animals', weapons' and ship's `.CAR` sounds, the area's random
+and ambient sounds, steps, screams and the chosen animals' calls. Which
+event plays what, and at what left/right level, is `c2_core::sound`, shared
+with the PC. 16 voices as the original, plus two channels to crossfade the
+ambience and one for the ship's engine.
+
 ## Not yet (M7)
-Sound, menus and saves, scope cross-hairs, stereo 3D, gyro aim, the pack
+Menus and saves, scope cross-hairs, stereo 3D, gyro aim, the pack
 picker, an Old 3DS performance pass.

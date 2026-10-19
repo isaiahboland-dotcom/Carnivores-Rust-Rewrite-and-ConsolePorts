@@ -33,6 +33,8 @@ pub struct PackInfo {
     /// `_RES.TXT` weapon indices.
     pub weapons: Vec<usize>,
     pub draw: DrawInfo,
+    /// Sample rate of the pack's sounds.
+    pub sound_rate: u32,
 }
 
 impl PackInfo {
@@ -64,6 +66,7 @@ impl PackInfo {
                 _ => TimeOfDay::Day,
             },
             dinos: list("dinos"),
+            sound_rate: num("sound_rate", c2_core::sound::SAMPLE_RATE),
             weapons: list("weapons"),
             draw: DrawInfo {
                 tile: num("terrain_tile", 64) as usize,
