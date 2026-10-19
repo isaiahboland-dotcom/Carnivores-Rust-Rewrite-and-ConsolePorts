@@ -10,6 +10,7 @@ mod flyer;
 mod herbivore;
 mod huntable;
 pub mod mee;
+mod mee_trex;
 mod place;
 pub mod pose;
 mod small;
@@ -294,6 +295,8 @@ pub struct Character {
     pub idle_group: Option<usize>,
     /// Phase of the zig-zag while alarmed (`tgalphaOffset`).
     pub tgalpha_offset: f32,
+    /// The roar this animal uses (`roarAnim`, picked at reset).
+    pub roar_anim: usize,
 }
 
 /// What the AI sees of the hunter.
@@ -637,6 +640,9 @@ impl Character {
             self.heard_shot = false;
             if m.kill_types.len() > 1 {
                 self.kill_type = rng.r_rand(m.kill_types.len() as i32 - 1) as usize;
+            }
+            if !m.roars.is_empty() {
+                self.roar_anim = m.roars[rng.r_rand(m.roars.len() as i32 - 1) as usize];
             }
             if m.death_types.len() > 1 {
                 self.death_type = rng.r_rand(m.death_types.len() as i32 - 1) as usize;
@@ -1097,7 +1103,11 @@ impl Herd {
                         leader,
                         group,
                     };
-                    huntable::animate(c, i, sp, m, ctx, &mut w);
+                    if m.ai == ai::TREX {
+                        mee_trex::animate(c, i, sp, m, ctx, &mut w);
+                    } else {
+                        huntable::animate(c, i, sp, m, ctx, &mut w);
+                    }
                 } else {
                     huntable::animate_dead(c, i, sp, m, ctx);
                 }

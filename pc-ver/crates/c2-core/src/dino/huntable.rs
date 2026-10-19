@@ -7,11 +7,12 @@
 
 use c2_formats::mee::SpawnGroup;
 
-use super::mee::{ai_info, mee_ai, MeeInfo};
+use super::mee::{ai_info, mee_ai, IdleGroup, MeeInfo};
 use super::{
     ai, angle_difference, corrected_alpha, delta_func, find_vector_alpha, hunt, sgn, wrap_angle,
     Character, Ctx, DinoEvent, Pack, Species, CS_ON_WATER, PI,
 };
+use crate::rng::MsRand;
 
 /// What a character sees of the rest of the herd.
 pub struct World<'a> {
@@ -88,16 +89,7 @@ pub fn animate(
         let pdist = (playerdx * playerdx + playerdz * playerdz).sqrt();
         let done = (targetdx, targetdz, pdist);
 
-        let depth =
-            ctx.area.land_up_h(c.pos[0], c.pos[2]) - ctx.area.land_height(c.pos[0], c.pos[2]);
-        // The original clears the flag with `StateF &= !csONWATER`, i.e. all
-        // of StateF.
-        c.state_f = if depth > m.water_level as f32 * c.scale {
-            c.state_f | CS_ON_WATER
-        } else {
-            0
-        };
-        let on_water = c.state_f & CS_ON_WATER != 0;
+        let on_water = water_flag(c, m, ctx);
 
         if eating(c) {
             break done;
@@ -172,32 +164,7 @@ pub fn animate(
             {
                 c.phase = m.jump;
             }
-            if m.kill_dist > 0 && pdist < m.kill_dist as f32 {
-                let kill_alt = m.water_level.max(256) as f32;
-                if (ctx.hunter.y - c.pos[1]).abs() < kill_alt + 20.0 {
-                    let (kind, scream) = match kill {
-                        Some(k) if !on_water => {
-                            c.vspeed /= 8.0;
-                            c.state = 1;
-                            c.phase = k.anim;
-                            if k.dont_loop {
-                                c.ftime = 0;
-                            }
-                            (k.hunter_anim, k.scream)
-                        }
-                        Some(_) => (hunt::EAT, true),
-                        None => {
-                            c.state = 0;
-                            (hunt::EAT, true)
-                        }
-                    };
-                    ctx.events.push(DinoEvent::KillHunter {
-                        index,
-                        kind,
-                        scream,
-                    });
-                }
-            }
+            try_kill(c, index, m, ctx, pdist, on_water);
         }
 
         if rethink < MAX_RETHINK
@@ -217,25 +184,7 @@ pub fn animate(
                 c.phase = m.run;
                 continue;
             }
-            if let Some(l) = w.leader.filter(|_| c.pack.is_some()) {
-                let leaderdist = ((l[0] - c.pos[0]).powi(2) + (l[2] - c.pos[2]).powi(2)).sqrt();
-                if c.follow_leader {
-                    if rethink < MAX_RETHINK && leaderdist < c.pack_density * 128.0 * 0.6 {
-                        c.follow_leader = false;
-                        c.set_new_target_place_in(ctx.area, ctx.rng, a.target_distance, w.group);
-                        continue;
-                    }
-                } else if leaderdist > c.pack_density * 128.0 * 1.3 {
-                    c.follow_leader = true;
-                }
-            }
-            if c.follow_leader {
-                if let Some(l) = w.leader {
-                    c.tgx = l[0];
-                    c.tgz = l[2];
-                }
-            } else if rethink < MAX_RETHINK && tdist < 456.0 {
-                c.set_new_target_place_in(ctx.area, ctx.rng, a.target_distance, w.group);
+            if rethink < MAX_RETHINK && wander(c, w, ctx, tdist, 456.0, a.target_distance) {
                 continue;
             }
         }
@@ -295,47 +244,8 @@ pub fn animate(
         if new_phase {
             if c.state != 0 {
                 c.phase = m.run;
-            } else if !m.idle_groups.is_empty()
-                && (ctx.hunter.alive || !kill.is_some_and(|k| k.carry_corpse))
-                && !on_water
-            {
-                let pick = |g: &super::mee::IdleGroup, rng: &mut crate::rng::MsRand| {
-                    let i = rng.r_rand(g.anims.len() as i32 - 1) as usize;
-                    g.anims.get(i).copied().unwrap_or(m.walk)
-                };
-                if let Some(g) = c.idle_group.and_then(|g| m.idle_groups.get(g)) {
-                    let last = g.anims.last().copied();
-                    if (ctx.rng.r_rand(127) + 1) as f32 > (1.0 - g.end) * 128.0
-                        && (g.end_on_any || Some(c.phase) == last)
-                    {
-                        c.phase = m.walk;
-                        c.idle_group = None;
-                        if !g.instant_repeat {
-                            break 'select;
-                        }
-                    } else {
-                        c.phase = pick(g, ctx.rng);
-                        break 'select;
-                    }
-                }
-                for (gi, g) in m.idle_groups.iter().enumerate() {
-                    if (ctx.rng.r_rand(127) + 1) as f32 > (1.0 - g.start) * 128.0 {
-                        c.idle_group = Some(gi);
-                    }
-                }
-                match c.idle_group.and_then(|g| m.idle_groups.get(g)) {
-                    Some(g) => {
-                        c.phase = if g.start_on_any {
-                            pick(g, ctx.rng)
-                        } else {
-                            g.anims.first().copied().unwrap_or(m.walk)
-                        };
-                        break 'select;
-                    }
-                    None => c.phase = m.walk,
-                }
-            } else {
-                c.phase = m.walk;
+            } else if calm_phase(c, m, ctx, on_water) {
+                break 'select;
             }
         }
         if c.idle_group.is_none() {
@@ -357,23 +267,7 @@ pub fn animate(
     }
 
     // ENDPSELECT.
-    if old_phase != c.phase || new_phase {
-        c.activate_fx(index, sp, ctx);
-    }
-    if old_phase != c.phase {
-        let gait = |p: usize| p == m.run || p == m.walk;
-        if gait(old_phase) && gait(c.phase) {
-            c.ftime = old_ftime * sp.time(c.phase) / sp.time(old_phase) + 64;
-        } else if !new_phase {
-            c.ftime = 0;
-        }
-        if c.pp_morph_time > 128 {
-            c.prev_phase = old_phase;
-            c.prev_pf_time = old_ftime;
-            c.pp_morph_time = 0;
-        }
-    }
-    c.ftime %= sp.time(c.phase);
+    end_phase(c, index, sp, m, ctx, old_phase, old_ftime, new_phase);
 
     // Turn.
     let dalpha = (c.tgalpha - c.alpha).abs();
@@ -538,6 +432,178 @@ pub fn animate(
     delta_func(&mut c.gamma, c.tggamma, dt as f32 / rate);
 }
 
+/// Sets the on-water flag (`csONWATER` in `StateF`) and returns it. The
+/// original clears it with `StateF &= !csONWATER`, i.e. all of `StateF`.
+pub(super) fn water_flag(c: &mut Character, m: &MeeInfo, ctx: &Ctx<'_>) -> bool {
+    let depth = ctx.area.land_up_h(c.pos[0], c.pos[2]) - ctx.area.land_height(c.pos[0], c.pos[2]);
+    c.state_f = if depth > m.water_level as f32 * c.scale {
+        c.state_f | CS_ON_WATER
+    } else {
+        0
+    };
+    c.state_f & CS_ON_WATER != 0
+}
+
+/// Kills a hunter within `killdist` and about level with it: with the
+/// species' kill type (eat animation, body animation, scream) on land.
+pub(super) fn try_kill(
+    c: &mut Character,
+    index: usize,
+    m: &MeeInfo,
+    ctx: &mut Ctx<'_>,
+    pdist: f32,
+    on_water: bool,
+) {
+    if m.kill_dist <= 0 || pdist >= m.kill_dist as f32 {
+        return;
+    }
+    let kill_alt = m.water_level.max(256) as f32;
+    if (ctx.hunter.y - c.pos[1]).abs() >= kill_alt + 20.0 {
+        return;
+    }
+    let (kind, scream) = match m.kill(c.kill_type) {
+        Some(k) if !on_water => {
+            c.vspeed /= 8.0;
+            c.state = 1;
+            c.phase = k.anim;
+            if k.dont_loop {
+                c.ftime = 0;
+            }
+            (k.hunter_anim, k.scream)
+        }
+        Some(_) => (hunt::EAT, true),
+        None => {
+            c.state = 0;
+            (hunt::EAT, true)
+        }
+    };
+    ctx.events.push(DinoEvent::KillHunter {
+        index,
+        kind,
+        scream,
+    });
+}
+
+/// A calm animal's heading: keep near the pack leader, else roam to a new
+/// place within `range` once closer than `reached` to the old one. True
+/// when a new target was picked (`goto TBEGIN`).
+pub(super) fn wander(
+    c: &mut Character,
+    w: &World<'_>,
+    ctx: &mut Ctx<'_>,
+    tdist: f32,
+    reached: f32,
+    range: f32,
+) -> bool {
+    if let Some(l) = w.leader.filter(|_| c.pack.is_some()) {
+        let leaderdist = ((l[0] - c.pos[0]).powi(2) + (l[2] - c.pos[2]).powi(2)).sqrt();
+        if c.follow_leader {
+            if leaderdist < c.pack_density * 128.0 * 0.6 {
+                c.follow_leader = false;
+                c.set_new_target_place_in(ctx.area, ctx.rng, range, w.group);
+                return true;
+            }
+        } else if leaderdist > c.pack_density * 128.0 * 1.3 {
+            c.follow_leader = true;
+        }
+    }
+    if c.follow_leader {
+        if let Some(l) = w.leader {
+            c.tgx = l[0];
+            c.tgz = l[2];
+        }
+    } else if tdist < reached {
+        c.set_new_target_place_in(ctx.area, ctx.rng, range, w.group);
+        return true;
+    }
+    false
+}
+
+/// A calm animal's next phase when one ends: an idle group's animation, or
+/// walking. True when an idle was chosen (`goto ENDPSELECT`).
+pub(super) fn calm_phase(
+    c: &mut Character,
+    m: &MeeInfo,
+    ctx: &mut Ctx<'_>,
+    on_water: bool,
+) -> bool {
+    let carries = m.kill(c.kill_type).is_some_and(|k| k.carry_corpse);
+    if m.idle_groups.is_empty() || !(ctx.hunter.alive || !carries) || on_water {
+        c.phase = m.walk;
+        return false;
+    }
+    let pick = |g: &IdleGroup, rng: &mut MsRand| {
+        let i = rng.r_rand(g.anims.len() as i32 - 1) as usize;
+        g.anims.get(i).copied().unwrap_or(m.walk)
+    };
+    if let Some(g) = c.idle_group.and_then(|g| m.idle_groups.get(g)) {
+        let last = g.anims.last().copied();
+        if (ctx.rng.r_rand(127) + 1) as f32 > (1.0 - g.end) * 128.0
+            && (g.end_on_any || Some(c.phase) == last)
+        {
+            c.phase = m.walk;
+            c.idle_group = None;
+            if !g.instant_repeat {
+                return true;
+            }
+        } else {
+            c.phase = pick(g, ctx.rng);
+            return true;
+        }
+    }
+    for (gi, g) in m.idle_groups.iter().enumerate() {
+        if (ctx.rng.r_rand(127) + 1) as f32 > (1.0 - g.start) * 128.0 {
+            c.idle_group = Some(gi);
+        }
+    }
+    match c.idle_group.and_then(|g| m.idle_groups.get(g)) {
+        Some(g) => {
+            c.phase = if g.start_on_any {
+                pick(g, ctx.rng)
+            } else {
+                g.anims.first().copied().unwrap_or(m.walk)
+            };
+            true
+        }
+        None => {
+            c.phase = m.walk;
+            false
+        }
+    }
+}
+
+/// `ENDPSELECT`: sound on a new phase, gait time carried between walking
+/// and running, and the blend from the old phase.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn end_phase(
+    c: &mut Character,
+    index: usize,
+    sp: &Species,
+    m: &MeeInfo,
+    ctx: &mut Ctx<'_>,
+    old_phase: usize,
+    old_ftime: i32,
+    new_phase: bool,
+) {
+    if old_phase != c.phase || new_phase {
+        c.activate_fx(index, sp, ctx);
+    }
+    if old_phase != c.phase {
+        let gait = |p: usize| p == m.run || p == m.walk;
+        if gait(old_phase) && gait(c.phase) {
+            c.ftime = old_ftime * sp.time(c.phase) / sp.time(old_phase) + 64;
+        } else if !new_phase {
+            c.ftime = 0;
+        }
+        if c.pp_morph_time > 128 {
+            c.prev_phase = old_phase;
+            c.prev_pf_time = old_ftime;
+            c.pp_morph_time = 0;
+        }
+    }
+    c.ftime %= sp.time(c.phase);
+}
+
 /// `AnimateDeadCommon`: fall with the species' death type, then lie still
 /// (or fall asleep, tranquilized).
 pub fn animate_dead(c: &mut Character, index: usize, sp: &Species, m: &MeeInfo, ctx: &mut Ctx<'_>) {
@@ -572,7 +638,8 @@ pub fn animate_dead(c: &mut Character, index: usize, sp: &Species, m: &MeeInfo, 
     delta_func(&mut c.vspeed, 0.0, dt as f32 / 800.0);
     c.pos[0] += c.lookx * c.vspeed * dt as f32;
     c.pos[2] += c.lookz * c.vspeed * dt as f32;
-    c.think_y_beta_gamma(ctx.area, dt, 100.0, 96.0, 0.6, 0.5);
+    let look = if c.ai == ai::TREX { 200.0 } else { 100.0 };
+    c.think_y_beta_gamma(ctx.area, dt, look, look - 4.0, 0.6, 0.5);
     delta_func(&mut c.gamma, c.tggamma, dt as f32 / 1600.0);
 }
 
@@ -836,5 +903,35 @@ mod tests {
         let c = &herd.chars[i];
         assert_eq!(c.phase, DIE);
         assert_eq!(c.ftime, herd.species[0].time(DIE) - 1);
+    }
+
+    #[test]
+    fn trex_looks_roars_then_chases_and_kills() {
+        let area = Area::flat(10);
+        let h = hunter();
+        let mut m = info(ai::TREX);
+        (m.looks, m.roars) = (vec![IDLE], vec![IDLE + 1]);
+        m.kill_dist = 400;
+        let mut herd = Herd {
+            species: vec![species(m)],
+            ..Default::default()
+        };
+        let i = add(&mut herd, 0, &area, h.x + 3000.0, h.z);
+        herd.chars[i].alpha = PI; // facing the hunter
+        herd.chars[i].state = 2; // heard something
+        let mut seen = Vec::new();
+        let mut killed = false;
+        for _ in 0..1500 {
+            let ev = run(&mut herd, &area, h, 10);
+            killed |= ev.iter().any(|e| matches!(e, DinoEvent::KillHunter { .. }));
+            if seen.last() != Some(&herd.chars[i].phase) {
+                seen.push(herd.chars[i].phase);
+            }
+            if killed {
+                break;
+            }
+        }
+        assert_eq!(&seen[..3], &[IDLE, IDLE + 1, RUN], "{seen:?}");
+        assert!(killed, "{seen:?}");
     }
 }

@@ -1126,6 +1126,14 @@ impl Hunt {
                 if l > range * sp.info.hear_k * 2.0 {
                     continue;
                 }
+                if c.ai == ai::TREX {
+                    if c.state == 0 {
+                        c.state = 2;
+                        c.aware_hunter = true;
+                        c.heard_shot = true;
+                    }
+                    continue;
+                }
                 c.afraid_time = ((10.0 + (range - l) / 256.0) as i32) * 1024;
                 if c.state == 0 {
                     c.state = 2;
@@ -1173,6 +1181,7 @@ impl Hunt {
             let mee = sp.mee.is_some();
             let skip = if mee {
                 !crate::dino::mee::ai_info(c.ai).sniffer
+                    || (c.ai == ai::TREX && (c.afraid_time != 0 || c.state == 1))
             } else {
                 c.ai < 10 || c.afraid_time != 0 || c.state == 1
             };
@@ -1294,7 +1303,13 @@ impl Hunt {
         let index = self.herd.chars.len() - 1;
         self.herd.demo_index = Some(index);
         if let Some((k, c)) = killer {
-            if c.ai == ai::TREX {
+            // The dialect does not carry the body (`elevate` is disabled).
+            let mee = self
+                .herd
+                .species
+                .get(c.ctype)
+                .is_some_and(|s| s.mee.is_some());
+            if c.ai == ai::TREX && !mee {
                 // The T-Rex carries the body: same size and heading, and the
                 // camera watches the T-Rex.
                 let b = &mut self.herd.chars[index];

@@ -11,7 +11,7 @@
 use c2_formats::mee::{flag, Hunt, Tables};
 use c2_formats::res_txt::{c_atof, c_atoi, Block, CharacterDef, Entry, ResData, ResTxt, WeaponDef};
 
-use crate::dino::mee::{is_huntable, DeathType, IdleGroup, KillType, MeeInfo};
+use crate::dino::mee::{is_ported, DeathType, IdleGroup, KillType, MeeInfo};
 use crate::dino::{ai, Species, Tuning};
 
 /// The original AI a dialect AI number runs as for now, `None` if none fits
@@ -157,9 +157,20 @@ fn info_line(m: &mut MeeInfo, key: &str, v: &str) {
         "swimanim" => m.swim = m.add_anim(anim),
         "jumpanim" => m.jump = m.add_anim(anim),
         "slideanim" => m.slide = m.add_anim(anim),
+        "lookanim" | "fishidleanim" => {
+            let p = m.add_anim(anim);
+            m.looks.push(p);
+        }
+        "smellanim" => {
+            let p = m.add_anim(anim);
+            m.smells.push(p);
+        }
+        "roaranim" => {
+            let p = m.add_anim(anim);
+            m.roars.push(p);
+        }
         "flyanim" | "diveanim" | "glideanim" | "takeoffanim" | "landanim" | "shakelanim"
-        | "shakewanim" | "climbanim" | "fireanim" | "pauseanim" | "reloadanim" | "lookanim"
-        | "fishidleanim" | "smellanim" | "roaranim" | "waterdanim" => {
+        | "shakewanim" | "climbanim" | "fireanim" | "pauseanim" | "reloadanim" | "waterdanim" => {
             m.add_anim(anim);
         }
         "runspd" => m.run_speed = c_atof(v),
@@ -177,6 +188,7 @@ fn info_line(m: &mut MeeInfo, key: &str, v: &str) {
         "waterlevel" => m.water_level = c_atoi(v),
         "morphtime" => m.morph_time = c_atof(v),
         "hpa" => m.health_a = c_atoi(v),
+        "trexobjcollide" => m.trex_obj_collide = truthy(v),
         _ => {}
     }
 }
@@ -253,14 +265,14 @@ pub fn info(b: &Block, mee_ai: i32) -> MeeInfo {
 }
 
 /// Gives loaded species their dialect data. AIs with the dialect's own
-/// behaviour ported ([`is_huntable`]) run it; the rest run as their
+/// behaviour ported ([`is_ported`]) run it; the rest run as their
 /// [`family`] with [`Tuning`] overrides (AI -1, never placed, when there is
 /// none).
 pub fn tune(species: &mut [Species], tables: &Tables) {
     for (s, c) in species.iter_mut().zip(&tables.characters) {
         s.tuning = tuning(&c.block);
         let mee_ai = s.tuning.mee_ai.unwrap_or(s.info.ai);
-        if is_huntable(mee_ai) {
+        if is_ported(mee_ai) {
             s.info.ai = mee_ai;
             s.mee = Some(Box::new(info(&c.block, mee_ai)));
         } else {

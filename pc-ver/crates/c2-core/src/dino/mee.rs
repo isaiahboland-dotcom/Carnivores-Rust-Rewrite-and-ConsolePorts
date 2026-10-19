@@ -84,6 +84,10 @@ pub struct MeeInfo {
     pub jump: usize,
     pub slide: usize,
     pub idle_groups: Vec<IdleGroup>,
+    /// `lookAnim` (or `fishIdleAnim`), `smellAnim`, `roarAnim` lists.
+    pub looks: Vec<usize>,
+    pub smells: Vec<usize>,
+    pub roars: Vec<usize>,
     pub death_types: Vec<DeathType>,
     pub kill_types: Vec<KillType>,
     /// `runspd`, `wlkspd`, `swmspd`, `jmpspd`.
@@ -112,6 +116,8 @@ pub struct MeeInfo {
     pub morph_time: f32,
     /// Extra health for the largest specimens (`hpA`).
     pub health_a: i32,
+    /// T-Rex: obstacles turn it while hunting too (`TRexObjCollide`).
+    pub trex_obj_collide: bool,
 }
 
 impl MeeInfo {
@@ -125,6 +131,9 @@ impl MeeInfo {
             jump: 0,
             slide: 0,
             idle_groups: Vec::new(),
+            looks: Vec::new(),
+            smells: Vec::new(),
+            roars: Vec::new(),
             death_types: Vec::new(),
             kill_types: Vec::new(),
             run_speed: 0.0,
@@ -142,6 +151,7 @@ impl MeeInfo {
             water_level: 0,
             morph_time: 1.0,
             health_a: 0,
+            trex_obj_collide: false,
         }
     }
 
@@ -395,6 +405,12 @@ pub fn ai_info(ai_id: i32) -> AiInfo {
 /// AIs that run the shared `AnimateHuntable`.
 pub fn is_huntable(ai_id: i32) -> bool {
     matches!(ai_id, 10..=17 | 19..=27)
+}
+
+/// AIs whose dialect behaviour is ported (the others run as an original
+/// family for now, `crate::mee::family`).
+pub fn is_ported(ai_id: i32) -> bool {
+    is_huntable(ai_id) || ai_id == super::ai::TREX
 }
 
 #[cfg(test)]

@@ -28,6 +28,12 @@ Newest first. Each entry: what, why, and what it affects.
   For dialect species `MakeNoise` reaches `2 * hearK` times as far,
   `CheckAfraid` asks the AI table which animals look (and keeps renewing
   alarmed ones), and neither restarts an alarm already running.
+- **T-Rex** (`AnimateTRex`, dialect AI 18): never flees; once it notices
+  the hunter (2: seen or heard, 3: smelt) it turns, plays a `lookAnim` /
+  `smellAnim` (else its roar), roars, then chases; obstacles only steer it
+  while calm unless `TRexObjCollide`. Unlike the original's, it does not
+  carry the hunter's body (the dialect disabled that), and `MakeNoise` only
+  wakes a calm one. Roars are picked per animal at reset.
 - **Kept quirks**: clearing the water flag clears all of `StateF`; the
   herbivore turn tests `State` (not `StateF`) for water; `morphTime`
   defaults to 1 (the manual; the released code leaves it 0, which would
