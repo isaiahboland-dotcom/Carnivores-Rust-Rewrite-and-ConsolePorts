@@ -2,6 +2,20 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-18 — M7: 3DS settings: animal run speed, ambient animals
+Owner's request, because the game handles awkwardly with 3DS controls
+and 10+ ambient animals nearby caused lag spikes on Old 3DS:
+- `HuntOptions::dino_run_k` / `Ctx::run_k` multiplies the running gait's
+  speed of carnivores, herbivores, small animals and the T-Rex (not walking,
+  swimming or flying), so species keep their relative speeds. The 3DS
+  setting is 50–100% in 5% steps; the PC passes 1.
+- `PlaceOptions::max_ambient` caps the small ambient animals (`None` on PC
+  = the original count). The 3DS uses 4, or 0 with ambient animals off,
+  which also leaves their models and sounds unloaded (brachiosaurs and
+  flyers included).
+- Settings live in `settings.txt`, not the save, which keeps the
+  original's format.
+
 ## 2026-10-18 — M7: kill notice, radar on the 3DS map
 - `GameEvent::Scored { ctype, score }` when a kill adds to the account
   (with the tranquilizer too, which keeps no trophy). The 3DS shows the

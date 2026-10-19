@@ -199,7 +199,7 @@ pub fn animate(c: &mut Character, index: usize, sp: &Species, ctx: &mut Ctx<'_>)
     c.lookx = c.alpha.cos();
     c.lookz = c.alpha.sin();
     let mut curspeed = match c.phase {
-        RUN => 2.49,
+        RUN => 2.49 * ctx.run_k,
         WALK => 0.76,
         SWIM => 0.70,
         _ => 0.0,

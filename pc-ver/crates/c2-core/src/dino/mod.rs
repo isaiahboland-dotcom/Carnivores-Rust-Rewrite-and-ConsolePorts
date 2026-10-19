@@ -225,6 +225,9 @@ pub struct Ctx<'a> {
     pub tranq: bool,
     /// `ctViewR`: view distance in cells (carnivores use it to give up).
     pub view_r: i32,
+    /// Multiplies every species' running speed (1 in the original; a 3DS
+    /// setting lowers it).
+    pub run_k: f32,
     pub events: &'a mut Vec<DinoEvent>,
 }
 
@@ -820,6 +823,7 @@ mod tests {
                 opt_agres: 128,
                 tranq: false,
                 view_r: 74,
+                run_k: 1.0,
                 events: &mut events,
             };
             herd.step(&mut ctx);

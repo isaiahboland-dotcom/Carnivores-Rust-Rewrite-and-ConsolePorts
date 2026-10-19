@@ -24,6 +24,7 @@ use c2_vfs::Vfs;
 use crate::draw2d::{in_hex, inside, Canvas, Rgba, WHITE};
 use crate::gpu::{Gpu, Texture, BOTTOM_W, TOP_W};
 use crate::hunt::{PackInfo, Setup};
+use crate::settings::Settings;
 use crate::ui::load;
 
 /// Accessories (`EQUIPn.TGA`), in `prices.acces` order.
@@ -40,9 +41,16 @@ const TIMES: [(TimeOfDay, &str); 3] = [
 const EXTRA_AMMO: [(i32, u32, f32); 3] = [(10, 1, 0.95), (50, 2, 0.95), (150, 3, 1.0)];
 
 /// Title screen buttons.
-const PLAY: [f32; 4] = [60.0, 34.0, 200.0, 44.0];
-const TROPHIES: [f32; 4] = [60.0, 96.0, 200.0, 44.0];
-const QUIT: [f32; 4] = [60.0, 158.0, 200.0, 44.0];
+const PLAY: [f32; 4] = [60.0, 18.0, 200.0, 42.0];
+const TROPHIES: [f32; 4] = [60.0, 70.0, 200.0, 42.0];
+const SETTINGS: [f32; 4] = [60.0, 122.0, 200.0, 42.0];
+const QUIT: [f32; 4] = [60.0, 174.0, 200.0, 42.0];
+
+/// Settings screen: run speed bar with - / +, ambient toggle.
+const SPEED_BAR: [f32; 4] = [64.0, 62.0, 192.0, 20.0];
+const SPEED_DOWN: [f32; 4] = [20.0, 58.0, 36.0, 28.0];
+const SPEED_UP: [f32; 4] = [264.0, 58.0, 36.0, 28.0];
+const AMBIENT: [f32; 4] = [60.0, 136.0, 200.0, 32.0];
 
 const BAR_Y: f32 = 212.0;
 const BACK: [f32; 4] = [4.0, BAR_Y, 76.0, 24.0];
@@ -61,6 +69,7 @@ const GAP: f32 = 3.0;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Step {
     Title,
+    Settings,
     Area,
     Animals,
     Gear,
@@ -109,8 +118,10 @@ pub struct Menu {
     areas: Vec<(String, Item)>,
     /// Huntable species: (AI, `_RES.TXT` character index, item).
     dinos: Vec<(i32, usize, Item)>,
-    /// Characters always loaded (hunter, ambient animals).
-    always: Vec<usize>,
+    /// Characters loaded whatever is picked: (index, AI) of the hunter and
+    /// the ambient animals.
+    always: Vec<(usize, i32)>,
+    settings: Settings,
     weapons: Vec<Item>,
     equip: Vec<Item>,
     area: usize,
@@ -176,7 +187,10 @@ impl Menu {
                 },
             ));
         }
-        let always = (0..infos.len()).filter(|&i| infos[i].ai < 10).collect();
+        let always = (0..infos.len())
+            .filter(|&i| infos[i].ai < 10)
+            .map(|i| (i, infos[i].ai))
+            .collect();
         let weapons = res
             .weapons
             .iter()
@@ -217,6 +231,7 @@ impl Menu {
             areas,
             dinos,
             always,
+            settings: Settings::load(),
             weapons,
             equip,
             area: 0,
@@ -274,8 +289,10 @@ impl Menu {
     fn memory(&self) -> (usize, usize) {
         let i = &self.info;
         let mut kb = i.cost("hunt") + self.areas.get(self.area).map_or(0, |a| i.cost(&a.0));
-        for &c in &self.always {
-            kb += i.cost(&format!("char{c}"));
+        for &(c, ai) in &self.always {
+            if ai == 0 || self.settings.ambient {
+                kb += i.cost(&format!("char{c}"));
+            }
         }
         for (k, d) in self.dinos.iter().enumerate() {
             if self.picked_dinos & (1 << k) != 0 {
@@ -326,6 +343,8 @@ impl Menu {
             observer: false,
             resupplies: 0,
             score_factor: 1.0,
+            max_ambient: 0,
+            dino_run_k: 1.0,
         }
     }
 
@@ -352,6 +371,8 @@ impl Menu {
             observer: self.observer,
             resupplies: self.extra().map_or(0, |e| e.1),
             score_factor: self.extra().map_or(1.0, |e| e.2),
+            max_ambient: self.settings.max_ambient(),
+            dino_run_k: self.settings.run_pct as f32 / 100.0,
         }
     }
 
@@ -438,8 +459,23 @@ impl Menu {
                     self.step = Step::Area;
                 } else if inside(TROPHIES, x, y) && self.trophy_room {
                     return Some(self.trophy_setup());
+                } else if inside(SETTINGS, x, y) {
+                    self.step = Step::Settings;
                 } else if inside(QUIT, x, y) {
                     self.quit = true;
+                }
+            }
+            Step::Settings => {
+                let s = &mut self.settings;
+                if inside(SPEED_DOWN, x, y) {
+                    s.run_pct = (s.run_pct - 5).max(50);
+                } else if inside(SPEED_UP, x, y) {
+                    s.run_pct = (s.run_pct + 5).min(100);
+                } else if inside(SPEED_BAR, x, y) {
+                    let f = (x - SPEED_BAR[0]) / SPEED_BAR[2];
+                    s.run_pct = (50 + (f * 50.0 / 5.0).round() as i32 * 5).clamp(50, 100);
+                } else if inside(AMBIENT, x, y) {
+                    s.ambient = !s.ambient;
                 }
             }
             Step::Area => {
@@ -501,8 +537,13 @@ impl Menu {
 
     /// B / the Back button.
     pub fn back(&mut self) {
+        if self.step == Step::Settings {
+            if let Err(e) = self.settings.store() {
+                self.message = Some(format!("settings not saved: {e}"));
+            }
+        }
         self.step = match self.step {
-            Step::Title | Step::Area => Step::Title,
+            Step::Title | Step::Settings | Step::Area => Step::Title,
             Step::Animals => Step::Area,
             Step::Gear => Step::Animals,
         };
@@ -513,6 +554,7 @@ impl Menu {
         if self.step == Step::Title {
             self.quit = true;
         } else {
+            self.back();
             self.step = Step::Title;
         }
     }
@@ -521,6 +563,7 @@ impl Menu {
     pub fn next(&mut self) -> Option<Setup> {
         match self.step {
             Step::Title => self.step = Step::Area,
+            Step::Settings => self.back(),
             Step::Area if !self.trophy() => self.step = Step::Animals,
             Step::Animals => self.step = Step::Gear,
             _ => match self.can_hunt() {
@@ -618,6 +661,7 @@ impl Menu {
                 let buttons = [
                     (PLAY, "PLAY", true),
                     (TROPHIES, "TROPHIES", self.trophy_room),
+                    (SETTINGS, "SETTINGS", true),
                     (QUIT, "QUIT", true),
                 ];
                 for (r, _, on) in buttons {
@@ -643,6 +687,11 @@ impl Menu {
                     let m: String = m.chars().take(38).collect();
                     c.text_c(gpu, 160.0, 216.0, 1.0, TEXT, &m);
                 }
+                self.c = c;
+                return;
+            }
+            Step::Settings => {
+                self.draw_settings(&mut c, gpu);
                 self.c = c;
                 return;
             }
@@ -764,6 +813,72 @@ impl Menu {
         }
     }
 
+    /// The settings screen (bottom).
+    fn draw_settings(&self, c: &mut Canvas, gpu: &mut Gpu) {
+        let s = self.settings;
+        c.text_c(gpu, 160.0, 30.0, 1.0, TEXT, "Dinosaur run speed");
+        c.rect(SPEED_BAR, PANEL);
+        let f = (s.run_pct - 50) as f32 / 50.0;
+        c.rect(
+            [
+                SPEED_BAR[0],
+                SPEED_BAR[1],
+                SPEED_BAR[2] * f.max(0.02),
+                SPEED_BAR[3],
+            ],
+            [60, 110, 60, 255],
+        );
+        for r in [SPEED_DOWN, SPEED_UP, BACK] {
+            c.rect(r, PANEL);
+        }
+        c.rect(AMBIENT, if s.ambient { [60, 110, 60, 255] } else { PANEL });
+        c.flush(gpu);
+        c.text_c(gpu, 160.0, 92.0, 2.0, GOLD, &format!("{}%", s.run_pct));
+        c.text_c(
+            gpu,
+            SPEED_DOWN[0] + 18.0,
+            SPEED_DOWN[1] + 6.0,
+            2.0,
+            WHITE,
+            "-",
+        );
+        c.text_c(gpu, SPEED_UP[0] + 18.0, SPEED_UP[1] + 6.0, 2.0, WHITE, "+");
+        let amb = if s.ambient {
+            "Ambient animals: ON"
+        } else {
+            "Ambient animals: OFF"
+        };
+        c.text_c(gpu, 160.0, AMBIENT[1] + 12.0, 1.0, WHITE, amb);
+        c.text_c(
+            gpu,
+            BACK[0] + BACK[2] / 2.0,
+            BAR_Y + 8.0,
+            1.0,
+            WHITE,
+            "Back",
+        );
+    }
+
+    /// What the settings do (top).
+    fn draw_settings_top(&self, c: &mut Canvas, gpu: &mut Gpu) {
+        let lines = [
+            ("Settings", GOLD),
+            ("", WHITE),
+            ("Dinosaur run speed", TEXT),
+            ("  Slows every species' run by the same", WHITE),
+            ("  share, so their differences stay.", WHITE),
+            ("  100% is the original.", WHITE),
+            ("", WHITE),
+            ("Ambient animals", TEXT),
+            ("  The small animals that score nothing.", WHITE),
+            ("  On: at most 4 near you (smoother on", WHITE),
+            ("  Old 3DS). Off: none, and less memory.", WHITE),
+        ];
+        for (i, (l, col)) in lines.iter().enumerate() {
+            c.text(gpu, 12.0, 14.0 + 14.0 * i as f32, 1.0, *col, l);
+        }
+    }
+
     /// The title: the main menu's art, the hunter's record over its
     /// painted buttons.
     fn draw_title_top(&mut self, c: &mut Canvas, gpu: &mut Gpu) {
@@ -805,6 +920,11 @@ impl Menu {
         let mut c = std::mem::replace(&mut self.c, Canvas::new(None));
         if self.step == Step::Title {
             self.draw_title_top(&mut c, gpu);
+            self.c = c;
+            return;
+        }
+        if self.step == Step::Settings {
+            self.draw_settings_top(&mut c, gpu);
             self.c = c;
             return;
         }
@@ -916,7 +1036,7 @@ impl Menu {
             (Step::Gear, Err(e)) => (e.to_string(), if need > have { RED } else { DIM }),
             (Step::Area, _) => ("Pick a place and the time of day".into(), DIM),
             (Step::Animals, _) => ("Pick the animals to hunt".into(), DIM),
-            (Step::Gear | Step::Title, _) => (String::new(), DIM),
+            (Step::Gear | Step::Title | Step::Settings, _) => (String::new(), DIM),
         };
         c.text(gpu, 8.0, 226.0, 1.0, col, &msg);
         self.c = c;

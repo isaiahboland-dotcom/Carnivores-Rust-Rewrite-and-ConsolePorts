@@ -14,6 +14,9 @@ pub struct PlaceOptions {
     /// Bit `ai` set for each target species chosen in the menu
     /// (`TargetDino`); 0 = none chosen.
     pub targets: u32,
+    /// At most this many small ambient animals (`None`: the original's
+    /// 5 + density / 80; the 3DS caps it, or turns them off with 0).
+    pub max_ambient: Option<i32>,
 }
 
 impl Herd {
@@ -56,6 +59,9 @@ impl Herd {
         let mut mc = 5 + o.density / 80;
         if area.time == TimeOfDay::Night {
             mc /= 2;
+        }
+        if let Some(max) = o.max_ambient {
+            mc = mc.min(max.max(0));
         }
         let mut tr = 0;
         'lohs: for c in 0..mc {

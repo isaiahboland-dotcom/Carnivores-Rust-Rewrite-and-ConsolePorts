@@ -312,7 +312,7 @@ pub fn animate(
     c.lookx = c.alpha.cos();
     c.lookz = c.alpha.sin();
     let mut curspeed = if c.phase == p.run {
-        p.run_speed
+        p.run_speed * ctx.run_k
     } else if c.phase == p.walk {
         p.walk_speed
     } else {

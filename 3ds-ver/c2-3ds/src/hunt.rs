@@ -112,6 +112,10 @@ pub struct Setup {
     /// kill scores.
     pub resupplies: u32,
     pub score_factor: f32,
+    /// Settings (3DS only): small ambient animals at most (0 = none), and
+    /// the animals' running speed (0.5..=1).
+    pub max_ambient: i32,
+    pub dino_run_k: f32,
 }
 
 impl Setup {
@@ -119,10 +123,14 @@ impl Setup {
         self.area.eq_ignore_ascii_case("TROPHY")
     }
 
-    /// Characters to load: the hunter and ambient animals always, the
-    /// targets; in the trophy room, every species (the trophies).
+    /// Characters to load: the hunter, the ambient animals unless they are
+    /// turned off, the targets; in the trophy room, every species (the
+    /// trophies).
     pub fn keeps_char(&self, ai: i32) -> bool {
-        self.trophy() || ai < 10 || (0..32).contains(&ai) && self.targets & (1 << ai) != 0
+        self.trophy()
+            || ai == 0
+            || ai < 10 && self.max_ambient > 0
+            || (0..32).contains(&ai) && self.targets & (1 << ai) != 0
     }
 
     pub fn carried(&self) -> Vec<usize> {
@@ -248,6 +256,7 @@ fn new_hunt(
                 density: o.dens,
                 opt_agres: o.agres,
                 targets: setup.targets,
+                max_ambient: Some(setup.max_ambient),
             },
         );
     }
@@ -272,6 +281,7 @@ fn new_hunt(
         observer: setup.observer,
         trophy,
         score_factor: setup.score_factor,
+        dino_run_k: setup.dino_run_k,
     };
     let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
     hunt.ship_anim_ms = ship_ms;

@@ -297,6 +297,7 @@ fn dinos_sim(map_path: &Path, seconds: u32) -> Result<()> {
             density: 128,
             opt_agres: 128,
             targets: 0,
+            max_ambient: None,
         },
     );
     println!("placed {}:", herd.chars.len());
@@ -331,6 +332,7 @@ fn dinos_sim(map_path: &Path, seconds: u32) -> Result<()> {
             opt_agres: 128,
             tranq: false,
             view_r: 74,
+            run_k: 1.0,
             events: &mut events,
         };
         herd.step(&mut ctx);

@@ -246,6 +246,9 @@ pub struct HuntOptions {
     /// Multiplies every kill's score (1 in the original; the 3DS's extra
     /// ammo gear lowers it).
     pub score_factor: f32,
+    /// Multiplies the animals' running speed (1 in the original; a 3DS
+    /// setting, 0.5..=1).
+    pub dino_run_k: f32,
 }
 
 impl Default for HuntOptions {
@@ -262,6 +265,7 @@ impl Default for HuntOptions {
             observer: false,
             trophy: false,
             score_factor: 1.0,
+            dino_run_k: 1.0,
         }
     }
 }
@@ -576,6 +580,7 @@ impl Hunt {
             opt_agres: self.opts.opt_agres,
             tranq: self.opts.tranq,
             view_r: self.opts.view_r,
+            run_k: self.opts.dino_run_k,
             events: &mut dev,
         };
         if !self.opts.trophy {

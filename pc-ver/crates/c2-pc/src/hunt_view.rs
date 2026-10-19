@@ -248,6 +248,7 @@ impl HuntView {
                 density: o.dens,
                 opt_agres: o.agres,
                 targets: setup.targets,
+                max_ambient: None,
             };
             herd.place(area, (player.x, player.z), &mut rng, opts);
         }
@@ -267,6 +268,7 @@ impl HuntView {
             observer: setup.observer,
             trophy,
             score_factor: 1.0,
+            dino_run_k: 1.0,
         };
         let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
         hunt.clock = local_clock();

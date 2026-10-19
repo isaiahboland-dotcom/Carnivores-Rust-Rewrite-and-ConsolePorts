@@ -11,6 +11,7 @@ mod gpu;
 mod hunt;
 mod menu;
 mod save;
+mod settings;
 mod shot;
 mod sound;
 mod ui;

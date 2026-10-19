@@ -36,8 +36,17 @@ share it (README §2).
 
 ## The menu
 The title screen shows the original's main menu art with your hunter's
-record; the bottom screen has **Play**, **Trophies** (the trophy room) and
-**Quit**. Play walks through three touch steps (A = Next, B = Back, START =
+record; the bottom screen has **Play**, **Trophies** (the trophy room),
+**Settings** and **Quit**.
+
+**Settings** (kept in `/3ds/c2rs/settings.txt`):
+- **Dinosaur run speed**, 50–100%: every species' running speed times the
+  same factor, so their differences stay; 100% is the original.
+- **Ambient animals** on/off: the small animals that score nothing
+  (Moschops, Gallimimus, the flyers, Dimetrodon, Brachiosaurus). On: at
+  most 4 small ones placed near you (the original places 5 + density/80;
+  more than a handful in view caused lag on Old 3DS). Off: none, and
+  they aren't loaded at all (less memory). Play walks through three touch steps (A = Next, B = Back, START =
 back to the title); the top screen sums up the picks, the points left and
 whether the hunt fits in memory.
 1. **Area**: a hexagon grid of the areas; the time of day as sunset (dawn),

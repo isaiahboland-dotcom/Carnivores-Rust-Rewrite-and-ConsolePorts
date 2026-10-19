@@ -420,7 +420,7 @@ pub fn animate(
     c.lookx = c.alpha.cos();
     c.lookz = c.alpha.sin();
     let mut curspeed = match c.phase {
-        ph if ph == p.run => p.run_speed,
+        ph if ph == p.run => p.run_speed * ctx.run_k,
         ph if ph == p.jump => p.jump_speed,
         ph if ph == p.walk => p.walk_speed,
         ph if ph == p.swim => p.swim_speed,
