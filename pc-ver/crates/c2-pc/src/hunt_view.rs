@@ -49,7 +49,7 @@ pub struct HuntSetup {
     /// `TargetDino`: bit per AI.
     pub targets: u128,
     /// `WeaponPres`: bit per `_RES.TXT` weapon.
-    pub weapons: u32,
+    pub weapons: u128,
     pub double_ammo: bool,
     pub observer: bool,
     /// The player (`trophy0N.sav`).

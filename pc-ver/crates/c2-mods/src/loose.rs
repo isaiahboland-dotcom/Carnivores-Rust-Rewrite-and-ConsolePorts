@@ -171,14 +171,25 @@ fn place(p: &Path, base: &Vfs, root: Option<&Path>) -> Option<String> {
     }
     let name = p.file_name()?.to_string_lossy().into_owned();
     let lname = name.to_ascii_lowercase();
-    // Same name as a base file: replace it.
-    if let Some((_, r)) = base
-        .files()
-        .find(|(k, _)| k.rsplit('/').next() == Some(lname.as_str()) && k.starts_with("huntdat/"))
-    {
+    let e = ext(p);
+    // A model goes where its entry looks: `HUNTDAT/<name>` (replacing the
+    // base's file there, if any).
+    if e == "car" {
+        let k = key(&format!("HUNTDAT/{name}"));
+        return Some(
+            base.resolve(&k)
+                .map_or_else(|| format!("HUNTDAT/{name}"), |r| r.path.clone()),
+        );
+    }
+    // Same name as a game file (a menu picture, a call): replace it. Not a
+    // file another game keeps in its own folder (`MODS/...`).
+    if let Some((_, r)) = base.files().find(|(k, _)| {
+        k.rsplit('/').next() == Some(lname.as_str())
+            && k.starts_with("huntdat/")
+            && !k.starts_with("huntdat/mods/")
+    }) {
         return Some(r.path.clone());
     }
-    let e = ext(p);
     let num = numbered(&lname);
     let dir = match (e.as_str(), num.as_ref().map(|(k, _)| k.as_str())) {
         ("car", _) => "HUNTDAT",

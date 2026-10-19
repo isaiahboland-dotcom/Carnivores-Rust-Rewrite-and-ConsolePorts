@@ -226,7 +226,7 @@ fn main() -> Result<()> {
                 seed: sim.as_ref().map(|_| 1),
                 targets,
                 // Without the menu, carry every weapon.
-                weapons: u32::MAX,
+                weapons: u128::MAX,
                 double_ammo: false,
                 observer: o.has("observer"),
                 reg: o.num("player", 0i32)?,

@@ -94,7 +94,7 @@ pub struct Weapons {
     /// Sniper scope view (`OPTICMODE`).
     pub optic_mode: bool,
     /// What `new` was given, for [`resupply`](Self::resupply).
-    present: u32,
+    present: u128,
     double_ammo: bool,
 }
 
@@ -103,7 +103,7 @@ impl Weapons {
     pub fn new(
         info: Vec<WeaponInfo>,
         anim_ms: Vec<[i32; 4]>,
-        present: u32,
+        present: u128,
         double_ammo: bool,
     ) -> Self {
         let n = info.len();

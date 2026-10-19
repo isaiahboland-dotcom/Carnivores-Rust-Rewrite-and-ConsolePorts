@@ -139,7 +139,7 @@ struct Choice {
     area: usize,
     /// Bit per dinosaur (AI 10 + i) / weapon / accessory.
     dinos: u128,
-    weapons: u32,
+    weapons: u128,
     equip: u32,
     /// 0 dawn, 1 day, 2 night.
     time: usize,
@@ -727,7 +727,7 @@ impl Menu {
         match col {
             0 => 1u128.checked_shl(c.area as u32).unwrap_or(0),
             1 => c.dinos,
-            2 => u128::from(c.weapons),
+            2 => c.weapons,
             _ => u128::from(c.equip),
         }
     }
@@ -948,7 +948,11 @@ impl Menu {
             let Some(r) = self.row_at(col) else { continue };
             // Picks are bit masks; animals go to the hunt as bits 10 and up
             // of 128.
-            let max = if col == 1 { 118 } else { 32 };
+            let max = match col {
+                1 => 118,
+                2 => 128,
+                _ => 32,
+            };
             if r >= max {
                 continue;
             }
@@ -958,7 +962,7 @@ impl Menu {
             match col {
                 0 => self.choice.area = r,
                 1 => self.choice.dinos ^= bit,
-                2 => self.choice.weapons ^= bit as u32,
+                2 => self.choice.weapons ^= bit,
                 _ => self.choice.equip ^= bit as u32,
             }
             // Can't spend more than the account holds.
@@ -989,7 +993,7 @@ impl Menu {
         map: PathBuf,
         time: TimeOfDay,
         targets: u128,
-        weapons: u32,
+        weapons: u128,
         double_ammo: bool,
         observer: bool,
     ) {

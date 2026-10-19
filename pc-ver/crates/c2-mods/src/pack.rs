@@ -43,6 +43,22 @@ pub fn find_root(dir: &Path) -> Option<PathBuf> {
     }
 }
 
+/// `rel` (either slash, any case) under `base`, if it exists.
+pub fn find_path(base: &Path, rel: &str) -> Option<PathBuf> {
+    rel.split(['/', '\\'])
+        .filter(|c| !c.is_empty() && *c != ".")
+        .try_fold(base.to_path_buf(), |d, c| {
+            std::fs::read_dir(&d)
+                .ok()?
+                .flatten()
+                .map(|e| e.path())
+                .find(|p| {
+                    p.file_name()
+                        .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(c))
+                })
+        })
+}
+
 fn is_zip(p: &Path) -> bool {
     p.is_file() && p.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip"))
 }

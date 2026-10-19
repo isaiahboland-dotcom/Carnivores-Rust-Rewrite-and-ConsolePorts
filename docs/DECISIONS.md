@@ -16,9 +16,10 @@ Newest first. Each entry: what, why, and what it affects.
   (`AREA23` is 23; the engine reads one digit, any `area1x` being the
   tenth) and `areaN` conditions match whole numbers (`area0` still means
   10), so large combined games keep their areas apart.
-- **128-bit target masks** (`HuntOptions::targets`, `mee::Hunt::picked`,
-  the PC menu's animal picks): up to 118 huntable slots, for the large
-  combined games. The 3DS still picks from 32 bits.
+- **128-bit target and weapon masks** (`HuntOptions::targets`,
+  `mee::Hunt::picked`, `Weapons::new`'s carried set, the PC menu's picks):
+  up to 118 huntable slots and 128 weapons, for large combined games. The
+  3DS still picks from 32 bits.
 
 ## 2026-10-19 — M4: loose add-ons, hunter merging, base overlays
 Real add-ons turned out to be loose files plus instructions, not
@@ -41,6 +42,9 @@ Real add-ons turned out to be loose files plus instructions, not
   only changed files; it is layered over the game as part of the *base*
   (its `_RES.TXT` replaces the original's), and add-ons diff against that.
 - Recipes don't cover loose add-ons yet (no hash pinning for them).
+- A loose add-on's model always goes to `HUNTDAT/<name>`, where its entry
+  looks; matching a game file by name is for menu pictures and sounds, and
+  never a file another game keeps in its own folder (`HUNTDAT/MODS/...`).
 - **Add, don't replace** (owner's call): an add-on made for a menu slot
   gets a new slot alongside the original (handed out at build time in
   load order; menu files renumbered, `overwrite charN` conditions and
