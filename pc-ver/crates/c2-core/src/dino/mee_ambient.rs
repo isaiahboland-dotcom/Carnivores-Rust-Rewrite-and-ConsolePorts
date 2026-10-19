@@ -89,7 +89,7 @@ pub fn animate(
                 c.phase = m.run;
                 continue;
             }
-            if again && super::huntable::wander(c, w, ctx, tdist, 456.0, 2048.0) {
+            if again && super::huntable::wander(c, sp, w, ctx, tdist, 456.0, 2048.0) {
                 continue;
             }
         }

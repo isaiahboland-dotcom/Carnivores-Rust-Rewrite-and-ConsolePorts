@@ -11,6 +11,7 @@ mod herbivore;
 mod huntable;
 pub mod mee;
 mod mee_ambient;
+mod mee_brachi;
 mod mee_flyer;
 mod mee_trex;
 mod place;
@@ -596,6 +597,96 @@ fn slope_too_steep(area: &Area, x: f32, z: f32, h: f32) -> bool {
         .any(|(dx, dz)| (area.land_height(x + dx, z + dz) - h).abs() > 100.0)
 }
 
+/// Is the water deeper than `limit` at (x, z) or `range` around it?
+fn deep_around(area: &Area, x: f32, z: f32, limit: f32, range: f32) -> bool {
+    [-range, 0.0, range].iter().any(|&dx| {
+        [-range, 0.0, range]
+            .iter()
+            .any(|&dz| area.land_up_h(x + dx, z + dz) - area.land_height(x + dx, z + dz) > limit)
+    })
+}
+
+/// Bounds, avoided regions, then the ground: within 64 of `v[1]`, not too
+/// steep, clear of big objects (`mc`). The tail of the dialect's
+/// brachiosaur checks.
+fn brahi_ground(area: &Area, v: &mut [f32; 3], mc: bool) -> bool {
+    let (ccx, ccz) = (cell_of(v[0]), cell_of(v[2]));
+    let h = area.land_height(v[0], v[2]);
+    if (h - v[1]).abs() > 64.0 {
+        return true;
+    }
+    v[1] = h;
+    slope_too_steep(area, v[0], v[2], h) || (mc && near_big_object(area, v[0], v[2], ccx, ccz))
+}
+
+/// `CheckPlaceCollisionBrahi`: wading, but not deeper than 550.
+pub(crate) fn check_place_collision_brahi(
+    area: &Area,
+    v: &mut [f32; 3],
+    wc: bool,
+    mc: bool,
+    avoid: &[Region],
+) -> bool {
+    let (ccx, ccz) = (cell_of(v[0]), cell_of(v[2]));
+    if !(4..=1018).contains(&ccx) || !(4..=1018).contains(&ccz) || in_avoided_cell(avoid, ccx, ccz)
+    {
+        return true;
+    }
+    if wc && deep_around(area, v[0], v[2], 550.0, 256.0) {
+        return true;
+    }
+    brahi_ground(area, v, mc)
+}
+
+/// `CheckPlaceCollisionLandBrahi`: no water (`wc`), or none deeper than
+/// the species' `waterLevel`.
+pub(crate) fn check_place_collision_land_brahi(
+    area: &Area,
+    v: &mut [f32; 3],
+    wc: bool,
+    mc: bool,
+    avoid: &[Region],
+    water_level: f32,
+) -> bool {
+    let (ccx, ccz) = (cell_of(v[0]), cell_of(v[2]));
+    if !(4..=1018).contains(&ccx) || !(4..=1018).contains(&ccz) || in_avoided_cell(avoid, ccx, ccz)
+    {
+        return true;
+    }
+    let wet = if wc {
+        flags_around(area, ccx, ccz) & cell_flags::WATER != 0
+    } else {
+        deep_around(area, v[0], v[2], water_level, 256.0)
+    };
+    wet || brahi_ground(area, v, mc)
+}
+
+/// `CheckPlaceCollisionBrahiP`: a spot in water no deeper than 550.
+pub(crate) fn check_place_collision_brahi_p(area: &Area, v: &mut [f32; 3]) -> bool {
+    let (ccx, ccz) = (cell_of(v[0]), cell_of(v[2]));
+    if !(4..=1008).contains(&ccx) || !(4..=1008).contains(&ccz) {
+        return true;
+    }
+    if area.land_up_h(v[0], v[2]) <= area.land_height(v[0], v[2])
+        || deep_around(area, v[0], v[2], 550.0, 256.0)
+    {
+        return true;
+    }
+    let h = area.land_height(v[0], v[2]);
+    v[1] = h;
+    for (dx, dz) in [
+        (-164.0, -164.0),
+        (164.0, -164.0),
+        (-164.0, 164.0),
+        (164.0, 164.0),
+    ] {
+        if (area.land_height(v[0] + dx, v[2] + dz) - h).abs() > 160.0 {
+            return true;
+        }
+    }
+    near_big_object(area, v[0], v[2], ccx, ccz)
+}
+
 /// `CheckPlaceCollision2(v, wc)`; the dialect's also honours `avoid`.
 pub fn check_place_collision2(area: &Area, v: &mut [f32; 3], wc: bool) -> bool {
     check_place_collision2_avoid(area, v, wc, &[])
@@ -754,7 +845,13 @@ impl Character {
     }
 
     /// `CheckPossiblePath`: blocked samples along `tgalpha` (20 x 64 units).
-    fn check_possible_path(&self, area: &Area, wc: bool, mc: bool, avoid: &[Region]) -> i32 {
+    pub(crate) fn check_possible_path(
+        &self,
+        area: &Area,
+        wc: bool,
+        mc: bool,
+        avoid: &[Region],
+    ) -> i32 {
         let mut p = self.pos;
         let (lx, lz) = (self.tgalpha.cos(), self.tgalpha.sin());
         let mut c = 0;
@@ -775,11 +872,17 @@ impl Character {
 
     /// [`Self::look_for_a_way`] also steering clear of `avoid` regions.
     pub fn look_for_a_way_avoid(&mut self, area: &Area, wc: bool, mc: bool, avoid: &[Region]) {
+        self.look_for_a_way_by(|c| c.check_possible_path(area, wc, mc, avoid));
+    }
+
+    /// `LookForAWay` with the AI's own `CheckPossiblePath` (`path` counts
+    /// blocked samples along `tgalpha`).
+    pub fn look_for_a_way_by(&mut self, path: impl Fn(&Character) -> i32) {
         let alpha = self.tgalpha;
         let mut dalpha = 15.0f32;
         let mut afound = alpha;
         let mut maxp = 16;
-        if self.check_possible_path(area, wc, mc, avoid) == 0 {
+        if path(self) == 0 {
             self.no_way_cnt = 0;
             return;
         }
@@ -787,7 +890,7 @@ impl Character {
         for i in 0..12 {
             for sign in [1.0, -1.0] {
                 self.tgalpha = alpha + sign * dalpha * PI / 180.0;
-                let curp = self.check_possible_path(area, wc, mc, avoid) + (i >> 1);
+                let curp = path(self) + (i >> 1);
                 if curp == 0 {
                     return;
                 }
@@ -938,6 +1041,73 @@ impl Character {
         }
     }
 
+    /// The dialect's `SetNewTargetPlace_Brahi`: brachiosaurs pick spots 200-400 deep
+    /// (the land brachiosaur: dry land, or up to 400 deep if it swims),
+    /// inside their spawn regions; any spot after 128 tries.
+    pub(crate) fn set_new_target_place_wading(
+        &mut self,
+        area: &Area,
+        rng: &mut MsRand,
+        r: f32,
+        group: Option<&SpawnGroup>,
+        land: Option<bool>,
+    ) {
+        let mut tr = 0;
+        loop {
+            let p = [
+                (self.pos[0] + rng.si_rand(r as i32) as f32).clamp(512.0, 1018.0 * 256.0),
+                0.0,
+                (self.pos[2] + rng.si_rand(r as i32) as f32).clamp(512.0, 1018.0 * 256.0),
+            ];
+            tr += 1;
+            if tr < 16 && (p[0] - self.pos[0]).abs() + (p[2] - self.pos[2]).abs() < r / 2.0 {
+                continue;
+            }
+            let wy = area.land_up_h(p[0], p[2]) - area.land_height(p[0], p[2]);
+            if tr < 128 {
+                let bad_depth = match land {
+                    Some(true) => wy > 400.0,
+                    Some(false) => wy > 0.0,
+                    None => !(200.0..=400.0).contains(&wy),
+                };
+                if bad_depth {
+                    continue;
+                }
+                if let Some(g) = group {
+                    if g.stay_in_region && !g.regions.iter().any(|g| in_region(g, p[0], p[2])) {
+                        continue;
+                    }
+                    if g.avoid.iter().any(|g| in_region(g, p[0], p[2])) {
+                        continue;
+                    }
+                }
+            }
+            self.tgtime = 0;
+            self.tgx = p[0];
+            self.tgz = p[2];
+            return;
+        }
+    }
+
+    /// A dialect animal's new target place, by its AI.
+    pub(crate) fn retarget(
+        &mut self,
+        sp: &Species,
+        area: &Area,
+        rng: &mut MsRand,
+        r: f32,
+        group: Option<&SpawnGroup>,
+    ) {
+        match sp.mee.as_ref() {
+            Some(m) if mee::is_brachi(m.ai) => {
+                // `Some(can swim)` for the land brachiosaur.
+                let land = (m.ai == mee::mee_ai::LANDBRACH).then_some(m.can_swim);
+                self.set_new_target_place_wading(area, rng, r, group, land);
+            }
+            _ => self.set_new_target_place_in(area, rng, r, group),
+        }
+    }
+
     /// The dialect's `ReplaceCharacterForward`: only for `moveForward`
     /// spawn groups, only into the group's regions, and the character is
     /// reset as if newly placed.
@@ -968,12 +1138,21 @@ impl Character {
         {
             return false;
         }
-        if check_place_collision_p(ctx.area, &mut p) {
+        let wader = sp
+            .mee
+            .as_ref()
+            .is_some_and(|m| matches!(m.ai, mee::mee_ai::BRACH | mee::mee_ai::BRACHDANGER));
+        let blocked = if wader {
+            check_place_collision_brahi_p(ctx.area, &mut p)
+        } else {
+            check_place_collision_p(ctx.area, &mut p)
+        };
+        if blocked {
             return false;
         }
         self.pos = p;
         self.reset(sp, ctx.rng, ctx.opt_agres);
-        self.set_new_target_place_in(ctx.area, ctx.rng, 2048.0, Some(g));
+        self.retarget(sp, ctx.area, ctx.rng, 2048.0, Some(g));
         if let Some(m) = sp
             .mee
             .as_ref()
@@ -1092,7 +1271,7 @@ impl Herd {
             let group = c.spawn_group.and_then(|g| self.groups.get(g));
             if c.tgtime > 30 * 1000 {
                 if sp.mee.is_some() {
-                    c.set_new_target_place_in(ctx.area, ctx.rng, 2048.0, group);
+                    c.retarget(sp, ctx.area, ctx.rng, 2048.0, group);
                 } else {
                     c.set_new_target_place(ctx.area, ctx.rng, 2048.0);
                 }
@@ -1128,6 +1307,10 @@ impl Herd {
                         mee_ambient::animate(c, i, sp, m, ctx, &mut w);
                     } else if mee::is_flyer(m.ai) {
                         mee_flyer::animate(c, i, sp, m, ctx, &mut w);
+                    } else if m.ai == mee::mee_ai::BRACH {
+                        mee_brachi::animate_old(c, i, sp, m, ctx, &mut w);
+                    } else if mee::is_brachi(m.ai) {
+                        mee_brachi::animate(c, i, sp, m, ctx, &mut w);
                     } else {
                         huntable::animate(c, i, sp, m, ctx, &mut w);
                     }

@@ -55,6 +55,15 @@ request: a jump needs the key released and pressed again
   follow packs, call now and then; a forward respawn starts at `minalt`.
   Shot, they fall (`AnimateIcthDead`: the death type's `fallAnim`, a
   splash on water, then `dieAnim` or a water death).
+- **Brachiosaurs** (`AnimateBrahiOld` 30, `AnimateBrahi` 34 / 35): wade
+  (or, 35, walk) between spots 200-400 deep (`SetNewTargetPlace_Brahi`),
+  idle in groups, follow packs, and move without obstacle checks (the
+  original's call is commented out). 34 / 35 with `aggress` charge an
+  aware hunter in water no deeper than 550, kill within `killdist`,
+  otherwise flee; deeper than 550 they head back. Kept: the dangerous
+  wader's path test also runs the common land check 64 further on (a
+  missing `else` upstream), and turning while alarmed scales by
+  `runrotatespeed`, which the manual makes required (0 freezes the turn).
 - **Kept quirks**: clearing the water flag clears all of `StateF`; the
   herbivore turn tests `State` (not `StateF`) for water; `morphTime`
   defaults to 1 (the manual; the released code leaves it 0, which would

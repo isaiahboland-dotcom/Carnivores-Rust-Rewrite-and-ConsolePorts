@@ -39,7 +39,7 @@ pub fn animate(
             if pdist > ((ctx.view_r + 20) * 256) as f32 && c.replace_forward_in(sp, ctx, w.group) {
                 continue;
             }
-            if wander(c, w, ctx, tdist, 1024.0, 4048.0) {
+            if wander(c, sp, w, ctx, tdist, 1024.0, 4048.0) {
                 continue;
             }
         }

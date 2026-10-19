@@ -200,6 +200,8 @@ fn info_line(m: &mut MeeInfo, key: &str, v: &str) {
         "hpa" => m.health_a = c_atoi(v),
         "trexobjcollide" => m.trex_obj_collide = truthy(v),
         "dash" => m.dash = truthy(v),
+        "collisiondist" => m.collision_dist = c_atoi(v),
+        "runrotatespeed" => m.rot_speed_multi = c_atof(v),
         _ => {}
     }
 }

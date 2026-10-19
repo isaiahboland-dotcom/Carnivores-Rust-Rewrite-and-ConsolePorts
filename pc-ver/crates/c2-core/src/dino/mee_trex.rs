@@ -95,7 +95,7 @@ pub fn animate(
         {
             continue;
         }
-        if c.state == 0 && rethink < MAX_RETHINK && wander(c, w, ctx, tdist, 1224.0, 8048.0) {
+        if c.state == 0 && rethink < MAX_RETHINK && wander(c, sp, w, ctx, tdist, 1224.0, 8048.0) {
             continue;
         }
         break done;

@@ -184,7 +184,7 @@ pub fn animate(
                 c.phase = m.run;
                 continue;
             }
-            if rethink < MAX_RETHINK && wander(c, w, ctx, tdist, 456.0, a.target_distance) {
+            if rethink < MAX_RETHINK && wander(c, sp, w, ctx, tdist, 456.0, a.target_distance) {
                 continue;
             }
         }
@@ -461,6 +461,18 @@ pub(super) fn try_kill(
     if (ctx.hunter.y - c.pos[1]).abs() >= kill_alt + 20.0 {
         return;
     }
+    kill_now(c, index, m, ctx, on_water);
+}
+
+/// The kill itself: the species' kill type on land (eat animation, body
+/// animation, scream), else the plain one.
+pub(super) fn kill_now(
+    c: &mut Character,
+    index: usize,
+    m: &MeeInfo,
+    ctx: &mut Ctx<'_>,
+    on_water: bool,
+) {
     let (kind, scream) = match m.kill(c.kill_type) {
         Some(k) if !on_water => {
             c.vspeed /= 8.0;
@@ -489,6 +501,7 @@ pub(super) fn try_kill(
 /// when a new target was picked (`goto TBEGIN`).
 pub(super) fn wander(
     c: &mut Character,
+    sp: &Species,
     w: &World<'_>,
     ctx: &mut Ctx<'_>,
     tdist: f32,
@@ -500,7 +513,7 @@ pub(super) fn wander(
         if c.follow_leader {
             if leaderdist < c.pack_density * 128.0 * 0.6 {
                 c.follow_leader = false;
-                c.set_new_target_place_in(ctx.area, ctx.rng, range, w.group);
+                c.retarget(sp, ctx.area, ctx.rng, range, w.group);
                 return true;
             }
         } else if leaderdist > c.pack_density * 128.0 * 1.3 {
@@ -513,7 +526,7 @@ pub(super) fn wander(
             c.tgz = l[2];
         }
     } else if tdist < reached {
-        c.set_new_target_place_in(ctx.area, ctx.rng, range, w.group);
+        c.retarget(sp, ctx.area, ctx.rng, range, w.group);
         return true;
     }
     false
@@ -984,5 +997,32 @@ mod tests {
         let c = &herd.chars[i];
         assert_eq!(c.phase, DIE);
         assert!((c.pos[1] - area.land_height(c.pos[0], c.pos[2])).abs() < 1.0);
+    }
+
+    #[test]
+    fn land_brachiosaur_charges_or_wanders() {
+        let area = Area::flat(10);
+        let h = hunter();
+        let mut m = info(mee_ai::LANDBRACH);
+        (m.aggress, m.kill_dist, m.collision_dist) = (40, 600, 128);
+        m.rot_speed_multi = 1.5; // `runrotatespeed`: required for this AI
+        m.run_speed = 0.4; // a slow giant, or it circles the hunter
+        let mut herd = Herd {
+            species: vec![species(m)],
+            ..Default::default()
+        };
+        let i = add(&mut herd, 0, &area, h.x + 2000.0, h.z);
+        let calm = add(&mut herd, 0, &area, h.x + 12000.0, h.z);
+        let start = herd.chars[calm].pos;
+        let c = &mut herd.chars[i];
+        (c.state, c.afraid_time, c.aware_hunter) = (2, 60_000, true);
+        let ev = run(&mut herd, &area, h, 20_000);
+        assert!(ev
+            .iter()
+            .any(|e| matches!(e, DinoEvent::KillHunter { index: 0, .. })));
+        let moved = ((herd.chars[calm].pos[0] - start[0]).powi(2)
+            + (herd.chars[calm].pos[2] - start[2]).powi(2))
+        .sqrt();
+        assert!(moved > 500.0, "calm one moved {moved}");
     }
 }

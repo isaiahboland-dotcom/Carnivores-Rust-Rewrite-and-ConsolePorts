@@ -132,6 +132,10 @@ pub struct MeeInfo {
     pub trex_obj_collide: bool,
     /// Ambients: speed up when the hunter is very close (`dash`).
     pub dash: bool,
+    /// Brachiosaurs: path test step (`collisiondist`) and turn speed while
+    /// alarmed (`runrotatespeed`).
+    pub collision_dist: i32,
+    pub rot_speed_multi: f32,
 }
 
 impl MeeInfo {
@@ -174,6 +178,8 @@ impl MeeInfo {
             health_a: 0,
             trex_obj_collide: false,
             dash: false,
+            collision_dist: 0,
+            rot_speed_multi: 0.0,
         }
     }
 
@@ -432,7 +438,19 @@ pub fn is_huntable(ai_id: i32) -> bool {
 /// AIs whose dialect behaviour is ported (the others run as an original
 /// family for now, `crate::mee::family`).
 pub fn is_ported(ai_id: i32) -> bool {
-    is_huntable(ai_id) || is_ambient(ai_id) || is_flyer(ai_id) || ai_id == super::ai::TREX
+    is_huntable(ai_id)
+        || is_ambient(ai_id)
+        || is_flyer(ai_id)
+        || is_brachi(ai_id)
+        || ai_id == super::ai::TREX
+}
+
+/// Brachiosaurs: `AnimateBrahiOld` (30) and `AnimateBrahi` (34, 35).
+pub fn is_brachi(ai_id: i32) -> bool {
+    matches!(
+        ai_id,
+        mee_ai::BRACH | mee_ai::BRACHDANGER | mee_ai::LANDBRACH
+    )
 }
 
 /// AIs that run `AnimateDimor` (and fall with `AnimateIcthDead`).
