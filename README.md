@@ -378,10 +378,15 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
   - [x] `c2-3ds`: hunt mode with terrain, water, objects, animals, view model, fog; buttons, Circle Pad, C-Stick, touch look; status on the bottom screen
   - [x] runs in Azahar (matches the PC view side by side, apart from the sky)
   - [x] walk around on real hardware: Old 3DS / Old 2DS, ~58 fps, 15.1 MiB heap (`docs/3DS.md`)
-- [ ] M7 Vanilla 3DS
+- [ ] M7 Vanilla 3DS — **in progress**
+  - [x] sky, sun/moon, ship, animated objects, particles, blood, water rings, binoculars
+  - [x] bottom screen: touch weapon picker | map with animals in range | call picker (owner's design)
+  - [x] sound on the DSP (shared event mapping and levels in `c2_core::sound`)
+  - [ ] menus (area, time, animals, weapons from a multi-area pack) and saves
+  - [ ] trophy room, scope cross-hairs, Old 3DS performance pass
 - [ ] M8 Modded 3DS
 
-_Last updated: 2026-10-18 — M6: first hardware test crashed out of memory on Old 3DS/2DS; fixed (16 MiB linear heap, slimmed packs, cooker measures the load peak: 23 MiB). Next: owner retests on hardware; real add-on mods for M4/M5 sign-off._
+_Last updated: 2026-10-18 — M7 in progress: 3DS sky/effects, touch bottom screen (weapons | map | calls), DSP sound. Next: menus and saves, then trophy room and an Old 3DS performance pass._
 
 
 note from user: quick headsup, the carnivores 2 datafile is copied direct from my library and includes re-shade files as well, please do not port the re-shade files to 3ds or the rust re-write as that would overcomplicate things dramatically
