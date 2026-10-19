@@ -1025,4 +1025,59 @@ mod tests {
         .sqrt();
         assert!(moved > 500.0, "calm one moved {moved}");
     }
+
+    /// A flat sea bed under deep water.
+    fn sea() -> Area {
+        let mut a = Area::flat(10);
+        a.map.flags.fill(crate::area::cell_flags::WATER);
+        a.map.water.fill(0);
+        a.rsc.waters = vec![c2_formats::rsc::Water {
+            texture_index: 0,
+            level: 100,
+            transp: 0.5,
+            fog_rgb: 0,
+        }];
+        a
+    }
+
+    #[test]
+    fn fish_keep_their_depth_and_a_danger_fish_kills_a_swimmer() {
+        let area = sea();
+        let (x, z) = (512.0 * 256.0, 512.0 * 256.0);
+        let (up, bed) = (area.land_up_h(x, z), area.land_height(x, z));
+        assert!(up - bed > 2000.0, "{up} {bed}");
+        let mut h = hunter();
+        h.y = up - 300.0;
+        let fish = |danger: bool| {
+            let mut m = info(mee_ai::FISH);
+            (m.min_depth, m.max_depth, m.spacing_depth) = (200, 8000, 400);
+            // Hunts within `view_r * aggress` = 74 * 80 units.
+            (m.aggress, m.kill_dist, m.danger_fish) = (80, 400, danger);
+            m
+        };
+        let mut herd = Herd {
+            species: vec![species(fish(false)), species(fish(true))],
+            ..Default::default()
+        };
+        let calm = add(&mut herd, 0, &area, h.x + 15_000.0, h.z);
+        let shark = add(&mut herd, 1, &area, h.x + 3000.0, h.z);
+        for c in &mut herd.chars {
+            c.depth = (up + bed) / 2.0;
+            c.tdepth = c.depth;
+        }
+        let start = herd.chars[calm].pos;
+        let ev = run(&mut herd, &area, h, 20_000);
+        assert!(
+            ev.iter()
+                .any(|e| matches!(e, DinoEvent::KillHunter { index, .. } if *index == shark)),
+            "{ev:?}"
+        );
+        let c = &herd.chars[calm];
+        assert!(
+            c.pos[1] > bed + 150.0 && c.pos[1] < up - 150.0,
+            "depth {}",
+            c.pos[1]
+        );
+        assert!((c.pos[0] - start[0]).abs() + (c.pos[2] - start[2]).abs() > 500.0);
+    }
 }

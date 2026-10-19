@@ -64,6 +64,18 @@ request: a jump needs the key released and pressed again
   wader's path test also runs the common land check 64 further on (a
   missing `else` upstream), and turning while alarmed scales by
   `runrotatespeed`, which the manual makes required (0 freezes the turn).
+- **Fish and Mosasaurus** (`AnimateFish`, `AnimateDeadFish`, 32 / 33):
+  swim at a depth between `spcDepth / 2` from surface and bottom, in water
+  `mindepth`-`maxdepth` deep, pitching toward a target depth; `DangerFish`
+  hunt a hunter standing in water within `view * aggress` (jumpers leap
+  at one near the surface), others swim off; idles (`lookAnim` /
+  `fishIdleAnim`) near the surface; dead ones sink. Kept: the target
+  range is 5024 for both (a `switch` without `break`); the depth retry
+  compares an `int` pitch difference; `spcdm` is an `int`, so 0 while
+  idling. Not done: leap spray particles (`partCnt`), and the vertical
+  bend `bdepth` (computed upstream, never drawn). Shots are not heard by
+  them (`Aquatic`). Their target picking can retry 3024 times: watch on
+  Old 3DS.
 - **Kept quirks**: clearing the water flag clears all of `StateF`; the
   herbivore turn tests `State` (not `StateF`) for water; `morphTime`
   defaults to 1 (the manual; the released code leaves it 0, which would

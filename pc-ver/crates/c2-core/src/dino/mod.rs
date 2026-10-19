@@ -12,6 +12,7 @@ mod huntable;
 pub mod mee;
 mod mee_ambient;
 mod mee_brachi;
+mod mee_fish;
 mod mee_flyer;
 mod mee_trex;
 mod place;
@@ -306,6 +307,15 @@ pub struct Character {
     /// asleep (tranquilizer) when down.
     pub death_phase: usize,
     pub can_sleep: bool,
+    /// Fish: swimming height and the one aimed for, the pitch easing
+    /// (`turny`, `lastTBeta`), idling, and the gap kept from surface and
+    /// bottom (`spcDepth`).
+    pub depth: f32,
+    pub tdepth: f32,
+    pub turny: f32,
+    pub last_tbeta: f32,
+    pub aquatic_idle: bool,
+    pub spc_depth: f32,
 }
 
 /// What the AI sees of the hunter.
@@ -687,6 +697,40 @@ pub(crate) fn check_place_collision_brahi_p(area: &Area, v: &mut [f32; 3]) -> bo
     near_big_object(area, v[0], v[2], ccx, ccz)
 }
 
+/// Is the water at (x, z) and 256 around it between `lo` and `hi` deep?
+fn depth_band_around(area: &Area, x: f32, z: f32, lo: f32, hi: f32) -> bool {
+    !deep_around(area, x, z, hi, 256.0)
+        && [-256.0, 0.0, 256.0].iter().all(|&dx| {
+            [-256.0, 0.0, 256.0]
+                .iter()
+                .all(|&dz| area.land_up_h(x + dx, z + dz) - area.land_height(x + dx, z + dz) >= lo)
+        })
+}
+
+/// `CheckPlaceCollisionFish`: outside the species' depth band (or an
+/// avoided region).
+pub(crate) fn check_place_collision_fish(
+    area: &Area,
+    v: &[f32; 3],
+    lo: f32,
+    hi: f32,
+    avoid: &[Region],
+) -> bool {
+    let (ccx, ccz) = (cell_of(v[0]), cell_of(v[2]));
+    !(4..=1018).contains(&ccx)
+        || !(4..=1018).contains(&ccz)
+        || in_avoided_cell(avoid, ccx, ccz)
+        || !depth_band_around(area, v[0], v[2], lo, hi)
+}
+
+/// `CheckPlaceCollisionFishP`.
+pub(crate) fn check_place_collision_fish_p(area: &Area, v: &[f32; 3], lo: f32, hi: f32) -> bool {
+    let (ccx, ccz) = (cell_of(v[0]), cell_of(v[2]));
+    !(4..=1008).contains(&ccx)
+        || !(4..=1008).contains(&ccz)
+        || !depth_band_around(area, v[0], v[2], lo, hi)
+}
+
 /// `CheckPlaceCollision2(v, wc)`; the dialect's also honours `avoid`.
 pub fn check_place_collision2(area: &Area, v: &mut [f32; 3], wc: bool) -> bool {
     check_place_collision2_avoid(area, v, wc, &[])
@@ -764,6 +808,10 @@ impl Character {
             }
             self.damaged = false;
             self.follow_leader = false;
+            self.aquatic_idle = false;
+            self.turny = 0.0;
+            self.last_tbeta = 0.0;
+            self.spc_depth = m.spacing_depth as f32 + self.scale * 500.0 - 500.0;
         }
     }
 
@@ -805,6 +853,30 @@ impl Character {
             sound,
             pos: self.pos,
         });
+    }
+
+    /// `ActivateCharacterFxAquatic`: a sound heard only underwater.
+    pub fn activate_fx_aquatic(&self, index: usize, sp: &Species, ctx: &mut Ctx<'_>) {
+        if !ctx.hunter.underwater {
+            return;
+        }
+        let Some(&fx) = sp.anifx.get(anim(sp.anims(), self.phase)) else {
+            return;
+        };
+        let Ok(sound) = usize::try_from(fx) else {
+            return;
+        };
+        let d = ((ctx.hunter.x - self.pos[0]).powi(2)
+            + (ctx.hunter.y - self.pos[1]).powi(2)
+            + (ctx.hunter.z - self.pos[2]).powi(2))
+        .sqrt();
+        if d <= 68.0 * 256.0 {
+            ctx.events.push(DinoEvent::Sound {
+                index,
+                sound,
+                pos: self.pos,
+            });
+        }
     }
 
     /// `ThinkY_Beta_Gamma`: sit on the ground and tilt with the slope.
@@ -1089,6 +1161,23 @@ impl Character {
         }
     }
 
+    /// A dialect animal's new target place after 30 s, or after a forward
+    /// respawn: fish 1024 away, Mosasaurus 5048, others 2048.
+    pub(crate) fn retarget_default(
+        &mut self,
+        sp: &Species,
+        area: &Area,
+        rng: &mut MsRand,
+        group: Option<&SpawnGroup>,
+    ) {
+        let r = match sp.mee.as_ref().map(|m| m.ai) {
+            Some(mee::mee_ai::FISH) => 1024.0,
+            Some(mee::mee_ai::MOSA) => 5048.0,
+            _ => 2048.0,
+        };
+        self.retarget(sp, area, rng, r, group);
+    }
+
     /// A dialect animal's new target place, by its AI.
     pub(crate) fn retarget(
         &mut self,
@@ -1099,6 +1188,7 @@ impl Character {
         group: Option<&SpawnGroup>,
     ) {
         match sp.mee.as_ref() {
+            Some(m) if mee::is_fish(m.ai) => self.set_new_target_place_fish(area, rng, r, group),
             Some(m) if mee::is_brachi(m.ai) => {
                 // `Some(can swim)` for the land brachiosaur.
                 let land = (m.ai == mee::mee_ai::LANDBRACH).then_some(m.can_swim);
@@ -1142,7 +1232,10 @@ impl Character {
             .mee
             .as_ref()
             .is_some_and(|m| matches!(m.ai, mee::mee_ai::BRACH | mee::mee_ai::BRACHDANGER));
-        let blocked = if wader {
+        let fish = sp.mee.as_ref().filter(|m| mee::is_fish(m.ai));
+        let blocked = if let Some(m) = fish {
+            check_place_collision_fish_p(ctx.area, &p, m.min_depth as f32, m.max_depth as f32)
+        } else if wader {
             check_place_collision_brahi_p(ctx.area, &mut p)
         } else {
             check_place_collision_p(ctx.area, &mut p)
@@ -1152,7 +1245,14 @@ impl Character {
         }
         self.pos = p;
         self.reset(sp, ctx.rng, ctx.opt_agres);
-        self.retarget(sp, ctx.area, ctx.rng, 2048.0, Some(g));
+        self.retarget_default(sp, ctx.area, ctx.rng, Some(g));
+        if fish.is_some() {
+            let (up, land) = (
+                ctx.area.land_up_h(self.pos[0], self.pos[2]),
+                ctx.area.land_height(self.pos[0], self.pos[2]),
+            );
+            self.pos[1] = up - (up - land) / 2.0;
+        }
         if let Some(m) = sp
             .mee
             .as_ref()
@@ -1271,7 +1371,7 @@ impl Herd {
             let group = c.spawn_group.and_then(|g| self.groups.get(g));
             if c.tgtime > 30 * 1000 {
                 if sp.mee.is_some() {
-                    c.retarget(sp, ctx.area, ctx.rng, 2048.0, group);
+                    c.retarget_default(sp, ctx.area, ctx.rng, group);
                 } else {
                     c.set_new_target_place(ctx.area, ctx.rng, 2048.0);
                 }
@@ -1307,6 +1407,8 @@ impl Herd {
                         mee_ambient::animate(c, i, sp, m, ctx, &mut w);
                     } else if mee::is_flyer(m.ai) {
                         mee_flyer::animate(c, i, sp, m, ctx, &mut w);
+                    } else if mee::is_fish(m.ai) {
+                        mee_fish::animate(c, i, sp, m, ctx, &mut w);
                     } else if m.ai == mee::mee_ai::BRACH {
                         mee_brachi::animate_old(c, i, sp, m, ctx, &mut w);
                     } else if mee::is_brachi(m.ai) {
@@ -1316,6 +1418,8 @@ impl Herd {
                     }
                 } else if mee::is_flyer(m.ai) {
                     mee_flyer::animate_dead(c, i, sp, m, ctx);
+                } else if mee::is_fish(m.ai) {
+                    mee_fish::animate_dead(c, i, sp, m, ctx);
                 } else {
                     huntable::animate_dead(c, i, sp, m, ctx);
                 }

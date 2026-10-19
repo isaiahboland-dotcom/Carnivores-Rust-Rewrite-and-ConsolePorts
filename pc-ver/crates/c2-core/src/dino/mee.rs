@@ -136,6 +136,13 @@ pub struct MeeInfo {
     /// alarmed (`runrotatespeed`).
     pub collision_dist: i32,
     pub rot_speed_multi: f32,
+    /// Fish: hunts swimmers (`DangerFish`), never attacks (`dontswimaway`),
+    /// leap length (`JumpRange`), distance kept from surface and bottom
+    /// (`spcdepth`, grown with size).
+    pub danger_fish: bool,
+    pub dont_swim_away: bool,
+    pub jump_range: i32,
+    pub spacing_depth: i32,
 }
 
 impl MeeInfo {
@@ -180,6 +187,10 @@ impl MeeInfo {
             dash: false,
             collision_dist: 0,
             rot_speed_multi: 0.0,
+            danger_fish: false,
+            dont_swim_away: false,
+            jump_range: 0,
+            spacing_depth: 0,
         }
     }
 
@@ -215,6 +226,8 @@ pub struct AiInfo {
     pub walk_target_gamma_rot: f32,
     pub target_gamma_rot: f32,
     pub y_beta_gamma: [f32; 4],
+    /// Fish: start an idle when `rRand(128)` beats this.
+    pub idle_start: i32,
     pub tga_increment: f32,
     pub rot1: f32,
     pub rot2: f32,
@@ -415,6 +428,7 @@ pub fn ai_info(ai_id: i32) -> AiInfo {
         },
         FISH | MOSA => AiInfo {
             agress_multi: 4,
+            idle_start: 126,
             jumper: ai_id == MOSA,
             ..Default::default()
         },
@@ -442,7 +456,13 @@ pub fn is_ported(ai_id: i32) -> bool {
         || is_ambient(ai_id)
         || is_flyer(ai_id)
         || is_brachi(ai_id)
+        || is_fish(ai_id)
         || ai_id == super::ai::TREX
+}
+
+/// Fish and Mosasaurus: `AnimateFish`.
+pub fn is_fish(ai_id: i32) -> bool {
+    matches!(ai_id, mee_ai::FISH | mee_ai::MOSA)
 }
 
 /// Brachiosaurs: `AnimateBrahiOld` (30) and `AnimateBrahi` (34, 35).

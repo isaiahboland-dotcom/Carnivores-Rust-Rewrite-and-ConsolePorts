@@ -202,6 +202,10 @@ fn info_line(m: &mut MeeInfo, key: &str, v: &str) {
         "dash" => m.dash = truthy(v),
         "collisiondist" => m.collision_dist = c_atoi(v),
         "runrotatespeed" => m.rot_speed_multi = c_atof(v),
+        "dangerfish" => m.danger_fish = truthy(v),
+        "dontswimaway" => m.dont_swim_away = truthy(v),
+        "jumprange" => m.jump_range = c_atoi(v),
+        "spcdepth" => m.spacing_depth = c_atoi(v),
         _ => {}
     }
 }

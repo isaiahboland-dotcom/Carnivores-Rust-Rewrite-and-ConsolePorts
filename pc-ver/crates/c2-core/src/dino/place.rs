@@ -60,6 +60,7 @@ impl Herd {
     /// group `group`, packs at `density`. Its index, if added.
     fn spawn_in(
         &mut self,
+        area: &Area,
         ctype: usize,
         pos: [f32; 3],
         rng: &mut MsRand,
@@ -70,9 +71,20 @@ impl Herd {
             return None;
         }
         let i = self.chars.len() - 1;
+        let fish = self.species[ctype]
+            .mee
+            .as_ref()
+            .is_some_and(|m| super::mee::is_fish(m.ai));
         let c = &mut self.chars[i];
         c.spawn_group = Some(group);
         c.pack_density = density;
+        if fish {
+            // `spawnMapAmbient`; the clamp to the water happens at once.
+            let (x, z) = (c.tgx, c.tgz);
+            c.depth =
+                area.land_height(x, z) + (area.land_up_h(x, z) - area.land_height(x, z) / 2.0);
+            c.tdepth = c.depth;
+        }
         Some(i)
     }
 
@@ -302,7 +314,7 @@ impl Herd {
                 else {
                     break;
                 };
-                let Some(li) = self.spawn_in(leader, pos, rng, sg, pack.density) else {
+                let Some(li) = self.spawn_in(area, leader, pos, rng, sg, pack.density) else {
                     continue;
                 };
                 if !group.move_forward {
@@ -346,7 +358,7 @@ impl Herd {
                         else {
                             break;
                         };
-                        if let Some(m) = self.spawn_in(ct, p, rng, sg, pack.density) {
+                        if let Some(m) = self.spawn_in(area, ct, p, rng, sg, pack.density) {
                             self.chars[m].pack = Some(pid);
                         }
                     }

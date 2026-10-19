@@ -1145,6 +1145,10 @@ impl Hunt {
                     }
                     continue;
                 }
+                // Fish and Mosasaurus do not hear shots (`Aquatic`).
+                if crate::dino::mee::is_fish(c.ai) {
+                    continue;
+                }
                 c.afraid_time = ((10.0 + (range - l) / 256.0) as i32) * 1024;
                 if c.state == 0 {
                     c.state = 2;
