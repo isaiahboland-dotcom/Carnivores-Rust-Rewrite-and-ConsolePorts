@@ -38,15 +38,17 @@ share it (README §2).
 | | |
 |---|---|
 | Circle Pad | move / strafe |
-| D-Pad | turn (left/right), look (up/down) |
+| X / B | look up / down |
+| Y / A | turn left / right |
 | C-Stick (New 3DS), drag on the touch screen | look |
 | R | fire |
-| A | show / hide weapon (and "yes" at the leave prompt) |
-| X | next weapon |
-| Y | binoculars |
+| D-Pad up | jump / swim up |
+| D-Pad down | next weapon |
+| D-Pad left | binoculars |
+| D-Pad right | show / hide weapon |
 | L | run on/off |
-| B | jump / swim up (and "no" at the leave prompt) |
 | ZL / ZR (New 3DS) | crouch / call |
+| A / B at the leave prompt | yes / no |
 | SELECT | pause (shows fps and memory) |
 | L + SELECT | screenshot to `/3ds/c2rs/shots/` |
 | START | leave the hunt |

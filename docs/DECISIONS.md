@@ -2,6 +2,13 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-18 — M7: 3DS buttons
+Owner's request, for the Old 3DS / 2DS, which have no C-Stick: the face
+buttons look (X/B up/down, Y/A turn) and the D-Pad does what they did:
+up jump, down next weapon, left binoculars, right show/hide weapon. Jump
+went on D-Pad up rather than down, where B's spot would put it, because it
+feels more natural there. A/B still answer the leave prompt.
+
 ## 2026-10-18 — M7: 3DS sound
 - `c2_core::sound` now holds what used to be the PC's `play_sounds` and
   `lr_gains`: which `SoundId` an event plays (`commands`) and
