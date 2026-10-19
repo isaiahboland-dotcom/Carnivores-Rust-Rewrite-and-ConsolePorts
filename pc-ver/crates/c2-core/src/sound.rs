@@ -95,7 +95,7 @@ pub fn commands(events: &[GameEvent], h: &Hunt) -> Vec<SoundCmd> {
                     64 + (h.player.vspeed * 30.0) as i32,
                 ),
                 GameEvent::Player(PlayerEvent::Land) => play(SoundId::Step(r3), None, 64),
-                GameEvent::HunterDied { kind } if *kind != hunt::BREATH => {
+                GameEvent::HunterDied { kind, scream: true } if *kind != hunt::BREATH => {
                     play(SoundId::Scream((h.real_time % 4) as usize), None, 256)
                 }
                 GameEvent::Ship(ShipEvent::Sound { slot, at }) => {

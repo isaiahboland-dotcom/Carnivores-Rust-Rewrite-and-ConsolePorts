@@ -1,6 +1,6 @@
 //! `PlaceCharacters`: populating an area at the start of a hunt.
 
-use super::{ai, check_place_collision_aquatic, check_place_collision_p, Character, Herd};
+use super::{ai, check_place_collision_aquatic, check_place_collision_p, Character, Herd, Pack};
 use crate::area::{Area, TimeOfDay};
 use crate::rng::MsRand;
 use c2_formats::mee::{SpawnGroup, SpawnLink, Tables};
@@ -52,6 +52,26 @@ impl Herd {
         }
         self.chars.push(c);
         true
+    }
+
+    /// [`Self::spawn`] for a dialect hunt: the character keeps to spawn
+    /// group `group`, packs at `density`. Its index, if added.
+    fn spawn_in(
+        &mut self,
+        ctype: usize,
+        pos: [f32; 3],
+        rng: &mut MsRand,
+        group: usize,
+        density: f32,
+    ) -> Option<usize> {
+        if !self.spawn(ctype, pos, rng, 128) {
+            return None;
+        }
+        let i = self.chars.len() - 1;
+        let c = &mut self.chars[i];
+        c.spawn_group = Some(group);
+        c.pack_density = density;
+        Some(i)
     }
 
     /// Places ambient animals near the hunter, brachiosaurs in shallow water
@@ -169,19 +189,23 @@ impl Herd {
         density: i32,
     ) {
         self.chars.clear();
-        struct Pack {
+        self.packs.clear();
+        self.groups = t.spawn_groups.clone();
+        struct PackType {
             members: Vec<(usize, f32)>,
             min: i32,
             max: i32,
+            density: f32,
             spawn: Vec<SpawnLink>,
         }
-        let mut packs: Vec<Pack> = t
+        let mut packs: Vec<PackType> = t
             .pack_groups
             .iter()
-            .map(|g| Pack {
+            .map(|g| PackType {
                 members: Vec::new(),
                 min: g.min,
                 max: g.max,
+                density: g.density,
                 spawn: g.spawn.clone(),
             })
             .collect();
@@ -194,10 +218,11 @@ impl Herd {
         }
         for (ct, c) in t.characters.iter().enumerate() {
             if !c.spawn.is_empty() {
-                packs.push(Pack {
+                packs.push(PackType {
                     members: vec![(ct, 1.0)],
                     min: 1,
                     max: 1,
+                    density: 0.0,
                     spawn: c.spawn.clone(),
                 });
             }
@@ -275,7 +300,9 @@ impl Herd {
                 else {
                     break;
                 };
-                self.spawn(leader, pos, rng, 128);
+                let Some(li) = self.spawn_in(leader, pos, rng, sg, pack.density) else {
+                    continue;
+                };
                 if !group.move_forward {
                     let mut k = 1;
                     if pack.max > 1 {
@@ -287,6 +314,14 @@ impl Herd {
                         }
                     }
                     let total_m: f32 = pack.members.iter().map(|m| m.1.max(0.0)).sum();
+                    let pid = self.packs.len();
+                    if k > 1 {
+                        self.packs.push(Pack {
+                            leader: li,
+                            ..Default::default()
+                        });
+                        self.chars[li].pack = Some(pid);
+                    }
                     for _ in 1..k {
                         if self.chars.len() >= MEE_MAX_CHARS {
                             return;
@@ -309,7 +344,9 @@ impl Herd {
                         else {
                             break;
                         };
-                        self.spawn(ct, p, rng, 128);
+                        if let Some(m) = self.spawn_in(ct, p, rng, sg, pack.density) {
+                            self.chars[m].pack = Some(pid);
+                        }
                     }
                 }
                 if tr > 10500 {

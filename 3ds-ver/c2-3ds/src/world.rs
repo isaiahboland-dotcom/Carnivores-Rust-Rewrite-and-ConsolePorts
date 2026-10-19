@@ -769,7 +769,8 @@ impl World {
                 continue;
             };
             let Some(tex) = &sp.tex else { continue };
-            let Some(pos) = pose::pose(c, car) else {
+            let anims = herd.species.get(c.ctype).map_or(&[][..], |s| s.anims());
+            let Some(pos) = pose::pose(c, car, anims) else {
                 continue;
             };
             let (v, _) = corners(&sp.prepared, Some(&pos), &[]);

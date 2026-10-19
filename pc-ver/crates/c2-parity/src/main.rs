@@ -288,6 +288,7 @@ fn dinos_sim(map_path: &Path, seconds: u32) -> Result<()> {
         species,
         chars: Vec::new(),
         demo_index: None,
+        ..Default::default()
     };
     herd.place(
         &area,
@@ -411,6 +412,156 @@ fn mee_report(game: &Path, area: u32, time: u8, picked: u32) -> Result<()> {
     Ok(())
 }
 
+/// `path` (either slash, any case) under `base`.
+fn find_path(base: &Path, path: &str) -> Option<PathBuf> {
+    path.split(['/', '\\'])
+        .filter(|c| !c.is_empty() && *c != ".")
+        .try_fold(base.to_path_buf(), |d, c| find_ci(&d, c))
+}
+
+/// `c2-parity mee-sim <GAME_DIR> [AREA] [seconds]`: a Modder's Edition hunt
+/// placed as the game would (day, nothing picked), run headlessly with the
+/// hunter standing at the first landing; checks positions stay finite and
+/// reports each species' phase and distance, and the slowest step.
+fn mee_sim(game: &Path, area_n: u32, seconds: u32) -> Result<()> {
+    use c2_core::area::{Area, TimeOfDay};
+    use c2_core::dino::{Ctx, DinoInfo, Herd, HunterView, Species};
+    use c2_core::rng::MsRand;
+    use c2_formats::mee::Hunt;
+    let huntdat = find_ci(game, "HUNTDAT").context("no HUNTDAT")?;
+    let res_path = find_ci(&huntdat, "_RES.TXT").context("no _RES.TXT")?;
+    let res = ResTxt::parse(&String::from_utf8_lossy(&std::fs::read(res_path)?))?;
+    let h = Hunt {
+        area: Some(area_n),
+        time: 1,
+        picked: 0,
+    };
+    let m = c2_core::mee::read(&res, &h);
+    let areas = find_ci(&huntdat, "AREAS").context("no AREAS")?;
+    let map_path = find_ci(&areas, &format!("AREA{area_n}.MAP")).context("no map")?;
+    let rsc_path = find_ci(&areas, &format!("AREA{area_n}.RSC")).context("no rsc")?;
+    let area = Area::new(
+        map::parse(&std::fs::read(map_path)?)?,
+        rsc::parse(&std::fs::read(rsc_path)?)?,
+        TimeOfDay::Day,
+    );
+    let mut species = Vec::new();
+    for d in &m.res.characters {
+        let info = DinoInfo::from_def(d);
+        let car = find_path(&huntdat, &info.file)
+            .and_then(|p| std::fs::read(p).ok())
+            .and_then(|d| car::parse(&d).ok());
+        let empty = car::Car {
+            name_raw: [0; 32],
+            mesh: Default::default(),
+            animations: vec![],
+            sounds: vec![],
+            anim_sounds: None,
+            trailing: Vec::new(),
+        };
+        species.push(Species::new(info, car.as_ref().unwrap_or(&empty)));
+    }
+    c2_core::mee::tune(&mut species, &m.tables);
+    for (i, s) in species.iter().enumerate() {
+        if let Some(mi) = &s.mee {
+            let n = s.ani_time.len();
+            let bad: Vec<_> = mi.anim_index.iter().filter(|&&a| a >= n).collect();
+            if !bad.is_empty() {
+                println!(
+                    "char {i} {}: anims {bad:?} beyond the model's {n}",
+                    s.info.name
+                );
+            }
+        }
+    }
+    let mut rng = MsRand::new(12345);
+    let (hx, hz) = area
+        .landings
+        .first()
+        .map_or((512.0 * 256.0, 512.0 * 256.0), |l| {
+            (
+                f32::from(l.0) * 256.0 + 128.0,
+                f32::from(l.1) * 256.0 + 128.0,
+            )
+        });
+    let mut herd = Herd {
+        species,
+        ..Default::default()
+    };
+    herd.place_mee(&area, (hx, hz), &mut rng, &m.tables, 128);
+    let native = herd
+        .chars
+        .iter()
+        .filter(|c| herd.species[c.ctype].mee.is_some())
+        .count();
+    println!(
+        "placed {} ({native} on the dialect's AI), {} packs",
+        herd.chars.len(),
+        herd.packs.len()
+    );
+    let start: Vec<[f32; 3]> = herd.chars.iter().map(|c| c.pos).collect();
+    let hunter = HunterView {
+        x: hx,
+        y: area.land_height(hx, hz),
+        z: hz,
+        head_y: 220.0,
+        alive: true,
+        ..Default::default()
+    };
+    let mut events = Vec::new();
+    let mut slowest = std::time::Duration::ZERO;
+    for t in 0..seconds * 100 {
+        let mut ctx = Ctx {
+            area: &area,
+            rng: &mut rng,
+            dt: 10,
+            real_time: (t * 10) as i32,
+            hunter,
+            opt_agres: 128,
+            tranq: false,
+            view_r: 74,
+            run_k: 1.0,
+            events: &mut events,
+        };
+        let t0 = std::time::Instant::now();
+        herd.step(&mut ctx);
+        slowest = slowest.max(t0.elapsed());
+        if let Some(c) = herd
+            .chars
+            .iter()
+            .find(|c| !c.pos.iter().all(|v| v.is_finite()))
+        {
+            bail!("t={}ms: non-finite position, ai {}", t * 10, c.ai);
+        }
+    }
+    let mut by_species: std::collections::BTreeMap<usize, (usize, f32, Vec<usize>)> =
+        Default::default();
+    for (i, c) in herd.chars.iter().enumerate() {
+        let d = ((c.pos[0] - start[i][0]).powi(2) + (c.pos[2] - start[i][2]).powi(2)).sqrt();
+        let e = by_species.entry(c.ctype).or_default();
+        e.0 += 1;
+        e.1 += d;
+        e.2.push(c.phase);
+    }
+    for (ct, (n, d, phases)) in by_species {
+        let s = &herd.species[ct];
+        println!(
+            "  {:<24} ai {:>2} {}x  avg moved {:>6.0}  phases {:?}",
+            s.info.name,
+            s.info.ai,
+            n,
+            d / n as f32,
+            phases
+        );
+    }
+    println!(
+        "{} events, slowest step {:.2} ms",
+        events.len(),
+        slowest.as_secs_f64() * 1000.0
+    );
+    Ok(())
+}
+
 /// `name` in `dir`, ignoring case.
 fn find_ci(dir: &Path, name: &str) -> Option<std::path::PathBuf> {
     std::fs::read_dir(dir)
@@ -439,6 +590,14 @@ fn main() -> Result<()> {
             Ok(args.get(i).map(|s| s.parse()).transpose()?.unwrap_or(d))
         };
         return mee_report(Path::new(dir), num(2, 1)?, num(3, 1)? as u8, num(4, 1)?);
+    }
+    if args.first().map(String::as_str) == Some("mee-sim") {
+        let usage = "usage: c2-parity mee-sim <GAME_DIR> [AREA] [seconds]";
+        let dir = args.get(1).context(usage)?;
+        let num = |i: usize, d: u32| -> Result<u32> {
+            Ok(args.get(i).map(|s| s.parse()).transpose()?.unwrap_or(d))
+        };
+        return mee_sim(Path::new(dir), num(2, 1)?, num(3, 60)?);
     }
     if args.first().map(String::as_str) == Some("walk") {
         let path = args

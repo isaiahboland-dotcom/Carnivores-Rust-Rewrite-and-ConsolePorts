@@ -2,14 +2,16 @@
 //! `_RES.TXT` resolved for a hunt, and their species mapped onto the AIs
 //! this engine has. Format side: `c2_formats::mee`.
 //!
-//! **Interim:** the dialect has AI families the original doesn't (Ice Age
-//! animals, Pachycephalosaurus, Titan, Micro, fish, Mosasaurus, ...). Until
-//! each is implemented, [`family`] runs it as the closest original AI, and
+//! The dialect's shared huntable AI (`AnimateHuntable`: the original's
+//! herbivores and hunters plus the Ice Age animals and Pachycephalosaurus)
+//! is ported (`crate::dino::huntable`). **Interim:** until its other
+//! families are, [`family`] runs each as the closest original AI, and
 //! families with nothing close (aquatic, poacher, dog) are not placed.
 
 use c2_formats::mee::{flag, Hunt, Tables};
 use c2_formats::res_txt::{c_atof, c_atoi, Block, CharacterDef, Entry, ResData, ResTxt, WeaponDef};
 
+use crate::dino::mee::{is_huntable, DeathType, IdleGroup, KillType, MeeInfo};
 use crate::dino::{ai, Species, Tuning};
 
 /// The original AI a dialect AI number runs as for now, `None` if none fits
@@ -139,12 +141,167 @@ pub fn tuning(b: &Block) -> Tuning {
     }
 }
 
-/// Gives loaded species their dialect overrides and runs each as its
-/// [`family`] (AI -1, never placed, when there is none).
+fn truthy(v: &str) -> bool {
+    v.contains("TRUE")
+}
+
+/// One `key = value` line of a character (`ReadCharacterLine`). Every
+/// `xxxAnim` takes a logical phase, used or not, so the numbering (and the
+/// phase 0 that a missing key falls back to) matches the original.
+fn info_line(m: &mut MeeInfo, key: &str, v: &str) {
+    let k = key.to_ascii_lowercase();
+    let anim = c_atoi(v);
+    match k.as_str() {
+        "runanim" => m.run = m.add_anim(anim),
+        "walkanim" => m.walk = m.add_anim(anim),
+        "swimanim" => m.swim = m.add_anim(anim),
+        "jumpanim" => m.jump = m.add_anim(anim),
+        "slideanim" => m.slide = m.add_anim(anim),
+        "flyanim" | "diveanim" | "glideanim" | "takeoffanim" | "landanim" | "shakelanim"
+        | "shakewanim" | "climbanim" | "fireanim" | "pauseanim" | "reloadanim" | "lookanim"
+        | "fishidleanim" | "smellanim" | "roaranim" | "waterdanim" => {
+            m.add_anim(anim);
+        }
+        "runspd" => m.run_speed = c_atof(v),
+        "wlkspd" => m.walk_speed = c_atof(v),
+        "swmspd" => m.swim_speed = c_atof(v),
+        "jmpspd" => m.jump_speed = c_atof(v),
+        "killdist" => m.kill_dist = c_atoi(v),
+        "aggress" => m.aggress = c_atoi(v),
+        "defensive" => m.defensive = truthy(v),
+        "fearshothear" => m.fear_hear_shot = truthy(v),
+        "fearshothit" => m.fear_shot = truthy(v),
+        "weaverange" => m.weave_range = c_atof(v),
+        "dontweave" => m.dont_weave = truthy(v),
+        "canswim" => m.can_swim = truthy(v),
+        "waterlevel" => m.water_level = c_atoi(v),
+        "morphtime" => m.morph_time = c_atof(v),
+        "hpa" => m.health_a = c_atoi(v),
+        _ => {}
+    }
+}
+
+/// A nested block of a character (`ReadKillTypeInfo`, `ReadDeathTypeInfo`,
+/// `ReadIdleGroupInfo`, `ReadIdle2GroupInfo`).
+fn info_sub(m: &mut MeeInfo, name: &str, b: &Block) {
+    let name = name.to_ascii_lowercase();
+    let lines = || {
+        b.entries
+            .iter()
+            .map(|e| (e.key.to_ascii_lowercase(), &e.value))
+    };
+    if name.contains("killtype") {
+        let mut k = KillType::default();
+        for (key, v) in lines() {
+            match key.as_str() {
+                "hunteranim" => k.hunter_anim = c_atoi(v),
+                "hunteroffset" => k.offset = c_atoi(v) as f32,
+                "eatanim" => k.anim = m.add_anim(c_atoi(v)),
+                "carrycorpse" => k.carry_corpse = truthy(v),
+                "dontloop" => k.dont_loop = truthy(v),
+                "scream" => k.scream = truthy(v),
+                _ => {}
+            }
+        }
+        m.kill_types.push(k);
+    } else if name.contains("deathtype") {
+        let mut d = DeathType::default();
+        for (key, v) in lines() {
+            match key.as_str() {
+                "dieanim" => d.die = m.add_anim(c_atoi(v)),
+                "sleepanim" => d.sleep = m.add_anim(c_atoi(v)),
+                "fallanim" => d.fall = m.add_anim(c_atoi(v)),
+                "nosleep" => d.no_sleep = truthy(v),
+                _ => {}
+            }
+        }
+        m.death_types.push(d);
+    } else if name.contains("idlegroup") || name.contains("waterigroup") {
+        let mut g = IdleGroup::default();
+        for (key, v) in lines() {
+            match key.as_str() {
+                "startchance" => g.start = c_atof(v),
+                "endchance" => g.end = c_atof(v),
+                "randomstarting" => g.start_on_any = truthy(v),
+                "randomending" => g.end_on_any = truthy(v),
+                "instantrepeat" => g.instant_repeat = truthy(v),
+                "anim" => g.anims.push(m.add_anim(c_atoi(v))),
+                _ => {}
+            }
+        }
+        // Water idles (`waterIgroup`) belong to AIs not ported yet.
+        if name.contains("idlegroup") {
+            m.idle_groups.push(g);
+        }
+    }
+}
+
+/// A resolved character block as the dialect's species data.
+pub fn info(b: &Block, mee_ai: i32) -> MeeInfo {
+    let mut m = MeeInfo::new(mee_ai);
+    let mut subs = b.subs.iter().peekable();
+    for (i, e) in b.entries.iter().enumerate() {
+        while let Some(s) = subs.next_if(|s| s.at <= i) {
+            info_sub(&mut m, &s.name, &s.block);
+        }
+        info_line(&mut m, &e.key, &e.value);
+    }
+    for s in subs {
+        info_sub(&mut m, &s.name, &s.block);
+    }
+    m
+}
+
+/// Gives loaded species their dialect data. AIs with the dialect's own
+/// behaviour ported ([`is_huntable`]) run it; the rest run as their
+/// [`family`] with [`Tuning`] overrides (AI -1, never placed, when there is
+/// none).
 pub fn tune(species: &mut [Species], tables: &Tables) {
     for (s, c) in species.iter_mut().zip(&tables.characters) {
         s.tuning = tuning(&c.block);
         let mee_ai = s.tuning.mee_ai.unwrap_or(s.info.ai);
-        s.info.ai = family(mee_ai).unwrap_or(-1);
+        if is_huntable(mee_ai) {
+            s.info.ai = mee_ai;
+            s.mee = Some(Box::new(info(&c.block, mee_ai)));
+        } else {
+            s.info.ai = family(mee_ai).unwrap_or(-1);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const RES: &str = "characters {\n{\n name = 'Wolf'\n ai = 22\n runAnim = 3\n walkAnim = 1\n\
+ runspd = 1.5\n killdist = 300\n fearShotHit = TRUE\n\
+ killtype {\n  hunterAnim = 3\n  hunterOffset = 150\n  eatAnim = 7\n  scream = FALSE\n }\n\
+ deathtype {\n  dieAnim = 5\n  sleepAnim = 6\n }\n\
+ idlegroup {\n  startChance = 0.5\n  anim = 2\n  anim = 4\n }\n\
+ jumpAnim = 8\n}\n}\n.\n";
+
+    #[test]
+    fn info_numbers_phases_in_reading_order() {
+        let res = ResTxt::parse(RES).unwrap_or_else(|e| panic!("{e}"));
+        let b = &res
+            .section("characters")
+            .map(|s| &s.blocks[0])
+            .cloned()
+            .unwrap_or_default();
+        let m = info(b, 22);
+        // runAnim, walkAnim, then the blocks in place, then jumpAnim.
+        assert_eq!(m.anim_index, vec![3, 1, 7, 5, 6, 2, 4, 8]);
+        assert_eq!((m.run, m.walk, m.jump, m.swim), (0, 1, 7, 0));
+        assert_eq!(m.kill_types.len(), 1);
+        let k = m.kill_types[0];
+        assert_eq!(
+            (k.hunter_anim, k.offset, k.anim, k.scream),
+            (3, 150.0, 2, false)
+        );
+        assert_eq!((m.death(0).die, m.death(0).sleep), (3, 4));
+        assert_eq!(m.idle_groups[0].anims, vec![5, 6]);
+        assert_eq!(m.idle_groups[0].start, 0.5);
+        assert_eq!((m.run_speed, m.kill_dist, m.fear_shot), (1.5, 300, true));
+        assert_eq!(m.morph_time, 1.0);
     }
 }

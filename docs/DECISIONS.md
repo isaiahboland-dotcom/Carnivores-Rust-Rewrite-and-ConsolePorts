@@ -2,6 +2,46 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-19 — M9: the dialect's shared AI (`AnimateHuntable`)
+- **Source**: ported from the upstream Modder's Edition release the mods
+  target (`Characters.cpp: AnimateHuntable`, `AnimateDeadCommon`,
+  `SetNewTargetPlaceRegion`, `ReplaceCharacterForward`, `MakeNoise`,
+  `CheckAfraid`; `Resources.cpp: ReadCharacterLine`, the `AIInfo` table;
+  `Game.cpp: registerDamage`), not the modernized fork's redesigned
+  awareness. Read and cited only (the upstream code has no licence).
+- **Who runs it**: dialect species with AI 10-17 and 19-27 (the original's
+  herbivores and hunters, Pachycephalosaurus, the Ice Age animals). The
+  others still run their interim family (previous entry). Original data
+  never reaches this code: the original's AIs are unchanged.
+- **Logical phases**: a dialect species' phase is a position in its
+  `animIndex` table (`AddAnim`), mapped to a model animation for timing,
+  sounds and posing (`Species::anims`, `pose::pose(c, car, anims)`). A
+  missing key leaves its phase at 0, as in the original. We number from the
+  *resolved* block, so an `overwrite` replaces an entry in place instead of
+  appending a new phase; only a species missing a key *and* overwriting the
+  first listed one could differ.
+- **Awareness**: `awareHunter`, `heardShot`, `damaged`, packs (shared alarm
+  and attack, leader following, a dead leader replaced), kill types (eat
+  animation, body offset, `dontloop`, silent kills), death types, idle
+  groups, weaving, the region-aware target picking and the forward respawn
+  only for `moveForward` groups (resetting the animal, as the original).
+  For dialect species `MakeNoise` reaches `2 * hearK` times as far,
+  `CheckAfraid` asks the AI table which animals look (and keeps renewing
+  alarmed ones), and neither restarts an alarm already running.
+- **Kept quirks**: clearing the water flag clears all of `StateF`; the
+  herbivore turn tests `State` (not `StateF`) for water; `morphTime`
+  defaults to 1 (the manual; the released code leaves it 0, which would
+  never finish a blend).
+- **Deviations**: `goto TBEGIN` repeats at most 16 times per step (the
+  original could loop forever on a bad target); a pack forms only when its
+  leader was actually placed; the evacuation ship's `DShipPickup` and
+  survival mode are not modelled yet; roar and water-death animations are
+  not rolled at reset (their AIs are not ported).
+- **Checked**: synthetic tests (fleeing, a wolf's kill type, defensive
+  animals, idle groups, packs, death types, phase numbering), and
+  `c2-parity mee-sim` over every dialect game folder we have: no
+  non-finite positions, slowest step under 0.5 ms with 147 animals.
+
 ## 2026-10-19 — M9: dialect hunts on PC (menus, spawning; interim AIs)
 - **Menu**: `_MENU.TXT` / `.c2map` lists (`c2_formats::menu_txt`); a
   huntable's menu slot, not its AI, is what a hunt passes on.

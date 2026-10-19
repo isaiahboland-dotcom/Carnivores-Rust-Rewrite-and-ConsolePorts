@@ -244,6 +244,7 @@ fn new_hunt(
         species: species.to_vec(),
         chars: Vec::new(),
         demo_index: None,
+        ..Default::default()
     };
     if trophy {
         herd.place_trophies(area, &room, &mut rng);

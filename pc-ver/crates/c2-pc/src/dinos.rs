@@ -183,7 +183,8 @@ impl DinoAssets {
             else {
                 continue;
             };
-            if let Some(v) = pose::pose(c, car) {
+            let anims = herd.species.get(c.ctype).map_or(&[][..], |s| s.anims());
+            if let Some(v) = pose::pose(c, car, anims) {
                 m.set_pose(gpu, &v);
             }
             insts.push([instance(c)]);

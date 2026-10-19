@@ -266,6 +266,7 @@ pub fn animate(
                         ctx.events.push(DinoEvent::KillHunter {
                             index,
                             kind: hunt::EAT,
+                            scream: true,
                         });
                     }
                 }

@@ -8,12 +8,15 @@ mod carnivore;
 mod dead;
 mod flyer;
 mod herbivore;
+mod huntable;
+pub mod mee;
 mod place;
 pub mod pose;
 mod small;
 mod trex;
 
 use c2_formats::car::Car;
+use c2_formats::mee::{Region, SpawnGroup};
 use c2_formats::res_txt::CharacterDef;
 
 use crate::area::{cell_flags, idx, Area, NO_OBJECT};
@@ -180,6 +183,9 @@ pub struct Species {
     pub info: DinoInfo,
     /// Dialect overrides (default: none).
     pub tuning: Tuning,
+    /// A dialect species running the dialect's own AI; its phases are
+    /// logical (see [`mee`]).
+    pub mee: Option<Box<mee::MeeInfo>>,
     /// `AniTime` per animation, ms (at least 1 so `%` is safe).
     pub ani_time: Vec<i32>,
     /// Frames per animation.
@@ -200,15 +206,35 @@ impl Species {
         Self {
             info,
             tuning: Tuning::default(),
+            mee: None,
             ani_time,
             frames,
             anifx,
         }
     }
 
+    /// Logical phase -> model animation (`animIndex`; the identity for
+    /// the original's AIs).
+    pub fn anims(&self) -> &[usize] {
+        self.mee.as_ref().map_or(&[], |m| &m.anim_index)
+    }
+
     /// `AniTime` of `phase`, tolerating mods with fewer animations.
     pub fn time(&self, phase: usize) -> i32 {
-        self.ani_time.get(phase).copied().unwrap_or(1)
+        self.ani_time
+            .get(anim(self.anims(), phase))
+            .copied()
+            .unwrap_or(1)
+    }
+}
+
+/// The model animation of `phase` under an `animIndex` table (empty: the
+/// identity).
+pub fn anim(anims: &[usize], phase: usize) -> usize {
+    if anims.is_empty() {
+        phase
+    } else {
+        anims.get(phase).copied().unwrap_or(0)
     }
 }
 
@@ -248,6 +274,26 @@ pub struct Character {
     pub health: i32,
     pub blood_time: i32,
     pub blood_ttime: i32,
+    // The dialect's additions (`TCharacter`).
+    /// Has seen, smelt or been hit by the hunter (`awareHunter`).
+    pub aware_hunter: bool,
+    /// Heard a shot (`heardShot`).
+    pub heard_shot: bool,
+    /// Has been hit (`damaged`).
+    pub damaged: bool,
+    /// Index into `Herd::packs` (`packId`).
+    pub pack: Option<usize>,
+    pub follow_leader: bool,
+    pub pack_density: f32,
+    /// Index into `Herd::groups` (`SpawnGroupType`).
+    pub spawn_group: Option<usize>,
+    /// Chosen kill type and death type of the species.
+    pub kill_type: usize,
+    pub death_type: usize,
+    /// The idle group being played (`currentIdleGroup`).
+    pub idle_group: Option<usize>,
+    /// Phase of the zig-zag while alarmed (`tgalphaOffset`).
+    pub tgalpha_offset: f32,
 }
 
 /// What the AI sees of the hunter.
@@ -273,8 +319,13 @@ pub enum DinoEvent {
         sound: usize,
         pos: [f32; 3],
     },
-    /// `AddDeadBody(cptr, kind)`: the hunter is killed by character `index`.
-    KillHunter { index: usize, kind: i32 },
+    /// `AddDeadBody(cptr, kind)`: the hunter is killed by character `index`
+    /// (and screams, unless a dialect kill type says not to).
+    KillHunter {
+        index: usize,
+        kind: i32,
+        scream: bool,
+    },
     /// `AddBloodTrail`.
     BloodTrail { pos: [f32; 3] },
     /// A falling flyer hit the water surface (`AddWCircle` ripples).
@@ -476,8 +527,35 @@ fn place_collision(area: &Area, v: &mut [f32; 3], aquatic: bool) -> bool {
     near_big_object(area, v[0], v[2], ccx, ccz)
 }
 
+/// Is (x, z) strictly inside region `r` (cells)?
+fn in_region(r: &Region, x: f32, z: f32) -> bool {
+    x > r.xmin as f32 * 256.0
+        && x < r.xmax as f32 * 256.0
+        && z > r.ymin as f32 * 256.0
+        && z < r.ymax as f32 * 256.0
+}
+
+/// Is cell (ccx, ccz) strictly inside one of the `avoid` regions?
+fn in_avoided_cell(avoid: &[Region], ccx: i32, ccz: i32) -> bool {
+    avoid
+        .iter()
+        .any(|r| ccx > r.xmin && ccx < r.xmax && ccz > r.ymin && ccz < r.ymax)
+}
+
 /// `CheckPlaceCollision(v, wc, mc)`.
 pub fn check_place_collision(area: &Area, v: &mut [f32; 3], wc: bool, mc: bool) -> bool {
+    check_place_collision_avoid(area, v, wc, mc, &[])
+}
+
+/// `CheckPlaceCollision(cptr, v, wc, mc)` as the dialect has it: the
+/// character's spawn group's avoided regions block too.
+fn check_place_collision_avoid(
+    area: &Area,
+    v: &mut [f32; 3],
+    wc: bool,
+    mc: bool,
+    avoid: &[Region],
+) -> bool {
     let (ccx, ccz) = (cell_of(v[0]), cell_of(v[2]));
     if !(4..=1018).contains(&ccx) || !(4..=1018).contains(&ccz) {
         return true;
@@ -489,6 +567,9 @@ pub fn check_place_collision(area: &Area, v: &mut [f32; 3], wc: bool, mc: bool) 
     if area.map.flags[idx(ccx as usize, ccz as usize)] & cell_flags::WATER == 0
         && (h - v[1]).abs() > 64.0
     {
+        return true;
+    }
+    if in_avoided_cell(avoid, ccx, ccz) {
         return true;
     }
     v[1] = h;
@@ -504,13 +585,20 @@ fn slope_too_steep(area: &Area, x: f32, z: f32, h: f32) -> bool {
         .any(|(dx, dz)| (area.land_height(x + dx, z + dz) - h).abs() > 100.0)
 }
 
-/// `CheckPlaceCollision2(v, wc)`.
+/// `CheckPlaceCollision2(v, wc)`; the dialect's also honours `avoid`.
 pub fn check_place_collision2(area: &Area, v: &mut [f32; 3], wc: bool) -> bool {
+    check_place_collision2_avoid(area, v, wc, &[])
+}
+
+fn check_place_collision2_avoid(area: &Area, v: &mut [f32; 3], wc: bool, avoid: &[Region]) -> bool {
     let (ccx, ccz) = (cell_of(v[0]), cell_of(v[2]));
     if !(4..=1018).contains(&ccx) || !(4..=1018).contains(&ccz) {
         return true;
     }
     if wc && flags_around(area, ccx, ccz) & cell_flags::WATER != 0 {
+        return true;
+    }
+    if in_avoided_cell(avoid, ccx, ccz) {
         return true;
     }
     let h = area.land_height(v[0], v[2]);
@@ -541,15 +629,42 @@ impl Character {
         self.blood_time = 0;
         self.lookx = self.alpha.cos();
         self.lookz = self.alpha.sin();
+        if let Some(m) = &species.mee {
+            // The original rolls these before the scale.
+            self.tgalpha_offset = rng.r_rand((PI * 2.0) as i32) as f32;
+            self.idle_group = None;
+            self.aware_hunter = false;
+            self.heard_shot = false;
+            if m.kill_types.len() > 1 {
+                self.kill_type = rng.r_rand(m.kill_types.len() as i32 - 1) as usize;
+            }
+            if m.death_types.len() > 1 {
+                self.death_type = rng.r_rand(m.death_types.len() as i32 - 1) as usize;
+            }
+        }
         self.health = species.info.health0;
         if opt_agres > 128 {
             self.health = self.health * opt_agres / 128;
         }
-        self.scale = (species.info.scale0 + rng.r_rand(species.info.scale_a)) as f32 / 1000.0;
+        let scale_a = rng.r_rand(species.info.scale_a);
+        self.scale = (species.info.scale0 + scale_a) as f32 / 1000.0;
+        if let Some(m) = &species.mee {
+            if scale_a > 0 && species.info.scale_a > 0 && m.health_a != 0 {
+                self.health +=
+                    (scale_a as f32 / species.info.scale_a as f32 * m.health_a as f32) as i32;
+            }
+            self.damaged = false;
+            self.follow_leader = false;
+        }
     }
 
     /// `ProcessPrevPhase`.
     pub fn process_prev_phase(&mut self, sp: &Species, dt: i32) {
+        // The dialect scales the blend by `morphTime`.
+        let dt = sp
+            .mee
+            .as_ref()
+            .map_or(dt, |m| (dt as f32 * m.morph_time) as i32);
         self.pp_morph_time += dt;
         if self.pp_morph_time > PMORPH_TIME {
             self.prev_phase = self.phase;
@@ -563,7 +678,7 @@ impl Character {
         if self.ai != ai::HUNTER && ctx.hunter.underwater {
             return;
         }
-        let Some(&fx) = sp.anifx.get(self.phase) else {
+        let Some(&fx) = sp.anifx.get(anim(sp.anims(), self.phase)) else {
             return;
         };
         let Ok(sound) = usize::try_from(fx) else {
@@ -621,14 +736,14 @@ impl Character {
     }
 
     /// `CheckPossiblePath`: blocked samples along `tgalpha` (20 x 64 units).
-    fn check_possible_path(&self, area: &Area, wc: bool, mc: bool) -> i32 {
+    fn check_possible_path(&self, area: &Area, wc: bool, mc: bool, avoid: &[Region]) -> i32 {
         let mut p = self.pos;
         let (lx, lz) = (self.tgalpha.cos(), self.tgalpha.sin());
         let mut c = 0;
         for _ in 0..20 {
             p[0] += lx * 64.0;
             p[2] += lz * 64.0;
-            if check_place_collision(area, &mut p, wc, mc) {
+            if check_place_collision_avoid(area, &mut p, wc, mc, avoid) {
                 c += 1;
             }
         }
@@ -637,11 +752,16 @@ impl Character {
 
     /// `LookForAWay`: fan out +-15..180 degrees for a clearer heading.
     pub fn look_for_a_way(&mut self, area: &Area, wc: bool, mc: bool) {
+        self.look_for_a_way_avoid(area, wc, mc, &[]);
+    }
+
+    /// [`Self::look_for_a_way`] also steering clear of `avoid` regions.
+    pub fn look_for_a_way_avoid(&mut self, area: &Area, wc: bool, mc: bool, avoid: &[Region]) {
         let alpha = self.tgalpha;
         let mut dalpha = 15.0f32;
         let mut afound = alpha;
         let mut maxp = 16;
-        if self.check_possible_path(area, wc, mc) == 0 {
+        if self.check_possible_path(area, wc, mc, avoid) == 0 {
             self.no_way_cnt = 0;
             return;
         }
@@ -649,7 +769,7 @@ impl Character {
         for i in 0..12 {
             for sign in [1.0, -1.0] {
                 self.tgalpha = alpha + sign * dalpha * PI / 180.0;
-                let curp = self.check_possible_path(area, wc, mc) + (i >> 1);
+                let curp = self.check_possible_path(area, wc, mc, avoid) + (i >> 1);
                 if curp == 0 {
                     return;
                 }
@@ -692,22 +812,35 @@ impl Character {
     /// dinosaur would ever move); the retail game clearly runs the body, which
     /// is what this ports. See docs/DECISIONS.md.
     pub fn move_character(&mut self, area: &Area, dx: f32, dz: f32, wc: bool) {
+        self.move_character_avoid(area, dx, dz, wc, &[]);
+    }
+
+    /// [`Self::move_character`] also kept out of `avoid` regions.
+    pub fn move_character_avoid(
+        &mut self,
+        area: &Area,
+        dx: f32,
+        dz: f32,
+        wc: bool,
+        avoid: &[Region],
+    ) {
+        let collides = |p: &mut [f32; 3]| check_place_collision2_avoid(area, p, wc, avoid);
         let mut p = self.pos;
-        if check_place_collision2(area, &mut p, wc) {
+        if collides(&mut p) {
             self.pos[0] += dx / 2.0;
             self.pos[2] += dz / 2.0;
             return;
         }
         p[0] += dx;
         p[2] += dz;
-        if !check_place_collision2(area, &mut p, wc) {
+        if !collides(&mut p) {
             self.pos = p;
             return;
         }
         p = self.pos;
         p[0] += dx / 2.0;
         p[2] += dz / 2.0;
-        if !check_place_collision2(area, &mut p, wc) {
+        if !collides(&mut p) {
             self.pos = p;
         }
         let mut p = self.pos;
@@ -741,6 +874,88 @@ impl Character {
         if self.ai == ai::DIMOR {
             self.pos[1] += 1048.0;
         }
+        true
+    }
+
+    /// `SetNewTargetPlaceRegion`, the dialect's `SetNewTargetPlace`: as the
+    /// original, but staying inside the spawn group's regions when it says
+    /// so (`stayInRegion`) and out of its avoided ones.
+    pub fn set_new_target_place_in(
+        &mut self,
+        area: &Area,
+        rng: &mut MsRand,
+        mut r: f32,
+        group: Option<&SpawnGroup>,
+    ) {
+        let mut tr = 0;
+        loop {
+            let mut p = [
+                (self.pos[0] + rng.si_rand(r as i32) as f32).clamp(512.0, 1018.0 * 256.0),
+                0.0,
+                (self.pos[2] + rng.si_rand(r as i32) as f32).clamp(512.0, 1018.0 * 256.0),
+            ];
+            p[1] = area.land_height(p[0], p[2]);
+            tr += 1;
+            if tr < 128 {
+                if (p[0] - self.pos[0]).abs() + (p[2] - self.pos[2]).abs() < r / 2.0 {
+                    continue;
+                }
+                if let Some(g) = group {
+                    if g.stay_in_region && !g.regions.iter().any(|g| in_region(g, p[0], p[2])) {
+                        continue;
+                    }
+                    if g.avoid.iter().any(|g| in_region(g, p[0], p[2])) {
+                        continue;
+                    }
+                }
+            }
+            r += 512.0;
+            if tr < 256 && check_place_collision_p(area, &mut p) {
+                continue;
+            }
+            self.tgtime = 0;
+            self.tgx = p[0];
+            self.tgz = p[2];
+            return;
+        }
+    }
+
+    /// The dialect's `ReplaceCharacterForward`: only for `moveForward`
+    /// spawn groups, only into the group's regions, and the character is
+    /// reset as if newly placed.
+    pub fn replace_forward_in(
+        &mut self,
+        sp: &Species,
+        ctx: &mut Ctx<'_>,
+        group: Option<&SpawnGroup>,
+    ) -> bool {
+        let Some(g) = group.filter(|g| g.move_forward) else {
+            return false;
+        };
+        let al = ctx.hunter.alpha + ctx.rng.si_rand(2048) as f32 / 2048.0;
+        let (sa, ca) = al.sin_cos();
+        let d1 = ((ctx.view_r + ctx.rng.r_rand(10)) * 256) as f32;
+        let d2 = ((ctx.view_r + ctx.rng.r_rand(10)) * 256) as f32;
+        let mut p = [ctx.hunter.x + sa * d1, 0.0, ctx.hunter.z - ca * d2];
+        p[1] = ctx.area.land_height(p[0], p[2]);
+        if p[0] < 16.0 * 256.0
+            || p[2] < 16.0 * 256.0
+            || p[0] > 1000.0 * 256.0
+            || p[2] > 1000.0 * 256.0
+        {
+            return false;
+        }
+        if !g.regions.iter().any(|r| in_region(r, p[0], p[2]))
+            || g.avoid.iter().any(|r| in_region(r, p[0], p[2]))
+        {
+            return false;
+        }
+        if check_place_collision_p(ctx.area, &mut p) {
+            return false;
+        }
+        self.pos = p;
+        self.reset(sp, ctx.rng, ctx.opt_agres);
+        self.set_new_target_place_in(ctx.area, ctx.rng, 2048.0, Some(g));
         true
     }
 
@@ -782,20 +997,55 @@ impl Character {
     }
 }
 
+/// A pack of a dialect hunt (`Packs[]`): members follow the leader and
+/// share alarm and attack.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Pack {
+    /// Index into `Herd::chars`; a dead leader is replaced by a living
+    /// member.
+    pub leader: usize,
+    /// Raised by members this step / seen by them (last step's, `_alert`).
+    pub alert: bool,
+    pub attack: bool,
+    pub alert_prev: bool,
+    pub attack_prev: bool,
+}
+
 /// All characters plus the species table, stepped together
 /// (`AnimateCharacters`).
+#[derive(Default)]
 pub struct Herd {
     pub species: Vec<Species>,
     pub chars: Vec<Character>,
     /// `DemoPoint.CIndex`: who the death camera watches (the hunter's body,
     /// or the T-Rex carrying it).
     pub demo_index: Option<usize>,
+    /// Dialect hunts: packs, and the spawn groups characters keep to.
+    pub packs: Vec<Pack>,
+    pub groups: Vec<SpawnGroup>,
 }
 
 impl Herd {
     /// `AnimateCharacters`.
     pub fn step(&mut self, ctx: &mut Ctx<'_>) {
+        for p in &mut self.packs {
+            p.alert_prev = std::mem::take(&mut p.alert);
+            p.attack_prev = std::mem::take(&mut p.attack);
+        }
         for i in 0..self.chars.len() {
+            // A pack whose leader died follows the next living member.
+            if let Some(p) = self.chars[i].pack.and_then(|p| self.packs.get_mut(p)) {
+                if self.chars[i].health != 0
+                    && self.chars.get(p.leader).is_none_or(|l| l.health == 0)
+                {
+                    p.leader = i;
+                }
+            }
+            let leader = self.chars[i]
+                .pack
+                .and_then(|p| self.packs.get(p))
+                .and_then(|p| self.chars.get(p.leader))
+                .map(|l| l.pos);
             let carrier = self
                 .demo_index
                 .and_then(|d| self.chars.get(d))
@@ -814,8 +1064,13 @@ impl Herd {
                 continue;
             };
             c.tgtime += ctx.dt;
+            let group = c.spawn_group.and_then(|g| self.groups.get(g));
             if c.tgtime > 30 * 1000 {
-                c.set_new_target_place(ctx.area, ctx.rng, 2048.0);
+                if sp.mee.is_some() {
+                    c.set_new_target_place_in(ctx.area, ctx.rng, 2048.0, group);
+                } else {
+                    c.set_new_target_place(ctx.area, ctx.rng, 2048.0);
+                }
             }
             if c.health != 0 && c.blood_ttime != 0 {
                 c.blood_ttime = (c.blood_ttime - ctx.dt).max(0);
@@ -829,8 +1084,25 @@ impl Herd {
                     }
                 }
             }
+            if c.afraid_time <= 0 {
+                c.aware_hunter = false;
+                c.heard_shot = false;
+            }
             let alive = c.health != 0;
             const LOOK: (f32, f32) = (100.0, 96.0);
+            if let Some(m) = &sp.mee {
+                if alive {
+                    let mut w = huntable::World {
+                        pack: c.pack.and_then(|p| self.packs.get_mut(p)),
+                        leader,
+                        group,
+                    };
+                    huntable::animate(c, i, sp, m, ctx, &mut w);
+                } else {
+                    huntable::animate_dead(c, i, sp, m, ctx);
+                }
+                continue;
+            }
             match c.ai {
                 ai::HUNTER => dead::animate_hunter(c, i, sp, ctx, carrier),
                 ai::BRACH => brachi::animate(c, i, sp, ctx),
@@ -935,6 +1207,7 @@ mod tests {
             species: vec![species(ai_id, n_anims)],
             chars: vec![],
             demo_index: None,
+            ..Default::default()
         };
         let mut c = Character {
             pos,
@@ -1001,6 +1274,7 @@ mod tests {
             ],
             chars: vec![],
             demo_index: None,
+            ..Default::default()
         };
         let mut rng = MsRand::new(7);
         let hunter = (50.0 * 256.0, 50.0 * 256.0);

@@ -4,7 +4,7 @@
 
 use c2_formats::car::Car;
 
-use super::{Character, PMORPH_TIME};
+use super::{anim, Character, PMORPH_TIME};
 use crate::model::car_anim_duration_ms;
 
 fn frame(car: &Car, phase: usize, ftime: i32) -> Option<(&[i16], usize, f32)> {
@@ -31,13 +31,15 @@ fn sample(data: &[i16], f0: usize, frames_vc: (usize, usize), k2: f32, v: usize)
 }
 
 /// Model-space vertices (before the `pi/2 - alpha` turn and translation).
-pub fn pose(c: &Character, car: &Car) -> Option<Vec<[f32; 3]>> {
+/// `anims` maps phases to the model's animations (`Species::anims`).
+pub fn pose(c: &Character, car: &Car, anims: &[usize]) -> Option<Vec<[f32; 3]>> {
     let vc = car.mesh.vertices.len();
-    let (data, f0, k2) = frame(car, c.phase, c.ftime)?;
-    let frames = car.animations[c.phase].frames;
+    let (phase, prev_phase) = (anim(anims, c.phase), anim(anims, c.prev_phase));
+    let (data, f0, k2) = frame(car, phase, c.ftime)?;
+    let frames = car.animations[phase].frames;
     let pmorph = c.phase != c.prev_phase && c.pp_morph_time < PMORPH_TIME;
     let prev = if pmorph {
-        frame(car, c.prev_phase, c.prev_pf_time).map(|f| (f, car.animations[c.prev_phase].frames))
+        frame(car, prev_phase, c.prev_pf_time).map(|f| (f, car.animations[prev_phase].frames))
     } else {
         None
     };

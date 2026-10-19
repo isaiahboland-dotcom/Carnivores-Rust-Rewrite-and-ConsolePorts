@@ -191,6 +191,8 @@ pub enum GameEvent {
     },
     HunterDied {
         kind: i32,
+        /// The hunter screams (a dialect kill type may say not to).
+        scream: bool,
     },
     Ship(ShipEvent),
     /// The looping ambience changed: `zone` = RSC ambient index, `None` =
@@ -544,7 +546,7 @@ impl Hunt {
                 // Drowning.
                 self.health -= dt * 12;
                 if self.health <= 0 {
-                    self.kill_hunter(area, None, hunt::BREATH, out);
+                    self.kill_hunter(area, None, hunt::BREATH, true, out);
                 }
             }
             self.weapon_input(area, cars, input, out);
@@ -588,9 +590,11 @@ impl Hunt {
         }
         for e in dev {
             match e {
-                DinoEvent::KillHunter { index, kind } => {
-                    self.kill_hunter(area, Some(index), kind, out)
-                }
+                DinoEvent::KillHunter {
+                    index,
+                    kind,
+                    scream,
+                } => self.kill_hunter(area, Some(index), kind, scream, out),
                 DinoEvent::BloodTrail { pos } => self.effects.blood_trail(area, &mut self.rng, pos),
                 DinoEvent::Splash { pos } => {
                     // AnimateDimorDead hitting the water: five rings.
@@ -972,9 +976,9 @@ impl Hunt {
         b: [f32; 3],
         out: &mut Vec<GameEvent>,
     ) {
-        let chars = &self.herd.chars;
+        let (chars, species) = (&self.herd.chars, &self.herd.species);
         let res = if !info.fall {
-            trace_shot(area, chars, cars, a, b)
+            trace_shot(area, chars, species, cars, a, b)
         } else {
             let dy = 40.0 * self.opts.view_r as f32 / 36.0;
             let dl = [
@@ -986,7 +990,7 @@ impl Hunt {
             let mut r = None;
             for drop in [dy / 2.0, dy * 3.0, dy * 5.0] {
                 let to = [from[0] + dl[0], from[1] + dl[1] - drop, from[2] + dl[2]];
-                r = trace_shot(area, chars, cars, from, to);
+                r = trace_shot(area, chars, species, cars, from, to);
                 if r.is_some() {
                     break;
                 }
@@ -1036,6 +1040,9 @@ impl Hunt {
         if c.health == 0 {
             return;
         }
+        // The dialect's `registerDamage` also marks the animal hurt and
+        // aware of the hunter.
+        c.damaged = true;
         if mortal {
             c.health = 0;
         } else {
@@ -1053,6 +1060,7 @@ impl Hunt {
                 self.add_secondary_one(area, ct);
             }
         } else {
+            c.aware_hunter = true;
             c.afraid_time = 60 * 1000;
             if c.ai != ai::TREX || c.state == 0 {
                 c.state = 2;
@@ -1101,7 +1109,9 @@ impl Hunt {
         }
     }
 
-    /// `MakeNoise`: startle everything within `range`.
+    /// `MakeNoise`: startle everything within `range`. Dialect species hear
+    /// `2 * hearK` times as far, only start an alarm if calm, and remember
+    /// the shot (`heardShot`).
     pub fn make_noise(&mut self, pos: [f32; 3], range: f32) {
         for c in &mut self.herd.chars {
             if c.health == 0 {
@@ -1111,6 +1121,20 @@ impl Hunt {
                 + (c.pos[1] - pos[1]).powi(2)
                 + (c.pos[2] - pos[2]).powi(2))
             .sqrt();
+            let sp = self.herd.species.get(c.ctype);
+            if let Some(sp) = sp.filter(|s| s.mee.is_some()) {
+                if l > range * sp.info.hear_k * 2.0 {
+                    continue;
+                }
+                c.afraid_time = ((10.0 + (range - l) / 256.0) as i32) * 1024;
+                if c.state == 0 {
+                    c.state = 2;
+                }
+                c.no_find_cnt = 0;
+                c.aware_hunter = true;
+                c.heard_shot = true;
+                continue;
+            }
             if l > range {
                 continue;
             }
@@ -1141,12 +1165,20 @@ impl Hunt {
         let kscent = if self.opts.scent { 1.5 } else { 1.0 };
         for i in 0..self.herd.chars.len() {
             let c = &self.herd.chars[i];
-            if c.health == 0 || c.ai < 10 || c.afraid_time != 0 || c.state == 1 {
-                continue;
-            }
             let Some(sp) = self.herd.species.get(c.ctype) else {
                 continue;
             };
+            // The dialect keeps checking alarmed animals (renewing
+            // `AfraidTime`), and asks the AI's table which ones look.
+            let mee = sp.mee.is_some();
+            let skip = if mee {
+                !crate::dino::mee::ai_info(c.ai).sniffer
+            } else {
+                c.ai < 10 || c.afraid_time != 0 || c.state == 1
+            };
+            if c.health == 0 || skip {
+                continue;
+            }
             let mut rlook = [ppos[0] - c.pos[0], ppos[1] - c.pos[1], ppos[2] - c.pos[2]];
             let rl = (rlook[0] * rlook[0] + rlook[1] * rlook[1] + rlook[2] * rlook[2]).sqrt();
             let mut kr = rl / 256.0 / (32.0 + self.opts.view_r as f32 / 2.0);
@@ -1198,7 +1230,10 @@ impl Hunt {
                 k_res = k_res.min(kr);
                 let c = &mut self.herd.chars[i];
                 c.afraid_time = (1.0 / (k_res + 0.1) * 10.0 * 1000.0) as i32;
-                c.state = 2;
+                if !mee || c.state == 0 {
+                    c.state = 2;
+                }
+                c.aware_hunter = true;
                 if c.ai == ai::TREX && k_look > k_smell {
                     c.state = 3;
                 }
@@ -1211,7 +1246,14 @@ impl Hunt {
 
     /// `AddDeadBody`: the hunter dies; a body is added and the camera
     /// switches to the death cam.
-    fn kill_hunter(&mut self, area: &Area, by: Option<usize>, kind: i32, out: &mut Vec<GameEvent>) {
+    fn kill_hunter(
+        &mut self,
+        area: &Area,
+        by: Option<usize>,
+        kind: i32,
+        scream: bool,
+        out: &mut Vec<GameEvent>,
+    ) {
         if self.death.is_some() {
             return;
         }
@@ -1231,10 +1273,13 @@ impl Hunt {
         body.pos = [self.player.x, self.player.y, self.player.z];
         let killer = by.and_then(|i| self.herd.chars.get(i).map(|c| (i, c.clone())));
         if let Some((_, c)) = &killer {
-            let pl = match c.ai {
-                ai::SPINO => 200.0,
-                ai::CERAT => 320.0,
-                ai::TREX => 0.0,
+            let mee = self.herd.species.get(c.ctype).and_then(|s| s.mee.as_ref());
+            let pl = match (mee, c.ai) {
+                // The dialect: the kill type's `hunterOffset`.
+                (Some(m), _) => m.kill(c.kill_type).map_or(0.0, |k| k.offset),
+                (None, ai::SPINO) => 200.0,
+                (None, ai::CERAT) => 320.0,
+                (None, ai::TREX) => 0.0,
                 _ => 170.0,
             };
             let (x, z) = (
@@ -1265,7 +1310,7 @@ impl Hunt {
             alpha,
             beta,
         });
-        out.push(GameEvent::HunterDied { kind });
+        out.push(GameEvent::HunterDied { kind, scream });
     }
 
     /// `ProcessDemoMovement`: fly to the body, then circle it.
@@ -1896,6 +1941,7 @@ mod tests {
             species,
             chars: vec![],
             demo_index: None,
+            ..Default::default()
         };
         let mut c = Character {
             ctype: 1,
@@ -2149,6 +2195,7 @@ mod tests {
             ],
             chars: vec![],
             demo_index: None,
+            ..Default::default()
         };
         herd.place_trophies(&area, &room, &mut rng);
         assert_eq!(herd.chars.len(), 2);

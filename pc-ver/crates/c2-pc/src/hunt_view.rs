@@ -287,6 +287,7 @@ impl HuntView {
             species,
             chars: Vec::new(),
             demo_index: None,
+            ..Default::default()
         };
         if trophy {
             herd.place_trophies(area, &room, &mut rng);
@@ -510,7 +511,7 @@ impl HuntView {
         for e in self.events.drain(..) {
             match e {
                 GameEvent::Message(m) => self.message = Some((m, 2.0)),
-                GameEvent::HunterDied { kind } => {
+                GameEvent::HunterDied { kind, .. } => {
                     let how = ["eaten", "drowned", "fell", "killed"];
                     let m = format!("You were {}.", how.get(kind as usize).unwrap_or(&"killed"));
                     self.message = Some((m, 6.0));

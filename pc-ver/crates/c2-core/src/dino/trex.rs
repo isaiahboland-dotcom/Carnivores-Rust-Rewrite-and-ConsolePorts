@@ -80,6 +80,7 @@ pub fn animate(c: &mut Character, index: usize, sp: &Species, ctx: &mut Ctx<'_>)
                         ctx.events.push(DinoEvent::KillHunter {
                             index,
                             kind: hunt::KILL,
+                            scream: true,
                         });
                     }
                     c.bend = 0.0;

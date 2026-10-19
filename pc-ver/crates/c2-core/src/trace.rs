@@ -6,7 +6,7 @@ use c2_formats::map::MAP_SIZE;
 use c2_formats::model::face_flags;
 
 use crate::area::{cell_flags, idx, Area, NO_OBJECT};
-use crate::dino::{pose, Character};
+use crate::dino::{pose, Character, Species};
 use crate::{CELL, H_SCALE};
 
 type V3 = [f32; 3];
@@ -187,6 +187,7 @@ fn trace_model(ray: &mut Ray, area: &Area, x: usize, z: usize, ob: usize) -> boo
 pub fn trace_shot(
     area: &Area,
     chars: &[Character],
+    species: &[Species],
     cars: &[Option<&Car>],
     a: V3,
     b: V3,
@@ -224,7 +225,8 @@ pub fn trace_shot(
         let Some(car) = cars.get(c.ctype).copied().flatten() else {
             continue;
         };
-        let Some(verts) = pose::pose(c, car) else {
+        let anims = species.get(c.ctype).map_or(&[][..], |s| s.anims());
+        let Some(verts) = pose::pose(c, car, anims) else {
             continue;
         };
         let al = -c.alpha + std::f32::consts::FRAC_PI_2;
@@ -324,6 +326,7 @@ mod tests {
             &area,
             &[],
             &[],
+            &[],
             [500.0 * 256.0, 2000.0, 500.0 * 256.0],
             [503.0 * 256.0, 0.0, 500.0 * 256.0],
         )
@@ -337,6 +340,7 @@ mod tests {
         let area = Area::flat(10);
         assert!(trace_shot(
             &area,
+            &[],
             &[],
             &[],
             [500.0 * 256.0, 2000.0, 500.0 * 256.0],
