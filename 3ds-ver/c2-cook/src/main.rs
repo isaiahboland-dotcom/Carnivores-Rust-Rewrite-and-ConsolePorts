@@ -68,8 +68,9 @@ const O3DS: Profile = Profile {
     name: "o3ds",
     terrain_tile: 32,
     model_tex: 64,
-    view: 26,
-    object_view: 18,
+    // The owner's Old 3DS ran 26 / 18 at 60 fps with time to spare.
+    view: 34,
+    object_view: 24,
     // 64 MiB for the app: 24 MiB linear, code, slack.
     heap_kb: 34 * 1024,
     linear_kb: 22 * 1024,
@@ -683,6 +684,19 @@ fn main() -> Result<()> {
             &format!("C2RS/MENU/EQUIP{n}.TX"),
             128,
         );
+    }
+    // The title screen: the main menu's art (MENUM.TGA, 800x600), its
+    // 800x480 middle at 400x240 on a 512x256 canvas.
+    if let Some(p) = vfs
+        .read("HUNTDAT/MENU/MENUM.TGA")
+        .ok()
+        .and_then(|d| c2_formats::tga::parse(&d).ok())
+    {
+        let px = image_to_rgba8(&p.pixels, false);
+        let (y0, h) = (p.height.saturating_sub(480) / 2, p.height.min(480));
+        let band = &px[(y0 * p.width * 4).min(px.len())..((y0 + h) * p.width * 4).min(px.len())];
+        let fitted = fit(band, p.width, h, 400, 240, 512, 256);
+        c.opaque("C2RS/MENU/TITLE.TX", &fitted, 512, 256);
     }
     let txt: Vec<String> = vfs
         .files()

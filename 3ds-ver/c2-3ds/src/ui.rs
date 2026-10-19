@@ -28,8 +28,10 @@ const MAP: [f32; 4] = [LEFT_W, 0.0, RIGHT_X - LEFT_W, 176.0];
 const WPN_SLOT: f32 = 58.0;
 const CALL_SLOT: f32 = 60.0;
 /// Buttons under the map: (x, y, w, h).
-const BINOC: [f32; 4] = [76.0, 212.0, 82.0, 24.0];
-const PAUSE: [f32; 4] = [166.0, 212.0, 78.0, 24.0];
+const AMMO: [f32; 4] = [74.0, 212.0, 52.0, 24.0];
+const BINOC: [f32; 4] = [130.0, 212.0, 60.0, 24.0];
+const PAUSE: [f32; 4] = [194.0, 212.0, 52.0, 24.0];
+const RED: Rgba = [230, 40, 30, 255];
 /// Map pixels shown across the map panel when zoomed in (1 pixel = 4 cells).
 const LOCAL_SPAN: f32 = 64.0;
 
@@ -47,6 +49,8 @@ pub enum Tap {
     MapZoom,
     Binoculars,
     Pause,
+    /// Use an extra ammo refill.
+    Resupply,
 }
 
 pub struct Ui {
@@ -90,7 +94,7 @@ impl Ui {
     /// What a tap at bottom-screen pixel (x, y) means.
     pub fn tap(&self, x: f32, y: f32) -> Option<Tap> {
         if x < LEFT_W {
-            let i = (y / WPN_SLOT) as usize;
+            let i = (y / self.wpn_slot()) as usize;
             return self.weapons.get(i).map(|w| Tap::Weapon(w.0));
         }
         if x >= RIGHT_X {
@@ -100,6 +104,9 @@ impl Ui {
         if inside(MAP, x, y) {
             return Some(Tap::MapZoom);
         }
+        if inside(AMMO, x, y) {
+            return Some(Tap::Resupply);
+        }
         if inside(BINOC, x, y) {
             return Some(Tap::Binoculars);
         }
@@ -107,6 +114,11 @@ impl Ui {
             return Some(Tap::Pause);
         }
         None
+    }
+
+    /// Height of a weapon card: 58, less when more than four are carried.
+    fn wpn_slot(&self) -> f32 {
+        WPN_SLOT.min(BOTTOM_H as f32 / self.weapons.len().max(1) as f32)
     }
 
     /// Call once per frame before drawing.
@@ -125,10 +137,11 @@ impl Ui {
         c.rect([RIGHT_X, 0.0, 320.0 - RIGHT_X, BOTTOM_H as f32], PANEL);
         let w = &h.weapons;
         let drawn = w.pose().is_some();
+        let slot = WPN_SLOT.min(BOTTOM_H as f32 / self.weapons.len().max(1) as f32);
         for (k, (i, _)) in self.weapons.iter().enumerate() {
             if *i == w.current && drawn {
                 c.rect(
-                    [2.0, k as f32 * WPN_SLOT + 1.0, LEFT_W - 4.0, WPN_SLOT - 2.0],
+                    [2.0, k as f32 * slot + 1.0, LEFT_W - 4.0, slot - 2.0],
                     HILITE,
                 );
             }
@@ -144,23 +157,27 @@ impl Ui {
                 c.rect(r, HILITE);
             }
         }
-        for (r, on) in [(BINOC, h.bin_mode), (PAUSE, h.paused)] {
+        for (r, on) in [(AMMO, false), (BINOC, h.bin_mode), (PAUSE, h.paused)] {
             c.rect(r, if on { HILITE } else { PANEL });
         }
         c.flush(gpu);
 
-        // Weapon pictures, names and shots left.
+        // Weapon pictures, names and shots left; with more than four
+        // weapons, smaller pictures and no names.
+        let pic_h = (slot - 21.0).min(37.0);
+        let pic_w = pic_h * 64.0 / 37.0;
         for (k, (i, t)) in self.weapons.iter().enumerate() {
-            let y = k as f32 * WPN_SLOT;
+            let y = k as f32 * slot;
             if let Some(t) = t {
                 c.image(
                     gpu,
                     t,
-                    [4.0, y + 3.0, 64.0, 37.0],
+                    [(LEFT_W - pic_w) / 2.0, y + 3.0, pic_w, pic_h],
                     [0.0, 0.0, 1.0, 37.0 / 64.0],
                     WHITE,
                 );
             }
+            let y = y + pic_h - 37.0;
             let name: String = w
                 .info
                 .get(*i)
@@ -211,6 +228,29 @@ impl Ui {
         if let Some(m) = message {
             let m: String = m.chars().take(22).collect();
             c.text_c(gpu, cx, 194.0, 1.0, GREEN, &m);
+        }
+        let left = game.resupplies;
+        let col = if left > 0 { WHITE } else { GREY };
+        c.text_c(
+            gpu,
+            AMMO[0] + AMMO[2] / 2.0 - 4.0,
+            AMMO[1] + 8.0,
+            1.0,
+            col,
+            "Ammo",
+        );
+        if left > 0 {
+            // The refills left, as a red badge.
+            c.disc(AMMO[0] + AMMO[2] - 6.0, AMMO[1] + 4.0, 7.0, RED);
+            c.flush(gpu);
+            c.text_c(
+                gpu,
+                AMMO[0] + AMMO[2] - 6.0,
+                AMMO[1],
+                1.0,
+                WHITE,
+                &left.to_string(),
+            );
         }
         c.text_c(
             gpu,

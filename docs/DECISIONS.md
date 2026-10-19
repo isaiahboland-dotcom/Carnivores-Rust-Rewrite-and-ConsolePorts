@@ -2,6 +2,21 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-18 — M7: title screen, extra ammo, longer Old 3DS view
+- **Title screen** (owner): Play / Trophies / Quit over the original's
+  `MENUM.TGA` (its painted buttons covered by the hunter's record). The
+  trophy room left the area grid for its own button.
+- **Extra ammo gear** (owner's idea, not in the original): x1 10 points,
+  1 refill, kills score x0.95; x2 50, 2 refills, x0.95; x3 150, 3 refills,
+  no penalty. A refill is `Weapons::resupply` (every carried weapon back to
+  its starting ammo); the penalty is `HuntOptions::score_factor` (1.0 on
+  PC, so nothing changes there).
+- **Old 3DS view distance 26 -> 34 cells, objects 18 -> 24**: the owner's
+  Old 3DS ran 60 fps with ~8 ms of CPU work per frame (sim 1.5, world 2.3,
+  2D 4.4, waiting 11.4). More if the next measurement allows.
+- Screenshots (L+SELECT, test script) now save both screens
+  (`<name>.tga`, `<name>_b.tga`).
+
 ## 2026-10-18 — M7: one pack for the whole game, and the 3DS menu
 - **Packs hold the whole game** (pack version 3): every area (plus the
   trophy room), animal and weapon. The menu picks, and a hunt loads only its
@@ -26,9 +41,8 @@ Newest first. Each entry: what, why, and what it affects.
 ## 2026-10-18 — M7: 3DS buttons
 Owner's request, for the Old 3DS / 2DS, which have no C-Stick: the face
 buttons look (X/B up/down, Y/A turn) and the D-Pad does what they did:
-up jump, down next weapon, left binoculars, right show/hide weapon. Jump
-went on D-Pad up rather than down, where B's spot would put it, because it
-feels more natural there. A/B still answer the leave prompt.
+down next weapon, left binoculars, right show/hide weapon. Then (owner):
+L jumps and D-Pad up toggles running. A/B still answer the leave prompt.
 
 ## 2026-10-18 — M7: 3DS sound
 - `c2_core::sound` now holds what used to be the PC's `play_sounds` and

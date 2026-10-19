@@ -1,13 +1,15 @@
-//! The hunt setup, touch-first (the owner's design, after the mobile game):
-//! the bottom screen walks through three steps, the top screen sums up the
-//! picks.
+//! The menus, touch-first (the owner's design, after the mobile game).
+//!
+//! The title: Play, Trophies (the trophy room), Quit, over the original's
+//! main menu art. Play walks through three steps on the bottom screen while
+//! the top screen sums up the picks:
 //!
 //! 1. Area: a hexagon grid of the areas (and the trophy room), and the time
 //!    of day as sun / sunset / moon.
 //! 2. Animals: a hexagon grid of the huntable species (several can be
 //!    picked).
-//! 3. Weapons and gear: a hexagon grid of both, tranquilizer and observer
-//!    toggles, then Hunt.
+//! 3. Weapons and gear: a hexagon grid of both (plus extra ammo, 3DS only),
+//!    tranquilizer and observer toggles, then Hunt.
 //!
 //! Prices, points and what is remembered follow `c2-pc`'s `menu.rs`
 //! (`Menu.cpp`): picks can't cost more than the hunter's score; camouflage,
@@ -33,6 +35,15 @@ const TIMES: [(TimeOfDay, &str); 3] = [
     (TimeOfDay::Night, "Night"),
 ];
 
+/// Extra ammo gear (3DS only, the owner's idea): (price, refills, factor
+/// on kill scores) for x1, x2, x3.
+const EXTRA_AMMO: [(i32, u32, f32); 3] = [(10, 1, 0.95), (50, 2, 0.95), (150, 3, 1.0)];
+
+/// Title screen buttons.
+const PLAY: [f32; 4] = [60.0, 34.0, 200.0, 44.0];
+const TROPHIES: [f32; 4] = [60.0, 96.0, 200.0, 44.0];
+const QUIT: [f32; 4] = [60.0, 158.0, 200.0, 44.0];
+
 const BAR_Y: f32 = 212.0;
 const BACK: [f32; 4] = [4.0, BAR_Y, 76.0, 24.0];
 const NEXT: [f32; 4] = [240.0, BAR_Y, 76.0, 24.0];
@@ -49,6 +60,7 @@ const GAP: f32 = 3.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Step {
+    Title,
     Area,
     Animals,
     Gear,
@@ -83,6 +95,13 @@ fn grid(n: usize, cols: usize, r: f32, top: f32) -> Vec<Cell> {
 
 pub struct Menu {
     c: Canvas,
+    /// The title screen's art.
+    title: Option<Texture>,
+    trophy_room: bool,
+    /// Quit was picked.
+    pub quit: bool,
+    /// Extra ammo tier: 0 none, 1..=3 (`EXTRA_AMMO`).
+    extra_ammo: usize,
     info: PackInfo,
     pub save: Save,
     step: Step,
@@ -128,19 +147,15 @@ impl Menu {
         let price = |v: &Vec<i32>, i: usize| v.get(i).copied().unwrap_or(0);
         let mut areas = Vec::new();
         for (i, name) in info.areas.iter().enumerate() {
-            let item = if name.eq_ignore_ascii_case("TROPHY") {
-                Item {
-                    name: "Trophies".into(),
-                    price: 0,
-                    pic: None,
-                }
-            } else {
-                let n = i + 1;
-                Item {
-                    name: title(vfs, &format!("AREA{n}.TXT"), format!("Area {n}")),
-                    price: price(&prices.area, i),
-                    pic: load(vfs, &format!("C2RS/MENU/AREA{n}.TX")),
-                }
+            // The trophy room has its own button on the title screen.
+            if name.eq_ignore_ascii_case("TROPHY") {
+                continue;
+            }
+            let n = i + 1;
+            let item = Item {
+                name: title(vfs, &format!("AREA{n}.TXT"), format!("Area {n}")),
+                price: price(&prices.area, i),
+                pic: load(vfs, &format!("C2RS/MENU/AREA{n}.TX")),
             };
             areas.push((name.clone(), item));
         }
@@ -189,11 +204,16 @@ impl Menu {
             .enumerate()
             .filter(|(_, &on)| on != 0)
             .fold(0, |m, (i, _)| m | 1 << i);
+        let trophy_room = info.areas.iter().any(|a| a.eq_ignore_ascii_case("TROPHY"));
         let mut m = Self {
             c: Canvas::new(load(vfs, "C2RS/FONT.TX")),
+            title: load(vfs, "C2RS/MENU/TITLE.TX"),
+            trophy_room,
+            quit: false,
+            extra_ammo: 0,
             info,
             save,
-            step: Step::Area,
+            step: Step::Title,
             areas,
             dinos,
             always,
@@ -247,6 +267,7 @@ impl Menu {
             - dinos
             - Self::sum(&self.weapons, self.picked_weapons)
             - Self::sum(&self.equip, self.picked_equip)
+            - self.extra().map_or(0, |e| e.0)
     }
 
     /// Linear memory the picks need, against what the console has (KiB).
@@ -286,6 +307,28 @@ impl Menu {
         Ok(())
     }
 
+    fn extra(&self) -> Option<(i32, u32, f32)> {
+        self.extra_ammo
+            .checked_sub(1)
+            .and_then(|i| EXTRA_AMMO.get(i))
+            .copied()
+            .filter(|_| !self.observer)
+    }
+
+    /// The trophy room.
+    fn trophy_setup(&self) -> Setup {
+        Setup {
+            area: "TROPHY".into(),
+            time: TimeOfDay::Day,
+            targets: 0,
+            weapons: 0,
+            double_ammo: false,
+            observer: false,
+            resupplies: 0,
+            score_factor: 1.0,
+        }
+    }
+
     fn setup(&self) -> Setup {
         let targets = self
             .dinos
@@ -307,6 +350,8 @@ impl Menu {
             },
             double_ammo: !self.observer && self.picked_equip & 8 != 0,
             observer: self.observer,
+            resupplies: self.extra().map_or(0, |e| e.1),
+            score_factor: self.extra().map_or(1.0, |e| e.2),
         }
     }
 
@@ -365,7 +410,8 @@ impl Menu {
     }
 
     fn gear_cells(&self) -> Vec<Cell> {
-        grid(self.weapons.len() + self.equip.len(), 5, 30.0, 2.0)
+        // Weapons, accessories, extra ammo.
+        grid(self.weapons.len() + self.equip.len() + 1, 6, 30.0, 2.0)
     }
 
     const TRANQ: [f32; 4] = [56.0, 178.0, 96.0, 24.0];
@@ -387,6 +433,15 @@ impl Menu {
                 .position(|&(cx, cy, r)| in_hex(cx, cy, r, x, y))
         };
         match self.step {
+            Step::Title => {
+                if inside(PLAY, x, y) {
+                    self.step = Step::Area;
+                } else if inside(TROPHIES, x, y) && self.trophy_room {
+                    return Some(self.trophy_setup());
+                } else if inside(QUIT, x, y) {
+                    self.quit = true;
+                }
+            }
             Step::Area => {
                 if let Some(i) = hit(&self.area_cells()) {
                     self.area = i;
@@ -403,11 +458,13 @@ impl Menu {
             }
             Step::Gear => {
                 if let Some(i) = hit(&self.gear_cells()) {
-                    let nw = self.weapons.len();
+                    let (nw, ne) = (self.weapons.len(), self.equip.len());
                     self.focus = Some(if i < nw {
                         self.toggle(Step::Gear, i, false)
-                    } else {
+                    } else if i < nw + ne {
                         self.toggle(Step::Gear, i - nw, true)
+                    } else {
+                        self.cycle_extra_ammo()
                     });
                 } else if inside(Self::TRANQ, x, y) {
                     let t = &mut self.save.options.tranq;
@@ -420,17 +477,50 @@ impl Menu {
         None
     }
 
+    /// Extra ammo: off -> x1 -> x2 -> x3 -> off, skipping what can't be
+    /// paid for.
+    fn cycle_extra_ammo(&mut self) -> String {
+        let old = self.extra_ammo;
+        loop {
+            self.extra_ammo = (self.extra_ammo + 1) % (EXTRA_AMMO.len() + 1);
+            if self.extra_ammo == 0 || self.remaining() >= 0 {
+                break;
+            }
+        }
+        if old == 0 && self.extra_ammo == 0 {
+            self.message = Some("Not enough points".into());
+        }
+        match self.extra() {
+            Some((price, n, f)) if f < 1.0 => {
+                format!("{n} refill(s), {price} pts, -5% score")
+            }
+            Some((price, n, _)) => format!("{n} refills, {price} pts"),
+            None => "Extra ammo: off".into(),
+        }
+    }
+
     /// B / the Back button.
     pub fn back(&mut self) {
         self.step = match self.step {
-            Step::Area | Step::Animals => Step::Area,
+            Step::Title | Step::Area => Step::Title,
+            Step::Animals => Step::Area,
             Step::Gear => Step::Animals,
         };
+    }
+
+    /// START: back to the title, or quit from it.
+    pub fn start_button(&mut self) {
+        if self.step == Step::Title {
+            self.quit = true;
+        } else {
+            self.step = Step::Title;
+        }
     }
 
     /// A / the Next (or Hunt) button.
     pub fn next(&mut self) -> Option<Setup> {
         match self.step {
+            Step::Title => self.step = Step::Area,
             Step::Area if !self.trophy() => self.step = Step::Animals,
             Step::Animals => self.step = Step::Gear,
             _ => match self.can_hunt() {
@@ -524,6 +614,38 @@ impl Menu {
         let step = self.step;
         let mut c = std::mem::replace(&mut self.c, Canvas::new(None));
         match step {
+            Step::Title => {
+                let buttons = [
+                    (PLAY, "PLAY", true),
+                    (TROPHIES, "TROPHIES", self.trophy_room),
+                    (QUIT, "QUIT", true),
+                ];
+                for (r, _, on) in buttons {
+                    c.rect(
+                        [r[0] - 2.0, r[1] - 2.0, r[2] + 4.0, r[3] + 4.0],
+                        if on { GOLD } else { DIM },
+                    );
+                    c.rect(r, PANEL);
+                }
+                c.flush(gpu);
+                for (r, label, on) in buttons {
+                    let col = if on { WHITE } else { DIM };
+                    c.text_c(
+                        gpu,
+                        r[0] + r[2] / 2.0,
+                        r[1] + r[3] / 2.0 - 8.0,
+                        2.0,
+                        col,
+                        label,
+                    );
+                }
+                if let Some(m) = self.message.clone() {
+                    let m: String = m.chars().take(38).collect();
+                    c.text_c(gpu, 160.0, 216.0, 1.0, TEXT, &m);
+                }
+                self.c = c;
+                return;
+            }
             Step::Area => {
                 for (i, cell) in self.area_cells().into_iter().enumerate() {
                     let it = &self.areas[i].1;
@@ -548,8 +670,12 @@ impl Menu {
                 }
             }
             Step::Gear => {
-                let nw = self.weapons.len();
+                let (nw, ne) = (self.weapons.len(), self.equip.len());
                 for (i, cell) in self.gear_cells().into_iter().enumerate() {
+                    if i >= nw + ne {
+                        self.draw_extra_ammo(&mut c, gpu, cell, left);
+                        continue;
+                    }
                     let (it, on) = if i < nw {
                         (&self.weapons[i], self.picked_weapons & (1 << i) != 0)
                     } else {
@@ -613,9 +739,75 @@ impl Menu {
         self.c = c;
     }
 
+    /// The extra ammo hexagon: "x1".."x3" when picked, the next tier's
+    /// price otherwise.
+    fn draw_extra_ammo(&self, c: &mut Canvas, gpu: &mut Gpu, (cx, cy, r): Cell, left: i32) {
+        let on = self.extra_ammo > 0;
+        if on {
+            c.hex(cx, cy, r + 3.0, GOLD);
+        }
+        c.hex(cx, cy, r, PANEL);
+        // A few cartridges.
+        for k in 0..3 {
+            let x = cx - 9.0 + k as f32 * 9.0;
+            c.rect([x - 2.5, cy - 16.0, 5.0, 12.0], [200, 160, 60, 255]);
+            c.rect([x - 2.5, cy - 20.0, 5.0, 4.0], [170, 90, 50, 255]);
+        }
+        c.flush(gpu);
+        if let Some((_, n, _)) = self.extra() {
+            c.text_c(gpu, cx, cy - 1.0, 2.0, WHITE, &format!("x{n}"));
+        } else {
+            c.text_c(gpu, cx, cy, 1.0, WHITE, "Ammo+");
+            let next = EXTRA_AMMO[0].0;
+            let col = if next <= left { GOLD } else { DIM };
+            c.text_c(gpu, cx, cy + r * 0.866 - 10.0, 1.0, col, &next.to_string());
+        }
+    }
+
+    /// The title: the main menu's art, the hunter's record over its
+    /// painted buttons.
+    fn draw_title_top(&mut self, c: &mut Canvas, gpu: &mut Gpu) {
+        if let Some(t) = &self.title {
+            c.image(
+                gpu,
+                t,
+                [0.0, 0.0, 400.0, 240.0],
+                [0.0, 0.0, 400.0 / 512.0, 240.0 / 256.0],
+                WHITE,
+            );
+        }
+        // Over the painted Hunt / Options / Trophy / Credits / Quit.
+        c.rect([0.0, 74.0, 168.0, 166.0], [10, 14, 10, 255]);
+        c.flush(gpu);
+        let name = String::from_utf8_lossy(&self.save.player_name_raw)
+            .trim_end_matches('\0')
+            .to_string();
+        let ranks = ["Beginner", "Advanced", "Expert"];
+        let rank = ranks
+            .get(self.save.rank.clamp(0, 2) as usize)
+            .unwrap_or(&"");
+        let trophies = self.save.bodies.iter().filter(|b| b.ctype != 0).count();
+        let lines = [
+            (name, WHITE),
+            (rank.to_string(), TEXT),
+            (format!("Score   {}", self.save.score), GOLD),
+            (format!("Trophies {trophies}"), WHITE),
+            (format!("Kills   {}", self.save.total.success), WHITE),
+        ];
+        for (i, (l, col)) in lines.iter().enumerate() {
+            let l: String = l.chars().take(18).collect();
+            c.text(gpu, 12.0, 92.0 + 16.0 * i as f32, 1.0, *col, &l);
+        }
+    }
+
     fn draw_top(&mut self, gpu: &mut Gpu) {
         gpu.begin_2d(None);
         let mut c = std::mem::replace(&mut self.c, Canvas::new(None));
+        if self.step == Step::Title {
+            self.draw_title_top(&mut c, gpu);
+            self.c = c;
+            return;
+        }
         let name = String::from_utf8_lossy(&self.save.player_name_raw)
             .trim_end_matches('\0')
             .to_string();
@@ -707,6 +899,10 @@ impl Menu {
             if self.save.options.tranq != 0 {
                 gear.push(("Tranquilizer".into(), 0));
             }
+            if let Some((price, n, f)) = self.extra() {
+                let pen = if f < 1.0 { " -5%" } else { "" };
+                gear.push((format!("Ammo x{n}{pen}"), price));
+            }
             list(&mut c, gpu, "Gear", gear);
         }
 
@@ -720,7 +916,7 @@ impl Menu {
             (Step::Gear, Err(e)) => (e.to_string(), if need > have { RED } else { DIM }),
             (Step::Area, _) => ("Pick a place and the time of day".into(), DIM),
             (Step::Animals, _) => ("Pick the animals to hunt".into(), DIM),
-            (Step::Gear, _) => (String::new(), DIM),
+            (Step::Gear | Step::Title, _) => (String::new(), DIM),
         };
         c.text(gpu, 8.0, 226.0, 1.0, col, &msg);
         self.c = c;

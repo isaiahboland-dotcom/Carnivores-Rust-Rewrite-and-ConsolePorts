@@ -93,6 +93,9 @@ pub struct Weapons {
     pub ammo_mag: Vec<i32>,
     /// Sniper scope view (`OPTICMODE`).
     pub optic_mode: bool,
+    /// What `new` was given, for [`resupply`](Self::resupply).
+    present: u32,
+    double_ammo: bool,
 }
 
 impl Weapons {
@@ -115,6 +118,8 @@ impl Weapons {
             shots_left: vec![0; n],
             ammo_mag: vec![0; n],
             optic_mode: false,
+            present,
+            double_ammo,
         };
         let mut first = None;
         for i in 0..n.min(32) {
@@ -129,6 +134,17 @@ impl Weapons {
         w.target = first.unwrap_or(0);
         w.current = w.target;
         w
+    }
+
+    /// Every carried weapon back to the ammo it started with (not in the
+    /// original: the 3DS "extra ammo" gear).
+    pub fn resupply(&mut self) {
+        for i in 0..self.info.len().min(32) {
+            if self.present & (1 << i) != 0 {
+                self.shots_left[i] = self.info[i].shots;
+                self.ammo_mag[i] = i32::from(self.double_ammo);
+            }
+        }
     }
 
     fn anim(&self, slot: usize) -> i32 {
@@ -221,6 +237,9 @@ pub struct HuntOptions {
     /// The trophy room (`TrophyMode`): the area is `TROPHY.MAP` and the
     /// animals are the saved trophies, standing still.
     pub trophy: bool,
+    /// Multiplies every kill's score (1 in the original; the 3DS's extra
+    /// ammo gear lowers it).
+    pub score_factor: f32,
 }
 
 impl Default for HuntOptions {
@@ -236,6 +255,7 @@ impl Default for HuntOptions {
             tranq: false,
             observer: false,
             trophy: false,
+            score_factor: 1.0,
         }
     }
 }
@@ -706,6 +726,7 @@ impl Hunt {
                 score *= k;
             }
         }
+        score *= self.opts.score_factor;
         self.room.score += score as i32;
         if !self.opts.tranq {
             let (y, mo, d, h, mi) = self.clock;
@@ -1792,6 +1813,16 @@ mod tests {
             scale_a: 0,
             danger_call: false,
         }
+    }
+
+    #[test]
+    fn resupply_refills_carried_weapons_only() {
+        let mut w = Weapons::new(vec![rifle(), rifle()], vec![[100; 4]; 2], 0b01, true);
+        w.shots_left = vec![0, 0];
+        w.ammo_mag = vec![0, 0];
+        w.resupply();
+        assert_eq!(w.shots_left, vec![14, 0]);
+        assert_eq!(w.ammo_mag, vec![1, 0]);
     }
 
     fn rifle() -> WeaponInfo {

@@ -266,6 +266,7 @@ impl HuntView {
             tranq: o.tranq != 0,
             observer: setup.observer,
             trophy,
+            score_factor: 1.0,
         };
         let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
         hunt.clock = local_clock();

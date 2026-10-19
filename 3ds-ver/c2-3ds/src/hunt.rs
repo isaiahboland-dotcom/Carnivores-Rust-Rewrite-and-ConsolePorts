@@ -108,6 +108,10 @@ pub struct Setup {
     pub weapons: u32,
     pub double_ammo: bool,
     pub observer: bool,
+    /// Extra ammo gear (3DS only): refills to carry, and what it does to
+    /// kill scores.
+    pub resupplies: u32,
+    pub score_factor: f32,
 }
 
 impl Setup {
@@ -138,6 +142,8 @@ pub struct Game {
     acc_ms: f32,
     /// `RunMode`.
     pub run: bool,
+    /// Extra ammo refills left.
+    pub resupplies: u32,
     pub prev_cam: [f32; 3],
 }
 
@@ -168,6 +174,8 @@ pub struct Pad {
     /// From the bottom screen: a weapon (index), a call (AI).
     pub select_weapon: Option<usize>,
     pub select_call: Option<i32>,
+    /// Use one extra ammo refill.
+    pub resupply: bool,
 }
 
 /// Frees what the 3DS doesn't need once the GPU has its copies.
@@ -263,6 +271,7 @@ fn new_hunt(
         tranq: o.tranq != 0,
         observer: setup.observer,
         trophy,
+        score_factor: setup.score_factor,
     };
     let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
     hunt.ship_anim_ms = ship_ms;
@@ -308,6 +317,7 @@ impl Game {
         let ship_ms = load::ship_anim_ms(vfs);
         let seed = next_seed(seed);
         let hunt = new_hunt(&area, &setup, &species, &weapon_info, ship_ms, seed, room);
+        let resupplies = setup.resupplies;
         Ok(Self {
             prev_cam: hunt.camera().0,
             draw: info.draw_info(vfs, &setup.area),
@@ -320,6 +330,7 @@ impl Game {
             events: Vec::new(),
             acc_ms: 0.0,
             run: false,
+            resupplies,
         })
     }
 
@@ -368,6 +379,11 @@ impl Game {
         };
         if let Some(ai) = pad.select_call {
             self.hunt.target_call = ai;
+        }
+        if pad.resupply && self.resupplies > 0 && self.hunt.death.is_none() {
+            self.hunt.weapons.resupply();
+            self.resupplies -= 1;
+            self.events.push(GameEvent::Message("Ammo refilled".into()));
         }
         let select = if let Some(w) = pad.select_weapon {
             Some(w)

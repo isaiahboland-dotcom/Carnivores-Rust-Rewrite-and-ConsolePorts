@@ -35,14 +35,20 @@ The pack is made from your own game files and stays on your SD card; never
 share it (README §2).
 
 ## The menu
-After the pack opens, the bottom screen walks through three touch steps
-(A = Next, B = Back, START quits); the top screen sums up the picks,
-the points left and whether the hunt fits in memory.
-1. **Area**: a hexagon grid of the areas (and the trophy room); the time of
-   day as sunset (dawn), sun (day) or moon (night).
+The title screen shows the original's main menu art with your hunter's
+record; the bottom screen has **Play**, **Trophies** (the trophy room) and
+**Quit**. Play walks through three touch steps (A = Next, B = Back, START =
+back to the title); the top screen sums up the picks, the points left and
+whether the hunt fits in memory.
+1. **Area**: a hexagon grid of the areas; the time of day as sunset (dawn),
+   sun (day) or moon (night).
 2. **Animals**: a hexagon grid of the huntable species; pick one or more.
 3. **Weapons and gear**: weapons, camouflage, radar, cover scent, double
-   ammo; Tranquilizer and Observer toggles; then **HUNT**.
+   ammo, **extra ammo**; Tranquilizer and Observer toggles; then **HUNT**.
+   Extra ammo (3DS only) cycles x1 (10 points, 1 refill, kills score 5%
+   less), x2 (50, 2 refills, -5%), x3 (150, 3 refills, no penalty), off.
+   In the hunt, the **Ammo** button under the map (red number = refills
+   left) refills every carried weapon.
 
 Each hexagon shows its price; picks can't cost more than your score, as in
 the original. Leaving a hunt saves your score and trophies to
@@ -58,11 +64,11 @@ saving.
 | Y / A | turn left / right |
 | C-Stick (New 3DS), drag on the touch screen | look |
 | R | fire |
-| D-Pad up | jump / swim up |
+| D-Pad up | run on/off |
 | D-Pad down | next weapon |
 | D-Pad left | binoculars |
 | D-Pad right | show / hide weapon |
-| L | run on/off |
+| L | jump / swim up |
 | ZL / ZR (New 3DS) | crouch / call |
 | A / B at the leave prompt | yes / no |
 | SELECT | pause (shows fps, memory, and ms per part of a frame) |
@@ -78,12 +84,13 @@ saving.
 |        |   animals in range   |        |
 |        +----------------------+        |
 |        |  status / message    |        |
-|        | [Binocs]   [Pause]   |        |
+|        | [Ammo][Binocs][Pause]|        |
 +--------+----------------------+--------+
 ```
 - Tap a weapon to draw it. Its card shows the picture, name and shots
   left.
 - Tap a call to select it; tap the selected one to call (ZR also calls).
+- Ammo: use an extra ammo refill (the red number is how many are left).
 - Tap the map to switch between close-up (follows you) and the whole area.
   Huntable animals in view range are bright green, others pale.
 - A drag anywhere looks around instead (for the Old 3DS, which has no

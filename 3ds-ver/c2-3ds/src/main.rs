@@ -190,8 +190,8 @@ fn read_pad(hid: &Hid, held: KeyPad, down: KeyPad, touch: &mut Touch) -> (Pad, O
         look_up: held.contains(KeyPad::X),
         look_down: held.contains(KeyPad::B),
         fire: held.contains(KeyPad::R),
-        run: down.contains(KeyPad::L),
-        jump: held.contains(KeyPad::DPAD_UP),
+        run: down.contains(KeyPad::DPAD_UP),
+        jump: held.contains(KeyPad::L),
         crouch: held.contains(KeyPad::ZL),
         toggle_weapon: down.contains(KeyPad::DPAD_RIGHT),
         next_weapon: down.contains(KeyPad::DPAD_DOWN),
@@ -203,6 +203,7 @@ fn read_pad(hid: &Hid, held: KeyPad, down: KeyPad, touch: &mut Touch) -> (Pad, O
         cancel: down.contains(KeyPad::B),
         select_weapon: None,
         select_call: None,
+        resupply: false,
     };
     (pad, tap)
 }
@@ -291,7 +292,10 @@ fn menu(
         if down.contains(KeyPad::B) {
             m.back();
         }
-        if down.contains(KeyPad::START) || io.quit() {
+        if down.contains(KeyPad::START) {
+            m.start_button();
+        }
+        if m.quit || io.quit() {
             return Ok(None);
         }
         gpu.begin([0, 0, 0]);
@@ -386,6 +390,7 @@ fn hunt(vfs: &Vfs, info: &PackInfo, setup: Setup, gpu: &mut Gpu, io: &mut Io) ->
             Some(Tap::MapZoom) => ui.map_local = !ui.map_local,
             Some(Tap::Binoculars) => pad.binoculars = true,
             Some(Tap::Pause) => pad.pause = true,
+            Some(Tap::Resupply) => pad.resupply = true,
             None => {}
         }
         let now = ticks();

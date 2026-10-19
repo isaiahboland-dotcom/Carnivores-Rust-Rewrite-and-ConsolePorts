@@ -17,33 +17,45 @@ use std::io::Write;
 
 use ctru::prelude::KeyPad;
 
-/// Writes the top screen as a 400x240 TGA.
+/// Writes the top screen (400x240) as a TGA, and the bottom one (320x240)
+/// next to it as `<name>_b.tga`.
 pub fn save_top(path: &str) -> std::io::Result<()> {
     if let Some(dir) = std::path::Path::new(path).parent() {
         std::fs::create_dir_all(dir)?;
     }
+    unsafe { ctru_sys::gspWaitForEvent(ctru_sys::GSPGPU_EVENT_VBlank0, true) };
+    save(ctru_sys::GFX_TOP, 400, path)?;
+    save(ctru_sys::GFX_BOTTOM, 320, &path.replace(".tga", "_b.tga"))
+}
+
+/// One screen, `width` x 240. Framebuffers are the screen turned sideways:
+/// 240 rows of `width` pixels become `width` columns of 240, bottom to top;
+/// the top screen is RGB8 (B, G, R bytes), the bottom RGB565.
+fn save(screen: ctru_sys::gfxScreen_t, width: usize, path: &str) -> std::io::Result<()> {
     let (mut w, mut h) = (0u16, 0u16);
-    let fb = unsafe {
-        ctru_sys::gspWaitForEvent(ctru_sys::GSPGPU_EVENT_VBlank0, true);
-        ctru_sys::gfxGetFramebuffer(ctru_sys::GFX_TOP, ctru_sys::GFX_LEFT, &mut w, &mut h)
-    };
-    // The framebuffer is the screen turned sideways: 240 rows of 400 pixels
-    // become 400 columns of 240, bottom to top, 3 bytes (B, G, R) each.
+    let fb = unsafe { ctru_sys::gfxGetFramebuffer(screen, ctru_sys::GFX_LEFT, &mut w, &mut h) };
     let (w, h) = (usize::from(w), usize::from(h));
-    if fb.is_null() || w != 240 || h < 400 {
-        return Err(std::io::Error::other("no top framebuffer"));
+    if fb.is_null() || w != 240 || h < width {
+        return Err(std::io::Error::other("no framebuffer"));
     }
-    let px = unsafe { std::slice::from_raw_parts(fb, w * h * 3) };
-    let mut out = Vec::with_capacity(18 + 400 * 240 * 3);
+    let bpp = if screen == ctru_sys::GFX_TOP { 3 } else { 2 };
+    let px = unsafe { std::slice::from_raw_parts(fb, w * h * bpp) };
+    let mut out = Vec::with_capacity(18 + width * 240 * 3);
     out.extend_from_slice(&[0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    out.extend_from_slice(&400u16.to_le_bytes());
+    out.extend_from_slice(&(width as u16).to_le_bytes());
     out.extend_from_slice(&240u16.to_le_bytes());
     out.extend_from_slice(&[24, 0]);
     // TGA rows go bottom to top by default.
     for y in (0..240).rev() {
-        for x in 0..400 {
-            let i = (x * 240 + (239 - y)) * 3;
-            out.extend_from_slice(&px[i..i + 3]);
+        for x in 0..width {
+            let i = (x * 240 + (239 - y)) * bpp;
+            if bpp == 3 {
+                out.extend_from_slice(&px[i..i + 3]);
+            } else {
+                let v = u16::from_le_bytes([px[i], px[i + 1]]);
+                let (r, g, b) = ((v >> 11) & 31, (v >> 5) & 63, v & 31);
+                out.extend_from_slice(&[(b << 3) as u8, (g << 2) as u8, (r << 3) as u8]);
+            }
         }
     }
     std::fs::File::create(path)?.write_all(&out)
