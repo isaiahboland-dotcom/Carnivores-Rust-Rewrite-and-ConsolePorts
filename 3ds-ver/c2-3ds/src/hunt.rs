@@ -1,7 +1,9 @@
 //! Starting a hunt from a cooked pack and turning 3DS input into the
 //! simulation's controls.
 
-use anyhow::{bail, Context, Result};
+use std::collections::HashMap;
+
+use anyhow::Result;
 use c2_core::area::{Area, TimeOfDay};
 use c2_core::dino::{Herd, PlaceOptions};
 use c2_core::game::{GameEvent, Hunt, HuntInput, HuntOptions, Weapons};
@@ -9,6 +11,7 @@ use c2_core::load;
 use c2_core::player::{Controls, Player};
 use c2_core::rng::MsRand;
 use c2_formats::car::Car;
+use c2_formats::sav::Save;
 use c2_vfs::Vfs;
 
 use crate::world::DrawInfo;
@@ -16,9 +19,16 @@ use crate::world::DrawInfo;
 /// Simulation step, as on PC.
 pub const TICK_MS: u32 = 10;
 
-/// The INFO.TXT `pack` this build reads: 2 = RSC and CARs without textures
-/// or sounds, `terrain_count` given.
-const PACK_VERSION: u32 = 2;
+/// The INFO.TXT `pack` this build reads: 3 = every area, animal and weapon
+/// (a "library"; the menu picks), per-area `C2RS/AREAn/`, `cost.*` lines.
+pub const PACK_VERSION: u32 = 3;
+
+fn kv(text: &str) -> HashMap<String, String> {
+    text.lines()
+        .filter_map(|l| l.split_once('='))
+        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+        .collect()
+}
 
 /// `C2RS/INFO.TXT`: what the cooker put in the pack.
 #[derive(Debug, Clone)]
@@ -26,61 +36,100 @@ pub struct PackInfo {
     /// Pack layout version (`pack` in INFO.TXT).
     pub pack: u32,
     pub target: String,
-    pub area: String,
-    pub time: TimeOfDay,
-    /// `_RES.TXT` character indices of the huntable animals.
-    pub dinos: Vec<usize>,
-    /// `_RES.TXT` weapon indices.
-    pub weapons: Vec<usize>,
-    pub draw: DrawInfo,
+    /// `AREA1`.. and `TROPHY`, as packed.
+    pub areas: Vec<String>,
+    pub view: u32,
+    pub object_view: u32,
     /// Sample rate of the pack's sounds.
     pub sound_rate: u32,
+    /// Linear memory a hunt may use, and what each piece takes (KiB):
+    /// `hunt` (always), `AREAn`, `char{i}`, `wpn{i}`.
+    pub linear_kb: usize,
+    pub costs: HashMap<String, usize>,
 }
 
 impl PackInfo {
     pub fn parse(text: &str) -> Self {
-        let get = |k: &str| {
-            text.lines()
-                .filter_map(|l| l.split_once('='))
-                .find(|(a, _)| a.trim() == k)
-                .map(|(_, v)| v.trim().to_string())
-                .unwrap_or_default()
-        };
-        let list = |k: &str| -> Vec<usize> {
-            get(k)
-                .split(',')
-                .filter_map(|v| v.trim().parse().ok())
-                .collect()
-        };
+        let m = kv(text);
+        let get = |k: &str| m.get(k).cloned().unwrap_or_default();
         let num = |k: &str, d: u32| get(k).parse().unwrap_or(d);
         Self {
             pack: num("pack", 1),
             target: get("target"),
-            area: match get("area") {
-                a if a.is_empty() => "AREA1".into(),
-                a => a,
-            },
-            time: match get("time").as_str() {
-                "dusk" => TimeOfDay::Dusk,
-                "night" => TimeOfDay::Night,
-                _ => TimeOfDay::Day,
-            },
-            dinos: list("dinos"),
+            areas: get("areas")
+                .split(',')
+                .map(str::trim)
+                .filter(|a| !a.is_empty())
+                .map(str::to_string)
+                .collect(),
+            view: num("view", 42),
+            object_view: num("object_view", 28),
             sound_rate: num("sound_rate", c2_core::sound::SAMPLE_RATE),
-            weapons: list("weapons"),
-            draw: DrawInfo {
-                tile: num("terrain_tile", 64) as usize,
-                cols: num("atlas_cols", 16) as usize,
-                view: num("view", 42),
-                object_view: num("object_view", 28),
-                terrain_count: num("terrain_count", 1) as usize,
-            },
+            linear_kb: num("linear_kb", 16 * 1024) as usize,
+            costs: m
+                .iter()
+                .filter_map(|(k, v)| Some((k.strip_prefix("cost.")?.to_string(), v.parse().ok()?)))
+                .collect(),
         }
+    }
+
+    pub fn cost(&self, piece: &str) -> usize {
+        self.costs.get(piece).copied().unwrap_or(0)
+    }
+
+    /// How to draw `area` (`C2RS/AREAn/INFO.TXT`).
+    pub fn draw_info(&self, vfs: &Vfs, area: &str) -> DrawInfo {
+        let m = kv(&String::from_utf8_lossy(
+            &vfs.read(&format!("C2RS/{area}/INFO.TXT"))
+                .unwrap_or_default(),
+        ));
+        let num = |k: &str, d: usize| m.get(k).and_then(|v| v.parse().ok()).unwrap_or(d);
+        DrawInfo {
+            area: area.to_string(),
+            tile: num("terrain_tile", 64),
+            cols: num("atlas_cols", 16),
+            view: self.view,
+            object_view: self.object_view,
+            terrain_count: num("terrain_count", 1),
+        }
+    }
+}
+
+/// What the menu picked (the original menu passes these to the game on its
+/// command line: `prj=`, `din=`, `wep=`, `dtm=`, `-double`, `-observ`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Setup {
+    /// `AREA1`.., or `TROPHY` for the trophy room.
+    pub area: String,
+    pub time: TimeOfDay,
+    /// Bit `ai` per target species (`TargetDino`).
+    pub targets: u32,
+    /// Bit per carried weapon.
+    pub weapons: u32,
+    pub double_ammo: bool,
+    pub observer: bool,
+}
+
+impl Setup {
+    pub fn trophy(&self) -> bool {
+        self.area.eq_ignore_ascii_case("TROPHY")
+    }
+
+    /// Characters to load: the hunter and ambient animals always, the
+    /// targets; in the trophy room, every species (the trophies).
+    pub fn keeps_char(&self, ai: i32) -> bool {
+        self.trophy() || ai < 10 || (0..32).contains(&ai) && self.targets & (1 << ai) != 0
+    }
+
+    pub fn carried(&self) -> Vec<usize> {
+        (0..32).filter(|i| self.weapons & (1 << i) != 0).collect()
     }
 }
 
 pub struct Game {
     pub info: PackInfo,
+    pub setup: Setup,
+    pub draw: DrawInfo,
     pub area: Area,
     pub hunt: Hunt,
     pub cars: Vec<Option<Car>>,
@@ -89,10 +138,6 @@ pub struct Game {
     acc_ms: f32,
     /// `RunMode`.
     pub run: bool,
-    seed: u32,
-    pub species: Vec<c2_core::dino::Species>,
-    weapon_info: Vec<(c2_core::game::WeaponInfo, [i32; 4])>,
-    ship_ms: i32,
     pub prev_cam: [f32; 3],
 }
 
@@ -155,64 +200,69 @@ fn next_seed(s: u32) -> u32 {
     s.wrapping_mul(1_103_515_245).wrapping_add(12345)
 }
 
-/// The hunter at a landing spot, the herd placed, the pack's weapons carried.
+/// `ReInitGame`: the hunter at a random landing spot (or the trophy room's
+/// door) and the herd placed (or the trophies), as `c2-pc`'s `new_hunt`.
 fn new_hunt(
     area: &Area,
-    info: &PackInfo,
+    setup: &Setup,
     species: &[c2_core::dino::Species],
     weapon_info: &[(c2_core::game::WeaponInfo, [i32; 4])],
     ship_ms: i32,
     seed: u32,
+    room: Save,
 ) -> Hunt {
-    let mut rng = MsRand::new(seed);
-    let cell = area
-        .landings
-        .get(seed as usize % area.landings.len().max(1))
-        .copied()
-        .unwrap_or((512, 512));
-    let player = Player::new(area, cell);
-    let room = c2_core::profile::new_player("Hunter", 0, 0);
     let o = room.options;
-    let targets = info
-        .dinos
-        .iter()
-        .filter_map(|&i| species.get(i))
-        .filter(|s| (0..32).contains(&s.info.ai))
-        .fold(0u32, |m, s| m | 1 << s.info.ai);
+    let trophy = setup.trophy();
+    let mut rng = MsRand::new(seed);
+    let player = if trophy {
+        Player::new(area, (76, 70))
+    } else {
+        let cell = area
+            .landings
+            .get(seed as usize % area.landings.len().max(1))
+            .copied()
+            .unwrap_or((512, 512));
+        Player::new(area, cell)
+    };
     let mut herd = Herd {
         species: species.to_vec(),
         chars: Vec::new(),
         demo_index: None,
     };
-    herd.place(
-        area,
-        (player.x, player.z),
-        &mut rng,
-        PlaceOptions {
-            density: o.dens,
-            opt_agres: o.agres,
-            targets,
-        },
-    );
-    let carried = info
-        .weapons
-        .iter()
-        .filter(|&&i| i < 32)
-        .fold(0u32, |m, &i| m | 1 << i);
+    if trophy {
+        herd.place_trophies(area, &room, &mut rng);
+    } else {
+        herd.place(
+            area,
+            (player.x, player.z),
+            &mut rng,
+            PlaceOptions {
+                density: o.dens,
+                opt_agres: o.agres,
+                targets: setup.targets,
+            },
+        );
+    }
+    let carried = if trophy || setup.observer {
+        0
+    } else {
+        setup.weapons
+    };
     let (infos, anims): (Vec<_>, Vec<_>) = weapon_info.iter().cloned().unzip();
-    let weapons = Weapons::new(infos, anims, carried, false);
+    let weapons = Weapons::new(infos, anims, carried, setup.double_ammo);
     let opts = HuntOptions {
-        targets,
-        radar: false,
+        targets: if setup.observer { 0 } else { setup.targets },
+        radar: o.radar != 0,
         opt_agres: o.agres,
         opt_sens: o.sens,
-        // ctViewR at the lowest view-range option (42 cells).
-        view_r: 42,
-        camo: false,
-        scent: false,
-        tranq: false,
-        observer: false,
-        trophy: false,
+        // ctViewR at the lowest view-range option (42 cells); 60 in the
+        // trophy room.
+        view_r: if trophy { 60 } else { 42 },
+        camo: o.camo != 0,
+        scent: o.scent != 0,
+        tranq: o.tranq != 0,
+        observer: setup.observer,
+        trophy,
     };
     let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
     hunt.ship_anim_ms = ship_ms;
@@ -220,25 +270,35 @@ fn new_hunt(
 }
 
 impl Game {
-    pub fn load(vfs: &Vfs, seed: u32, progress: &mut dyn FnMut(&str)) -> Result<Self> {
-        let info = PackInfo::parse(&String::from_utf8_lossy(
-            &vfs.read("C2RS/INFO.TXT")
-                .context("not a c2rs pack (no C2RS/INFO.TXT)")?,
-        ));
-        if info.pack < PACK_VERSION {
-            bail!("this pack was made by an older c2-cook; cook it again");
-        }
+    /// Loads what `setup` needs: its area, the hunter, ambient and target
+    /// animals, the carried weapons.
+    pub fn load(
+        vfs: &Vfs,
+        info: PackInfo,
+        setup: Setup,
+        room: Save,
+        seed: u32,
+        progress: &mut dyn FnMut(&str),
+    ) -> Result<Self> {
         // The area first, while the heap is empty: its map is the biggest
         // file, and is briefly in memory twice (file and parsed).
         // `c2-cook`'s `load_peak` repeats these steps; keep them in step.
-        progress(&format!("area {}", info.area));
-        let area = load::area_with(vfs, &info.area, info.time, true)?;
+        progress(&format!("area {}", setup.area));
+        let area = load::area_with(vfs, &setup.area, setup.time, true)?;
         progress("rules (_RES.TXT)");
         let res = load::res(vfs)?;
         progress("animals");
-        let (species, cars) = load::species(vfs, &res);
+        let ais: Vec<i32> = res
+            .characters
+            .iter()
+            .map(|c| c2_core::dino::DinoInfo::from_def(c).ai)
+            .collect();
+        let (species, cars) = load::species_with(vfs, &res, &|i| {
+            ais.get(i).is_some_and(|&ai| setup.keeps_char(ai))
+        });
         progress("weapons");
-        let weapons = load::weapons(vfs, &res);
+        let carried = setup.carried();
+        let weapons = load::weapons_with(vfs, &res, &|i| carried.contains(&i));
         let mut weapon_cars = Vec::new();
         let mut weapon_info = Vec::new();
         for w in weapons {
@@ -247,10 +307,12 @@ impl Game {
         }
         let ship_ms = load::ship_anim_ms(vfs);
         let seed = next_seed(seed);
-        let hunt = new_hunt(&area, &info, &species, &weapon_info, ship_ms, seed);
+        let hunt = new_hunt(&area, &setup, &species, &weapon_info, ship_ms, seed, room);
         Ok(Self {
             prev_cam: hunt.camera().0,
+            draw: info.draw_info(vfs, &setup.area),
             info,
+            setup,
             area,
             hunt,
             cars,
@@ -258,10 +320,6 @@ impl Game {
             events: Vec::new(),
             acc_ms: 0.0,
             run: false,
-            seed,
-            species,
-            weapon_info,
-            ship_ms,
         })
     }
 
@@ -271,22 +329,6 @@ impl Game {
         for c in self.weapon_cars.iter_mut().flatten() {
             c.mesh.texture = Vec::new();
         }
-    }
-
-    /// `ReInitGame`: a fresh hunt (after dying).
-    pub fn restart(&mut self) {
-        self.seed = next_seed(self.seed);
-        self.hunt = new_hunt(
-            &self.area,
-            &self.info,
-            &self.species,
-            &self.weapon_info,
-            self.ship_ms,
-            self.seed,
-        );
-        self.prev_cam = self.hunt.camera().0;
-        self.acc_ms = 0.0;
-        self.events.clear();
     }
 
     /// Runs the simulation for `dt` seconds of real time.
@@ -331,7 +373,7 @@ impl Game {
             Some(w)
         } else if pad.next_weapon {
             let w = &self.hunt.weapons;
-            let carried: Vec<usize> = self.info.weapons.clone();
+            let carried = self.setup.carried();
             let cur = carried.iter().position(|&i| i == w.current);
             let next = cur.map_or(0, |c| (c + 1) % carried.len().max(1));
             carried.get(next).copied()

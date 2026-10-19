@@ -194,6 +194,7 @@ pub struct Gpu {
     fog: [f32; 4],
     /// The world texenv's alpha (see [`Gpu::texenv`]).
     tex_alpha: Option<u8>,
+    night: bool,
 }
 
 pub const TOP_W: usize = 400;
@@ -306,6 +307,7 @@ impl Gpu {
                 lsel: [0.0; 4],
                 fog: [0.0; 4],
                 tex_alpha: None,
+                night: false,
             };
             gpu.bind(Prog::World);
             Some(gpu)
@@ -359,6 +361,7 @@ impl Gpu {
         self.no_fog();
         self.depth_off();
         self.blend(Blend::Alpha);
+        self.night = false;
     }
 
     /// Textured 2D: colour and alpha = texture x `rgba`, no fog. Undone by
@@ -376,6 +379,7 @@ impl Gpu {
             let [r, g, b, a] = rgba.map(u32::from);
             c3d::C3D_TexEnvColor(env, a << 24 | b << 16 | g << 8 | r);
             c3d::C3D_TexEnvInit(c3d::C3D_GetTexEnv(1));
+            c3d::C3D_TexEnvInit(c3d::C3D_GetTexEnv(2));
         }
     }
 
@@ -545,8 +549,18 @@ impl Gpu {
         }
     }
 
+    /// Night vision (`BrightenTexture`: every texel becomes `(G/8, G, G/8)`)
+    /// for world drawing; the sky and sun are drawn without it.
+    pub fn set_night(&mut self, on: bool) {
+        if self.night != on {
+            self.night = on;
+            self.texenv(self.tex_alpha);
+        }
+    }
+
     /// Colour = texture x vertex light. Alpha = the texture's, times
-    /// `alpha` (0..255) if given.
+    /// `alpha` (0..255) if given. Stages: 0 texture (night vision: its
+    /// green times (1/8, 1, 1/8)), 1 times the light, 2 fog.
     pub fn texenv(&mut self, alpha: Option<u8>) {
         self.tex_alpha = alpha;
         if self.prog != Prog::World {
@@ -554,35 +568,40 @@ impl Gpu {
             return;
         }
         unsafe {
+            let a = u32::from(alpha.unwrap_or(255));
             let env = c3d::C3D_GetTexEnv(0);
+            c3d::C3D_TexEnvInit(env);
+            if self.night {
+                c3d::C3D_TexEnvSrc(env, c3d::C3D_RGB, sys::GPU_TEXTURE0, sys::GPU_CONSTANT, 0);
+                c3d::C3D_TexEnvOpRgb(
+                    env,
+                    sys::GPU_TEVOP_RGB_SRC_G,
+                    sys::GPU_TEVOP_RGB_SRC_COLOR,
+                    sys::GPU_TEVOP_RGB_SRC_COLOR,
+                );
+                c3d::C3D_TexEnvFunc(env, c3d::C3D_RGB, sys::GPU_MODULATE);
+            } else {
+                c3d::C3D_TexEnvSrc(env, c3d::C3D_RGB, sys::GPU_TEXTURE0, 0, 0);
+                c3d::C3D_TexEnvFunc(env, c3d::C3D_RGB, sys::GPU_REPLACE);
+            }
+            c3d::C3D_TexEnvSrc(env, c3d::C3D_Alpha, sys::GPU_TEXTURE0, sys::GPU_CONSTANT, 0);
+            c3d::C3D_TexEnvFunc(env, c3d::C3D_Alpha, sys::GPU_MODULATE);
+            c3d::C3D_TexEnvColor(env, a << 24 | 32 << 16 | 255 << 8 | 32);
+            // Stage 1: times the vertex light.
+            let env = c3d::C3D_GetTexEnv(1);
             c3d::C3D_TexEnvInit(env);
             c3d::C3D_TexEnvSrc(
                 env,
                 c3d::C3D_RGB,
-                sys::GPU_TEXTURE0,
+                sys::GPU_PREVIOUS,
                 sys::GPU_PRIMARY_COLOR,
                 0,
             );
             c3d::C3D_TexEnvFunc(env, c3d::C3D_RGB, sys::GPU_MODULATE);
-            match alpha {
-                None => {
-                    c3d::C3D_TexEnvSrc(env, c3d::C3D_Alpha, sys::GPU_TEXTURE0, 0, 0);
-                    c3d::C3D_TexEnvFunc(env, c3d::C3D_Alpha, sys::GPU_REPLACE);
-                }
-                Some(a) => {
-                    c3d::C3D_TexEnvSrc(
-                        env,
-                        c3d::C3D_Alpha,
-                        sys::GPU_TEXTURE0,
-                        sys::GPU_CONSTANT,
-                        0,
-                    );
-                    c3d::C3D_TexEnvFunc(env, c3d::C3D_Alpha, sys::GPU_MODULATE);
-                    c3d::C3D_TexEnvColor(env, u32::from(a) << 24);
-                }
-            }
-            // Stage 1: fog colour mixed in by the vertex colour's alpha.
-            let env = c3d::C3D_GetTexEnv(1);
+            c3d::C3D_TexEnvSrc(env, c3d::C3D_Alpha, sys::GPU_PREVIOUS, 0, 0);
+            c3d::C3D_TexEnvFunc(env, c3d::C3D_Alpha, sys::GPU_REPLACE);
+            // Stage 2: fog colour mixed in by the vertex colour's alpha.
+            let env = c3d::C3D_GetTexEnv(2);
             c3d::C3D_TexEnvInit(env);
             c3d::C3D_TexEnvSrc(
                 env,
@@ -666,6 +685,7 @@ impl Gpu {
                 c3d::C3D_TexEnvSrc(env, c3d::C3D_Both, sys::GPU_PRIMARY_COLOR, 0, 0);
                 c3d::C3D_TexEnvFunc(env, c3d::C3D_Both, sys::GPU_REPLACE);
                 c3d::C3D_TexEnvInit(c3d::C3D_GetTexEnv(1));
+                c3d::C3D_TexEnvInit(c3d::C3D_GetTexEnv(2));
             }
         }
         unsafe {

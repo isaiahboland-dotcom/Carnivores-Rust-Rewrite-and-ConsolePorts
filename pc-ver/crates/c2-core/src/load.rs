@@ -65,11 +65,23 @@ fn empty_car() -> Car {
 /// Every `_RES.TXT` character, with its `.CAR` where there is one (a species
 /// without one has no animations and is never placed).
 pub fn species(vfs: &Vfs, res: &ResData) -> (Vec<Species>, Vec<Option<Car>>) {
+    species_with(vfs, res, &|_| true)
+}
+
+/// [`species`], reading the `.CAR` only for characters `keep` accepts (by
+/// index); the others get no model, so they are never placed.
+pub fn species_with(
+    vfs: &Vfs,
+    res: &ResData,
+    keep: &dyn Fn(usize) -> bool,
+) -> (Vec<Species>, Vec<Option<Car>>) {
     let mut species = Vec::new();
     let mut cars = Vec::new();
-    for def in &res.characters {
+    for (i, def) in res.characters.iter().enumerate() {
         let info = DinoInfo::from_def(def);
-        let car = optional_car(vfs, &format!("HUNTDAT/{}", info.file));
+        let car = keep(i)
+            .then(|| optional_car(vfs, &format!("HUNTDAT/{}", info.file)))
+            .flatten();
         species.push(Species::new(info, car.as_ref().unwrap_or(&empty_car())));
         cars.push(car);
     }
@@ -85,11 +97,19 @@ pub struct LoadedWeapon {
 }
 
 pub fn weapons(vfs: &Vfs, res: &ResData) -> Vec<LoadedWeapon> {
+    weapons_with(vfs, res, &|_| true)
+}
+
+/// [`weapons`], reading the view model only for weapons `keep` accepts.
+pub fn weapons_with(vfs: &Vfs, res: &ResData, keep: &dyn Fn(usize) -> bool) -> Vec<LoadedWeapon> {
     res.weapons
         .iter()
-        .map(|d| {
+        .enumerate()
+        .map(|(i, d)| {
             let info = WeaponInfo::from_def(d);
-            let car = optional_car(vfs, &format!("HUNTDAT/WEAPONS/{}", info.file));
+            let car = keep(i)
+                .then(|| optional_car(vfs, &format!("HUNTDAT/WEAPONS/{}", info.file)))
+                .flatten();
             let mut anims = [0; 4];
             if let Some(c) = &car {
                 for (slot, t) in anims.iter_mut().enumerate() {

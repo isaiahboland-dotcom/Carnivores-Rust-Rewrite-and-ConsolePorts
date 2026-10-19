@@ -12,6 +12,8 @@ use c2_core::game::{GameEvent, Hunt};
 use c2_core::ship::ship_sound;
 use c2_core::sound::{ambient_gain, commands, lr_gains, SoundCmd, SoundId, MAX_VOICES};
 use c2_vfs::Vfs;
+
+use crate::hunt::Game;
 use ctru_sys as sys;
 
 const AMBIENT_CH: [i32; 2] = [16, 17];
@@ -163,9 +165,12 @@ fn parse_name(n: &str) -> Option<Name> {
 }
 
 impl Sound {
-    /// Starts the DSP and loads the pack's sounds. `Err` says why there is
-    /// no sound (usually: no DSP firmware dump on the SD card).
-    pub fn new(vfs: &Vfs, rate: u32) -> Result<Self, String> {
+    /// Starts the DSP and loads the sounds `game` can play: the area's, the
+    /// loaded animals' and carried weapons' (and the targets' calls), and
+    /// the common ones. `Err` says why there is no sound (usually: no DSP
+    /// firmware dump on the SD card).
+    pub fn new(vfs: &Vfs, game: &Game) -> Result<Self, String> {
+        let rate = game.info.sound_rate;
         if unsafe { sys::ndspInit() } < 0 {
             return Err("no sound: DSP firmware missing (sdmc:/3ds/dspfirm.cdc)".into());
         }
@@ -181,6 +186,21 @@ impl Sound {
             cam: [0.0; 3],
             alpha: 0.0,
         };
+        let area_dir = format!("{}/", game.setup.area);
+        let carried = game.setup.carried();
+        let wanted = |n: &str| match parse_name(n) {
+            // The trophies stand still: no animal sounds in the room.
+            Some(Name::Id(SoundId::Species { ctype, .. })) => {
+                !game.setup.trophy() && game.cars.get(ctype).is_some_and(Option::is_some)
+            }
+            Some(Name::Id(SoundId::Weapon { weapon, .. })) => carried.contains(&weapon),
+            Some(Name::Id(SoundId::Call { ai, .. })) => {
+                (0..32).contains(&ai) && game.hunt.opts.targets & (1 << ai) != 0
+            }
+            Some(Name::Id(SoundId::Random(_)) | Name::Ambient(_)) => false,
+            Some(_) => true,
+            None => false,
+        };
         let names: Vec<String> = vfs
             .files()
             // Keys are lower case; the layer's own spelling is upper.
@@ -189,6 +209,14 @@ impl Sound {
                     .strip_prefix("C2RS/SND/")?
                     .strip_suffix(".PCM")
                     .map(str::to_string)
+            })
+            .filter(|n| match n.strip_prefix(&area_dir) {
+                // This area's random and ambient sounds.
+                Some(rest) => matches!(
+                    parse_name(rest),
+                    Some(Name::Id(SoundId::Random(_)) | Name::Ambient(_))
+                ),
+                None => !n.contains('/') && wanted(n),
             })
             .collect();
         for n in names {
@@ -199,7 +227,7 @@ impl Sound {
             else {
                 continue;
             };
-            match parse_name(&n) {
+            match parse_name(n.rsplit('/').next().unwrap_or(&n)) {
                 Some(Name::Id(id)) => {
                     s.clips.insert(id, clip);
                 }

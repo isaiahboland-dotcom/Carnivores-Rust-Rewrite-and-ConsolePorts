@@ -1,7 +1,7 @@
 # 3DS port
 
-> Status: M6 first test build. One area, the animals and weapons chosen
-> when cooking, hunt mode, no sound or menus yet. See README §9 for status.
+> Status: M7 in progress. The whole game in one pack, a touch menu, hunts
+> with sound, saves. See README §9 for status.
 
 ## What you need
 - devkitPro with devkitARM, libctru and citro3d (`$DEVKITPRO=/opt/devkitpro`;
@@ -15,10 +15,10 @@
 ## Build and run
 From `3ds-ver/`:
 ```
-# 1. Cook your game into a pack (runs on the PC).
-cargo run --release -p c2-cook -- --game ../source/c2-original --out c2rs.c2pk
-#    options: --area N  --time day|dusk|night  --dinos Velociraptor,T-Rex
-#             --weapons Pistol,Shotgun  --ambient  --target n3ds|o3ds
+# 1. Cook your game into a pack (runs on the PC): every area, animal and
+#    weapon (~140 MB); the 3DS loads only what you pick.
+cargo run --release -p c2-cook -- --game ../source/c2-original --target o3ds --out c2rs.c2pk
+#    options: --target n3ds|o3ds  --areas 1,2 (fewer areas, smaller pack)
 #             --mod DIR... or --recipe R.toml --mods DIR  (add-on mods)
 
 # 2. Build the app.
@@ -34,7 +34,23 @@ cargo 3ds build --release -p c2-3ds
 The pack is made from your own game files and stays on your SD card; never
 share it (README §2).
 
-## Controls
+## The menu
+After the pack opens, the bottom screen walks through three touch steps
+(A = Next, B = Back, START quits); the top screen sums up the picks,
+the points left and whether the hunt fits in memory.
+1. **Area**: a hexagon grid of the areas (and the trophy room); the time of
+   day as sunset (dawn), sun (day) or moon (night).
+2. **Animals**: a hexagon grid of the huntable species; pick one or more.
+3. **Weapons and gear**: weapons, camouflage, radar, cover scent, double
+   ammo; Tranquilizer and Observer toggles; then **HUNT**.
+
+Each hexagon shows its price; picks can't cost more than your score, as in
+the original. Leaving a hunt saves your score and trophies to
+`/3ds/c2rs/trophy00.sav` (the original's format; a new hunter starts with
+`_RES.TXT`'s `prices.start` points). Dying returns to the menu without
+saving.
+
+## Controls (hunting)
 | | |
 |---|---|
 | Circle Pad | move / strafe |
@@ -49,9 +65,9 @@ share it (README §2).
 | L | run on/off |
 | ZL / ZR (New 3DS) | crouch / call |
 | A / B at the leave prompt | yes / no |
-| SELECT | pause (shows fps and memory) |
+| SELECT | pause (shows fps, memory, and ms per part of a frame) |
 | L + SELECT | screenshot to `/3ds/c2rs/shots/` |
-| START | leave the hunt |
+| START | leave the hunt (A = yes saves and returns to the menu) |
 
 ### Bottom screen (touch)
 ```
@@ -97,35 +113,39 @@ quit
 - Terrain is meshed on the 3DS in 16x16-cell chunks around the hunter (same
   triangulation and texture rotation as `terrain.wgsl`), built as they come
   into view and dropped two seconds after leaving it.
-- One vertex shader (`c2-3ds/shaders/world.v.pica`) for everything; light is
+- One vertex shader (`c2-3ds/shaders/world.v.pica`) for the world; light is
   per vertex (light map for terrain, `CalcLights` for objects). Fog is worked
-  out in the shader from distance to the eye and blended in by a second
+  out in the shader from distance to the eye and blended in by the last
   texture-combiner stage (the GPU's fog table works on depth, which is too
-  uneven here). The view model's depth is squeezed into the front 2% so the
-  world never covers it.
+  uneven here). Night vision (`BrightenTexture`: `(G/8, G, G/8)`) is the
+  first combiner stage, so packs carry one set of textures for all times of
+  day. The view model's depth is squeezed into the front 2% so the world
+  never covers it.
+- A second shader (`flat.v.pica`) draws coloured shapes: particles, blood,
+  the map and menu shapes. Text is the font8x8 font, cooked into the pack.
 - Animals and the view model are posed on the CPU each frame (as on PC) and
   written to per-character GPU buffers.
 
 ## Memory budget
-- An Old 3DS app gets 64 MiB, a New 3DS app 124 MiB. The app keeps 20 MiB as
+- An Old 3DS app gets 64 MiB, a New 3DS app 124 MiB. The app keeps 24 MiB as
   linear memory (what the GPU and the DSP read: textures, vertex buffers,
-  sounds) and the rest is heap: about 43 MiB on Old, 103 on New.
+  sounds) and the rest is heap: about 39 MiB on Old, 99 on New.
   Start the Homebrew Launcher through a game or Download Play (title
   takeover). Started as an applet, it has much less memory.
-- `c2-cook` loads each pack the way the 3DS does, measures the peak heap,
-  and refuses packs over the target's budget (heap: o3ds 38 MiB, n3ds 96;
-  linear: 16 MiB) unless `--force`.
+- `c2-cook` measures the loading peak of each area with every animal and
+  weapon (heap budget o3ds 34 MiB, n3ds 96) and estimates linear memory for
+  a typical hunt (budget 22 MiB). It writes what each area, animal and
+  weapon takes (`cost.*` in `C2RS/INFO.TXT`); the menu adds up the picks
+  and won't start a hunt that doesn't fit.
 - Packs carry the `.RSC`/`.CAR` without textures or sounds. The app reads
   one light map from the `.MAP` and frees the rest of what only the PC uses
   after loading.
-- Vanilla AREA1, two hunted species + hunter, two weapons: pack 25 MiB (o3ds),
-  loading peak 23 MiB. In the emulator the heap then sits at 15 MiB; linear
-  memory used is ~12 MiB, of which sounds are 7.
-- **Hardware (owner, 2026-10-18)**: Old 3DS / Old 2DS, o3ds pack: loads,
-  ~58 fps, heap 15.1 MiB in use while hunting.
+- Vanilla, o3ds: pack 136 MiB. Loading peak 23 MiB in every area. Linear
+  for a hunt with 2 animals and 2 weapons: 12 to 17.5 MiB, mostly sounds
+  (the area's ambience, and every ambient animal's).
+- **Hardware (owner, 2026-10-18)**: Old 3DS / Old 2DS, single-area o3ds
+  pack: loads, ~58 fps, heap 15.1 MiB in use while hunting.
 - Out of memory shows a message (press START) instead of crashing.
-- The loading screen and the bottom screen show heap used/total and free
-  linear memory.
 
 ## Sound
 Sounds play on the DSP, which needs the console's DSP firmware dump at
@@ -134,13 +154,15 @@ Sounds play on the DSP, which needs the console's DSP firmware dump at
 on the bottom screen. In Azahar, any file at that path works (it emulates
 the DSP).
 
-The cooker writes every sound a hunt can play as 16-bit mono at 22050 Hz:
-the chosen animals', weapons' and ship's `.CAR` sounds, the area's random
-and ambient sounds, steps, screams and the chosen animals' calls. Which
+The cooker writes every sound as 16-bit mono at 22050 Hz: the animals',
+weapons' and ship's `.CAR` sounds, each area's random and ambient sounds
+(`C2RS/SND/AREAn/`), steps, screams and calls. A hunt loads its area's,
+its loaded animals' and carried weapons' sounds, and the targets' calls. Which
 event plays what, and at what left/right level, is `c2_core::sound`, shared
 with the PC. 16 voices as the original, plus two channels to crossfade the
 ambience and one for the ship's engine.
 
 ## Not yet (M7)
-Menus and saves, scope cross-hairs, stereo 3D, gyro aim, the pack
-picker, an Old 3DS performance pass.
+Hunter name entry and more than one hunter, the options screen
+(aggressiveness, density, ...), scope cross-hairs, stereo 3D, gyro aim, the
+pack picker, an Old 3DS performance pass.

@@ -239,20 +239,28 @@ original format. All values little-endian.
 | 16 | index | per entry: `u16` name length, name (UTF-8, `/`-separated), `u32` offset from file start, `u32` size |
 | … | data | entries, each starting on a 16-byte boundary |
 
-Entries:
+Entries (pack version 3, one pack for the whole game):
 - `HUNTDAT/...`: game files in their original formats: the merged
-  `_RES.TXT` and the area's `.MAP` as they are; the area's `.RSC` and the
-  chosen `.CAR`s slimmed (pack version 2): no terrain textures (texture
-  count 0), empty model textures, and sounds with no samples (the entries
-  stay, so indices hold).
-- `C2RS/INFO.TXT`: `key = value` lines: `pack` (2), `target`, `area` (e.g.
-  `AREA1`), `time`, `dinos` / `weapons` (`_RES.TXT` indices),
-  `terrain_tile`, `atlas_cols`, `terrain_count`, `view`, `object_view`
-  (cells).
-- `C2RS/TERRAIN.TX`: every terrain texture in one atlas, `terrain_tile`
-  pixels square, `atlas_cols` per row, in texture order.
-- `C2RS/OBJn.TX`, `C2RS/CHARn.TX`, `C2RS/WPNn.TX`: the texture of RSC object
-  `n`, `_RES.TXT` character `n`, weapon `n`.
+  `_RES.TXT`, `MENU/TXT/*`, every area's `.MAP` as it is; every area's
+  `.RSC` and every `.CAR` slimmed: no terrain textures (texture count 0),
+  empty model textures, and sounds with no samples (the entries stay, so
+  indices hold).
+- `C2RS/INFO.TXT`: `key = value` lines: `pack` (3), `target`, `areas`
+  (`AREA1,...,TROPHY`), `view`, `object_view` (cells), `sound_rate`,
+  `linear_kb` (what a hunt may use), and `cost.<piece> = KiB` of linear
+  memory for `hunt` (always), `AREAn`, `char<i>`, `wpn<i>`.
+- Per area, `C2RS/AREAn/`: `INFO.TXT` (`terrain_tile`, `atlas_cols`,
+  `terrain_count`), `TERRAIN.TX` (every terrain texture in one atlas,
+  `terrain_tile` pixels square, `atlas_cols` per row), `OBJn.TX`,
+  `SKY0..2.TX` (dusk, day, night), `MAP.TX` (the 256x256 overview).
+- Shared: `CHARi.TX`, `WPNi.TX` (`_RES.TXT` character / weapon i),
+  `SHIP.TX`, `RING.TX`, `SUN`/`MOON`/`BINOC` `.3DF` + `.TX`, `FONT.TX`
+  (font8x8, ASCII 32..127 in 16x6 cells of 8x8), `CALL<ai>.TX`,
+  `WPNPICi.TX`, menu pictures `MENU/{AREA,DINO,WEAPON,EQUIP}n.TX`.
+- Sounds, `C2RS/SND/*.PCM`: raw 16-bit mono at `sound_rate`.
+  `C<i>_<k>` character i's sound k, `W<i>_<k>` weapon, `SHIP_<k>`,
+  `K<ai>_<v>` call, `F<n>`/`FW<n>` steps, `H<n>` screams, `U` underwater,
+  `AREAn/R<k>` / `AREAn/A<k>` the area's random / ambient sounds.
 
 ### `.TX` — cooked texture
 | Offset | Type | Field |
@@ -267,7 +275,8 @@ Tiled order: 8x8 tiles left to right, tile rows starting from the **bottom**
 of the image; inside a tile, texels in Morton (Z) order (bit 0 = x0, bit 1 =
 y0, bit 2 = x1, …, y counted upwards). The GPU then samples it with `t` equal to the image's
 `v` (0 = top), as checked in an emulator. Cut-out alpha is 1 bit (texel colour 0 in an `sfOpacity`
-model, as `GenerateAlphaFlags`).
+model, as `GenerateAlphaFlags`). Textures are the daytime ones; night vision is applied on the
+GPU.
 
 ## Not yet parsed
 - Map-editor side files in some mods (`.grp .lai .mtc .prj`) — not loaded by the game.

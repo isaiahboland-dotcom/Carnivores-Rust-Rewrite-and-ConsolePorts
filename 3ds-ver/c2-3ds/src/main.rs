@@ -1,12 +1,16 @@
-//! c2rs for the Nintendo 3DS: loads a pack made by `c2-cook` from
-//! `sdmc:/3ds/c2rs/` and starts a hunt.
+//! c2rs for the Nintendo 3DS: opens a pack made by `c2-cook` from
+//! `sdmc:/3ds/c2rs/`, then menu -> hunt -> menu.
 //!
-//! Top screen: the world. Bottom screen: status and controls (text for now).
+//! Hunting: the world on the top screen, weapons | map | calls on the
+//! bottom. Menu: the picks on the top screen, touch steps on the bottom.
 
 #![feature(alloc_error_hook)]
 
+mod draw2d;
 mod gpu;
 mod hunt;
+mod menu;
+mod save;
 mod shot;
 mod sound;
 mod ui;
@@ -21,8 +25,10 @@ use ctru::console::Console;
 use ctru::prelude::*;
 use glam::{Mat4, Vec3};
 
+use crate::draw2d::{Canvas, WHITE};
 use crate::gpu::Gpu;
-use crate::hunt::{Game, Pad};
+use crate::hunt::{Game, PackInfo, Pad, Setup, PACK_VERSION};
+use crate::menu::Menu;
 use crate::shot::Script;
 use crate::ui::{Tap, Ui};
 use crate::world::{Poser, World};
@@ -68,15 +74,20 @@ fn wait_for_start(apt: &Apt, hid: &mut Hid, gfx: &Gfx) {
 /// which leaves an Old 3DS only ~30 MiB of heap; textures, vertex buffers
 /// and sounds need under 16 (`c2-cook` checks each pack).
 #[no_mangle]
-static mut __ctru_linear_heap_size: u32 = 20 << 20;
+static mut __ctru_linear_heap_size: u32 = 24 << 20;
 
 /// Out of memory: say so and wait, instead of the default abort (which the
 /// system shows as a crash and restarts the console).
 fn out_of_memory(layout: std::alloc::Layout) {
-    // Nothing here may allocate.
+    // Nothing here may allocate. The bottom screen may be the GPU's: put
+    // the text console back on it.
+    unsafe {
+        ctru_sys::gfxSetDoubleBuffering(ctru_sys::GFX_BOTTOM, false);
+        ctru_sys::consoleInit(ctru_sys::GFX_BOTTOM, std::ptr::null_mut());
+    }
     println!(
-        "\n\nOut of memory ({} bytes wanted).\nThis pack is too big for this console:\n\
-         cook it with fewer animals or\n--target o3ds.\n\nPress START to quit.",
+        "\n\nOut of memory ({} bytes wanted).\nPick fewer animals or weapons,\n\
+         or cook the pack with --target o3ds.\n\nPress START to quit.",
         layout.size()
     );
     unsafe {
@@ -207,58 +218,154 @@ fn camera(pos: Vec3, alpha: f32, beta: f32) -> (Mat4, Vec3) {
     (glam::camera::rh::view::look_to_mat4(pos, fwd, Vec3::Y), fwd)
 }
 
-fn run(pack: &Path, apt: &Apt, hid: &mut Hid, console: &Console) -> Result<()> {
-    console.select();
-    let mut vfs = Vfs::new();
-    vfs.push(
-        "pack",
-        Box::new(PackBackend::open(pack).with_context(|| format!("opening {}", pack.display()))?),
-    );
+/// Input and test-script state shared by the menu and the hunts.
+struct Io<'a> {
+    apt: &'a Apt,
+    hid: &'a mut Hid,
+    script: Option<Script>,
+    /// Frames since start (the test script counts these).
+    frame: u32,
+    touch: Touch,
+    shot_n: u32,
+}
+
+impl Io<'_> {
+    /// Next frame's keys (held, pressed), with the test script's.
+    fn keys(&mut self) -> (KeyPad, KeyPad) {
+        self.hid.scan_input();
+        let (mut held, mut down) = (self.hid.keys_held(), self.hid.keys_down());
+        if let Some(s) = self.script.as_ref() {
+            let (h, d) = s.keys(self.frame);
+            held |= h;
+            down |= d;
+        }
+        (held, down)
+    }
+
+    fn script_tap(&self) -> Option<(f32, f32)> {
+        self.script.as_ref().and_then(|s| s.tap(self.frame))
+    }
+
+    fn quit(&self) -> bool {
+        self.script.as_ref().is_some_and(|s| s.done(self.frame))
+    }
+
+    /// L+SELECT, or the script: save the top screen.
+    fn screenshot(&mut self, held: KeyPad, down: KeyPad) -> Option<String> {
+        let name = (held.contains(KeyPad::L) && down.contains(KeyPad::SELECT))
+            .then(|| {
+                self.shot_n += 1;
+                format!("shot{:03}", self.shot_n)
+            })
+            .or_else(|| self.script.as_ref().and_then(|s| s.shot(self.frame)))?;
+        let p = format!("{DIR}/shots/{name}.tga");
+        Some(match shot::save_top(&p) {
+            Ok(()) => format!("saved {p}"),
+            Err(e) => format!("screenshot failed: {e}"),
+        })
+    }
+}
+
+/// The setup menu until a hunt is picked (`None`: quit).
+fn menu(
+    vfs: &Vfs,
+    info: &PackInfo,
+    gpu: &mut Gpu,
+    io: &mut Io,
+    note: Option<String>,
+) -> Result<Option<Setup>> {
+    let mut m = Menu::new(vfs, info.clone())?;
+    if let Some(n) = note {
+        m.set_message(n);
+    }
+    while io.apt.main_loop() {
+        let (held, down) = io.keys();
+        let (_, mut tap) = read_pad(io.hid, held, down, &mut io.touch);
+        if let Some(t) = io.script_tap() {
+            tap = Some(t);
+        }
+        let mut pick = tap.and_then(|(x, y)| m.tap(x, y));
+        if down.contains(KeyPad::A) {
+            pick = pick.or_else(|| m.next());
+        }
+        if down.contains(KeyPad::B) {
+            m.back();
+        }
+        if down.contains(KeyPad::START) || io.quit() {
+            return Ok(None);
+        }
+        gpu.begin([0, 0, 0]);
+        m.draw(gpu);
+        gpu.end();
+        if let Some(msg) = io.screenshot(held, down) {
+            m.set_message(msg);
+        }
+        io.frame += 1;
+        if pick.is_some() {
+            return Ok(pick);
+        }
+    }
+    Ok(None)
+}
+
+/// "Loading..." on both screens while a hunt loads.
+fn loading_screen(vfs: &Vfs, gpu: &mut Gpu, what: &str) {
+    let mut c = Canvas::new(ui::load(vfs, "C2RS/FONT.TX"));
+    // Two frames, so both framebuffers show it.
+    for _ in 0..2 {
+        c.new_frame();
+        gpu.begin([0, 0, 0]);
+        gpu.begin_2d(None);
+        c.text_c(gpu, 200.0, 112.0, 2.0, WHITE, "Loading...");
+        c.text_c(gpu, 200.0, 136.0, 1.0, WHITE, what);
+        gpu.begin_2d(Some([0, 0, 0]));
+        gpu.end();
+    }
+}
+
+/// One hunt, until the hunter leaves (saved) or dies (not saved). Returns a
+/// line for the menu.
+fn hunt(vfs: &Vfs, info: &PackInfo, setup: Setup, gpu: &mut Gpu, io: &mut Io) -> Result<String> {
+    loading_screen(vfs, gpu, &setup.area);
+    let room0 = save::load(0);
     let t0 = ticks();
-    let mut game = Game::load(&vfs, ticks() as u32, &mut |what| {
-        println!("  {}", mem_line());
-        println!("  loading {what}...")
-    })?;
-    println!("  {}", mem_line());
-    println!("  GPU data...");
-    let mut gpu = Gpu::new().context("citro3d init failed")?;
+    let mut game = Game::load(
+        vfs,
+        info.clone(),
+        setup,
+        room0.clone(),
+        ticks() as u32,
+        &mut |_| {},
+    )?;
     let mut world = World::new(
-        &vfs,
+        vfs,
         &game.area,
-        game.info.draw.clone(),
+        game.draw.clone(),
         &game.cars,
         &game.weapon_cars,
     );
-    let mut ui = Ui::new(&vfs, &game);
-    let (mut sound, sound_err) = match sound::Sound::new(&vfs, game.info.sound_rate) {
+    let mut ui = Ui::new(vfs, &game);
+    let (mut sound, sound_err) = match sound::Sound::new(vfs, &game) {
         Ok(s) => (Some(s), None),
         Err(e) => (None, Some(e)),
     };
     game.trim();
-    drop(vfs);
-    println!(
-        "  ready in {:.1} s ({} animals)",
+    let ready = format!(
+        "ready in {:.1} s, {} animals",
         (ticks() - t0) as f64 / TICKS_PER_SEC,
         game.hunt.herd.chars.len()
     );
-    println!("  {}", mem_line());
-
-    let mut script = Script::load(&format!("{DIR}/autotest.txt"));
-    let mut touch = Touch::default();
+    let mut message: Option<(String, u32)> = Some((sound_err.unwrap_or(ready), io.frame + 300));
     let mut last = ticks();
     let mut fps = 0.0f32;
-    let mut frame = 0u32;
-    let mut message: Option<(String, u32)> = sound_err.map(|e| (e, 600));
-    let mut shot_n = 0;
-    while apt.main_loop() {
-        hid.scan_input();
-        let (mut held, mut down) = (hid.keys_held(), hid.keys_down());
-        if let Some(s) = script.as_mut() {
-            let (h, d) = s.keys(frame);
-            held |= h;
-            down |= d;
-        }
-        if let Some([x, z, a, b]) = script.as_ref().and_then(|s| s.cam(frame)) {
+    // Smoothed ms spent simulating, drawing the world, drawing the screens'
+    // 2D, and waiting for the GPU / vsync.
+    let mut ms = [0.0f32; 4];
+    let ms_of = |t0: u64| ((ticks() - t0) as f64 / TICKS_PER_SEC * 1000.0) as f32;
+    while io.apt.main_loop() {
+        let frame = io.frame;
+        let (held, down) = io.keys();
+        if let Some([x, z, a, b]) = io.script.as_ref().and_then(|s| s.cam(frame)) {
             let p = &mut game.hunt.player;
             p.x = x;
             p.z = z;
@@ -268,8 +375,8 @@ fn run(pack: &Path, apt: &Apt, hid: &mut Hid, console: &Console) -> Result<()> {
             game.hunt.paused = true;
             game.prev_cam = game.hunt.camera().0;
         }
-        let (mut pad, mut tap) = read_pad(hid, held, down, &mut touch);
-        if let Some(t) = script.as_ref().and_then(|s| s.tap(frame)) {
+        let (mut pad, mut tap) = read_pad(io.hid, held, down, &mut io.touch);
+        if let Some(t) = io.script_tap() {
             tap = Some(t);
         }
         match tap.and_then(|(x, y)| ui.tap(x, y)) {
@@ -287,23 +394,26 @@ fn run(pack: &Path, apt: &Apt, hid: &mut Hid, console: &Console) -> Result<()> {
         if dt > 0.0 {
             fps = fps * 0.9 + (1.0 / dt) * 0.1;
         }
+        let t_upd = ticks();
         game.update(&pad, dt.min(0.1));
         if let Some(s) = sound.as_mut() {
             s.update(&game.events, &game.hunt, dt.min(0.1));
         }
+        let m_upd = ms_of(t_upd);
         for e in game.events.drain(..) {
             if let GameEvent::Message(m) = e {
                 message = Some((m, frame + 180));
             }
         }
         match game.hunt.outcome() {
-            Some(Outcome::Exited) => break,
-            Some(Outcome::Died) => {
-                if let Some(s) = sound.as_mut() {
-                    s.stop_all();
-                }
-                game.restart();
+            Some(Outcome::Exited) => {
+                return Ok(match save::store(&game.hunt.room) {
+                    Ok(()) => format!("Saved. Score {}", game.hunt.room.score),
+                    Err(e) => format!("save failed: {e}"),
+                });
             }
+            // Dying discards this hunt's trophies (the save isn't written).
+            Some(Outcome::Died) => return Ok("You died. Nothing was saved.".into()),
             None => {}
         }
 
@@ -313,51 +423,95 @@ fn run(pack: &Path, apt: &Apt, hid: &mut Hid, console: &Console) -> Result<()> {
         let pos = Vec3::from(game.prev_cam).lerp(Vec3::from(pos), t);
         let (view, fwd) = camera(pos, alpha, beta);
         let fovy = 2.0 * (0.6 / game.hunt.zoom().max(0.1)).atan();
+        let t_wait = ticks();
         gpu.begin(world.sky);
+        let m_wait = ms_of(t_wait);
+        let t_draw = ticks();
         let poser = Poser {
             cars: &game.cars,
             weapon_cars: &game.weapon_cars,
         };
-        world.draw(
-            &mut gpu, &game.area, &game.hunt, &poser, &view, pos, fwd, fovy,
-        );
+        world.draw(gpu, &game.area, &game.hunt, &poser, &view, pos, fwd, fovy);
+        let m_draw = ms_of(t_draw);
         let msg = message
             .as_ref()
             .filter(|m| m.1 > frame)
             .map(|m| m.0.clone());
         let debug = format!(
-            "{} {fps:.0}fps cmd {:.0}% {}\n{}",
+            "{} {fps:.0}fps cmd {:.0}% {}\n{}\nms: sim {:.1} world {:.1} 2d {:.1} wait {:.1}",
             game.info.target,
             gpu.cmdbuf_usage() * 100.0,
             mem_line(),
             sound
                 .as_ref()
-                .map_or("no sound".into(), sound::Sound::status)
+                .map_or("no sound".into(), sound::Sound::status),
+            ms[0],
+            ms[1],
+            ms[2],
+            ms[3],
         );
+        let t_ui = ticks();
         ui.new_frame();
-        ui.draw_top(&mut gpu, &game, &game.hunt, &debug);
-        ui.draw_bottom(&mut gpu, &game, msg.as_deref());
+        ui.draw_top(gpu, &game, &game.hunt, &debug);
+        ui.draw_bottom(gpu, &game, msg.as_deref());
         gpu.end();
-
-        let shoot = (held.contains(KeyPad::L) && down.contains(KeyPad::SELECT))
-            .then(|| {
-                shot_n += 1;
-                format!("shot{shot_n:03}")
-            })
-            .or_else(|| script.as_mut().and_then(|s| s.shot(frame)));
-        if let Some(name) = shoot {
-            let p = format!("{DIR}/shots/{name}.tga");
-            match shot::save_top(&p) {
-                Ok(()) => message = Some((format!("saved {p}"), frame + 120)),
-                Err(e) => message = Some((format!("screenshot failed: {e}"), frame + 120)),
+        let m_ui = ms_of(t_ui);
+        // Frozen while paused, so the pause screen shows them running.
+        if !game.hunt.paused {
+            for (a, b) in ms.iter_mut().zip([m_upd, m_draw, m_ui, m_wait]) {
+                *a = *a * 0.95 + b * 0.05;
             }
         }
-        if script.as_ref().is_some_and(|s| s.done(frame)) {
-            break;
+
+        if let Some(m) = io.screenshot(held, down) {
+            message = Some((m, frame + 120));
         }
-        frame += 1;
+        if io.quit() {
+            return Ok(String::new());
+        }
+        io.frame += 1;
     }
-    Ok(())
+    Ok(String::new())
+}
+
+fn run(pack: &Path, apt: &Apt, hid: &mut Hid) -> Result<()> {
+    let mut vfs = Vfs::new();
+    vfs.push(
+        "pack",
+        Box::new(PackBackend::open(pack).with_context(|| format!("opening {}", pack.display()))?),
+    );
+    let info = PackInfo::parse(&String::from_utf8_lossy(
+        &vfs.read("C2RS/INFO.TXT")
+            .context("not a c2rs pack (no C2RS/INFO.TXT)")?,
+    ));
+    if info.pack != PACK_VERSION {
+        anyhow::bail!(
+            "this pack is version {}, this app reads version {PACK_VERSION}; cook it again",
+            info.pack
+        );
+    }
+    let mut gpu = Gpu::new().context("citro3d init failed")?;
+    let mut io = Io {
+        apt,
+        hid,
+        script: Script::load(&format!("{DIR}/autotest.txt")),
+        frame: 0,
+        touch: Touch::default(),
+        shot_n: 0,
+    };
+    let mut note = None;
+    loop {
+        let Some(setup) = menu(&vfs, &info, &mut gpu, &mut io, note.take())? else {
+            return Ok(());
+        };
+        note = Some(match hunt(&vfs, &info, setup, &mut gpu, &mut io) {
+            Ok(n) => n,
+            Err(e) => format!("{e:#}"),
+        });
+        if io.quit() || !io.apt.main_loop() {
+            return Ok(());
+        }
+    }
 }
 
 fn main() {
@@ -388,7 +542,8 @@ fn main() {
         return;
     };
     println!("pack: {}", pack.display());
-    if let Err(e) = run(pack, &apt, &mut hid, &console) {
+    if let Err(e) = run(pack, &apt, &mut hid) {
+        console.select();
         println!("\nerror: {e:#}");
         wait_for_start(&apt, &mut hid, &gfx);
     }

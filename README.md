@@ -382,11 +382,12 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
   - [x] sky, sun/moon, ship, animated objects, particles, blood, water rings, binoculars
   - [x] bottom screen: touch weapon picker | map with animals in range | call picker (owner's design)
   - [x] sound on the DSP (shared event mapping and levels in `c2_core::sound`)
-  - [ ] menus (area, time, animals, weapons from a multi-area pack) and saves
+  - [x] one pack for the whole game; touch menu (area + time, animals, weapons + gear; owner's design) and saves
+  - [ ] hunter name entry / several hunters, options screen
   - [ ] trophy room, scope cross-hairs, Old 3DS performance pass
 - [ ] M8 Modded 3DS
 
-_Last updated: 2026-10-18 — M7 in progress: 3DS sky/effects, touch bottom screen (weapons | map | calls), DSP sound. Next: menus and saves, then trophy room and an Old 3DS performance pass._
+_Last updated: 2026-10-18 — M7 in progress: whole-game packs, touch menu and saves, sound, touch bottom screen. Next: owner tests on Old 3DS/2DS (pause screen shows per-part ms), then performance, trophy room checks, scope cross-hairs._
 
 
 note from user: quick headsup, the carnivores 2 datafile is copied direct from my library and includes re-shade files as well, please do not port the re-shade files to 3ds or the rust re-write as that would overcomplicate things dramatically

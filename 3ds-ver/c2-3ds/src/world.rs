@@ -37,6 +37,8 @@ const DISC_K: f32 = 0.64;
 /// Pack settings that affect drawing (`C2RS/INFO.TXT`).
 #[derive(Debug, Clone)]
 pub struct DrawInfo {
+    /// `AREA1`..: where its files are (`C2RS/AREAn/`).
+    pub area: String,
     pub tile: usize,
     pub cols: usize,
     pub view: u32,
@@ -236,7 +238,9 @@ impl World {
         cars: &[Option<Car>],
         weapon_cars: &[Option<Car>],
     ) -> Self {
-        let terrain = parse_texture(&vfs.read("C2RS/TERRAIN.TX").unwrap_or_default()).ok();
+        let dir = format!("C2RS/{}", info.area);
+        let terrain =
+            parse_texture(&vfs.read(&format!("{dir}/TERRAIN.TX")).unwrap_or_default()).ok();
         let atlas_size = terrain
             .as_ref()
             .map_or((1, 1), |t| (usize::from(t.width), usize::from(t.height)));
@@ -257,24 +261,30 @@ impl World {
                 } else {
                     vertex_lights(&o.model.mesh, sun)
                 };
-                let m = Model::new(&p, &vl, load_texture(vfs, &format!("C2RS/OBJ{k}.TX")));
+                let m = Model::new(&p, &vl, load_texture(vfs, &format!("{dir}/OBJ{k}.TX")));
                 object_anims.push(o.animation.is_some().then_some((p, vl)));
                 m
             })
             .collect();
-        let mut sky_tex = load_texture(vfs, "C2RS/SKY.TX");
+        let mut sky_tex = load_texture(vfs, &format!("{dir}/SKY{}.TX", area.time as usize));
+        // Hunt2.cpp: MOON.3DF at night, SUN2.3DF otherwise.
+        let sun_name = if area.time == c2_core::area::TimeOfDay::Night {
+            "MOON"
+        } else {
+            "SUN"
+        };
         if let Some(t) = &mut sky_tex {
             t.repeat();
         }
         let sun_model = vfs
-            .read("C2RS/SUN.3DF")
+            .read(&format!("C2RS/{sun_name}.3DF"))
             .ok()
             .and_then(|d| c2_formats::three_df::parse(&d).ok())
             .and_then(|m| {
                 Model::new(
                     &PreparedModel::from_mesh(&m.mesh),
                     &[],
-                    load_texture(vfs, "C2RS/SUN.TX"),
+                    load_texture(vfs, &format!("C2RS/{sun_name}.TX")),
                 )
             });
         let mut placements = vec![Vec::new(); CHUNKS * CHUNKS];
@@ -471,7 +481,9 @@ impl World {
         let radius = self.info.view as f32;
         let far = radius * CELL * 1.5;
         let near = 16.0;
+        gpu.set_night(false);
         self.draw_sky(gpu, area, view, eye, fovy, hunt.real_time);
+        gpu.set_night(area.time.night_vision());
         gpu.set_projection(fovy, near, far);
         gpu.set_fog(self.sky, radius * CELL * 0.6, radius * CELL);
         gpu.texenv(None);

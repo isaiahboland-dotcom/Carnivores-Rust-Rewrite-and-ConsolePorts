@@ -2,6 +2,27 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-18 — M7: one pack for the whole game, and the 3DS menu
+- **Packs hold the whole game** (pack version 3): every area (plus the
+  trophy room), animal and weapon. The menu picks, and a hunt loads only its
+  area, the hunter, the ambient animals (always placed, as in the
+  original), the targets and the carried weapons
+  (`load::species_with` / `weapons_with`). Vanilla o3ds: 136 MiB on the SD
+  card.
+- **Night vision on the GPU** (a texture-combiner stage) instead of in
+  the cooker, so one set of textures serves every time of day.
+- **Linear memory 20 → 24 MiB.** With every ambient animal's sounds, a
+  hunt needs 12–17.5 MiB; the heap still fits the 23 MiB loading peak.
+  The cooker writes each piece's cost and the menu refuses a hunt that
+  doesn't fit ("Too much for this console") instead of risking a crash.
+- **Menu (owner's design, after the mobile game)**: touch steps on the
+  bottom screen (area hexagons + sun/sunset/moon; animal hexagons; weapon
+  and gear hexagons with Tranquilizer / Observer), a summary on the top.
+  Prices, points and what is saved follow the PC menu (`Menu.cpp`). One
+  hunter for now (`trophy00.sav`, named "Hunter"); name entry and more
+  hunters come later.
+- Dying goes back to the menu without saving, as from the PC menu.
+
 ## 2026-10-18 — M7: 3DS buttons
 Owner's request, for the Old 3DS / 2DS, which have no C-Stick: the face
 buttons look (X/B up/down, Y/A turn) and the D-Pad does what they did:

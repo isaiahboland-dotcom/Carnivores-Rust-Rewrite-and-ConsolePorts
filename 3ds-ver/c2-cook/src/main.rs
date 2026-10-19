@@ -1,11 +1,11 @@
 //! `c2-cook`: turns your game (vanilla, or with add-on mods / a recipe) into
-//! one pack file for the 3DS: the chosen area, animals and weapons as game
-//! files, plus their textures already converted for the 3DS GPU.
+//! one pack file for the 3DS: every area, animal and weapon as game files,
+//! their textures and sounds already converted for the 3DS, and the menu
+//! pictures. The 3DS loads only what is picked for a hunt.
 //!
 //! ```text
 //! c2-cook --game ../source/c2-original [--mod DIR]... [--recipe R.toml --mods DIR]
-//!         [--area 1] [--time day|dusk|night] [--dinos NAME,NAME] [--weapons NAME,NAME]
-//!         [--ambient] [--target n3ds|o3ds] [--force] --out c2rs.c2pk
+//!         [--areas 1,2] [--target n3ds|o3ds] [--force] --out c2rs.c2pk
 //! ```
 
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -25,12 +25,9 @@ use c2_vfs::{MemBackend, Vfs};
 
 const USAGE: &str = "usage:
   c2-cook --game <GAME_DIR> [--mod MOD]... [--recipe RECIPE.toml --mods DIR]
-          [--area N] [--time day|dusk|night] [--dinos NAME,NAME] [--weapons NAME,NAME]
-          [--ambient] [--target n3ds|o3ds] [--force] --out <PACK.c2pk>
+          [--areas N,N] [--target n3ds|o3ds] [--force] --out <PACK.c2pk>
 
-  --dinos    huntable animals to include, by _RES.TXT name (default: Parasaurolophus,Velociraptor)
-  --weapons  weapons to include, by name (default: the first two)
-  --ambient  also include the small ambient animals (Moschops, Gallimimus, ...)
+  --areas    only these areas (default: all, plus the trophy room)
   --target   n3ds (New 3DS, default) or o3ds (Old 3DS / 2DS: smaller textures, shorter view)
   --force    write the pack even if it is over the target's memory budget
 
@@ -61,9 +58,9 @@ const N3DS: Profile = Profile {
     model_tex: 128,
     view: 42,
     object_view: 28,
-    // ~124 MiB for the app: 20 MiB linear (`c2-3ds` sets it), code, slack.
+    // ~124 MiB for the app: 24 MiB linear (`c2-3ds` sets it), code, slack.
     heap_kb: 96 * 1024,
-    linear_kb: 16 * 1024,
+    linear_kb: 22 * 1024,
     sound_rate: SAMPLE_RATE,
 };
 
@@ -73,9 +70,9 @@ const O3DS: Profile = Profile {
     model_tex: 64,
     view: 26,
     object_view: 18,
-    // 64 MiB for the app: 20 MiB linear, code, slack.
-    heap_kb: 38 * 1024,
-    linear_kb: 16 * 1024,
+    // 64 MiB for the app: 24 MiB linear, code, slack.
+    heap_kb: 34 * 1024,
+    linear_kb: 22 * 1024,
     sound_rate: SAMPLE_RATE,
 };
 
@@ -123,7 +120,7 @@ static ALLOC: Counting = Counting;
 /// Peak heap bytes for loading the pack the way `c2-3ds` does
 /// (`Game::load` in `c2-3ds/src/hunt.rs`; keep the two in step). Measured
 /// here on the PC, where pointers are wider, so it errs on the high side.
-fn load_peak(entries: &[(String, Vec<u8>)], area: &str, time: TimeOfDay) -> Result<usize> {
+fn load_peak(entries: &[(String, Vec<u8>)], area: &str) -> Result<usize> {
     let mut mem = MemBackend::new();
     for (name, data) in entries {
         mem.insert(name, data.clone());
@@ -133,7 +130,7 @@ fn load_peak(entries: &[(String, Vec<u8>)], area: &str, time: TimeOfDay) -> Resu
     let base = IN_USE.load(Ordering::Relaxed);
     PEAK.store(base, Ordering::Relaxed);
     let loaded = (
-        c2_core::load::area_with(&vfs, area, time, true)?,
+        c2_core::load::area_with(&vfs, area, TimeOfDay::Day, true)?,
         c2_core::load::res(&vfs).map(|res| {
             let s = c2_core::load::species(&vfs, &res);
             let w = c2_core::load::weapons(&vfs, &res);
@@ -151,21 +148,14 @@ struct Args {
     mods: Vec<PathBuf>,
     recipe: Option<PathBuf>,
     mods_dir: Option<PathBuf>,
-    area: u32,
-    time: Option<String>,
-    dinos: Option<String>,
-    weapons: Option<String>,
-    ambient: bool,
+    areas: Option<String>,
     target: Option<String>,
     force: bool,
     out: Option<PathBuf>,
 }
 
 fn parse_args() -> Result<Args> {
-    let mut a = Args {
-        area: 1,
-        ..Default::default()
-    };
+    let mut a = Args::default();
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
         let mut val = || {
@@ -177,13 +167,9 @@ fn parse_args() -> Result<Args> {
             "--mod" => a.mods.push(val()?.into()),
             "--recipe" => a.recipe = Some(val()?.into()),
             "--mods" => a.mods_dir = Some(val()?.into()),
-            "--area" => a.area = val()?.parse().context("--area takes a number")?,
-            "--time" => a.time = Some(val()?),
-            "--dinos" => a.dinos = Some(val()?),
-            "--weapons" => a.weapons = Some(val()?),
+            "--areas" => a.areas = Some(val()?),
             "--target" => a.target = Some(val()?),
             "--out" => a.out = Some(val()?.into()),
-            "--ambient" => a.ambient = true,
             "--force" => a.force = true,
             "-h" | "--help" => {
                 println!("{USAGE}");
@@ -345,21 +331,14 @@ fn to_mono16(pcm: &[u8], rate0: u32, channels: u16, bits: u16, rate: u32) -> Vec
     out
 }
 
-/// `BrightenTexture` at night: every texel becomes `(G/8, G, G/8)`.
-fn night_vision(rgba: &mut [u8]) {
-    for p in rgba.as_chunks_mut::<4>().0 {
-        let lo = (p[1] >> 3) & !7;
-        p[0] = lo;
-        p[2] = lo;
-    }
-}
-
 struct Cooker {
     profile: &'static Profile,
-    night: bool,
     entries: Vec<(String, Vec<u8>)>,
-    /// Estimated 3DS GPU memory by kind, KiB.
-    linear: BTreeMap<&'static str, usize>,
+    /// Linear memory by scope ("hunt" = every hunt, "AREAn", "char{i}",
+    /// "wpn{i}", "menu") and kind, KiB.
+    linear: BTreeMap<String, BTreeMap<&'static str, usize>>,
+    /// The scope `add_linear` counts into.
+    scope: String,
     /// Sounds go in as 16-bit mono at this rate.
     sound_rate: u32,
 }
@@ -398,7 +377,7 @@ impl Cooker {
         if out.is_empty() {
             return;
         }
-        *self.linear.entry("sounds").or_default() += out.len() / 1024;
+        self.count("sounds", out.len());
         self.add(format!("C2RS/SND/{name}.PCM"), out);
     }
 
@@ -418,43 +397,127 @@ impl Cooker {
     /// A 2D picture, already sized, as an RGBA5551 texture.
     fn picture(&mut self, name: &str, rgba: &[u8], w: usize, h: usize) {
         let t = tile(rgba, w, h, TexFormat::Rgba5551);
-        *self.linear.entry("textures").or_default() += t.data.len() / 1024;
+        self.count("textures", t.data.len());
         self.add(name, write_texture(&t));
+    }
+
+    /// Counts `bytes` of linear memory of `kind` in the current scope.
+    fn count(&mut self, kind: &'static str, bytes: usize) {
+        *self
+            .linear
+            .entry(self.scope.clone())
+            .or_default()
+            .entry(kind)
+            .or_default() += bytes / 1024;
+    }
+
+    /// An RGB565 texture (terrain, sky, map) from RGBA8.
+    fn opaque(&mut self, name: &str, rgba: &[u8], w: usize, h: usize) {
+        let t = tile(rgba, w, h, TexFormat::Rgb565);
+        self.count("textures", t.data.len());
+        self.add(name, write_texture(&t));
+    }
+
+    /// A menu picture (357x208 in the original) fitted to `w` wide, on a
+    /// `w` x `w` canvas.
+    fn menu_picture(&mut self, vfs: &Vfs, file: &str, name: &str, w: usize) {
+        let Some(p) = vfs
+            .read(&format!("HUNTDAT/MENU/PICS/{file}"))
+            .ok()
+            .and_then(|d| c2_formats::tga::parse(&d).ok())
+        else {
+            return;
+        };
+        let px = image_to_rgba8(&p.pixels, false);
+        let h = (w * p.height / p.width.max(1)).min(w);
+        self.picture(name, &fit(&px, p.width, p.height, w, h, w, w), w, w);
     }
 
     /// A model texture (256x256 RGBA8) at the profile's size.
     fn model_texture(&mut self, name: String, rgba: &[u8]) {
         let side = self.profile.model_tex.min(256);
-        let mut px = downscale(rgba, 256, 256, side, side);
-        if self.night {
-            night_vision(&mut px);
-        }
-        let t = tile(&px, side, side, TexFormat::Rgba5551);
-        *self.linear.entry("textures").or_default() += t.data.len() / 1024;
-        self.add(name, write_texture(&t));
+        let px = downscale(rgba, 256, 256, side, side);
+        self.picture(&name, &px, side, side);
     }
 }
 
-fn pick(names: &[String], want: &str, what: &str) -> Result<Vec<usize>> {
-    want.split(',')
-        .map(str::trim)
-        .filter(|w| !w.is_empty())
-        .map(|w| {
-            names
-                .iter()
-                .position(|n| n.eq_ignore_ascii_case(w))
-                .with_context(|| format!("no {what} named {w:?}; there are: {}", names.join(", ")))
-        })
-        .collect()
+/// One area: its map and slimmed RSC, terrain atlas, object textures, the
+/// three skies, the overview map and its sounds, under `C2RS/{name}/`.
+fn cook_area(c: &mut Cooker, vfs: &Vfs, name: &str) -> Result<()> {
+    c.scope = name.to_string();
+    c.copy(vfs, &format!("HUNTDAT/AREAS/{name}.MAP"))?;
+    let area = c2_core::load::area(vfs, name, TimeOfDay::Day)?;
+    let profile = c.profile;
+    // Terrain textures in one atlas, square, power-of-two.
+    let n = area.rsc.textures.len().max(1);
+    let mut t = profile.terrain_tile;
+    while (1024 / t) * (1024 / t) < n && t > 8 {
+        t /= 2;
+    }
+    let mut side = t;
+    while (side / t) * (side / t) < n {
+        side *= 2;
+    }
+    let cols = side / t;
+    let mut atlas = vec![0u8; side * side * 4];
+    for (k, tex) in area.rsc.textures.iter().enumerate() {
+        let px = downscale(&image_to_rgba8(tex, false), 128, 128, t, t);
+        let (ox, oy) = ((k % cols) * t, (k / cols) * t);
+        for y in 0..t {
+            let d = ((oy + y) * side + ox) * 4;
+            atlas[d..d + t * 4].copy_from_slice(&px[y * t * 4..(y + 1) * t * 4]);
+        }
+    }
+    c.opaque(&format!("C2RS/{name}/TERRAIN.TX"), &atlas, side, side);
+    // The overview map (GenerateMapImage) and the cloud planes.
+    let map = image_to_rgba8(&c2_core::game::Hunt::map_image(&area), false);
+    c.opaque(&format!("C2RS/{name}/MAP.TX"), &map, 256, 256);
+    let sky_side = (profile.model_tex * 2).min(256);
+    for (i, sky) in area.rsc.skies.iter().enumerate() {
+        let px = downscale(&image_to_rgba8(sky, false), 256, 256, sky_side, sky_side);
+        c.add(
+            format!("C2RS/{name}/SKY{i}.TX"),
+            write_texture(&tile(&px, sky_side, sky_side, TexFormat::Rgb565)),
+        );
+    }
+    // One sky is loaded per hunt.
+    c.count("textures", sky_side * sky_side * 2);
+    for (k, o) in area.rsc.objects.iter().enumerate() {
+        let p = PreparedModel::from_mesh(&o.model.mesh);
+        c.model_texture(format!("C2RS/{name}/OBJ{k}.TX"), &p.texture_rgba);
+        // Vertex buffer: 24 bytes per face corner.
+        c.count("vertex buffers", p.faces.len() * 3 * 24);
+    }
+    // The RSC without what is now in the .TX files or only the PC uses:
+    // terrain and object textures, sounds (kept as empty sounds).
+    let mut rsc = area.rsc;
+    rsc.textures = Vec::new();
+    for o in &mut rsc.objects {
+        o.model.mesh.texture = Vec::new();
+    }
+    for (k, s) in rsc.random_sounds.iter_mut().enumerate() {
+        let pcm = std::mem::take(s);
+        c.sound(&format!("{name}/R{k}"), &pcm, SAMPLE_RATE, 1, 16);
+    }
+    for (k, amb) in rsc.ambients.iter_mut().enumerate() {
+        let pcm = std::mem::take(&mut amb.pcm);
+        c.sound(&format!("{name}/A{k}"), &pcm, SAMPLE_RATE, 1, 16);
+    }
+    c.add(
+        format!("HUNTDAT/AREAS/{name}.RSC"),
+        c2_formats::rsc::write(&rsc),
+    );
+    c.add(
+        format!("C2RS/{name}/INFO.TXT"),
+        format!("terrain_tile = {t}\natlas_cols = {cols}\nterrain_count = {n}\n").into_bytes(),
+    );
+    Ok(())
 }
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            // `c2_core::load` warns about every species whose model is not in
-            // the pack, which the cooker leaves out on purpose.
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "warn,c2_core::load=error".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()),
         )
         .init();
     let a = parse_args()?;
@@ -465,49 +528,37 @@ fn main() -> Result<()> {
         "o3ds" => &O3DS,
         t => bail!("unknown target {t:?} (n3ds or o3ds)"),
     };
-    let time = match a.time.as_deref().unwrap_or("day") {
-        "day" => TimeOfDay::Day,
-        "dusk" => TimeOfDay::Dusk,
-        "night" => TimeOfDay::Night,
-        t => bail!("unknown time {t:?} (day, dusk or night)"),
-    };
     let vfs = merged(&a, &game)?;
     let res = c2_core::load::res(&vfs)?;
     let mut c = Cooker {
         profile,
-        night: time == TimeOfDay::Night,
         entries: Vec::new(),
         linear: BTreeMap::new(),
+        scope: "hunt".into(),
         sound_rate: profile.sound_rate,
     };
-
-    // Which animals: the hunter (his body after a death), the chosen
-    // huntable species and, optionally, the ambient ones (CType 1..=5).
     let infos: Vec<DinoInfo> = res.characters.iter().map(DinoInfo::from_def).collect();
-    let names: Vec<String> = infos.iter().map(|i| i.name.clone()).collect();
-    let mut chars = vec![0];
-    if a.ambient {
-        chars.extend(1..=5.min(infos.len().saturating_sub(1)));
-    }
-    let dinos = pick(
-        &names,
-        a.dinos.as_deref().unwrap_or("Parasaurolophus,Velociraptor"),
-        "animal",
-    )?;
-    chars.extend(&dinos);
-    chars.sort_unstable();
-    chars.dedup();
     let winfos: Vec<WeaponInfo> = res.weapons.iter().map(WeaponInfo::from_def).collect();
-    let wnames: Vec<String> = winfos.iter().map(|w| w.name.clone()).collect();
-    let weapons = match &a.weapons {
-        Some(w) => pick(&wnames, w, "weapon")?,
-        None => (0..wnames.len().min(2)).collect(),
-    };
 
+    // Areas: AREA1.. as present (or as asked), then the trophy room.
+    let wanted: Option<Vec<u32>> = a
+        .areas
+        .as_deref()
+        .map(|l| l.split(',').filter_map(|v| v.trim().parse().ok()).collect());
+    let mut areas: Vec<String> = (1..=9)
+        .filter(|n| wanted.as_ref().is_none_or(|w| w.contains(n)))
+        .map(|n| format!("AREA{n}"))
+        .filter(|n| vfs.resolve(&format!("HUNTDAT/AREAS/{n}.MAP")).is_some())
+        .collect();
+    if areas.is_empty() {
+        bail!("no areas found (HUNTDAT/AREAS/AREAn.MAP)");
+    }
+    if wanted.is_none() && vfs.resolve("HUNTDAT/AREAS/TROPHY.MAP").is_some() {
+        areas.push("TROPHY".into());
+    }
+
+    // Everything a hunt can use, whatever is picked.
     c.copy(&vfs, "HUNTDAT/_RES.TXT")?;
-    let area_name = format!("AREA{}", a.area);
-    c.copy(&vfs, &format!("HUNTDAT/AREAS/{area_name}.MAP"))?;
-    // The pickup ship and the water ring (`WCIRCLE2.CAR`, RenderWCircles).
     for (file, tx) in [("SHIP2A.CAR", "SHIP"), ("WCIRCLE2.CAR", "RING")] {
         let path = format!("HUNTDAT/{file}");
         if vfs.resolve(&path).is_some() {
@@ -515,240 +566,202 @@ fn main() -> Result<()> {
             c.model_texture(format!("C2RS/{tx}.TX"), &rgba);
         }
     }
-    // Binoculars (`RenderNearModel(Binocular, ...)`).
-    if let Ok(d) = vfs.read("HUNTDAT/BINOCUL.3DF") {
-        let m = c2_formats::three_df::parse(&d).context("parsing HUNTDAT/BINOCUL.3DF")?;
-        c.add("C2RS/BINOC.3DF", d);
-        c.model_texture(
-            "C2RS/BINOC.TX".into(),
-            &PreparedModel::from_mesh(&m.mesh).texture_rgba,
-        );
+    // Binoculars, sun and moon (`Hunt2.cpp`: MOON.3DF at night).
+    for (file, tx) in [("BINOCUL", "BINOC"), ("SUN2", "SUN"), ("MOON", "MOON")] {
+        let path = format!("HUNTDAT/{file}.3DF");
+        if let Ok(d) = vfs.read(&path) {
+            let m = c2_formats::three_df::parse(&d).with_context(|| format!("parsing {path}"))?;
+            c.add(format!("C2RS/{tx}.3DF"), d);
+            c.model_texture(
+                format!("C2RS/{tx}.TX"),
+                &PreparedModel::from_mesh(&m.mesh).texture_rgba,
+            );
+        }
     }
-    // Sun or moon (`Hunt2.cpp`: MOON.3DF at night, SUN2.3DF otherwise).
-    let sun = if time == TimeOfDay::Night {
-        "HUNTDAT/MOON.3DF"
-    } else {
-        "HUNTDAT/SUN2.3DF"
-    };
-    if let Ok(d) = vfs.read(sun) {
-        let m = c2_formats::three_df::parse(&d).with_context(|| format!("parsing {sun}"))?;
-        c.add("C2RS/SUN.3DF", d);
-        // Not night-vision tinted: the PC draws it as it is.
-        let night = std::mem::replace(&mut c.night, false);
-        c.model_texture(
-            "C2RS/SUN.TX".into(),
-            &PreparedModel::from_mesh(&m.mesh).texture_rgba,
-        );
-        c.night = night;
-    }
-    for &i in &chars {
-        let rgba = c.car(
-            &vfs,
-            &format!("HUNTDAT/{}", infos[i].file),
-            &format!("C{i}_"),
-        )?;
+    for (i, info) in infos.iter().enumerate() {
+        let path = format!("HUNTDAT/{}", info.file);
+        if vfs.resolve(&path).is_none() {
+            continue;
+        }
+        c.scope = format!("char{i}");
+        let rgba = c.car(&vfs, &path, &format!("C{i}_"))?;
         c.model_texture(format!("C2RS/CHAR{i}.TX"), &rgba);
+        // Its call (MENU/PICS/CALLn.TGA, SOUNDFX/CALLS/CALLn_*.WAV,
+        // n = AI - 9).
+        let ai = info.ai;
+        if ai < 10 {
+            continue;
+        }
+        for (v, l) in ["A", "B", "C"].iter().enumerate() {
+            let f = format!("HUNTDAT/SOUNDFX/CALLS/CALL{}_{l}.WAV", ai - 9);
+            c.wav(&vfs, &f, &format!("K{ai}_{v}"));
+        }
+        if let Some(p) = vfs
+            .read(&format!("HUNTDAT/MENU/PICS/CALL{}.TGA", ai - 9))
+            .ok()
+            .and_then(|d| c2_formats::tga::parse(&d).ok())
+        {
+            let px = image_to_rgba8(&p.pixels, false);
+            let px = fit(&px, p.width, p.height, 64, 52, 64, 64);
+            c.picture(&format!("C2RS/CALL{ai}.TX"), &px, 64, 64);
+        }
     }
-    for &i in &weapons {
-        let rgba = c.car(
-            &vfs,
-            &format!("HUNTDAT/WEAPONS/{}", winfos[i].file),
-            &format!("W{i}_"),
-        )?;
+    for (i, w) in winfos.iter().enumerate() {
+        let path = format!("HUNTDAT/WEAPONS/{}", w.file);
+        if vfs.resolve(&path).is_none() {
+            continue;
+        }
+        c.scope = format!("wpn{i}");
+        let rgba = c.car(&vfs, &path, &format!("W{i}_"))?;
         c.model_texture(format!("C2RS/WPN{i}.TX"), &rgba);
+        c.menu_picture(
+            &vfs,
+            &format!("WEAPON{}.TGA", i + 1),
+            &format!("C2RS/WPNPIC{i}.TX"),
+            64,
+        );
     }
-
-    // The area: its terrain textures in one atlas, one texture per object.
-    let area = c2_core::load::area(&vfs, &area_name, time)?;
-    let n = area.rsc.textures.len().max(1);
-    let mut t = profile.terrain_tile;
-    while (1024 / t) * (1024 / t) < n && t > 8 {
-        t /= 2;
-    }
-    // Square: the smallest power-of-two side that holds every tile.
-    let mut side = t;
-    while (side / t) * (side / t) < n {
-        side *= 2;
-    }
-    let cols = side / t;
-    let (aw, ah) = (side, side);
-    let mut atlas = vec![0u8; aw * ah * 4];
-    for (k, tex) in area.rsc.textures.iter().enumerate() {
-        let mut px = downscale(&image_to_rgba8(tex, false), 128, 128, t, t);
-        if c.night {
-            night_vision(&mut px);
-        }
-        let (ox, oy) = ((k % cols) * t, (k / cols) * t);
-        for y in 0..t {
-            let d = ((oy + y) * aw + ox) * 4;
-            atlas[d..d + t * 4].copy_from_slice(&px[y * t * 4..(y + 1) * t * 4]);
-        }
-    }
-    // Bottom screen: the font, the map (GenerateMapImage), call icons for
-    // the chosen animals (MENU/PICS/CALLn.TGA, n = AI - 9) and weapon
-    // pictures (WEAPONn.TGA, n = index + 1), at the sizes c2-3ds draws.
-    c.picture("C2RS/FONT.TX", &font(), 128, 64);
-    let map = image_to_rgba8(&c2_core::game::Hunt::map_image(&area), false);
-    let map = tile(&map, 256, 256, TexFormat::Rgb565);
-    *c.linear.entry("textures").or_default() += map.data.len() / 1024;
-    c.add("C2RS/MAP.TX", write_texture(&map));
-    let menu_pic = |name: &str| -> Option<(usize, usize, Vec<u8>)> {
-        let p =
-            c2_formats::tga::parse(&vfs.read(&format!("HUNTDAT/MENU/PICS/{name}")).ok()?).ok()?;
-        Some((p.width, p.height, image_to_rgba8(&p.pixels, false)))
-    };
-    for &i in &dinos {
-        let ai = infos[i].ai;
-        if let Some((w, h, px)) = menu_pic(&format!("CALL{}.TGA", ai - 9)) {
-            c.picture(
-                &format!("C2RS/CALL{ai}.TX"),
-                &fit(&px, w, h, 64, 52, 64, 64),
-                64,
-                64,
-            );
-        }
-    }
-    for &i in &weapons {
-        if let Some((w, h, px)) = menu_pic(&format!("WEAPON{}.TGA", i + 1)) {
-            c.picture(
-                &format!("C2RS/WPNPIC{i}.TX"),
-                &fit(&px, w, h, 64, 37, 64, 64),
-                64,
-                64,
-            );
-        }
-    }
-
-    // The cloud plane (RenderSkyPlane), as on the PC: no night vision.
-    let sky_side = (profile.model_tex * 2).min(256);
-    let sky = downscale(
-        &image_to_rgba8(&area.rsc.skies[time as usize], false),
-        256,
-        256,
-        sky_side,
-        sky_side,
-    );
-    let sky = tile(&sky, sky_side, sky_side, TexFormat::Rgb565);
-    *c.linear.entry("textures").or_default() += sky.data.len() / 1024;
-    c.add("C2RS/SKY.TX", write_texture(&sky));
-    let tex = tile(&atlas, aw, ah, TexFormat::Rgb565);
-    *c.linear.entry("textures").or_default() += tex.data.len() / 1024;
-    c.add("C2RS/TERRAIN.TX", write_texture(&tex));
-    for (k, o) in area.rsc.objects.iter().enumerate() {
-        let p = PreparedModel::from_mesh(&o.model.mesh);
-        c.model_texture(format!("C2RS/OBJ{k}.TX"), &p.texture_rgba);
-        // Vertex buffer: 24 bytes per face corner.
-        *c.linear.entry("vertex buffers").or_default() += p.faces.len() * 3 * 24 / 1024;
-    }
-    // Terrain chunks around the hunter: 6 corners per cell, 24 bytes each.
-    let side = (2 * profile.view + 32) as usize;
-    *c.linear.entry("vertex buffers").or_default() += side * side * 6 * 24 / 1024;
-    // Framebuffers, depth buffer, command buffer.
-    *c.linear.entry("screens").or_default() += 3 * 1024;
-    // The RSC without what is now in the .TX files or only the PC uses:
-    // terrain and object textures, sounds (kept as empty sounds).
-    let mut rsc = area.rsc;
-    rsc.textures = Vec::new();
-    for o in &mut rsc.objects {
-        o.model.mesh.texture = Vec::new();
-    }
-    for (k, s) in rsc.random_sounds.iter_mut().enumerate() {
-        let pcm = std::mem::take(s);
-        c.sound(&format!("R{k}"), &pcm, SAMPLE_RATE, 1, 16);
-    }
-    for (k, amb) in rsc.ambients.iter_mut().enumerate() {
-        let pcm = std::mem::take(&mut amb.pcm);
-        c.sound(&format!("A{k}"), &pcm, SAMPLE_RATE, 1, 16);
-    }
-    // SOUNDFX: underwater, steps, screams, the chosen animals' calls.
+    c.scope = "hunt".into();
+    // SOUNDFX: underwater, steps, screams, every call.
     c.wav(&vfs, "HUNTDAT/SOUNDFX/A_UNDERW.WAV", "U");
     for n in 1..=3 {
+        let steps = "HUNTDAT/SOUNDFX/STEPS";
         c.wav(
             &vfs,
-            &format!("HUNTDAT/SOUNDFX/STEPS/HWALK{n}.WAV"),
+            &format!("{steps}/HWALK{n}.WAV"),
             &format!("F{}", n - 1),
         );
         c.wav(
             &vfs,
-            &format!("HUNTDAT/SOUNDFX/STEPS/FOOTW{n}.WAV"),
+            &format!("{steps}/FOOTW{n}.WAV"),
             &format!("FW{}", n - 1),
         );
     }
     for n in 1..=4 {
-        c.wav(
+        let f = format!("HUNTDAT/SOUNDFX/HUM_DIE{n}.WAV");
+        c.wav(&vfs, &f, &format!("H{}", n - 1));
+    }
+    c.picture("C2RS/FONT.TX", &font(), 128, 64);
+    let huntable: Vec<i32> = infos.iter().map(|i| i.ai).filter(|&ai| ai >= 10).collect();
+    // Framebuffers, depth buffer, command buffer; terrain chunks around the
+    // hunter (6 corners per cell, 24 bytes each).
+    c.count("screens", 3 << 20);
+    let side = (2 * profile.view + 32) as usize;
+    c.count("vertex buffers", side * side * 6 * 24);
+
+    // The menu: pictures of areas, animals, weapons, accessories, and the
+    // descriptions (MENU/TXT).
+    c.scope = "menu".into();
+    for n in 1..=areas.iter().filter(|a| a.starts_with("AREA")).count() {
+        c.menu_picture(
             &vfs,
-            &format!("HUNTDAT/SOUNDFX/HUM_DIE{n}.WAV"),
-            &format!("H{}", n - 1),
+            &format!("AREA{n}.TGA"),
+            &format!("C2RS/MENU/AREA{n}.TX"),
+            256,
         );
     }
-    for &i in &dinos {
-        let ai = infos[i].ai;
-        for (v, l) in ["A", "B", "C"].iter().enumerate() {
-            c.wav(
-                &vfs,
-                &format!("HUNTDAT/SOUNDFX/CALLS/CALL{}_{l}.WAV", ai - 9),
-                &format!("K{ai}_{v}"),
-            );
-        }
+    for n in 1..=huntable.len() {
+        c.menu_picture(
+            &vfs,
+            &format!("DINO{n}.TGA"),
+            &format!("C2RS/MENU/DINO{n}.TX"),
+            128,
+        );
     }
-    c.add(
-        format!("HUNTDAT/AREAS/{area_name}.RSC"),
-        c2_formats::rsc::write(&rsc),
-    );
-    drop(rsc);
+    for n in 1..=winfos.len() {
+        c.menu_picture(
+            &vfs,
+            &format!("WEAPON{n}.TGA"),
+            &format!("C2RS/MENU/WEAPON{n}.TX"),
+            128,
+        );
+    }
+    for n in 1..=4 {
+        c.menu_picture(
+            &vfs,
+            &format!("EQUIP{n}.TGA"),
+            &format!("C2RS/MENU/EQUIP{n}.TX"),
+            128,
+        );
+    }
+    let txt: Vec<String> = vfs
+        .files()
+        .filter(|(_, r)| r.path.to_ascii_uppercase().starts_with("HUNTDAT/MENU/TXT/"))
+        .map(|(_, r)| r.path.clone())
+        .collect();
+    for path in txt {
+        c.copy(&vfs, &path)?;
+    }
 
-    let list = |v: &[usize]| v.iter().map(usize::to_string).collect::<Vec<_>>().join(",");
-    let linear: usize = c.linear.values().sum();
-    let info = format!(
-        "pack = 2\ntarget = {}\narea = {area_name}\ntime = {}\ndinos = {}\nweapons = {}\n\
-         terrain_tile = {t}\natlas_cols = {cols}\nterrain_count = {n}\nview = {}\n\
-         object_view = {}\nsound_rate = {}\n",
+    for name in &areas {
+        cook_area(&mut c, &vfs, name)?;
+    }
+    // Linear memory per piece, for the menu to check a hunt fits.
+    let mut info = format!(
+        "pack = 3\ntarget = {}\nareas = {}\nview = {}\nobject_view = {}\nsound_rate = {}\n\
+         linear_kb = {}\n",
         profile.name,
-        a.time.as_deref().unwrap_or("day"),
-        list(&dinos),
-        list(&weapons),
+        areas.join(","),
         profile.view,
         profile.object_view,
         profile.sound_rate,
+        profile.linear_kb,
     );
+    for (scope, kinds) in &c.linear {
+        if scope != "menu" {
+            info += &format!("cost.{scope} = {}\n", kinds.values().sum::<usize>());
+        }
+    }
     c.entries.push(("C2RS/INFO.TXT".into(), info.into_bytes()));
 
-    println!("{} pack: {area_name}, {:?}", profile.name, time);
-    println!(
-        "  animals: {}",
-        chars
-            .iter()
-            .map(|&i| names[i].as_str())
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-    println!(
-        "  weapons: {}",
-        weapons
-            .iter()
-            .map(|&i| wnames[i].as_str())
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-    let heap = load_peak(&c.entries, &area_name, time)? / 1024;
+    // Memory: the loading peak (each area, every animal and weapon); linear
+    // memory for each area with the hunter, the ambient animals, the two
+    // costliest huntable ones and weapons. The menu checks real picks.
     let mib = |kb: usize| kb as f32 / 1024.0;
-    println!("  3DS memory:");
-    println!(
-        "    loading peak    {:>6.1} MiB (budget {:.0} MiB)",
-        mib(heap),
-        mib(profile.heap_kb)
+    let sum = |s: &str| c.linear.get(s).map_or(0, |m| m.values().sum::<usize>());
+    let ambient: usize = (0..infos.len())
+        .filter(|&i| infos[i].ai < 10)
+        .map(|i| sum(&format!("char{i}")))
+        .sum();
+    let top2 = |mut v: Vec<usize>| {
+        v.sort_unstable_by(|a, b| b.cmp(a));
+        v.iter().take(2).sum::<usize>()
+    };
+    let dinos2 = top2(
+        (0..infos.len())
+            .filter(|&i| infos[i].ai >= 10)
+            .map(|i| sum(&format!("char{i}")))
+            .collect(),
     );
-    for (k, v) in &c.linear {
-        println!("    {k:<15} {:>6.1} MiB", mib(*v));
+    let weapons2 = top2((0..winfos.len()).map(|i| sum(&format!("wpn{i}"))).collect());
+    println!(
+        "{} pack: {} ({} animals, {} weapons)",
+        profile.name,
+        areas.join(", "),
+        infos.len(),
+        winfos.len()
+    );
+    println!("  3DS memory (linear: 2 animals, 2 weapons; the menu checks real picks):");
+    let mut over = false;
+    for name in &areas {
+        let heap = load_peak(&c.entries, name)? / 1024;
+        let linear = sum("hunt") + sum(name) + ambient + dinos2 + weapons2;
+        println!(
+            "    {name:<8} loading peak {:>5.1} MiB, linear {:>5.1} MiB",
+            mib(heap),
+            mib(linear)
+        );
+        over |= heap > profile.heap_kb || linear > profile.linear_kb;
     }
     println!(
-        "    GPU total       {:>6.1} MiB (budget {:.0} MiB)",
-        mib(linear),
-        mib(profile.linear_kb)
+        "    budget: heap {:.0} MiB, linear {:.0} MiB; menu pictures {:.1} MiB (menu only)",
+        mib(profile.heap_kb),
+        mib(profile.linear_kb),
+        mib(sum("menu"))
     );
-    if (heap > profile.heap_kb || linear > profile.linear_kb) && !a.force {
+    if over && !a.force {
         bail!(
-            "over the {} budget; choose fewer animals, use --target o3ds for smaller textures, or --force",
+            "over the {} budget; use --target o3ds for smaller textures, or --force",
             profile.name
         );
     }
