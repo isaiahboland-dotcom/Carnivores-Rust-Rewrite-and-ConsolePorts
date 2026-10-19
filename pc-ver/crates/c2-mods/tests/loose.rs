@@ -148,3 +148,80 @@ fn loose_add_ons_are_placed_merged_and_their_hunters_combined() {
     );
     assert!(report.contains("merged into"), "{report}");
 }
+
+/// A Modder's Edition-style base: entries with spawn tables, and the menu's
+/// own `_MENU.TXT`.
+const MEE_RES: &str = "weapons {\n{\n name = 'Pistol'\n power = 1\n}\n}\ncharacters {\n{\n name = 'Hunter'\n file = 'hunter.car'\n ai = 0\n}\n{\n name = 'Spinosaurus'\n file = 'spino.car'\n ai = 16\n overwrite char0 {\n  spawninfo{\n   spawngroup = 2\n  }\n }\n spawninfo{\n  spawngroup = 1\n }\n}\n}\n.\n";
+const MEE_MENU: &str = "weapons {\n{\n name = 'Pistol'\n power = 1\n}\n}\ncharacters {\n{\n name = 'Spinosaurus'\n ai = 16\n}\n}\nprices {\n start = 100\n dino = 250\n weapon = 20\n}\n.\n";
+
+#[test]
+fn on_a_modders_edition_base_slot_add_ons_get_their_own_slot() {
+    let base = tmp("mee-base");
+    write(
+        &base,
+        &[
+            ("HUNTDAT/_RES.TXT", MEE_RES.as_bytes()),
+            ("HUNTDAT/_MENU.TXT", MEE_MENU.as_bytes()),
+            ("HUNTDAT/hunter.car", &model(&[0, 1])),
+            ("HUNTDAT/MENU/PICS/DINO1.TGA", b"spino pic"),
+            ("HUNTDAT/MENU/PICS/WEAPON1.TGA", b"pistol pic"),
+            ("HUNTDAT/SOUNDFX/CALLS/CALL1_A.WAV", b"spino call"),
+            ("HUNTDAT/WEAPONS/BULLET1.TGA", b"pistol bullet"),
+        ],
+    );
+    // Made for the Spinosaurus slot, as an original-game entry (no spawn
+    // tables), plus a weapon made for the pistol slot.
+    let a = tmp("mee-a");
+    write(
+        &a,
+        &[
+            ("rx.car", b"rx"),
+            ("DINO1.TGA", b"rx pic"),
+            ("CALL1_A.wav", b"rx call"),
+            (
+                "README.txt",
+                b"{\n name = 'Raptor X'\n file = 'rx.car'\n ai = 16\n}\n",
+            ),
+            (
+                "gun/_RES.TXT",
+                b"{\n name = 'Gun'\n pic = 'bullet1.tga'\n power = 2\n}\n",
+            ),
+            ("gun/MENU/PICS/WEAPON1.TGA", b"gun pic"),
+            ("gun/WEAPONS/BULLET1.TGA", b"gun bullet"),
+        ],
+    );
+    let bases = [base.clone()];
+    let v = vanilla(&bases).expect("vanilla");
+    let pack = build(&bases, vec![load_mod(&v, &a).expect("a")]).expect("build");
+    let read = |p: &str| pack.vfs.read(p).expect(p);
+    // The originals stay; the add-on's files moved to the new slots.
+    assert_eq!(read("HUNTDAT/MENU/PICS/DINO1.TGA"), b"spino pic");
+    assert_eq!(read("HUNTDAT/MENU/PICS/DINO2.TGA"), b"rx pic");
+    assert_eq!(read("HUNTDAT/SOUNDFX/CALLS/CALL2_A.wav"), b"rx call");
+    assert_eq!(read("HUNTDAT/MENU/PICS/WEAPON2.TGA"), b"gun pic");
+    assert_eq!(read("HUNTDAT/WEAPONS/BULLET2.TGA"), b"gun bullet");
+    assert_eq!(read("HUNTDAT/WEAPONS/BULLET1.TGA"), b"pistol bullet");
+    let parse = |p: &str| {
+        c2_formats::res_txt::ResTxt::parse(&String::from_utf8_lossy(&read(p))).expect("parse")
+    };
+    let menu = c2_formats::menu_txt::MenuData::from_res(&parse("HUNTDAT/_MENU.TXT"));
+    let dinos: Vec<_> = menu
+        .huntables
+        .iter()
+        .map(|d| (d.name.as_str(), d.price))
+        .collect();
+    assert_eq!(dinos, [("Spinosaurus", 250), ("Raptor X", 250)]);
+    let guns: Vec<_> = menu
+        .weapons
+        .iter()
+        .map(|w| (w.name.as_str(), w.price))
+        .collect();
+    assert_eq!(guns, [("Pistol", 20), ("Gun", 20)]);
+    let res = parse("HUNTDAT/_RES.TXT");
+    let rx = &res.section("characters").expect("characters").blocks[2];
+    // The Spinosaurus slot's spawn tables, its slot condition moved along.
+    let subs: Vec<_> = rx.subs.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(subs, ["overwrite char1", "spawninfo"]);
+    let gun = &res.section("weapons").expect("weapons").blocks[1];
+    assert_eq!(gun.get(&["pic"]), Some("'bullet2.tga'"));
+}

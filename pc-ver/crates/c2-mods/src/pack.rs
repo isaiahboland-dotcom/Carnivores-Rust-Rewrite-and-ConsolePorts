@@ -5,7 +5,7 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use c2_formats::res_txt::ResTxt;
+use c2_formats::res_txt::{Block, ResTxt};
 use c2_vfs::{key, Backend, DirBackend, MemBackend, Vfs, VfsError, ZipBackend};
 
 use crate::detect::{detect, is_data, read_res, RES_TXT};
@@ -104,6 +104,8 @@ pub struct ModSource {
     pub hunter: Option<PathBuf>,
     /// How a loose add-on was read, for the report.
     pub notes: Vec<String>,
+    /// Loose add-on entries that get a menu slot of their own.
+    pub slots: Vec<crate::loose::SlotAdd>,
 }
 
 /// Reads a loose add-on (`crate::loose`) as a mod.
@@ -147,6 +149,7 @@ fn load_loose(vanilla: &Vfs, dir: &Path) -> Result<ModSource, ModError> {
         map: l.files,
         hunter: l.hunter,
         notes: l.notes,
+        slots: l.slots,
     })
 }
 
@@ -279,6 +282,157 @@ pub struct BuildOptions {
     pub patches: Vec<(String, String, String)>,
 }
 
+const MENU_TXT: &str = "huntdat/_menu.txt";
+
+/// `CALL7_A.WAV` with prefix `call`, from 7 to 11 -> `CALL11_A.WAV`.
+fn renumber(name: &str, prefixes: &[&str], from: usize, to: usize) -> Option<String> {
+    let lower = name.to_ascii_lowercase();
+    let p = prefixes.iter().find(|p| lower.starts_with(*p))?;
+    let rest = &name[p.len()..];
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    if digits.parse::<usize>().ok()? != from {
+        return None;
+    }
+    Some(format!("{}{to}{}", &name[..p.len()], &rest[digits.len()..]))
+}
+
+/// `overwrite char6 area2` -> `overwrite char10 area2` (menu-slot
+/// conditions follow an entry to its new slot).
+fn retarget_conditions(b: &mut Block, from: usize, to: usize) {
+    let (old, new) = (format!("char{from}"), format!("char{to}"));
+    for s in &mut b.subs {
+        s.name = s
+            .name
+            .split_whitespace()
+            .map(|w| {
+                if w.eq_ignore_ascii_case(&old) {
+                    new.as_str()
+                } else {
+                    w
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        retarget_conditions(&mut s.block, from, to);
+    }
+}
+
+/// Gives loose add-on entries made for a menu slot (`loose::SlotAdd`) a
+/// slot of their own, the next free one in load order: their menu files
+/// (`DINO7.TGA`, `CALL7_A.WAV`, `WEAPON1.TXT`, `BULLET1.TGA`) are renumbered,
+/// their slot conditions (`overwrite char6`) and `callNo` / `pic` follow,
+/// and the menu gets the entry at the price of the slot it was made for
+/// (`_MENU.TXT` when the base has one, else `_RES.TXT`'s `prices`).
+/// Returns each mod's `_MENU.TXT` changes.
+fn assign_slots(
+    vfs: &Vfs,
+    res: &ResTxt,
+    mods: &mut [ModSource],
+    notes: &mut Vec<String>,
+) -> Result<Vec<(String, Vec<Change>)>, ModError> {
+    let menu_res = match vfs.resolve(MENU_TXT) {
+        Some(r) => Some(read_res(&vfs.read(&r.path.clone())?)?),
+        None => None,
+    };
+    let menu = c2_formats::menu_txt::MenuData::from_res(menu_res.as_ref().unwrap_or(res));
+    let (mut dinos, mut weapons) = (menu.huntables.len(), menu.weapons.len());
+    let mut out = Vec::new();
+    for m in mods.iter_mut() {
+        let mut mc = Vec::new();
+        for s in m.slots.clone() {
+            let chars = s.section == "characters";
+            let n = if chars {
+                dinos += 1;
+                dinos
+            } else {
+                weapons += 1;
+                weapons
+            };
+            let prefixes: &[&str] = if chars {
+                &["dino", "call"]
+            } else {
+                &["weapon", "bullet"]
+            };
+            for (p, _) in &mut m.map {
+                let (dir, name) = p.rsplit_once('/').unwrap_or(("", p.as_str()));
+                if let Some(new) = renumber(name, prefixes, s.from, n) {
+                    *p = format!("{dir}/{new}");
+                }
+            }
+            m.files = m.map.iter().map(|(p, _)| p.clone()).collect();
+            let price = if chars {
+                menu.huntables.get(s.from - 1).map(|i| i.price)
+            } else {
+                menu.weapons.get(s.from - 1).map(|i| i.price)
+            }
+            .unwrap_or(0);
+            let Some(block) = m.res_changes.iter_mut().find_map(|c| match c {
+                Change::Add { section, block }
+                    if *section == s.section && block_id(block).as_deref() == Some(&s.id) =>
+                {
+                    Some(block)
+                }
+                _ => None,
+            }) else {
+                continue;
+            };
+            if chars {
+                retarget_conditions(block, s.from - 1, n - 1);
+            }
+            for e in &mut block.entries {
+                let k = e.key.to_ascii_lowercase();
+                if chars && k == "callno" {
+                    e.value = (n - 1).to_string();
+                }
+                if !chars && k == "pic" {
+                    let v = e.value.trim().trim_matches('\'');
+                    if let Some(new) = renumber(v, &["bullet"], s.from, n) {
+                        e.value = format!("'{new}'");
+                    }
+                }
+            }
+            let price = Change::Entry {
+                section: "prices".into(),
+                key: if chars { "dino" } else { "weapon" }.into(),
+                n: n - 1,
+                value: price.to_string(),
+            };
+            if menu_res.is_some() {
+                // The menu's own list: the entry's name and menu stats.
+                let keep: &[&str] = if chars {
+                    &["name", "ai", "smell", "hear", "look", "pic"]
+                } else {
+                    &["name", "power", "prec", "loud", "rate"]
+                };
+                let mut entry = Block::default();
+                entry.entries = block
+                    .entries
+                    .iter()
+                    .filter(|e| keep.iter().any(|k| e.key.eq_ignore_ascii_case(k)))
+                    .cloned()
+                    .collect();
+                mc.push(Change::Add {
+                    section: s.section.clone(),
+                    block: entry,
+                });
+                mc.push(price);
+            } else {
+                m.res_changes.push(price);
+            }
+            notes.push(format!(
+                "`{}`: '{}' added as {} {n}, alongside '{}' (made for slot {}; its menu files renumbered)",
+                m.manifest.info.id,
+                s.id,
+                if chars { "huntable" } else { "weapon" },
+                s.alongside,
+                s.from
+            ));
+        }
+        out.push((m.manifest.info.id.clone(), mc));
+    }
+    Ok(out)
+}
+
 /// Merges the hunter models loose add-ons ship (`crate::hunter`) into the
 /// base one, moving each add-on's kill animations to their new numbers.
 /// The merged model's path and bytes, if any add-on had one.
@@ -377,6 +531,7 @@ pub fn build_with(
             }
         ));
     }
+    let menu_changes = assign_slots(&vfs, &vanilla_res, &mut mods, &mut notes)?;
     for m in &mods {
         if !m.notes.is_empty() {
             for n in &m.notes {
@@ -433,6 +588,16 @@ pub fn build_with(
         }
     }
     let merged = merge(&vanilla_res, &changes);
+    if menu_changes.iter().any(|(_, c)| !c.is_empty()) {
+        if let Some(r) = vfs.resolve(MENU_TXT) {
+            let path = r.path.clone();
+            let menu = read_res(&vfs.read(&path)?)?;
+            let m = merge(&menu, &menu_changes);
+            let mut mem = MemBackend::new();
+            mem.insert(&path, m.res.write().into_bytes());
+            vfs.push("(merged _MENU.TXT)", Box::new(mem));
+        }
+    }
     if let Some((path, data)) = hunter {
         let mut mem = MemBackend::new();
         mem.insert(&path, data);

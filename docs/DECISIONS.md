@@ -23,6 +23,15 @@ Real add-ons turned out to be loose files plus instructions, not
   only changed files; it is layered over the game as part of the *base*
   (its `_RES.TXT` replaces the original's), and add-ons diff against that.
 - Recipes don't cover loose add-ons yet (no hash pinning for them).
+- **Add, don't replace** (owner's call): an add-on made for a menu slot
+  gets a new slot alongside the original (handed out at build time in
+  load order; menu files renumbered, `overwrite charN` conditions and
+  `callNo` / `pic` moved, `_MENU.TXT` extended, price copied). Animals on
+  the original game's data still take the slot over: its engine places by
+  AI number. Slot conditions past `char9` match by whole number (the
+  engine's substring test would let `char1` match `char10`); the PC hunt
+  passes up to 22 picked slots (it masked them to 10), and the menu lists
+  scroll.
 
 ## 2026-10-19 — 3DS: slow-tick report; catch-up capped, tick timings
 Owner's Old 3DS report: after a Stegosaurus came into view (and was

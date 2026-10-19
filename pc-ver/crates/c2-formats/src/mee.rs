@@ -83,11 +83,25 @@ pub fn applies(header: &str, h: &Hunt) -> bool {
         return false;
     }
     if header.contains("char")
-        && !(0..10).any(|i| h.picked & (1 << i) != 0 && header.contains(&format!("char{i}")))
+        && !(0..32).any(|i| h.picked & (1 << i) != 0 && mentions_char(header, i))
     {
         return false;
     }
     true
+}
+
+/// Does `header` name menu slot `i` (`char6`)? The engine tests `char0` to
+/// `char9` as substrings; with slots 10 and up (add-ons given slots of
+/// their own) `char1` must not also match `char10`, so a number counts only
+/// when no digit follows it.
+fn mentions_char(header: &str, i: u32) -> bool {
+    let pat = format!("char{i}");
+    header.match_indices(&pat).any(|(at, _)| {
+        !header[at + pat.len()..]
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_digit())
+    })
 }
 
 /// `b` with every applicable conditional block merged in and the others

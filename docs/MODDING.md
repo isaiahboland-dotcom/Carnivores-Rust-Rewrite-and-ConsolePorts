@@ -32,9 +32,15 @@ was decided:
   one introduced as for the Modder's Edition is used, else the first.
   Trophy-room entries and "Legacy" folders are skipped; of a Modder's
   Edition folder and a plain one, the one matching the base is used.
-- Menu art for slot n (`DINO7.TGA`) means the entry takes over that menu
-  slot ("replace the Spinosaurus"); `WEAPONn` the same for weapons. An
-  entry named like an existing one changes it; anything else is added.
+- Menu art for slot n (`DINO7.TGA`) means the entry was made to replace
+  that slot ("paste it over the Spinosaurus"). Instead it is **added in a
+  slot of its own**, next to the original: its menu pictures, texts and
+  calls are renumbered to the new slot, its slot conditions follow, and it
+  is priced like the slot it was made for. `WEAPONn` the same for weapons.
+  Exception: an animal on the original game's data (not the Modder's
+  Edition) takes the slot over, since that engine places animals by AI
+  number. The menu lists scroll with the mouse wheel; up to 22 animals.
+  An entry named like an existing one changes it; anything else is added.
 - A hunter model (`hunter...car`) carrying the add-on's kill animations
   is **merged**: the extra animations of every add-on's hunter are added to
   the game's hunter and each add-on's `hunterAnim` numbers are moved to

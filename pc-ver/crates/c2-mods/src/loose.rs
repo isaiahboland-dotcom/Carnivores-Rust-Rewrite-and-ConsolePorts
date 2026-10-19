@@ -11,9 +11,12 @@
 //! - Entries are the `{ ... }` blocks found in the text files. When the same
 //!   animal has several (one per target game), the one introduced as for the
 //!   Modder's Edition is taken on that base, else the first.
-//! - Shipping `DINOn` menu art means the animal takes over menu slot n
-//!   ("replace the Spinosaurus entry"); `WEAPONn` likewise for weapons. An
-//!   entry named like a base one changes it. Anything else is added.
+//! - Menu art for slot n (`DINO7.TGA`) means the entry was made for menu
+//!   slot n ("replace the Spinosaurus entry"); `WEAPONn` likewise. It is
+//!   added in a new slot instead (`SlotAdd`), except an animal on the
+//!   original game's data, which places animals by AI number and so can
+//!   only take the slot over. An entry named like a base one changes it.
+//!   Anything else is added.
 //! - A `.CAR` named `hunter...` is the hunter model with the add-on's kill
 //!   animations: merged with the others at build time (`crate::hunter`).
 //! - Variant folders: one for "Legacy" (another game) is skipped; of a
@@ -44,6 +47,21 @@ pub struct Loose {
     pub hunter: Option<PathBuf>,
     /// What was decided, for the merge report.
     pub notes: Vec<String>,
+    /// Entries drawn for a menu slot that get one of their own instead.
+    pub slots: Vec<SlotAdd>,
+}
+
+/// An add-on animal or weapon made for menu slot `from` (its `DINOn` /
+/// `WEAPONn` files, 1-based) that is added in a new slot instead of
+/// replacing that slot's occupant (`alongside`). The slot is handed out
+/// when the game is built, as is renumbering its menu files.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SlotAdd {
+    /// `characters` or `weapons`.
+    pub section: String,
+    pub id: String,
+    pub from: usize,
+    pub alongside: String,
 }
 
 /// Is `dir` a loose add-on (a folder with a model or an entry, no
@@ -382,16 +400,34 @@ pub fn read(dir: &Path, base: &Vfs) -> Result<Loose, ModError> {
                         }));
                     }
                 }
-                out.notes.push(format!(
-                    "takes over {section} slot {} ('{}'), as its menu files say",
-                    i,
-                    was.clone().unwrap_or_default()
-                ));
-                Change::Modify {
-                    section,
-                    index: i,
-                    block: b,
-                    was,
+                let num = if section == "characters" {
+                    menu_slot_n
+                } else {
+                    weapon_slot_n
+                };
+                // The original engine places animals by AI number, so on its
+                // data an animal can only take over a slot; weapons and the
+                // Modder's Edition's animals get a slot of their own.
+                if section == "characters" && !dialect {
+                    out.notes.push(format!(
+                        "takes over {section} slot {i} ('{}'), as its menu files say (the original game has no room for another)",
+                        was.clone().unwrap_or_default()
+                    ));
+                    Change::Modify {
+                        section,
+                        index: i,
+                        block: b,
+                        was,
+                    }
+                } else {
+                    let from = num.unwrap_or(i + 1);
+                    out.slots.push(SlotAdd {
+                        section: section.clone(),
+                        id: id.clone().unwrap_or_default(),
+                        from,
+                        alongside: was.unwrap_or_default(),
+                    });
+                    Change::Add { section, block: b }
                 }
             }
             (None, None) => Change::Add { section, block: b },

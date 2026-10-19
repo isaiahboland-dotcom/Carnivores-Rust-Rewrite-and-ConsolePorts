@@ -24,6 +24,10 @@ fn conditions_match_like_the_engine() {
     // char<i> = menu slot i picked.
     assert!(applies("overwrite char0 char3", &hunt(1, 1, 0b1000)));
     assert!(!applies("overwrite char0", &hunt(1, 1, 0b10)));
+    // Slots past 9 (add-ons given their own): `char1` doesn't match `char10`.
+    assert!(applies("overwrite char10", &hunt(1, 1, 1 << 10)));
+    assert!(!applies("overwrite char10", &hunt(1, 1, 0b10)));
+    assert!(!applies("overwrite char1", &hunt(1, 1, 1 << 10)));
     // The trophy room takes every block.
     let trophy = Hunt {
         area: None,

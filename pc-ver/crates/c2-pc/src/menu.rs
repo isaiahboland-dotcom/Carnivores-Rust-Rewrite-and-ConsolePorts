@@ -165,9 +165,18 @@ struct Column {
     /// Description per item (dinosaurs: metric, then US units).
     texts: Vec<Vec<String>>,
     texts_us: Vec<Vec<String>>,
+    /// First row shown (lists longer than the box scroll with the wheel).
+    scroll: usize,
 }
 
 const ROW_H: f32 = 19.0;
+
+impl Column {
+    /// Rows that fit in the box.
+    fn visible(&self) -> usize {
+        (((self.rect.3 - 8.0) / ROW_H) as usize).max(1)
+    }
+}
 
 /// Options panel rows.
 #[derive(Debug, Clone, Copy)]
@@ -456,6 +465,7 @@ impl Menu {
             })
             .collect();
         cols.push(Column {
+            scroll: 0,
             rect: (12.0, 376.0, 182.0, 170.0),
             names: area_list
                 .iter()
@@ -483,6 +493,7 @@ impl Menu {
         // Huntables by menu slot (slot n = `DINOn+1.TGA` unless `pic` says).
         let dinos: Vec<String> = menu.huntables.iter().map(|d| d.name.clone()).collect();
         cols.push(Column {
+            scroll: 0,
             rect: (210.0, 376.0, 184.0, 170.0),
             prices: menu.huntables.iter().map(|d| d.price).collect(),
             pics: menu
@@ -507,6 +518,7 @@ impl Menu {
             .map(|n| read_text(txt.as_deref(), &format!("WEAPON{n}.TXT")))
             .collect();
         cols.push(Column {
+            scroll: 0,
             rect: (410.0, 376.0, 184.0, 170.0),
             prices: menu.weapons.iter().map(|w| w.price).collect(),
             pics: (1..=weapons.len())
@@ -521,6 +533,7 @@ impl Menu {
             .map(|(_, f)| read_text(txt.as_deref(), f))
             .collect();
         cols.push(Column {
+            scroll: 0,
             rect: (610.0, 376.0, 184.0, 170.0),
             names: EQUIPMENT.iter().map(|(n, _)| n.to_string()).collect(),
             prices: (0..4)
@@ -758,7 +771,11 @@ impl Menu {
         }
         let _ = x;
         let r = ((y - c.rect.1 - 4.0) / ROW_H).floor();
-        (r >= 0.0 && (r as usize) < c.names.len()).then_some(r as usize)
+        if r < 0.0 || r as usize >= c.visible() {
+            return None;
+        }
+        let r = r as usize + c.scroll;
+        (r < c.names.len()).then_some(r)
     }
 
     // ---------------------------------------------------------------- input
@@ -877,6 +894,17 @@ impl Menu {
             self.screen = Screen::Main;
             return;
         }
+        // The wheel scrolls the list under the cursor.
+        if input.scroll != 0.0 {
+            let cursor = self.cursor;
+            for c in &mut self.columns {
+                if inside(cursor, c.rect) {
+                    let max = c.names.len().saturating_sub(c.visible());
+                    let step = if input.scroll > 0.0 { -1 } else { 1 };
+                    c.scroll = c.scroll.saturating_add_signed(step).min(max);
+                }
+            }
+        }
         // Hovering a list item shows it.
         for col in 0..self.columns.len() {
             if let Some(r) = self.row_at(col) {
@@ -918,7 +946,8 @@ impl Menu {
         }
         for col in 0..self.columns.len() {
             let Some(r) = self.row_at(col) else { continue };
-            if r >= 32 {
+            // Picks are bit masks; animals go to the hunt as bits 10 and up.
+            if r >= 32 || (col == 1 && r >= 22) {
                 continue;
             }
             let bit = 1u32 << r;
@@ -1228,8 +1257,12 @@ impl Menu {
         for (ci, col) in self.columns.iter().enumerate() {
             let mask = self.picked_mask(ci);
             let hover_row = self.row_at(ci);
+            let shown = col.scroll..col.scroll + col.visible();
             for (i, name) in col.names.iter().enumerate() {
-                let y = col.rect.1 + 6.0 + i as f32 * ROW_H;
+                if !shown.contains(&i) {
+                    continue;
+                }
+                let y = col.rect.1 + 6.0 + (i - col.scroll) as f32 * ROW_H;
                 let picked = i < 32 && mask & (1 << i) != 0;
                 let price = col.prices[i];
                 let affordable = c.observer || picked || left - price >= 0;
@@ -1250,6 +1283,14 @@ impl Menu {
                 while self.text_width(12.0, &name) > room && name.pop().is_some() {}
                 self.text(out, col.rect.0 + 6.0, y, 12.0, color, &name);
                 self.text(out, col.rect.0 + col.rect.2 - 8.0 - w, y, 12.0, color, &p);
+            }
+            // More rows above / below: scroll with the wheel.
+            let mid = col.rect.0 + col.rect.2 / 2.0 - 4.0;
+            if col.scroll > 0 {
+                self.text(out, mid, col.rect.1 - 6.0, 12.0, TEXT, "^");
+            }
+            if col.scroll + col.visible() < col.names.len() {
+                self.text(out, mid, col.rect.1 + col.rect.3 - 8.0, 12.0, TEXT, "v");
             }
         }
         // The view and info panels: the focused item, or a hovered toggle.

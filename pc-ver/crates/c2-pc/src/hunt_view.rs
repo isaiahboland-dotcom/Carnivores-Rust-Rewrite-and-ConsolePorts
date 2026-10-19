@@ -118,7 +118,9 @@ fn mee_hunt(setup: &HuntSetup) -> c2_formats::mee::Hunt {
             TimeOfDay::Day => 1,
             TimeOfDay::Night => 2,
         },
-        picked: (setup.targets >> 10) & 0x3ff,
+        // Menu slot i is target bit 10 + i, so up to 22 slots (add-ons
+        // past the engine's 10 get slots of their own).
+        picked: setup.targets >> 10,
     }
 }
 
