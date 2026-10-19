@@ -187,13 +187,13 @@ fn main() -> Result<()> {
             // placement of T-Rex/Cerato and score depend on them.
             let targets = match o.value("target") {
                 None => 0,
-                Some("all") => (10..=18).fold(0u32, |m, a| m | 1 << a),
+                Some("all") => (10..=18).fold(0u128, |m, a| m | 1 << a),
                 Some(v) => v
                     .split(',')
                     .map(|a| {
                         a.trim()
                             .parse::<u32>()
-                            .map(|a| 1u32.checked_shl(a).unwrap_or(0))
+                            .map(|a| 1u128.checked_shl(a).unwrap_or(0))
                     })
                     .collect::<Result<Vec<_>, _>>()
                     .context("--target AI[,AI...]")?

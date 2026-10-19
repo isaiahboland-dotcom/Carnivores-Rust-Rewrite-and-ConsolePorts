@@ -47,7 +47,7 @@ pub struct HuntSetup {
     /// Fixed RNG seed (reproducible runs); `None` = from the clock.
     pub seed: Option<u32>,
     /// `TargetDino`: bit per AI.
-    pub targets: u32,
+    pub targets: u128,
     /// `WeaponPres`: bit per `_RES.TXT` weapon.
     pub weapons: u32,
     pub double_ammo: bool,
@@ -197,10 +197,14 @@ impl HuntView {
                 let rgba = c2_core::color::image_to_rgba8(&frame.pixels, false);
                 hud.add_image(gpu, frame.width as u32, frame.height as u32, &rgba)
             });
-        // Call icons (`MENU/PICS/CALLn.TGA`), by AI 10..=19.
+        // Call icons (`MENU/PICS/CALLn.TGA`), by call id 10.. (menu slot +
+        // 10), for the hunted animals.
         let pics = find_file(&huntdat, "MENU").and_then(|m| find_file(&m, "PICS"));
-        let call_imgs: Vec<Option<usize>> = (1..=10)
+        let call_imgs: Vec<Option<usize>> = (1..=c2_core::game::MAX_CALL - 10)
             .map(|n| {
+                if setup.targets & (1 << (n + 9)) == 0 {
+                    return None;
+                }
                 let p = find_file(pics.as_deref()?, &format!("CALL{n}.TGA"))?;
                 let (w, h, rgba) = load_tga(&p).ok()?;
                 Some(hud.add_image(gpu, w, h, &rgba))
@@ -218,6 +222,7 @@ impl HuntView {
             &weapons.cars(),
             dinos.ship_car(),
             &view.area().rsc,
+            setup.targets,
         );
         let mut hunt = Self::new_hunt(
             &view,

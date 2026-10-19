@@ -378,6 +378,14 @@ fn assign_slots(
             };
             if chars {
                 retarget_conditions(block, s.from - 1, n - 1);
+                // It answers its own slot's call (`callNo`; an entry for the
+                // original game has none, and would answer slot 0's).
+                if block.get(&["callNo"]).is_none() {
+                    block.entries.push(c2_formats::res_txt::Entry {
+                        key: "callNo".into(),
+                        value: (n - 1).to_string(),
+                    });
+                }
             }
             for e in &mut block.entries {
                 let k = e.key.to_ascii_lowercase();

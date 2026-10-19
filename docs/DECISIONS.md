@@ -2,6 +2,20 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-19 — Calls by menu slot; up to 118 huntable slots
+- **Calls** are numbered `10 + menu slot` (the original's AI number, so the
+  original game is unchanged) and play `CALL{slot+1}_A/B/C.WAV`. Dialect
+  species follow the engine's `MakeCall`: an animal answers the call of
+  its `callNo` slot (0 when not given, as the engine), hears it within
+  `view * 400 * 2 * hearK`, and flees calls in its `fearCall` list (not
+  flyers or the old brachiosaur). The original game's species still answer
+  by AI. An add-on given a slot of its own gets `callNo` for it.
+- Call sounds and icons load for the picked slots only (as the engine:
+  with add-ons there can be a hundred).
+- **128-bit target masks** (`HuntOptions::targets`, `mee::Hunt::picked`,
+  the PC menu's animal picks): up to 118 huntable slots, for the large
+  combined games. The 3DS still picks from 32 bits.
+
 ## 2026-10-19 — M4: loose add-ons, hunter merging, base overlays
 Real add-ons turned out to be loose files plus instructions, not
 `HUNTDAT`-shaped folders; most are for the Modder's Edition (MEE).

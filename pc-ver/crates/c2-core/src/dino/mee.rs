@@ -152,6 +152,11 @@ pub struct MeeInfo {
     pub dont_swim_away: bool,
     pub jump_range: i32,
     pub spacing_depth: i32,
+    /// The menu slot whose call it answers (`callNo`, `menuDino`; 0 when
+    /// not given, as in the engine).
+    pub call_no: i32,
+    /// Slots whose calls scare it off (`fearCall = n`, `dontFear = n`).
+    pub fear_calls: Vec<i32>,
 }
 
 impl MeeInfo {
@@ -207,6 +212,8 @@ impl MeeInfo {
             dont_swim_away: false,
             jump_range: 0,
             spacing_depth: 0,
+            call_no: 0,
+            fear_calls: Vec::new(),
         }
     }
 

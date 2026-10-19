@@ -211,6 +211,17 @@ fn info_line(m: &mut MeeInfo, key: &str, v: &str) {
         "dontswimaway" => m.dont_swim_away = truthy(v),
         "jumprange" => m.jump_range = c_atoi(v),
         "spcdepth" => m.spacing_depth = c_atoi(v),
+        "callno" => m.call_no = c_atoi(v),
+        "fearcall" => {
+            let n = c_atoi(v);
+            if !m.fear_calls.contains(&n) {
+                m.fear_calls.push(n);
+            }
+        }
+        "dontfear" => {
+            let n = c_atoi(v);
+            m.fear_calls.retain(|&f| f != n);
+        }
         _ => {}
     }
 }

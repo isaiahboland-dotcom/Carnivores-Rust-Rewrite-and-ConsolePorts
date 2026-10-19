@@ -33,7 +33,7 @@ pub struct Hunt {
     /// 0 dawn, 1 day, 2 night.
     pub time: u8,
     /// Picked menu slots, bit `i` = slot `i` (`char<i>`).
-    pub picked: u32,
+    pub picked: u128,
 }
 
 /// Keys whose repeated values form a list (wiped by an `overwrite`).

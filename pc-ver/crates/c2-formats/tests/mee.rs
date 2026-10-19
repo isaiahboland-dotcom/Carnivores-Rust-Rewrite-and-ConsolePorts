@@ -3,7 +3,7 @@
 use c2_formats::mee::{applies, is_dialect, resolve, Hunt, Tables};
 use c2_formats::res_txt::ResTxt;
 
-fn hunt(area: u32, time: u8, picked: u32) -> Hunt {
+fn hunt(area: u32, time: u8, picked: u128) -> Hunt {
     Hunt {
         area: Some(area),
         time,

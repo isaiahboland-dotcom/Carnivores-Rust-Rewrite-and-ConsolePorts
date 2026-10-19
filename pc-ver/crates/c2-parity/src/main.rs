@@ -366,7 +366,7 @@ fn dinos_sim(map_path: &Path, seconds: u32) -> Result<()> {
 
 /// The Modder's Edition tables a hunt would use: spawn groups, pack groups,
 /// and which characters spawn where.
-fn mee_report(game: &Path, area: u32, time: u8, picked: u32) -> Result<()> {
+fn mee_report(game: &Path, area: u32, time: u8, picked: u128) -> Result<()> {
     use c2_formats::mee::{is_dialect, Hunt, Tables};
     let res_path = find_ci(&game.join("HUNTDAT"), "_RES.TXT").context("no HUNTDAT/_RES.TXT")?;
     let res =
@@ -709,7 +709,12 @@ fn main() -> Result<()> {
         let num = |i: usize, d: u32| -> Result<u32> {
             Ok(args.get(i).map(|s| s.parse()).transpose()?.unwrap_or(d))
         };
-        return mee_report(Path::new(dir), num(2, 1)?, num(3, 1)? as u8, num(4, 1)?);
+        return mee_report(
+            Path::new(dir),
+            num(2, 1)?,
+            num(3, 1)? as u8,
+            u128::from(num(4, 1)?),
+        );
     }
     if args.first().map(String::as_str) == Some("mee-sim") {
         let usage = "usage: c2-parity mee-sim <GAME_DIR> [AREA] [seconds]";

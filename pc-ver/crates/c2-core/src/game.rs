@@ -232,7 +232,7 @@ pub enum GameEvent {
 #[derive(Debug, Clone, Copy)]
 pub struct HuntOptions {
     /// Bit `ai` set for each species chosen as a target (`TargetDino`).
-    pub targets: u32,
+    pub targets: u128,
     pub radar: bool,
     pub opt_agres: i32,
     pub opt_sens: i32,
@@ -271,6 +271,10 @@ impl Default for HuntOptions {
         }
     }
 }
+
+/// Call ids are `10 + menu slot` (the original's AI number); one past the
+/// last a 128-bit target mask can hold.
+pub const MAX_CALL: i32 = 128;
 
 /// One tick of player input.
 #[derive(Debug, Clone, Copy, Default)]
@@ -456,7 +460,9 @@ impl Hunt {
             map_mode: false,
             effects: Default::default(),
             prof: Default::default(),
-            target_call: (10..30).find(|a| opts.targets & (1 << a) != 0).unwrap_or(0),
+            target_call: (10..MAX_CALL)
+                .find(|a| opts.targets & (1 << a) != 0)
+                .unwrap_or(0),
             call_icon_time: 0,
             call_lock: 0,
             next_call: 0,
@@ -1504,12 +1510,12 @@ impl Hunt {
         let targets = self.opts.targets;
         if input.change_call && targets != 0 {
             if self.call_icon_time > 0 {
-                for _ in 0..32 {
+                for _ in 0..MAX_CALL {
                     self.target_call += 1;
-                    if self.target_call > 32 {
+                    if self.target_call >= MAX_CALL {
                         self.target_call = 10;
                     }
-                    if self.target_call < 32 && targets & (1 << self.target_call) != 0 {
+                    if targets & (1 << self.target_call) != 0 {
                         break;
                     }
                 }
@@ -1537,11 +1543,12 @@ impl Hunt {
             .herd
             .species
             .iter()
-            .find(|s| s.info.ai == self.target_call)
+            .find(|s| s.mee.is_none() && s.info.ai == self.target_call)
             .is_some_and(|s| s.info.danger_call);
         let p = [self.player.x, self.player.y, self.player.z];
         let mut best: Option<(usize, f32)> = None;
         let range = self.opts.view_r as f32 * 400.0;
+        let slot = self.target_call - 10;
         for i in 0..self.herd.chars.len() {
             if danger && self.herd.chars[i].ai < 10 {
                 let t = (10 + self.rng.r_rand(5)) * 1024;
@@ -1550,13 +1557,39 @@ impl Hunt {
                 c.afraid_time = t;
             }
             let c = &self.herd.chars[i];
-            if c.ai != self.target_call || c.afraid_time != 0 || c.state != 0 {
-                continue;
-            }
             let d =
                 ((p[0] - c.pos[0]).powi(2) + (p[1] - c.pos[1]).powi(2) + (p[2] - c.pos[2]).powi(2))
                     .sqrt();
-            if d < range {
+            // The dialect's species: calls are by menu slot. A species
+            // answers its `callNo` slot's call, flees the ones it fears
+            // (`fearCall`), and hears `2 * hearK` times as far.
+            let mee = self
+                .herd
+                .species
+                .get(c.ctype)
+                .and_then(|s| s.mee.as_ref().map(|m| (m, s.info.hear_k)));
+            let (answers, hears) = match mee {
+                Some((m, hear_k)) => {
+                    let hears = d < range * hear_k * 2.0;
+                    let flier = matches!(
+                        m.ai,
+                        ai::DIMOR | ai::PTERA | crate::dino::mee::mee_ai::BRACH
+                    );
+                    if c.health != 0 && hears && !flier && m.fear_calls.contains(&slot) {
+                        let t = (10 + self.rng.r_rand(5)) * 1024;
+                        let c = &mut self.herd.chars[i];
+                        c.state = 2;
+                        c.afraid_time = t;
+                    }
+                    (m.call_no == slot, hears)
+                }
+                None => (c.ai == self.target_call, d < range),
+            };
+            let c = &self.herd.chars[i];
+            if !answers || c.health == 0 || c.afraid_time != 0 || c.state != 0 {
+                continue;
+            }
+            if hears {
                 if self.rng.r_rand(128) > 32 && best.is_none_or(|(_, bd)| d < bd) {
                     best = Some((i, d));
                 }
@@ -1702,7 +1735,7 @@ impl Hunt {
             .species
             .get(c.ctype)
             .and_then(|s| s.tuning.radar)
-            .unwrap_or_else(|| self.opts.targets & 1u32.checked_shl(c.ai as u32).unwrap_or(0) != 0)
+            .unwrap_or_else(|| self.opts.targets & 1u128.checked_shl(c.ai as u32).unwrap_or(0) != 0)
     }
 
     pub fn life_info(&self, area: &Area) -> Option<LifeInfo> {
@@ -1997,6 +2030,38 @@ mod tests {
         let opts = HuntOptions::default();
         let hunt = Hunt::new(&area, player, herd, weapons, rng, opts, blank_save());
         (area, hunt, car)
+    }
+
+    #[test]
+    fn dialect_calls_go_by_menu_slot() {
+        let (area, mut hunt, car) = setup(false);
+        let cars = [None, Some(&car)];
+        let mut m = crate::dino::mee::MeeInfo::new(ai::STEGO);
+        (m.call_no, m.fear_calls) = (3, vec![5]);
+        hunt.herd.species[1].mee = Some(Box::new(m));
+        // Can't see or smell the hunter: only calls move it.
+        hunt.herd.species[1].info.look_k = 0.0;
+        hunt.herd.species[1].info.smell_k = 0.0;
+        hunt.opts.targets = 1 << 13 | 1 << 15;
+        let call = HuntInput {
+            call: true,
+            ..Default::default()
+        };
+        let mut out = Vec::new();
+        // Slot 3's call: it comes over (heads near the hunter).
+        hunt.target_call = 13;
+        hunt.tick(&area, &cars, &call, 10, &mut out);
+        let c = &hunt.herd.chars[0];
+        assert!((c.tgx - hunt.player.x).abs() <= 1800.0 && (c.tgz - hunt.player.z).abs() <= 1800.0);
+        assert_eq!(c.state, 0);
+        assert!(out
+            .iter()
+            .any(|e| matches!(e, GameEvent::Call { call: 13, .. })));
+        // Slot 5's call: it fears that one.
+        hunt.call_lock = 0;
+        hunt.target_call = 15;
+        hunt.tick(&area, &cars, &call, 10, &mut out);
+        assert_ne!(hunt.herd.chars[0].state, 0);
     }
 
     /// Ticks without stepping the herd (keeps the target still).

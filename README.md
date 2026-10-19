@@ -312,6 +312,14 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
 **M8 — Modded packs on 3DS**
 - Pack picker at boot, budget reports enforced, test the example recipe on hardware.
 
+**M10 — Launcher and mod manager (PC GUI)**
+- First run: drag and drop (or browse to) the original game folder; it is checked against the base hash
+  list and the game is set up from it, with no command line.
+- Mod manager: drop add-on folders, zips or rars in; enable/disable and reorder them; see conflicts and the
+  merge report; one Play button builds the combined game (cached until something changes) and starts it.
+- Saved profiles (sets of mods), export as a recipe.
+- ✅ Done when: a new user goes from the original game files plus a few add-ons to hunting without a terminal.
+
 ---
 
 ## 8. Conventions
@@ -398,6 +406,7 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
   - [ ] hunter name entry / several hunters, options screen
   - [ ] trophy room, scope cross-hairs, Old 3DS performance pass
 - [ ] M8 Modded 3DS
+- [ ] M10 Launcher and mod manager (planned)
 - [ ] M9 Modder's Edition Engine data — **in progress**
   - [x] nested `_RES.TXT` blocks; `_MENU.TXT` / `.c2map` menu lists; `overwrite` / `addition` resolution
   - [x] spawn / pack tables and placement on PC (dialect game folders hunt with their own rosters and spawns)

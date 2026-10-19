@@ -16,7 +16,7 @@ pub struct PlaceOptions {
     pub opt_agres: i32,
     /// Bit `ai` set for each target species chosen in the menu
     /// (`TargetDino`); 0 = none chosen.
-    pub targets: u32,
+    pub targets: u128,
     /// At most this many small ambient animals (`None`: the original's
     /// 5 + density / 80; the 3DS caps it, or turns them off with 0).
     pub max_ambient: Option<i32>,

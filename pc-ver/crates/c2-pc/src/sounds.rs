@@ -20,7 +20,7 @@ pub struct SoundBank {
     pub steps: Vec<Option<Clip>>,
     pub steps_water: Vec<Option<Clip>>,
     pub screams: Vec<Option<Clip>>,
-    /// Hunting calls by AI 10.. : `CALLS/CALL{n}_A/B/C.WAV`.
+    /// Hunting calls by call id 10.. (menu slot + 10): `CALLS/CALL{n}_A/B/C.WAV`.
     pub calls: Vec<Vec<Option<Clip>>>,
 }
 
@@ -45,6 +45,7 @@ impl SoundBank {
         weapons: &[Option<&Car>],
         ship: Option<&Car>,
         rsc: &Rsc,
+        targets: u128,
     ) -> Self {
         let fx = find_file(huntdat, "SOUNDFX");
         let steps_dir = fx.as_deref().and_then(|d| find_file(d, "STEPS"));
@@ -85,8 +86,13 @@ impl SoundBank {
             ),
             calls: {
                 let dir = fx.as_deref().and_then(|d| find_file(d, "CALLS"));
-                (1..=10)
+                // Only the hunted animals' calls (as the original): with
+                // add-ons there can be a hundred slots.
+                (1..=c2_core::game::MAX_CALL - 10)
                     .map(|n| {
+                        if targets & (1 << (n + 9)) == 0 {
+                            return vec![None, None, None];
+                        }
                         ["A", "B", "C"]
                             .iter()
                             .map(|v| wav(dir.as_deref(), &format!("CALL{n}_{v}.WAV")))

@@ -260,7 +260,7 @@ fn new_hunt(
             PlaceOptions {
                 density: o.dens,
                 opt_agres: o.agres,
-                targets: setup.targets,
+                targets: u128::from(setup.targets),
                 max_ambient: Some(setup.max_ambient),
             },
         );
@@ -273,7 +273,7 @@ fn new_hunt(
     let (infos, anims): (Vec<_>, Vec<_>) = weapon_info.iter().cloned().unzip();
     let weapons = Weapons::new(infos, anims, carried, setup.double_ammo);
     let opts = HuntOptions {
-        targets: if setup.observer { 0 } else { setup.targets },
+        targets: if setup.observer { 0 } else { u128::from(setup.targets) },
         radar: o.radar != 0,
         opt_agres: o.agres,
         opt_sens: o.sens,

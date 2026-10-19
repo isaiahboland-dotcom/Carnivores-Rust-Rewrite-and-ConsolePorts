@@ -138,7 +138,7 @@ enum Screen {
 struct Choice {
     area: usize,
     /// Bit per dinosaur (AI 10 + i) / weapon / accessory.
-    dinos: u32,
+    dinos: u128,
     weapons: u32,
     equip: u32,
     /// 0 dawn, 1 day, 2 night.
@@ -722,13 +722,13 @@ impl Menu {
         self.me().is_some_and(|s| s.options.tranq != 0)
     }
 
-    fn picked_mask(&self, col: usize) -> u32 {
+    fn picked_mask(&self, col: usize) -> u128 {
         let c = &self.choice;
         match col {
-            0 => 1 << c.area,
+            0 => 1u128.checked_shl(c.area as u32).unwrap_or(0),
             1 => c.dinos,
-            2 => c.weapons,
-            _ => c.equip,
+            2 => u128::from(c.weapons),
+            _ => u128::from(c.equip),
         }
     }
 
@@ -742,7 +742,7 @@ impl Menu {
         for (ci, c) in self.columns.iter().enumerate() {
             let mask = self.picked_mask(ci);
             for (i, p) in c.prices.iter().enumerate() {
-                if i < 32 && mask & (1 << i) != 0 {
+                if i < 128 && mask & (1 << i) != 0 {
                     spent += p;
                 }
             }
@@ -946,18 +946,20 @@ impl Menu {
         }
         for col in 0..self.columns.len() {
             let Some(r) = self.row_at(col) else { continue };
-            // Picks are bit masks; animals go to the hunt as bits 10 and up.
-            if r >= 32 || (col == 1 && r >= 22) {
+            // Picks are bit masks; animals go to the hunt as bits 10 and up
+            // of 128.
+            let max = if col == 1 { 118 } else { 32 };
+            if r >= max {
                 continue;
             }
-            let bit = 1u32 << r;
+            let bit = 1u128 << r;
             let price = self.columns[col].prices[r];
             let old = self.choice.clone();
             match col {
                 0 => self.choice.area = r,
                 1 => self.choice.dinos ^= bit,
-                2 => self.choice.weapons ^= bit,
-                _ => self.choice.equip ^= bit,
+                2 => self.choice.weapons ^= bit as u32,
+                _ => self.choice.equip ^= bit as u32,
             }
             // Can't spend more than the account holds.
             if self.remaining() < 0 && price > 0 {
@@ -986,7 +988,7 @@ impl Menu {
         &mut self,
         map: PathBuf,
         time: TimeOfDay,
-        targets: u32,
+        targets: u128,
         weapons: u32,
         double_ammo: bool,
         observer: bool,
@@ -1263,7 +1265,7 @@ impl Menu {
                     continue;
                 }
                 let y = col.rect.1 + 6.0 + (i - col.scroll) as f32 * ROW_H;
-                let picked = i < 32 && mask & (1 << i) != 0;
+                let picked = i < 128 && mask & (1 << i) != 0;
                 let price = col.prices[i];
                 let affordable = c.observer || picked || left - price >= 0;
                 let color = if picked {
