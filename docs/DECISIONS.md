@@ -12,6 +12,10 @@ Newest first. Each entry: what, why, and what it affects.
   by AI. An add-on given a slot of its own gets `callNo` for it.
 - Call sounds and icons load for the picked slots only (as the engine:
   with add-ons there can be a hundred).
+- **Areas past 10**: a map's area is the whole number in its name
+  (`AREA23` is 23; the engine reads one digit, any `area1x` being the
+  tenth) and `areaN` conditions match whole numbers (`area0` still means
+  10), so large combined games keep their areas apart.
 - **128-bit target masks** (`HuntOptions::targets`, `mee::Hunt::picked`,
   the PC menu's animal picks): up to 118 huntable slots, for the large
   combined games. The 3DS still picks from 32 bits.

@@ -76,7 +76,7 @@ pub fn applies(header: &str, h: &Hunt) -> bool {
     let Some(area) = h.area else {
         return true;
     };
-    if header.contains("area") && (area == 0 || !header.contains(&format!("area{}", area % 10))) {
+    if header.contains("area") && (area == 0 || !mentions_area(header, area)) {
         return false;
     }
     if header.contains("time") && !header.contains(&format!("time{}", h.time)) {
@@ -88,6 +88,23 @@ pub fn applies(header: &str, h: &Hunt) -> bool {
         return false;
     }
     true
+}
+
+/// Does `header` name area `area`? The engine tests the last digit's
+/// `areaN` as a substring, area 10 being `area0`. Combined games have more
+/// areas, so `areaN` counts as a whole number (no digit after it); area 10
+/// still answers to `area0`.
+fn mentions_area(header: &str, area: u32) -> bool {
+    let named = |n: u32| {
+        let pat = format!("area{n}");
+        header.match_indices(&pat).any(|(at, _)| {
+            !header[at + pat.len()..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_digit())
+        })
+    };
+    named(area) || (area == 10 && named(0))
 }
 
 /// Does `header` name menu slot `i` (`char6`)? The engine tests `char0` to
@@ -247,10 +264,11 @@ pub struct Tables {
     pub characters: Vec<Character>,
 }
 
-/// The area a map is, as the engine reads it from the launch path
-/// (`huntdat/areas/<name>`, the character after `area`): `areaN` is N,
-/// `area1x...` the tenth, `trophy...` the trophy room (`None`); the sixth
-/// slot may be `external`; anything else matches no area (0).
+/// The area a map is, from its file name (`huntdat/areas/<name>`): `areaN`
+/// is N, `trophy...` the trophy room (`None`); the sixth slot may be
+/// `external`; anything else matches no area (0). The engine reads only the
+/// digit after `area` (any `area1x` being the tenth); combined games have
+/// more areas, so the whole number counts (`area10` is still 10).
 pub fn area_of(map_stem: &str) -> Option<u32> {
     let s = map_stem.to_ascii_lowercase();
     if s.starts_with("trophy") {
@@ -260,14 +278,8 @@ pub fn area_of(map_stem: &str) -> Option<u32> {
         return Some(6);
     }
     let rest = s.strip_prefix("area").unwrap_or("");
-    let mut chars = rest.chars();
-    Some(
-        match (chars.next().and_then(|c| c.to_digit(10)), chars.next()) {
-            (Some(1), Some(_)) => 10,
-            (Some(d), _) if d > 0 => d,
-            _ => 0,
-        },
-    )
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    Some(digits.parse().unwrap_or(0))
 }
 
 /// Whether `_RES.TXT` uses the dialect (any of its tables, or nested

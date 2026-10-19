@@ -15,9 +15,13 @@ fn hunt(area: u32, time: u8, picked: u128) -> Hunt {
 fn conditions_match_like_the_engine() {
     assert!(applies("overwrite area2 area3", &hunt(3, 1, 0)));
     assert!(!applies("overwrite area2 area3", &hunt(4, 1, 0)));
-    // Substring rule: "area10" contains "area1"; area 10 is "area0".
-    assert!(applies("overwrite area10", &hunt(1, 1, 0)));
+    // Area 10 is "area0" (the engine's last-digit rule); numbers count
+    // whole, so combined games' areas 11 and up don't collide.
     assert!(applies("overwrite area0", &hunt(10, 1, 0)));
+    assert!(applies("overwrite area10", &hunt(10, 1, 0)));
+    assert!(!applies("overwrite area10", &hunt(1, 1, 0)));
+    assert!(applies("overwrite area23 area2", &hunt(23, 1, 0)));
+    assert!(!applies("overwrite area23", &hunt(3, 1, 0)));
     // All categories must match.
     assert!(!applies("overwrite area1 time2", &hunt(1, 1, 0)));
     assert!(applies("overwrite area1 time2", &hunt(1, 2, 0)));
