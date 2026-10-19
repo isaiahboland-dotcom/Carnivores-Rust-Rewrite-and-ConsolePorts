@@ -18,6 +18,8 @@ use crate::world::DrawInfo;
 
 /// Simulation step, as on PC.
 pub const TICK_MS: u32 = 10;
+/// Most ticks run in one frame (40 ms of game time).
+pub const MAX_TICKS: u32 = 4;
 
 /// The INFO.TXT `pack` this build reads: 3 = every area, animal and weapon
 /// (a "library"; the menu picks), per-area `C2RS/AREAn/`, `cost.*` lines.
@@ -148,6 +150,8 @@ pub struct Game {
     pub weapon_cars: Vec<Option<Car>>,
     pub events: Vec<GameEvent>,
     acc_ms: f32,
+    /// Ticks run by the last `update`.
+    pub ticks_last: u32,
     /// `RunMode`.
     pub run: bool,
     /// Extra ammo refills left.
@@ -340,6 +344,7 @@ impl Game {
             weapon_cars,
             events: Vec::new(),
             acc_ms: 0.0,
+            ticks_last: 0,
             run: false,
             resupplies,
         })
@@ -416,7 +421,11 @@ impl Game {
             call: pad.call,
             ..Default::default()
         };
-        self.acc_ms = (self.acc_ms + dt * 1000.0).min(250.0);
+        // At most `MAX_TICKS` per frame: past that the game slows down
+        // instead of spending ever longer catching up (a slow tick would
+        // otherwise make the next frame need more of them).
+        self.acc_ms = (self.acc_ms + dt * 1000.0).min((MAX_TICKS * TICK_MS) as f32);
+        self.ticks_last = 0;
         let cars: Vec<Option<&Car>> = self.cars.iter().map(Option::as_ref).collect();
         while self.acc_ms >= TICK_MS as f32 {
             self.prev_cam = self.hunt.camera().0;
@@ -428,6 +437,7 @@ impl Game {
             input.toggle_binoculars = false;
             input.call = false;
             self.acc_ms -= TICK_MS as f32;
+            self.ticks_last += 1;
         }
     }
 

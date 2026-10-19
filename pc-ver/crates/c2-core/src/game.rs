@@ -367,6 +367,8 @@ pub struct Hunt {
     pub map_mode: bool,
     /// Particles, blood trails and water rings.
     pub effects: crate::effects::Effects,
+    /// Tick timings, when a clock is set (`prof.clock`).
+    pub prof: crate::prof::Prof,
     /// Selected call (`TargetCall`, an AI number) and how long its icon shows.
     pub target_call: i32,
     pub call_icon_time: i32,
@@ -453,6 +455,7 @@ impl Hunt {
             bin_power: 2.5,
             map_mode: false,
             effects: Default::default(),
+            prof: Default::default(),
             target_call: (10..30).find(|a| opts.targets & (1 << a) != 0).unwrap_or(0),
             call_icon_time: 0,
             call_lock: 0,
@@ -513,6 +516,7 @@ impl Hunt {
         if self.paused && self.health > 0 {
             return;
         }
+        self.prof.start();
         self.real_time += dt;
         self.takt = self.takt.wrapping_add(1);
         // ProcessSyncro: health recovers 4 per ms while alive.
@@ -540,6 +544,7 @@ impl Hunt {
             }
             let mut pev = Vec::new();
             self.player.tick(area, &input.controls, dt as u32, &mut pev);
+            self.prof.mark(0);
             self.player_effects(area, &pev);
             out.extend(pev.into_iter().map(GameEvent::Player));
             if self.player.underwater && self.health > 0 {
@@ -570,6 +575,7 @@ impl Hunt {
             }
         }
         self.weapon_step(dt, out);
+        self.prof.mark(1);
 
         let mut dev = Vec::new();
         let hv = self.hunter_view();
@@ -588,6 +594,7 @@ impl Hunt {
         if !self.opts.trophy {
             self.herd.step(&mut ctx);
         }
+        self.prof.mark(2);
         for e in dev {
             match e {
                 DinoEvent::KillHunter {
@@ -628,6 +635,7 @@ impl Hunt {
             }
             out.push(GameEvent::Dino(e));
         }
+        self.prof.mark(3);
         // AnimateProcesses: now and then, bubbles rise in deep water ahead.
         if self.takt & 63 == 0 {
             let (cam, a, _) = self.camera();
@@ -647,6 +655,7 @@ impl Hunt {
             }
         }
         self.effects.step(area, dt, self.takt);
+        self.prof.mark(4);
 
         // AnimateProcesses: wind drifts every other frame.
         if self.takt & 1 != 0 {
@@ -655,6 +664,7 @@ impl Hunt {
         }
         self.wind.speed = self.wind.speed.clamp(4.0, 18.0);
         self.check_afraid(area);
+        self.prof.mark(5);
         if self.opts.trophy {
             self.process_trophy();
         } else if self.trophy_time > 0 {
@@ -680,6 +690,8 @@ impl Hunt {
             }
             out.push(GameEvent::Ship(e));
         }
+        self.prof.mark(6);
+        self.prof.end();
     }
 
     /// `RemoveCharacter`, fixing up every index that refers past it.

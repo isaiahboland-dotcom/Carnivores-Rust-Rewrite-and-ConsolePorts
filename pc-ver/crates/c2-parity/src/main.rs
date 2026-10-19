@@ -562,6 +562,126 @@ fn mee_sim(game: &Path, area_n: u32, seconds: u32) -> Result<()> {
     Ok(())
 }
 
+/// `c2-parity tick-bench <GAME_DIR> [AREA]`: the owner's 3DS report
+/// (sim time jumps once a Stegosaurus is in view, and stays up after
+/// killing it). A vanilla hunt with the 3DS's options, the hunter parked
+/// near a Stegosaurus for 20 s, then the animal killed and 60 s more; the
+/// slowest and mean tick of every 5 s.
+fn tick_bench(game: &Path, area_n: u32) -> Result<()> {
+    use c2_core::area::{Area, TimeOfDay};
+    use c2_core::dino::{ai, DinoInfo, Herd, PlaceOptions, Species};
+    use c2_core::game::{Hunt, HuntInput, HuntOptions, Weapons};
+    use c2_core::player::Player;
+    use c2_core::rng::MsRand;
+    let huntdat = find_ci(game, "HUNTDAT").context("no HUNTDAT")?;
+    let res_path = find_ci(&huntdat, "_RES.TXT").context("no _RES.TXT")?;
+    let res = ResTxt::parse(&String::from_utf8_lossy(&std::fs::read(res_path)?))?.to_data();
+    let areas = find_ci(&huntdat, "AREAS").context("no AREAS")?;
+    let map_path = find_ci(&areas, &format!("AREA{area_n}.MAP")).context("no map")?;
+    let rsc_path = find_ci(&areas, &format!("AREA{area_n}.RSC")).context("no rsc")?;
+    let area = Area::new(
+        map::parse(&std::fs::read(map_path)?)?,
+        rsc::parse(&std::fs::read(rsc_path)?)?,
+        TimeOfDay::Day,
+    );
+    let mut species = Vec::new();
+    let mut cars = Vec::new();
+    for d in &res.characters {
+        let info = DinoInfo::from_def(d);
+        let car = find_path(&huntdat, &info.file)
+            .and_then(|p| std::fs::read(p).ok())
+            .and_then(|d| car::parse(&d).ok());
+        let empty = car::Car {
+            name_raw: [0; 32],
+            mesh: Default::default(),
+            animations: vec![],
+            sounds: vec![],
+            anim_sounds: None,
+            trailing: Vec::new(),
+        };
+        species.push(Species::new(info, car.as_ref().unwrap_or(&empty)));
+        cars.push(car);
+    }
+    let cars: Vec<Option<&car::Car>> = cars.iter().map(Option::as_ref).collect();
+    let mut rng = MsRand::new(4242);
+    let cell = area.landings.first().copied().unwrap_or((512, 512));
+    let mut player = Player::new(&area, cell);
+    let mut herd = Herd {
+        species,
+        ..Default::default()
+    };
+    herd.place(
+        &area,
+        (player.x, player.z),
+        &mut rng,
+        PlaceOptions {
+            density: 128,
+            opt_agres: 128,
+            targets: 1 << ai::STEGO,
+            max_ambient: Some(4),
+        },
+    );
+    let stego = herd
+        .chars
+        .iter()
+        .position(|c| c.ai == ai::STEGO)
+        .context("no Stegosaurus placed")?;
+    // Park the hunter 1500 units from it, on the ground.
+    let s = herd.chars[stego].pos;
+    player.x = s[0] + 1500.0;
+    player.z = s[2];
+    player.y = area.land_height(player.x, player.z);
+    println!("{} animals; Stegosaurus #{stego}", herd.chars.len());
+    let opts = HuntOptions {
+        targets: 1 << ai::STEGO,
+        radar: false,
+        opt_agres: 128,
+        opt_sens: 128,
+        view_r: 42,
+        camo: false,
+        scent: false,
+        tranq: false,
+        observer: false,
+        trophy: false,
+        score_factor: 1.0,
+        dino_run_k: 1.0,
+    };
+    let weapons = Weapons::new(vec![], vec![], 0, false);
+    let room = c2_core::profile::new_player("bench", 0, 0);
+    let mut hunt = Hunt::new(&area, player, herd, weapons, rng, opts, room);
+    let input = HuntInput::default();
+    let mut out = Vec::new();
+    let (mut worst, mut sum, mut n) = (0f64, 0f64, 0u32);
+    for t in 0..8000u32 {
+        if t == 2000 {
+            hunt.debug_bag(&area, stego, &mut out);
+            println!("-- killed");
+        }
+        let t0 = std::time::Instant::now();
+        hunt.tick(&area, &cars, &input, 10, &mut out);
+        let ms = t0.elapsed().as_secs_f64() * 1000.0;
+        out.clear();
+        worst = worst.max(ms);
+        sum += ms;
+        n += 1;
+        if (t + 1) % 500 == 0 {
+            let c = hunt.herd.chars.get(stego);
+            println!(
+                "t={:>3}s worst {:.3} ms mean {:.4} ms  chars {} blood {} ship {} stego state {:?}",
+                (t + 1) / 100,
+                worst,
+                sum / f64::from(n),
+                hunt.herd.chars.len(),
+                hunt.effects.blood.len(),
+                hunt.ship.state,
+                c.map(|c| (c.state, c.health, c.afraid_time)),
+            );
+            (worst, sum, n) = (0.0, 0.0, 0);
+        }
+    }
+    Ok(())
+}
+
 /// `name` in `dir`, ignoring case.
 fn find_ci(dir: &Path, name: &str) -> Option<std::path::PathBuf> {
     std::fs::read_dir(dir)
@@ -598,6 +718,13 @@ fn main() -> Result<()> {
             Ok(args.get(i).map(|s| s.parse()).transpose()?.unwrap_or(d))
         };
         return mee_sim(Path::new(dir), num(2, 1)?, num(3, 60)?);
+    }
+    if args.first().map(String::as_str) == Some("tick-bench") {
+        let dir = args
+            .get(1)
+            .context("usage: c2-parity tick-bench <GAME_DIR> [AREA]")?;
+        let a = args.get(2).map(|s| s.parse()).transpose()?.unwrap_or(1);
+        return tick_bench(Path::new(dir), a);
     }
     if args.first().map(String::as_str) == Some("walk") {
         let path = args

@@ -2,6 +2,22 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-19 — 3DS: slow-tick report; catch-up capped, tick timings
+Owner's Old 3DS report: after a Stegosaurus came into view (and was
+killed) the frame rate fell to 40 with "sim" at 93 ms. That is about 12
+fixed 10 ms ticks per frame at about 8 ms each, against well under 1 ms
+normally: one tick got slower, and the catch-up loop (up to 25 ticks per
+frame) multiplied it. The same scene on PC (`c2-parity tick-bench`: hunter
+beside a Stegosaurus, the kill, the ship's pickup) never exceeds 0.12 ms
+a tick, so the cause is not found yet.
+- The 3DS runs at most 4 ticks a frame (`MAX_TICKS`); below 25 fps the
+  game slows down instead of spiralling. Deviation from the PC build,
+  which keeps catching up.
+- `Hunt::prof` times the tick's parts when given a clock; the 3DS pause
+  screen shows ticks last frame and per part mean / worst ms (`p` player,
+  `w` weapon, `d` dinos, `e` events, `f` effects, `a` CheckAfraid, `s`
+  ship), to find the slow part on hardware.
+
 ## 2026-10-19 — Jumping needs a fresh press
 The original jumps whenever the jump key is down and the hunter is not
 rising (`Hunt2.cpp: ProcessPlayerMovement`, `YSpeed == 0`), and walking

@@ -43,6 +43,23 @@ fn ticks() -> u64 {
 /// ARM11 ticks per second (`SYSCLOCK_ARM11`).
 const TICKS_PER_SEC: f64 = 268_111_856.0;
 
+/// Milliseconds for `Hunt::prof`.
+fn clock_ms() -> f64 {
+    ticks() as f64 / TICKS_PER_SEC * 1000.0
+}
+
+/// The last frame's tick count and each part's mean / worst ms per tick
+/// (`c2_core::prof::SECTIONS`, by initial).
+fn tick_line(game: &hunt::Game) -> String {
+    let p = &game.hunt.prof;
+    let parts: Vec<String> = c2_core::prof::SECTIONS
+        .iter()
+        .zip(p.mean.iter().zip(&p.worst))
+        .map(|(n, (m, w))| format!("{}{m:.1}/{w:.0}", &n[..1]))
+        .collect();
+    format!("{}t {}", game.ticks_last, parts.join(" "))
+}
+
 fn find_packs() -> Vec<PathBuf> {
     let mut v: Vec<PathBuf> = std::fs::read_dir(DIR)
         .map(|rd| {
@@ -342,6 +359,7 @@ fn hunt(vfs: &Vfs, info: &PackInfo, setup: Setup, gpu: &mut Gpu, io: &mut Io) ->
         ticks() as u32,
         &mut |_| {},
     )?;
+    game.hunt.prof.clock = Some(clock_ms);
     let mut world = World::new(
         vfs,
         &game.area,
@@ -408,6 +426,9 @@ fn hunt(vfs: &Vfs, info: &PackInfo, setup: Setup, gpu: &mut Gpu, io: &mut Io) ->
             s.update(&game.events, &game.hunt, dt.min(0.1));
         }
         let m_upd = ms_of(t_upd);
+        if frame % 120 == 0 {
+            game.hunt.prof.reset_worst();
+        }
         for e in game.events.drain(..) {
             match e {
                 GameEvent::Message(m) => message = Some((m, frame + 180)),
@@ -456,7 +477,7 @@ fn hunt(vfs: &Vfs, info: &PackInfo, setup: Setup, gpu: &mut Gpu, io: &mut Io) ->
             .filter(|m| m.1 > frame)
             .map(|m| m.0.clone());
         let debug = format!(
-            "{} {fps:.0}fps cmd {:.0}% {}\n{}\nms: sim {:.1} world {:.1} 2d {:.1} wait {:.1}",
+            "{} {fps:.0}fps cmd {:.0}% {}\n{}\nms: sim {:.1} world {:.1} 2d {:.1} wait {:.1}\n{}",
             game.info.target,
             gpu.cmdbuf_usage() * 100.0,
             mem_line(),
@@ -467,6 +488,7 @@ fn hunt(vfs: &Vfs, info: &PackInfo, setup: Setup, gpu: &mut Gpu, io: &mut Io) ->
             ms[1],
             ms[2],
             ms[3],
+            tick_line(&game),
         );
         let t_ui = ticks();
         ui.new_frame();

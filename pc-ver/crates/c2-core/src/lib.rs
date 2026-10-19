@@ -13,6 +13,7 @@ pub mod load;
 pub mod mee;
 pub mod model;
 pub mod player;
+pub mod prof;
 pub mod profile;
 pub mod rng;
 pub mod ship;
