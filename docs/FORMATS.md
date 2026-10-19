@@ -182,6 +182,15 @@ but every retail and mod `_RES.TXT` has it.
 Keys the original engine doesn't read are kept in each def's `extra` list, so
 mods that add their own keys survive a parse/merge/write cycle.
 
+**Nesting** (the Modder's Edition Engine dialect, README M9): any line ending
+in `{` opens a sub-block, at any depth (`spawninfo{`, `idlegroup{`,
+`overwrite area2 time0 {`, `region{` inside a spawn table's `spawngroup{`).
+`c2_formats::res_txt` keeps them as `Block::subs` / `Section::subs`, in
+order and with their position among the entries, so a rewrite puts them
+back in place. Blocks outside any section are kept as unnamed sections. The
+original engine never sees nested blocks; the dialect's own semantics
+(tables, `overwrite` / `addition`) are layered on top.
+
 ---
 
 ## `.TGA` — images (`LoadPictureTGA`)

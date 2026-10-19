@@ -77,3 +77,22 @@ fn blocks_outside_a_section_are_kept_and_ignored() {
     let again = ResTxt::parse(&r.write()).expect("reparse");
     assert_eq!(again.sections, r.sections);
 }
+
+#[test]
+fn nested_blocks_keep_their_place() {
+    // The Modder's Edition dialect nests named blocks inside entries.
+    let text = "characters {\n{\n name = 'Moschops'\n ai = 1\nspawninfo{\n spawngroup = 0\n}\n health = 2\n overwrite area2 time0 {\n  health = 3\n  idlegroup{\n   anim = 4\n  }\n }\n}\n}\nspawntable {\n spawngroup{\n  spawnmax = 6\n  region{\n   xmin = 1\n  }\n }\n spawngroup{\n  spawnmax = 4\n }\n}\n.\n";
+    let r = ResTxt::parse(text).expect("parse");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    let c = &r.section("characters").expect("characters").blocks[0];
+    assert_eq!(c.get(&["health"]), Some("2"));
+    assert_eq!(c.subs.len(), 2);
+    assert_eq!((c.subs[0].name.as_str(), c.subs[0].at), ("spawninfo", 2));
+    assert_eq!(c.subs[1].name, "overwrite area2 time0");
+    assert_eq!(c.subs[1].block.subs_named("idlegroup").count(), 1);
+    let t = r.section("spawntable").expect("spawntable");
+    assert_eq!(t.subs.len(), 2);
+    assert_eq!(t.subs[0].block.subs[0].name, "region");
+    let again = ResTxt::parse(&r.write()).expect("reparse");
+    assert_eq!(again.sections, r.sections);
+}

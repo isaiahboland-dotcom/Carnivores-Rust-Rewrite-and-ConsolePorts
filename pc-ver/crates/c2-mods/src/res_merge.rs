@@ -118,6 +118,7 @@ pub fn diff(vanilla: &ResTxt, modded: &ResTxt) -> Vec<Change> {
             name: ms.name.clone(),
             blocks: Vec::new(),
             entries: Vec::new(),
+            subs: Vec::new(),
         };
         let vs = vanilla.section(&ms.name).unwrap_or(&empty);
         // Blocks: match by id first.
@@ -211,6 +212,7 @@ fn section_mut<'a>(res: &'a mut ResTxt, name: &str) -> &'a mut Section {
                 name: name.to_string(),
                 blocks: Vec::new(),
                 entries: Vec::new(),
+                subs: Vec::new(),
             });
             res.sections.len() - 1
         }

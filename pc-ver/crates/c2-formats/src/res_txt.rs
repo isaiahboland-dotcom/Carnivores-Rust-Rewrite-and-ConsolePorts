@@ -2,8 +2,10 @@
 //!
 //! Parsing happens in two layers:
 //! - [`ResTxt`] is a lossless-enough generic tree (sections → blocks →
-//!   `key = value` entries) that keeps unknown keys, so mods that add their
-//!   own keys survive a parse/merge/write cycle.
+//!   `key = value` entries, and nested `name { ... }` sub-blocks at any
+//!   depth, as the Modder's Edition Engine dialect uses) that keeps unknown
+//!   keys, so mods that add their own keys survive a parse/merge/write
+//!   cycle.
 //! - [`ResTxt::to_data`] builds typed [`ResData`] for the engine.
 //!
 //! Matching the original (`Resources.cpp: LoadResourcesScript`,
@@ -24,6 +26,20 @@ pub struct Entry {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Block {
     pub entries: Vec<Entry>,
+    /// Nested `name { ... }` blocks (`spawninfo{`, `overwrite area2 {`, an
+    /// anonymous `{` has an empty name), in file order.
+    pub subs: Vec<Sub>,
+}
+
+/// A nested block inside a [`Block`] or [`Section`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sub {
+    /// The text before `{`, trimmed (`spawninfo`, `overwrite char0 area1`).
+    pub name: String,
+    /// How many of the parent's entries come before it (for rewriting in
+    /// place).
+    pub at: usize,
+    pub block: Block,
 }
 
 impl Block {
@@ -35,15 +51,35 @@ impl Block {
             .find(|e| keys.iter().any(|k| e.key.eq_ignore_ascii_case(k)))
             .map(|e| e.value.as_str())
     }
+
+    /// Every entry with this key (case-insensitive), in order (keys that
+    /// may repeat, such as `fearCall`).
+    pub fn all<'a>(&'a self, key: &'a str) -> impl Iterator<Item = &'a str> + 'a {
+        self.entries
+            .iter()
+            .filter(move |e| e.key.eq_ignore_ascii_case(key))
+            .map(|e| e.value.as_str())
+    }
+
+    /// Sub-blocks named `name` (case-insensitive), in order.
+    pub fn subs_named<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a Block> + 'a {
+        self.subs
+            .iter()
+            .filter(move |s| s.name.eq_ignore_ascii_case(name))
+            .map(|s| &s.block)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Section {
     pub name: String,
-    /// `{ ... }` blocks (weapons, characters).
+    /// Anonymous `{ ... }` blocks (weapons, characters).
     pub blocks: Vec<Block>,
     /// Bare `key = value` lines directly in the section (prices).
     pub entries: Vec<Entry>,
+    /// Named blocks directly in the section (`spawngroup{` in a spawn
+    /// table), in order.
+    pub subs: Vec<Sub>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -79,10 +115,71 @@ fn parse_entry(line: &str) -> Option<Entry> {
     })
 }
 
+/// One `{ ... }` body: entries and child bodies, read up to its `}`.
+#[derive(Default)]
+struct Node {
+    entries: Vec<Entry>,
+    children: Vec<(String, usize, Node)>,
+}
+
+impl Node {
+    fn into_block(self) -> Block {
+        Block {
+            entries: self.entries,
+            subs: self
+                .children
+                .into_iter()
+                .map(|(name, at, n)| Sub {
+                    name,
+                    at,
+                    block: n.into_block(),
+                })
+                .collect(),
+        }
+    }
+}
+
+/// Reads a body after its `{`. Returns it and whether its `}` was found
+/// (`false`: the file ended first, or a `.` line ended it).
+fn parse_node<'a>(
+    lines: &mut impl Iterator<Item = (usize, &'a str)>,
+    warnings: &mut Vec<String>,
+) -> (Node, bool) {
+    let mut node = Node::default();
+    while let Some((ln, raw)) = lines.next() {
+        if raw.starts_with('.') {
+            return (node, false);
+        }
+        let line = strip_comment(raw).trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line.starts_with('}') {
+            return (node, true);
+        }
+        if let Some(name) = line.strip_suffix('{').map(str::trim) {
+            let at = node.entries.len();
+            let (child, closed) = parse_node(lines, warnings);
+            node.children.push((name.to_string(), at, child));
+            if !closed {
+                return (node, false);
+            }
+        } else if let Some(e) = parse_entry(line) {
+            node.entries.push(e);
+        } else {
+            warnings.push(format!(
+                "line {}: not a `key = value` line: {line:?}",
+                ln + 1
+            ));
+        }
+    }
+    (node, false)
+}
+
 impl ResTxt {
     pub fn parse(text: &str) -> Result<Self, FormatError> {
         let mut out = ResTxt::default();
-        let mut lines = text.lines().enumerate().peekable();
+        let mut lines = text.lines().enumerate();
         while let Some((ln, raw)) = lines.next() {
             if raw.starts_with('.') {
                 break;
@@ -109,48 +206,23 @@ impl ResTxt {
                     ln + 1
                 ));
             }
+            let (node, closed) = parse_node(&mut lines, &mut out.warnings);
             let mut section = Section {
                 name: name.to_string(),
                 blocks: Vec::new(),
-                entries: Vec::new(),
+                entries: node.entries,
+                subs: Vec::new(),
             };
-            let mut block: Option<Block> = None;
-            let mut closed = false;
-            for (ln, raw) in lines.by_ref() {
-                let line = strip_comment(raw).trim();
-                if line.is_empty() {
-                    continue;
-                }
-                if line.starts_with('}') {
-                    match block.take() {
-                        Some(b) => section.blocks.push(b),
-                        None => {
-                            closed = true;
-                            break;
-                        }
-                    }
-                } else if line.starts_with('{') {
-                    if let Some(b) = block.replace(Block::default()) {
-                        out.warnings.push(format!(
-                            "line {}: block opened before previous one closed",
-                            ln + 1
-                        ));
-                        section.blocks.push(b);
-                    }
-                } else if let Some(e) = parse_entry(line) {
-                    match &mut block {
-                        Some(b) => b.entries.push(e),
-                        None => section.entries.push(e),
-                    }
+            for (n, at, child) in node.children {
+                if n.is_empty() {
+                    section.blocks.push(child.into_block());
                 } else {
-                    out.warnings.push(format!(
-                        "line {}: not a `key = value` line: {line:?}",
-                        ln + 1
-                    ));
+                    section.subs.push(Sub {
+                        name: n,
+                        at,
+                        block: child.into_block(),
+                    });
                 }
-            }
-            if let Some(b) = block {
-                section.blocks.push(b);
             }
             if !closed {
                 out.warnings.push(format!(
@@ -173,9 +245,6 @@ impl ResTxt {
     /// terminated by `.`).
     pub fn write(&self) -> String {
         let mut s = String::new();
-        let entry = |s: &mut String, indent: &str, e: &Entry| {
-            s.push_str(&format!("{indent}{} = {}\r\n", e.key, e.value));
-        };
         for sec in &self.sections {
             if sec.name.is_empty() {
                 s.push_str("{\r\n");
@@ -184,14 +253,17 @@ impl ResTxt {
             }
             for b in &sec.blocks {
                 s.push_str("{\r\n");
-                for e in &b.entries {
-                    entry(&mut s, " ", e);
-                }
+                write_body(&mut s, b, 1);
                 s.push_str("}\r\n\r\n");
             }
-            for e in &sec.entries {
-                entry(&mut s, " ", e);
-            }
+            write_body(
+                &mut s,
+                &Block {
+                    entries: sec.entries.clone(),
+                    subs: sec.subs.clone(),
+                },
+                1,
+            );
             s.push_str("}\r\n\r\n");
         }
         s.push_str(".\r\n");
@@ -217,6 +289,22 @@ impl ResTxt {
             weapons,
             characters,
             prices,
+        }
+    }
+}
+
+/// A block's entries with its sub-blocks in their places, indented.
+fn write_body(s: &mut String, b: &Block, depth: usize) {
+    let pad = " ".repeat(depth);
+    let mut subs = b.subs.iter().peekable();
+    for i in 0..=b.entries.len() {
+        while let Some(sub) = subs.next_if(|x| x.at <= i) {
+            s.push_str(&format!("{pad}{} {{\r\n", sub.name));
+            write_body(s, &sub.block, depth + 1);
+            s.push_str(&format!("{pad}}}\r\n"));
+        }
+        if let Some(e) = b.entries.get(i) {
+            s.push_str(&format!("{pad}{} = {}\r\n", e.key, e.value));
         }
     }
 }
