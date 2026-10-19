@@ -8,6 +8,7 @@
 mod gpu;
 mod hunt;
 mod shot;
+mod ui;
 mod world;
 
 use std::path::{Path, PathBuf};
@@ -22,6 +23,7 @@ use glam::{Mat4, Vec3};
 use crate::gpu::Gpu;
 use crate::hunt::{Game, Pad};
 use crate::shot::Script;
+use crate::ui::{Tap, Ui};
 use crate::world::{Poser, World};
 
 pub const DIR: &str = "sdmc:/3ds/c2rs";
@@ -117,28 +119,56 @@ fn mem_line() -> String {
         let used = mallinfo().uordblks as f32 / (1024.0 * 1024.0);
         let heap = __ctru_heap_size as f32 / (1024.0 * 1024.0);
         let lin = ctru_sys::linearSpaceFree() as f32 / (1024.0 * 1024.0);
-        format!("heap {used:.1}/{heap:.1} MiB, linear free {lin:.1}")
+        format!("heap {used:.1}/{heap:.1}M linear free {lin:.1}M")
     }
 }
 
-/// Keys to the hunt's controls. `touch` is the previous touch point.
-fn read_pad(hid: &Hid, held: KeyPad, down: KeyPad, touch: &mut Option<(u16, u16)>) -> Pad {
+/// A touch in progress: where it started, where it was last frame, and
+/// whether it has moved far enough to be a drag (look) rather than a tap.
+#[derive(Default)]
+struct Touch {
+    start: Option<(f32, f32)>,
+    last: (f32, f32),
+    dragged: bool,
+}
+
+/// Keys to the hunt's controls, and a finished tap on the bottom screen.
+fn read_pad(hid: &Hid, held: KeyPad, down: KeyPad, touch: &mut Touch) -> (Pad, Option<(f32, f32)>) {
     let (cx, cy) = hid.circlepad_position();
     let mut cs = ctru_sys::circlePosition { dx: 0, dy: 0 };
     unsafe { ctru_sys::irrstCstickRead(&mut cs) };
     let mut look = (f32::from(cs.dx) / 12.0, -f32::from(cs.dy) / 12.0);
+    let mut tap = None;
     if held.contains(KeyPad::TOUCH) {
-        let p = hid.touch_position();
-        if let Some(prev) = *touch {
-            look.0 += (f32::from(p.0) - f32::from(prev.0)) * 2.0;
-            look.1 += (f32::from(p.1) - f32::from(prev.1)) * 2.0;
+        let (x, y) = hid.touch_position();
+        let p = (f32::from(x), f32::from(y));
+        match touch.start {
+            None => {
+                *touch = Touch {
+                    start: Some(p),
+                    last: p,
+                    dragged: false,
+                }
+            }
+            Some(s) => {
+                if !touch.dragged && (p.0 - s.0).hypot(p.1 - s.1) > 6.0 {
+                    touch.dragged = true;
+                }
+                if touch.dragged {
+                    look.0 += (p.0 - touch.last.0) * 2.0;
+                    look.1 += (p.1 - touch.last.1) * 2.0;
+                }
+                touch.last = p;
+            }
         }
-        *touch = Some(p);
     } else {
-        *touch = None;
+        if !touch.dragged {
+            tap = touch.start;
+        }
+        *touch = Touch::default();
     }
     let stick = |v: i16| (f32::from(v) / 150.0).clamp(-1.0, 1.0);
-    Pad {
+    let pad = Pad {
         stick: (stick(cx), stick(cy)),
         look,
         turn_left: held.contains(KeyPad::DPAD_LEFT),
@@ -157,7 +187,10 @@ fn read_pad(hid: &Hid, held: KeyPad, down: KeyPad, touch: &mut Option<(u16, u16)
         escape: down.contains(KeyPad::START),
         confirm: down.contains(KeyPad::A),
         cancel: down.contains(KeyPad::B),
-    }
+        select_weapon: None,
+        select_call: None,
+    };
+    (pad, tap)
 }
 
 /// The camera: the original's yaw/pitch, as the PC view does it.
@@ -172,6 +205,7 @@ fn camera(pos: Vec3, alpha: f32, beta: f32) -> (Mat4, Vec3) {
 }
 
 fn run(pack: &Path, apt: &Apt, hid: &mut Hid, console: &Console) -> Result<()> {
+    console.select();
     let mut vfs = Vfs::new();
     vfs.push(
         "pack",
@@ -192,6 +226,7 @@ fn run(pack: &Path, apt: &Apt, hid: &mut Hid, console: &Console) -> Result<()> {
         &game.cars,
         &game.weapon_cars,
     );
+    let mut ui = Ui::new(&vfs, &game);
     game.trim();
     drop(vfs);
     println!(
@@ -202,13 +237,12 @@ fn run(pack: &Path, apt: &Apt, hid: &mut Hid, console: &Console) -> Result<()> {
     println!("  {}", mem_line());
 
     let mut script = Script::load(&format!("{DIR}/autotest.txt"));
-    let mut touch = None;
+    let mut touch = Touch::default();
     let mut last = ticks();
     let mut fps = 0.0f32;
     let mut frame = 0u32;
     let mut message: Option<(String, u32)> = None;
     let mut shot_n = 0;
-    console.clear();
     while apt.main_loop() {
         hid.scan_input();
         let (mut held, mut down) = (hid.keys_held(), hid.keys_down());
@@ -227,7 +261,19 @@ fn run(pack: &Path, apt: &Apt, hid: &mut Hid, console: &Console) -> Result<()> {
             game.hunt.paused = true;
             game.prev_cam = game.hunt.camera().0;
         }
-        let pad = read_pad(hid, held, down, &mut touch);
+        let (mut pad, mut tap) = read_pad(hid, held, down, &mut touch);
+        if let Some(t) = script.as_ref().and_then(|s| s.tap(frame)) {
+            tap = Some(t);
+        }
+        match tap.and_then(|(x, y)| ui.tap(x, y)) {
+            Some(Tap::Weapon(i)) => pad.select_weapon = Some(i),
+            Some(Tap::Call(ai)) if ai == game.hunt.target_call => pad.call = true,
+            Some(Tap::Call(ai)) => pad.select_call = Some(ai),
+            Some(Tap::MapZoom) => ui.map_local = !ui.map_local,
+            Some(Tap::Binoculars) => pad.binoculars = true,
+            Some(Tap::Pause) => pad.pause = true,
+            None => {}
+        }
         let now = ticks();
         let dt = ((now - last) as f64 / TICKS_PER_SEC) as f32;
         last = now;
@@ -260,6 +306,19 @@ fn run(pack: &Path, apt: &Apt, hid: &mut Hid, console: &Console) -> Result<()> {
         world.draw(
             &mut gpu, &game.area, &game.hunt, &poser, &view, pos, fwd, fovy,
         );
+        let msg = message
+            .as_ref()
+            .filter(|m| m.1 > frame)
+            .map(|m| m.0.clone());
+        let debug = format!(
+            "{} {fps:.0}fps cmd {:.0}% {}",
+            game.info.target,
+            gpu.cmdbuf_usage() * 100.0,
+            mem_line()
+        );
+        ui.new_frame();
+        ui.draw_top(&mut gpu, &game, &game.hunt, &debug);
+        ui.draw_bottom(&mut gpu, &game, msg.as_deref());
         gpu.end();
 
         let shoot = (held.contains(KeyPad::L) && down.contains(KeyPad::SELECT))
@@ -278,82 +337,9 @@ fn run(pack: &Path, apt: &Apt, hid: &mut Hid, console: &Console) -> Result<()> {
         if script.as_ref().is_some_and(|s| s.done(frame)) {
             break;
         }
-
-        if frame % 15 == 0 {
-            status(
-                &game,
-                fps,
-                &message
-                    .as_ref()
-                    .filter(|m| m.1 > frame)
-                    .map(|m| m.0.clone()),
-                &gpu,
-            );
-        }
         frame += 1;
     }
     Ok(())
-}
-
-/// The bottom screen.
-fn status(game: &Game, fps: f32, message: &Option<String>, gpu: &Gpu) {
-    let h = &game.hunt;
-    let w = &h.weapons;
-    let alive = h
-        .herd
-        .chars
-        .iter()
-        .filter(|c| c.health > 0 && c.ai >= 10)
-        .count();
-    let weapon = match w.pose() {
-        Some(_) => format!(
-            "{} ({} left)",
-            w.info.get(w.current).map_or("?", |i| i.name.as_str()),
-            w.shots_left.get(w.current).copied().unwrap_or(0)
-        ),
-        None => "hidden (A to draw)".into(),
-    };
-    let state = if h.exit_prompt {
-        "Leave the hunt? A = yes, B = no"
-    } else if h.paused {
-        "PAUSED (SELECT)"
-    } else if h.death.is_some() {
-        "You are dead..."
-    } else if h.player.underwater {
-        "underwater"
-    } else if game.run {
-        "running"
-    } else {
-        ""
-    };
-    print!("\x1b[1;1H");
-    println!(
-        "c2rs 3DS ({})  {} {:?}  {:4.1} fps\x1b[K",
-        game.info.target, game.info.area, game.info.time, fps
-    );
-    println!(
-        "cmdbuf {:3.0}%  {}\x1b[K",
-        gpu.cmdbuf_usage() * 100.0,
-        mem_line()
-    );
-    let (cam, a, b) = h.camera();
-    println!(
-        "cam {:.0},{:.0},{:.0} {:.2},{:.2}\x1b[K",
-        cam[0], cam[1], cam[2], a, b
-    );
-    println!("Weapon:  {weapon}\x1b[K");
-    println!("Animals: {alive} huntable, {} bagged\x1b[K", h.successes);
-    println!("{state}\x1b[K");
-    println!("{}\x1b[K", message.as_deref().unwrap_or(""));
-    println!("\x1b[K");
-    println!("Circle Pad move     D-Pad turn/look\x1b[K");
-    println!("C-Stick / touch     look\x1b[K");
-    println!("R fire   A show/hide weapon\x1b[K");
-    println!("X next weapon   Y binoculars\x1b[K");
-    println!("L run on/off   B jump/swim\x1b[K");
-    println!("ZL crouch   ZR call\x1b[K");
-    println!("SELECT pause   L+SELECT screenshot\x1b[K");
-    println!("START leave\x1b[K");
 }
 
 fn main() {

@@ -92,6 +92,7 @@ dependencies = [
  "c2-formats",
  "c2-mods",
  "c2-vfs",
+ "font8x8",
  "tracing",
  "tracing-subscriber",
 ]
@@ -294,6 +295,12 @@ checksum = "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb"
 dependencies = [
  "zlib-rs",
 ]
+
+[[package]]
+name = "font8x8"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "875488b8711a968268c7cf5d139578713097ca4635a76044e8fe8eedf831d07e"
 
 [[package]]
 name = "generic-array"

@@ -9,6 +9,7 @@
 //! press a             # one frame
 //! shot NAME           # save shots/NAME.tga
 //! cam X Z ALPHA BETA   # put the hunter there (world units, radians), paused
+//! tap X Y             # tap the bottom screen at pixel (X, Y)
 //! quit
 //! ```
 
@@ -55,6 +56,7 @@ enum Step {
     Shot(String),
     /// Put the hunter at world (x, z) looking (alpha, beta) and pause.
     Cam([f32; 4]),
+    Tap(f32, f32),
     Quit,
 }
 
@@ -103,6 +105,10 @@ impl Script {
                 "press" => (Step::Press(keys(a.unwrap_or(""))), 2),
                 "shot" => (Step::Shot(a.unwrap_or("shot").to_string()), 1),
                 "quit" => (Step::Quit, 1),
+                "tap" => {
+                    let n = |s: Option<&str>| s.and_then(|v| v.parse().ok()).unwrap_or(0.0);
+                    (Step::Tap(n(a), n(b)), 2)
+                }
                 "cam" => {
                     let v: Vec<f32> = line
                         .split_whitespace()
@@ -147,6 +153,13 @@ impl Script {
     pub fn cam(&self, frame: u32) -> Option<[f32; 4]> {
         match self.current(frame) {
             Some((at, Step::Cam(c))) if *at == frame => Some(*c),
+            _ => None,
+        }
+    }
+
+    pub fn tap(&self, frame: u32) -> Option<(f32, f32)> {
+        match self.current(frame) {
+            Some((at, Step::Tap(x, y))) if *at == frame => Some((*x, *y)),
             _ => None,
         }
     }

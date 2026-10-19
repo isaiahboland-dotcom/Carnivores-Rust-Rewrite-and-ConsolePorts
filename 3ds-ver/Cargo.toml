@@ -21,6 +21,7 @@ c2-core = { path = "../pc-ver/crates/c2-core" }
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+font8x8 = { version = "0.3.1", default-features = false, features = ["unicode"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

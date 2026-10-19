@@ -254,6 +254,56 @@ fn downscale(rgba: &[u8], w: usize, h: usize, nw: usize, nh: usize) -> Vec<u8> {
     out
 }
 
+/// Area-averaged resize of an RGBA8 image to `nw` x `nh`, placed at the
+/// top left of a transparent `cw` x `ch` canvas (power-of-two for the GPU).
+fn fit(rgba: &[u8], w: usize, h: usize, nw: usize, nh: usize, cw: usize, ch: usize) -> Vec<u8> {
+    let mut out = vec![0u8; cw * ch * 4];
+    for y in 0..nh.min(ch) {
+        for x in 0..nw.min(cw) {
+            let (x0, x1) = (x * w / nw, ((x + 1) * w / nw).max(x * w / nw + 1));
+            let (y0, y1) = (y * h / nh, ((y + 1) * h / nh).max(y * h / nh + 1));
+            let (mut sum, mut n) = ([0u32; 4], 0u32);
+            for sy in y0..y1.min(h) {
+                for sx in x0..x1.min(w) {
+                    let i = (sy * w + sx) * 4;
+                    if let Some(p) = rgba.get(i..i + 4) {
+                        for k in 0..4 {
+                            sum[k] += u32::from(p[k]);
+                        }
+                        n += 1;
+                    }
+                }
+            }
+            let d = (y * cw + x) * 4;
+            for k in 0..4 {
+                out[d + k] = (sum[k] / n.max(1)) as u8;
+            }
+        }
+    }
+    out
+}
+
+/// The 8x8 font (ASCII 32..=127, 16 per row) as white-on-clear, 128x64.
+fn font() -> Vec<u8> {
+    use font8x8::{UnicodeFonts, BASIC_FONTS};
+    let mut px = vec![0u8; 128 * 64 * 4];
+    for code in 32u32..128 {
+        let Some(glyph) = char::from_u32(code).and_then(|c| BASIC_FONTS.get(c)) else {
+            continue;
+        };
+        let (cx, cy) = ((code - 32) as usize % 16 * 8, (code - 32) as usize / 16 * 8);
+        for (row, bits) in glyph.iter().enumerate() {
+            for col in 0..8 {
+                if bits & (1 << col) != 0 {
+                    let i = ((cy + row) * 128 + cx + col) * 4;
+                    px[i..i + 4].copy_from_slice(&[255; 4]);
+                }
+            }
+        }
+    }
+    px
+}
+
 /// `BrightenTexture` at night: every texel becomes `(G/8, G, G/8)`.
 fn night_vision(rgba: &mut [u8]) {
     for p in rgba.as_chunks_mut::<4>().0 {
@@ -295,6 +345,13 @@ impl Cooker {
         }
         self.add(path, c2_formats::car::write(&car));
         Ok(rgba)
+    }
+
+    /// A 2D picture, already sized, as an RGBA5551 texture.
+    fn picture(&mut self, name: &str, rgba: &[u8], w: usize, h: usize) {
+        let t = tile(rgba, w, h, TexFormat::Rgba5551);
+        *self.linear.entry("textures").or_default() += t.data.len() / 1024;
+        self.add(name, write_texture(&t));
     }
 
     /// A model texture (256x256 RGBA8) at the profile's size.
@@ -389,6 +446,15 @@ fn main() -> Result<()> {
             c.model_texture(format!("C2RS/{tx}.TX"), &rgba);
         }
     }
+    // Binoculars (`RenderNearModel(Binocular, ...)`).
+    if let Ok(d) = vfs.read("HUNTDAT/BINOCUL.3DF") {
+        let m = c2_formats::three_df::parse(&d).context("parsing HUNTDAT/BINOCUL.3DF")?;
+        c.add("C2RS/BINOC.3DF", d);
+        c.model_texture(
+            "C2RS/BINOC.TX".into(),
+            &PreparedModel::from_mesh(&m.mesh).texture_rgba,
+        );
+    }
     // Sun or moon (`Hunt2.cpp`: MOON.3DF at night, SUN2.3DF otherwise).
     let sun = if time == TimeOfDay::Night {
         "HUNTDAT/MOON.3DF"
@@ -441,6 +507,41 @@ fn main() -> Result<()> {
             atlas[d..d + t * 4].copy_from_slice(&px[y * t * 4..(y + 1) * t * 4]);
         }
     }
+    // Bottom screen: the font, the map (GenerateMapImage), call icons for
+    // the chosen animals (MENU/PICS/CALLn.TGA, n = AI - 9) and weapon
+    // pictures (WEAPONn.TGA, n = index + 1), at the sizes c2-3ds draws.
+    c.picture("C2RS/FONT.TX", &font(), 128, 64);
+    let map = image_to_rgba8(&c2_core::game::Hunt::map_image(&area), false);
+    let map = tile(&map, 256, 256, TexFormat::Rgb565);
+    *c.linear.entry("textures").or_default() += map.data.len() / 1024;
+    c.add("C2RS/MAP.TX", write_texture(&map));
+    let menu_pic = |name: &str| -> Option<(usize, usize, Vec<u8>)> {
+        let p =
+            c2_formats::tga::parse(&vfs.read(&format!("HUNTDAT/MENU/PICS/{name}")).ok()?).ok()?;
+        Some((p.width, p.height, image_to_rgba8(&p.pixels, false)))
+    };
+    for &i in &dinos {
+        let ai = infos[i].ai;
+        if let Some((w, h, px)) = menu_pic(&format!("CALL{}.TGA", ai - 9)) {
+            c.picture(
+                &format!("C2RS/CALL{ai}.TX"),
+                &fit(&px, w, h, 64, 52, 64, 64),
+                64,
+                64,
+            );
+        }
+    }
+    for &i in &weapons {
+        if let Some((w, h, px)) = menu_pic(&format!("WEAPON{}.TGA", i + 1)) {
+            c.picture(
+                &format!("C2RS/WPNPIC{i}.TX"),
+                &fit(&px, w, h, 64, 37, 64, 64),
+                64,
+                64,
+            );
+        }
+    }
+
     // The cloud plane (RenderSkyPlane), as on the PC: no night vision.
     let sky_side = (profile.model_tex * 2).min(256);
     let sky = downscale(

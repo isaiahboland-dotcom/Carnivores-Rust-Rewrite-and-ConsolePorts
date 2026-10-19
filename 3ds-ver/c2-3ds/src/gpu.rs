@@ -51,13 +51,32 @@ impl<T: Copy> LinearBuf<T> {
 
     /// Replaces the contents (up to the capacity) and flushes them to memory.
     pub fn write(&mut self, data: &[T]) {
-        let n = data.len().min(self.cap);
-        unsafe {
-            std::ptr::copy_nonoverlapping(data.as_ptr(), self.ptr, n);
-            let _ =
-                sys::GSPGPU_FlushDataCache(self.ptr as *const c_void, (n * size_of::<T>()) as u32);
+        self.len = 0;
+        self.append(data);
+    }
+
+    /// Adds `data` after the current contents; returns where it starts, or
+    /// `None` if it doesn't fit. A buffer drawn several times in a frame is
+    /// filled this way: the GPU reads it only when the frame is submitted.
+    pub fn append(&mut self, data: &[T]) -> Option<usize> {
+        let at = self.len;
+        if at + data.len() > self.cap {
+            return None;
         }
-        self.len = n;
+        unsafe {
+            let dst = self.ptr.add(at);
+            std::ptr::copy_nonoverlapping(data.as_ptr(), dst, data.len());
+            let _ = sys::GSPGPU_FlushDataCache(
+                dst as *const c_void,
+                (data.len() * size_of::<T>()) as u32,
+            );
+        }
+        self.len = at + data.len();
+        Some(at)
+    }
+
+    pub fn clear(&mut self) {
+        self.len = 0;
     }
 
     pub fn len(&self) -> usize {
@@ -150,6 +169,7 @@ pub fn c3d_mtx(m: &Mat4) -> c3d::C3D_Mtx {
 
 pub struct Gpu {
     target: *mut c3d::C3D_RenderTarget,
+    bottom: *mut c3d::C3D_RenderTarget,
     world: Box<sys::shaderProgram_s>,
     flat: Box<sys::shaderProgram_s>,
     _dvlb: *mut sys::DVLB_s,
@@ -178,13 +198,17 @@ pub struct Gpu {
 
 pub const TOP_W: usize = 400;
 pub const TOP_H: usize = 240;
+pub const BOTTOM_W: usize = 320;
+pub const BOTTOM_H: usize = 240;
 
-const fn transfer_flags() -> u32 {
+/// `out`: the screen's framebuffer format (the top is RGB8; the bottom is
+/// RGB565, as libctru's console sets it up).
+const fn transfer_flags(out: u8) -> u32 {
     c3d::GX_TRANSFER_FLIP_VERT(false)
         | c3d::GX_TRANSFER_OUT_TILED(false)
         | c3d::GX_TRANSFER_RAW_COPY(false)
         | c3d::GX_TRANSFER_IN_FORMAT(sys::GX_TRANSFER_FMT_RGBA8)
-        | c3d::GX_TRANSFER_OUT_FORMAT(sys::GX_TRANSFER_FMT_RGB8)
+        | c3d::GX_TRANSFER_OUT_FORMAT(out)
         | c3d::GX_TRANSFER_SCALING(sys::GX_TRANSFER_SCALE_NO)
 }
 
@@ -206,7 +230,30 @@ impl Gpu {
             if target.is_null() {
                 return None;
             }
-            c3d::C3D_RenderTargetSetOutput(target, sys::GFX_TOP, sys::GFX_LEFT, transfer_flags());
+            c3d::C3D_RenderTargetSetOutput(
+                target,
+                sys::GFX_TOP,
+                sys::GFX_LEFT,
+                transfer_flags(sys::GX_TRANSFER_FMT_RGB8),
+            );
+            let bottom = c3d::C3D_RenderTargetCreate(
+                BOTTOM_H as i32,
+                BOTTOM_W as i32,
+                sys::GPU_RB_RGBA8,
+                c3d::C3D_DEPTHTYPE { __i: -1 },
+            );
+            if bottom.is_null() {
+                return None;
+            }
+            c3d::C3D_RenderTargetSetOutput(
+                bottom,
+                sys::GFX_BOTTOM,
+                sys::GFX_LEFT,
+                transfer_flags(sys::GX_TRANSFER_FMT_RGB565),
+            );
+            // The console drew it single-buffered; the GPU draws a frame at
+            // a time.
+            sys::gfxSetDoubleBuffering(sys::GFX_BOTTOM, true);
 
             // DVLB_ParseFile keeps pointers into the (word-aligned) code.
             let mut code = vec![0u32; SHADER.len().div_ceil(4)];
@@ -238,6 +285,7 @@ impl Gpu {
             };
             let mut gpu = Self {
                 target,
+                bottom,
                 u_proj: loc(&world, "projection"),
                 u_mv: loc(&world, "modelView"),
                 u_light: loc(&world, "light"),
@@ -282,6 +330,53 @@ impl Gpu {
         self.depth(true, false);
         self.blend(Blend::Cutout);
         self.texenv(None);
+    }
+
+    /// 2D drawing in screen pixels (x right, y down) on the top screen, over
+    /// the world, or on the bottom screen (cleared to `rgb`).
+    pub fn begin_2d(&mut self, bottom: Option<[u8; 3]>) {
+        let w = if let Some(rgb) = bottom {
+            let [r, g, b] = rgb.map(u32::from);
+            unsafe {
+                c3d::C3D_RenderTargetClear(
+                    self.bottom,
+                    c3d::C3D_CLEAR_COLOR,
+                    r << 24 | g << 16 | b << 8 | 0xff,
+                    0,
+                );
+                c3d::C3D_FrameDrawOn(self.bottom);
+            }
+            BOTTOM_W
+        } else {
+            TOP_W
+        };
+        let mut p: c3d::C3D_Mtx = unsafe { zeroed() };
+        unsafe { c3d::Mtx_OrthoTilt(&mut p, 0.0, w as f32, TOP_H as f32, 0.0, 0.0, 1.0, true) };
+        self.proj = p;
+        self.unif_mtx(self.u_proj, self.u_flat_proj, &p);
+        self.set_model_view(&Mat4::IDENTITY);
+        self.set_light(1.0, None);
+        self.no_fog();
+        self.depth_off();
+        self.blend(Blend::Alpha);
+    }
+
+    /// Textured 2D: colour and alpha = texture x `rgba`, no fog. Undone by
+    /// the next [`texenv`](Self::texenv).
+    pub fn texenv_tint(&mut self, rgba: [u8; 4]) {
+        if self.prog != Prog::World {
+            self.bind(Prog::World);
+        }
+        self.tex_alpha = None;
+        unsafe {
+            let env = c3d::C3D_GetTexEnv(0);
+            c3d::C3D_TexEnvInit(env);
+            c3d::C3D_TexEnvSrc(env, c3d::C3D_Both, sys::GPU_TEXTURE0, sys::GPU_CONSTANT, 0);
+            c3d::C3D_TexEnvFunc(env, c3d::C3D_Both, sys::GPU_MODULATE);
+            let [r, g, b, a] = rgba.map(u32::from);
+            c3d::C3D_TexEnvColor(env, a << 24 | b << 16 | g << 8 | r);
+            c3d::C3D_TexEnvInit(c3d::C3D_GetTexEnv(1));
+        }
     }
 
     pub fn end(&mut self) {
@@ -597,6 +692,8 @@ impl Drop for Gpu {
     fn drop(&mut self) {
         unsafe {
             c3d::C3D_RenderTargetDelete(self.target);
+            c3d::C3D_RenderTargetDelete(self.bottom);
+            sys::gfxSetDoubleBuffering(sys::GFX_BOTTOM, false);
             let _ = sys::shaderProgramFree(&mut *self.world);
             let _ = sys::shaderProgramFree(&mut *self.flat);
             sys::DVLB_Free(self._dvlb);

@@ -18,7 +18,7 @@ use c2_formats::rsc::object_flags;
 use c2_vfs::Vfs;
 use glam::{Mat4, Vec3};
 
-use crate::gpu::{Blend, FlatVertex, Gpu, LinearBuf, Lit, Texture, Vertex};
+use crate::gpu::{Blend, FlatVertex, Gpu, LinearBuf, Lit, Texture, Vertex, TOP_H, TOP_W};
 
 const CHUNK: usize = 16;
 const CHUNKS: usize = MAP_SIZE / CHUNK;
@@ -201,6 +201,7 @@ pub struct World {
     /// Sun or moon (`C2RS/SUN.3DF`).
     sun: Option<Model>,
     ship: Option<Extra>,
+    binoculars: Option<Posed>,
     ring: Option<Extra>,
     flat_buf: Option<LinearBuf<FlatVertex>>,
     placements: Vec<Vec<(Placement, f32)>>,
@@ -317,6 +318,18 @@ impl World {
             sky_buf: LinearBuf::new(SKY_GRID * SKY_GRID * 6),
             sun: sun_model,
             ship: Extra::load(vfs, "HUNTDAT/SHIP2A.CAR", "C2RS/SHIP.TX"),
+            binoculars: vfs
+                .read("C2RS/BINOC.3DF")
+                .ok()
+                .and_then(|d| c2_formats::three_df::parse(&d).ok())
+                .map(|m| {
+                    let mut prepared = PreparedModel::from_mesh(&m.mesh);
+                    prepared.texture_rgba = Vec::new();
+                    Posed {
+                        prepared,
+                        tex: load_texture(vfs, "C2RS/BINOC.TX"),
+                    }
+                }),
             ring: Extra::load(vfs, "HUNTDAT/WCIRCLE2.CAR", "C2RS/RING.TX"),
             flat_buf: None,
             placements,
@@ -765,7 +778,36 @@ impl World {
     /// The view model, in camera space, drawn in front of everything.
     fn draw_weapon(&mut self, gpu: &mut Gpu, area: &Area, hunt: &Hunt, poser: &Poser<'_>) {
         let w = &hunt.weapons;
-        if hunt.death.is_some() || hunt.bin_mode {
+        if hunt.death.is_some() {
+            return;
+        }
+        // The binocular and scope frames are made for 4:3; widen them.
+        let widen = (TOP_W as f32 / TOP_H as f32) / (4.0 / 3.0);
+        if hunt.bin_mode {
+            // RenderNearModel(Binocular, 0, 0, 2*(216-72*power), 192).
+            let Some(b) = &self.binoculars else { return };
+            let z0 = 2.0 * (216.0 - 72.0 * hunt.bin_power);
+            let cam: Vec<[f32; 3]> = b
+                .prepared
+                .positions
+                .iter()
+                .map(|v| [v[0] * widen, v[1], v[2] + z0])
+                .collect();
+            let (v, _) = corners(&b.prepared, Some(&cam), &[]);
+            if self.weapon_buf.as_ref().is_none_or(|x| x.cap() < v.len()) {
+                self.weapon_buf = LinearBuf::new(v.len());
+            }
+            let (Some(buf), Some(tex)) = (self.weapon_buf.as_mut(), &b.tex) else {
+                return;
+            };
+            buf.write(&v);
+            gpu.set_light(192.0 / 255.0, None);
+            gpu.set_model_view(&Mat4::IDENTITY);
+            gpu.no_fog();
+            gpu.depth(true, true);
+            tex.bind();
+            gpu.draw(buf, Lit::Signed, 0, buf.len());
+            gpu.depth(true, false);
             return;
         }
         let Some((slot, ftime)) = w.pose() else {
@@ -788,11 +830,13 @@ impl World {
         let (da, db) = w.sway(hunt.real_time);
         let (sa, ca) = (-da).sin_cos();
         let (sb, cb) = (-db).sin_cos();
+        let wx = if w.optic_mode { widen } else { 1.0 };
         let cam: Vec<[f32; 3]> = verts
             .iter()
             .map(|v| {
-                let x = v[0] * ca + v[2] * sa;
-                let vz = v[2] * ca - v[0] * sa;
+                let vx = v[0] * wx;
+                let x = vx * ca + v[2] * sa;
+                let vz = v[2] * ca - vx * sa;
                 [x, v[1] * cb - vz * sb, vz * cb + v[1] * sb]
             })
             .collect();

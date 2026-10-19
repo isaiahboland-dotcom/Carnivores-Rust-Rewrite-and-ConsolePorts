@@ -2,6 +2,18 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-18 — M7: 3DS bottom screen
+The owner's design: a **touch weapon picker on the left, the map in the
+middle, a call picker on the right**, replacing the PC's number keys,
+change-call key and Tab map. The map is always on, which the original
+isn't. It shows **the animals in view range** (huntable ones bright),
+whatever the radar option says. That's a deviation the owner asked for. In
+the original, blips need the radar. Tapping the selected call calls; a
+touch that moves more than 6 px is a look drag, so the Old 3DS can still
+look by touch. The font is font8x8 (as on PC), cooked into the pack.
+Pictures are the game's own `MENU/PICS/WEAPONn` / `CALLn`, resized by the
+cooker.
+
 ## 2026-10-18 — M6: Old 3DS memory (first hardware test)
 The first build crashed with an out-of-memory fatal error on the owner's Old
 3DS and Old 2DS while loading. The emulator didn't catch it, since it gives

@@ -39,7 +39,7 @@ share it (README §2).
 |---|---|
 | Circle Pad | move / strafe |
 | D-Pad | turn (left/right), look (up/down) |
-| C-Stick (New 3DS), touch-drag | look |
+| C-Stick (New 3DS), drag on the touch screen | look |
 | R | fire |
 | A | show / hide weapon (and "yes" at the leave prompt) |
 | X | next weapon |
@@ -47,9 +47,29 @@ share it (README §2).
 | L | run on/off |
 | B | jump / swim up (and "no" at the leave prompt) |
 | ZL / ZR (New 3DS) | crouch / call |
-| SELECT | pause |
+| SELECT | pause (shows fps and memory) |
 | L + SELECT | screenshot to `/3ds/c2rs/shots/` |
 | START | leave the hunt |
+
+### Bottom screen (touch)
+```
++--------+----------------------+--------+
+| weapon |                      |  call  |
+| weapon |   map: you, your     |  call  |
+|  ...   |   view range, the    |  ...   |
+|        |   animals in range   |        |
+|        +----------------------+        |
+|        |  status / message    |        |
+|        | [Binocs]   [Pause]   |        |
++--------+----------------------+--------+
+```
+- Tap a weapon to draw it. Its card shows the picture, name and shots
+  left.
+- Tap a call to select it; tap the selected one to call (ZR also calls).
+- Tap the map to switch between close-up (follows you) and the whole area.
+  Huntable animals in view range are bright green, others pale.
+- A drag anywhere looks around instead (for the Old 3DS, which has no
+  C-Stick).
 
 ## Testing in an emulator
 Azahar runs the `.3dsx` directly (`azahar c2-3ds.3dsx`); put the pack in its
@@ -105,6 +125,5 @@ quit
   linear memory.
 
 ## Not yet (M7)
-Sound, the map and other bottom-screen UI, menus and saves, sky and sun,
-animated objects, particles/blood, stereo 3D, gyro aim, the pack picker,
-an Old 3DS performance pass.
+Sound, menus and saves, scope cross-hairs, stereo 3D, gyro aim, the pack
+picker, an Old 3DS performance pass.

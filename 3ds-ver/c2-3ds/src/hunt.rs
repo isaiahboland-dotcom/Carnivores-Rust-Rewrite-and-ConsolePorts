@@ -87,7 +87,7 @@ pub struct Game {
     /// `RunMode`.
     pub run: bool,
     seed: u32,
-    species: Vec<c2_core::dino::Species>,
+    pub species: Vec<c2_core::dino::Species>,
     weapon_info: Vec<(c2_core::game::WeaponInfo, [i32; 4])>,
     ship_ms: i32,
     pub prev_cam: [f32; 3],
@@ -117,6 +117,9 @@ pub struct Pad {
     pub escape: bool,
     pub confirm: bool,
     pub cancel: bool,
+    /// From the bottom screen: a weapon (index), a call (AI).
+    pub select_weapon: Option<usize>,
+    pub select_call: Option<i32>,
 }
 
 /// Frees what the 3DS doesn't need once the GPU has its copies.
@@ -318,7 +321,12 @@ impl Game {
             mouse: pad.look,
             mouse_sens: f32::from(128u8),
         };
-        let select = if pad.next_weapon {
+        if let Some(ai) = pad.select_call {
+            self.hunt.target_call = ai;
+        }
+        let select = if let Some(w) = pad.select_weapon {
+            Some(w)
+        } else if pad.next_weapon {
             let w = &self.hunt.weapons;
             let carried: Vec<usize> = self.info.weapons.clone();
             let cur = carried.iter().position(|&i| i == w.current);

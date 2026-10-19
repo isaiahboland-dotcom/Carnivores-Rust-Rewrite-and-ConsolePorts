@@ -16,3 +16,4 @@ c2-formats.workspace = true
 c2-vfs.workspace = true
 c2-mods.workspace = true
 c2-core.workspace = true
+font8x8.workspace = true
