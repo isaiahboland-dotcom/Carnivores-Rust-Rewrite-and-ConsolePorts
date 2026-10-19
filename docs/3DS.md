@@ -74,9 +74,11 @@ quit
   triangulation and texture rotation as `terrain.wgsl`), built as they come
   into view and dropped two seconds after leaving it.
 - One vertex shader (`c2-3ds/shaders/world.v.pica`) for everything; light is
-  per vertex (light map for terrain, `CalcLights` for objects), fog is the
-  GPU's fog table. The view model's depth is squeezed into the front 2% so
-  the world never covers it.
+  per vertex (light map for terrain, `CalcLights` for objects). Fog is worked
+  out in the shader from distance to the eye and blended in by a second
+  texture-combiner stage (the GPU's fog table works on depth, which is too
+  uneven here). The view model's depth is squeezed into the front 2% so the
+  world never covers it.
 - Animals and the view model are posed on the CPU each frame (as on PC) and
   written to per-character GPU buffers.
 
