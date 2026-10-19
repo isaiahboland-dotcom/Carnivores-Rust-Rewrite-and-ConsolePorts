@@ -98,6 +98,8 @@ quit
 - Vanilla AREA1, two hunted species + hunter, two weapons: pack 17 MiB (o3ds)
   / 18 MiB (n3ds), loading peak 23 MiB. In the emulator the heap then sits
   at 15 MiB; GPU memory used is 4–7 MiB.
+- **Hardware (owner, 2026-10-18)**: Old 3DS / Old 2DS, o3ds pack: loads,
+  ~58 fps, heap 15.1 MiB in use while hunting.
 - Out of memory shows a message (press START) instead of crashing.
 - The loading screen and the bottom screen show heap used/total and free
   linear memory.

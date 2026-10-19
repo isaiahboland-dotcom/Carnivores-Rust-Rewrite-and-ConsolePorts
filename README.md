@@ -372,12 +372,12 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
   - [x] `c2-pc recipe verify|build|new|base`, `play --recipe`; unified-diff patches; `recipes/example.toml`,
         `recipes/bases/c2-vanilla.toml` (hashes only)
   - [ ] a first real recipe (needs real add-on mods, see M4)
-- [ ] M6 Cooker + 3DS boot — **first test build**
+- [x] M6 Cooker + 3DS boot
   - [x] `.c2pk` pack format (`c2_formats::cooked`, `c2_vfs::PackBackend`); shared loading in `c2_core::load`
   - [x] `c2-cook`: chosen area / animals / weapons / time of day, mods or recipe, PICA200 textures, n3ds/o3ds profiles, measured 3DS loading peak
   - [x] `c2-3ds`: hunt mode with terrain, water, objects, animals, view model, fog; buttons, Circle Pad, C-Stick, touch look; status on the bottom screen
   - [x] runs in Azahar (matches the PC view side by side, apart from the sky)
-  - [ ] walk around on real hardware (owner: New/Old 3DS, 2DS) and record memory/fps in `docs/3DS.md`
+  - [x] walk around on real hardware: Old 3DS / Old 2DS, ~58 fps, 15.1 MiB heap (`docs/3DS.md`)
 - [ ] M7 Vanilla 3DS
 - [ ] M8 Modded 3DS
 
