@@ -191,6 +191,19 @@ back in place. Blocks outside any section are kept as unnamed sections. The
 original engine never sees nested blocks; the dialect's own semantics
 (tables, `overwrite` / `addition`) are layered on top.
 
+## `_MENU.TXT` and `.c2map` — hunt menu lists (Modder's Edition Engine)
+`c2_formats::menu_txt`, after the dialect's menu (`Menu/Resources.cpp`).
+`HUNTDAT/_MENU.TXT`, when present, replaces `_RES.TXT` for the menu: same
+syntax, `weapons` / `characters` / `prices` (plus `accessories`, score
+multipliers). Only characters with `ai >= 10` are listed; their position is
+the **menu slot**, and a hunt passes picked slots as `din` bits read as bit
+`10 + slot` (`char<slot>` in `overwrite` conditions); in vanilla data slot
+n is AI 10 + n. Pictures follow the slot (`DINOn.TGA`, n = slot + 1) unless
+`pic = '...'` names a file. Areas: one per `prices.area` line (area n =
+`AREAn.MAP`, slot 6 may be `EXTERNAL.MAP`), kept if the map exists, then
+`HUNTDAT/AREAS/*.c2map` descriptors (`info { name mapfile rscfile pic text
+price }`) whose stem isn't listed yet.
+
 ---
 
 ## `.TGA` — images (`LoadPictureTGA`)

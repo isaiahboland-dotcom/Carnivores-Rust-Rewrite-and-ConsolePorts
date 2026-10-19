@@ -15,6 +15,7 @@ mod reader;
 pub mod car;
 pub mod cooked;
 pub mod map;
+pub mod menu_txt;
 pub mod model;
 pub mod res_txt;
 pub mod rsc;

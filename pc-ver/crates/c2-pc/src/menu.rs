@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use c2_core::area::TimeOfDay;
+use c2_formats::menu_txt::{parse_c2map, MenuArea, MenuData};
+use c2_formats::res_txt::ResTxt;
 use c2_formats::sav::{KeyMap, Save};
 use winit::keyboard::KeyCode;
 
@@ -337,7 +339,8 @@ impl Menu {
                 game_dir.to_path_buf(),
             ),
         };
-        let res = load_res(&huntdat).context("reading the game data (is this a game folder?)")?;
+        // A readable `_RES.TXT` is what makes this a game folder.
+        load_res(&huntdat).context("reading the game data (is this a game folder?)")?;
         let dir = find_file(&huntdat, "MENU").unwrap_or_else(|| huntdat.join("MENU"));
         let mut hud = Hud::new(gpu);
         let mut board =
@@ -363,56 +366,133 @@ impl Menu {
 
         let pics_dir = find_file(&dir, "PICS");
         let txt = find_file(&dir, "TXT");
+        // A picture by name in `MENU/PICS`, or by a path from the game
+        // folder (`huntdat\\menu\\pics\\x.tga`, as data may give).
         let mut view = |name: String| {
-            let t = read_tga(pics_dir.as_deref()?, &name)?;
+            let t = if name.contains(['/', '\\']) {
+                c2_formats::tga::parse(&std::fs::read(find_file(&game_dir, &name)?).ok()?).ok()?
+            } else {
+                read_tga(pics_dir.as_deref()?, &name)?
+            };
             let rgba = c2_core::color::image_to_rgba8(&t.pixels, false);
             Some(hud.add_image_filtered(gpu, t.width as u32, t.height as u32, &rgba, true))
         };
-        let prices = res.prices.clone().unwrap_or_default();
-        let price = |v: &Vec<i32>, i: usize| v.get(i).copied().unwrap_or(0);
+        // The hunt lists: `_MENU.TXT` if the game has one (Modder's Edition
+        // Engine), else `_RES.TXT`; see `c2_formats::menu_txt`.
+        let menu_src = find_file(&huntdat, "_MENU.TXT")
+            .or_else(|| find_file(&huntdat, "_RES.TXT"))
+            .and_then(|p| std::fs::read(p).ok())
+            .map(|d| String::from_utf8_lossy(&d).into_owned())
+            .unwrap_or_default();
+        let mut menu = MenuData::from_res(&ResTxt::parse(&menu_src)?);
 
-        // Locations: AREAS/AREAn.MAP that exist.
+        // Locations: the `prices` areas whose .MAP exists (slot 6 may be
+        // `external.map`), then `.c2map` descriptors; without any `prices`
+        // areas, AREA1.. as found.
         let areas_dir = find_file(&huntdat, "AREAS");
-        let areas: Vec<PathBuf> = (1..=9)
-            .map_while(|n| find_file(areas_dir.as_deref()?, &format!("AREA{n}.MAP")))
-            .collect();
+        let map_of = |stem: &str| find_file(areas_dir.as_deref()?, &format!("{stem}.MAP"));
+        if menu.areas.is_empty() {
+            for n in 1..=9 {
+                if map_of(&format!("area{n}")).is_none() {
+                    break;
+                }
+                menu.areas.push(MenuArea {
+                    name: None,
+                    project: format!("area{n}"),
+                    price: 0,
+                    number: Some(n),
+                    pic: None,
+                    text: None,
+                });
+            }
+        }
+        if let Some(dir) = areas_dir.as_deref() {
+            let mut c2maps: Vec<PathBuf> = std::fs::read_dir(dir)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.extension()
+                        .is_some_and(|e| e.eq_ignore_ascii_case("c2map"))
+                })
+                .collect();
+            c2maps.sort();
+            for p in c2maps {
+                if let Some(a) = std::fs::read(&p)
+                    .ok()
+                    .and_then(|d| parse_c2map(&String::from_utf8_lossy(&d)))
+                {
+                    menu.add_c2map(a);
+                }
+            }
+        }
+        let mut area_list: Vec<(MenuArea, PathBuf)> = Vec::new();
+        for a in &menu.areas {
+            let map = map_of(&a.project)
+                .or_else(|| (a.number == Some(6)).then(|| map_of("external")).flatten());
+            if let Some(m) = map {
+                area_list.push((a.clone(), m));
+            }
+        }
+        let areas: Vec<PathBuf> = area_list.iter().map(|(_, m)| m.clone()).collect();
+        // A path from the data (`huntdat\\menu\\pics\\x.tga`), from the game folder.
+        let game_path = |p: &str| find_file(&game_dir, p);
         let mut cols = Vec::new();
-        let area_texts: Vec<Vec<String>> = (1..=areas.len())
-            .map(|n| read_text(txt.as_deref(), &format!("AREA{n}.TXT")))
+        let area_texts: Vec<Vec<String>> = area_list
+            .iter()
+            .map(|(a, _)| match (&a.text, a.number) {
+                (Some(t), _) => game_path(t)
+                    .and_then(|p| std::fs::read(p).ok())
+                    .map(|d| {
+                        String::from_utf8_lossy(&d)
+                            .lines()
+                            .map(str::to_string)
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                (None, Some(n)) => read_text(txt.as_deref(), &format!("AREA{n}.TXT")),
+                (None, None) => Vec::new(),
+            })
             .collect();
         cols.push(Column {
             rect: (12.0, 376.0, 182.0, 170.0),
-            names: area_texts
+            names: area_list
                 .iter()
+                .zip(&area_texts)
                 .enumerate()
-                .map(|(i, t)| {
-                    t.first()
-                        .filter(|l| !l.is_empty())
-                        .cloned()
+                .map(|(i, ((a, _), t))| {
+                    a.name
+                        .clone()
+                        .or_else(|| t.first().filter(|l| !l.is_empty()).cloned())
                         .unwrap_or_else(|| format!("Area {}", i + 1))
                 })
                 .collect(),
-            prices: (0..areas.len()).map(|i| price(&prices.area, i)).collect(),
-            pics: (1..=areas.len())
-                .map(|n| view(format!("AREA{n}.TGA")))
+            prices: area_list.iter().map(|(a, _)| a.price).collect(),
+            pics: area_list
+                .iter()
+                .map(|(a, _)| match (&a.pic, a.number) {
+                    (Some(p), _) => view(p.clone()),
+                    (None, Some(n)) => view(format!("AREA{n}.TGA")),
+                    (None, None) => None,
+                })
                 .collect(),
             texts: area_texts.clone(),
             texts_us: area_texts,
         });
-        // Dinosaurs: the huntable species, AI 10 on.
-        let dinos: Vec<String> = (10..)
-            .map_while(|ai| {
-                res.characters
-                    .iter()
-                    .find(|c| c.ai == Some(ai))
-                    .map(|c| c.name.clone().unwrap_or_default())
-            })
-            .collect();
+        // Huntables by menu slot (slot n = `DINOn+1.TGA` unless `pic` says).
+        let dinos: Vec<String> = menu.huntables.iter().map(|d| d.name.clone()).collect();
         cols.push(Column {
             rect: (210.0, 376.0, 184.0, 170.0),
-            prices: (0..dinos.len()).map(|i| price(&prices.dino, i)).collect(),
-            pics: (1..=dinos.len())
-                .map(|n| view(format!("DINO{n}.TGA")))
+            prices: menu.huntables.iter().map(|d| d.price).collect(),
+            pics: menu
+                .huntables
+                .iter()
+                .enumerate()
+                .map(|(k, d)| match &d.pic {
+                    Some(p) => view(p.clone()),
+                    None => view(format!("DINO{}.TGA", k + 1)),
+                })
                 .collect(),
             texts: (1..=dinos.len())
                 .map(|n| read_text(txt.as_deref(), &format!("DINO{n}.TXM")))
@@ -422,19 +502,13 @@ impl Menu {
                 .collect(),
             names: dinos,
         });
-        let weapons: Vec<String> = res
-            .weapons
-            .iter()
-            .map(|w| w.name.clone().unwrap_or_default())
-            .collect();
+        let weapons: Vec<String> = menu.weapons.iter().map(|w| w.name.clone()).collect();
         let wtexts: Vec<Vec<String>> = (1..=weapons.len())
             .map(|n| read_text(txt.as_deref(), &format!("WEAPON{n}.TXT")))
             .collect();
         cols.push(Column {
             rect: (410.0, 376.0, 184.0, 170.0),
-            prices: (0..weapons.len())
-                .map(|i| price(&prices.weapon, i))
-                .collect(),
+            prices: menu.weapons.iter().map(|w| w.price).collect(),
             pics: (1..=weapons.len())
                 .map(|n| view(format!("WEAPON{n}.TGA")))
                 .collect(),
@@ -449,7 +523,9 @@ impl Menu {
         cols.push(Column {
             rect: (610.0, 376.0, 184.0, 170.0),
             names: EQUIPMENT.iter().map(|(n, _)| n.to_string()).collect(),
-            prices: (0..4).map(|i| price(&prices.accessory, i)).collect(),
+            prices: (0..4)
+                .map(|i| menu.accessory_prices.get(i).copied().unwrap_or(0))
+                .collect(),
             pics: (1..=4).map(|n| view(format!("EQUIP{n}.TGA"))).collect(),
             texts: etexts.clone(),
             texts_us: etexts,
@@ -485,7 +561,7 @@ impl Menu {
             hud,
             game_dir,
             huntdat,
-            start_score: prices.start.unwrap_or(100),
+            start_score: menu.start,
             main,
             stats_board,
             quit_board,
