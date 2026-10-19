@@ -1,6 +1,6 @@
 //! The Modder's Edition `overwrite` / `addition` rules, on synthetic text.
 
-use c2_formats::mee::{applies, resolve, Hunt};
+use c2_formats::mee::{applies, is_dialect, resolve, Hunt, Tables};
 use c2_formats::res_txt::ResTxt;
 
 fn hunt(area: u32, time: u8, picked: u32) -> Hunt {
@@ -71,4 +71,34 @@ fn overwrite_replaces_and_addition_adds() {
     assert_eq!(groups(&para(&hunt(1, 1, 1))), ["2"]);
     // Area 3: one more, kept alongside.
     assert_eq!(groups(&para(&hunt(3, 1, 1))), ["2", "7"]);
+}
+
+const TABLES: &str = "spawntable {\n spawngroup{\n  spawnmax = 6\n  spawnmin = 2\n  spawnrate = 0.5\n  moveForward = TRUE\n }\n\
+ spawngroup{\n  spawnmax = 3\n  region{\n   xmin = 100\n   xmax = 200\n   ymin = 300\n   ymax = 400\n  }\n  overwrite area2 {\n   region{\n    xmin = 1\n   }\n  }\n }\n}\n\
+packtable {\n packgroup{\n  packMax = 4\n  packMin = 2\n  spawninfo{\n   spawngroup = 1\n   spawnratio = 2\n  }\n }\n}\n\
+characters {\n{\n name = 'Hunter'\n}\n{\n name = 'Raptor'\n packinfo{\n  group = 0\n  ratio = 1\n }\n}\n\
+{\n name = 'Fish'\n spawngroup{\n  spawnmax = 9\n }\n}\n{\n name = 'Moschops'\n spawninfo{\n  spawngroup = 0\n  spawnratio = 1\n }\n}\n}\n.\n";
+
+#[test]
+fn tables_link_groups_packs_and_characters() {
+    let r = ResTxt::parse(TABLES).expect("parse");
+    let t = Tables::read(&r, &hunt(1, 1, 0));
+    // Two table groups, then the fish's inline one.
+    assert_eq!(t.spawn_groups.len(), 3);
+    let g = &t.spawn_groups[0];
+    assert_eq!((g.min, g.max, g.move_forward), (2, 6, true));
+    // No region given: the whole map.
+    assert_eq!(g.regions[0].xmax, 988);
+    assert_eq!(t.spawn_groups[1].regions[0].xmin, 100);
+    assert_eq!(t.pack_groups[0].spawn[0].group, 1);
+    assert_eq!(t.pack_groups[0].spawn[0].ratio, 2.0);
+    assert_eq!(t.characters.len(), 4);
+    assert_eq!(t.characters[1].packs[0].group, 0);
+    assert_eq!(t.characters[2].spawn[0].group, 2);
+    assert_eq!(t.characters[2].spawn[0].ratio, 1.0);
+    assert_eq!(t.characters[3].spawn[0].group, 0);
+    // On area 2 the region is overwritten.
+    let t2 = Tables::read(&r, &hunt(2, 1, 0));
+    assert_eq!(t2.spawn_groups[1].regions[0].xmin, 1);
+    assert!(is_dialect(&r));
 }

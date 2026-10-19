@@ -363,6 +363,66 @@ fn dinos_sim(map_path: &Path, seconds: u32) -> Result<()> {
     Ok(())
 }
 
+/// The Modder's Edition tables a hunt would use: spawn groups, pack groups,
+/// and which characters spawn where.
+fn mee_report(game: &Path, area: u32, time: u8, picked: u32) -> Result<()> {
+    use c2_formats::mee::{is_dialect, Hunt, Tables};
+    let res_path = find_ci(&game.join("HUNTDAT"), "_RES.TXT").context("no HUNTDAT/_RES.TXT")?;
+    let res =
+        c2_formats::res_txt::ResTxt::parse(&String::from_utf8_lossy(&std::fs::read(res_path)?))?;
+    println!("dialect: {}", is_dialect(&res));
+    let h = Hunt {
+        area: Some(area),
+        time,
+        picked,
+    };
+    let t = Tables::read(&res, &h);
+    println!("area {area}, time {time}, picked slots {picked:#b}");
+    for (i, g) in t.spawn_groups.iter().enumerate() {
+        println!(
+            "spawn group {i}: {}..{} rate {} dens {} fwd {} rnd {} regions {} avoid {}",
+            g.min,
+            g.max,
+            g.rate,
+            g.density_multi,
+            g.move_forward,
+            g.randomise,
+            g.regions.len(),
+            g.avoid.len()
+        );
+    }
+    for (i, p) in t.pack_groups.iter().enumerate() {
+        println!(
+            "pack group {i}: {}..{} density {} spawn {:?}",
+            p.min, p.max, p.density, p.spawn
+        );
+    }
+    for (i, c) in t.characters.iter().enumerate() {
+        if c.spawn.is_empty() && c.packs.is_empty() {
+            continue;
+        }
+        let name = c.block.get(&["name"]).unwrap_or("?");
+        let ai = c.block.get(&["ai"]).unwrap_or("?");
+        println!(
+            "char {i} {name} ai {ai}: spawn {:?} packs {:?}",
+            c.spawn, c.packs
+        );
+    }
+    Ok(())
+}
+
+/// `name` in `dir`, ignoring case.
+fn find_ci(dir: &Path, name: &str) -> Option<std::path::PathBuf> {
+    std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| {
+            p.file_name()
+                .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(name))
+        })
+}
+
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("dinos") {
@@ -371,6 +431,14 @@ fn main() -> Result<()> {
             .context("usage: c2-parity dinos <AREA.MAP> [seconds]")?;
         let secs = args.get(2).map(|s| s.parse()).transpose()?.unwrap_or(30);
         return dinos_sim(Path::new(path), secs);
+    }
+    if args.first().map(String::as_str) == Some("mee") {
+        let usage = "usage: c2-parity mee <GAME_DIR> [AREA] [TIME 0-2] [PICKED_SLOTS_MASK]";
+        let dir = args.get(1).context(usage)?;
+        let num = |i: usize, d: u32| -> Result<u32> {
+            Ok(args.get(i).map(|s| s.parse()).transpose()?.unwrap_or(d))
+        };
+        return mee_report(Path::new(dir), num(2, 1)?, num(3, 1)? as u8, num(4, 1)?);
     }
     if args.first().map(String::as_str) == Some("walk") {
         let path = args

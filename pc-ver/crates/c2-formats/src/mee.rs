@@ -22,7 +22,7 @@
 //! simply set again (the last one wins). An `addition` only adds.
 //! [`resolve`] applies all of this and returns blocks without conditions.
 
-use crate::res_txt::{Block, Entry, Sub};
+use crate::res_txt::{c_atof, c_atoi, Block, Entry, ResTxt, Sub};
 
 /// What a hunt is: the conditions blocks are tested against.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,5 +155,244 @@ fn merge(out: &mut Block, inner: &Block, overwrite: bool) {
                 value: e.value.clone(),
             });
         }
+    }
+}
+
+// ------------------------------------------------------------ spawn tables
+
+/// A rectangle of cells (`region{` / `avoid{`: `xmin xmax ymin ymax`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Region {
+    pub xmin: i32,
+    pub xmax: i32,
+    pub ymin: i32,
+    pub ymax: i32,
+}
+
+/// `spawngroup{`: how many of its linked packs spawn, and where.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SpawnGroup {
+    pub min: i32,
+    pub max: i32,
+    /// Chance (0..1) for each of the `max - min` extra spawns.
+    pub rate: f32,
+    /// Spawns more or fewer with the density option: `(dens - 128) / 128 *
+    /// densityMulti`.
+    pub density_multi: i32,
+    /// Spawned around the hunter and moved along with him (the classic
+    /// ambient animals).
+    pub move_forward: bool,
+    /// Pick packs at random by ratio, rather than in turn.
+    pub randomise: bool,
+    pub only_active_nearby: bool,
+    pub stay_in_region: bool,
+    /// Where to spawn; none = the whole map (cells 12..988).
+    pub regions: Vec<Region>,
+    pub avoid: Vec<Region>,
+}
+
+/// `spawninfo{ spawngroup ratio }`: a link to a spawn group.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct SpawnLink {
+    pub group: usize,
+    pub ratio: f32,
+}
+
+/// `packgroup{`: a pack type and the spawn groups it spawns in.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PackGroup {
+    pub min: i32,
+    pub max: i32,
+    pub density: f32,
+    pub spawn: Vec<SpawnLink>,
+}
+
+/// `packinfo{ group ratio }`: a character's membership of a pack type.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct PackLink {
+    pub group: usize,
+    pub ratio: f32,
+}
+
+/// One `characters` entry after the hunt's conditions are applied.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Character {
+    /// Every `key = value` (and other sub-blocks) as resolved.
+    pub block: Block,
+    pub spawn: Vec<SpawnLink>,
+    pub packs: Vec<PackLink>,
+}
+
+/// The dialect's tables for one hunt (`LoadResourcesScript` in file order).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Tables {
+    pub spawn_groups: Vec<SpawnGroup>,
+    pub pack_groups: Vec<PackGroup>,
+    /// In `characters` order (the character type index).
+    pub characters: Vec<Character>,
+}
+
+/// Whether `_RES.TXT` uses the dialect (any of its tables, or nested
+/// blocks in a character).
+pub fn is_dialect(res: &ResTxt) -> bool {
+    res.sections.iter().any(|s| {
+        let n = s.name.to_ascii_lowercase();
+        n.contains("spawntable") || n.contains("packtable") || n.contains("areatable")
+    }) || res
+        .section("characters")
+        .is_some_and(|s| s.blocks.iter().any(|b| !b.subs.is_empty()))
+}
+
+/// `readBool`: `TRUE` sets, `FALSE` clears, anything else leaves it.
+pub fn flag(b: &Block, key: &str) -> Option<bool> {
+    let v = b.get(&[key])?;
+    if v.contains("TRUE") {
+        Some(true)
+    } else if v.contains("FALSE") {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+fn int(b: &Block, key: &str) -> Option<i32> {
+    b.get(&[key]).map(c_atoi)
+}
+
+fn float(b: &Block, key: &str) -> Option<f32> {
+    b.get(&[key]).map(c_atof)
+}
+
+/// `RecoverOrderedScriptRange`: both within 0..=256, min <= max.
+fn ordered(min: i32, max: i32) -> (i32, i32) {
+    let (a, b) = (min.clamp(0, 256), max.clamp(0, 256));
+    (a.min(b), a.max(b))
+}
+
+fn region(b: &Block) -> Region {
+    Region {
+        xmin: int(b, "xmin").unwrap_or(0),
+        xmax: int(b, "xmax").unwrap_or(0),
+        ymin: int(b, "ymin").unwrap_or(0),
+        ymax: int(b, "ymax").unwrap_or(0),
+    }
+}
+
+fn spawn_group(b: &Block) -> SpawnGroup {
+    let (min, max) = ordered(
+        int(b, "spawnmin").unwrap_or(0),
+        int(b, "spawnmax").unwrap_or(0),
+    );
+    SpawnGroup {
+        min,
+        max,
+        rate: float(b, "spawnrate").unwrap_or(0.0),
+        density_multi: int(b, "densityMulti").unwrap_or(0),
+        move_forward: flag(b, "moveForward").unwrap_or(false),
+        randomise: flag(b, "randomise").unwrap_or(false),
+        only_active_nearby: flag(b, "onlyActiveNearby").unwrap_or(false),
+        stay_in_region: flag(b, "styInRgn").unwrap_or(false),
+        regions: b.subs_named("region").map(region).collect(),
+        avoid: b.subs_named("avoid").map(region).collect(),
+    }
+}
+
+fn spawn_link(b: &Block) -> SpawnLink {
+    SpawnLink {
+        group: int(b, "spawngroup").unwrap_or(0).max(0) as usize,
+        ratio: float(b, "spawnratio").unwrap_or(0.0),
+    }
+}
+
+impl Tables {
+    /// Inline `spawngroup{`: a new spawn group, linked with ratio 1.
+    fn inline_group(&mut self, b: &Block) -> SpawnLink {
+        self.spawn_groups.push(spawn_group(b));
+        SpawnLink {
+            group: self.spawn_groups.len() - 1,
+            ratio: 1.0,
+        }
+    }
+
+    fn pack_group(&mut self, b: &Block) -> usize {
+        let (min, max) = ordered(
+            int(b, "packMin").unwrap_or(0),
+            int(b, "packMax").unwrap_or(0),
+        );
+        let mut spawn = Vec::new();
+        for s in &b.subs {
+            match s.name.to_ascii_lowercase().as_str() {
+                "spawninfo" => spawn.push(spawn_link(&s.block)),
+                "spawngroup" => {
+                    let l = self.inline_group(&s.block);
+                    spawn.push(l);
+                }
+                _ => {}
+            }
+        }
+        self.pack_groups.push(PackGroup {
+            min,
+            max,
+            density: float(b, "packDensity").unwrap_or(0.0),
+            spawn,
+        });
+        self.pack_groups.len() - 1
+    }
+
+    /// The tables for hunt `h`.
+    pub fn read(res: &ResTxt, h: &Hunt) -> Self {
+        let mut t = Tables::default();
+        for sec in &res.sections {
+            let name = sec.name.to_ascii_lowercase();
+            if name.contains("spawntable") {
+                t.spawn_groups.clear();
+                for s in sec.subs.iter().filter(|s| s.name.contains("spawngroup")) {
+                    let g = spawn_group(&resolve(&s.block, h));
+                    t.spawn_groups.push(g);
+                }
+            } else if name.contains("packtable") {
+                t.pack_groups.clear();
+                for s in sec.subs.iter().filter(|s| s.name.contains("packgroup")) {
+                    t.pack_group(&resolve(&s.block, h));
+                }
+            } else if name.contains("characters") {
+                for b in &sec.blocks {
+                    let block = resolve(b, h);
+                    let mut c = Character::default();
+                    for s in &block.subs {
+                        match s.name.to_ascii_lowercase().as_str() {
+                            "spawninfo" => c.spawn.push(spawn_link(&s.block)),
+                            "spawngroup" => {
+                                let l = t.inline_group(&s.block);
+                                c.spawn.push(l);
+                            }
+                            "packinfo" => c.packs.push(PackLink {
+                                group: int(&s.block, "group").unwrap_or(0).max(0) as usize,
+                                ratio: float(&s.block, "ratio").unwrap_or(0.0),
+                            }),
+                            "packgroup" => {
+                                let group = t.pack_group(&s.block);
+                                c.packs.push(PackLink { group, ratio: 1.0 });
+                            }
+                            _ => {}
+                        }
+                    }
+                    c.block = block;
+                    t.characters.push(c);
+                }
+            }
+        }
+        // Groups without a region spawn anywhere (`LoadResourcesScript`).
+        for g in &mut t.spawn_groups {
+            if g.regions.is_empty() {
+                g.regions.push(Region {
+                    xmin: 12,
+                    xmax: 988,
+                    ymin: 12,
+                    ymax: 988,
+                });
+            }
+        }
+        t
     }
 }
