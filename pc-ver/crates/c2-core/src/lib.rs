@@ -15,6 +15,7 @@ pub mod player;
 pub mod profile;
 pub mod rng;
 pub mod ship;
+pub mod sound;
 pub mod trace;
 
 /// Height-map units to world units (`Hunt.h: ctHScale`).

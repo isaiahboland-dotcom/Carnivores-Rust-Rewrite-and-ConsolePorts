@@ -12,12 +12,8 @@ use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle, StaticSoundS
 use kira::sound::PlaybackState;
 use kira::{AudioManager, AudioManagerSettings, Decibels, DefaultBackend, Frame, Panning, Tween};
 
-/// `MAX_CHANNEL`.
-const MAX_VOICES: usize = 16;
-/// `MIN_RADIUS` in `Audio.h`.
-const MIN_RADIUS: f32 = 512.0;
-/// Every vanilla sound is 16-bit mono at this rate.
-pub const SAMPLE_RATE: u32 = 22050;
+pub use c2_core::sound::SAMPLE_RATE;
+use c2_core::sound::{ambient_gain, lr_gains, MAX_VOICES};
 
 /// A sound ready to play.
 #[derive(Clone)]
@@ -61,35 +57,6 @@ impl Clip {
             .format
             .map_or((SAMPLE_RATE, 1), |f| (f.sample_rate, f.channels));
         Self::from_pcm(&w.pcm, rate, ch)
-    }
-}
-
-/// `CalcLRVolumes` as linear (left, right) amplitudes for volume `v0`
-/// (0..=256). `pos = None` is a non-positional voice.
-fn lr_gains(v0: f32, pos: Option<[f32; 3]>, cam: [f32; 3], alpha: f32) -> (f32, f32) {
-    let Some(p) = pos else {
-        let g = v0 * 180.0 / 65536.0;
-        return (g, g);
-    };
-    let v0 = v0 * 200.0;
-    let (x, y, z) = (p[0] - cam[0], p[1] - cam[1], p[2] - cam[2]);
-    let (sa, ca) = alpha.sin_cos();
-    let xx = x * ca + z * sa;
-    let zz = (z * ca - x * sa).abs();
-    let d = (xx * xx + y * y + zz * zz).sqrt() - MIN_RADIUS;
-    let mut k = if d <= 0.0 { 1.0 } else { 1224.0 / (1224.0 + d) };
-    if d > 6000.0 {
-        k *= (4000.0 - (d - 6000.0)) / 4000.0;
-    }
-    let k = k.max(0.0);
-    let fi = xx.abs().atan2(zz);
-    let r = 0.7 + 0.3 * fi / (std::f32::consts::PI / 2.0);
-    let l = 0.7 - 0.6 * fi / (std::f32::consts::PI / 2.0);
-    let (near, far) = (v0 * r * k / 65536.0, v0 * l * k / 65536.0);
-    if xx > 0.0 {
-        (far, near)
-    } else {
-        (near, far)
     }
 }
 
@@ -182,7 +149,7 @@ impl Audio {
         if let Some(mut old) = self.ambient.take() {
             old.stop(fade);
         }
-        self.ambient_volume = 32000.0 * avolume as f32 / 256.0 / 65536.0;
+        self.ambient_volume = ambient_gain(avolume);
         let Some(clip) = clip else { return };
         if let Some(mut h) = self.start(clip, (0.0, 0.0), true) {
             let (vol, _) = volume_pan(self.ambient_volume, self.ambient_volume);
@@ -250,27 +217,6 @@ impl Audio {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn gains_follow_the_original_curve() {
-        let cam = [0.0; 3];
-        // Non-positional: 180/65536 per unit of volume, both sides.
-        assert_eq!(
-            lr_gains(256.0, None, cam, 0.0),
-            (256.0 * 180.0 / 65536.0, 256.0 * 180.0 / 65536.0)
-        );
-        // Close and dead ahead (-z): full k, equal gains (l = r = 0.7).
-        let (l, r) = lr_gains(256.0, Some([0.0, 0.0, -100.0]), cam, 0.0);
-        assert!((l - r).abs() < 1e-6 && (l - 256.0 * 200.0 * 0.7 / 65536.0).abs() < 1e-4);
-        // To the right (+x): louder right.
-        let (l, r) = lr_gains(256.0, Some([2000.0, 0.0, 0.0]), cam, 0.0);
-        assert!(r > l);
-        // Beyond 10000 + MIN_RADIUS: silent.
-        assert_eq!(
-            lr_gains(256.0, Some([0.0, 0.0, -11000.0]), cam, 0.0),
-            (0.0, 0.0)
-        );
-    }
 
     #[test]
     fn volume_pan_reproduces_gains() {

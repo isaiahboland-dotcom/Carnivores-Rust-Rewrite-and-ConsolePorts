@@ -3,6 +3,7 @@
 
 use std::path::Path;
 
+use c2_core::sound::SoundId;
 use c2_formats::car::Car;
 use c2_formats::rsc::Rsc;
 
@@ -107,6 +108,24 @@ impl SoundBank {
             n(&bank.screams)
         );
         bank
+    }
+}
+
+impl SoundBank {
+    /// The clip for a sound, if loaded.
+    pub fn clip(&self, id: SoundId) -> Option<&Clip> {
+        match id {
+            SoundId::Species { ctype, sound } => get(self.species.get(ctype)?, sound),
+            SoundId::Weapon { weapon, slot } => get(self.weapons.get(weapon)?, slot),
+            SoundId::Ship(i) => get(&self.ship, i),
+            SoundId::Random(i) => get(&self.random, i),
+            SoundId::Step(i) => get(&self.steps, i),
+            SoundId::StepWater(i) => get(&self.steps_water, i),
+            SoundId::Scream(i) => get(&self.screams, i),
+            SoundId::Call { ai, variant } => {
+                get(self.calls.get((ai - 10).max(0) as usize)?, variant)
+            }
+        }
     }
 }
 

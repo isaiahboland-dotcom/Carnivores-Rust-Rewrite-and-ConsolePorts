@@ -27,9 +27,8 @@ use crate::keys;
 use crate::scene::Scene;
 use crate::sounds::{get, SoundBank};
 use crate::weapons::{load_weapons, WeaponAssets};
-use c2_core::dino::{hunt, DinoEvent};
-use c2_core::player::PlayerEvent;
-use c2_core::ship::{ship_sound, ShipEvent};
+use c2_core::ship::ship_sound;
+use c2_core::sound::SoundCmd;
 
 /// Simulation step. The original runs on variable `TimeDt`; a fixed step keeps
 /// the simulation deterministic (needed for logic parity later).
@@ -473,58 +472,18 @@ impl HuntView {
 
     /// Plays the sounds for this frame's events (`AddVoice*` call sites).
     fn play_sounds(&mut self) {
-        let snd = &self.sounds;
-        let a = &mut self.audio;
-        let h = &self.hunt;
-        let r3 = (h.real_time % 3) as usize;
-        for e in &self.events {
-            match e {
-                GameEvent::WeaponSound { weapon, slot } => a.play(
-                    snd.weapons.get(*weapon).and_then(|w| get(w, *slot)),
-                    None,
-                    256,
-                ),
-                GameEvent::Dino(DinoEvent::Sound { index, sound, pos }) => {
-                    let ct = h.herd.chars.get(*index).map_or(usize::MAX, |c| c.ctype);
-                    a.play(
-                        snd.species.get(ct).and_then(|s| get(s, *sound)),
-                        Some(*pos),
-                        256,
-                    );
+        for c in c2_core::sound::commands(&self.events, &self.hunt) {
+            match c {
+                SoundCmd::Play { id, pos, volume } => {
+                    self.audio.play(self.sounds.clip(id), pos, volume)
                 }
-                GameEvent::Player(PlayerEvent::Step) => {
-                    let v = 24 + (h.player.vspeed * 50.0) as i32;
-                    a.play(get(&snd.steps, r3), None, v);
-                }
-                GameEvent::Player(PlayerEvent::StepWater) => {
-                    let v = 64 + (h.player.vspeed * 30.0) as i32;
-                    a.play(get(&snd.steps_water, r3), None, v);
-                }
-                GameEvent::Player(PlayerEvent::Land) => a.play(get(&snd.steps, r3), None, 64),
-                GameEvent::HunterDied { kind } if *kind != hunt::BREATH => {
-                    a.play(get(&snd.screams, (h.real_time % 4) as usize), None, 256)
-                }
-                GameEvent::Ship(ShipEvent::Sound { slot, at }) => {
-                    a.play(get(&snd.ship, *slot), *at, 256)
-                }
-                GameEvent::RandomSound { sound, pos, volume } => {
-                    a.play(get(&snd.random, *sound), Some(*pos), *volume)
-                }
-                GameEvent::Call { call, variant, pos } => {
-                    let clip = snd
-                        .calls
-                        .get((*call - 10).max(0) as usize)
-                        .and_then(|c| get(c, *variant));
-                    a.play(clip, *pos, 256);
-                }
-                GameEvent::Ambient { zone, volume } => {
+                SoundCmd::Ambient { zone, volume } => {
                     let clip = match zone {
-                        Some(z) => get(&snd.ambients, *z),
-                        None => snd.underwater.as_ref(),
+                        Some(z) => get(&self.sounds.ambients, z),
+                        None => self.sounds.underwater.as_ref(),
                     };
-                    a.set_ambient(clip, *volume);
+                    self.audio.set_ambient(clip, volume);
                 }
-                _ => {}
             }
         }
     }
