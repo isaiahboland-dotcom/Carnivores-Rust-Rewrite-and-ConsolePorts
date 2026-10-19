@@ -42,8 +42,11 @@ spawninfo{\n spawngroup = 1\n}\n\
 }\n}\n.\n";
 
 fn para(h: &Hunt) -> c2_formats::res_txt::Block {
-    let r = ResTxt::parse(RES).expect("parse");
-    resolve(&r.section("characters").expect("characters").blocks[0], h)
+    let r = ResTxt::parse(RES).unwrap_or_default();
+    r.section("characters")
+        .and_then(|s| s.blocks.first())
+        .map(|b| resolve(b, h))
+        .unwrap_or_default()
 }
 
 fn groups(b: &c2_formats::res_txt::Block) -> Vec<&str> {
