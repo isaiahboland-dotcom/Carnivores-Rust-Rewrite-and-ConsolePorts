@@ -789,6 +789,7 @@ mod tests {
                 .collect(),
             sounds: vec![],
             anim_sounds: None,
+            trailing: Vec::new(),
         };
         let info = DinoInfo {
             name: "test".into(),

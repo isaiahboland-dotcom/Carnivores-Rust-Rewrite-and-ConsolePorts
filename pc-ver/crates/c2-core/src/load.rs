@@ -59,6 +59,7 @@ fn empty_car() -> Car {
         animations: vec![],
         sounds: vec![],
         anim_sounds: None,
+        trailing: Vec::new(),
     }
 }
 

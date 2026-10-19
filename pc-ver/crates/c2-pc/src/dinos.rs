@@ -66,6 +66,7 @@ pub fn load_species(
             animations: vec![],
             sounds: vec![],
             anim_sounds: None,
+            trailing: Vec::new(),
         };
         species.push(Species::new(info, car.as_ref().unwrap_or(&empty)));
         cars.push(car.map(|c| {

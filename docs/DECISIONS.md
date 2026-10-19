@@ -2,6 +2,24 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-18 — Reading more modded game folders
+Found by scanning a batch of mods (all game folders now parse):
+- `_RES.TXT`: a `{ ... }` block outside any section is kept as an unnamed
+  section and ignored by `to_data`, instead of failing. The original's
+  `LoadResourcesScript` only looks for lines containing `weapons` /
+  `characters` and skips everything else, so this matches it. Modded
+  engines put their own tables there.
+- `.CAR`: bytes after the `Anifx` table (some modding tools leave a few)
+  are kept in `Car::trailing`, so rewrites are byte-identical.
+- PC file lookup: a `_RES.TXT` file name may be a relative path with
+  either slash (`MODELS\x.car`); each part is matched ignoring case, as
+  on Windows.
+- Many full-game mods target community-modified engines whose `_RES.TXT`
+  is a different dialect (spawn / area / trophy tables, per-area and
+  per-time `overwrite` sections, new AI kinds, new weapon keys). They
+  load and render; their menus, spawning and AIs need that dialect
+  implemented, which is not done yet.
+
 ## 2026-10-18 — M7: 3DS settings: animal run speed, ambient animals
 Owner's request, because the game handles awkwardly with 3DS controls
 and 10+ ambient animals nearby caused lag spikes on Old 3DS:

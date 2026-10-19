@@ -12,7 +12,7 @@
 //! (exact key matching instead of `strstr`) are recorded in
 //! `docs/DECISIONS.md`.
 
-use crate::error::{FormatError, FormatErrorKind};
+use crate::error::FormatError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
@@ -83,15 +83,7 @@ impl ResTxt {
     pub fn parse(text: &str) -> Result<Self, FormatError> {
         let mut out = ResTxt::default();
         let mut lines = text.lines().enumerate().peekable();
-        let mut offset = 0usize;
-        let syntax = |offset, msg: String| FormatError {
-            offset,
-            context: "_res.txt".into(),
-            kind: FormatErrorKind::Syntax(msg),
-        };
-
         while let Some((ln, raw)) = lines.next() {
-            offset += raw.len() + 1;
             if raw.starts_with('.') {
                 break;
             }
@@ -107,9 +99,14 @@ impl ResTxt {
                 continue;
             };
             if name.is_empty() {
-                return Err(syntax(
-                    offset,
-                    format!("line {}: block outside a section", ln + 1),
+                // Some modded engines add blocks of their own here. The
+                // original (`LoadResourcesScript`) only looks for lines
+                // containing "weapons" / "characters" and skips the rest,
+                // so this is kept (for rewriting) as an unnamed section that
+                // `to_data` ignores.
+                out.warnings.push(format!(
+                    "line {}: block outside a section (ignored, as the original does)",
+                    ln + 1
                 ));
             }
             let mut section = Section {
@@ -120,7 +117,6 @@ impl ResTxt {
             let mut block: Option<Block> = None;
             let mut closed = false;
             for (ln, raw) in lines.by_ref() {
-                offset += raw.len() + 1;
                 let line = strip_comment(raw).trim();
                 if line.is_empty() {
                     continue;
@@ -181,7 +177,11 @@ impl ResTxt {
             s.push_str(&format!("{indent}{} = {}\r\n", e.key, e.value));
         };
         for sec in &self.sections {
-            s.push_str(&format!("{} {{\r\n", sec.name));
+            if sec.name.is_empty() {
+                s.push_str("{\r\n");
+            } else {
+                s.push_str(&format!("{} {{\r\n", sec.name));
+            }
             for b in &sec.blocks {
                 s.push_str("{\r\n");
                 for e in &b.entries {

@@ -49,6 +49,9 @@ pub struct Car {
     /// Sound index played by each animation, `-1` for none. `None` when the
     /// file ends before this table (the original then fills it with `-1`).
     pub anim_sounds: Option<[i32; ANIFX_SLOTS]>,
+    /// Bytes after the table, which the original never reads (some
+    /// modding tools leave a few); kept so a rewrite is byte-identical.
+    pub trailing: Vec<u8>,
 }
 
 impl Car {
@@ -111,6 +114,7 @@ pub fn parse(data: &[u8]) -> Result<Car, FormatError> {
         animations,
         sounds,
         anim_sounds,
+        trailing: r.bytes(r.remaining(), "car.trailing")?.to_vec(),
     })
 }
 
@@ -140,5 +144,6 @@ pub fn write(car: &Car) -> Vec<u8> {
             w.put_i32(*v);
         }
     }
+    w.extend_from_slice(&car.trailing);
     w
 }

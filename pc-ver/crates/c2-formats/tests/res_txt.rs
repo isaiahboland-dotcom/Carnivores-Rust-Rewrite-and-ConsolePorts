@@ -64,3 +64,16 @@ fn garbage_does_not_panic() {
         let _ = ResTxt::parse(s);
     }
 }
+
+#[test]
+fn blocks_outside_a_section_are_kept_and_ignored() {
+    // Some modded engines add their own blocks between the sections.
+    let text = "weapons {\n{\n name = 'Gun'\n}\n}\n\n{\n tree = 9\n}\n\ncharacters {\n{\n name = 'Rex'\n}\n}\n.\n";
+    let r = ResTxt::parse(text).expect("parse");
+    assert_eq!(r.warnings.len(), 1, "{:?}", r.warnings);
+    let d = r.to_data();
+    assert_eq!(d.weapons.len(), 1);
+    assert_eq!(d.characters.len(), 1);
+    let again = ResTxt::parse(&r.write()).expect("reparse");
+    assert_eq!(again.sections, r.sections);
+}

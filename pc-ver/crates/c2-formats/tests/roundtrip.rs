@@ -75,6 +75,11 @@ fn sample_car(anim_sounds: bool) -> car::Car {
             pcm: vec![1, 2, 3, 4],
         }],
         anim_sounds: anim_sounds.then_some([-1; car::ANIFX_SLOTS]),
+        trailing: if anim_sounds {
+            vec![1, 2, 3]
+        } else {
+            Vec::new()
+        },
         mesh,
     }
 }

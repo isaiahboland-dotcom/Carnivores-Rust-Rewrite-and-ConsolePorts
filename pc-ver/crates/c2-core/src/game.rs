@@ -1807,6 +1807,7 @@ mod tests {
                 .collect(),
             sounds: vec![],
             anim_sounds: None,
+            trailing: Vec::new(),
         }
     }
 

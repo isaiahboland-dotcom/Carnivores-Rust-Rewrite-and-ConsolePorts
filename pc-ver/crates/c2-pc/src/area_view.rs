@@ -45,16 +45,28 @@ pub fn sibling(path: &Path, ext: &str) -> Result<PathBuf> {
     anyhow::bail!("no {stem}.{ext} next to {}", path.display())
 }
 
-/// Finds `name` in `dir`, ignoring case.
+/// Finds `name` (a file name or a relative path) in `dir`, ignoring case.
 pub fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
-    std::fs::read_dir(dir)
-        .ok()?
-        .flatten()
-        .map(|e| e.path())
-        .find(|p| {
-            p.file_name()
-                .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(name))
-        })
+    // `_RES.TXT` paths may name subfolders, with either slash (some mods
+    // keep models in `MODELS\...`); each part is matched ignoring case, as
+    // on Windows.
+    let mut cur = dir.to_path_buf();
+    let mut any = false;
+    for part in name
+        .split(['/', '\\'])
+        .filter(|p| !p.is_empty() && *p != ".")
+    {
+        cur = std::fs::read_dir(&cur)
+            .ok()?
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| {
+                p.file_name()
+                    .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(part))
+            })?;
+        any = true;
+    }
+    any.then_some(cur)
 }
 
 /// `Hunt2.cpp`: MOON.3DF at night, SUN2.3DF otherwise, from `HUNTDAT/`
