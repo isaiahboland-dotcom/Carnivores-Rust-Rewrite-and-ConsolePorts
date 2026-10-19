@@ -1,13 +1,15 @@
-//! Drawing a hunt: terrain and water (built in chunks around the hunter),
-//! RSC objects, the animals and the view model. Mirrors what the PC
+//! Drawing a hunt: sky and sun, terrain and water (built in chunks around
+//! the hunter), RSC objects (animated ones re-posed each frame), the animals
+//! and the ship, particles and water rings, and the view model. Mirrors what the PC
 //! renderer does (`c2-pc/src/render.rs`, `terrain.wgsl`), on the PICA200.
 
 use std::collections::HashMap;
 
 use c2_core::area::{cell_flags, Area, Placement, NO_WATER};
 use c2_core::dino::pose;
+use c2_core::effects::Effects;
 use c2_core::game::Hunt;
-use c2_core::model::{car_anim_duration_ms, pose_car, vertex_lights, PreparedModel};
+use c2_core::model::{car_anim_duration_ms, pose_car, pose_object, vertex_lights, PreparedModel};
 use c2_core::{CELL, H_SCALE};
 use c2_formats::car::Car;
 use c2_formats::cooked::parse_texture;
@@ -16,12 +18,21 @@ use c2_formats::rsc::object_flags;
 use c2_vfs::Vfs;
 use glam::{Mat4, Vec3};
 
-use crate::gpu::{Blend, Gpu, LinearBuf, Lit, Texture, Vertex};
+use crate::gpu::{Blend, FlatVertex, Gpu, LinearBuf, Lit, Texture, Vertex};
 
 const CHUNK: usize = 16;
 const CHUNKS: usize = MAP_SIZE / CHUNK;
 /// `Characters`: model light (`RenderCharacter`, 210).
 const CHAR_LIGHT: f32 = 210.0 / 255.0;
+/// The cloud plane: quads per side, half its size, height above the eye
+/// (`RenderSkyPlane`: 4*512*16 up).
+const SKY_GRID: usize = 8;
+const SKY_R: f32 = 300_000.0;
+const SKY_H: f32 = 32_768.0;
+/// Particle discs: rim vertices, and world radius per unit of the
+/// original's screen-space radius (as `c2-pc/src/effects_view.rs`).
+const DISC_SIDES: usize = 6;
+const DISC_K: f32 = 0.64;
 
 /// Pack settings that affect drawing (`C2RS/INFO.TXT`).
 #[derive(Debug, Clone)]
@@ -79,6 +90,14 @@ fn corners(
 }
 
 impl Model {
+    /// Rewrites the vertices for a new pose (same faces, same order).
+    fn repose(&mut self, p: &PreparedModel, pos: &[[f32; 3]], lights: &[[f32; 4]]) {
+        let (v, _) = corners(p, Some(pos), lights);
+        if v.len() == self.total {
+            self.buf.write(&v);
+        }
+    }
+
     fn new(p: &PreparedModel, lights: &[[f32; 4]], tex: Option<Texture>) -> Option<Self> {
         let (v, opaque) = corners(p, None, lights);
         Some(Self {
@@ -111,6 +130,55 @@ struct Posed {
     tex: Option<Texture>,
 }
 
+/// A `.CAR` drawn outside the herd (the ship, the water ring), with its own
+/// buffers.
+struct Extra {
+    car: Car,
+    posed: Posed,
+    bufs: Vec<Option<LinearBuf<Vertex>>>,
+}
+
+impl Extra {
+    fn load(vfs: &Vfs, car: &str, tex: &str) -> Option<Self> {
+        let car = c2_formats::car::parse(&vfs.read(car).ok()?).ok()?;
+        let mut prepared = PreparedModel::from_mesh(&car.mesh);
+        prepared.texture_rgba = Vec::new();
+        Some(Self {
+            posed: Posed {
+                prepared,
+                tex: load_texture(vfs, tex),
+            },
+            car,
+            bufs: Vec::new(),
+        })
+    }
+
+    /// Animation 0 at `ms`, scaled, into buffer `slot`; then drawn.
+    fn draw(&mut self, gpu: &mut Gpu, slot: usize, ms: i32, scale: f32) {
+        let Some(anim) = self.car.animations.first() else {
+            return;
+        };
+        let Some(pos) = pose_car(anim, self.car.mesh.vertices.len(), ms.max(0) as u32) else {
+            return;
+        };
+        let pos: Vec<[f32; 3]> = pos.iter().map(|p| p.map(|c| c * scale)).collect();
+        let (v, _) = corners(&self.posed.prepared, Some(&pos), &[]);
+        if self.bufs.len() <= slot {
+            self.bufs.resize_with(slot + 1, || None);
+        }
+        let b = &mut self.bufs[slot];
+        if b.as_ref().is_none_or(|b| b.cap() < v.len()) {
+            *b = LinearBuf::new(v.len());
+        }
+        let (Some(b), Some(t)) = (b.as_mut(), &self.posed.tex) else {
+            return;
+        };
+        b.write(&v);
+        t.bind();
+        gpu.draw(b, Lit::Signed, 0, b.len());
+    }
+}
+
 struct Chunk {
     ground: Option<LinearBuf<Vertex>>,
     /// Water quads by water type: (type, first, count).
@@ -126,6 +194,15 @@ pub struct World {
     terrain_count: usize,
     chunks: HashMap<(usize, usize), Chunk>,
     objects: Vec<Option<Model>>,
+    /// Animated RSC objects: their prepared model and lights, by index.
+    object_anims: Vec<Option<(PreparedModel, Vec<[f32; 4]>)>>,
+    sky_tex: Option<Texture>,
+    sky_buf: Option<LinearBuf<Vertex>>,
+    /// Sun or moon (`C2RS/SUN.3DF`).
+    sun: Option<Model>,
+    ship: Option<Extra>,
+    ring: Option<Extra>,
+    flat_buf: Option<LinearBuf<FlatVertex>>,
     placements: Vec<Vec<(Placement, f32)>>,
     species: Vec<Option<Posed>>,
     weapons: Vec<Option<Posed>>,
@@ -164,22 +241,41 @@ impl World {
             .map_or((1, 1), |t| (usize::from(t.width), usize::from(t.height)));
         let terrain = terrain.and_then(|t| Texture::new(&t));
         let sun = area.time.sun_pos();
+        let mut object_anims = Vec::new();
         let objects = area
             .rsc
             .objects
             .iter()
             .enumerate()
             .map(|(k, o)| {
-                let p = PreparedModel::from_mesh(&o.model.mesh);
+                let mut p = PreparedModel::from_mesh(&o.model.mesh);
+                p.texture_rgba = Vec::new();
                 let unlit = object_flags::NO_LIGHT | object_flags::GROUND_LIGHT;
                 let vl = if o.info.flags & unlit != 0 {
                     Vec::new()
                 } else {
                     vertex_lights(&o.model.mesh, sun)
                 };
-                Model::new(&p, &vl, load_texture(vfs, &format!("C2RS/OBJ{k}.TX")))
+                let m = Model::new(&p, &vl, load_texture(vfs, &format!("C2RS/OBJ{k}.TX")));
+                object_anims.push(o.animation.is_some().then_some((p, vl)));
+                m
             })
             .collect();
+        let mut sky_tex = load_texture(vfs, "C2RS/SKY.TX");
+        if let Some(t) = &mut sky_tex {
+            t.repeat();
+        }
+        let sun_model = vfs
+            .read("C2RS/SUN.3DF")
+            .ok()
+            .and_then(|d| c2_formats::three_df::parse(&d).ok())
+            .and_then(|m| {
+                Model::new(
+                    &PreparedModel::from_mesh(&m.mesh),
+                    &[],
+                    load_texture(vfs, "C2RS/SUN.TX"),
+                )
+            });
         let mut placements = vec![Vec::new(); CHUNKS * CHUNKS];
         for p in area.placements() {
             let c = usize::from(p.cell.1) / CHUNK * CHUNKS + usize::from(p.cell.0) / CHUNK;
@@ -216,6 +312,13 @@ impl World {
             terrain_count,
             chunks: HashMap::new(),
             objects,
+            object_anims,
+            sky_tex,
+            sky_buf: LinearBuf::new(SKY_GRID * SKY_GRID * 6),
+            sun: sun_model,
+            ship: Extra::load(vfs, "HUNTDAT/SHIP2A.CAR", "C2RS/SHIP.TX"),
+            ring: Extra::load(vfs, "HUNTDAT/WCIRCLE2.CAR", "C2RS/RING.TX"),
+            flat_buf: None,
             placements,
             species: posed(cars, "CHAR"),
             weapons: posed(weapon_cars, "WPN"),
@@ -355,6 +458,7 @@ impl World {
         let radius = self.info.view as f32;
         let far = radius * CELL * 1.5;
         let near = 16.0;
+        self.draw_sky(gpu, area, view, eye, fovy, hunt.real_time);
         gpu.set_projection(fovy, near, far);
         gpu.set_fog(self.sky, radius * CELL * 0.6, radius * CELL);
         gpu.texenv(None);
@@ -398,6 +502,24 @@ impl World {
                 }
             }
         }
+        // CreateMorphedObject: all instances of an animated object share
+        // one pose, so re-pose the visible ones once.
+        for ((m, a), (list, o)) in self
+            .objects
+            .iter_mut()
+            .zip(&self.object_anims)
+            .zip(by_model.iter().zip(&area.rsc.objects))
+        {
+            let (Some(m), Some((p, vl)), Some(anim)) = (m, a, &o.animation) else {
+                continue;
+            };
+            if list.is_empty() {
+                continue;
+            }
+            if let Some(pos) = pose_object(anim, hunt.real_time.max(0) as u32) {
+                m.repose(p, &pos, vl);
+            }
+        }
         for (m, list) in self.objects.iter().zip(&by_model) {
             let Some(m) = m else { continue };
             for (p, l) in list {
@@ -411,6 +533,7 @@ impl World {
         }
 
         self.draw_animals(gpu, hunt, poser, view, eye);
+        self.draw_ship(gpu, hunt, view, eye);
 
         // Water, blended, after everything opaque.
         gpu.set_model_view(view);
@@ -434,7 +557,157 @@ impl World {
         gpu.texenv(None);
         gpu.depth(true, false);
 
+        self.draw_effects(gpu, &hunt.effects, view);
         self.draw_weapon(gpu, area, hunt, poser);
+    }
+
+    /// `RenderSkyPlane` (a scrolling cloud plane above the eye, fading out
+    /// with distance) and `RenderSun`. Drawn first, without depth.
+    fn draw_sky(
+        &mut self,
+        gpu: &mut Gpu,
+        area: &Area,
+        view: &Mat4,
+        eye: Vec3,
+        fovy: f32,
+        real_time: i32,
+    ) {
+        gpu.set_projection(fovy, 64.0, SKY_R * 2.0);
+        gpu.depth_off();
+        if let (Some(t), Some(buf)) = (&self.sky_tex, self.sky_buf.as_mut()) {
+            // 0.002 texels per unit, scrolled by (RealTime & 0x1FFFF) / 512
+            // texels; one texture is 256 texels.
+            let dtt = (real_time & 0x1_FFFF) as f32 / 512.0;
+            let step = 2.0 * SKY_R / SKY_GRID as f32;
+            let y = eye.y + SKY_H;
+            let mut v = Vec::with_capacity(SKY_GRID * SKY_GRID * 6);
+            for gz in 0..SKY_GRID {
+                for gx in 0..SKY_GRID {
+                    for d in NORMAL {
+                        let x = eye.x - SKY_R + (gx + d[0]) as f32 * step;
+                        let z = eye.z - SKY_R + (gz + d[1]) as f32 * step;
+                        v.push(Vertex {
+                            pos: [x, y, z],
+                            uv: [(x * 0.002 + dtt) / 256.0, (z * 0.002 - dtt) / 256.0],
+                            lit: [0; 4],
+                        });
+                    }
+                }
+            }
+            buf.write(&v);
+            gpu.set_model_view(view);
+            gpu.set_light(1.0, None);
+            // Alpha 40240 / (40240 + max(0, d - 100200)) over the clear
+            // colour, which is the fog colour: a linear fade is close.
+            gpu.set_fog(self.sky, 100_200.0, 280_000.0);
+            gpu.texenv(None);
+            t.bind();
+            gpu.draw(buf, Lit::Unsigned, 0, buf.len());
+        }
+        // RenderSun: in camera space, pulled closer near the screen centre;
+        // only when in front (z < -2024). Alpha 200, added.
+        if let Some(sun) = &self.sun {
+            let night = area.time == c2_core::area::TimeOfDay::Night;
+            let nv = view.transform_vector3(Vec3::from(area.time.sun_pos()));
+            if nv.z < -2024.0 {
+                let d = if night {
+                    1.5
+                } else {
+                    (2048.0 + (nv.x * nv.x + nv.y * nv.y).sqrt().min(812.0)) / 3048.0
+                };
+                gpu.set_model_view(&Mat4::from_translation(nv * d));
+                gpu.set_light(200.0 / 255.0, None);
+                gpu.no_fog();
+                gpu.blend(Blend::Add);
+                sun.draw(gpu, Lit::Signed);
+                gpu.blend(Blend::Cutout);
+            }
+        }
+        gpu.depth(true, false);
+    }
+
+    /// The pickup ship: landing animation at `FTime`, light 240
+    /// (`RenderShip`).
+    fn draw_ship(&mut self, gpu: &mut Gpu, hunt: &Hunt, view: &Mat4, eye: Vec3) {
+        let ship = &hunt.ship;
+        let max = self.info.view as f32 * CELL;
+        let d = Vec3::from(ship.pos) - eye;
+        if ship.state == -1 || d.x * d.x + d.z * d.z > max * max {
+            return;
+        }
+        let Some(x) = &mut self.ship else { return };
+        let a = ship.quarter_turns() * std::f32::consts::FRAC_PI_2;
+        gpu.set_model_view(
+            &(*view * Mat4::from_translation(Vec3::from(ship.pos)) * Mat4::from_rotation_y(a)),
+        );
+        gpu.set_light(240.0 / 255.0, None);
+        x.draw(gpu, 0, ship.ftime, 1.0);
+    }
+
+    /// Particles and blood as camera-facing discs (centre colour fading to
+    /// the edge's), then water rings, added (`RenderElements`,
+    /// `RenderWCircles`).
+    fn draw_effects(&mut self, gpu: &mut Gpu, fx: &Effects, view: &Mat4) {
+        // Colours are [a, r, g, b].
+        let rgba = |c: [u8; 4]| [c[1], c[2], c[3], c[0]];
+        let mut discs: Vec<([f32; 3], f32, [u8; 4], [u8; 4])> = Vec::new();
+        for b in &fx.bursts {
+            let (c0, c1) = (rgba(b.rgba), rgba(b.rgba2));
+            discs.extend(b.parts.iter().map(|p| (p.pos, p.r * DISC_K, c0, c1)));
+        }
+        for d in &fx.blood {
+            let a1 = (0xE0 * d.life / 20000).clamp(0, 0xE0) as u8;
+            let a2 = (0x20 * d.life / 20000).clamp(0, 0x20) as u8;
+            discs.push((d.pos, 12.0 * DISC_K, [0x70, 0, 0, a1], [0x30, 0, 0, a2]));
+        }
+        if !discs.is_empty() {
+            let mut v = Vec::with_capacity(discs.len() * DISC_SIDES * 3);
+            for (c, r, c0, c1) in discs {
+                let cv = view.transform_point3(Vec3::from(c));
+                if cv.z > -16.0 {
+                    continue;
+                }
+                let rim = |k: usize| {
+                    let a = k as f32 / DISC_SIDES as f32 * std::f32::consts::TAU;
+                    FlatVertex {
+                        pos: [cv.x + a.cos() * r, cv.y + a.sin() * r, cv.z],
+                        rgba: c1,
+                    }
+                };
+                for k in 0..DISC_SIDES {
+                    v.push(FlatVertex {
+                        pos: cv.to_array(),
+                        rgba: c0,
+                    });
+                    v.push(rim(k));
+                    v.push(rim(k + 1));
+                }
+            }
+            if self.flat_buf.as_ref().is_none_or(|b| b.cap() < v.len()) {
+                self.flat_buf = LinearBuf::new(v.len().next_power_of_two());
+            }
+            if let Some(b) = self.flat_buf.as_mut() {
+                b.write(&v);
+                gpu.set_model_view(&Mat4::IDENTITY);
+                gpu.blend(Blend::Alpha);
+                gpu.depth(false, false);
+                gpu.draw_flat(b, 0, b.len());
+                gpu.blend(Blend::Cutout);
+                gpu.depth(true, false);
+            }
+        }
+        // Rings: GlassL = 255 - (2000 - FTime) / 38, faint and fading.
+        let Some(ring) = &mut self.ring else { return };
+        gpu.blend(Blend::Add);
+        gpu.depth(false, false);
+        for (i, r) in fx.rings.iter().enumerate() {
+            let alpha = ((2000 - r.ftime) as f32 / 38.0).clamp(0.0, 255.0) / 255.0;
+            gpu.set_model_view(&(*view * Mat4::from_translation(Vec3::from(r.pos))));
+            gpu.set_light(250.0 / 255.0 * alpha, None);
+            ring.draw(gpu, i, r.ftime, r.scale);
+        }
+        gpu.blend(Blend::Cutout);
+        gpu.depth(true, false);
     }
 }
 

@@ -1,5 +1,6 @@
-//! A thin layer over citro3d's C API for what the game draws: one shader,
-//! textures from the cooked pack, vertex buffers in GPU-visible memory, and
+//! A thin layer over citro3d's C API for what the game draws: two shaders
+//! (textured world geometry, flat-coloured geometry), textures from the
+//! cooked pack, vertex buffers in GPU-visible memory, and
 //! the few render states the original uses.
 
 use std::ffi::{c_void, CString};
@@ -10,7 +11,7 @@ use citro3d_sys as c3d;
 use ctru_sys as sys;
 use glam::Mat4;
 
-static SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/world.shbin"));
+static SHADER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/shaders.shbin"));
 
 /// 24 bytes: position, texture coordinate, 4 light bytes (see the shader).
 #[repr(C)]
@@ -19,6 +20,14 @@ pub struct Vertex {
     pub pos: [f32; 3],
     pub uv: [f32; 2],
     pub lit: [u8; 4],
+}
+
+/// 16 bytes, for the flat shader: position and RGBA colour.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug)]
+pub struct FlatVertex {
+    pub pos: [f32; 3],
+    pub rgba: [u8; 4],
 }
 
 /// Memory the GPU can read (the linear heap).
@@ -85,6 +94,11 @@ impl Texture {
         Some(Self { tex })
     }
 
+    /// Tile the texture instead of clamping (the scrolling sky).
+    pub fn repeat(&mut self) {
+        unsafe { c3d::C3D_TexSetWrap(&mut *self.tex, sys::GPU_REPEAT, sys::GPU_REPEAT) };
+    }
+
     pub fn bind(&self) {
         unsafe { c3d::C3D_TexBind(0, &*self.tex as *const _ as *mut _) };
     }
@@ -111,6 +125,14 @@ pub enum Blend {
     Cutout,
     /// Mixed with what is behind by the alpha (water, transparent faces).
     Alpha,
+    /// Added to what is behind (sun, water rings).
+    Add,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Prog {
+    World,
+    Flat,
 }
 
 /// Converts a glam (column-major) matrix to citro3d's layout: rows, each
@@ -128,7 +150,8 @@ pub fn c3d_mtx(m: &Mat4) -> c3d::C3D_Mtx {
 
 pub struct Gpu {
     target: *mut c3d::C3D_RenderTarget,
-    program: Box<sys::shaderProgram_s>,
+    world: Box<sys::shaderProgram_s>,
+    flat: Box<sys::shaderProgram_s>,
     _dvlb: *mut sys::DVLB_s,
     _code: Vec<u32>,
     u_proj: i32,
@@ -136,8 +159,21 @@ pub struct Gpu {
     u_light: i32,
     u_lsel: i32,
     u_fog: i32,
+    u_flat_proj: i32,
+    u_flat_mv: i32,
     fog_rgb: u32,
+    /// Current program and vertex layout.
+    prog: Prog,
     lit: Option<Lit>,
+    // Uniform values, re-sent when the program changes (the two programs
+    // may place uniforms and constants in the same registers).
+    proj: c3d::C3D_Mtx,
+    mv: c3d::C3D_Mtx,
+    light: [f32; 4],
+    lsel: [f32; 4],
+    fog: [f32; 4],
+    /// The world texenv's alpha (see [`Gpu::texenv`]).
+    tex_alpha: Option<u8>,
 }
 
 pub const TOP_W: usize = 400;
@@ -183,30 +219,47 @@ impl Gpu {
             if dvlb.is_null() {
                 return None;
             }
-            let mut program: Box<sys::shaderProgram_s> = Box::new(zeroed());
-            let _ = sys::shaderProgramInit(&mut *program);
-            let _ = sys::shaderProgramSetVsh(&mut *program, (*dvlb).DVLE);
-            c3d::C3D_BindProgram(&mut *program);
-            let loc = |name: &str| {
+            if (*dvlb).numDVLE < 2 {
+                return None;
+            }
+            let program = |i: usize| {
+                let mut p: Box<sys::shaderProgram_s> = Box::new(zeroed());
+                let _ = sys::shaderProgramInit(&mut *p);
+                let _ = sys::shaderProgramSetVsh(&mut *p, (*dvlb).DVLE.add(i));
+                p
+            };
+            let (world, flat) = (program(0), program(1));
+            let loc = |p: &sys::shaderProgram_s, name: &str| {
                 let c = CString::new(name).unwrap_or_default();
                 i32::from(sys::shaderInstanceGetUniformLocation(
-                    program.vertexShader,
+                    p.vertexShader,
                     c.as_ptr(),
                 ))
             };
-            let gpu = Self {
+            let mut gpu = Self {
                 target,
-                u_proj: loc("projection"),
-                u_mv: loc("modelView"),
-                u_light: loc("light"),
-                u_lsel: loc("lsel"),
-                u_fog: loc("fog"),
-                program,
+                u_proj: loc(&world, "projection"),
+                u_mv: loc(&world, "modelView"),
+                u_light: loc(&world, "light"),
+                u_lsel: loc(&world, "lsel"),
+                u_fog: loc(&world, "fog"),
+                u_flat_proj: loc(&flat, "projection"),
+                u_flat_mv: loc(&flat, "modelView"),
+                world,
+                flat,
                 _dvlb: dvlb,
                 _code: code,
                 fog_rgb: 0,
+                prog: Prog::World,
                 lit: None,
+                proj: zeroed(),
+                mv: zeroed(),
+                light: [0.0; 4],
+                lsel: [0.0; 4],
+                fog: [0.0; 4],
+                tex_alpha: None,
             };
+            gpu.bind(Prog::World);
             Some(gpu)
         }
     }
@@ -223,10 +276,9 @@ impl Gpu {
                 0,
             );
             c3d::C3D_FrameDrawOn(self.target);
-            c3d::C3D_BindProgram(&mut *self.program);
             c3d::C3D_CullFace(sys::GPU_CULL_NONE);
         }
-        self.lit = None;
+        self.bind(Prog::World);
         self.depth(true, false);
         self.blend(Blend::Cutout);
         self.texenv(None);
@@ -234,6 +286,49 @@ impl Gpu {
 
     pub fn end(&mut self) {
         unsafe { c3d::C3D_FrameEnd(0) };
+    }
+
+    /// Switches program and sends it the current uniforms.
+    fn bind(&mut self, p: Prog) {
+        unsafe {
+            let v = sys::GPU_VERTEX_SHADER;
+            match p {
+                Prog::World => {
+                    c3d::C3D_BindProgram(&mut *self.world);
+                    c3d::C3D_FVUnifMtx4x4(v, self.u_proj, &self.proj);
+                    c3d::C3D_FVUnifMtx4x4(v, self.u_mv, &self.mv);
+                    for (u, x) in [
+                        (self.u_light, self.light),
+                        (self.u_lsel, self.lsel),
+                        (self.u_fog, self.fog),
+                    ] {
+                        c3d::C3D_FVUnifSet(v, u, x[0], x[1], x[2], x[3]);
+                    }
+                }
+                Prog::Flat => {
+                    c3d::C3D_BindProgram(&mut *self.flat);
+                    c3d::C3D_FVUnifMtx4x4(v, self.u_flat_proj, &self.proj);
+                    c3d::C3D_FVUnifMtx4x4(v, self.u_flat_mv, &self.mv);
+                }
+            }
+        }
+        self.prog = p;
+        self.lit = None;
+    }
+
+    fn unif_mtx(&mut self, world: i32, flat: i32, m: &c3d::C3D_Mtx) {
+        let u = if self.prog == Prog::World {
+            world
+        } else {
+            flat
+        };
+        unsafe { c3d::C3D_FVUnifMtx4x4(sys::GPU_VERTEX_SHADER, u, m) };
+    }
+
+    fn unif_vec(&mut self, u: i32, x: [f32; 4]) {
+        if self.prog == Prog::World {
+            unsafe { c3d::C3D_FVUnifSet(sys::GPU_VERTEX_SHADER, u, x[0], x[1], x[2], x[3]) };
+        }
     }
 
     /// Perspective for the top screen: vertical field of view `fovy`.
@@ -248,13 +343,15 @@ impl Gpu {
                 far,
                 false,
             );
-            c3d::C3D_FVUnifMtx4x4(sys::GPU_VERTEX_SHADER, self.u_proj, &p);
         }
+        self.proj = p;
+        self.unif_mtx(self.u_proj, self.u_flat_proj, &p);
     }
 
     pub fn set_model_view(&mut self, mv: &Mat4) {
         let m = c3d_mtx(mv);
-        unsafe { c3d::C3D_FVUnifMtx4x4(sys::GPU_VERTEX_SHADER, self.u_mv, &m) };
+        self.mv = m;
+        self.unif_mtx(self.u_mv, self.u_flat_mv, &m);
     }
 
     /// Base light (0..1) and which light byte to add (0..=3), if any.
@@ -263,10 +360,10 @@ impl Gpu {
         if let Some(i) = select {
             s[i & 3] = 1.0 / 255.0;
         }
-        unsafe {
-            c3d::C3D_FVUnifSet(sys::GPU_VERTEX_SHADER, self.u_light, base, 0.0, 0.0, 0.0);
-            c3d::C3D_FVUnifSet(sys::GPU_VERTEX_SHADER, self.u_lsel, s[0], s[1], s[2], s[3]);
-        }
+        self.light = [base, 0.0, 0.0, 0.0];
+        self.lsel = s;
+        self.unif_vec(self.u_light, self.light);
+        self.unif_vec(self.u_lsel, s);
     }
 
     /// Linear fog from `start` to `end` (world units from the eye) to
@@ -274,14 +371,21 @@ impl Gpu {
     /// are too non-linear at this view distance, so the shader computes it.
     pub fn set_fog(&mut self, rgb: [u8; 3], start: f32, end: f32) {
         let k = 1.0 / (end - start).max(1.0);
-        unsafe { c3d::C3D_FVUnifSet(sys::GPU_VERTEX_SHADER, self.u_fog, k, -start * k, 0.0, 0.0) };
+        self.fog = [k, -start * k, 0.0, 0.0];
+        self.unif_vec(self.u_fog, self.fog);
         let [r, g, b] = rgb.map(u32::from);
         self.fog_rgb = 0xff00_0000 | b << 16 | g << 8 | r;
     }
 
-    /// No fog (the view model).
+    /// No fog (the view model, the sun).
     pub fn no_fog(&mut self) {
-        unsafe { c3d::C3D_FVUnifSet(sys::GPU_VERTEX_SHADER, self.u_fog, 0.0, 0.0, 0.0, 0.0) };
+        self.fog = [0.0; 4];
+        self.unif_vec(self.u_fog, self.fog);
+    }
+
+    /// No depth test or writes (the sky, drawn first).
+    pub fn depth_off(&mut self) {
+        unsafe { c3d::C3D_DepthTest(false, sys::GPU_ALWAYS, sys::GPU_WRITE_COLOR) };
     }
 
     /// Depth test on; `write` off for blended things; `near` squeezes depth
@@ -330,6 +434,18 @@ impl Gpu {
                         sys::GPU_ONE_MINUS_SRC_ALPHA,
                     );
                 }
+                Blend::Add => {
+                    // Cut-out texels still dropped (the sun's corners).
+                    c3d::C3D_AlphaTest(true, sys::GPU_GREATER, 127);
+                    c3d::C3D_AlphaBlend(
+                        sys::GPU_BLEND_ADD,
+                        sys::GPU_BLEND_ADD,
+                        sys::GPU_ONE,
+                        sys::GPU_ONE,
+                        sys::GPU_ZERO,
+                        sys::GPU_ONE,
+                    );
+                }
             }
         }
     }
@@ -337,6 +453,11 @@ impl Gpu {
     /// Colour = texture x vertex light. Alpha = the texture's, times
     /// `alpha` (0..255) if given.
     pub fn texenv(&mut self, alpha: Option<u8>) {
+        self.tex_alpha = alpha;
+        if self.prog != Prog::World {
+            // Applied when the world program is next used.
+            return;
+        }
         unsafe {
             let env = c3d::C3D_GetTexEnv(0);
             c3d::C3D_TexEnvInit(env);
@@ -389,6 +510,10 @@ impl Gpu {
     }
 
     fn set_attrs(&mut self, lit: Lit) {
+        if self.prog != Prog::World {
+            self.bind(Prog::World);
+            self.texenv(self.tex_alpha);
+        }
         if self.lit == Some(lit) {
             return;
         }
@@ -426,6 +551,42 @@ impl Gpu {
         }
     }
 
+    /// Draws `count` vertices (triangles) of a flat-coloured buffer, blended
+    /// by their alpha. The world texenv comes back on the next [`draw`].
+    ///
+    /// [`draw`]: Self::draw
+    pub fn draw_flat(&mut self, buf: &LinearBuf<FlatVertex>, first: usize, count: usize) {
+        if count == 0 || first + count > buf.len() {
+            return;
+        }
+        if self.prog != Prog::Flat {
+            self.bind(Prog::Flat);
+            unsafe {
+                let ai = c3d::C3D_GetAttrInfo();
+                c3d::AttrInfo_Init(ai);
+                c3d::AttrInfo_AddLoader(ai, 0, sys::GPU_FLOAT, 3);
+                c3d::AttrInfo_AddLoader(ai, 1, sys::GPU_UNSIGNED_BYTE, 4);
+                let env = c3d::C3D_GetTexEnv(0);
+                c3d::C3D_TexEnvInit(env);
+                c3d::C3D_TexEnvSrc(env, c3d::C3D_Both, sys::GPU_PRIMARY_COLOR, 0, 0);
+                c3d::C3D_TexEnvFunc(env, c3d::C3D_Both, sys::GPU_REPLACE);
+                c3d::C3D_TexEnvInit(c3d::C3D_GetTexEnv(1));
+            }
+        }
+        unsafe {
+            let bi = c3d::C3D_GetBufInfo();
+            c3d::BufInfo_Init(bi);
+            c3d::BufInfo_Add(
+                bi,
+                buf.ptr as *const c_void,
+                size_of::<FlatVertex>() as isize,
+                2,
+                0x10,
+            );
+            c3d::C3D_DrawArrays(sys::GPU_TRIANGLES, first as i32, count as i32);
+        }
+    }
+
     /// Fraction of the GPU command buffer used this frame.
     pub fn cmdbuf_usage(&self) -> f32 {
         unsafe { c3d::C3D_GetCmdBufUsage() }
@@ -436,7 +597,8 @@ impl Drop for Gpu {
     fn drop(&mut self) {
         unsafe {
             c3d::C3D_RenderTargetDelete(self.target);
-            let _ = sys::shaderProgramFree(&mut *self.program);
+            let _ = sys::shaderProgramFree(&mut *self.world);
+            let _ = sys::shaderProgramFree(&mut *self.flat);
             sys::DVLB_Free(self._dvlb);
             c3d::C3D_Fini();
         }

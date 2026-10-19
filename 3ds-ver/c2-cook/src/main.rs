@@ -381,8 +381,30 @@ fn main() -> Result<()> {
     c.copy(&vfs, "HUNTDAT/_RES.TXT")?;
     let area_name = format!("AREA{}", a.area);
     c.copy(&vfs, &format!("HUNTDAT/AREAS/{area_name}.MAP"))?;
-    if vfs.resolve("HUNTDAT/SHIP2A.CAR").is_some() {
-        c.car(&vfs, "HUNTDAT/SHIP2A.CAR")?;
+    // The pickup ship and the water ring (`WCIRCLE2.CAR`, RenderWCircles).
+    for (file, tx) in [("SHIP2A.CAR", "SHIP"), ("WCIRCLE2.CAR", "RING")] {
+        let path = format!("HUNTDAT/{file}");
+        if vfs.resolve(&path).is_some() {
+            let rgba = c.car(&vfs, &path)?;
+            c.model_texture(format!("C2RS/{tx}.TX"), &rgba);
+        }
+    }
+    // Sun or moon (`Hunt2.cpp`: MOON.3DF at night, SUN2.3DF otherwise).
+    let sun = if time == TimeOfDay::Night {
+        "HUNTDAT/MOON.3DF"
+    } else {
+        "HUNTDAT/SUN2.3DF"
+    };
+    if let Ok(d) = vfs.read(sun) {
+        let m = c2_formats::three_df::parse(&d).with_context(|| format!("parsing {sun}"))?;
+        c.add("C2RS/SUN.3DF", d);
+        // Not night-vision tinted: the PC draws it as it is.
+        let night = std::mem::replace(&mut c.night, false);
+        c.model_texture(
+            "C2RS/SUN.TX".into(),
+            &PreparedModel::from_mesh(&m.mesh).texture_rgba,
+        );
+        c.night = night;
     }
     for &i in &chars {
         let rgba = c.car(&vfs, &format!("HUNTDAT/{}", infos[i].file))?;
@@ -419,6 +441,18 @@ fn main() -> Result<()> {
             atlas[d..d + t * 4].copy_from_slice(&px[y * t * 4..(y + 1) * t * 4]);
         }
     }
+    // The cloud plane (RenderSkyPlane), as on the PC: no night vision.
+    let sky_side = (profile.model_tex * 2).min(256);
+    let sky = downscale(
+        &image_to_rgba8(&area.rsc.skies[time as usize], false),
+        256,
+        256,
+        sky_side,
+        sky_side,
+    );
+    let sky = tile(&sky, sky_side, sky_side, TexFormat::Rgb565);
+    *c.linear.entry("textures").or_default() += sky.data.len() / 1024;
+    c.add("C2RS/SKY.TX", write_texture(&sky));
     let tex = tile(&atlas, aw, ah, TexFormat::Rgb565);
     *c.linear.entry("textures").or_default() += tex.data.len() / 1024;
     c.add("C2RS/TERRAIN.TX", write_texture(&tex));
