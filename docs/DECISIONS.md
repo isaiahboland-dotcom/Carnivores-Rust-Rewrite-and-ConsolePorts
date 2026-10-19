@@ -2,6 +2,15 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-19 — Jumping needs a fresh press
+The original jumps whenever the jump key is down and the hunter is not
+rising (`Hunt2.cpp: ProcessPlayerMovement`, `YSpeed == 0`), and walking
+onto higher ground zeroes `YSpeed` as a landing. Holding jump therefore
+relaunches the hunter every frame on a slope: on PC and 3DS you could
+climb mountains in the air (owner's report). Deviation, at the owner's
+request: a jump needs the key released and pressed again
+(`Player::jump_held`). Holding it still keeps a swimmer afloat.
+
 ## 2026-10-19 — M9: the dialect's shared AI (`AnimateHuntable`)
 - **Source**: ported from the upstream Modder's Edition release the mods
   target (`Characters.cpp: AnimateHuntable`, `AnimateDeadCommon`,

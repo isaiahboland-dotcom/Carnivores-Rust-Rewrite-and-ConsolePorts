@@ -66,6 +66,8 @@ pub struct Player {
     /// Recoil kick (`HeadBackR`): pushes the camera back and up, then settles.
     pub head_back_r: f32,
     pub swim: bool,
+    /// Jump was held last tick (a jump needs a fresh press).
+    jump_held: bool,
     pub underwater: bool,
     pub on_water: bool,
     /// Milliseconds since the hunt started (`RealTime`).
@@ -98,6 +100,7 @@ impl Player {
             stepdd: 0.0,
             head_back_r: 0.0,
             swim: false,
+            jump_held: false,
             underwater: false,
             on_water: false,
             time_ms: 0,
@@ -184,7 +187,12 @@ impl Player {
         self.vspeed = self.vspeed.clamp(-max, max);
         self.sspeed = self.sspeed.clamp(-max, max);
 
-        if c.jump && self.yspeed == 0.0 && !self.swim {
+        // Deviation: the original jumps whenever the key is down and the
+        // hunter stands, and stepping onto rising ground counts as landing,
+        // so holding it climbs any slope in the air. A jump needs a press.
+        let pressed = c.jump && !self.jump_held;
+        self.jump_held = c.jump;
+        if pressed && self.yspeed == 0.0 && !self.swim {
             self.yspeed = 600.0 + self.vspeed.abs() * 600.0;
             events.push(PlayerEvent::Jump);
         }
@@ -488,5 +496,20 @@ mod tests {
         );
         assert_eq!(p.head_y, HEAD_CROUCH);
         assert_eq!(p.beta, 1.46);
+    }
+
+    #[test]
+    fn holding_jump_jumps_once() {
+        let area = Area::flat(10);
+        let mut p = Player::new(&area, (500, 500));
+        let held = Controls {
+            jump: true,
+            ..Default::default()
+        };
+        let ev = run(&mut p, &area, &held, 3000);
+        assert_eq!(ev.iter().filter(|e| **e == PlayerEvent::Jump).count(), 1);
+        run(&mut p, &area, &Controls::default(), 100);
+        let ev = run(&mut p, &area, &held, 100);
+        assert!(ev.contains(&PlayerEvent::Jump), "a new press jumps again");
     }
 }
