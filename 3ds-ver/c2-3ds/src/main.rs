@@ -362,6 +362,8 @@ fn hunt(vfs: &Vfs, info: &PackInfo, setup: Setup, gpu: &mut Gpu, io: &mut Io) ->
     let mut message: Option<(String, u32)> = Some((sound_err.unwrap_or(ready), io.frame + 300));
     let mut last = ticks();
     let mut fps = 0.0f32;
+    // The last kill: species, points, shown until this frame.
+    let mut kill: Option<(String, i32, u32)> = None;
     // Smoothed ms spent simulating, drawing the world, drawing the screens'
     // 2D, and waiting for the GPU / vsync.
     let mut ms = [0.0f32; 4];
@@ -406,8 +408,18 @@ fn hunt(vfs: &Vfs, info: &PackInfo, setup: Setup, gpu: &mut Gpu, io: &mut Io) ->
         }
         let m_upd = ms_of(t_upd);
         for e in game.events.drain(..) {
-            if let GameEvent::Message(m) = e {
-                message = Some((m, frame + 180));
+            match e {
+                GameEvent::Message(m) => message = Some((m, frame + 180)),
+                GameEvent::Scored { ctype, score } => {
+                    let name = game
+                        .hunt
+                        .herd
+                        .species
+                        .get(ctype)
+                        .map_or_else(String::new, |s| s.info.name.clone());
+                    kill = Some((name, score, frame + 240));
+                }
+                _ => {}
             }
         }
         match game.hunt.outcome() {
@@ -457,7 +469,11 @@ fn hunt(vfs: &Vfs, info: &PackInfo, setup: Setup, gpu: &mut Gpu, io: &mut Io) ->
         );
         let t_ui = ticks();
         ui.new_frame();
-        ui.draw_top(gpu, &game, &game.hunt, &debug);
+        let shown = kill
+            .as_ref()
+            .filter(|k| k.2 > frame)
+            .map(|k| (k.0.as_str(), k.1));
+        ui.draw_top(gpu, &game, &game.hunt, &debug, shown);
         ui.draw_bottom(gpu, &game, msg.as_deref());
         gpu.end();
         let m_ui = ms_of(t_ui);

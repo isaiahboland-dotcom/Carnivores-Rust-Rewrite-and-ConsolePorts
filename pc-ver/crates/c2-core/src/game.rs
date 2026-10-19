@@ -217,6 +217,12 @@ pub enum GameEvent {
         slot: usize,
         score: i32,
     },
+    /// A kill added `score` to the account (species `ctype`); also with the
+    /// tranquilizer, where no trophy is kept.
+    Scored {
+        ctype: usize,
+        score: i32,
+    },
     Message(String),
 }
 
@@ -728,6 +734,10 @@ impl Hunt {
         }
         score *= self.opts.score_factor;
         self.room.score += score as i32;
+        out.push(GameEvent::Scored {
+            ctype: c.ctype,
+            score: score as i32,
+        });
         if !self.opts.tranq {
             let (y, mo, d, h, mi) = self.clock;
             let p = &self.player;
@@ -2079,6 +2089,7 @@ mod tests {
             ev.contains(&GameEvent::Trophy { slot: 0, score: 0 }),
             "{ev:?}"
         );
+        assert!(ev.contains(&GameEvent::Scored { ctype: 1, score: 0 }));
         assert_eq!(h.room.bodies[0].ctype, 1);
         let n = h.herd.chars.len();
         let mut removed = false;

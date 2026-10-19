@@ -2,6 +2,16 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-18 — M7: kill notice, radar on the 3DS map
+- `GameEvent::Scored { ctype, score }` when a kill adds to the account
+  (with the tranquilizer too, which keeps no trophy). The 3DS shows the
+  species and points for 4 s in the top screen's bottom right (owner's
+  idea; the original shows nothing until the trophy plaque). The PC
+  ignores the event.
+- Radar: the 3DS map shows the hunted species everywhere, as the
+  original's radar blips do; without it, only animals in view range (the
+  owner's always-on map).
+
 ## 2026-10-18 — M7: title screen, extra ammo, longer Old 3DS view
 - **Title screen** (owner): Play / Trophies / Quit over the original's
   `MENUM.TGA` (its painted buttons covered by the hunter's record). The

@@ -92,7 +92,10 @@ saving.
 - Tap a call to select it; tap the selected one to call (ZR also calls).
 - Ammo: use an extra ammo refill (the red number is how many are left).
 - Tap the map to switch between close-up (follows you) and the whole area.
-  Huntable animals in view range are bright green, others pale.
+  Huntable animals in view range are bright green, others pale. With the
+  radar, the hunted species show everywhere on the map.
+- A kill shows a small box in the top screen's bottom right: the species
+  and the points it earned.
 - A drag anywhere looks around instead (for the Old 3DS, which has no
   C-Stick).
 

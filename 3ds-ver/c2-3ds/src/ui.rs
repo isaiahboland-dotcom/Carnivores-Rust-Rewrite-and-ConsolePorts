@@ -272,10 +272,35 @@ impl Ui {
 
     /// Overlays on the top screen, after the world. `debug` (fps, memory)
     /// shows while paused.
-    pub fn draw_top(&mut self, gpu: &mut Gpu, game: &Game, hunt: &Hunt, debug: &str) {
+    /// `kill`: the last kill's species name and points, shown for a while
+    /// in the bottom right.
+    pub fn draw_top(
+        &mut self,
+        gpu: &mut Gpu,
+        game: &Game,
+        hunt: &Hunt,
+        debug: &str,
+        kill: Option<(&str, i32)>,
+    ) {
         gpu.begin_2d(None);
         let c = &mut self.c;
         let cx = TOP_W as f32 / 2.0;
+        if let Some((name, score)) = kill {
+            let name: String = name.chars().take(18).collect();
+            let w = 8.0 * name.len().max(10) as f32 + 16.0;
+            let (x, y) = (TOP_W as f32 - w - 6.0, 240.0 - 42.0);
+            c.rect([x, y, w, 36.0], [0, 0, 0, 200]);
+            c.flush(gpu);
+            c.text(gpu, x + 8.0, y + 6.0, 1.0, WHITE, &name);
+            c.text(
+                gpu,
+                x + 8.0,
+                y + 20.0,
+                1.0,
+                [240, 200, 70, 255],
+                &format!("+{score} pts"),
+            );
+        }
         if hunt.paused {
             c.text_c(gpu, cx, 104.0, 2.0, WHITE, "PAUSED");
             c.text_c(gpu, cx, 128.0, 1.0, WHITE, "SELECT to resume");
@@ -339,15 +364,17 @@ fn draw_map(c: &mut Canvas, gpu: &mut Gpu, game: &Game, map: Option<&Texture>, l
         let a = i as f32 / 48.0 * std::f32::consts::TAU;
         dot(hx + a.cos() * r, hy + a.sin() * r, 1.5, [0, 144, 0, 255]);
     }
-    // Animals within view range: huntable bright, others pale.
+    // Animals within view range: huntable bright, others pale. With the
+    // radar, the hunted species everywhere (`DrawHMap`'s radar blips).
     let range = h.opts.view_r as f32 * CELL;
     for ch in &h.herd.chars {
         let (dx, dz) = (ch.pos[0] - p.x, ch.pos[2] - p.z);
-        if ch.health <= 0 || dx * dx + dz * dz > range * range {
+        let huntable = ch.ai >= 10 && h.opts.targets & (1 << ch.ai) != 0;
+        let in_range = dx * dx + dz * dz <= range * range;
+        if ch.health <= 0 || !(in_range || huntable && h.opts.radar) {
             continue;
         }
         let (x, y) = to_screen(px(ch.pos[0]), px(ch.pos[2]));
-        let huntable = ch.ai >= 10 && h.opts.targets & (1 << ch.ai) != 0;
         if huntable {
             dot(x, y, 4.0, [0, 248, 0, 255]);
         } else {
