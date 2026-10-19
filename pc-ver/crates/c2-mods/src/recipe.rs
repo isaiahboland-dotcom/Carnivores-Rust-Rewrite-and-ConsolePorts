@@ -368,6 +368,7 @@ pub fn prepare(
             res_changes,
             identical: 0,
             inferred: false,
+            ..Default::default()
         });
     }
     if !r.load_order.order.is_empty() {

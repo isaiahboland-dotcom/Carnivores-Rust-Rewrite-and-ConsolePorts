@@ -53,7 +53,7 @@ hunt:  click to capture mouse; keys follow the player's bindings (default WASD m
 /// Flags followed by a value (`--flag VALUE`).
 const VALUE_FLAGS: &[&str] = &[
     "anim", "time", "yaw", "shot", "cam", "view", "sim", "ship", "weapon", "target", "fire",
-    "screen", "player", "script", "mod", "base", "out", "recipe", "mods", "id", "name",
+    "screen", "player", "script", "mod", "base", "out", "recipe", "mods", "id", "name", "overlay",
 ];
 
 struct Opts {
@@ -133,14 +133,14 @@ fn main() -> Result<()> {
     if cmd == "mod" {
         return mods_cli::run(
             &o.positional,
-            o.value("base"),
+            mods_cli::bases(o.value("base"), &o.values("overlay"))?,
             o.value("out"),
             o.has("write"),
         );
     }
     if cmd == "recipe" {
         let a = mods_cli::RecipeArgs {
-            base: o.value("base"),
+            bases: mods_cli::bases(o.value("base"), &o.values("overlay"))?,
             mods: o.value("mods"),
             out: o.value("out"),
             id: o.value("id"),
@@ -273,16 +273,20 @@ fn main() -> Result<()> {
             // --mod DIR (repeatable): play a combined game from the data dir.
             let mods: Vec<PathBuf> = o.values("mod").into_iter().map(PathBuf::from).collect();
             let recipe = o.value("recipe").map(PathBuf::from);
+            // --overlay DIR (repeatable): files copied over the game first
+            // (the Modder's Edition release over the original game).
+            let overlays = o.values("overlay");
+            let bases = mods_cli::bases(o.positional.first().map(String::as_str), &overlays)?;
             let path = if let Some(r) = recipe {
                 let mods_dir = PathBuf::from(o.value("mods").context("--recipe needs --mods DIR")?);
                 let out = mods_cli::recipe_pack_dir(&r);
-                mods_cli::build_recipe(&r, &path, &mods_dir, &out)?;
+                mods_cli::build_recipe(&r, &bases, &mods_dir, &out)?;
                 out
-            } else if mods.is_empty() {
+            } else if mods.is_empty() && overlays.is_empty() {
                 path
             } else {
-                let out = mods_cli::pack_dir(&mods);
-                mods_cli::build_pack(&path, &mods, &out)?;
+                let out = mods_cli::pack_dir(&bases[1..], &mods);
+                mods_cli::build_pack(&bases, &mods, &out)?;
                 out
             };
             Box::new(move |g| {

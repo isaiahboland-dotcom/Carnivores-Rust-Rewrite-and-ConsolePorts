@@ -2,6 +2,28 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-19 — M4: loose add-ons, hunter merging, base overlays
+Real add-ons turned out to be loose files plus instructions, not
+`HUNTDAT`-shaped folders; most are for the Modder's Edition (MEE).
+- **Loose add-ons** (`c2_mods::loose`) are placed by rules standing in for
+  the instructions (docs/MODDING.md): files by name and kind, entries
+  pulled from text files, a slot takeover inferred from `DINOn` / `WEAPONn`
+  menu files, variant folders chosen by the base. Fix-ups a person would
+  make are made and reported (a misnamed model, a plain entry keeping the
+  replaced slot's MEE spawn tables). A no-entry add-on (skin pack) only
+  adds files, so it can't silently replace call sounds.
+- **Hunter models are merged** (`c2_mods::hunter`): every add-on hunter
+  checked so far is the base hunter (same body, same first animations)
+  plus its kill animations. Extras are appended once (identical ones
+  shared) and each add-on's `hunterAnim` remapped, instead of the last
+  add-on's hunter winning and breaking the others' kills. Texture: the
+  base's (some add-on hunters are reskins). A different body is left out
+  with a warning.
+- **Base overlays** (`--overlay DIR`, repeatable): the MEE release ships
+  only changed files; it is layered over the game as part of the *base*
+  (its `_RES.TXT` replaces the original's), and add-ons diff against that.
+- Recipes don't cover loose add-ons yet (no hash pinning for them).
+
 ## 2026-10-19 — 3DS: slow-tick report; catch-up capped, tick timings
 Owner's Old 3DS report: after a Stegosaurus came into view (and was
 killed) the frame rate fell to 40 with "sim" at 93 ms. That is about 12

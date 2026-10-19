@@ -17,6 +17,43 @@ first). A mod shipped as a complete copy of the game is fine: files
 identical to vanilla, executables, DLLs, logs and map-editor side files are
 ignored.
 
+### Loose add-ons
+Most add-ons are shipped as loose files with instructions ("drop the `.car`
+in HUNTDAT, paste this entry into `_RES.TXT` over the Spinosaurus, use our
+hunter model"). Give such a folder as a mod as it is; it is installed the
+way the instructions would have you do it, and the merge report says what
+was decided:
+- A folder holding `MENU`, `SOUNDFX`, `WEAPONS` or `AREAS` stands for
+  `HUNTDAT`. Other files named like a game file replace it (`CALL7_A.WAV`);
+  a new `.car` goes in `HUNTDAT`; `DINOn`/`CALLn`/`WEAPONn` menu files and
+  call sounds go to their folders. Pictures and anything else are left out.
+- The `{ ... }` entries are read from its text files (readmes included).
+  An add-on with entries for several games: on a Modder's Edition base the
+  one introduced as for the Modder's Edition is used, else the first.
+  Trophy-room entries and "Legacy" folders are skipped; of a Modder's
+  Edition folder and a plain one, the one matching the base is used.
+- Menu art for slot n (`DINO7.TGA`) means the entry takes over that menu
+  slot ("replace the Spinosaurus"); `WEAPONn` the same for weapons. An
+  entry named like an existing one changes it; anything else is added.
+- A hunter model (`hunter...car`) carrying the add-on's kill animations
+  is **merged**: the extra animations of every add-on's hunter are added to
+  the game's hunter and each add-on's `hunterAnim` numbers are moved to
+  match, so several such add-ons work together.
+- Fix-ups: an entry naming a model the add-on doesn't ship uses its
+  closest-named one; an entry for the original game that takes over a slot
+  on a Modder's Edition base keeps that slot's spawn tables; an add-on with
+  no entry at all (a skin pack) only adds its new files.
+
+## Modder's Edition add-ons
+Add-ons written for the Modder's Edition Engine need its data under them.
+Its release ships only the files it changes, to be copied over the
+original game; give that folder as an `--overlay` and it is layered over
+the game the same way (its `_RES.TXT` replaces the original's):
+```
+cargo run --release -p c2-pc -- play ../source/c2-original --overlay "PATH/Carnivores 2" --mod ADDON_DIR --mod OTHER
+cargo run --release -p c2-pc -- mod build ADDON_DIR... --base ../source/c2-original --overlay "PATH/Carnivores 2" --out DIR
+```
+
 ## Playing with mods
 ```
 cd pc-ver

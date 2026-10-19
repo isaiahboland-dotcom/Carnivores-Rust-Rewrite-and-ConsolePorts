@@ -64,7 +64,7 @@ fn full_copy_and_partial_mods_merge_with_a_report() {
             ),
         ],
     );
-    let v = vanilla(&base).expect("vanilla");
+    let v = vanilla(std::slice::from_ref(&base)).expect("vanilla");
     let ma = load_mod(&v, &a).expect("mod a");
     // Named after its folder; the data is found in the "Rex Pack" subfolder.
     assert!(
@@ -79,7 +79,7 @@ fn full_copy_and_partial_mods_merge_with_a_report() {
     assert_eq!(mb.manifest.info.id, "menus");
     assert_eq!(mb.files.len(), 3);
 
-    let pack = build(&base, vec![ma, mb]).expect("build");
+    let pack = build(std::slice::from_ref(&base), vec![ma, mb]).expect("build");
     let out = tmp("out");
     materialize(&pack, &out).expect("materialize");
     let read = |p: &str| std::fs::read(out.join(p)).unwrap_or_default();

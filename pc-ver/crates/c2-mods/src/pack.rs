@@ -86,6 +86,7 @@ impl Backend for Subset {
 }
 
 /// A mod ready to layer.
+#[derive(Default)]
 pub struct ModSource {
     pub manifest: Manifest,
     pub root: PathBuf,
@@ -96,27 +97,93 @@ pub struct ModSource {
     pub identical: usize,
     /// The manifest was inferred (no `mod.toml`).
     pub inferred: bool,
+    /// A loose add-on (`crate::loose`): its files' game paths -> disk
+    /// (`files` holds the game paths then).
+    pub map: Vec<(String, PathBuf)>,
+    /// A loose add-on's hunter model, merged at build time.
+    pub hunter: Option<PathBuf>,
+    /// How a loose add-on was read, for the report.
+    pub notes: Vec<String>,
 }
 
-/// The vanilla game data as a one-layer VFS.
-pub fn vanilla(base: &Path) -> Result<Vfs, ModError> {
-    let root = find_root(base).ok_or_else(|| ModError::NoHuntdat(base.to_path_buf()))?;
-    // Only the game data: not the executables, DLLs or wrapper files next to it.
-    let dir: Box<dyn Backend> = Box::new(DirBackend::new(root)?);
-    let keep = dir
-        .files()
-        .into_iter()
-        .filter(|f| is_data(&key(f)))
-        .collect();
+/// Reads a loose add-on (`crate::loose`) as a mod.
+fn load_loose(vanilla: &Vfs, dir: &Path) -> Result<ModSource, ModError> {
+    let l = crate::loose::read(dir, vanilla)?;
+    let name = dir
+        .file_name()
+        .map_or_else(|| "mod".into(), |n| n.to_string_lossy().into_owned());
+    let mut manifest = Manifest::default();
+    manifest.info.id = slug(&name);
+    manifest.info.name = name;
+    for (p, _) in &l.files {
+        if vanilla.resolve(&key(p)).is_some() {
+            manifest.files.replaces.push(p.clone());
+        } else {
+            manifest.files.adds.push(p.clone());
+        }
+    }
+    for c in &l.res_changes {
+        let (section, b, added) = match c {
+            Change::Add { section, block } => (section, block, true),
+            Change::Modify { section, block, .. } => (section, block, false),
+            Change::Entry { .. } => continue,
+        };
+        let id = block_id(b).unwrap_or_else(|| "?".into());
+        let r = &mut manifest.res;
+        match (section.as_str(), added) {
+            ("characters", true) => r.adds_dinos.push(id),
+            ("characters", false) => r.modifies_dinos.push(id),
+            ("weapons", true) => r.adds_weapons.push(id),
+            _ => r.modifies_weapons.push(id),
+        }
+    }
+    Ok(ModSource {
+        manifest,
+        root: dir.to_path_buf(),
+        files: l.files.iter().map(|(p, _)| p.clone()).collect(),
+        res_changes: l.res_changes,
+        identical: 0,
+        inferred: true,
+        map: l.files,
+        hunter: l.hunter,
+        notes: l.notes,
+    })
+}
+
+/// The base game data: the game folder, then any overlays over it (a
+/// release shipped as changed files only, such as the Modder's Edition,
+/// copied over the original game). A later layer's file wins, `_RES.TXT`
+/// included.
+pub fn vanilla(bases: &[PathBuf]) -> Result<Vfs, ModError> {
     let mut v = Vfs::new();
-    v.push("vanilla", Box::new(Subset { dir, keep }));
+    for (i, base) in bases.iter().enumerate() {
+        let root = find_root(base).ok_or_else(|| ModError::NoHuntdat(base.to_path_buf()))?;
+        // Only the game data: not the executables, DLLs or wrapper files next to it.
+        let dir: Box<dyn Backend> = Box::new(DirBackend::new(root)?);
+        let keep = dir
+            .files()
+            .into_iter()
+            .filter(|f| is_data(&key(f)))
+            .collect();
+        let name = if i == 0 {
+            "vanilla".to_string()
+        } else {
+            format!("base overlay {}", base.display())
+        };
+        v.push(name, Box::new(Subset { dir, keep }));
+    }
     Ok(v)
 }
 
 /// Reads a mod folder or `.zip`: its `mod.toml` if any (an empty `[files]`
 /// is filled in by detection), and its `_RES.TXT` changes.
 pub fn load_mod(vanilla: &Vfs, dir: &Path) -> Result<ModSource, ModError> {
-    let root = mod_root(dir).ok_or_else(|| ModError::NoHuntdat(dir.to_path_buf()))?;
+    let Some(root) = mod_root(dir) else {
+        if crate::loose::is_loose(dir) {
+            return load_loose(vanilla, dir);
+        }
+        return Err(ModError::NoHuntdat(dir.to_path_buf()));
+    };
     let backend = open_root(&root)?;
     let name = if is_zip(dir) {
         dir.file_stem()
@@ -182,6 +249,7 @@ pub fn load_mod(vanilla: &Vfs, dir: &Path) -> Result<ModSource, ModError> {
         res_changes: d.res_changes,
         identical: d.identical,
         inferred,
+        ..Default::default()
     })
 }
 
@@ -190,8 +258,11 @@ pub struct Pack {
     pub vfs: Vfs,
     pub vanilla_res: ResTxt,
     pub merged: Merged,
-    /// Mods in load order (VFS layers `1..=mods.len()`; later layers are
-    /// generated files).
+    /// Base layers (the game folder and its overlays): VFS layers
+    /// `0..bases`.
+    pub bases: usize,
+    /// Mods in load order (VFS layers `bases..bases + mods.len()`; later
+    /// layers are generated files).
     pub mods: Vec<ModSource>,
     /// Recipe resolutions and patches, for the report.
     pub notes: Vec<String>,
@@ -208,18 +279,68 @@ pub struct BuildOptions {
     pub patches: Vec<(String, String, String)>,
 }
 
+/// Merges the hunter models loose add-ons ship (`crate::hunter`) into the
+/// base one, moving each add-on's kill animations to their new numbers.
+/// The merged model's path and bytes, if any add-on had one.
+fn merge_hunters(
+    vfs: &mut Vfs,
+    res: &ResTxt,
+    mods: &mut [ModSource],
+    notes: &mut Vec<String>,
+) -> Result<Option<(String, Vec<u8>)>, ModError> {
+    if mods.iter().all(|m| m.hunter.is_none()) {
+        return Ok(None);
+    }
+    let Some(file) = res
+        .section("characters")
+        .and_then(|s| s.blocks.first())
+        .and_then(|b| b.get(&["file"]))
+        .map(|f| f.trim().trim_matches('\'').replace('\\', "/"))
+    else {
+        notes.push("no hunter entry in the base `_RES.TXT`: add-on hunters left out".into());
+        return Ok(None);
+    };
+    let path = vfs
+        .resolve(&format!("huntdat/{file}"))
+        .map_or_else(|| format!("HUNTDAT/{file}"), |r| r.path.clone());
+    let mut base = c2_formats::car::parse(&vfs.read(&path)?)?;
+    for m in mods.iter_mut() {
+        let Some(h) = &m.hunter else { continue };
+        let data = std::fs::read(h).map_err(|source| ModError::Io {
+            path: h.clone(),
+            source,
+        })?;
+        let extra = c2_formats::car::parse(&data)?;
+        let id = &m.manifest.info.id;
+        match crate::hunter::merge(&mut base, std::slice::from_ref(&extra)).remove(0) {
+            crate::hunter::Outcome::Merged { map } => {
+                crate::hunter::remap(&mut m.res_changes, &map);
+                notes.push(format!(
+                    "`{id}`: its hunter model's animations merged into `{path}` (now {})",
+                    base.animations.len()
+                ));
+            }
+            crate::hunter::Outcome::Incompatible(why) => notes.push(format!(
+                "`{id}`: its hunter model is left out ({why}); its kills may show the wrong animation"
+            )),
+        }
+    }
+    Ok(Some((path, c2_formats::car::write(&base))))
+}
+
 /// Layers the mods (in dependency order) over vanilla and merges `_RES.TXT`.
-pub fn build(base: &Path, mods: Vec<ModSource>) -> Result<Pack, ModError> {
-    build_with(base, mods, &BuildOptions::default())
+pub fn build(bases: &[PathBuf], mods: Vec<ModSource>) -> Result<Pack, ModError> {
+    build_with(bases, mods, &BuildOptions::default())
 }
 
 /// [`build`] with a recipe's resolutions and patches.
 pub fn build_with(
-    base: &Path,
+    bases: &[PathBuf],
     mods: Vec<ModSource>,
     opts: &BuildOptions,
 ) -> Result<Pack, ModError> {
-    let mut vfs = vanilla(base)?;
+    let mut vfs = vanilla(bases)?;
+    let n_bases = bases.len();
     let mut notes = Vec::new();
     let vanilla_res = read_res(&vfs.read(RES_TXT)?)?;
     let manifests: Vec<Manifest> = mods.iter().map(|m| m.manifest.clone()).collect();
@@ -257,14 +378,29 @@ pub fn build_with(
         ));
     }
     for m in &mods {
-        vfs.push(
-            m.manifest.info.id.clone(),
+        if !m.notes.is_empty() {
+            for n in &m.notes {
+                notes.push(format!("`{}`: {n}", m.manifest.info.id));
+            }
+        }
+        let layer: Box<dyn Backend> = if m.map.is_empty() {
             Box::new(Subset {
                 dir: open_root(&m.root)?,
                 keep: m.files.clone(),
-            }),
-        );
+            })
+        } else {
+            Box::new(crate::loose::MapBackend {
+                map: m
+                    .map
+                    .iter()
+                    .filter(|(p, _)| m.files.contains(p))
+                    .cloned()
+                    .collect(),
+            })
+        };
+        vfs.push(m.manifest.info.id.clone(), layer);
     }
+    let hunter = merge_hunters(&mut vfs, &vanilla_res, &mut mods, &mut notes)?;
     let mut changes: Vec<(String, Vec<Change>)> = mods
         .iter()
         .map(|m| (m.manifest.info.id.clone(), m.res_changes.clone()))
@@ -297,6 +433,11 @@ pub fn build_with(
         }
     }
     let merged = merge(&vanilla_res, &changes);
+    if let Some((path, data)) = hunter {
+        let mut mem = MemBackend::new();
+        mem.insert(&path, data);
+        vfs.push("(merged hunter)", Box::new(mem));
+    }
     if changes.iter().any(|(_, c)| !c.is_empty()) {
         let mut mem = MemBackend::new();
         mem.insert("HUNTDAT/_RES.TXT", merged.res.write().into_bytes());
@@ -321,12 +462,17 @@ pub fn build_with(
         vfs,
         vanilla_res,
         merged,
+        bases: n_bases,
         mods,
         notes,
     })
 }
 
 impl Pack {
+    fn is_mod_layer(&self, l: usize) -> bool {
+        l >= self.bases && l < self.bases + self.mods.len()
+    }
+
     /// Files more than one mod provides: (path, mods in load order).
     pub fn file_conflicts(&self) -> Vec<(String, Vec<String>)> {
         let layers = self.vfs.layers();
@@ -336,7 +482,7 @@ impl Pack {
                 let mods: Vec<String> = r
                     .providers
                     .iter()
-                    .filter(|&&l| l > 0 && l <= self.mods.len())
+                    .filter(|&&l| self.is_mod_layer(l))
                     .map(|&l| layers[l].name.clone())
                     .collect();
                 (mods.len() > 1).then(|| (r.path.clone(), mods))
@@ -349,13 +495,16 @@ impl Pack {
         let mut s = String::new();
         let _ = writeln!(s, "# Merge report\n");
         let _ = writeln!(s, "## Load order\n");
-        let _ = writeln!(s, "0. vanilla");
+        let layers = self.vfs.layers();
+        for (i, l) in layers.iter().take(self.bases).enumerate() {
+            let _ = writeln!(s, "{i}. {}", l.name);
+        }
         for (i, m) in self.mods.iter().enumerate() {
             let info = &m.manifest.info;
             let _ = writeln!(
                 s,
                 "{}. `{}` — {}{}{} ({} file{}, {} identical to vanilla skipped{})",
-                i + 1,
+                i + self.bases,
                 info.id,
                 info.name,
                 if info.version.is_empty() {
@@ -402,7 +551,7 @@ impl Pack {
             );
         }
         if !self.notes.is_empty() {
-            let _ = writeln!(s, "\n## Recipe decisions\n");
+            let _ = writeln!(s, "\n## Decisions\n");
             for n in &self.notes {
                 let _ = writeln!(s, "- {n}");
             }
@@ -418,11 +567,11 @@ impl Pack {
         let layers = self.vfs.layers();
         let mut any = false;
         for (_, r) in self.vfs.files() {
-            if r.layer == 0 || r.layer > self.mods.len() {
+            if !self.is_mod_layer(r.layer) {
                 continue;
             }
             any = true;
-            let how = if r.providers.first() == Some(&0) {
+            let how = if r.providers.first().is_some_and(|&l| l < self.bases) {
                 "replaces vanilla"
             } else {
                 "new"

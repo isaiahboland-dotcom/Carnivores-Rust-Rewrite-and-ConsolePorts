@@ -3,6 +3,8 @@
 //! folders, and recipes (mod combinations shared as URLs and file hashes).
 
 pub mod detect;
+pub mod hunter;
+pub mod loose;
 pub mod manifest;
 pub mod pack;
 pub mod patch;

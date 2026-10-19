@@ -57,7 +57,7 @@ fn recipe_round_trip() {
             ("Blue Menu/HUNTDAT/MENU/MENUM.TGA", b"blue"),
         ],
     );
-    let v = vanilla(&base).expect("vanilla");
+    let v = vanilla(std::slice::from_ref(&base)).expect("vanilla");
     let mods = ["Red Menu", "Blue Menu"]
         .map(|m| load_mod(&v, &authoring.join(m)).expect("mod"))
         .into_iter()
@@ -107,7 +107,7 @@ fn recipe_round_trip() {
     let found = locate(&r, &downloads);
     assert!(found.iter().all(|l| l.complete()), "{found:?}");
     let (sources, opts) = prepare(&rpath, &r, &found, &v).expect("prepare");
-    let pack = build_with(&base, sources, &opts).expect("build");
+    let pack = build_with(std::slice::from_ref(&base), sources, &opts).expect("build");
     let out = tmp("out");
     materialize(&pack, &out).expect("materialize");
     assert_eq!(

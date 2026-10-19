@@ -5,14 +5,24 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 use c2_mods::{build, load_mod, materialize, vanilla};
 
-/// Builds vanilla + `mods` into `out` and prints a summary.
-pub fn build_pack(base: &Path, mods: &[PathBuf], out: &Path) -> Result<()> {
-    let v = vanilla(base)?;
+/// The base game folder (`--base`, or `play`'s game folder) and the
+/// `--overlay` folders copied over it.
+pub fn bases(base: Option<&str>, overlays: &[&str]) -> Result<Vec<PathBuf>> {
+    let base = base.context("--base GAME_DIR is required")?;
+    Ok(std::iter::once(base)
+        .chain(overlays.iter().copied())
+        .map(PathBuf::from)
+        .collect())
+}
+
+/// Builds the base + `mods` into `out` and prints a summary.
+pub fn build_pack(bases: &[PathBuf], mods: &[PathBuf], out: &Path) -> Result<()> {
+    let v = vanilla(bases)?;
     let sources = mods
         .iter()
         .map(|m| load_mod(&v, m).with_context(|| format!("reading mod {}", m.display())))
         .collect::<Result<Vec<_>>>()?;
-    let pack = build(base, sources)?;
+    let pack = build(bases, sources)?;
     materialize(&pack, out).with_context(|| format!("writing {}", out.display()))?;
     let conflicts = pack.file_conflicts().len() + pack.merged.conflicts.len();
     tracing::info!(
@@ -25,10 +35,12 @@ pub fn build_pack(base: &Path, mods: &[PathBuf], out: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Where `play --mod` keeps its combined games.
-pub fn pack_dir(mods: &[PathBuf]) -> PathBuf {
-    let names: Vec<String> = mods
+/// Where `play --mod` keeps its combined games (named after the overlays
+/// and mods).
+pub fn pack_dir(overlays: &[PathBuf], mods: &[PathBuf]) -> PathBuf {
+    let names: Vec<String> = overlays
         .iter()
+        .chain(mods)
         .map(|m| {
             c2_mods::manifest::slug(
                 &m.file_name()
@@ -40,14 +52,13 @@ pub fn pack_dir(mods: &[PathBuf]) -> PathBuf {
 }
 
 /// `c2-pc mod detect|build ...`.
-pub fn run(args: &[String], base: Option<&str>, out: Option<&str>, write: bool) -> Result<()> {
+pub fn run(args: &[String], bases: Vec<PathBuf>, out: Option<&str>, write: bool) -> Result<()> {
     let Some((sub, rest)) = args.split_first() else {
         bail!("usage: c2-pc mod detect|build ...");
     };
-    let base = PathBuf::from(base.context("--base GAME_DIR is required")?);
     match sub.as_str() {
         "detect" => {
-            let v = vanilla(&base)?;
+            let v = vanilla(&bases)?;
             for m in rest {
                 let dir = PathBuf::from(m);
                 let src = load_mod(&v, &dir)?;
@@ -76,7 +87,7 @@ pub fn run(args: &[String], base: Option<&str>, out: Option<&str>, write: bool) 
         "build" => {
             let out = PathBuf::from(out.context("--out DIR is required")?);
             let mods: Vec<PathBuf> = rest.iter().map(PathBuf::from).collect();
-            build_pack(&base, &mods, &out)
+            build_pack(&bases, &mods, &out)
         }
         _ => bail!("unknown mod command {sub:?}"),
     }
@@ -86,11 +97,11 @@ pub fn run(args: &[String], base: Option<&str>, out: Option<&str>, write: bool) 
 fn verify(
     recipe_path: &Path,
     r: &c2_mods::recipe::Recipe,
-    base: &Path,
+    bases: &[PathBuf],
     mods_dir: &Path,
 ) -> Result<Vec<c2_mods::recipe::Located>> {
     use c2_mods::recipe::{check_base, load_base, locate};
-    let v = vanilla(base)?;
+    let v = vanilla(bases)?;
     println!(
         "recipe {} — {} {}",
         r.recipe.id, r.recipe.name, r.recipe.version
@@ -144,12 +155,17 @@ fn verify(
 }
 
 /// Verifies and builds a recipe into `out`.
-pub fn build_recipe(recipe_path: &Path, base: &Path, mods_dir: &Path, out: &Path) -> Result<()> {
+pub fn build_recipe(
+    recipe_path: &Path,
+    bases: &[PathBuf],
+    mods_dir: &Path,
+    out: &Path,
+) -> Result<()> {
     let r = c2_mods::recipe::Recipe::load(recipe_path)?;
-    let found = verify(recipe_path, &r, base, mods_dir)?;
-    let v = vanilla(base)?;
+    let found = verify(recipe_path, &r, bases, mods_dir)?;
+    let v = vanilla(bases)?;
     let (sources, opts) = c2_mods::recipe::prepare(recipe_path, &r, &found, &v)?;
-    let pack = c2_mods::build_with(base, sources, &opts)?;
+    let pack = c2_mods::build_with(bases, sources, &opts)?;
     materialize(&pack, out).with_context(|| format!("writing {}", out.display()))?;
     tracing::info!(
         "built {} — see {}",
@@ -175,7 +191,7 @@ pub fn recipe_pack_dir(recipe_path: &Path) -> PathBuf {
 }
 
 pub struct RecipeArgs<'a> {
-    pub base: Option<&'a str>,
+    pub bases: Vec<PathBuf>,
     pub mods: Option<&'a str>,
     pub out: Option<&'a str>,
     pub id: Option<&'a str>,
@@ -187,14 +203,14 @@ pub fn run_recipe(args: &[String], a: &RecipeArgs<'_>) -> Result<()> {
     let Some((sub, rest)) = args.split_first() else {
         bail!("usage: c2-pc recipe verify|build|new|base ...");
     };
-    let base = PathBuf::from(a.base.context("--base GAME_DIR is required")?);
+    let bases = &a.bases;
     let first = || rest.first().map(PathBuf::from).context("which recipe?");
     match sub.as_str() {
         "verify" => {
             let p = first()?;
             let r = c2_mods::recipe::Recipe::load(&p)?;
             let mods = PathBuf::from(a.mods.context("--mods DIR is required")?);
-            let found = verify(&p, &r, &base, &mods)?;
+            let found = verify(&p, &r, bases, &mods)?;
             if found.iter().all(|l| l.complete()) {
                 println!("everything matches; `recipe build` will work");
                 Ok(())
@@ -205,11 +221,11 @@ pub fn run_recipe(args: &[String], a: &RecipeArgs<'_>) -> Result<()> {
         "build" => {
             let mods = PathBuf::from(a.mods.context("--mods DIR is required")?);
             let out = PathBuf::from(a.out.context("--out DIR is required")?);
-            build_recipe(&first()?, &base, &mods, &out)
+            build_recipe(&first()?, bases, &mods, &out)
         }
         "new" => {
             let id = a.id.context("--id ID is required")?;
-            let v = vanilla(&base)?;
+            let v = vanilla(bases)?;
             let sources = rest
                 .iter()
                 .map(|m| load_mod(&v, Path::new(m)).with_context(|| format!("reading mod {m}")))
@@ -218,7 +234,7 @@ pub fn run_recipe(args: &[String], a: &RecipeArgs<'_>) -> Result<()> {
             write_new(a.out, &r.to_toml())
         }
         "base" => {
-            let v = vanilla(&base)?;
+            let v = vanilla(bases)?;
             let b = c2_mods::recipe::base_profile(
                 a.id.unwrap_or("c2-vanilla"),
                 a.name

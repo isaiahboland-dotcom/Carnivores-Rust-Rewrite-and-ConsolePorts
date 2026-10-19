@@ -374,12 +374,16 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
         load order with requires/conflicts, file merge (last wins) and `_RES.TXT` merge by entry, merge report
   - [x] `c2-pc mod detect|build`, `c2-pc play GAME --mod DIR...` (combined game in the data dir, linked not copied)
   - [x] zip backend: a mod can be a `.zip` (its `HUNTDAT` at the top or one folder down), for `--mod`, `mod`, `recipe`
-  - [ ] test with 2-3 real add-on mods (owner to pick)
+  - [x] loose add-ons (a model + an entry to paste, as most real add-ons ship): placed by rule, slot
+        takeovers from menu files, entries from readmes, variant folders, reported fix-ups
+  - [x] hunter-model merging, so add-ons that each ship a hunter with their kill animations combine
+  - [x] base overlays (`--overlay`): a release shipping changed files only (the Modder's Edition) under the add-ons
+  - [x] 13 real add-ons built together and simulated headless (`c2-parity mee-sim`); owner play test pending
 - [ ] M5 Recipes — **in progress**
   - [x] recipe schema (§6) with `folder` hint and `[[resolve]] entry = "section:name"`; SHA-256 pinning
   - [x] `c2-pc recipe verify|build|new|base`, `play --recipe`; unified-diff patches; `recipes/example.toml`,
         `recipes/bases/c2-vanilla.toml` (hashes only)
-  - [ ] a first real recipe (needs real add-on mods, see M4)
+  - [ ] recipes for loose add-ons (hash pinning of their files), then a first real recipe
 - [x] M6 Cooker + 3DS boot
   - [x] `.c2pk` pack format (`c2_formats::cooked`, `c2_vfs::PackBackend`); shared loading in `c2_core::load`
   - [x] `c2-cook`: chosen area / animals / weapons / time of day, mods or recipe, PICA200 textures, n3ds/o3ds profiles, measured 3DS loading peak
