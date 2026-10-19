@@ -73,7 +73,9 @@ pub struct DinoInfo {
     pub mass: f32,
     pub length: f32,
     pub radius: f32,
-    pub base_score: i32,
+    /// `BaseScore`: whole points in the original (`atoi`), any number in
+    /// the Modder's Edition (`atof`, set by `crate::mee::tune`).
+    pub base_score: f32,
     pub smell_k: f32,
     pub hear_k: f32,
     pub look_k: f32,
@@ -93,7 +95,7 @@ impl DinoInfo {
             mass: d.mass.unwrap_or(0.0),
             length: d.length.unwrap_or(0.0),
             radius: d.radius.unwrap_or(0.0),
-            base_score: d.basescore.unwrap_or(0),
+            base_score: d.basescore.unwrap_or(0) as f32,
             smell_k: d.smell.unwrap_or(0.0),
             hear_k: d.hear.unwrap_or(0.0),
             look_k: d.look.unwrap_or(0.0),
@@ -1515,7 +1517,7 @@ mod tests {
             mass: 1.0,
             length: 1.0,
             radius: 256.0,
-            base_score: 1,
+            base_score: 1.0,
             smell_k: 1.0,
             hear_k: 1.0,
             look_k: 1.0,

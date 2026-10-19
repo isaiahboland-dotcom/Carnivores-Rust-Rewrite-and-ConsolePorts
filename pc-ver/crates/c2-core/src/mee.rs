@@ -305,6 +305,10 @@ pub fn info(b: &Block, mee_ai: i32) -> MeeInfo {
 pub fn tune(species: &mut [Species], tables: &Tables) {
     for (s, c) in species.iter_mut().zip(&tables.characters) {
         s.tuning = tuning(&c.block);
+        // The dialect reads the score as a decimal (`basescore = 7.5`).
+        if let Some(v) = c.block.get(&["basescore"]) {
+            s.info.base_score = c_atof(v);
+        }
         let mee_ai = s.tuning.mee_ai.unwrap_or(s.info.ai);
         if is_ported(mee_ai) {
             s.info.ai = mee_ai;

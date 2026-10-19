@@ -369,7 +369,7 @@ fn draw_map(c: &mut Canvas, gpu: &mut Gpu, game: &Game, map: Option<&Texture>, l
     let range = h.opts.view_r as f32 * CELL;
     for ch in &h.herd.chars {
         let (dx, dz) = (ch.pos[0] - p.x, ch.pos[2] - p.z);
-        let huntable = ch.ai >= 10 && h.opts.targets & (1 << ch.ai) != 0;
+        let huntable = h.is_target(ch);
         let in_range = dx * dx + dz * dz <= range * range;
         if ch.health <= 0 || !(in_range || huntable && h.opts.radar) {
             continue;

@@ -733,7 +733,7 @@ mod tests {
             mass: 1.0,
             length: 1.0,
             radius: 256.0,
-            base_score: 1,
+            base_score: 1.0,
             smell_k: 1.0,
             hear_k: 1.0,
             look_k: 1.0,

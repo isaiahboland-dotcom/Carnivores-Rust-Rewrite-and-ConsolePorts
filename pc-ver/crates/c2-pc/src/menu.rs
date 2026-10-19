@@ -33,6 +33,39 @@ const CH: f32 = 600.0;
 
 type Rect = (f32, f32, f32, f32);
 
+/// Each huntable's `basescore`: its `_RES.TXT` entry (matched by name),
+/// with the game's "when picked" changes applied (`overwrite charN`).
+fn hunt_scores(huntdat: &Path, menu: &MenuData) -> Vec<Option<f32>> {
+    let Some(res) = find_file(huntdat, "_RES.TXT")
+        .and_then(|p| std::fs::read(p).ok())
+        .and_then(|d| ResTxt::parse(&String::from_utf8_lossy(&d)).ok())
+    else {
+        return vec![None; menu.huntables.len()];
+    };
+    let chars = res
+        .section("characters")
+        .map(|s| s.blocks.as_slice())
+        .unwrap_or_default();
+    let unquote = |v: &str| v.trim().trim_matches('\'').to_ascii_lowercase();
+    menu.huntables
+        .iter()
+        .enumerate()
+        .map(|(k, h)| {
+            let name = h.name.to_ascii_lowercase();
+            let b = chars
+                .iter()
+                .find(|b| b.get(&["name"]).map(unquote).as_deref() == Some(&name))?;
+            let picked = c2_formats::mee::Hunt {
+                area: Some(0),
+                time: 1,
+                picked: 1u128.checked_shl(k as u32).unwrap_or(0),
+            };
+            let b = c2_formats::mee::resolve(b, &picked);
+            b.get(&["basescore"]).map(c2_formats::res_txt::c_atof)
+        })
+        .collect()
+}
+
 fn inside(p: Option<(f32, f32)>, r: Rect) -> bool {
     p.is_some_and(|(x, y)| x >= r.0 && y >= r.1 && x < r.0 + r.2 && y < r.1 + r.3)
 }
@@ -550,6 +583,27 @@ impl Menu {
             texts: etexts.clone(),
             texts_us: etexts,
         });
+        // Each huntable's points, from its `_RES.TXT` entry as when picked
+        // (descriptions differ between games; this is what the hunt scores).
+        let scores = hunt_scores(&huntdat, &menu);
+        if let Some(c) = cols.get_mut(1) {
+            for (k, sc) in scores.iter().enumerate() {
+                let Some(sc) = sc else { continue };
+                // Whole points, as the hunt adds them.
+                let line = format!(
+                    "Score when bagged: {} (tranquilized: {}, no trophy)",
+                    *sc as i32,
+                    (sc * 1.25) as i32
+                );
+                for t in [c.texts.get_mut(k), c.texts_us.get_mut(k)]
+                    .into_iter()
+                    .flatten()
+                {
+                    t.push(String::new());
+                    t.push(line.clone());
+                }
+            }
+        }
         // Rows by price (stable, so equal prices keep their order); the
         // equipment keeps its fixed order.
         for (ci, c) in cols.iter_mut().enumerate() {

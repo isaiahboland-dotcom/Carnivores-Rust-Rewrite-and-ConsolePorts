@@ -925,8 +925,7 @@ impl Scene for HuntView {
                 sprites.extend(dot(ccx, ccy, [0.97, 0.0, 0.0, 1.0]));
                 if self.hunt.opts.radar {
                     for c in &self.hunt.herd.chars {
-                        let t = self.hunt.opts.targets;
-                        if c.ai >= 10 && c.health > 0 && t & (1 << c.ai) != 0 {
+                        if c.health > 0 && self.hunt.is_target(c) {
                             sprites.extend(dot(
                                 c.pos[0] / 1024.0,
                                 c.pos[2] / 1024.0,

@@ -741,8 +741,8 @@ impl Hunt {
             .herd
             .species
             .get(c.ctype)
-            .map_or(0, |s| s.info.base_score);
-        let mut score = base as f32;
+            .map_or(0.0, |s| s.info.base_score);
+        let mut score = base;
         if self.successes > 1 {
             score *= 1.0 + self.successes as f32 / 10.0;
         }
@@ -1727,15 +1727,20 @@ impl Hunt {
     }
 
     /// `ScanLifeForms`: the nearest visible animal close to the view centre.
-    /// Whether `c` is one of the hunted species: chosen in the menu
-    /// (`TargetDino` bit of its AI), or, in Modder's Edition data, marked
-    /// `radar = TRUE` for this hunt.
+    /// Whether `c` is one of the hunted species: in Modder's Edition data,
+    /// marked `radar = TRUE` for this hunt, else picked in the menu by its
+    /// slot (`callNo`); in the original's, picked by AI (`TargetDino`).
     pub fn is_target(&self, c: &crate::dino::Character) -> bool {
-        self.herd
-            .species
-            .get(c.ctype)
-            .and_then(|s| s.tuning.radar)
-            .unwrap_or_else(|| self.opts.targets & 1u128.checked_shl(c.ai as u32).unwrap_or(0) != 0)
+        let Some(sp) = self.herd.species.get(c.ctype) else {
+            return false;
+        };
+        let bit = match &sp.mee {
+            Some(m) => 10 + m.call_no,
+            None => c.ai,
+        };
+        sp.tuning
+            .radar
+            .unwrap_or_else(|| self.opts.targets & 1u128.checked_shl(bit as u32).unwrap_or(0) != 0)
     }
 
     pub fn life_info(&self, area: &Area) -> Option<LifeInfo> {
@@ -1951,7 +1956,7 @@ mod tests {
             mass: 1.0,
             length: 1.0,
             radius: 256.0,
-            base_score: 1,
+            base_score: 1.0,
             smell_k: 1.0,
             hear_k: 1.0,
             look_k: 1.0,

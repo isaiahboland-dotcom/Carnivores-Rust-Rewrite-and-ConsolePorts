@@ -2,6 +2,18 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-19 — Radar by slot; points in the menu
+- The map's radar blips (PC and 3DS) use `Hunt::is_target`, which now
+  knows the dialect: an animal marked `radar` when picked, else picked by
+  its `callNo` slot. The old test (AI bit) missed most Modder's Edition and
+  combined-game animals.
+- The hunt menu's info panel adds "Score when bagged: N (tranquilized: M,
+  no trophy)" for each huntable: its `_RES.TXT` `basescore` as when picked
+  (the games' own descriptions differ). The tranquilizer already scores
+  x1.25 (`Game.cpp`, as the original), with no trophy.
+- Base scores are decimals for dialect species (`basescore = 7.5`, the
+  engine's `atof`); the original's stay whole (`atoi`).
+
 ## 2026-10-19 — Calls by menu slot; up to 118 huntable slots
 - **Calls** are numbered `10 + menu slot` (the original's AI number, so the
   original game is unchanged) and play `CALL{slot+1}_A/B/C.WAV`. Dialect
