@@ -951,4 +951,38 @@ mod tests {
         assert_eq!(c.state, 0);
         assert!(dist(c, &h) > 4096.0, "{}", dist(c, &h));
     }
+
+    #[test]
+    fn flyer_climbs_glides_and_falls_when_shot() {
+        let area = Area::flat(10);
+        let h = hunter();
+        let mut m = info(ai::PTERA);
+        (m.fly, m.glide) = (IDLE, IDLE + 1);
+        (m.fly_speed, m.glide_speed) = (0.6, 0.6);
+        (m.min_depth, m.max_depth) = (300, 1200);
+        m.death_types[0].fall = JUMP;
+        let mut herd = Herd {
+            species: vec![species(m)],
+            ..Default::default()
+        };
+        let i = add(&mut herd, 0, &area, h.x + 9000.0, h.z);
+        let mut phases = std::collections::BTreeSet::new();
+        for _ in 0..300 {
+            run(&mut herd, &area, h, 100);
+            phases.insert(herd.chars[i].phase);
+        }
+        assert!(
+            phases.contains(&IDLE) && phases.contains(&(IDLE + 1)),
+            "{phases:?}"
+        );
+        let ground = area.land_height(herd.chars[i].pos[0], herd.chars[i].pos[2]);
+        assert!(herd.chars[i].pos[1] > ground + 200.0);
+        herd.chars[i].health = 0;
+        run(&mut herd, &area, h, 10);
+        assert_eq!(herd.chars[i].phase, JUMP, "falling");
+        run(&mut herd, &area, h, 5000);
+        let c = &herd.chars[i];
+        assert_eq!(c.phase, DIE);
+        assert!((c.pos[1] - area.land_height(c.pos[0], c.pos[2])).abs() < 1.0);
+    }
 }

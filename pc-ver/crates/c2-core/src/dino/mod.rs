@@ -11,6 +11,7 @@ mod herbivore;
 mod huntable;
 pub mod mee;
 mod mee_ambient;
+mod mee_flyer;
 mod mee_trex;
 mod place;
 pub mod pose;
@@ -298,6 +299,12 @@ pub struct Character {
     pub tgalpha_offset: f32,
     /// The roar this animal uses (`roarAnim`, picked at reset).
     pub roar_anim: usize,
+    /// Its death in water (`waterDieAnim`, picked at reset).
+    pub water_die_anim: usize,
+    /// Falling flyers: the phase it was shot in, and whether it may fall
+    /// asleep (tranquilizer) when down.
+    pub death_phase: usize,
+    pub can_sleep: bool,
 }
 
 /// What the AI sees of the hunter.
@@ -648,6 +655,10 @@ impl Character {
             if m.death_types.len() > 1 {
                 self.death_type = rng.r_rand(m.death_types.len() as i32 - 1) as usize;
             }
+            if !m.water_dies.is_empty() {
+                let n = m.water_dies.len() as i32 - 1;
+                self.water_die_anim = m.water_dies[rng.r_rand(n) as usize];
+            }
         }
         self.health = species.info.health0;
         if opt_agres > 128 {
@@ -963,6 +974,13 @@ impl Character {
         self.pos = p;
         self.reset(sp, ctx.rng, ctx.opt_agres);
         self.set_new_target_place_in(ctx.area, ctx.rng, 2048.0, Some(g));
+        if let Some(m) = sp
+            .mee
+            .as_ref()
+            .filter(|m| matches!(m.ai, ai::DIMOR | ai::PTERA))
+        {
+            self.pos[1] += m.min_depth as f32;
+        }
         true
     }
 
@@ -1108,9 +1126,13 @@ impl Herd {
                         mee_trex::animate(c, i, sp, m, ctx, &mut w);
                     } else if mee::is_ambient(m.ai) {
                         mee_ambient::animate(c, i, sp, m, ctx, &mut w);
+                    } else if mee::is_flyer(m.ai) {
+                        mee_flyer::animate(c, i, sp, m, ctx, &mut w);
                     } else {
                         huntable::animate(c, i, sp, m, ctx, &mut w);
                     }
+                } else if mee::is_flyer(m.ai) {
+                    mee_flyer::animate_dead(c, i, sp, m, ctx);
                 } else {
                     huntable::animate_dead(c, i, sp, m, ctx);
                 }

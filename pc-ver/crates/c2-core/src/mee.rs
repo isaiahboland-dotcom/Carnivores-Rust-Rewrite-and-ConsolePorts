@@ -169,10 +169,20 @@ fn info_line(m: &mut MeeInfo, key: &str, v: &str) {
             let p = m.add_anim(anim);
             m.roars.push(p);
         }
-        "flyanim" | "diveanim" | "glideanim" | "takeoffanim" | "landanim" | "shakelanim"
-        | "shakewanim" | "climbanim" | "fireanim" | "pauseanim" | "reloadanim" | "waterdanim" => {
+        "flyanim" => m.fly = m.add_anim(anim),
+        "glideanim" => m.glide = m.add_anim(anim),
+        "waterdanim" => {
+            let p = m.add_anim(anim);
+            m.water_dies.push(p);
+        }
+        "diveanim" | "takeoffanim" | "landanim" | "shakelanim" | "shakewanim" | "climbanim"
+        | "fireanim" | "pauseanim" | "reloadanim" => {
             m.add_anim(anim);
         }
+        "flyspd" => m.fly_speed = c_atof(v),
+        "gldspd" => m.glide_speed = c_atof(v),
+        "mindepth" | "minalt" => m.min_depth = c_atoi(v),
+        "maxdepth" | "maxalt" => m.max_depth = c_atoi(v),
         "runspd" => m.run_speed = c_atof(v),
         "wlkspd" => m.walk_speed = c_atof(v),
         "swmspd" => m.swim_speed = c_atof(v),

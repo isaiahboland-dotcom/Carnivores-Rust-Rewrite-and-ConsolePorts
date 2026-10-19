@@ -41,6 +41,11 @@ Newest first. Each entry: what, why, and what it affects.
   any species, as the dialect does). Dialect animals always leave blood
   trails (the original exempts its AI 6, the brachiosaur; the dialect's 6
   is the pig).
+- **Flyers** (`AnimateDimor`, dialect AI 3, 4): flap up toward
+  `1.5 * maxalt`, glide down from `maxalt`, flap again below `minalt`,
+  follow packs, call now and then; a forward respawn starts at `minalt`.
+  Shot, they fall (`AnimateIcthDead`: the death type's `fallAnim`, a
+  splash on water, then `dieAnim` or a water death).
 - **Kept quirks**: clearing the water flag clears all of `StateF`; the
   herbivore turn tests `State` (not `StateF`) for water; `morphTime`
   defaults to 1 (the manual; the released code leaves it 0, which would

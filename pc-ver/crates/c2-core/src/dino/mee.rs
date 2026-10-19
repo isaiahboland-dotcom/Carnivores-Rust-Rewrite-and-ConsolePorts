@@ -83,6 +83,8 @@ pub struct MeeInfo {
     pub swim: usize,
     pub jump: usize,
     pub slide: usize,
+    pub fly: usize,
+    pub glide: usize,
     pub idle_groups: Vec<IdleGroup>,
     /// `lookAnim` (or `fishIdleAnim`), `smellAnim`, `roarAnim` lists.
     pub looks: Vec<usize>,
@@ -95,6 +97,16 @@ pub struct MeeInfo {
     pub walk_speed: f32,
     pub swim_speed: f32,
     pub jump_speed: f32,
+    /// `flyspd`, `gldspd`.
+    pub fly_speed: f32,
+    pub glide_speed: f32,
+    /// Flyers: glide down from `maxalt`, flap up from `minalt` (above the
+    /// ground); fish: the water depths they keep to (`mindepth`,
+    /// `maxdepth`).
+    pub min_depth: i32,
+    pub max_depth: i32,
+    /// Deaths in water (`waterDAnim`), one picked per animal.
+    pub water_dies: Vec<usize>,
     /// Kills a hunter closer than this (`killdist`; 0 = never).
     pub kill_dist: i32,
     /// Attacks within roughly this many cells (`aggress`; 0 = never).
@@ -132,6 +144,8 @@ impl MeeInfo {
             swim: 0,
             jump: 0,
             slide: 0,
+            fly: 0,
+            glide: 0,
             idle_groups: Vec::new(),
             looks: Vec::new(),
             smells: Vec::new(),
@@ -142,6 +156,11 @@ impl MeeInfo {
             walk_speed: 0.0,
             swim_speed: 0.0,
             jump_speed: 0.0,
+            fly_speed: 0.0,
+            glide_speed: 0.0,
+            min_depth: 0,
+            max_depth: 0,
+            water_dies: Vec::new(),
             kill_dist: 0,
             aggress: 0,
             defensive: false,
@@ -413,7 +432,12 @@ pub fn is_huntable(ai_id: i32) -> bool {
 /// AIs whose dialect behaviour is ported (the others run as an original
 /// family for now, `crate::mee::family`).
 pub fn is_ported(ai_id: i32) -> bool {
-    is_huntable(ai_id) || is_ambient(ai_id) || ai_id == super::ai::TREX
+    is_huntable(ai_id) || is_ambient(ai_id) || is_flyer(ai_id) || ai_id == super::ai::TREX
+}
+
+/// AIs that run `AnimateDimor` (and fall with `AnimateIcthDead`).
+pub fn is_flyer(ai_id: i32) -> bool {
+    matches!(ai_id, super::ai::DIMOR | super::ai::PTERA)
 }
 
 /// AIs that run `AnimateClassicAmbient`.
