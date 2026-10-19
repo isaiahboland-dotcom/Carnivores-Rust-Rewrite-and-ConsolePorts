@@ -545,41 +545,60 @@ pub(super) fn calm_phase(
         c.phase = m.walk;
         return false;
     }
+    idle_groups(
+        &mut c.phase,
+        &mut c.idle_group,
+        &m.idle_groups,
+        m.walk,
+        ctx.rng,
+    )
+}
+
+/// The idle-group rules (`currentIdleGroup`): stay in the group or leave it
+/// for `fallback`, else maybe start a group. True when an idle was chosen
+/// (`goto ENDPSELECT`).
+pub(super) fn idle_groups(
+    phase: &mut usize,
+    current: &mut Option<usize>,
+    groups: &[IdleGroup],
+    fallback: usize,
+    rng: &mut MsRand,
+) -> bool {
     let pick = |g: &IdleGroup, rng: &mut MsRand| {
         let i = rng.r_rand(g.anims.len() as i32 - 1) as usize;
-        g.anims.get(i).copied().unwrap_or(m.walk)
+        g.anims.get(i).copied().unwrap_or(fallback)
     };
-    if let Some(g) = c.idle_group.and_then(|g| m.idle_groups.get(g)) {
+    if let Some(g) = current.and_then(|g| groups.get(g)) {
         let last = g.anims.last().copied();
-        if (ctx.rng.r_rand(127) + 1) as f32 > (1.0 - g.end) * 128.0
-            && (g.end_on_any || Some(c.phase) == last)
+        if (rng.r_rand(127) + 1) as f32 > (1.0 - g.end) * 128.0
+            && (g.end_on_any || Some(*phase) == last)
         {
-            c.phase = m.walk;
-            c.idle_group = None;
+            *phase = fallback;
+            *current = None;
             if !g.instant_repeat {
                 return true;
             }
         } else {
-            c.phase = pick(g, ctx.rng);
+            *phase = pick(g, rng);
             return true;
         }
     }
-    for (gi, g) in m.idle_groups.iter().enumerate() {
-        if (ctx.rng.r_rand(127) + 1) as f32 > (1.0 - g.start) * 128.0 {
-            c.idle_group = Some(gi);
+    for (gi, g) in groups.iter().enumerate() {
+        if (rng.r_rand(127) + 1) as f32 > (1.0 - g.start) * 128.0 {
+            *current = Some(gi);
         }
     }
-    match c.idle_group.and_then(|g| m.idle_groups.get(g)) {
+    match current.and_then(|g| groups.get(g)) {
         Some(g) => {
-            c.phase = if g.start_on_any {
-                pick(g, ctx.rng)
+            *phase = if g.start_on_any {
+                pick(g, rng)
             } else {
-                g.anims.first().copied().unwrap_or(m.walk)
+                g.anims.first().copied().unwrap_or(fallback)
             };
             true
         }
         None => {
-            c.phase = m.walk;
+            *phase = fallback;
             false
         }
     }
@@ -1079,5 +1098,44 @@ mod tests {
             c.pos[1]
         );
         assert!((c.pos[0] - start[0]).abs() + (c.pos[2] - start[2]).abs() > 500.0);
+    }
+
+    #[test]
+    fn ichthyornis_takes_off_when_startled_and_comes_back_down() {
+        let area = sea();
+        let mut m = info(mee_ai::ICTH);
+        // More logical phases over the test model's eight animations.
+        m.fly = m.add_anim(2);
+        m.glide = m.add_anim(3);
+        m.takeoff = m.add_anim(4);
+        m.land = m.add_anim(5);
+        m.swim = m.add_anim(6);
+        m.shake_land = m.add_anim(7);
+        m.shake_water = m.add_anim(0);
+        (m.fly_speed, m.glide_speed, m.takeoff_speed, m.land_speed) = (2.0, 1.8, 1.5, 0.3);
+        (m.swim_speed, m.water_level) = (0.25, 40);
+        let (fly, glide, takeoff) = (m.fly, m.glide, m.takeoff);
+        let mut herd = Herd {
+            species: vec![species(m)],
+            ..Default::default()
+        };
+        let mut h = hunter();
+        let i = add(&mut herd, 0, &area, h.x + 600.0, h.z);
+        let up = area.land_up_h(h.x, h.z);
+        run(&mut herd, &area, h, 8000);
+        let c = &herd.chars[i];
+        assert!(
+            [fly, glide, takeoff].contains(&c.phase),
+            "phase {}",
+            c.phase
+        );
+        assert!(c.pos[1] > up + 1000.0, "y {} water {up}", c.pos[1]);
+        // Hunter gone: after its fright it glides down and lands.
+        h.x += 200_000.0;
+        run(&mut herd, &area, h, 120_000);
+        let c = &herd.chars[i];
+        assert_eq!(c.state, 0);
+        let up = area.land_up_h(c.pos[0], c.pos[2]);
+        assert!(c.pos[1] < up + 300.0, "y {} water {up}", c.pos[1]);
     }
 }

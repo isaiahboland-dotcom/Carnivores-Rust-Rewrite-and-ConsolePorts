@@ -85,7 +85,13 @@ pub struct MeeInfo {
     pub slide: usize,
     pub fly: usize,
     pub glide: usize,
+    pub takeoff: usize,
+    pub land: usize,
+    pub shake_land: usize,
+    pub shake_water: usize,
     pub idle_groups: Vec<IdleGroup>,
+    /// Idle groups on water (`waterIgroup`).
+    pub idle2_groups: Vec<IdleGroup>,
     /// `lookAnim` (or `fishIdleAnim`), `smellAnim`, `roarAnim` lists.
     pub looks: Vec<usize>,
     pub smells: Vec<usize>,
@@ -100,6 +106,9 @@ pub struct MeeInfo {
     /// `flyspd`, `gldspd`.
     pub fly_speed: f32,
     pub glide_speed: f32,
+    /// `tkfspd`, `lndspd`.
+    pub takeoff_speed: f32,
+    pub land_speed: f32,
     /// Flyers: glide down from `maxalt`, flap up from `minalt` (above the
     /// ground); fish: the water depths they keep to (`mindepth`,
     /// `maxdepth`).
@@ -157,7 +166,12 @@ impl MeeInfo {
             slide: 0,
             fly: 0,
             glide: 0,
+            takeoff: 0,
+            land: 0,
+            shake_land: 0,
+            shake_water: 0,
             idle_groups: Vec::new(),
+            idle2_groups: Vec::new(),
             looks: Vec::new(),
             smells: Vec::new(),
             roars: Vec::new(),
@@ -169,6 +183,8 @@ impl MeeInfo {
             jump_speed: 0.0,
             fly_speed: 0.0,
             glide_speed: 0.0,
+            takeoff_speed: 0.0,
+            land_speed: 0.0,
             min_depth: 0,
             max_depth: 0,
             water_dies: Vec::new(),
@@ -457,6 +473,7 @@ pub fn is_ported(ai_id: i32) -> bool {
         || is_flyer(ai_id)
         || is_brachi(ai_id)
         || is_fish(ai_id)
+        || ai_id == mee_ai::ICTH
         || ai_id == super::ai::TREX
 }
 

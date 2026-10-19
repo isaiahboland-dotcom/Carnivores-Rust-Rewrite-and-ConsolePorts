@@ -175,8 +175,13 @@ fn info_line(m: &mut MeeInfo, key: &str, v: &str) {
             let p = m.add_anim(anim);
             m.water_dies.push(p);
         }
-        "diveanim" | "takeoffanim" | "landanim" | "shakelanim" | "shakewanim" | "climbanim"
-        | "fireanim" | "pauseanim" | "reloadanim" => {
+        "takeoffanim" => m.takeoff = m.add_anim(anim),
+        "landanim" => m.land = m.add_anim(anim),
+        "shakelanim" => m.shake_land = m.add_anim(anim),
+        "shakewanim" => m.shake_water = m.add_anim(anim),
+        "tkfspd" => m.takeoff_speed = c_atof(v),
+        "lndspd" => m.land_speed = c_atof(v),
+        "diveanim" | "climbanim" | "fireanim" | "pauseanim" | "reloadanim" => {
             m.add_anim(anim);
         }
         "flyspd" => m.fly_speed = c_atof(v),
@@ -258,9 +263,10 @@ fn info_sub(m: &mut MeeInfo, name: &str, b: &Block) {
                 _ => {}
             }
         }
-        // Water idles (`waterIgroup`) belong to AIs not ported yet.
         if name.contains("idlegroup") {
             m.idle_groups.push(g);
+        } else {
+            m.idle2_groups.push(g);
         }
     }
 }

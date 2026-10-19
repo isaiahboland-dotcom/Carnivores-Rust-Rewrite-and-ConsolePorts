@@ -78,6 +78,13 @@ impl Herd {
         let c = &mut self.chars[i];
         c.spawn_group = Some(group);
         c.pack_density = density;
+        let wader = self.species[ctype].mee.as_ref().is_some_and(|m| {
+            use super::mee::mee_ai::*;
+            matches!(m.ai, BRACH | BRACHDANGER | LANDBRACH | ICTH)
+        });
+        if wader {
+            c.spawn_alt = area.land_up_h(c.pos[0], c.pos[2]);
+        }
         if fish {
             // `spawnMapAmbient`; the clamp to the water happens at once.
             let (x, z) = (c.tgx, c.tgz);

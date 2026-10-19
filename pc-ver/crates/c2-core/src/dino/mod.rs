@@ -14,6 +14,7 @@ mod mee_ambient;
 mod mee_brachi;
 mod mee_fish;
 mod mee_flyer;
+mod mee_icth;
 mod mee_trex;
 mod place;
 pub mod pose;
@@ -316,6 +317,14 @@ pub struct Character {
     pub last_tbeta: f32,
     pub aquatic_idle: bool,
     pub spc_depth: f32,
+    /// Ichthyornis: water idle group, gliding down, a take-off without a
+    /// call (`notFlushed`), walk cycles since the last shake, and the water
+    /// height where it was placed (`spawnAlt`).
+    pub idle2_group: Option<usize>,
+    pub gliding: bool,
+    pub not_flushed: bool,
+    pub shake_time: i32,
+    pub spawn_alt: f32,
 }
 
 /// What the AI sees of the hunter.
@@ -779,6 +788,7 @@ impl Character {
             // The original rolls these before the scale.
             self.tgalpha_offset = rng.r_rand((PI * 2.0) as i32) as f32;
             self.idle_group = None;
+            self.idle2_group = None;
             self.aware_hunter = false;
             self.heard_shot = false;
             if m.kill_types.len() > 1 {
@@ -1369,6 +1379,19 @@ impl Herd {
             };
             c.tgtime += ctx.dt;
             let group = c.spawn_group.and_then(|g| self.groups.get(g));
+            // The dialect's Ichthyornis: a minute on the ground ends in a
+            // take-off, one in the air in a new heading.
+            if let Some(m) = sp.mee.as_ref().filter(|m| m.ai == mee::mee_ai::ICTH) {
+                if c.tgtime > 50 * 1000 {
+                    if [m.fly, m.glide, m.takeoff, m.land].contains(&c.phase) {
+                        c.set_new_target_place_icth(ctx.area, ctx.rng, 2048.0, group);
+                    } else {
+                        c.state = 2;
+                        c.afraid_time = (50 + ctx.rng.r_rand(8)) * 1024;
+                        c.not_flushed = true;
+                    }
+                }
+            }
             if c.tgtime > 30 * 1000 {
                 if sp.mee.is_some() {
                     c.retarget_default(sp, ctx.area, ctx.rng, group);
@@ -1409,6 +1432,8 @@ impl Herd {
                         mee_flyer::animate(c, i, sp, m, ctx, &mut w);
                     } else if mee::is_fish(m.ai) {
                         mee_fish::animate(c, i, sp, m, ctx, &mut w);
+                    } else if m.ai == mee::mee_ai::ICTH {
+                        mee_icth::animate(c, i, sp, m, ctx, &mut w);
                     } else if m.ai == mee::mee_ai::BRACH {
                         mee_brachi::animate_old(c, i, sp, m, ctx, &mut w);
                     } else if mee::is_brachi(m.ai) {
@@ -1416,7 +1441,7 @@ impl Herd {
                     } else {
                         huntable::animate(c, i, sp, m, ctx, &mut w);
                     }
-                } else if mee::is_flyer(m.ai) {
+                } else if mee::is_flyer(m.ai) || m.ai == mee::mee_ai::ICTH {
                     mee_flyer::animate_dead(c, i, sp, m, ctx);
                 } else if mee::is_fish(m.ai) {
                     mee_fish::animate_dead(c, i, sp, m, ctx);

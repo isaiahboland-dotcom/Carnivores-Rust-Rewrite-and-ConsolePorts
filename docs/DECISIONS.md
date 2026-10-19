@@ -76,6 +76,17 @@ request: a jump needs the key released and pressed again
   bend `bdepth` (computed upstream, never drawn). Shots are not heard by
   them (`Aquatic`). Their target picking can retry 3024 times: watch on
   Old 3DS.
+- **Ichthyornis** (`AnimateIcth`, 31): walks the shore and swims (land
+  and water idle groups, shaking itself dry every eighth walk cycle),
+  takes off when the hunter comes within 1050 (or after a minute on the
+  ground), flies up, glides down and lands. Kept: `waterNear` ignores its
+  position and tests map cell (0, 0); `swimmingAnim` is true whenever the
+  species lists a `shakeWAnim` (an index tested as a flag). Deviation:
+  `ProcessPrevPhase` runs once per step, not once per `goto TBEGIN`.
+- **Not ported** (no game folder we have uses them): Titan (28) and Micro
+  (29) still run as the interim Ceratosaurus / Velociraptor; the wary
+  Dimorphodon (36) is not placed; poacher (8) and hunting dog (9) are
+  multiplayer-only upstream.
 - **Kept quirks**: clearing the water flag clears all of `StateF`; the
   herbivore turn tests `State` (not `StateF`) for water; `morphTime`
   defaults to 1 (the manual; the released code leaves it 0, which would
