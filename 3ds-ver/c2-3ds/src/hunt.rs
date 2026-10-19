@@ -1,7 +1,7 @@
 //! Starting a hunt from a cooked pack and turning 3DS input into the
 //! simulation's controls.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use c2_core::area::{Area, TimeOfDay};
 use c2_core::dino::{Herd, PlaceOptions};
 use c2_core::game::{GameEvent, Hunt, HuntInput, HuntOptions, Weapons};
@@ -16,9 +16,15 @@ use crate::world::DrawInfo;
 /// Simulation step, as on PC.
 pub const TICK_MS: u32 = 10;
 
+/// The INFO.TXT `pack` this build reads: 2 = RSC and CARs without textures
+/// or sounds, `terrain_count` given.
+const PACK_VERSION: u32 = 2;
+
 /// `C2RS/INFO.TXT`: what the cooker put in the pack.
 #[derive(Debug, Clone)]
 pub struct PackInfo {
+    /// Pack layout version (`pack` in INFO.TXT).
+    pub pack: u32,
     pub target: String,
     pub area: String,
     pub time: TimeOfDay,
@@ -46,6 +52,7 @@ impl PackInfo {
         };
         let num = |k: &str, d: u32| get(k).parse().unwrap_or(d);
         Self {
+            pack: num("pack", 1),
             target: get("target"),
             area: match get("area") {
                 a if a.is_empty() => "AREA1".into(),
@@ -63,6 +70,7 @@ impl PackInfo {
                 cols: num("atlas_cols", 16) as usize,
                 view: num("view", 42),
                 object_view: num("object_view", 28),
+                terrain_count: num("terrain_count", 1) as usize,
             },
         }
     }
@@ -211,14 +219,20 @@ impl Game {
             &vfs.read("C2RS/INFO.TXT")
                 .context("not a c2rs pack (no C2RS/INFO.TXT)")?,
         ));
+        if info.pack < PACK_VERSION {
+            bail!("this pack was made by an older c2-cook; cook it again");
+        }
+        // The area first, while the heap is empty: its map is the biggest
+        // file, and is briefly in memory twice (file and parsed).
+        // `c2-cook`'s `load_peak` repeats these steps; keep them in step.
+        progress(&format!("area {}", info.area));
+        let area = load::area_with(vfs, &info.area, info.time, true)?;
         progress("rules (_RES.TXT)");
         let res = load::res(vfs)?;
         progress("animals");
         let (species, cars) = load::species(vfs, &res);
         progress("weapons");
         let weapons = load::weapons(vfs, &res);
-        progress(&format!("area {}", info.area));
-        let area = load::area(vfs, &info.area, info.time)?;
         let mut weapon_cars = Vec::new();
         let mut weapon_info = Vec::new();
         for w in weapons {

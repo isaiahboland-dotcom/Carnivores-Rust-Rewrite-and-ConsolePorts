@@ -240,11 +240,15 @@ original format. All values little-endian.
 | … | data | entries, each starting on a 16-byte boundary |
 
 Entries:
-- `HUNTDAT/...`: game files exactly as the engine reads them (merged
-  `_RES.TXT`, the area's `.MAP`/`.RSC`, the chosen `.CAR`s).
-- `C2RS/INFO.TXT`: `key = value` lines: `target`, `area` (e.g. `AREA1`),
-  `time`, `dinos` / `weapons` (`_RES.TXT` indices), `terrain_tile`,
-  `atlas_cols`, `view`, `object_view` (cells), `ram_kb` (the estimate).
+- `HUNTDAT/...`: game files in their original formats: the merged
+  `_RES.TXT` and the area's `.MAP` as they are; the area's `.RSC` and the
+  chosen `.CAR`s slimmed (pack version 2): no terrain textures (texture
+  count 0), empty model textures, and sounds with no samples (the entries
+  stay, so indices hold).
+- `C2RS/INFO.TXT`: `key = value` lines: `pack` (2), `target`, `area` (e.g.
+  `AREA1`), `time`, `dinos` / `weapons` (`_RES.TXT` indices),
+  `terrain_tile`, `atlas_cols`, `terrain_count`, `view`, `object_view`
+  (cells).
 - `C2RS/TERRAIN.TX`: every terrain texture in one atlas, `terrain_tile`
   pixels square, `atlas_cols` per row, in texture order.
 - `C2RS/OBJn.TX`, `C2RS/CHARn.TX`, `C2RS/WPNn.TX`: the texture of RSC object

@@ -374,14 +374,14 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
   - [ ] a first real recipe (needs real add-on mods, see M4)
 - [ ] M6 Cooker + 3DS boot — **first test build**
   - [x] `.c2pk` pack format (`c2_formats::cooked`, `c2_vfs::PackBackend`); shared loading in `c2_core::load`
-  - [x] `c2-cook`: chosen area / animals / weapons / time of day, mods or recipe, PICA200 textures, n3ds/o3ds profiles, memory estimate
+  - [x] `c2-cook`: chosen area / animals / weapons / time of day, mods or recipe, PICA200 textures, n3ds/o3ds profiles, measured 3DS loading peak
   - [x] `c2-3ds`: hunt mode with terrain, water, objects, animals, view model, fog; buttons, Circle Pad, C-Stick, touch look; status on the bottom screen
   - [x] runs in Azahar (matches the PC view side by side, apart from the sky)
   - [ ] walk around on real hardware (owner: New/Old 3DS, 2DS) and record memory/fps in `docs/3DS.md`
 - [ ] M7 Vanilla 3DS
 - [ ] M8 Modded 3DS
 
-_Last updated: 2026-10-18 — M6: first 3DS test build (one area, two animals, two weapons, hunt mode) runs in Azahar; next: owner tests on hardware; real add-on mods for M4/M5 sign-off._
+_Last updated: 2026-10-18 — M6: first hardware test crashed out of memory on Old 3DS/2DS; fixed (16 MiB linear heap, slimmed packs, cooker measures the load peak: 23 MiB). Next: owner retests on hardware; real add-on mods for M4/M5 sign-off._
 
 
 note from user: quick headsup, the carnivores 2 datafile is copied direct from my library and includes re-shade files as well, please do not port the re-shade files to 3ds or the rust re-write as that would overcomplicate things dramatically

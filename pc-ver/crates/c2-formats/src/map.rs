@@ -37,19 +37,44 @@ pub struct Map {
 }
 
 pub fn parse(data: &[u8]) -> Result<Map, FormatError> {
+    parse_lean(data, None)
+}
+
+/// Like [`parse`], but with `Some(light)` only that light map is kept and
+/// `texture2` is skipped (left empty): what a renderer that draws one time
+/// of day needs, for about 30% less memory.
+pub fn parse_lean(data: &[u8], light: Option<usize>) -> Result<Map, FormatError> {
     let mut r = Reader::new(data);
     let b = |r: &mut Reader<'_>, n, c| r.bytes(n, c).map(<[u8]>::to_vec);
+    let keep = |i: usize| light.is_none_or(|l| l == i);
+    let height = b(&mut r, CELLS, "map.hmap")?;
+    let texture1 = r.u16_vec(CELLS, "map.tmap1")?;
+    let texture2 = if light.is_none() {
+        r.u16_vec(CELLS, "map.tmap2")?
+    } else {
+        r.bytes(CELLS * 2, "map.tmap2")?;
+        Vec::new()
+    };
+    let objects = b(&mut r, CELLS, "map.omap")?;
+    let flags = r.u16_vec(CELLS, "map.fmap")?;
+    let mut lights: [Vec<u8>; 3] = Default::default();
+    for (i, (l, c)) in lights
+        .iter_mut()
+        .zip(["map.lmap.day", "map.lmap.dusk", "map.lmap.night"])
+        .enumerate()
+    {
+        let raw = r.bytes(CELLS, c)?;
+        if keep(i) {
+            *l = raw.to_vec();
+        }
+    }
     let map = Map {
-        height: b(&mut r, CELLS, "map.hmap")?,
-        texture1: r.u16_vec(CELLS, "map.tmap1")?,
-        texture2: r.u16_vec(CELLS, "map.tmap2")?,
-        objects: b(&mut r, CELLS, "map.omap")?,
-        flags: r.u16_vec(CELLS, "map.fmap")?,
-        light: [
-            b(&mut r, CELLS, "map.lmap.day")?,
-            b(&mut r, CELLS, "map.lmap.dusk")?,
-            b(&mut r, CELLS, "map.lmap.night")?,
-        ],
+        height,
+        texture1,
+        texture2,
+        objects,
+        flags,
+        light: lights,
         water: b(&mut r, CELLS, "map.wmap")?,
         object_height: b(&mut r, CELLS, "map.hmapo")?,
         fogs: b(&mut r, HALF_CELLS, "map.fogsmap")?,

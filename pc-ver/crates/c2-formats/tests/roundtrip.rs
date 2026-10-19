@@ -134,7 +134,13 @@ fn map_roundtrip() {
     };
     let bytes = map::write(&m);
     assert_eq!(bytes.len(), map::FILE_SIZE);
-    assert_eq!(map::parse(&bytes).ok(), Some(m));
+    assert_eq!(map::parse(&bytes).ok().as_ref(), Some(&m));
+    let lean = map::parse_lean(&bytes, Some(1)).ok();
+    let mut want = m;
+    want.texture2 = Vec::new();
+    want.light[0] = Vec::new();
+    want.light[2] = Vec::new();
+    assert_eq!(lean, Some(want));
 }
 
 #[test]

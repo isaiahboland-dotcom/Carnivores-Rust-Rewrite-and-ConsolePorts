@@ -3,6 +3,8 @@
 //!
 //! Top screen: the world. Bottom screen: status and controls (text for now).
 
+#![feature(alloc_error_hook)]
+
 mod gpu;
 mod hunt;
 mod shot;
@@ -56,6 +58,34 @@ fn wait_for_start(apt: &Apt, hid: &mut Hid, gfx: &Gfx) {
         }
         gfx.wait_for_vblank();
     }
+}
+
+/// libctru: linear (GPU-visible) memory to reserve at start; the rest of the
+/// app's memory becomes the heap. libctru's default is 32 MiB, which leaves
+/// an Old 3DS only ~30 MiB of heap; the GPU data needs well under 16
+/// (`c2-cook` checks each pack).
+#[no_mangle]
+static mut __ctru_linear_heap_size: u32 = 16 << 20;
+
+/// Out of memory: say so and wait, instead of the default abort (which the
+/// system shows as a crash and restarts the console).
+fn out_of_memory(layout: std::alloc::Layout) {
+    // Nothing here may allocate.
+    println!(
+        "\n\nOut of memory ({} bytes wanted).\nThis pack is too big for this console:\n\
+         cook it with fewer animals or\n--target o3ds.\n\nPress START to quit.",
+        layout.size()
+    );
+    unsafe {
+        loop {
+            ctru_sys::hidScanInput();
+            if ctru_sys::hidKeysDown() & ctru_sys::KEY_START != 0 {
+                break;
+            }
+            ctru_sys::gspWaitForEvent(ctru_sys::GSPGPU_EVENT_VBlank0, true);
+        }
+    }
+    std::process::exit(1);
 }
 
 extern "C" {
@@ -149,8 +179,10 @@ fn run(pack: &Path, apt: &Apt, hid: &mut Hid, console: &Console) -> Result<()> {
     );
     let t0 = ticks();
     let mut game = Game::load(&vfs, ticks() as u32, &mut |what| {
+        println!("  {}", mem_line());
         println!("  loading {what}...")
     })?;
+    println!("  {}", mem_line());
     println!("  GPU data...");
     let mut gpu = Gpu::new().context("citro3d init failed")?;
     let mut world = World::new(
@@ -332,6 +364,7 @@ fn main() {
         return;
     };
     let console = Console::new(gfx.bottom_screen.borrow_mut());
+    std::alloc::set_alloc_error_hook(out_of_memory);
     unsafe {
         // 804 MHz and the extra cache on New 3DS (no effect on Old 3DS).
         ctru_sys::osSetSpeedupEnable(true);

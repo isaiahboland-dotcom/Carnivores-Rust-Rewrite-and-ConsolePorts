@@ -53,7 +53,9 @@ share it (README §2).
 
 ## Testing in an emulator
 Azahar runs the `.3dsx` directly (`azahar c2-3ds.3dsx`); put the pack in its
-SD folder (`~/.local/share/azahar-emu/sdmc/3ds/c2rs/`). An
+SD folder (`~/.local/share/azahar-emu/sdmc/3ds/c2rs/`). Azahar gives a
+`.3dsx` 96 MiB even in Old 3DS mode, so it won't show Old 3DS memory
+problems; the cooker's measured peak is the check for those. An
 `autotest.txt` in the same folder drives the app without input and saves
 screenshots (format in `c2-3ds/src/shot.rs`):
 ```
@@ -83,15 +85,22 @@ quit
   written to per-character GPU buffers.
 
 ## Memory budget
-- Old 3DS ~64 MB app RAM, New 3DS ~124 MB (extended mode) — less under the
-  Homebrew Launcher, depending on how it was started.
-- `c2-cook` prints an estimate per pack and refuses packs over the target's
-  budget (n3ds 96 MiB, o3ds 44 MiB) unless `--force`.
-- After loading, the app frees what only the PC needs (terrain and model
-  textures now on the GPU, unused light maps, sounds).
-- Vanilla AREA1, two hunted species + hunter, two weapons, n3ds: pack
-  31 MiB, estimate 36 MiB. The bottom screen shows free heap and linear
-  memory; real numbers from hardware go here.
+- An Old 3DS app gets 64 MiB, a New 3DS app 124 MiB. The app keeps 16 MiB as
+  linear (GPU) memory and the rest is heap: about 47 MiB on Old, 107 on New.
+  Start the Homebrew Launcher through a game or Download Play (title
+  takeover). Started as an applet, it has much less memory.
+- `c2-cook` loads each pack the way the 3DS does, measures the peak heap,
+  and refuses packs over the target's budget (heap: o3ds 40 MiB, n3ds 96;
+  GPU: 12 MiB) unless `--force`.
+- Packs carry the `.RSC`/`.CAR` without textures or sounds. The app reads
+  one light map from the `.MAP` and frees the rest of what only the PC uses
+  after loading.
+- Vanilla AREA1, two hunted species + hunter, two weapons: pack 17 MiB (o3ds)
+  / 18 MiB (n3ds), loading peak 23 MiB. In the emulator the heap then sits
+  at 15 MiB; GPU memory used is 4–7 MiB.
+- Out of memory shows a message (press START) instead of crashing.
+- The loading screen and the bottom screen show heap used/total and free
+  linear memory.
 
 ## Not yet (M7)
 Sound, the map and other bottom-screen UI, menus and saves, sky and sun,

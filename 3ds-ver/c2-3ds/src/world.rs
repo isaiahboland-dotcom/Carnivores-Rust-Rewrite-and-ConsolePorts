@@ -30,6 +30,8 @@ pub struct DrawInfo {
     pub cols: usize,
     pub view: u32,
     pub object_view: u32,
+    /// Terrain textures in the atlas (the pack's RSC no longer has them).
+    pub terrain_count: usize,
 }
 
 fn load_texture(vfs: &Vfs, path: &str) -> Option<Texture> {
@@ -189,8 +191,11 @@ impl World {
                 .enumerate()
                 .map(|(i, c)| {
                     let c = c.as_ref()?;
+                    let mut prepared = PreparedModel::from_mesh(&c.mesh);
+                    // The texture is on the GPU (from the .TX).
+                    prepared.texture_rgba = Vec::new();
                     Some(Posed {
-                        prepared: PreparedModel::from_mesh(&c.mesh),
+                        prepared,
                         tex: load_texture(vfs, &format!("C2RS/{prefix}{i}.TX")),
                     })
                 })
@@ -203,11 +208,12 @@ impl World {
             .iter()
             .map(|w| (w.transp.clamp(0.0, 1.0) * 255.0) as u8)
             .collect();
+        let terrain_count = info.terrain_count.max(1);
         Self {
             info,
             terrain,
             atlas_size,
-            terrain_count: area.rsc.textures.len(),
+            terrain_count,
             chunks: HashMap::new(),
             objects,
             placements,

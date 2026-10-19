@@ -2,6 +2,30 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-18 — M6: Old 3DS memory (first hardware test)
+The first build crashed with an out-of-memory fatal error on the owner's Old
+3DS and Old 2DS while loading. The emulator didn't catch it, since it gives
+3DSX apps 96 MiB on either model. On hardware an Old 3DS app has 64 MiB,
+libctru reserved 32 MiB of it as linear (GPU) memory, and loading the area
+needed over 30 MiB of heap.
+- **Linear heap 16 MiB** (`__ctru_linear_heap_size` in `c2-3ds`). The GPU
+  data is 5–7 MiB, so the Old 3DS heap goes from ~30 to ~47 MiB.
+- **Packs carry slimmed `.RSC`/`.CAR` files** (pack version 2): no terrain or
+  model textures, which are in the `.TX` files, and no sound samples. Sounds
+  stay as empty entries so indices hold; M7 will cook sound separately.
+  The `.MAP` stays whole (fixed layout), but the 3DS parses it with
+  `map::parse_lean`, keeping one light map and no `texture2`. The area loads
+  first, while the heap is still empty. Packs went from 31 to 17–18 MiB.
+- **The cooker measures instead of estimating**: it repeats the 3DS load
+  steps under a counting allocator and checks the peak against the target
+  (o3ds 40 MiB, n3ds 96 MiB), and checks the GPU total against 12 MiB.
+  Vanilla AREA1 + 2 animals + 2 weapons peaks at 23 MiB.
+- Running out of memory now prints a message and waits for START (nightly
+  `alloc_error_hook`) instead of the system crash screen and reboot.
+- Side effect, unchanged from before: the effects code's terrain colours
+  (`texture_mid_color`) see no textures on the 3DS, which already happened
+  after `trim()`.
+
 ## 2026-10-18 — M6: cooker and first 3DS build
 - **Layout**: `3ds-ver/` is one nightly workspace holding `c2-cook` (host
   tool) and `c2-3ds`, as the README tree says; `default-members` is the cooker.
@@ -10,7 +34,8 @@ Newest first. Each entry: what, why, and what it affects.
   which needs the `.MAP`/`.RSC`/`.CAR` data anyway, so the pack carries them
   unchanged plus textures pre-tiled for the PICA200 (RGB565 terrain atlas,
   RGBA5551 models, scaled per profile). After loading, the 3DS frees what
-  only the PC uses (≈ heap 16.6 MiB in use for the default pack).
+  only the PC uses (≈ heap 16.6 MiB in use for the default pack). (Since
+  the hardware test above, the pack's `.RSC`/`.CAR` are slimmed.)
 - **Partial species sets**: the pack keeps the full `_RES.TXT` (character and
   weapon indices drive placement and AI) but only the chosen `.CAR`s.
   `Herd::spawn` now skips a species with no animations instead of placing an

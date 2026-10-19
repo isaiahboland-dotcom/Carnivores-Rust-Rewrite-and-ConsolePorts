@@ -8,8 +8,10 @@
 //!         [--ambient] [--target n3ds|o3ds] [--force] --out c2rs.c2pk
 //! ```
 
+use std::alloc::{GlobalAlloc, Layout, System};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::{bail, Context, Result};
 use c2_core::area::TimeOfDay;
@@ -18,8 +20,7 @@ use c2_core::dino::DinoInfo;
 use c2_core::game::WeaponInfo;
 use c2_core::model::PreparedModel;
 use c2_formats::cooked::{tile, write_pack, write_texture, TexFormat};
-use c2_formats::map::CELLS;
-use c2_vfs::Vfs;
+use c2_vfs::{MemBackend, Vfs};
 
 const USAGE: &str = "usage:
   c2-cook --game <GAME_DIR> [--mod MOD]... [--recipe RECIPE.toml --mods DIR]
@@ -45,8 +46,10 @@ struct Profile {
     view: u32,
     /// Objects are drawn up to this many cells away.
     object_view: u32,
-    /// Estimated RAM the pack may need, KiB.
-    budget_kb: usize,
+    /// Main memory (heap) the app may use while loading, KiB.
+    heap_kb: usize,
+    /// GPU (linear) memory for textures and vertex buffers, KiB.
+    linear_kb: usize,
 }
 
 const N3DS: Profile = Profile {
@@ -55,7 +58,9 @@ const N3DS: Profile = Profile {
     model_tex: 128,
     view: 42,
     object_view: 28,
-    budget_kb: 96 * 1024,
+    // ~124 MiB for the app: 16 MiB linear (`c2-3ds` sets it), code, slack.
+    heap_kb: 96 * 1024,
+    linear_kb: 12 * 1024,
 };
 
 const O3DS: Profile = Profile {
@@ -64,8 +69,76 @@ const O3DS: Profile = Profile {
     model_tex: 64,
     view: 26,
     object_view: 18,
-    budget_kb: 44 * 1024,
+    // 64 MiB for the app: 16 MiB linear, code, slack.
+    heap_kb: 40 * 1024,
+    linear_kb: 12 * 1024,
 };
+
+/// Counts heap use, so the cooker can measure what loading a pack takes.
+struct Counting;
+
+static IN_USE: AtomicUsize = AtomicUsize::new(0);
+static PEAK: AtomicUsize = AtomicUsize::new(0);
+
+fn note(grow: usize, shrink: usize) {
+    let now = IN_USE.fetch_add(grow, Ordering::Relaxed) + grow;
+    PEAK.fetch_max(now, Ordering::Relaxed);
+    IN_USE.fetch_sub(shrink, Ordering::Relaxed);
+}
+
+// A GlobalAlloc must be unsafe; it only forwards to the system allocator.
+#[allow(unsafe_code)]
+unsafe impl GlobalAlloc for Counting {
+    unsafe fn alloc(&self, l: Layout) -> *mut u8 {
+        let p = unsafe { System.alloc(l) };
+        if !p.is_null() {
+            note(l.size(), 0);
+        }
+        p
+    }
+
+    unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
+        unsafe { System.dealloc(p, l) };
+        note(0, l.size());
+    }
+
+    unsafe fn realloc(&self, p: *mut u8, l: Layout, new: usize) -> *mut u8 {
+        let q = unsafe { System.realloc(p, l, new) };
+        if !q.is_null() {
+            // Old and new blocks briefly coexist.
+            note(new, l.size());
+        }
+        q
+    }
+}
+
+#[global_allocator]
+static ALLOC: Counting = Counting;
+
+/// Peak heap bytes for loading the pack the way `c2-3ds` does
+/// (`Game::load` in `c2-3ds/src/hunt.rs`; keep the two in step). Measured
+/// here on the PC, where pointers are wider, so it errs on the high side.
+fn load_peak(entries: &[(String, Vec<u8>)], area: &str, time: TimeOfDay) -> Result<usize> {
+    let mut mem = MemBackend::new();
+    for (name, data) in entries {
+        mem.insert(name, data.clone());
+    }
+    let mut vfs = Vfs::new();
+    vfs.push("pack", Box::new(mem));
+    let base = IN_USE.load(Ordering::Relaxed);
+    PEAK.store(base, Ordering::Relaxed);
+    let loaded = (
+        c2_core::load::area_with(&vfs, area, time, true)?,
+        c2_core::load::res(&vfs).map(|res| {
+            let s = c2_core::load::species(&vfs, &res);
+            let w = c2_core::load::weapons(&vfs, &res);
+            (res, s, w)
+        })?,
+    );
+    let peak = PEAK.load(Ordering::Relaxed).saturating_sub(base);
+    drop(loaded);
+    Ok(peak)
+}
 
 #[derive(Default)]
 struct Args {
@@ -194,23 +267,34 @@ struct Cooker {
     profile: &'static Profile,
     night: bool,
     entries: Vec<(String, Vec<u8>)>,
-    /// Estimated 3DS memory by kind, KiB.
-    budget: BTreeMap<&'static str, usize>,
+    /// Estimated 3DS GPU memory by kind, KiB.
+    linear: BTreeMap<&'static str, usize>,
 }
 
 impl Cooker {
-    fn add(&mut self, name: impl Into<String>, data: Vec<u8>, kind: &'static str, ram: usize) {
-        *self.budget.entry(kind).or_default() += ram / 1024;
+    fn add(&mut self, name: impl Into<String>, data: Vec<u8>) {
         self.entries.push((name.into(), data));
     }
 
     /// A game file, copied as the engine reads it.
-    fn copy(&mut self, vfs: &Vfs, path: &str, kind: &'static str) -> Result<()> {
+    fn copy(&mut self, vfs: &Vfs, path: &str) -> Result<()> {
         let d = vfs.read(path).with_context(|| format!("reading {path}"))?;
-        // Parsed structures take about as much again as the file.
-        let n = d.len();
-        self.add(path, d, kind, n);
+        self.add(path, d);
         Ok(())
+    }
+
+    /// A model file without what the 3DS gets elsewhere: its texture (now a
+    /// `.TX`) and its sounds' samples (kept as empty sounds, so indices hold).
+    fn car(&mut self, vfs: &Vfs, path: &str) -> Result<Vec<u8>> {
+        let mut car =
+            c2_formats::car::parse(&vfs.read(path)?).with_context(|| format!("parsing {path}"))?;
+        let rgba = PreparedModel::from_mesh(&car.mesh).texture_rgba;
+        car.mesh.texture = Vec::new();
+        for s in &mut car.sounds {
+            s.pcm = Vec::new();
+        }
+        self.add(path, c2_formats::car::write(&car));
+        Ok(rgba)
     }
 
     /// A model texture (256x256 RGBA8) at the profile's size.
@@ -221,8 +305,8 @@ impl Cooker {
             night_vision(&mut px);
         }
         let t = tile(&px, side, side, TexFormat::Rgba5551);
-        let n = t.data.len();
-        self.add(name, write_texture(&t), "textures", n);
+        *self.linear.entry("textures").or_default() += t.data.len() / 1024;
+        self.add(name, write_texture(&t));
     }
 }
 
@@ -242,7 +326,10 @@ fn pick(names: &[String], want: &str, what: &str) -> Result<Vec<usize>> {
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()),
+            // `c2_core::load` warns about every species whose model is not in
+            // the pack, which the cooker leaves out on purpose.
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "warn,c2_core::load=error".into()),
         )
         .init();
     let a = parse_args()?;
@@ -265,7 +352,7 @@ fn main() -> Result<()> {
         profile,
         night: time == TimeOfDay::Night,
         entries: Vec::new(),
-        budget: BTreeMap::new(),
+        linear: BTreeMap::new(),
     };
 
     // Which animals: the hunter (his body after a death), the chosen
@@ -291,33 +378,19 @@ fn main() -> Result<()> {
         None => (0..wnames.len().min(2)).collect(),
     };
 
-    c.copy(&vfs, "HUNTDAT/_RES.TXT", "game data")?;
+    c.copy(&vfs, "HUNTDAT/_RES.TXT")?;
     let area_name = format!("AREA{}", a.area);
-    for ext in ["MAP", "RSC"] {
-        c.copy(&vfs, &format!("HUNTDAT/AREAS/{area_name}.{ext}"), "area")?;
-    }
+    c.copy(&vfs, &format!("HUNTDAT/AREAS/{area_name}.MAP"))?;
     if vfs.resolve("HUNTDAT/SHIP2A.CAR").is_some() {
-        c.copy(&vfs, "HUNTDAT/SHIP2A.CAR", "models")?;
+        c.car(&vfs, "HUNTDAT/SHIP2A.CAR")?;
     }
     for &i in &chars {
-        let path = format!("HUNTDAT/{}", infos[i].file);
-        c.copy(&vfs, &path, "models")?;
-        let car =
-            c2_formats::car::parse(&vfs.read(&path)?).with_context(|| format!("parsing {path}"))?;
-        c.model_texture(
-            format!("C2RS/CHAR{i}.TX"),
-            &PreparedModel::from_mesh(&car.mesh).texture_rgba,
-        );
+        let rgba = c.car(&vfs, &format!("HUNTDAT/{}", infos[i].file))?;
+        c.model_texture(format!("C2RS/CHAR{i}.TX"), &rgba);
     }
     for &i in &weapons {
-        let path = format!("HUNTDAT/WEAPONS/{}", winfos[i].file);
-        c.copy(&vfs, &path, "models")?;
-        let car =
-            c2_formats::car::parse(&vfs.read(&path)?).with_context(|| format!("parsing {path}"))?;
-        c.model_texture(
-            format!("C2RS/WPN{i}.TX"),
-            &PreparedModel::from_mesh(&car.mesh).texture_rgba,
-        );
+        let rgba = c.car(&vfs, &format!("HUNTDAT/WEAPONS/{}", winfos[i].file))?;
+        c.model_texture(format!("C2RS/WPN{i}.TX"), &rgba);
     }
 
     // The area: its terrain textures in one atlas, one texture per object.
@@ -347,26 +420,44 @@ fn main() -> Result<()> {
         }
     }
     let tex = tile(&atlas, aw, ah, TexFormat::Rgb565);
-    let tex_len = tex.data.len();
-    c.add("C2RS/TERRAIN.TX", write_texture(&tex), "textures", tex_len);
+    *c.linear.entry("textures").or_default() += tex.data.len() / 1024;
+    c.add("C2RS/TERRAIN.TX", write_texture(&tex));
     for (k, o) in area.rsc.objects.iter().enumerate() {
         let p = PreparedModel::from_mesh(&o.model.mesh);
         c.model_texture(format!("C2RS/OBJ{k}.TX"), &p.texture_rgba);
         // Vertex buffer: 24 bytes per face corner.
-        *c.budget.entry("vertex buffers").or_default() += p.faces.len() * 3 * 24 / 1024;
+        *c.linear.entry("vertex buffers").or_default() += p.faces.len() * 3 * 24 / 1024;
     }
     // Terrain chunks around the hunter: 6 corners per cell, 24 bytes each.
     let side = (2 * profile.view + 32) as usize;
-    *c.budget.entry("vertex buffers").or_default() += side * side * 6 * 24 / 1024;
-    // The map's parsed layers outweigh its file (one light map is used,
-    // but all three are kept for now).
-    *c.budget.entry("area").or_default() += CELLS * 3 / 1024;
+    *c.linear.entry("vertex buffers").or_default() += side * side * 6 * 24 / 1024;
+    // Framebuffers, depth buffer, command buffer.
+    *c.linear.entry("screens").or_default() += 3 * 1024;
+    // The RSC without what is now in the .TX files or only the PC uses:
+    // terrain and object textures, sounds (kept as empty sounds).
+    let mut rsc = area.rsc;
+    rsc.textures = Vec::new();
+    for o in &mut rsc.objects {
+        o.model.mesh.texture = Vec::new();
+    }
+    for s in &mut rsc.random_sounds {
+        *s = Vec::new();
+    }
+    for amb in &mut rsc.ambients {
+        amb.pcm = Vec::new();
+    }
+    c.add(
+        format!("HUNTDAT/AREAS/{area_name}.RSC"),
+        c2_formats::rsc::write(&rsc),
+    );
+    drop(rsc);
 
     let list = |v: &[usize]| v.iter().map(usize::to_string).collect::<Vec<_>>().join(",");
-    let total: usize = c.budget.values().sum();
+    let linear: usize = c.linear.values().sum();
     let info = format!(
-        "pack = 1\ntarget = {}\narea = {area_name}\ntime = {}\ndinos = {}\nweapons = {}\n\
-         terrain_tile = {t}\natlas_cols = {cols}\nview = {}\nobject_view = {}\nram_kb = {total}\n",
+        "pack = 2\ntarget = {}\narea = {area_name}\ntime = {}\ndinos = {}\nweapons = {}\n\
+         terrain_tile = {t}\natlas_cols = {cols}\nterrain_count = {n}\nview = {}\n\
+         object_view = {}\n",
         profile.name,
         a.time.as_deref().unwrap_or("day"),
         list(&dinos),
@@ -393,17 +484,23 @@ fn main() -> Result<()> {
             .collect::<Vec<_>>()
             .join(", ")
     );
-    println!("  estimated 3DS memory:");
-    for (k, v) in &c.budget {
-        println!("    {k:<15} {:>6.1} MiB", *v as f32 / 1024.0);
+    let heap = load_peak(&c.entries, &area_name, time)? / 1024;
+    let mib = |kb: usize| kb as f32 / 1024.0;
+    println!("  3DS memory:");
+    println!(
+        "    loading peak    {:>6.1} MiB (budget {:.0} MiB)",
+        mib(heap),
+        mib(profile.heap_kb)
+    );
+    for (k, v) in &c.linear {
+        println!("    {k:<15} {:>6.1} MiB", mib(*v));
     }
     println!(
-        "    {:<15} {:>6.1} MiB (budget {:.0} MiB)",
-        "total",
-        total as f32 / 1024.0,
-        profile.budget_kb as f32 / 1024.0
+        "    GPU total       {:>6.1} MiB (budget {:.0} MiB)",
+        mib(linear),
+        mib(profile.linear_kb)
     );
-    if total > profile.budget_kb && !a.force {
+    if (heap > profile.heap_kb || linear > profile.linear_kb) && !a.force {
         bail!(
             "over the {} budget; choose fewer animals, use --target o3ds for smaller textures, or --force",
             profile.name

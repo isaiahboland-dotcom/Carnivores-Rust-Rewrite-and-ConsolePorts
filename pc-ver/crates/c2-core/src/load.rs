@@ -106,7 +106,16 @@ pub fn weapons(vfs: &Vfs, res: &ResData) -> Vec<LoadedWeapon> {
 
 /// `HUNTDAT/AREAS/<name>.MAP` and `.RSC`.
 pub fn area(vfs: &Vfs, name: &str, time: TimeOfDay) -> Result<Area, LoadError> {
-    let m = parse(vfs, &format!("HUNTDAT/AREAS/{name}.MAP"), map::parse)?;
+    area_with(vfs, name, time, false)
+}
+
+/// [`area`]; `lean` keeps only `time`'s light map and drops `texture2`
+/// (see [`map::parse_lean`]), for a renderer that never changes time of day.
+pub fn area_with(vfs: &Vfs, name: &str, time: TimeOfDay, lean: bool) -> Result<Area, LoadError> {
+    let light = lean.then_some(time as usize);
+    let m = parse(vfs, &format!("HUNTDAT/AREAS/{name}.MAP"), |d| {
+        map::parse_lean(d, light)
+    })?;
     let r = parse(vfs, &format!("HUNTDAT/AREAS/{name}.RSC"), rsc::parse)?;
     let mut a = Area::new(m, r, time);
     if name.to_ascii_lowercase().contains("trophy") {
