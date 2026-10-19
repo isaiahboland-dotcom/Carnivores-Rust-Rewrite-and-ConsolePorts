@@ -189,6 +189,7 @@ fn info_line(m: &mut MeeInfo, key: &str, v: &str) {
         "morphtime" => m.morph_time = c_atof(v),
         "hpa" => m.health_a = c_atoi(v),
         "trexobjcollide" => m.trex_obj_collide = truthy(v),
+        "dash" => m.dash = truthy(v),
         _ => {}
     }
 }

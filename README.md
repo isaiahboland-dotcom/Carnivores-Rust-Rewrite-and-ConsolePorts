@@ -400,7 +400,7 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
   - [ ] the dialect's AI families (interim: run as the closest original AI; aquatic ones not placed)
   - [ ] extended weapons, trophy table, survival mode, weather; 3DS cooking and menus
 
-_Last updated: 2026-10-19 — M9: Modder's Edition game folders show their menus and spawn their rosters on PC; the dialect's shared AI (herbivores, hunters, Ice Age animals) and its T-Rex are ported. Next: its other AI families (ambients, flyers, brachiosaurs, fish, Titan), then weapons/trophies and the 3DS side._
+_Last updated: 2026-10-19 — M9: Modder's Edition game folders show their menus and spawn their rosters on PC; the dialect's shared AI (herbivores, hunters, Ice Age animals) its T-Rex and ambients are ported. Next: its other AI families (flyers, brachiosaurs, fish, Titan), then weapons/trophies and the 3DS side._
 
 
 note from user: quick headsup, the carnivores 2 datafile is copied direct from my library and includes re-shade files as well, please do not port the re-shade files to 3ds or the rust re-write as that would overcomplicate things dramatically

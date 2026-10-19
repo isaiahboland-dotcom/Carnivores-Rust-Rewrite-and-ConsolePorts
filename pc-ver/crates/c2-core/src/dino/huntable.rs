@@ -934,4 +934,21 @@ mod tests {
         assert_eq!(&seen[..3], &[IDLE, IDLE + 1, RUN], "{seen:?}");
         assert!(killed, "{seen:?}");
     }
+
+    #[test]
+    fn ambient_bolts_then_settles_far_away() {
+        let area = Area::flat(10);
+        let h = hunter();
+        let mut herd = Herd {
+            species: vec![species(info(ai::MOSH))],
+            ..Default::default()
+        };
+        let i = add(&mut herd, 0, &area, h.x + 700.0, h.z);
+        run(&mut herd, &area, h, 500);
+        assert_eq!((herd.chars[i].state, herd.chars[i].phase), (1, RUN));
+        run(&mut herd, &area, h, 30_000);
+        let c = &herd.chars[i];
+        assert_eq!(c.state, 0);
+        assert!(dist(c, &h) > 4096.0, "{}", dist(c, &h));
+    }
 }

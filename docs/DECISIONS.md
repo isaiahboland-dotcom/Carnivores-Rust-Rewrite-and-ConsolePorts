@@ -34,6 +34,13 @@ Newest first. Each entry: what, why, and what it affects.
   while calm unless `TRexObjCollide`. Unlike the original's, it does not
   carry the hunter's body (the dialect disabled that), and `MakeNoise` only
   wakes a calm one. Roars are picked per animal at reset.
+- **Ambients** (`AnimateClassicAmbient`, dialect AI 1, 2, 5, 6): bolt
+  from a hunter within 812 units, zig-zag away, settle beyond 4096; idle
+  groups, packs, swimming, `dash`. A killed animal of a `moveForward` spawn
+  group is replaced in its group's regions (`Characters_AddSecondaryOne`;
+  any species, as the dialect does). Dialect animals always leave blood
+  trails (the original exempts its AI 6, the brachiosaur; the dialect's 6
+  is the pig).
 - **Kept quirks**: clearing the water flag clears all of `StateF`; the
   herbivore turn tests `State` (not `StateF`) for water; `morphTime`
   defaults to 1 (the manual; the released code leaves it 0, which would

@@ -10,6 +10,7 @@ mod flyer;
 mod herbivore;
 mod huntable;
 pub mod mee;
+mod mee_ambient;
 mod mee_trex;
 mod place;
 pub mod pose;
@@ -1105,6 +1106,8 @@ impl Herd {
                     };
                     if m.ai == ai::TREX {
                         mee_trex::animate(c, i, sp, m, ctx, &mut w);
+                    } else if mee::is_ambient(m.ai) {
+                        mee_ambient::animate(c, i, sp, m, ctx, &mut w);
                     } else {
                         huntable::animate(c, i, sp, m, ctx, &mut w);
                     }

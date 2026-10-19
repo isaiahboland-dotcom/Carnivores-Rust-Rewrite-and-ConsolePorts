@@ -1,6 +1,8 @@
 //! `PlaceCharacters`: populating an area at the start of a hunt.
 
-use super::{ai, check_place_collision_aquatic, check_place_collision_p, Character, Herd, Pack};
+use super::{
+    ai, check_place_collision_aquatic, check_place_collision_p, in_region, Character, Herd, Pack,
+};
 use crate::area::{Area, TimeOfDay};
 use crate::rng::MsRand;
 use c2_formats::mee::{SpawnGroup, SpawnLink, Tables};
@@ -353,6 +355,61 @@ impl Herd {
                     break;
                 }
             }
+        }
+    }
+
+    /// The dialect's `Characters_AddSecondaryOne`: a killed animal of a
+    /// `moveForward` spawn group is replaced by a new one of its kind,
+    /// 40-80 cells from the hunter, inside the group's regions.
+    pub fn add_secondary_in(
+        &mut self,
+        area: &Area,
+        index: usize,
+        hunter: (f32, f32),
+        rng: &mut MsRand,
+        opt_agres: i32,
+    ) {
+        let Some(src) = self.chars.get(index) else {
+            return;
+        };
+        let (ctype, sg) = (src.ctype, src.spawn_group);
+        let Some(g) = sg
+            .and_then(|g| self.groups.get(g))
+            .filter(|g| g.move_forward)
+        else {
+            return;
+        };
+        if self.chars.len() > 250 {
+            return;
+        }
+        let (px, pz) = hunter;
+        for _ in 0..128 {
+            let mut p = [
+                px + rng.si_rand(20040) as f32,
+                0.0,
+                pz + rng.si_rand(20040) as f32,
+            ];
+            p[1] = area.land_height(p[0], p[2]);
+            if !g.regions.iter().any(|r| in_region(r, p[0], p[2]))
+                || g.avoid.iter().any(|r| in_region(r, p[0], p[2]))
+                || check_place_collision_p(area, &mut p)
+                || (p[0] - px).abs() + (p[2] - pz).abs() < 256.0 * 40.0
+            {
+                continue;
+            }
+            let mut c = Character {
+                ctype,
+                pos: p,
+                tgx: p[0],
+                tgz: p[2],
+                spawn_group: sg,
+                ..Default::default()
+            };
+            if let Some(sp) = self.species.get(ctype) {
+                c.reset(sp, rng, opt_agres);
+            }
+            self.chars.push(c);
+            return;
         }
     }
 

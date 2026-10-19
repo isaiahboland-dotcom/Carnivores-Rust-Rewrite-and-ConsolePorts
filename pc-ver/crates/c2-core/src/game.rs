@@ -1049,6 +1049,11 @@ impl Hunt {
             c.health -= info.power as i32;
         }
         c.health = c.health.max(0);
+        let mee = self
+            .herd
+            .species
+            .get(c.ctype)
+            .is_some_and(|s| s.mee.is_some());
         if c.health == 0 {
             let trophy = c.ai >= 10;
             let ct = c.ctype;
@@ -1056,7 +1061,13 @@ impl Hunt {
             if trophy {
                 self.successes += 1;
                 self.add_ship_task(area, index, out);
-            } else {
+            }
+            if mee {
+                let p = (self.player.x, self.player.z);
+                let agres = self.opts.opt_agres;
+                self.herd
+                    .add_secondary_in(area, index, p, &mut self.rng, agres);
+            } else if !trophy {
                 self.add_secondary_one(area, ct);
             }
         } else {
@@ -1065,7 +1076,7 @@ impl Hunt {
             if c.ai != ai::TREX || c.state == 0 {
                 c.state = 2;
             }
-            if c.ai != ai::BRACH {
+            if mee || c.ai != ai::BRACH {
                 c.blood_ttime += 90000;
             }
         }

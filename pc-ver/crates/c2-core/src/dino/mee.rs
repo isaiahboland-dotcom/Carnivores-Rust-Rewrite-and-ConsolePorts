@@ -118,6 +118,8 @@ pub struct MeeInfo {
     pub health_a: i32,
     /// T-Rex: obstacles turn it while hunting too (`TRexObjCollide`).
     pub trex_obj_collide: bool,
+    /// Ambients: speed up when the hunter is very close (`dash`).
+    pub dash: bool,
 }
 
 impl MeeInfo {
@@ -152,6 +154,7 @@ impl MeeInfo {
             morph_time: 1.0,
             health_a: 0,
             trex_obj_collide: false,
+            dash: false,
         }
     }
 
@@ -410,7 +413,13 @@ pub fn is_huntable(ai_id: i32) -> bool {
 /// AIs whose dialect behaviour is ported (the others run as an original
 /// family for now, `crate::mee::family`).
 pub fn is_ported(ai_id: i32) -> bool {
-    is_huntable(ai_id) || ai_id == super::ai::TREX
+    is_huntable(ai_id) || is_ambient(ai_id) || ai_id == super::ai::TREX
+}
+
+/// AIs that run `AnimateClassicAmbient`.
+pub fn is_ambient(ai_id: i32) -> bool {
+    use super::ai;
+    matches!(ai_id, ai::MOSH | ai::GALL | ai::DIMET | mee_ai::PIG)
 }
 
 #[cfg(test)]
