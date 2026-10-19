@@ -167,6 +167,9 @@ struct Column {
     texts_us: Vec<Vec<String>>,
     /// First row shown (lists longer than the box scroll with the wheel).
     scroll: usize,
+    /// Item shown on each row: maps, animals and weapons cheapest first
+    /// (picks still go by item, so slots and saves are unaffected).
+    order: Vec<usize>,
 }
 
 const ROW_H: f32 = 19.0;
@@ -466,6 +469,7 @@ impl Menu {
             .collect();
         cols.push(Column {
             scroll: 0,
+            order: Vec::new(),
             rect: (12.0, 376.0, 182.0, 170.0),
             names: area_list
                 .iter()
@@ -494,6 +498,7 @@ impl Menu {
         let dinos: Vec<String> = menu.huntables.iter().map(|d| d.name.clone()).collect();
         cols.push(Column {
             scroll: 0,
+            order: Vec::new(),
             rect: (210.0, 376.0, 184.0, 170.0),
             prices: menu.huntables.iter().map(|d| d.price).collect(),
             pics: menu
@@ -519,6 +524,7 @@ impl Menu {
             .collect();
         cols.push(Column {
             scroll: 0,
+            order: Vec::new(),
             rect: (410.0, 376.0, 184.0, 170.0),
             prices: menu.weapons.iter().map(|w| w.price).collect(),
             pics: (1..=weapons.len())
@@ -534,6 +540,7 @@ impl Menu {
             .collect();
         cols.push(Column {
             scroll: 0,
+            order: Vec::new(),
             rect: (610.0, 376.0, 184.0, 170.0),
             names: EQUIPMENT.iter().map(|(n, _)| n.to_string()).collect(),
             prices: (0..4)
@@ -543,6 +550,15 @@ impl Menu {
             texts: etexts.clone(),
             texts_us: etexts,
         });
+        // Rows by price (stable, so equal prices keep their order); the
+        // equipment keeps its fixed order.
+        for (ci, c) in cols.iter_mut().enumerate() {
+            c.order = (0..c.names.len()).collect();
+            if ci < 3 {
+                c.order
+                    .sort_by_key(|&i| c.prices.get(i).copied().unwrap_or(0));
+            }
+        }
         // Wrap descriptions to the info panel.
         let info_w = 340.0;
         for c in &mut cols {
@@ -774,8 +790,7 @@ impl Menu {
         if r < 0.0 || r as usize >= c.visible() {
             return None;
         }
-        let r = r as usize + c.scroll;
-        (r < c.names.len()).then_some(r)
+        c.order.get(r as usize + c.scroll).copied()
     }
 
     // ---------------------------------------------------------------- input
@@ -1264,11 +1279,12 @@ impl Menu {
             let mask = self.picked_mask(ci);
             let hover_row = self.row_at(ci);
             let shown = col.scroll..col.scroll + col.visible();
-            for (i, name) in col.names.iter().enumerate() {
-                if !shown.contains(&i) {
+            for (row, &i) in col.order.iter().enumerate() {
+                if !shown.contains(&row) {
                     continue;
                 }
-                let y = col.rect.1 + 6.0 + (i - col.scroll) as f32 * ROW_H;
+                let name = &col.names[i];
+                let y = col.rect.1 + 6.0 + (row - col.scroll) as f32 * ROW_H;
                 let picked = i < 128 && mask & (1 << i) != 0;
                 let price = col.prices[i];
                 let affordable = c.observer || picked || left - price >= 0;
