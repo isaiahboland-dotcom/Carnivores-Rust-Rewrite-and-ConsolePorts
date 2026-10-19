@@ -404,13 +404,15 @@ fn assign_slots(
                 } else {
                     &["name", "power", "prec", "loud", "rate"]
                 };
-                let mut entry = Block::default();
-                entry.entries = block
-                    .entries
-                    .iter()
-                    .filter(|e| keep.iter().any(|k| e.key.eq_ignore_ascii_case(k)))
-                    .cloned()
-                    .collect();
+                let entry = Block {
+                    entries: block
+                        .entries
+                        .iter()
+                        .filter(|e| keep.iter().any(|k| e.key.eq_ignore_ascii_case(k)))
+                        .cloned()
+                        .collect(),
+                    ..Default::default()
+                };
                 mc.push(Change::Add {
                     section: s.section.clone(),
                     block: entry,
