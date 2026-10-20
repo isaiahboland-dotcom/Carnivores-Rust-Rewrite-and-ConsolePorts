@@ -501,14 +501,18 @@ fn hunt(
         let (view, fwd) = camera(pos, alpha, beta);
         let fovy = 2.0 * (0.6 / game.hunt.zoom().max(0.1)).atan();
         let t_wait = ticks();
-        gpu.begin(world.sky);
+        // Dead with the death camera off: black, with the prompt.
+        let black = game.hunt.death.is_some() && !game.hunt.opts.death_anim;
+        gpu.begin(if black { [0; 3] } else { world.sky });
         let m_wait = ms_of(t_wait);
         let t_draw = ticks();
         let poser = Poser {
             cars: &game.cars,
             weapon_cars: &game.weapon_cars,
         };
-        world.draw(gpu, &game.area, &game.hunt, &poser, &view, pos, fwd, fovy);
+        if !black {
+            world.draw(gpu, &game.area, &game.hunt, &poser, &view, pos, fwd, fovy);
+        }
         let m_draw = ms_of(t_draw);
         let msg = message
             .as_ref()

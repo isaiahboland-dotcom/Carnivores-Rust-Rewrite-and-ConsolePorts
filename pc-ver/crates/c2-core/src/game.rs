@@ -263,6 +263,12 @@ pub struct HuntOptions {
     /// Multiplies the animals' running speed (1 in the original; a 3DS
     /// setting, 0.5..=1).
     pub dino_run_k: f32,
+    /// Blood (setting; on in the original): off drops the spray of a hit
+    /// and the wounded animals' trails.
+    pub blood: bool,
+    /// The death camera (setting; on in the original): off shows a black
+    /// screen and the leave / restart prompt at once.
+    pub death_anim: bool,
 }
 
 impl Default for HuntOptions {
@@ -281,6 +287,8 @@ impl Default for HuntOptions {
             trophy: false,
             score_factor: 1.0,
             dino_run_k: 1.0,
+            blood: true,
+            death_anim: true,
         }
     }
 }
@@ -622,7 +630,10 @@ impl Hunt {
                     kind,
                     scream,
                 } => self.kill_hunter(area, Some(index), kind, scream, out),
-                DinoEvent::BloodTrail { pos } => self.effects.blood_trail(area, &mut self.rng, pos),
+                DinoEvent::BloodTrail { pos } if self.opts.blood => {
+                    self.effects.blood_trail(area, &mut self.rng, pos);
+                }
+                DinoEvent::BloodTrail { .. } => {}
                 DinoEvent::Splash { pos } => {
                     // AnimateDimorDead hitting the water: five rings.
                     for sc in [2.0, 2.5, 3.0, 3.5, 3.0] {
@@ -1057,7 +1068,7 @@ impl Hunt {
                 self.effects.ring(area, pos[0], pos[2], 1.2);
                 self.effects.ring(area, pos[0], pos[2], 1.2);
             }
-            Hit::Character { .. } => self.effects.add(
+            Hit::Character { .. } if self.opts.blood => self.effects.add(
                 area,
                 &mut self.rng,
                 pos,
@@ -1065,6 +1076,7 @@ impl Hunt {
                 4 + pw * 4,
                 a,
             ),
+            Hit::Character { .. } => {}
         }
         let Hit::Character { index, mortal } = hit else {
             return;
@@ -1433,7 +1445,10 @@ impl Hunt {
 
     /// Show the exit prompt (`EXITMODE`, or 6 s after death).
     pub fn show_exit(&self) -> bool {
-        self.exit_prompt || self.death.is_some_and(|d| d.time > 6_000)
+        self.exit_prompt
+            || self
+                .death
+                .is_some_and(|d| d.time > 6_000 || !self.opts.death_anim)
     }
 
     /// Debug helper (screenshots, tools): kill character `index` outright as
@@ -2070,6 +2085,39 @@ mod tests {
         let opts = HuntOptions::default();
         let hunt = Hunt::new(&area, player, herd, weapons, rng, opts, blank_save());
         (area, hunt, car)
+    }
+
+    #[test]
+    fn no_death_camera_prompts_at_once() {
+        let (_, mut hunt, _) = setup(false);
+        hunt.death = Some(DeathCam {
+            body: 0,
+            time: 1,
+            pos: [0.0; 3],
+            alpha: 0.0,
+            beta: 0.0,
+        });
+        assert!(!hunt.show_exit());
+        hunt.opts.death_anim = false;
+        assert!(hunt.show_exit());
+    }
+
+    #[test]
+    fn no_blood_leaves_no_trail() {
+        let (area, mut hunt, _) = setup(false);
+        hunt.opts.blood = false;
+        hunt.herd.chars[0].health = 3;
+        hunt.herd.chars[0].blood_ttime = 90_000;
+        let mut out = Vec::new();
+        for _ in 0..500 {
+            hunt.tick(&area, &[], &HuntInput::default(), 10, &mut out);
+        }
+        assert!(hunt.effects.blood.is_empty());
+        hunt.opts.blood = true;
+        for _ in 0..500 {
+            hunt.tick(&area, &[], &HuntInput::default(), 10, &mut out);
+        }
+        assert!(!hunt.effects.blood.is_empty());
     }
 
     #[test]

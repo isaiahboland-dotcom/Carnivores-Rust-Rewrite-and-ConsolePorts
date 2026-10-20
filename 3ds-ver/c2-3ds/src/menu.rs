@@ -46,11 +46,13 @@ const TROPHIES: [f32; 4] = [60.0, 70.0, 200.0, 42.0];
 const SETTINGS: [f32; 4] = [60.0, 122.0, 200.0, 42.0];
 const QUIT: [f32; 4] = [60.0, 174.0, 200.0, 42.0];
 
-/// Settings screen: run speed bar with - / +, ambient toggle.
+/// Settings screen: run speed bar with - / +, then the toggles.
 const SPEED_BAR: [f32; 4] = [64.0, 62.0, 192.0, 20.0];
 const SPEED_DOWN: [f32; 4] = [20.0, 58.0, 36.0, 28.0];
 const SPEED_UP: [f32; 4] = [264.0, 58.0, 36.0, 28.0];
-const AMBIENT: [f32; 4] = [60.0, 136.0, 200.0, 32.0];
+const AMBIENT: [f32; 4] = [60.0, 112.0, 200.0, 28.0];
+const BLOOD: [f32; 4] = [60.0, 144.0, 200.0, 28.0];
+const DEATH_ANIM: [f32; 4] = [60.0, 176.0, 200.0, 28.0];
 
 const BAR_Y: f32 = 212.0;
 const BACK: [f32; 4] = [4.0, BAR_Y, 76.0, 24.0];
@@ -345,6 +347,8 @@ impl Menu {
             score_factor: 1.0,
             max_ambient: 0,
             dino_run_k: 1.0,
+            blood: true,
+            death_anim: true,
         }
     }
 
@@ -373,6 +377,8 @@ impl Menu {
             score_factor: self.extra().map_or(1.0, |e| e.2),
             max_ambient: self.settings.max_ambient(),
             dino_run_k: self.settings.run_pct as f32 / 100.0,
+            blood: self.settings.blood,
+            death_anim: self.settings.death_anim,
         }
     }
 
@@ -476,6 +482,10 @@ impl Menu {
                     s.run_pct = (50 + (f * 50.0 / 5.0).round() as i32 * 5).clamp(50, 100);
                 } else if inside(AMBIENT, x, y) {
                     s.ambient = !s.ambient;
+                } else if inside(BLOOD, x, y) {
+                    s.blood = !s.blood;
+                } else if inside(DEATH_ANIM, x, y) {
+                    s.death_anim = !s.death_anim;
                 }
             }
             Step::Area => {
@@ -831,7 +841,14 @@ impl Menu {
         for r in [SPEED_DOWN, SPEED_UP, BACK] {
             c.rect(r, PANEL);
         }
-        c.rect(AMBIENT, if s.ambient { [60, 110, 60, 255] } else { PANEL });
+        let toggles = [
+            (AMBIENT, s.ambient, "Ambient animals"),
+            (BLOOD, s.blood, "Blood"),
+            (DEATH_ANIM, s.death_anim, "Death animation"),
+        ];
+        for (r, on, _) in toggles {
+            c.rect(r, if on { [60, 110, 60, 255] } else { PANEL });
+        }
         c.flush(gpu);
         c.text_c(gpu, 160.0, 92.0, 2.0, GOLD, &format!("{}%", s.run_pct));
         c.text_c(
@@ -843,12 +860,10 @@ impl Menu {
             "-",
         );
         c.text_c(gpu, SPEED_UP[0] + 18.0, SPEED_UP[1] + 6.0, 2.0, WHITE, "+");
-        let amb = if s.ambient {
-            "Ambient animals: ON"
-        } else {
-            "Ambient animals: OFF"
-        };
-        c.text_c(gpu, 160.0, AMBIENT[1] + 12.0, 1.0, WHITE, amb);
+        for (r, on, name) in toggles {
+            let t = format!("{name}: {}", if on { "ON" } else { "OFF" });
+            c.text_c(gpu, 160.0, r[1] + 10.0, 1.0, WHITE, &t);
+        }
         c.text_c(
             gpu,
             BACK[0] + BACK[2] / 2.0,
@@ -873,6 +888,10 @@ impl Menu {
             ("  The small animals that score nothing.", WHITE),
             ("  On: at most 4 near you (smoother on", WHITE),
             ("  Old 3DS). Off: none, and less memory.", WHITE),
+            ("", WHITE),
+            ("Blood / Death animation", TEXT),
+            ("  Off: no blood sprays or trails; when", WHITE),
+            ("  you die, a black screen and the prompt.", WHITE),
         ];
         for (i, (l, col)) in lines.iter().enumerate() {
             c.text(gpu, 12.0, 14.0 + 14.0 * i as f32, 1.0, *col, l);

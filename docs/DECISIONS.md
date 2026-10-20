@@ -2,6 +2,18 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-19 — Blood and death-animation settings (PC and 3DS)
+Both on by default, as in the original (owner's request).
+- **Blood** off: a hit on an animal throws no blood spray, and wounded
+  animals leave no trail (`HuntOptions::blood`).
+- **Death animation** off: once the hunter is killed the screen is black
+  and the leave / restart prompt shows at once instead of after the 6 s
+  death camera (`HuntOptions::death_anim`, `Hunt::show_exit`). Sounds still
+  play; the hunt still ends on its own 12 s into the death camera's
+  circling, as with it on.
+- PC: Options → game panel, kept in `c2rs.cfg` (`blood`,
+  `death_animation`). 3DS: Settings screen, kept in `settings.txt`.
+
 ## 2026-10-19 — 3DS: 20 ms ticks, full LTO, restart
 - Owner's Old 3DS readout with ambients on: 41 fps, sim 11.3 ms, of which
   the animals about 2.8 ms a tick. On PC each animal costs about 1.5 µs a

@@ -13,6 +13,10 @@ pub struct Settings {
     pub run_pct: i32,
     /// Small ambient animals (the ones that score nothing) on or off.
     pub ambient: bool,
+    /// Blood sprays and trails.
+    pub blood: bool,
+    /// The death camera; off: a black screen and the prompt.
+    pub death_anim: bool,
 }
 
 impl Default for Settings {
@@ -20,6 +24,8 @@ impl Default for Settings {
         Self {
             run_pct: 100,
             ambient: true,
+            blood: true,
+            death_anim: true,
         }
     }
 }
@@ -42,6 +48,8 @@ impl Settings {
                     }
                 }
                 ("ambient", v) => s.ambient = v != "0",
+                ("blood", v) => s.blood = v != "0",
+                ("death_animation", v) => s.death_anim = v != "0",
                 _ => {}
             }
         }
@@ -52,9 +60,11 @@ impl Settings {
         std::fs::write(
             path(),
             format!(
-                "run_speed = {}\nambient = {}\n",
+                "run_speed = {}\nambient = {}\nblood = {}\ndeath_animation = {}\n",
                 self.run_pct,
-                i32::from(self.ambient)
+                i32::from(self.ambient),
+                i32::from(self.blood),
+                i32::from(self.death_anim)
             ),
         )
     }

@@ -1,5 +1,6 @@
 //! PC-only settings the original save file has no room for, kept in
-//! `c2rs.cfg` in the data folder: the render distance and fog.
+//! `c2rs.cfg` in the data folder: the render distance, fog, blood and the
+//! death camera.
 
 use std::path::PathBuf;
 
@@ -7,7 +8,7 @@ use std::path::PathBuf;
 /// 104; the map is 1024 across).
 pub const MAX_RENDER_CELLS: i32 = 384;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PcSettings {
     /// Render distance slider, 0..=255: 0 = the original view range, 255 =
     /// [`MAX_RENDER_CELLS`].
@@ -15,6 +16,21 @@ pub struct PcSettings {
     /// Fog: hunt at the original view range and fog, whatever `render`
     /// says (0 = off, 1 = on).
     pub fog: i32,
+    /// Blood sprays and trails (1 = on, as in the original).
+    pub blood: i32,
+    /// The death camera (1 = on); off: a black screen and the prompt.
+    pub death_anim: i32,
+}
+
+impl Default for PcSettings {
+    fn default() -> Self {
+        Self {
+            render: 0,
+            fog: 0,
+            blood: 1,
+            death_anim: 1,
+        }
+    }
 }
 
 fn path() -> PathBuf {
@@ -37,6 +53,8 @@ impl PcSettings {
             match k.trim() {
                 "render_distance" => s.render = v.clamp(0, 255),
                 "fog" => s.fog = i32::from(v != 0),
+                "blood" => s.blood = i32::from(v != 0),
+                "death_animation" => s.death_anim = i32::from(v != 0),
                 _ => {}
             }
         }
@@ -44,7 +62,10 @@ impl PcSettings {
     }
 
     pub fn store(&self) {
-        let text = format!("render_distance = {}\nfog = {}\n", self.render, self.fog);
+        let text = format!(
+            "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\n",
+            self.render, self.fog, self.blood, self.death_anim
+        );
         if let Some(dir) = path().parent() {
             let _ = std::fs::create_dir_all(dir);
         }

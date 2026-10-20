@@ -121,6 +121,9 @@ pub struct Setup {
     /// the animals' running speed (0.5..=1).
     pub max_ambient: i32,
     pub dino_run_k: f32,
+    /// Settings: blood, and the death camera.
+    pub blood: bool,
+    pub death_anim: bool,
 }
 
 impl Setup {
@@ -297,6 +300,8 @@ fn new_hunt(
         trophy,
         score_factor: setup.score_factor,
         dino_run_k: setup.dino_run_k,
+        blood: setup.blood,
+        death_anim: setup.death_anim,
     };
     let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
     hunt.ship_anim_ms = ship_ms;

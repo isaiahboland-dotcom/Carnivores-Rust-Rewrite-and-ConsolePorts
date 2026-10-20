@@ -341,6 +341,8 @@ impl HuntView {
             trophy,
             score_factor: 1.0,
             dino_run_k: 1.0,
+            blood: setup.pc.blood != 0,
+            death_anim: setup.pc.death_anim != 0,
         };
         let mut opts = opts;
         opts.render_r = if trophy {
@@ -483,6 +485,11 @@ impl HuntView {
             ..Default::default()
         };
         self.step(&input);
+    }
+
+    /// Dead with the death camera turned off: nothing but the prompt.
+    fn blacked_out(&self) -> bool {
+        self.hunt.death.is_some() && !self.hunt.opts.death_anim
     }
 
     /// The carried weapons, for the pick screen.
@@ -1020,6 +1027,9 @@ impl Scene for HuntView {
     }
 
     fn clear_color(&self) -> [f64; 3] {
+        if self.blacked_out() {
+            return [0.0; 3];
+        }
         self.view.clear_color()
     }
 
@@ -1045,12 +1055,15 @@ impl Scene for HuntView {
         let eye = self.view.cam.pos.to_array();
         let view = self.view.cam.view();
         let max = self.view.radius as f32 * c2_core::CELL;
-        self.view
-            .draw_with(gpu, pass, aspect, &mut |gpu, pass, globals| {
-                dinos.draw(gpu, pass, globals, &hunt.herd, &hunt.ship, eye, max);
-                effects.draw(gpu, pass, globals, &hunt.effects);
-                weapons.draw(gpu, pass, globals, hunt, view, light, aspect);
-            });
+        let black = hunt.death.is_some() && !hunt.opts.death_anim;
+        if !black {
+            self.view
+                .draw_with(gpu, pass, aspect, &mut |gpu, pass, globals| {
+                    dinos.draw(gpu, pass, globals, &hunt.herd, &hunt.ship, eye, max);
+                    effects.draw(gpu, pass, globals, &hunt.effects);
+                    weapons.draw(gpu, pass, globals, hunt, view, light, aspect);
+                });
+        }
 
         // HUD at an integer scale of the original's 640x480 layout.
         let scale = (screen.1 as f32 / 480.0).floor().max(1.0);

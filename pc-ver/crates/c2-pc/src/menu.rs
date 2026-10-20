@@ -222,13 +222,17 @@ enum Opt {
     Toggle(&'static str, [&'static str; 2], fn(&mut Save) -> &mut i32),
     /// A slider for a PC-only setting (`settings::PcSettings`).
     PcSlider(&'static str, fn(&mut PcSettings) -> &mut i32),
+    /// An on/off PC-only setting.
+    PcToggle(&'static str, fn(&mut PcSettings) -> &mut i32),
 }
 
-const GAME_OPTS: [Opt; 4] = [
+const GAME_OPTS: [Opt; 6] = [
     Opt::Slider("Aggressiveness", |s| &mut s.options.agres),
     Opt::Slider("Density", |s| &mut s.options.dens),
     Opt::Slider("Sensitivity", |s| &mut s.options.sens),
     Opt::Toggle("Measurement", ["Metric", "US"], |s| &mut s.options.sys),
+    Opt::PcToggle("Blood", |p| &mut p.blood),
+    Opt::PcToggle("Death animation", |p| &mut p.death_anim),
 ];
 
 const VIDEO_OPTS: [Opt; 3] = [
@@ -1195,6 +1199,10 @@ impl Menu {
                             *v = i32::from(*v == 0);
                         }
                     }
+                    Opt::PcToggle(_, f) => {
+                        let v = f(&mut self.pc);
+                        *v = i32::from(*v == 0);
+                    }
                 }
             }
         }
@@ -1475,6 +1483,11 @@ impl Menu {
                 Opt::Toggle(name, labels, f) => {
                     self.text(out, r.0, r.1 + 4.0, 12.0, color, name);
                     let v = labels[usize::from(*f(&mut copy) != 0)];
+                    self.text(out, r.0 + SLIDER_X, r.1 + 4.0, 12.0, SAND, v);
+                }
+                Opt::PcToggle(name, f) => {
+                    self.text(out, r.0, r.1 + 4.0, 12.0, color, name);
+                    let v = ["Off", "On"][usize::from(*f(&mut self.pc.clone()) != 0)];
                     self.text(out, r.0 + SLIDER_X, r.1 + 4.0, 12.0, SAND, v);
                 }
             }

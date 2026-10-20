@@ -648,10 +648,17 @@ fn tick_bench(game: &Path, area_n: u32) -> Result<()> {
         trophy: false,
         score_factor: 1.0,
         dino_run_k: 1.0,
+        blood: true,
+        death_anim: true,
     };
     // The first weapon, drawn and aimed at the animal: real hits (blood
     // trail, hit reactions) rather than a scripted kill.
-    let infos: Vec<_> = res.weapons.iter().take(1).map(WeaponInfo::from_def).collect();
+    let infos: Vec<_> = res
+        .weapons
+        .iter()
+        .take(1)
+        .map(WeaponInfo::from_def)
+        .collect();
     let n = infos.len();
     let weapons = Weapons::new(infos, vec![[300; 4]; n], 1, false);
     let room = c2_core::profile::new_player("bench", 0, 0);
@@ -672,7 +679,11 @@ fn tick_bench(game: &Path, area_n: u32) -> Result<()> {
             p.x = c.pos[0] + 800.0;
             p.z = c.pos[2];
             p.y = area.land_height(p.x, p.z);
-            let d = [c.pos[0] - p.x, c.pos[1] + 120.0 - (p.y + p.head_y), c.pos[2] - p.z];
+            let d = [
+                c.pos[0] - p.x,
+                c.pos[1] + 120.0 - (p.y + p.head_y),
+                c.pos[2] - p.z,
+            ];
             p.alpha = d[0].atan2(-d[2]);
             p.beta = (-d[1]).atan2(d[0].hypot(d[2]));
             input.fire = true;
@@ -697,7 +708,10 @@ fn tick_bench(game: &Path, area_n: u32) -> Result<()> {
         let after = hunt.herd.chars.get(stego).map_or(0, |c| c.health);
         if after < before {
             hits += 1;
-            println!("-- hit {hits} at {}s: health {after}, tick {ms:.3} ms", t / 100);
+            println!(
+                "-- hit {hits} at {}s: health {after}, tick {ms:.3} ms",
+                t / 100
+            );
         }
         worst = worst.max(ms);
         sum += ms;
