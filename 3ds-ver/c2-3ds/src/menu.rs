@@ -27,8 +27,14 @@ use crate::hunt::{PackInfo, Setup};
 use crate::settings::Settings;
 use crate::ui::load;
 
-/// Accessories (`EQUIPn.TGA`), in `prices.acces` order.
-const EQUIPMENT: [&str; 4] = ["Camouflage", "Radar", "Cover Scent", "Double Ammo"];
+/// Accessories (`EQUIPn.TGA`), in `prices.acces` order. The original's
+/// fourth, Double Ammo, isn't offered on the 3DS: the extra ammo gear takes
+/// its place and its picture.
+const EQUIPMENT: [&str; 3] = ["Camouflage", "Radar", "Cover Scent"];
+
+/// At most this many animals and weapons per hunt: each one's model,
+/// textures and sounds are loaded, and an Old 3DS has 64 MiB.
+pub const MAX_PICKS: u32 = 3;
 /// Time-of-day choices as the original lists them (`dtm=`).
 const TIMES: [(TimeOfDay, &str); 3] = [
     (TimeOfDay::Dusk, "Dawn"),
@@ -113,6 +119,8 @@ pub struct Menu {
     pub quit: bool,
     /// Extra ammo tier: 0 none, 1..=3 (`EXTRA_AMMO`).
     extra_ammo: usize,
+    /// Its picture: the original's Double Ammo (`EQUIP4`).
+    ammo_pic: Option<Texture>,
     info: PackInfo,
     pub save: Save,
     step: Step,
@@ -227,6 +235,7 @@ impl Menu {
             trophy_room,
             quit: false,
             extra_ammo: 0,
+            ammo_pic: load(vfs, "C2RS/MENU/EQUIP4.TX"),
             info,
             save,
             step: Step::Title,
@@ -371,7 +380,7 @@ impl Menu {
             } else {
                 self.picked_weapons
             },
-            double_ammo: !self.observer && self.picked_equip & 8 != 0,
+            double_ammo: false,
             observer: self.observer,
             resupplies: self.extra().map_or(0, |e| e.1),
             score_factor: self.extra().map_or(1.0, |e| e.2),
@@ -408,6 +417,17 @@ impl Menu {
         };
         *mask ^= 1 << i;
         let on = *mask & (1 << i) != 0;
+        let counted = which == Step::Animals || !gear;
+        if on && counted && mask.count_ones() > MAX_PICKS {
+            *mask ^= 1 << i;
+            let what = if which == Step::Animals {
+                "animals"
+            } else {
+                "weapons"
+            };
+            self.message = Some(format!("{MAX_PICKS} {what} at most"));
+            return format!("{name}  {price} pts");
+        }
         if on && self.remaining() < 0 {
             let mask = match (which, gear) {
                 (Step::Animals, _) => &mut self.picked_dinos,
@@ -806,13 +826,18 @@ impl Menu {
             c.hex(cx, cy, r + 3.0, GOLD);
         }
         c.hex(cx, cy, r, PANEL);
-        // A few cartridges.
-        for k in 0..3 {
-            let x = cx - 9.0 + k as f32 * 9.0;
-            c.rect([x - 2.5, cy - 16.0, 5.0, 12.0], [200, 160, 60, 255]);
-            c.rect([x - 2.5, cy - 20.0, 5.0, 4.0], [170, 90, 50, 255]);
-        }
         c.flush(gpu);
+        if let Some(t) = &self.ammo_pic {
+            c.hex_image(gpu, t, (cx, cy, r), [0.17, 0.0, 0.83, 0.58], WHITE);
+        } else {
+            // A few cartridges.
+            for k in 0..3 {
+                let x = cx - 9.0 + k as f32 * 9.0;
+                c.rect([x - 2.5, cy - 16.0, 5.0, 12.0], [200, 160, 60, 255]);
+                c.rect([x - 2.5, cy - 20.0, 5.0, 4.0], [170, 90, 50, 255]);
+            }
+            c.flush(gpu);
+        }
         if let Some((_, n, _)) = self.extra() {
             c.text_c(gpu, cx, cy - 1.0, 2.0, WHITE, &format!("x{n}"));
         } else {

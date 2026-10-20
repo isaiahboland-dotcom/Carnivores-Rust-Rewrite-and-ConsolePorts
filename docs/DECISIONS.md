@@ -2,6 +2,13 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-19 — 3DS: at most 3 animals and 3 weapons; no Double Ammo
+Owner's call, for Old 3DS memory: the 3DS hunt menu takes at most three
+animals and three weapons (`MAX_PICKS`); a fourth tap says so. The
+original's Double Ammo accessory is gone from the 3DS gear; the 3DS's
+extra-ammo refills take its slot and its picture (`EQUIP4`). The PC is
+unchanged.
+
 ## 2026-10-19 — Blood and death-animation settings (PC and 3DS)
 Both on by default, as in the original (owner's request).
 - **Blood** off: a hit on an animal throws no blood spray, and wounded
