@@ -2,6 +2,20 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-19 — PC render distance and fog
+- **Render distance** (Options → Video, PC only, kept in `c2rs.cfg` in the
+  data folder since the original save has no room): from the original
+  view range (default, slider at 0) up to 384 cells. Past the original
+  range, fog only softens the last 15% instead of the original's 40%.
+- **Fog** (the setup screen's empty box beside the times of day, any time
+  of day): hunt at the original view range and fog whatever the render
+  distance says.
+- Gameplay keeps the original view range for detection, aggression and
+  noise. Two things follow what is drawn (`HuntOptions::render_r`): where
+  an animal out of sight is re-placed (just beyond the drawn distance, so
+  it isn't seen appearing) and how far a shot carries (what you see you
+  can hit). With fog on, or on the 3DS, both equal the original.
+
 ## 2026-10-19 — Radar by slot; points in the menu
 - The map's radar blips (PC and 3DS) use `Hunt::is_target`, which now
   knows the dialect: an animal marked `radar` when picked, else picked by

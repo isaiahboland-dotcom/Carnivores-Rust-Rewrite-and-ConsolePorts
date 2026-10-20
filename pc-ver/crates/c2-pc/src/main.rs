@@ -18,6 +18,7 @@ mod png;
 mod render;
 mod save;
 mod scene;
+mod settings;
 mod sounds;
 mod weapons;
 
@@ -231,6 +232,7 @@ fn main() -> Result<()> {
                 observer: o.has("observer"),
                 reg: o.num("player", 0i32)?,
                 from_menu: false,
+                pc: settings::PcSettings::load(),
             };
             Box::new(move |g| {
                 let mut h = hunt_view::HuntView::load(g, setup)?;

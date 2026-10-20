@@ -237,6 +237,10 @@ pub struct HuntOptions {
     pub opt_agres: i32,
     pub opt_sens: i32,
     pub view_r: i32,
+    /// Cells drawn (at least `view_r`; more with a longer PC render
+    /// distance): how far shots carry and where animals out of sight are
+    /// re-placed. Detection and aggression keep `view_r`.
+    pub render_r: i32,
     pub camo: bool,
     pub scent: bool,
     pub tranq: bool,
@@ -261,6 +265,7 @@ impl Default for HuntOptions {
             opt_agres: 128,
             opt_sens: 128,
             view_r: 74,
+            render_r: 74,
             camo: false,
             scent: false,
             tranq: false,
@@ -594,6 +599,7 @@ impl Hunt {
             opt_agres: self.opts.opt_agres,
             tranq: self.opts.tranq,
             view_r: self.opts.view_r,
+            render_r: self.opts.render_r.max(self.opts.view_r),
             run_k: self.opts.dino_run_k,
             events: &mut dev,
         };
@@ -962,7 +968,7 @@ impl Hunt {
         let p = &self.player;
         let origin = [p.x, p.y + p.head_y, p.z];
         let (alpha, beta) = (p.alpha, p.beta);
-        let reach = 256.0 * self.opts.view_r as f32;
+        let reach = 256.0 * self.opts.render_r.max(self.opts.view_r) as f32;
         for _ in 0..=info.trace_c.max(0) {
             let ra = self.rng.si_rand(128) as f32 * 0.0001 * (2.0 - info.prec);
             let rb = self.rng.si_rand(128) as f32 * 0.0001 * (2.0 - info.prec);

@@ -390,6 +390,9 @@ pub struct Ctx<'a> {
     pub tranq: bool,
     /// `ctViewR`: view distance in cells (carnivores use it to give up).
     pub view_r: i32,
+    /// Cells the player can see (`view_r`, or more with a longer PC render
+    /// distance): animals out of sight are re-placed just beyond it.
+    pub render_r: i32,
     /// Multiplies every species' running speed (1 in the original; a 3DS
     /// setting lowers it).
     pub run_k: f32,
@@ -1059,8 +1062,8 @@ impl Character {
     pub fn replace_forward(&mut self, ctx: &mut Ctx<'_>) -> bool {
         let al = ctx.hunter.alpha + ctx.rng.si_rand(2048) as f32 / 2048.0;
         let (sa, ca) = al.sin_cos();
-        let d1 = ((ctx.view_r + ctx.rng.r_rand(10)) * 256) as f32;
-        let d2 = ((ctx.view_r + ctx.rng.r_rand(10)) * 256) as f32;
+        let d1 = ((ctx.render_r + ctx.rng.r_rand(10)) * 256) as f32;
+        let d2 = ((ctx.render_r + ctx.rng.r_rand(10)) * 256) as f32;
         let mut p = [ctx.hunter.x + sa * d1, 0.0, ctx.hunter.z - ca * d2];
         p[1] = ctx.area.land_height(p[0], p[2]);
         if p[0] < 16.0 * 256.0
@@ -1224,8 +1227,8 @@ impl Character {
         };
         let al = ctx.hunter.alpha + ctx.rng.si_rand(2048) as f32 / 2048.0;
         let (sa, ca) = al.sin_cos();
-        let d1 = ((ctx.view_r + ctx.rng.r_rand(10)) * 256) as f32;
-        let d2 = ((ctx.view_r + ctx.rng.r_rand(10)) * 256) as f32;
+        let d1 = ((ctx.render_r + ctx.rng.r_rand(10)) * 256) as f32;
+        let d2 = ((ctx.render_r + ctx.rng.r_rand(10)) * 256) as f32;
         let mut p = [ctx.hunter.x + sa * d1, 0.0, ctx.hunter.z - ca * d2];
         p[1] = ctx.area.land_height(p[0], p[2]);
         if p[0] < 16.0 * 256.0
@@ -1542,6 +1545,7 @@ mod tests {
                 opt_agres: 128,
                 tranq: false,
                 view_r: 74,
+                render_r: 74,
                 run_k: 1.0,
                 events: &mut events,
             };

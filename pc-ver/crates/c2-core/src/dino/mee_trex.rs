@@ -90,7 +90,7 @@ pub fn animate(
         }
 
         if rethink < MAX_RETHINK
-            && pdist > ((ctx.view_r + 20) * 256) as f32
+            && pdist > ((ctx.render_r + 20) * 256) as f32
             && c.replace_forward_in(sp, ctx, w.group)
         {
             continue;

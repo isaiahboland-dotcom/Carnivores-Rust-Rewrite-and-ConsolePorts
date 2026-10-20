@@ -280,6 +280,7 @@ fn new_hunt(
         // ctViewR at the lowest view-range option (42 cells); 60 in the
         // trophy room.
         view_r: if trophy { 60 } else { 42 },
+        render_r: 0,
         camo: o.camo != 0,
         scent: o.scent != 0,
         tranq: o.tranq != 0,

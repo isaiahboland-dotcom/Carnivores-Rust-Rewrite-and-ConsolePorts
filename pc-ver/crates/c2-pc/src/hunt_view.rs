@@ -56,6 +56,8 @@ pub struct HuntSetup {
     pub reg: i32,
     /// Return to the menu afterwards (otherwise close the window).
     pub from_menu: bool,
+    /// Render distance and fog (PC-only settings).
+    pub pc: crate::settings::PcSettings,
 }
 
 impl HuntSetup {
@@ -234,7 +236,11 @@ impl HuntView {
             mee.as_ref(),
         );
         hunt.ship_anim_ms = dinos.ship_anim_ms();
-        view.radius = hunt.opts.view_r as u32;
+        view.radius = hunt.opts.render_r.max(hunt.opts.view_r) as u32;
+        // Past the original range, fog only softens the far edge.
+        if hunt.opts.render_r > hunt.opts.view_r {
+            view.fog_start = 0.85;
+        }
         view.brightness = (hunt.room.options.brightness + 128) as f32 / 256.0;
         let prev_cam = hunt.camera().0;
         let effects = EffectsView::new(gpu, view.globals(), &huntdat);
@@ -319,6 +325,7 @@ impl HuntView {
             opt_sens: o.sens,
             // ctViewR: 42 + OptViewR / 8 * 2 cells; 60 in the trophy room.
             view_r: if trophy { 60 } else { 42 + o.view_r / 8 * 2 },
+            render_r: 0,
             camo: o.camo != 0,
             scent: o.scent != 0,
             tranq: o.tranq != 0,
@@ -326,6 +333,12 @@ impl HuntView {
             trophy,
             score_factor: 1.0,
             dino_run_k: 1.0,
+        };
+        let mut opts = opts;
+        opts.render_r = if trophy {
+            opts.view_r
+        } else {
+            setup.pc.render_cells(opts.view_r)
         };
         let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
         hunt.clock = local_clock();

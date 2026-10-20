@@ -333,6 +333,7 @@ fn dinos_sim(map_path: &Path, seconds: u32) -> Result<()> {
             opt_agres: 128,
             tranq: false,
             view_r: 74,
+            render_r: 74,
             run_k: 1.0,
             events: &mut events,
         };
@@ -520,6 +521,7 @@ fn mee_sim(game: &Path, area_n: u32, seconds: u32) -> Result<()> {
             opt_agres: 128,
             tranq: false,
             view_r: 74,
+            render_r: 74,
             run_k: 1.0,
             events: &mut events,
         };
@@ -638,6 +640,7 @@ fn tick_bench(game: &Path, area_n: u32) -> Result<()> {
         opt_agres: 128,
         opt_sens: 128,
         view_r: 42,
+        render_r: 42,
         camo: false,
         scent: false,
         tranq: false,

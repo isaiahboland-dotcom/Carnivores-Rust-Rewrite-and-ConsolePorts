@@ -107,6 +107,8 @@ pub struct AreaView {
     /// Field-of-view magnification (binoculars, scope).
     pub zoom: f32,
     pub radius: u32,
+    /// Fog begins at this fraction of `radius` (0.6, as the original).
+    pub fog_start: f32,
     /// `(OptBrightness + 128) / 256`: textures, sky and fog colour.
     pub brightness: f32,
     start: Instant,
@@ -209,6 +211,7 @@ impl AreaView {
             fly: true,
             zoom: 1.0,
             radius: 74,
+            fog_start: 0.6,
             brightness: 1.0,
             start: Instant::now(),
             fps: 0.0,
@@ -305,7 +308,7 @@ impl AreaView {
                 proj: projection(aspect, far * 1.5, self.zoom),
                 eye: self.cam.pos,
                 fog_rgb: self.clear_color().map(|c| c as f32),
-                fog: (far * 0.6, far),
+                fog: (far * self.fog_start, far),
                 night_vision: time.night_vision(),
                 time_s: t.as_secs_f32(),
                 brightness: self.brightness,

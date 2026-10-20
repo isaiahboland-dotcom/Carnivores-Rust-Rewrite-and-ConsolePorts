@@ -115,7 +115,7 @@ pub fn animate(c: &mut Character, index: usize, sp: &Species, ctx: &mut Ctx<'_>,
             c.tgtime = 0;
         }
 
-        if pdist > (ctx.view_r + 20) as f32 * 256.0 && c.replace_forward(ctx) {
+        if pdist > (ctx.render_r + 20) as f32 * 256.0 && c.replace_forward(ctx) {
             continue;
         }
 

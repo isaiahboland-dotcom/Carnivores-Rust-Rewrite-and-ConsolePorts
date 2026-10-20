@@ -121,7 +121,8 @@ pub fn animate_old(
         let playerdz = ctx.hunter.z - c.pos[2] - c.lookz * 108.0;
         let pdist = (playerdx * playerdx + playerdz * playerdz).sqrt();
         if rethink < MAX_RETHINK {
-            if pdist > ((ctx.view_r + 20) * 256) as f32 && c.replace_forward_in(sp, ctx, w.group) {
+            if pdist > ((ctx.render_r + 20) * 256) as f32 && c.replace_forward_in(sp, ctx, w.group)
+            {
                 continue;
             }
             if wander(c, sp, w, ctx, tdist, 256.0, 2048.0) {
@@ -309,7 +310,7 @@ pub fn animate(
             }
         }
         if again
-            && pdist > ((ctx.view_r + 20) * 256) as f32
+            && pdist > ((ctx.render_r + 20) * 256) as f32
             && c.replace_forward_in(sp, ctx, w.group)
         {
             continue;

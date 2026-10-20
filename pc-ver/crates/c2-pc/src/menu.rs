@@ -26,6 +26,7 @@ use crate::input::Input;
 use crate::keys;
 use crate::save;
 use crate::scene::{MakeScene, Scene};
+use crate::settings::PcSettings;
 
 /// The menus are drawn on an 800x600 canvas, scaled to fit the window.
 const CW: f32 = 800.0;
@@ -219,6 +220,8 @@ impl Column {
 enum Opt {
     Slider(&'static str, fn(&mut Save) -> &mut i32),
     Toggle(&'static str, [&'static str; 2], fn(&mut Save) -> &mut i32),
+    /// A slider for a PC-only setting (`settings::PcSettings`).
+    PcSlider(&'static str, fn(&mut PcSettings) -> &mut i32),
 }
 
 const GAME_OPTS: [Opt; 4] = [
@@ -228,8 +231,9 @@ const GAME_OPTS: [Opt; 4] = [
     Opt::Toggle("Measurement", ["Metric", "US"], |s| &mut s.options.sys),
 ];
 
-const VIDEO_OPTS: [Opt; 2] = [
+const VIDEO_OPTS: [Opt; 3] = [
     Opt::Slider("View range", |s| &mut s.options.view_r),
+    Opt::PcSlider("Render distance", |p| &mut p.render),
     Opt::Slider("Brightness", |s| &mut s.options.brightness),
 ];
 
@@ -299,6 +303,9 @@ pub struct Menu {
     columns: Vec<Column>,
     day_texts: Vec<Vec<String>>,
     tranq_text: Vec<String>,
+    fog_text: Vec<String>,
+    /// Render distance and fog (not in the original save).
+    pc: PcSettings,
     observe_text: Vec<String>,
     areas: Vec<PathBuf>,
     players: Vec<Save>,
@@ -631,6 +638,18 @@ impl Menu {
             })
             .collect();
         let tranq_text = wrap(&hud, 12.0, info_w, &read_text(txt.as_deref(), "TRANQ.NFO"));
+        let fog_text = wrap(
+            &hud,
+            12.0,
+            info_w,
+            &[
+                "Fog".to_string(),
+                String::new(),
+                "Hunt in the original game's view range and fog, whatever the render distance \
+                 in Options says, at any time of day."
+                    .to_string(),
+            ],
+        );
         let observe_text = wrap(
             &hud,
             12.0,
@@ -660,6 +679,8 @@ impl Menu {
             columns: cols,
             day_texts,
             tranq_text,
+            fog_text,
+            pc: PcSettings::load(),
             observe_text,
             areas,
             players,
@@ -985,6 +1006,10 @@ impl Menu {
         }
         match region {
             1..=3 => self.choice.time = region as usize - 1,
+            4 => {
+                self.pc.fog = i32::from(self.pc.fog == 0);
+                self.pc.store();
+            }
             5 => {
                 if let Some(s) = self.me_mut() {
                     s.options.tranq = i32::from(s.options.tranq == 0);
@@ -1080,6 +1105,7 @@ impl Menu {
             observer,
             reg,
             from_menu: true,
+            pc: self.pc,
         });
         self.shown_loading = false;
         self.screen = Screen::Loading;
@@ -1136,6 +1162,7 @@ impl Menu {
         }
         if input.pressed(KeyCode::Escape) || (input.clicked && region == 4) {
             self.store_me();
+            self.pc.store();
             self.screen = Screen::Main;
             return;
         }
@@ -1161,7 +1188,7 @@ impl Menu {
                     continue;
                 }
                 match o {
-                    Opt::Slider(..) => self.drag = Some(*o),
+                    Opt::Slider(..) | Opt::PcSlider(..) => self.drag = Some(*o),
                     Opt::Toggle(_, _, f) => {
                         if let Some(s) = self.me_mut() {
                             let v = f(s);
@@ -1169,6 +1196,15 @@ impl Menu {
                         }
                     }
                 }
+            }
+        }
+        if let Some(Opt::PcSlider(name, f)) = self.drag {
+            let r = rows.iter().find_map(|(o, r)| match o {
+                Opt::PcSlider(n, _) if *n == name => Some(*r),
+                _ => None,
+            });
+            if let Some(v) = r.and_then(|r| self.slider_value(r)) {
+                *f(&mut self.pc) = v;
             }
         }
         if let Some(Opt::Slider(name, f)) = self.drag {
@@ -1314,6 +1350,17 @@ impl Menu {
             lit.push(6);
         }
         self.board(out, &self.setup, &lit);
+        // The original's empty box beside the times of day: the fog toggle.
+        let on = self.pc.fog != 0;
+        let fc = if on || region == 4 { PICKED } else { DIM };
+        self.text(
+            out,
+            301.0 - self.text_width(14.0, "FOG") / 2.0,
+            304.0,
+            14.0,
+            fc,
+            "FOG",
+        );
         let score = self.me().map_or(0, |s| s.score);
         let left = self.remaining();
         for (x, v) in [(332.0, score), (408.0, left)] {
@@ -1372,6 +1419,7 @@ impl Menu {
         // The view and info panels: the focused item, or a hovered toggle.
         let (pic, text): (Option<usize>, &[String]) = match region {
             1..=3 => (None, &self.day_texts[region as usize - 1]),
+            4 => (None, &self.fog_text),
             5 => (None, &self.tranq_text),
             6 => (None, &self.observe_text),
             _ => match c.focus {
@@ -1411,6 +1459,14 @@ impl Menu {
                 Opt::Slider(name, f) => {
                     self.text(out, r.0, r.1 + 4.0, 12.0, color, name);
                     let v = *f(&mut copy);
+                    let x0 = r.0 + r.2 - 128.0 - 8.0;
+                    self.image_native(out, self.slider, x0, r.1 + 4.0);
+                    let kx = x0 + 4.0 + v.clamp(0, 255) as f32 * 120.0 / 255.0 - 4.0;
+                    self.image_native(out, self.knob, kx, r.1 + 5.0);
+                }
+                Opt::PcSlider(name, f) => {
+                    self.text(out, r.0, r.1 + 4.0, 12.0, color, name);
+                    let v = *f(&mut self.pc.clone());
                     let x0 = r.0 + r.2 - 128.0 - 8.0;
                     self.image_native(out, self.slider, x0, r.1 + 4.0);
                     let kx = x0 + 4.0 + v.clamp(0, 255) as f32 * 120.0 / 255.0 - 4.0;
