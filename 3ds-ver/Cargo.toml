@@ -32,4 +32,5 @@ expect_used = "deny"
 
 [profile.release]
 opt-level = 3
-lto = "thin"
+lto = "fat"
+codegen-units = 1

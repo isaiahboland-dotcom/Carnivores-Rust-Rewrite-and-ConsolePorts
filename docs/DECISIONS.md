@@ -2,6 +2,21 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-19 — 3DS: 20 ms ticks, full LTO, restart
+- Owner's Old 3DS readout with ambients on: 41 fps, sim 11.3 ms, of which
+  the animals about 2.8 ms a tick. On PC each animal costs about 1.5 µs a
+  tick, ambients as much as huntables; an Old 3DS (268 MHz ARM11, no L2) is
+  60-90x slower at this, so nothing is broken, it's just 100 updates a
+  second of ~25 animals.
+- The 3DS steps the game every 20 ms instead of 10. The original runs one
+  update per frame with any `TimeDt` and the port keeps that scaling, so
+  play is the same (checked with `tick-bench` at 20 ms: same hits, kill and
+  pickup), at half the cost. Still a fixed step, so runs stay reproducible.
+  The PC keeps 10 ms.
+- 3DS release builds use full LTO with one codegen unit.
+- Y or X at the leave prompt, or once dead, restarts the hunt with the
+  same setup; like dying, the hunt isn't saved (the PC's `R`).
+
 ## 2026-10-19 — 3DS slow ticks, round two: flush-to-zero
 - The report's "sim 93 ms at 40 fps" is consistent: the pause screen freezes
   the ms averages but keeps measuring fps, so the hunt really ran near

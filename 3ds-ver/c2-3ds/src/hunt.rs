@@ -16,8 +16,11 @@ use c2_vfs::Vfs;
 
 use crate::world::DrawInfo;
 
-/// Simulation step, as on PC.
-pub const TICK_MS: u32 = 10;
+/// Simulation step: 20 ms, half the PC's rate. Every animal costs about
+/// 0.1 ms a step on an Old 3DS; the original updates once per frame with
+/// any `TimeDt`, so the game plays the same, and the camera is
+/// interpolated between steps.
+pub const TICK_MS: u32 = 20;
 /// Most ticks run in one frame (40 ms of game time).
 pub const MAX_TICKS: u32 = 4;
 
