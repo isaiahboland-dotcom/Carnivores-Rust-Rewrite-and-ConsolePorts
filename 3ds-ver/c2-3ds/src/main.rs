@@ -245,6 +245,7 @@ fn read_pad(hid: &Hid, held: KeyPad, down: KeyPad, touch: &mut Touch) -> (Pad, O
         escape: down.contains(KeyPad::START),
         confirm: down.contains(KeyPad::A),
         cancel: down.contains(KeyPad::B),
+        restart: down.contains(KeyPad::Y) || down.contains(KeyPad::X),
         select_weapon: None,
         select_call: None,
         resupply: false,
@@ -373,7 +374,14 @@ fn loading_screen(vfs: &Vfs, gpu: &mut Gpu, what: &str) {
 
 /// One hunt, until the hunter leaves (saved) or dies (not saved). Returns a
 /// line for the menu.
-fn hunt(vfs: &Vfs, info: &PackInfo, setup: Setup, gpu: &mut Gpu, io: &mut Io) -> Result<String> {
+/// One hunt; `None` when the player asked for a restart.
+fn hunt(
+    vfs: &Vfs,
+    info: &PackInfo,
+    setup: Setup,
+    gpu: &mut Gpu,
+    io: &mut Io,
+) -> Result<Option<String>> {
     loading_screen(vfs, gpu, &setup.area);
     let room0 = save::load(0);
     let t0 = ticks();
@@ -470,15 +478,19 @@ fn hunt(vfs: &Vfs, info: &PackInfo, setup: Setup, gpu: &mut Gpu, io: &mut Io) ->
                 _ => {}
             }
         }
+        // A restart drops this hunt unsaved, like dying.
+        if pad.restart && game.hunt.show_exit() && !game.hunt.opts.trophy {
+            return Ok(None);
+        }
         match game.hunt.outcome() {
             Some(Outcome::Exited) => {
-                return Ok(match save::store(&game.hunt.room) {
+                return Ok(Some(match save::store(&game.hunt.room) {
                     Ok(()) => format!("Saved. Score {}", game.hunt.room.score),
                     Err(e) => format!("save failed: {e}"),
-                });
+                }));
             }
             // Dying discards this hunt's trophies (the save isn't written).
-            Some(Outcome::Died) => return Ok("You died. Nothing was saved.".into()),
+            Some(Outcome::Died) => return Ok(Some("You died. Nothing was saved.".into())),
             None => {}
         }
 
@@ -537,11 +549,11 @@ fn hunt(vfs: &Vfs, info: &PackInfo, setup: Setup, gpu: &mut Gpu, io: &mut Io) ->
             message = Some((m, frame + 120));
         }
         if io.quit() {
-            return Ok(String::new());
+            return Ok(Some(String::new()));
         }
         io.frame += 1;
     }
-    Ok(String::new())
+    Ok(Some(String::new()))
 }
 
 fn run(pack: &Path, apt: &Apt, hid: &mut Hid) -> Result<()> {
@@ -574,10 +586,15 @@ fn run(pack: &Path, apt: &Apt, hid: &mut Hid) -> Result<()> {
         let Some(setup) = menu(&vfs, &info, &mut gpu, &mut io, note.take())? else {
             return Ok(());
         };
-        note = Some(match hunt(&vfs, &info, setup, &mut gpu, &mut io) {
-            Ok(n) => n,
-            Err(e) => format!("{e:#}"),
-        });
+        loop {
+            match hunt(&vfs, &info, setup.clone(), &mut gpu, &mut io) {
+                Ok(Some(n)) => note = Some(n),
+                Ok(None) if !io.quit() && io.apt.main_loop() => continue,
+                Ok(None) => {}
+                Err(e) => note = Some(format!("{e:#}")),
+            }
+            break;
+        }
         if io.quit() || !io.apt.main_loop() {
             return Ok(());
         }

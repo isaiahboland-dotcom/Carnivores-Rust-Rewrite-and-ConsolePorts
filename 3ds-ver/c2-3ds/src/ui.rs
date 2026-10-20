@@ -214,7 +214,7 @@ impl Ui {
         // Status under the map.
         let cx = MAP[0] + MAP[2] / 2.0;
         let state = if h.exit_prompt {
-            "Leave? A yes, B no".to_string()
+            "Leave? A yes, B no, Y restart".to_string()
         } else if h.death.is_some() {
             "You are dead...".to_string()
         } else if h.player.underwater {
@@ -311,6 +311,14 @@ impl Ui {
         if hunt.show_exit() {
             c.text_c(gpu, cx, 104.0, 2.0, WHITE, "Leave the hunt?");
             c.text_c(gpu, cx, 128.0, 1.0, WHITE, "A = yes   B = no");
+            c.text_c(
+                gpu,
+                cx,
+                142.0,
+                1.0,
+                WHITE,
+                "Y = restart (this hunt isn't saved)",
+            );
         }
         // Binoculars: what's in the cross-hairs (`Render_LifeInfo`).
         if let Some(li) = hunt.life_info(&game.area) {

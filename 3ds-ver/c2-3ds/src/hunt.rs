@@ -183,6 +183,8 @@ pub struct Pad {
     pub escape: bool,
     pub confirm: bool,
     pub cancel: bool,
+    /// Y / X at the leave prompt (or once dead): a new hunt, same setup.
+    pub restart: bool,
     /// From the bottom screen: a weapon (index), a call (AI).
     pub select_weapon: Option<usize>,
     pub select_call: Option<i32>,
