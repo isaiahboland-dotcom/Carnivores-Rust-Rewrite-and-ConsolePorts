@@ -236,6 +236,7 @@ impl World {
         area: &Area,
         info: DrawInfo,
         cars: &[Option<Car>],
+        keys: &[String],
         weapon_cars: &[Option<Car>],
     ) -> Self {
         let dir = format!("C2RS/{}", info.area);
@@ -293,7 +294,7 @@ impl World {
             let l = area.object_light(&p);
             placements[c].push((p, l));
         }
-        let posed = |cars: &[Option<Car>], prefix: &str| -> Vec<Option<Posed>> {
+        let posed = |cars: &[Option<Car>], tex: &dyn Fn(usize) -> String| -> Vec<Option<Posed>> {
             cars.iter()
                 .enumerate()
                 .map(|(i, c)| {
@@ -303,7 +304,7 @@ impl World {
                     prepared.texture_rgba = Vec::new();
                     Some(Posed {
                         prepared,
-                        tex: load_texture(vfs, &format!("C2RS/{prefix}{i}.TX")),
+                        tex: load_texture(vfs, &tex(i)),
                     })
                 })
                 .collect()
@@ -343,8 +344,10 @@ impl World {
             ring: Extra::load(vfs, "HUNTDAT/WCIRCLE2.CAR", "C2RS/RING.TX"),
             flat_buf: None,
             placements,
-            species: posed(cars, "CHAR"),
-            weapons: posed(weapon_cars, "WPN"),
+            species: posed(cars, &|i| {
+                format!("C2RS/M/{}.TX", keys.get(i).map_or("", String::as_str))
+            }),
+            weapons: posed(weapon_cars, &|i| format!("C2RS/WPN{i}.TX")),
             char_bufs: Vec::new(),
             weapon_buf: None,
             frame: 0,

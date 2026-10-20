@@ -14,6 +14,7 @@ use c2_formats::car::Car;
 use c2_formats::sav::Save;
 use c2_vfs::Vfs;
 
+use crate::rules::{Role, Rules};
 use crate::world::DrawInfo;
 
 /// Simulation step: 20 ms, half the PC's rate. Every animal costs about
@@ -24,9 +25,10 @@ pub const TICK_MS: u32 = 20;
 /// Most ticks run in one frame (40 ms of game time).
 pub const MAX_TICKS: u32 = 4;
 
-/// The INFO.TXT `pack` this build reads: 3 = every area, animal and weapon
-/// (a "library"; the menu picks), per-area `C2RS/AREAn/`, `cost.*` lines.
-pub const PACK_VERSION: u32 = 3;
+/// The INFO.TXT `pack` this build reads: 4 = every area, animal model
+/// (by file, `C2RS/M/`) and weapon; calls by menu slot; `cost.*` (linear)
+/// and `heap.*` (main memory) lines; `dialect` for Modder's Edition rules.
+pub const PACK_VERSION: u32 = 4;
 
 fn kv(text: &str) -> HashMap<String, String> {
     text.lines()
@@ -48,9 +50,13 @@ pub struct PackInfo {
     /// Sample rate of the pack's sounds.
     pub sound_rate: u32,
     /// Linear memory a hunt may use, and what each piece takes (KiB):
-    /// `hunt` (always), `AREAn`, `char{i}`, `wpn{i}`.
+    /// `hunt` (always), `AREAn`, `m:{model}`, `wpn{i}`.
     pub linear_kb: usize,
     pub costs: HashMap<String, usize>,
+    /// Main memory: the budget, each area's loading peak with the hunter
+    /// and ambient animals (`AREAn`), and each model and weapon.
+    pub heap_kb: usize,
+    pub heaps: HashMap<String, usize>,
 }
 
 impl PackInfo {
@@ -71,15 +77,24 @@ impl PackInfo {
             object_view: num("object_view", 28),
             sound_rate: num("sound_rate", c2_core::sound::SAMPLE_RATE),
             linear_kb: num("linear_kb", 16 * 1024) as usize,
-            costs: m
-                .iter()
-                .filter_map(|(k, v)| Some((k.strip_prefix("cost.")?.to_string(), v.parse().ok()?)))
-                .collect(),
+            costs: Self::prefixed(&m, "cost."),
+            heap_kb: num("heap_kb", 34 * 1024) as usize,
+            heaps: Self::prefixed(&m, "heap."),
         }
+    }
+
+    fn prefixed(m: &HashMap<String, String>, prefix: &str) -> HashMap<String, usize> {
+        m.iter()
+            .filter_map(|(k, v)| Some((k.strip_prefix(prefix)?.to_string(), v.parse().ok()?)))
+            .collect()
     }
 
     pub fn cost(&self, piece: &str) -> usize {
         self.costs.get(piece).copied().unwrap_or(0)
+    }
+
+    pub fn heap(&self, piece: &str) -> usize {
+        self.heaps.get(piece).copied().unwrap_or(0)
     }
 
     /// How to draw `area` (`C2RS/AREAn/INFO.TXT`).
@@ -107,8 +122,12 @@ pub struct Setup {
     /// `AREA1`.., or `TROPHY` for the trophy room.
     pub area: String,
     pub time: TimeOfDay,
-    /// Bit `ai` per target species (`TargetDino`).
-    pub targets: u32,
+    /// Bit 10 + menu slot per target (`TargetDino`; in the original the
+    /// slot is the AI - 10, so the bit is the AI).
+    pub targets: u128,
+    /// Characters (`_RES.TXT` index) picked that roam rather than being
+    /// hunt targets (add-ons without a menu slot).
+    pub roamers: Vec<usize>,
     /// Bit per carried weapon.
     pub weapons: u32,
     pub double_ammo: bool,
@@ -131,14 +150,17 @@ impl Setup {
         self.area.eq_ignore_ascii_case("TROPHY")
     }
 
-    /// Characters to load: the hunter, the ambient animals unless they are
-    /// turned off, the targets; in the trophy room, every species (the
-    /// trophies).
-    pub fn keeps_char(&self, ai: i32) -> bool {
+    /// Whether character `i` is loaded: the hunter, the ambient animals
+    /// unless they are turned off, the targets and picked roamers; in the
+    /// trophy room, every species (the trophies).
+    pub fn keeps_char(&self, i: usize, role: Role) -> bool {
         self.trophy()
-            || ai == 0
-            || ai < 10 && self.max_ambient > 0
-            || (0..32).contains(&ai) && self.targets & (1 << ai) != 0
+            || match role {
+                Role::Hunter => true,
+                Role::Ambient => self.max_ambient > 0,
+                Role::Slot(k) => k < 118 && self.targets & (1 << (k + 10)) != 0,
+                Role::Roamer => self.roamers.contains(&i),
+            }
     }
 
     pub fn carried(&self) -> Vec<usize> {
@@ -153,6 +175,8 @@ pub struct Game {
     pub area: Area,
     pub hunt: Hunt,
     pub cars: Vec<Option<Car>>,
+    /// Per character, the name its model is cooked under (`C2RS/M/`).
+    pub keys: Vec<String>,
     pub weapon_cars: Vec<Option<Car>>,
     pub events: Vec<GameEvent>,
     acc_ms: f32,
@@ -234,6 +258,7 @@ fn new_hunt(
     area: &Area,
     setup: &Setup,
     species: &[c2_core::dino::Species],
+    tables: Option<&c2_formats::mee::Tables>,
     weapon_info: &[(c2_core::game::WeaponInfo, [i32; 4])],
     ship_ms: i32,
     seed: u32,
@@ -260,6 +285,8 @@ fn new_hunt(
     };
     if trophy {
         herd.place_trophies(area, &room, &mut rng);
+    } else if let Some(t) = tables {
+        herd.place_mee(area, (player.x, player.z), &mut rng, t, o.dens);
     } else {
         herd.place(
             area,
@@ -268,7 +295,7 @@ fn new_hunt(
             PlaceOptions {
                 density: o.dens,
                 opt_agres: o.agres,
-                targets: u128::from(setup.targets),
+                targets: setup.targets,
                 max_ambient: Some(setup.max_ambient),
             },
         );
@@ -281,11 +308,7 @@ fn new_hunt(
     let (infos, anims): (Vec<_>, Vec<_>) = weapon_info.iter().cloned().unzip();
     let weapons = Weapons::new(infos, anims, u128::from(carried), setup.double_ammo);
     let opts = HuntOptions {
-        targets: if setup.observer {
-            0
-        } else {
-            u128::from(setup.targets)
-        },
+        targets: if setup.observer { 0 } else { setup.targets },
         radar: o.radar != 0,
         opt_agres: o.agres,
         opt_sens: o.sens,
@@ -325,19 +348,18 @@ impl Game {
         progress(&format!("area {}", setup.area));
         let area = load::area_with(vfs, &setup.area, setup.time, true)?;
         progress("rules (_RES.TXT)");
-        let res = load::res(vfs)?;
+        let rules = Rules::load(vfs)?.hunt(&setup.area, setup.time, setup.targets);
         progress("animals");
-        let ais: Vec<i32> = res
-            .characters
-            .iter()
-            .map(|c| c2_core::dino::DinoInfo::from_def(c).ai)
-            .collect();
-        let (species, cars) = load::species_with(vfs, &res, &|i| {
-            ais.get(i).is_some_and(|&ai| setup.keeps_char(ai))
+        let (mut species, cars) = load::species_with(vfs, &rules.res, &|i| {
+            rules.roles.get(i).is_some_and(|&r| setup.keeps_char(i, r))
         });
+        if let Some(t) = &rules.tables {
+            c2_core::mee::tune(&mut species, t);
+        }
+        let res = &rules.res;
         progress("weapons");
         let carried = setup.carried();
-        let weapons = load::weapons_with(vfs, &res, &|i| carried.contains(&i));
+        let weapons = load::weapons_with(vfs, res, &|i| carried.contains(&i));
         let mut weapon_cars = Vec::new();
         let mut weapon_info = Vec::new();
         for w in weapons {
@@ -346,7 +368,17 @@ impl Game {
         }
         let ship_ms = load::ship_anim_ms(vfs);
         let seed = next_seed(seed);
-        let hunt = new_hunt(&area, &setup, &species, &weapon_info, ship_ms, seed, room);
+        let hunt = new_hunt(
+            &area,
+            &setup,
+            &species,
+            rules.tables.as_ref(),
+            &weapon_info,
+            ship_ms,
+            seed,
+            room,
+        );
+        let keys = rules.keys;
         let resupplies = setup.resupplies;
         Ok(Self {
             prev_cam: hunt.camera().0,
@@ -356,6 +388,7 @@ impl Game {
             area,
             hunt,
             cars,
+            keys,
             weapon_cars,
             events: Vec::new(),
             acc_ms: 0.0,

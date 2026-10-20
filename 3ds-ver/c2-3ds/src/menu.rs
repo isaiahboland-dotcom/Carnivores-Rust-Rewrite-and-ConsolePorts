@@ -17,13 +17,13 @@
 
 use c2_core::area::TimeOfDay;
 use c2_core::dino::DinoInfo;
-use c2_core::game::WeaponInfo;
 use c2_formats::sav::Save;
 use c2_vfs::Vfs;
 
 use crate::draw2d::{in_hex, inside, Canvas, Rgba, WHITE};
 use crate::gpu::{Gpu, Texture, BOTTOM_W, TOP_W};
 use crate::hunt::{PackInfo, Setup};
+use crate::rules::{Role, Rules};
 use crate::settings::Settings;
 use crate::ui::load;
 
@@ -89,6 +89,27 @@ struct Item {
     pic: Option<Texture>,
 }
 
+/// An animal in the menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pick {
+    /// A menu slot: a hunt target (call id 10 + slot).
+    Slot(usize),
+    /// An add-on that roams (`_RES.TXT` character index): loaded so it
+    /// spawns, but not a target.
+    Roamer(usize),
+}
+
+/// What memory the picks need and what the console has, KiB: linear, then
+/// main memory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Memory {
+    linear: (usize, usize),
+    heap: (usize, usize),
+}
+
+/// Area, time, animals, weapons, ambient on.
+type MemKey = (usize, usize, u32, u32, bool);
+
 /// One cell of a hexagon grid: centre and radius.
 type Cell = (f32, f32, f32);
 
@@ -126,11 +147,11 @@ pub struct Menu {
     step: Step,
     /// Areas (`AREA1`..), then the trophy room if packed.
     areas: Vec<(String, Item)>,
-    /// Huntable species: (AI, `_RES.TXT` character index, item).
-    dinos: Vec<(i32, usize, Item)>,
-    /// Characters loaded whatever is picked: (index, AI) of the hunter and
-    /// the ambient animals.
-    always: Vec<(usize, i32)>,
+    /// The animals offered (at most 32).
+    dinos: Vec<(Pick, Item)>,
+    rules: Rules,
+    /// The last memory figure and the picks it was for.
+    mem: std::cell::Cell<Option<(MemKey, Memory)>>,
     settings: Settings,
     weapons: Vec<Item>,
     equip: Vec<Item>,
@@ -162,9 +183,9 @@ fn title(vfs: &Vfs, file: &str, fallback: String) -> String {
 impl Menu {
     /// The menu, with the hunter's save (a new hunter gets `prices.start`).
     pub fn new(vfs: &Vfs, info: PackInfo) -> anyhow::Result<Self> {
-        let res = c2_core::load::res(vfs)?;
-        let prices = res.prices.clone().unwrap_or_default();
-        let save = crate::save::load(prices.start.unwrap_or(100));
+        let rules = Rules::load(vfs)?;
+        let menu = &rules.menu;
+        let save = crate::save::load(menu.start);
         let price = |v: &Vec<i32>, i: usize| v.get(i).copied().unwrap_or(0);
         let mut areas = Vec::new();
         for (i, name) in info.areas.iter().enumerate() {
@@ -175,48 +196,63 @@ impl Menu {
             let n = i + 1;
             let item = Item {
                 name: title(vfs, &format!("AREA{n}.TXT"), format!("Area {n}")),
-                price: price(&prices.area, i),
+                price: menu.areas.get(i).map_or(0, |a| a.price),
                 pic: load(vfs, &format!("C2RS/MENU/AREA{n}.TX")),
             };
             areas.push((name.clone(), item));
         }
-        let infos: Vec<DinoInfo> = res.characters.iter().map(DinoInfo::from_def).collect();
-        // Huntable: AI 10 on, in order (`DINOn.TGA`, `prices.dino`).
-        let mut dinos = Vec::new();
-        for (k, ai) in (10..32).enumerate() {
-            let Some(ci) = infos.iter().position(|d| d.ai == ai) else {
-                break;
-            };
-            dinos.push((
-                ai,
-                ci,
-                Item {
-                    name: infos[ci].name.clone(),
-                    price: price(&prices.dino, k),
+        // The menu's animals by slot (`DINOn.TGA`), then the ones that only
+        // roam (add-ons without a slot), by name.
+        let mut dinos: Vec<(Pick, Item)> = menu
+            .huntables
+            .iter()
+            .enumerate()
+            .map(|(k, d)| {
+                let item = Item {
+                    name: d.name.clone(),
+                    price: d.price,
                     pic: load(vfs, &format!("C2RS/MENU/DINO{}.TX", k + 1)),
-                },
-            ));
-        }
-        let always = (0..infos.len())
-            .filter(|&i| infos[i].ai < 10)
-            .map(|i| (i, infos[i].ai))
+                };
+                (Pick::Slot(k), item)
+            })
             .collect();
-        let weapons = res
+        let first = info.areas.first().cloned().unwrap_or_default();
+        let neutral = rules.hunt(&first, TimeOfDay::Day, u128::MAX);
+        for (i, role) in neutral.roles.iter().enumerate() {
+            let name = neutral
+                .res
+                .characters
+                .get(i)
+                .map(|d| DinoInfo::from_def(d).name)
+                .unwrap_or_default();
+            let cooked = info.costs.contains_key(&format!("m:{}", neutral.keys[i]));
+            if *role == Role::Roamer && cooked && !dinos.iter().any(|d| d.1.name == name) {
+                let item = Item {
+                    name,
+                    price: 0,
+                    pic: None,
+                };
+                dinos.push((Pick::Roamer(i), item));
+            }
+        }
+        dinos.truncate(32);
+        let weapons = menu
             .weapons
             .iter()
             .enumerate()
             .map(|(i, w)| Item {
-                name: WeaponInfo::from_def(w).name,
-                price: price(&prices.weapon, i),
+                name: w.name.clone(),
+                price: w.price,
                 pic: load(vfs, &format!("C2RS/MENU/WEAPON{}.TX", i + 1)),
             })
             .collect();
+        let prices = menu.accessory_prices.clone();
         let equip = EQUIPMENT
             .iter()
             .enumerate()
             .map(|(i, n)| Item {
                 name: n.to_string(),
-                price: price(&prices.accessory, i),
+                price: price(&prices, i),
                 pic: load(vfs, &format!("C2RS/MENU/EQUIP{}.TX", i + 1)),
             })
             .collect();
@@ -241,7 +277,8 @@ impl Menu {
             step: Step::Title,
             areas,
             dinos,
-            always,
+            rules,
+            mem: std::cell::Cell::new(None),
             settings: Settings::load(),
             weapons,
             equip,
@@ -286,7 +323,7 @@ impl Menu {
             .iter()
             .enumerate()
             .filter(|(i, _)| self.picked_dinos & (1 << i) != 0)
-            .map(|(_, d)| d.2.price)
+            .map(|(_, d)| d.1.price)
             .sum();
         self.save.score
             - area
@@ -296,26 +333,67 @@ impl Menu {
             - self.extra().map_or(0, |e| e.0)
     }
 
-    /// Linear memory the picks need, against what the console has (KiB).
-    fn memory(&self) -> (usize, usize) {
-        let i = &self.info;
-        let mut kb = i.cost("hunt") + self.areas.get(self.area).map_or(0, |a| i.cost(&a.0));
-        for &(c, ai) in &self.always {
-            if ai == 0 || self.settings.ambient {
-                kb += i.cost(&format!("char{c}"));
-            }
-        }
+    /// The hunt targets (bit 10 + slot) and roaming add-ons picked.
+    fn picks(&self) -> (u128, Vec<usize>) {
+        let mut targets = 0u128;
+        let mut roamers = Vec::new();
         for (k, d) in self.dinos.iter().enumerate() {
-            if self.picked_dinos & (1 << k) != 0 {
-                kb += i.cost(&format!("char{}", d.1));
+            if self.picked_dinos & (1 << k) == 0 {
+                continue;
+            }
+            match d.0 {
+                Pick::Slot(s) if s < 118 => targets |= 1 << (s + 10),
+                Pick::Slot(_) => {}
+                Pick::Roamer(i) => roamers.push(i),
             }
         }
-        for w in 0..self.weapons.len() {
-            if self.picked_weapons & (1 << w) != 0 {
-                kb += i.cost(&format!("wpn{w}"));
+        (targets, roamers)
+    }
+
+    /// Memory the picks need, against what the console has: the area with
+    /// the hunter and ambient animals, then each loaded model and weapon
+    /// (`c2-cook`'s figures; which model an animal uses can depend on the
+    /// area in Modder's Edition rules).
+    fn memory(&self) -> Memory {
+        let key = (
+            self.area,
+            self.time,
+            self.picked_dinos,
+            self.picked_weapons,
+            self.settings.ambient,
+        );
+        if let Some((k, m)) = self.mem.get() {
+            if k == key {
+                return m;
             }
         }
-        (kb, i.linear_kb)
+        let i = &self.info;
+        let setup = self.setup();
+        let area = self.areas.get(self.area).map_or("AREA1", |a| a.0.as_str());
+        let mut lin = i.cost("hunt") + i.cost(area);
+        let mut heap = i.heap(area);
+        let rules = self.rules.hunt(area, TIMES[self.time].0, setup.targets);
+        for (c, &role) in rules.roles.iter().enumerate() {
+            if !setup.keeps_char(c, role) {
+                continue;
+            }
+            let m = format!("m:{}", rules.keys[c]);
+            lin += i.cost(&m);
+            // The hunter and ambient animals are in the area's figure.
+            if matches!(role, Role::Slot(_) | Role::Roamer) {
+                heap += i.heap(&m);
+            }
+        }
+        for w in setup.carried() {
+            lin += i.cost(&format!("wpn{w}"));
+            heap += i.heap(&format!("wpn{w}"));
+        }
+        let m = Memory {
+            linear: (lin, i.linear_kb),
+            heap: (heap, i.heap_kb),
+        };
+        self.mem.set(Some((key, m)));
+        m
     }
 
     fn can_hunt(&self) -> Result<(), &'static str> {
@@ -328,8 +406,8 @@ impl Menu {
         if self.remaining() < 0 {
             return Err("Not enough points");
         }
-        let (need, have) = self.memory();
-        if need > have {
+        let m = self.memory();
+        if m.linear.0 > m.linear.1 || m.heap.0 > m.heap.1 {
             return Err("Too much for this console");
         }
         Ok(())
@@ -349,6 +427,7 @@ impl Menu {
             area: "TROPHY".into(),
             time: TimeOfDay::Day,
             targets: 0,
+            roamers: Vec::new(),
             weapons: 0,
             double_ammo: false,
             observer: false,
@@ -362,12 +441,7 @@ impl Menu {
     }
 
     fn setup(&self) -> Setup {
-        let targets = self
-            .dinos
-            .iter()
-            .enumerate()
-            .filter(|(k, _)| self.picked_dinos & (1 << k) != 0)
-            .fold(0u32, |m, (_, d)| m | 1 << d.0);
+        let (targets, roamers) = self.picks();
         Setup {
             area: self
                 .areas
@@ -375,6 +449,7 @@ impl Menu {
                 .map_or("AREA1".into(), |a| a.0.clone()),
             time: TIMES[self.time].0,
             targets: if self.observer { 0 } else { targets },
+            roamers: if self.observer { Vec::new() } else { roamers },
             weapons: if self.observer {
                 0
             } else {
@@ -406,7 +481,7 @@ impl Menu {
     /// Toggles bit `i` of `mask` unless that costs more than is left.
     fn toggle(&mut self, which: Step, i: usize, gear: bool) -> String {
         let (name, price) = match (which, gear) {
-            (Step::Animals, _) => (self.dinos[i].2.name.clone(), self.dinos[i].2.price),
+            (Step::Animals, _) => (self.dinos[i].1.name.clone(), self.dinos[i].1.price),
             (_, false) => (self.weapons[i].name.clone(), self.weapons[i].price),
             (_, true) => (self.equip[i].name.clone(), self.equip[i].price),
         };
@@ -452,8 +527,14 @@ impl Menu {
         ]
     }
 
+    /// Smaller hexagons when there are many animals (add-ons).
     fn dino_cells(&self) -> Vec<Cell> {
-        grid(self.dinos.len(), 5, 32.0, 2.0)
+        let n = self.dinos.len();
+        match n {
+            0..=15 => grid(n, 5, 32.0, 2.0),
+            16..=24 => grid(n, 7, 24.0, 2.0),
+            _ => grid(n, 8, 19.0, 2.0),
+        }
     }
 
     fn gear_cells(&self) -> Vec<Cell> {
@@ -744,8 +825,12 @@ impl Menu {
             Step::Animals => {
                 for (i, cell) in self.dino_cells().into_iter().enumerate() {
                     let on = self.picked_dinos & (1 << i) != 0;
-                    let afford = self.dinos[i].2.price <= left;
-                    Self::draw_hex_item(&mut c, gpu, cell, &self.dinos[i].2, on, afford);
+                    let (pick, item) = &self.dinos[i];
+                    // Roaming add-ons: a blue rim (blue on the radar too).
+                    if matches!(pick, Pick::Roamer(_)) && !on {
+                        c.hex(cell.0, cell.1, cell.2 + 2.0, [60, 120, 230, 255]);
+                    }
+                    Self::draw_hex_item(&mut c, gpu, cell, item, on, item.price <= left);
                 }
             }
             Step::Gear => {
@@ -1050,7 +1135,7 @@ impl Menu {
                 .iter()
                 .enumerate()
                 .filter(|(i, _)| self.picked_dinos & (1 << i) != 0)
-                .map(|(_, d)| (d.2.name.clone(), d.2.price))
+                .map(|(_, d)| (d.1.name.clone(), d.1.price))
                 .collect();
             list(&mut c, gpu, "Animals", dinos);
             list(
@@ -1071,13 +1156,20 @@ impl Menu {
         }
 
         // Will it fit?
-        let (need, have) = self.memory();
+        let m = self.memory();
+        let over = m.linear.0 > m.linear.1 || m.heap.0 > m.heap.1;
         let (msg, col) = match (self.step, self.can_hunt()) {
             (_, Ok(())) if self.step == Step::Gear || self.trophy() => (
-                format!("Ready. Memory {}/{} MiB", need / 1024, have / 1024),
+                format!(
+                    "Ready. Memory {}/{} + {}/{} MiB",
+                    m.heap.0 / 1024,
+                    m.heap.1 / 1024,
+                    m.linear.0 / 1024,
+                    m.linear.1 / 1024
+                ),
                 TEXT,
             ),
-            (Step::Gear, Err(e)) => (e.to_string(), if need > have { RED } else { DIM }),
+            (Step::Gear, Err(e)) => (e.to_string(), if over { RED } else { DIM }),
             (Step::Area, _) => ("Pick a place and the time of day".into(), DIM),
             (Step::Animals, _) => ("Pick the animals to hunt".into(), DIM),
             (Step::Gear | Step::Title | Step::Settings, _) => (String::new(), DIM),

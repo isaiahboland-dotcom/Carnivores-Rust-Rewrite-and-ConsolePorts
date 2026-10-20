@@ -21,6 +21,19 @@ pub const PACK_VERSION: u32 = 1;
 /// Bytes before the index.
 pub const PACK_HEADER_LEN: usize = 16;
 pub const TEX_MAGIC: &[u8; 4] = b"C2TX";
+
+/// The name a character model is cooked under (`C2RS/M/{key}.TX`, sounds
+/// `C2RS/SND/M/{key}/{k}.PCM`): its `_RES.TXT` file, upper case, folders
+/// flattened. By file rather than character index because the Modder's
+/// Edition can give one character another model per area.
+pub fn model_key(file: &str) -> String {
+    file.trim()
+        .to_ascii_uppercase()
+        .replace(['\\', '/'], "_")
+        .trim_end_matches(".CAR")
+        .to_string()
+}
+
 const TEX_HEADER_LEN: usize = 12;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

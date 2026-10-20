@@ -261,6 +261,17 @@ impl Herd {
             }
         }
         let mut tr = 0;
+        // Packs whose leader isn't loaded (the 3DS loads only the picked
+        // animals) can't spawn; leaving them out gives their share to the
+        // others. With everything loaded, as on PC, nothing changes.
+        let loaded = |ct: usize| {
+            self.species
+                .get(ct)
+                .is_some_and(|s| !s.ani_time.is_empty() && s.info.ai >= 0)
+        };
+        for l in &mut links {
+            l.retain(|&(p, _)| packs[p].members.first().is_some_and(|m| loaded(m.0)));
+        }
         for (sg, group) in t.spawn_groups.iter().enumerate() {
             let link = &links[sg];
             if link.is_empty() {

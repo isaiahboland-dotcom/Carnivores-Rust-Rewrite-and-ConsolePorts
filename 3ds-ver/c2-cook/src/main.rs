@@ -4,8 +4,9 @@
 //! pictures. The 3DS loads only what is picked for a hunt.
 //!
 //! ```text
-//! c2-cook --game ../source/c2-original [--mod DIR]... [--recipe R.toml --mods DIR]
-//!         [--areas 1,2] [--target n3ds|o3ds] [--force] --out c2rs.c2pk
+//! c2-cook --game ../source/c2-original [--overlay DIR]... [--mod DIR]...
+//!         [--recipe R.toml --mods DIR] [--areas 1,2] [--target n3ds|o3ds]
+//!         [--force] --out c2rs.c2pk
 //! ```
 
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -23,15 +24,24 @@ use c2_core::sound::SAMPLE_RATE;
 use c2_formats::cooked::{tile, write_pack, write_texture, TexFormat};
 use c2_vfs::{MemBackend, Vfs};
 
-const USAGE: &str = "usage:
-  c2-cook --game <GAME_DIR> [--mod MOD]... [--recipe RECIPE.toml --mods DIR]
-          [--areas N,N] [--target n3ds|o3ds] [--force] --out <PACK.c2pk>
+mod check;
 
+const USAGE: &str = "usage:
+  c2-cook --game <GAME_DIR> [--overlay DIR]... [--mod MOD]...
+          [--recipe RECIPE.toml --mods DIR] [--areas N,N] [--target n3ds|o3ds]
+          [--force] --out <PACK.c2pk>
+
+  c2-cook --check <PACK.c2pk>   loads a pack as the 3DS does and plays a short
+                                hunt for each animal (finds missing files)
+
+  --overlay  a game folder copied over GAME_DIR first (e.g. the Modder's
+             Edition, which most add-ons are made for); repeatable
   --areas    only these areas (default: all, plus the trophy room)
   --target   n3ds (New 3DS, default) or o3ds (Old 3DS / 2DS: smaller textures, shorter view)
   --force    write the pack even if it is over the target's memory budget
 
-Copy the pack to sdmc:/3ds/c2rs/ on the SD card.";
+Copy the pack to sdmc:/3ds/c2rs/ on the SD card. Several packs (say
+c2rs.c2pk and modded.c2pk) can sit side by side: the app asks which one.";
 
 /// What a target can hold.
 struct Profile {
@@ -50,6 +60,9 @@ struct Profile {
     linear_kb: usize,
     /// Sound sample rate (the originals are 22050 Hz).
     sound_rate: u32,
+    /// A character's animations at most this big (KiB); bigger ones keep
+    /// every other frame until they fit (add-ons can be huge).
+    anim_kb: usize,
 }
 
 const N3DS: Profile = Profile {
@@ -62,6 +75,7 @@ const N3DS: Profile = Profile {
     heap_kb: 96 * 1024,
     linear_kb: 22 * 1024,
     sound_rate: SAMPLE_RATE,
+    anim_kb: 6 * 1024,
 };
 
 const O3DS: Profile = Profile {
@@ -75,7 +89,35 @@ const O3DS: Profile = Profile {
     heap_kb: 34 * 1024,
     linear_kb: 22 * 1024,
     sound_rate: SAMPLE_RATE,
+    anim_kb: 2 * 1024,
 };
+
+/// Every other frame of each animation, timing kept (the engine blends
+/// between frames, so motion stays smooth, with less detail).
+fn halve_frames(car: &mut c2_formats::car::Car) {
+    let n = car.mesh.vertices.len() * 3;
+    for a in &mut car.animations {
+        if a.frames < 4 || n == 0 {
+            continue;
+        }
+        let keep = a.frames.div_ceil(2);
+        let mut data = Vec::with_capacity(keep * n);
+        for f in (0..a.frames).step_by(2) {
+            if let Some(fr) = a.data.get(f * n..(f + 1) * n) {
+                data.extend_from_slice(fr);
+            }
+        }
+        // Same length: frames / kps.
+        a.kps = ((i64::from(a.kps) * keep as i64 + a.frames as i64 / 2) / a.frames as i64).max(1)
+            as i32;
+        a.frames = data.len() / n;
+        a.data = data;
+    }
+}
+
+fn anim_bytes(car: &c2_formats::car::Car) -> usize {
+    car.animations.iter().map(|a| a.data.len() * 2).sum()
+}
 
 /// Counts heap use, so the cooker can measure what loading a pack takes.
 struct Counting;
@@ -119,9 +161,16 @@ unsafe impl GlobalAlloc for Counting {
 static ALLOC: Counting = Counting;
 
 /// Peak heap bytes for loading the pack the way `c2-3ds` does
-/// (`Game::load` in `c2-3ds/src/hunt.rs`; keep the two in step). Measured
+/// (`Game::load` in `c2-3ds/src/hunt.rs`; keep the two in step), with the
+/// models in `models` (by `model_key`) and weapons in `weapons`. Measured
 /// here on the PC, where pointers are wider, so it errs on the high side.
-fn load_peak(entries: &[(String, Vec<u8>)], area: &str) -> Result<usize> {
+fn load_peak(
+    entries: &[(String, Vec<u8>)],
+    area: &str,
+    dialect: bool,
+    models: &[String],
+    weapons: &[usize],
+) -> Result<usize> {
     let mut mem = MemBackend::new();
     for (name, data) in entries {
         mem.insert(name, data.clone());
@@ -130,14 +179,30 @@ fn load_peak(entries: &[(String, Vec<u8>)], area: &str) -> Result<usize> {
     vfs.push("pack", Box::new(mem));
     let base = IN_USE.load(Ordering::Relaxed);
     PEAK.store(base, Ordering::Relaxed);
-    let loaded = (
-        c2_core::load::area_with(&vfs, area, TimeOfDay::Day, true)?,
-        c2_core::load::res(&vfs).map(|res| {
-            let s = c2_core::load::species(&vfs, &res);
-            let w = c2_core::load::weapons(&vfs, &res);
-            (res, s, w)
-        })?,
-    );
+    let area_data = c2_core::load::area_with(&vfs, area, TimeOfDay::Day, true)?;
+    let res = if dialect {
+        let raw = c2_formats::res_txt::ResTxt::parse(&String::from_utf8_lossy(
+            &vfs.read("HUNTDAT/_RES.TXT")?,
+        ))?;
+        let h = c2_formats::mee::Hunt {
+            area: c2_formats::mee::area_of(area),
+            time: 1,
+            picked: u128::MAX,
+        };
+        c2_core::mee::read(&raw, &h).res
+    } else {
+        c2_core::load::res(&vfs)?
+    };
+    let keys: Vec<String> = res
+        .characters
+        .iter()
+        .map(|d| c2_formats::cooked::model_key(&DinoInfo::from_def(d).file))
+        .collect();
+    let s = c2_core::load::species_with(&vfs, &res, &|i| {
+        keys.get(i).is_some_and(|k| models.contains(k))
+    });
+    let w = c2_core::load::weapons_with(&vfs, &res, &|i| weapons.contains(&i));
+    let loaded = (area_data, res, s, w);
     let peak = PEAK.load(Ordering::Relaxed).saturating_sub(base);
     drop(loaded);
     Ok(peak)
@@ -146,6 +211,8 @@ fn load_peak(entries: &[(String, Vec<u8>)], area: &str) -> Result<usize> {
 #[derive(Default)]
 struct Args {
     game: Option<PathBuf>,
+    check: Option<PathBuf>,
+    overlays: Vec<PathBuf>,
     mods: Vec<PathBuf>,
     recipe: Option<PathBuf>,
     mods_dir: Option<PathBuf>,
@@ -166,6 +233,8 @@ fn parse_args() -> Result<Args> {
         match arg.as_str() {
             "--game" => a.game = Some(val()?.into()),
             "--mod" => a.mods.push(val()?.into()),
+            "--overlay" => a.overlays.push(val()?.into()),
+            "--check" => a.check = Some(val()?.into()),
             "--recipe" => a.recipe = Some(val()?.into()),
             "--mods" => a.mods_dir = Some(val()?.into()),
             "--areas" => a.areas = Some(val()?),
@@ -182,9 +251,13 @@ fn parse_args() -> Result<Args> {
     Ok(a)
 }
 
-/// The game as the engine would see it: vanilla, plus mods or a recipe.
+/// The game as the engine would see it: vanilla (with any overlays), plus
+/// mods or a recipe.
 fn merged(a: &Args, game: &Path) -> Result<Vfs> {
-    let game = &[game.to_path_buf()][..];
+    let bases: Vec<PathBuf> = std::iter::once(game.to_path_buf())
+        .chain(a.overlays.iter().cloned())
+        .collect();
+    let game = &bases[..];
     if let Some(r) = &a.recipe {
         let mods_dir = a.mods_dir.as_deref().context("--recipe needs --mods DIR")?;
         let recipe = c2_mods::recipe::Recipe::load(r)?;
@@ -343,6 +416,9 @@ struct Cooker {
     scope: String,
     /// Sounds go in as 16-bit mono at this rate.
     sound_rate: u32,
+    /// Main memory a loaded model takes, by scope, KiB (about its cooked
+    /// file).
+    heap: BTreeMap<String, usize>,
 }
 
 impl Cooker {
@@ -365,11 +441,29 @@ impl Cooker {
             c2_formats::car::parse(&vfs.read(path)?).with_context(|| format!("parsing {path}"))?;
         let rgba = PreparedModel::from_mesh(&car.mesh).texture_rgba;
         car.mesh.texture = Vec::new();
+        let before = anim_bytes(&car);
+        while anim_bytes(&car) > self.profile.anim_kb * 1024 {
+            let was = anim_bytes(&car);
+            halve_frames(&mut car);
+            if anim_bytes(&car) >= was {
+                break;
+            }
+        }
+        if anim_bytes(&car) < before {
+            println!(
+                "  {path}: animations {:.1} -> {:.1} MiB (fewer frames)",
+                before as f32 / 1048576.0,
+                anim_bytes(&car) as f32 / 1048576.0
+            );
+        }
         for (k, s) in car.sounds.iter_mut().enumerate() {
             let pcm = std::mem::take(&mut s.pcm);
             self.sound(&format!("{snd}{k}"), &pcm, SAMPLE_RATE, 1, 16);
         }
-        self.add(path, c2_formats::car::write(&car));
+        let bytes = c2_formats::car::write(&car);
+        // Parsed, a model is a little bigger than its file.
+        *self.heap.entry(self.scope.clone()).or_default() += bytes.len() * 5 / 4 / 1024;
+        self.add(path, bytes);
         Ok(rgba)
     }
 
@@ -516,6 +610,103 @@ fn cook_area(c: &mut Cooker, vfs: &Vfs, name: &str) -> Result<()> {
     Ok(())
 }
 
+/// The pack's rules, read the way the 3DS reads them.
+struct Rules {
+    /// Modder's Edition `_RES.TXT` (resolved per hunt on the 3DS).
+    dialect: bool,
+    /// Characters and weapons for a neutral hunt (area 1, day, every slot
+    /// picked); in the dialect the 3DS resolves each hunt itself.
+    res: c2_formats::res_txt::ResData,
+    /// Every model a character can use, by `model_key`: (file, loaded
+    /// for every hunt). The others load only when picked.
+    models: BTreeMap<String, (String, bool)>,
+    /// The menu: `_MENU.TXT` if there is one, else `_RES.TXT`.
+    menu: c2_formats::menu_txt::MenuData,
+}
+
+/// A dialect character with a menu slot (`callNo`): a hunt target. Without
+/// one, AI under 10 (the hunter, small ambient animals, flyers) is loaded
+/// for every hunt; the rest (add-ons that roam, brachiosaurs, fish) only
+/// when picked. `c2-3ds` (`hunt::Role`) decides the same way.
+fn has_slot(b: &c2_formats::res_txt::Block) -> bool {
+    b.get(&["callNo"])
+        .is_some_and(|v| c2_formats::res_txt::c_atoi(v) >= 0)
+}
+
+/// The `file` of every block under `b`, quotes removed.
+fn files_in(b: &c2_formats::res_txt::Block, out: &mut Vec<String>) {
+    for e in &b.entries {
+        if e.key.eq_ignore_ascii_case("file") {
+            let v = e.value.trim().trim_matches('\'').trim().to_string();
+            if !v.is_empty() {
+                out.push(v);
+            }
+        }
+    }
+    for s in &b.subs {
+        files_in(&s.block, out);
+    }
+}
+
+fn rules(vfs: &Vfs) -> Result<Rules> {
+    use c2_formats::res_txt::ResTxt;
+    let text = String::from_utf8_lossy(&vfs.read("HUNTDAT/_RES.TXT")?).into_owned();
+    let raw = ResTxt::parse(&text)?;
+    let dialect = c2_formats::mee::is_dialect(&raw);
+    let (res, slots) = if dialect {
+        let h = c2_formats::mee::Hunt {
+            area: Some(1),
+            time: 1,
+            picked: u128::MAX,
+        };
+        let m = c2_core::mee::read(&raw, &h);
+        let slots: Vec<bool> = m
+            .tables
+            .characters
+            .iter()
+            .map(|c| has_slot(&c.block))
+            .collect();
+        (m.res, slots)
+    } else {
+        (c2_core::load::res(vfs)?, Vec::new())
+    };
+    let mut models = BTreeMap::new();
+    for (i, def) in res.characters.iter().enumerate() {
+        let info = DinoInfo::from_def(def);
+        let key = c2_formats::cooked::model_key(&info.file);
+        let always = if dialect {
+            !slots.get(i).copied().unwrap_or(false) && (0..10).contains(&info.ai)
+        } else {
+            info.ai < 10
+        };
+        let e = models.entry(key).or_insert((info.file.clone(), always));
+        e.1 &= always;
+    }
+    if dialect {
+        // Models only an area or time override uses.
+        let mut all = Vec::new();
+        for b in raw.section("characters").map_or(&[][..], |s| &s.blocks) {
+            files_in(b, &mut all);
+        }
+        for f in all {
+            models
+                .entry(c2_formats::cooked::model_key(&f))
+                .or_insert((f, false));
+        }
+    }
+    let menu_src = match vfs.read("HUNTDAT/_MENU.TXT") {
+        Ok(d) => ResTxt::parse(&String::from_utf8_lossy(&d))?,
+        Err(_) => raw,
+    };
+    let menu = c2_formats::menu_txt::MenuData::from_res(&menu_src);
+    Ok(Rules {
+        dialect,
+        res,
+        models,
+        menu,
+    })
+}
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -523,6 +714,9 @@ fn main() -> Result<()> {
         )
         .init();
     let a = parse_args()?;
+    if let Some(p) = &a.check {
+        return check::check(p);
+    }
     let game = a.game.clone().context(USAGE)?;
     let out = a.out.clone().context(USAGE)?;
     let profile = match a.target.as_deref().unwrap_or("n3ds") {
@@ -531,13 +725,15 @@ fn main() -> Result<()> {
         t => bail!("unknown target {t:?} (n3ds or o3ds)"),
     };
     let vfs = merged(&a, &game)?;
-    let res = c2_core::load::res(&vfs)?;
+    let rules = rules(&vfs)?;
+    let res = &rules.res;
     let mut c = Cooker {
         profile,
         entries: Vec::new(),
         linear: BTreeMap::new(),
         scope: "hunt".into(),
         sound_rate: profile.sound_rate,
+        heap: BTreeMap::new(),
     };
     let infos: Vec<DinoInfo> = res.characters.iter().map(DinoInfo::from_def).collect();
     let winfos: Vec<WeaponInfo> = res.weapons.iter().map(WeaponInfo::from_def).collect();
@@ -547,7 +743,7 @@ fn main() -> Result<()> {
         .areas
         .as_deref()
         .map(|l| l.split(',').filter_map(|v| v.trim().parse().ok()).collect());
-    let mut areas: Vec<String> = (1..=9)
+    let mut areas: Vec<String> = (1..=99)
         .filter(|n| wanted.as_ref().is_none_or(|w| w.contains(n)))
         .map(|n| format!("AREA{n}"))
         .filter(|n| vfs.resolve(&format!("HUNTDAT/AREAS/{n}.MAP")).is_some())
@@ -561,6 +757,9 @@ fn main() -> Result<()> {
 
     // Everything a hunt can use, whatever is picked.
     c.copy(&vfs, "HUNTDAT/_RES.TXT")?;
+    if vfs.resolve("HUNTDAT/_MENU.TXT").is_some() {
+        c.copy(&vfs, "HUNTDAT/_MENU.TXT")?;
+    }
     for (file, tx) in [("SHIP2A.CAR", "SHIP"), ("WCIRCLE2.CAR", "RING")] {
         let path = format!("HUNTDAT/{file}");
         if vfs.resolve(&path).is_some() {
@@ -580,32 +779,35 @@ fn main() -> Result<()> {
             );
         }
     }
-    for (i, info) in infos.iter().enumerate() {
-        let path = format!("HUNTDAT/{}", info.file);
+    // Character models by file (`model_key`): texture `C2RS/M/{key}.TX`,
+    // sounds `C2RS/SND/M/{key}/{k}.PCM`.
+    let mut cooked_models = Vec::new();
+    for (key, (file, always)) in &rules.models {
+        let path = format!("HUNTDAT/{file}");
         if vfs.resolve(&path).is_none() {
             continue;
         }
-        c.scope = format!("char{i}");
-        let rgba = c.car(&vfs, &path, &format!("C{i}_"))?;
-        c.model_texture(format!("C2RS/CHAR{i}.TX"), &rgba);
-        // Its call (MENU/PICS/CALLn.TGA, SOUNDFX/CALLS/CALLn_*.WAV,
-        // n = AI - 9).
-        let ai = info.ai;
-        if ai < 10 {
-            continue;
-        }
+        c.scope = format!("m:{key}");
+        let rgba = c.car(&vfs, &path, &format!("M/{key}/"))?;
+        c.model_texture(format!("C2RS/M/{key}.TX"), &rgba);
+        cooked_models.push((key.clone(), *always));
+    }
+    // Calls by menu slot n (call id n + 9; in the original the slot is the
+    // AI - 10): MENU/PICS/CALLn.TGA, SOUNDFX/CALLS/CALLn_*.WAV.
+    for n in 1..=rules.menu.huntables.len().max(1) {
+        let id = n + 9;
         for (v, l) in ["A", "B", "C"].iter().enumerate() {
-            let f = format!("HUNTDAT/SOUNDFX/CALLS/CALL{}_{l}.WAV", ai - 9);
-            c.wav(&vfs, &f, &format!("K{ai}_{v}"));
+            let f = format!("HUNTDAT/SOUNDFX/CALLS/CALL{n}_{l}.WAV");
+            c.wav(&vfs, &f, &format!("K{id}_{v}"));
         }
         if let Some(p) = vfs
-            .read(&format!("HUNTDAT/MENU/PICS/CALL{}.TGA", ai - 9))
+            .read(&format!("HUNTDAT/MENU/PICS/CALL{n}.TGA"))
             .ok()
             .and_then(|d| c2_formats::tga::parse(&d).ok())
         {
             let px = image_to_rgba8(&p.pixels, false);
             let px = fit(&px, p.width, p.height, 64, 52, 64, 64);
-            c.picture(&format!("C2RS/CALL{ai}.TX"), &px, 64, 64);
+            c.picture(&format!("C2RS/CALL{id}.TX"), &px, 64, 64);
         }
     }
     for (i, w) in winfos.iter().enumerate() {
@@ -644,7 +846,6 @@ fn main() -> Result<()> {
         c.wav(&vfs, &f, &format!("H{}", n - 1));
     }
     c.picture("C2RS/FONT.TX", &font(), 128, 64);
-    let huntable: Vec<i32> = infos.iter().map(|i| i.ai).filter(|&ai| ai >= 10).collect();
     // Framebuffers, depth buffer, command buffer; terrain chunks around the
     // hunter (6 corners per cell, 24 bytes each).
     c.count("screens", 3 << 20);
@@ -662,7 +863,7 @@ fn main() -> Result<()> {
             256,
         );
     }
-    for n in 1..=huntable.len() {
+    for n in 1..=rules.menu.huntables.len() {
         c.menu_picture(
             &vfs,
             &format!("DINO{n}.TGA"),
@@ -711,62 +912,89 @@ fn main() -> Result<()> {
     for name in &areas {
         cook_area(&mut c, &vfs, name)?;
     }
-    // Linear memory per piece, for the menu to check a hunt fits.
-    let mut info = format!(
-        "pack = 3\ntarget = {}\nareas = {}\nview = {}\nobject_view = {}\nsound_rate = {}\n\
-         linear_kb = {}\n",
-        profile.name,
-        areas.join(","),
-        profile.view,
-        profile.object_view,
-        profile.sound_rate,
-        profile.linear_kb,
-    );
-    for (scope, kinds) in &c.linear {
-        if scope != "menu" {
-            info += &format!("cost.{scope} = {}\n", kinds.values().sum::<usize>());
-        }
-    }
-    c.entries.push(("C2RS/INFO.TXT".into(), info.into_bytes()));
-
-    // Memory: the loading peak (each area, every animal and weapon); linear
-    // memory for each area with the hunter, the ambient animals, the two
-    // costliest huntable ones and weapons. The menu checks real picks.
+    // Memory. For each area, the base: the area, the hunter and the
+    // ambient animals (measured loading peak; linear memory). Then each
+    // pick's share, which the 3DS menu adds up for the real picks; here the
+    // three costliest huntable animals and weapons are shown (the menu
+    // takes three of each).
+    const PICKS: usize = 3;
     let mib = |kb: usize| kb as f32 / 1024.0;
     let sum = |s: &str| c.linear.get(s).map_or(0, |m| m.values().sum::<usize>());
-    let ambient: usize = (0..infos.len())
-        .filter(|&i| infos[i].ai < 10)
-        .map(|i| sum(&format!("char{i}")))
-        .sum();
-    let top2 = |mut v: Vec<usize>| {
-        v.sort_unstable_by(|a, b| b.cmp(a));
-        v.iter().take(2).sum::<usize>()
-    };
-    let dinos2 = top2(
-        (0..infos.len())
-            .filter(|&i| infos[i].ai >= 10)
-            .map(|i| sum(&format!("char{i}")))
-            .collect(),
-    );
-    let weapons2 = top2((0..winfos.len()).map(|i| sum(&format!("wpn{i}"))).collect());
+    let heap_of = |s: &str| c.heap.get(s).copied().unwrap_or(0);
+    let model_cost = |k: &str| sum(&format!("m:{k}"));
+    let always: Vec<String> = cooked_models
+        .iter()
+        .filter(|m| m.1)
+        .map(|m| m.0.clone())
+        .collect();
+    let mut hunted: Vec<String> = cooked_models
+        .iter()
+        .filter(|m| !m.1)
+        .map(|m| m.0.clone())
+        .collect();
+    hunted.sort_by_key(|k| std::cmp::Reverse(model_cost(k) + heap_of(&format!("m:{k}"))));
+    hunted.truncate(PICKS);
+    let mut guns: Vec<usize> = (0..winfos.len()).collect();
+    guns.sort_by_key(|&i| std::cmp::Reverse(sum(&format!("wpn{i}"))));
+    guns.truncate(PICKS);
+    let ambient: usize = always.iter().map(|k| model_cost(k)).sum();
+    if std::env::var_os("C2COOK_DEBUG").is_some() {
+        for (k, h) in &cooked_models {
+            let kinds = c.linear.get(&format!("m:{k}"));
+            eprintln!(
+                "  {k:<28} always {h:<5} heap {:>6} KiB  linear {:?}",
+                heap_of(&format!("m:{k}")),
+                kinds
+            );
+        }
+        for (s, k) in &c.linear {
+            if !s.starts_with("m:") {
+                eprintln!("  {s:<28} linear {k:?}");
+            }
+        }
+    }
+    let picks_linear: usize = hunted.iter().map(|k| model_cost(k)).sum::<usize>()
+        + guns.iter().map(|&i| sum(&format!("wpn{i}"))).sum::<usize>();
+    let picks_heap: usize = hunted
+        .iter()
+        .map(|k| heap_of(&format!("m:{k}")))
+        .sum::<usize>()
+        + guns
+            .iter()
+            .map(|&i| heap_of(&format!("wpn{i}")))
+            .sum::<usize>();
     println!(
-        "{} pack: {} ({} animals, {} weapons)",
+        "{} pack{}: {} ({} animals, {} models, {} weapons)",
         profile.name,
+        if rules.dialect {
+            " (Modder's Edition)"
+        } else {
+            ""
+        },
         areas.join(", "),
         infos.len(),
+        cooked_models.len(),
         winfos.len()
     );
-    println!("  3DS memory (linear: 2 animals, 2 weapons; the menu checks real picks):");
+    println!(
+        "  3DS memory: base (area, hunter, ambient animals) + the 3 costliest animals and weapons"
+    );
     let mut over = false;
+    let mut worst = false;
+    let mut base_heap = BTreeMap::new();
     for name in &areas {
-        let heap = load_peak(&c.entries, name)? / 1024;
-        let linear = sum("hunt") + sum(name) + ambient + dinos2 + weapons2;
+        let base = load_peak(&c.entries, name, rules.dialect, &always, &[])? / 1024;
+        let lin = sum("hunt") + sum(name) + ambient;
+        base_heap.insert(name.clone(), base);
         println!(
-            "    {name:<8} loading peak {:>5.1} MiB, linear {:>5.1} MiB",
-            mib(heap),
-            mib(linear)
+            "    {name:<8} heap {:>5.1} + {:>4.1} MiB, linear {:>5.1} + {:>4.1} MiB",
+            mib(base),
+            mib(picks_heap),
+            mib(lin),
+            mib(picks_linear)
         );
-        over |= heap > profile.heap_kb || linear > profile.linear_kb;
+        over |= base > profile.heap_kb || lin > profile.linear_kb;
+        worst |= base + picks_heap > profile.heap_kb || lin + picks_linear > profile.linear_kb;
     }
     println!(
         "    budget: heap {:.0} MiB, linear {:.0} MiB; menu pictures {:.1} MiB (menu only)",
@@ -774,12 +1002,43 @@ fn main() -> Result<()> {
         mib(profile.linear_kb),
         mib(sum("menu"))
     );
+    if worst && !over {
+        println!(
+            "  The costliest picks don't fit together; the 3DS menu says when picks are too much."
+        );
+    }
     if over && !a.force {
         bail!(
             "over the {} budget; use --target o3ds for smaller textures, or --force",
             profile.name
         );
     }
+    // What each piece costs, for the 3DS menu to check a hunt fits:
+    // linear memory (`cost.`) and main memory (`heap.`), KiB.
+    let mut info = format!(
+        "pack = 4\ntarget = {}\ndialect = {}\nareas = {}\nview = {}\nobject_view = {}\n\
+         sound_rate = {}\nlinear_kb = {}\nheap_kb = {}\n",
+        profile.name,
+        u8::from(rules.dialect),
+        areas.join(","),
+        profile.view,
+        profile.object_view,
+        profile.sound_rate,
+        profile.linear_kb,
+        profile.heap_kb,
+    );
+    for (scope, kinds) in &c.linear {
+        if scope != "menu" {
+            info += &format!("cost.{scope} = {}\n", kinds.values().sum::<usize>());
+        }
+    }
+    for (scope, kb) in &c.heap {
+        info += &format!("heap.{scope} = {kb}\n");
+    }
+    for (area, kb) in &base_heap {
+        info += &format!("heap.{area} = {kb}\n");
+    }
+    c.entries.push(("C2RS/INFO.TXT".into(), info.into_bytes()));
     let bytes = write_pack(&c.entries);
     if let Some(dir) = out.parent().filter(|d| !d.as_os_str().is_empty()) {
         std::fs::create_dir_all(dir)?;

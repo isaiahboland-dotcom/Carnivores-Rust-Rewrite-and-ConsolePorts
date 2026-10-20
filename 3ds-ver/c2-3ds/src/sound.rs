@@ -189,13 +189,11 @@ impl Sound {
         let area_dir = format!("{}/", game.setup.area);
         let carried = game.setup.carried();
         let wanted = |n: &str| match parse_name(n) {
-            // The trophies stand still: no animal sounds in the room.
-            Some(Name::Id(SoundId::Species { ctype, .. })) => {
-                !game.setup.trophy() && game.cars.get(ctype).is_some_and(Option::is_some)
-            }
+            // Animal sounds are read by model, below.
+            Some(Name::Id(SoundId::Species { .. })) => false,
             Some(Name::Id(SoundId::Weapon { weapon, .. })) => carried.contains(&weapon),
             Some(Name::Id(SoundId::Call { ai, .. })) => {
-                (0..32).contains(&ai) && game.hunt.opts.targets & (1 << ai) != 0
+                (0..128).contains(&ai) && game.hunt.opts.targets & (1 << ai) != 0
             }
             Some(Name::Id(SoundId::Random(_)) | Name::Ambient(_)) => false,
             Some(_) => true,
@@ -239,6 +237,24 @@ impl Sound {
                 }
                 Some(Name::Underwater) => s.underwater = Some(clip),
                 None => {}
+            }
+        }
+        // The loaded animals' sounds, by model (`C2RS/SND/M/{key}/{k}`); the
+        // trophies stand still, so none in the room.
+        if !game.setup.trophy() {
+            for (ctype, car) in game.cars.iter().enumerate() {
+                let (Some(car), Some(key)) = (car, game.keys.get(ctype)) else {
+                    continue;
+                };
+                for sound in 0..car.sounds.len() {
+                    if let Some(clip) = vfs
+                        .read(&format!("C2RS/SND/M/{key}/{sound}.PCM"))
+                        .ok()
+                        .and_then(|d| Clip::new(&d))
+                    {
+                        s.clips.insert(SoundId::Species { ctype, sound }, clip);
+                    }
+                }
             }
         }
         Ok(s)

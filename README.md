@@ -174,6 +174,13 @@ c2-cook --game source/c2-original --recipe recipes/my-pack.toml --mods source/mo
 - Audio → format/sample-rate suitable for `ndsp`.
 - Target profiles: `o3ds` (aggressive), `n3ds` (default), each with texture size caps, max visible dinos, draw distance.
 - Emits a budget report: estimated RAM per area; fails loudly if over budget unless `--force`.
+- Add-ons for the 3DS, as on PC: the Modder's Edition as an overlay, then the add-ons, into a second pack
+  (the app asks which pack at boot; each pack keeps its own save):
+  ```
+  cargo run --release -p c2-cook -- --game ../source/c2-original --overlay "PATH/Carnivores 2" \
+      --mod ADDON --mod ADDON... --target o3ds --out modded.c2pk
+  ```
+- `c2-cook --check PACK.c2pk` loads a pack the way the 3DS does and plays a short hunt per animal on the PC.
 
 ### `c2-parity`
 Keeps the rewrite honest.
@@ -318,7 +325,11 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
 - Mod manager: drop add-on folders, zips or rars in; enable/disable and reorder them; see conflicts and the
   merge report; one Play button builds the combined game (cached until something changes) and starts it.
 - Saved profiles (sets of mods), export as a recipe.
-- ✅ Done when: a new user goes from the original game files plus a few add-ons to hunting without a terminal.
+- 3DS packs from the same screen: pick a target (Old / New 3DS), build the vanilla pack and an add-ons pack
+  (`c2-cook` underneath, its memory report shown in plain words), and copy them to the SD card, or to a
+  folder to copy by hand.
+- ✅ Done when: a new user goes from the original game files plus a few add-ons to hunting without a terminal,
+  on PC or on a 3DS.
 
 ---
 
@@ -405,7 +416,11 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
   - [x] one pack for the whole game; touch menu (area + time, animals, weapons + gear; owner's design) and saves
   - [ ] hunter name entry / several hunters, options screen
   - [ ] trophy room, scope cross-hairs, Old 3DS performance pass
-- [ ] M8 Modded 3DS
+- [ ] M8 Modded 3DS — **in progress**
+  - [x] pack picker at boot, a save per pack; `c2-cook --overlay`, models cooked by file, calls by menu slot
+  - [x] Modder's Edition rules resolved per hunt on the 3DS; roaming add-ons pickable; main and video memory checked per pick
+  - [x] `c2-cook --check`; big add-on animations thinned for Old 3DS
+  - [ ] tested on hardware
 - [ ] M10 Launcher and mod manager (planned)
 - [ ] M9 Modder's Edition Engine data — **in progress**
   - [x] nested `_RES.TXT` blocks; `_MENU.TXT` / `.c2map` menu lists; `overwrite` / `addition` resolution

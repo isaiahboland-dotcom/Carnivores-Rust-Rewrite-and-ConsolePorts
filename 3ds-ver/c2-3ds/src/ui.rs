@@ -58,7 +58,7 @@ pub struct Ui {
     map: Option<Texture>,
     /// Carried weapons: (index, picture).
     weapons: Vec<(usize, Option<Texture>)>,
-    /// Calls of the hunted animals: (AI, icon).
+    /// Calls of the hunted animals: (call id = 10 + menu slot, icon).
     calls: Vec<(i32, Option<Texture>)>,
     pub map_local: bool,
 }
@@ -78,7 +78,7 @@ impl Ui {
                 .map(|i| (i, load(vfs, &format!("C2RS/WPNPIC{i}.TX"))))
                 .collect()
         };
-        let calls = (10..32)
+        let calls = (10..128)
             .filter(|ai| game.hunt.opts.targets & (1 << ai) != 0)
             .map(|ai| (ai, load(vfs, &format!("C2RS/CALL{ai}.TX"))))
             .collect();

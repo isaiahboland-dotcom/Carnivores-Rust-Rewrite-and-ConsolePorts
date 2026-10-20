@@ -2,6 +2,47 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-19 — M8: add-ons on the 3DS (a second pack)
+Owner's plan: the 3DS gets the vanilla pack plus one pack of vanilla and
+add-ons, as the PC plays them (over the Modder's Edition).
+- **Packs**: the app lists every `.c2pk` in `sdmc:/3ds/c2rs/` and asks
+  which one when there are several. `c2rs.c2pk` keeps `trophy00.sav`;
+  another pack keeps `trophy00-<name>.sav`, since its trophies are other
+  animals. Pack layout 4 (cook both again).
+- **Cooking**: `c2-cook --overlay DIR` (as `c2-pc play --overlay`). Models
+  are cooked by file (`C2RS/M/<FILE>.TX`, sounds `C2RS/SND/M/<FILE>/k`),
+  not by character number, because the Modder's Edition can give a
+  character another model per area. Calls and their icons go by menu slot
+  (`CALLn`, call id n + 9; in the original the slot is AI - 10, so vanilla
+  is unchanged). `_MENU.TXT` is packed.
+- **Per hunt on the 3DS** (`c2-3ds/src/rules.rs`): the rules are resolved
+  for the area, time and picks as on PC (`c2_core::mee::read`, `tune`,
+  `place_mee`). Each character has a role: the hunter; ambient animals
+  (AI under 10), loaded unless turned off; menu animals (with a `callNo`),
+  loaded when picked; and the rest ("roamers": add-ons with no menu slot,
+  brachiosaurs, fish), loaded only when picked. Roamers are listed after the
+  menu animals with a blue rim, cost nothing, count toward the three
+  animals, and spawn where their tables put them but aren't targets. Not
+  picked, nothing of theirs loads and they don't spawn: memory.
+- **Spawning with animals missing**: dialect spawn groups now skip packs
+  whose leader has no model, so their share goes to the loaded ones (before,
+  those rolls were lost, and a picked roamer sharing a group with unloaded
+  animals rarely came). Everything loaded, as on PC, nothing changes;
+  data with broken models (placeholder `blank.car`) now spawns its other
+  animals in their place.
+- **Memory**: `c2-cook` records each model's and weapon's main memory
+  (`heap.*`, about its cooked file) besides video memory (`cost.*`), and
+  each area's loading peak with the hunter and ambient animals. The 3DS menu
+  adds up the real picks against both budgets. The cooker fails only if the
+  base hunt can't fit, and says when the three costliest picks wouldn't.
+- **Thinned animations**: on Old 3DS a character's animations are kept
+  under 2 MiB (6 MiB New 3DS) by dropping every other frame, length kept;
+  the engine blends between frames. Several add-ons needed it (one was
+  12 MiB of animation).
+- `c2-cook --check PACK` loads a pack with the 3DS's own `rules.rs` and plays
+  30 s with each animal in each area, reporting missing files and how many
+  spawned.
+
 ## 2026-10-19 — 3DS: at most 3 animals and 3 weapons; no Double Ammo
 Owner's call, for Old 3DS memory: the 3DS hunt menu takes at most three
 animals and three weapons (`MAX_PICKS`); a fourth tap says so. The

@@ -10,6 +10,7 @@ mod draw2d;
 mod gpu;
 mod hunt;
 mod menu;
+mod rules;
 mod save;
 mod settings;
 mod shot;
@@ -80,6 +81,47 @@ fn find_packs() -> Vec<PathBuf> {
         .unwrap_or_default();
     v.sort();
     v
+}
+
+/// With several packs (say `c2rs.c2pk` and `modded.c2pk`), asks which one
+/// to play: D-Pad and A on the bottom screen's text console.
+fn choose_pack(packs: &[PathBuf], apt: &Apt, hid: &mut Hid, gfx: &Gfx) -> Option<PathBuf> {
+    if packs.len() < 2 {
+        return packs.first().cloned();
+    }
+    let name = |p: &PathBuf| {
+        p.file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    let mut at = 0usize;
+    let mut drawn = None;
+    while apt.main_loop() {
+        if drawn != Some(at) {
+            // Clear and home (the console understands ANSI codes).
+            print!("\x1b[2J\x1b[1;1H");
+            println!("c2rs for 3DS\n\nWhich game?\n");
+            for (i, p) in packs.iter().enumerate() {
+                let mark = if i == at { '>' } else { ' ' };
+                println!(" {mark} {}", name(p));
+            }
+            println!("\nD-Pad to choose, A to play, START to quit.");
+            drawn = Some(at);
+        }
+        hid.scan_input();
+        let down = hid.keys_down();
+        if down.contains(KeyPad::DPAD_UP) {
+            at = (at + packs.len() - 1) % packs.len();
+        } else if down.contains(KeyPad::DPAD_DOWN) {
+            at = (at + 1) % packs.len();
+        } else if down.contains(KeyPad::A) {
+            return packs.get(at).cloned();
+        } else if down.contains(KeyPad::START) {
+            return None;
+        }
+        gfx.wait_for_vblank();
+    }
+    None
 }
 
 fn wait_for_start(apt: &Apt, hid: &mut Hid, gfx: &Gfx) {
@@ -399,6 +441,7 @@ fn hunt(
         &game.area,
         game.draw.clone(),
         &game.cars,
+        &game.keys,
         &game.weapon_cars,
     );
     let mut ui = Ui::new(vfs, &game);
@@ -624,7 +667,7 @@ fn main() {
     run_fast();
     println!("c2rs for 3DS (test build)\n");
     let packs = find_packs();
-    let Some(pack) = packs.first() else {
+    if packs.is_empty() {
         println!("No pack found in {DIR}/.");
         println!("\nOn your PC, from 3ds-ver/:");
         println!("  cargo run --release -p c2-cook --");
@@ -633,9 +676,13 @@ fn main() {
         println!("then copy c2rs.c2pk to {DIR}/");
         wait_for_start(&apt, &mut hid, &gfx);
         return;
+    }
+    let Some(pack) = choose_pack(&packs, &apt, &mut hid, &gfx) else {
+        return;
     };
+    save::use_pack(&pack);
     println!("pack: {}", pack.display());
-    if let Err(e) = run(pack, &apt, &mut hid) {
+    if let Err(e) = run(&pack, &apt, &mut hid) {
         console.select();
         println!("\nerror: {e:#}");
         wait_for_start(&apt, &mut hid, &gfx);
