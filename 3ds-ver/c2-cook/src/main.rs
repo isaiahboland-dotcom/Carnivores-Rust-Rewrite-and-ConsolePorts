@@ -184,6 +184,7 @@ fn parse_args() -> Result<Args> {
 
 /// The game as the engine would see it: vanilla, plus mods or a recipe.
 fn merged(a: &Args, game: &Path) -> Result<Vfs> {
+    let game = &[game.to_path_buf()][..];
     if let Some(r) = &a.recipe {
         let mods_dir = a.mods_dir.as_deref().context("--recipe needs --mods DIR")?;
         let recipe = c2_mods::recipe::Recipe::load(r)?;
