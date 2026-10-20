@@ -94,7 +94,7 @@ hunt follow the player's bindings (Options > Controls).
 Add-on mods: append `--mod path/to/mod` (repeatable); see `docs/MODDING.md`.
 
 Hunt mode directly (debugging): `cargo run --release -p c2-pc -- hunt ../source/c2-original/HUNTDAT/AREAS/AREA1.MAP` —
-click to capture the mouse, `WASD` move, mouse look, `LMB` fire, `E` show/hide weapon, `1`-`6` choose weapon,
+click to capture the mouse, `WASD` move, mouse look, `LMB` fire, `E` show/hide weapon, `1`-`6` choose weapon, `Q` weapon-pick screen (lists every carried weapon),
 `B` binoculars (`+`/`-` power), `Tab` map, `Alt` call (`C` switch call), `Shift` toggles run, `X` crouch, `Space` jump/swim, arrows turn/look, `Pause`/`P` pause, `Esc` exit prompt (`Y` leave and save, `R` restart).
 Without the menu, pick hunt targets with `--target 18` (AI numbers, comma-separated, or `all`), the hunter with `--player N`;
 `hunt .../TROPHY.MAP` opens the trophy room (`R` removes the trophy in front of you, `Esc` leaves).

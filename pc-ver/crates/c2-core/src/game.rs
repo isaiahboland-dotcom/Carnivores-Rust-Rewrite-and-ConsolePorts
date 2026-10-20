@@ -122,7 +122,7 @@ impl Weapons {
             double_ammo,
         };
         let mut first = None;
-        for i in 0..n.min(32) {
+        for i in 0..n.min(128) {
             if present & (1 << i) != 0 {
                 w.shots_left[i] = w.info[i].shots;
                 if double_ammo {
@@ -139,12 +139,17 @@ impl Weapons {
     /// Every carried weapon back to the ammo it started with (not in the
     /// original: the 3DS "extra ammo" gear).
     pub fn resupply(&mut self) {
-        for i in 0..self.info.len().min(32) {
+        for i in 0..self.info.len().min(128) {
             if self.present & (1 << i) != 0 {
                 self.shots_left[i] = self.info[i].shots;
                 self.ammo_mag[i] = i32::from(self.double_ammo);
             }
         }
+    }
+
+    /// Whether weapon `i` was taken on the hunt.
+    pub fn carried(&self, i: usize) -> bool {
+        i < 128 && self.present & (1 << i) != 0
     }
 
     fn anim(&self, slot: usize) -> i32 {
@@ -224,6 +229,9 @@ pub enum GameEvent {
     Scored {
         ctype: usize,
         score: i32,
+        /// Distance of the kill, metres (the trophy's "range").
+        range: f32,
+        tranq: bool,
     },
     Message(String),
 }
@@ -767,17 +775,18 @@ impl Hunt {
         }
         score *= self.opts.score_factor;
         self.room.score += score as i32;
+        let p = &self.player;
+        let range =
+            ((c.pos[0] - p.x).powi(2) + (c.pos[1] - p.y).powi(2) + (c.pos[2] - p.z).powi(2)).sqrt()
+                / 64.0;
         out.push(GameEvent::Scored {
             ctype: c.ctype,
             score: score as i32,
+            range,
+            tranq: self.opts.tranq,
         });
         if !self.opts.tranq {
             let (y, mo, d, h, mi) = self.clock;
-            let p = &self.player;
-            let range =
-                ((c.pos[0] - p.x).powi(2) + (c.pos[1] - p.y).powi(2) + (c.pos[2] - p.z).powi(2))
-                    .sqrt()
-                    / 64.0;
             self.room.bodies[t] = TrophyItem {
                 ctype: c.ctype as i32,
                 scale: c.scale,
@@ -1749,6 +1758,15 @@ impl Hunt {
             .unwrap_or_else(|| self.opts.targets & 1u128.checked_shl(bit as u32).unwrap_or(0) != 0)
     }
 
+    /// A huntable animal (a menu animal, picked or not), not an ambient,
+    /// flyer or fish.
+    pub fn is_huntable(&self, c: &crate::dino::Character) -> bool {
+        match self.herd.species.get(c.ctype).and_then(|s| s.mee.as_ref()) {
+            Some(m) => (10..=29).contains(&m.ai),
+            None => c.ai >= 10,
+        }
+    }
+
     pub fn life_info(&self, area: &Area) -> Option<LifeInfo> {
         if !self.bin_mode {
             return None;
@@ -1981,6 +1999,17 @@ mod tests {
         w.resupply();
         assert_eq!(w.shots_left, vec![14, 0]);
         assert_eq!(w.ammo_mag, vec![1, 0]);
+    }
+
+    #[test]
+    fn weapons_past_slot_32_get_ammo() {
+        let n = 50;
+        let mut w = Weapons::new(vec![rifle(); n], vec![[100; 4]; n], 1 << 40 | 1 << 2, false);
+        assert_eq!(w.shots_left[40], 14);
+        assert!(w.carried(40) && w.carried(2) && !w.carried(3));
+        w.shots_left[40] = 0;
+        w.resupply();
+        assert_eq!(w.shots_left[40], 14);
     }
 
     fn rifle() -> WeaponInfo {
@@ -2270,7 +2299,14 @@ mod tests {
             ev.contains(&GameEvent::Trophy { slot: 0, score: 0 }),
             "{ev:?}"
         );
-        assert!(ev.contains(&GameEvent::Scored { ctype: 1, score: 0 }));
+        assert!(ev.iter().any(|e| matches!(
+            e,
+            GameEvent::Scored {
+                ctype: 1,
+                score: 0,
+                ..
+            }
+        )));
         assert_eq!(h.room.bodies[0].ctype, 1);
         let n = h.herd.chars.len();
         let mut removed = false;

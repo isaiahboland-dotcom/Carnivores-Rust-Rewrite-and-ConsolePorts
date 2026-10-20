@@ -95,6 +95,12 @@ pub struct HuntView {
     pending: HuntInput,
     events: Vec<GameEvent>,
     message: Option<(String, f32)>,
+    /// The last kill's notice (bottom right): animal, points, metres,
+    /// tranquilized; seconds left.
+    kill: Option<(String, i32, f32, bool, f32)>,
+    /// The weapon-pick screen (PC only): open with the highlighted row.
+    /// The hunt doesn't tick while it's up.
+    picker: Option<usize>,
     seed: u32,
     /// The hunt is over (saved if left alive).
     done: bool,
@@ -265,6 +271,8 @@ impl HuntView {
             pending: HuntInput::default(),
             events: Vec::new(),
             message: None,
+            kill: None,
+            picker: None,
             seed,
             done: false,
             audio: Audio::new(),
@@ -477,6 +485,165 @@ impl HuntView {
         self.step(&input);
     }
 
+    /// The carried weapons, for the pick screen.
+    fn carried(&self) -> Vec<usize> {
+        let w = &self.hunt.weapons;
+        (0..w.info.len()).filter(|&i| w.carried(i)).collect()
+    }
+
+    /// The pick screen's key: Q, or G when Q is bound to something.
+    fn pick_key(&self) -> KeyCode {
+        let k = &self.hunt.room.options.keys;
+        let q = 81;
+        let bound = [
+            k.forward,
+            k.backward,
+            k.up,
+            k.down,
+            k.left,
+            k.right,
+            k.fire,
+            k.show,
+            k.strafe_left,
+            k.strafe_right,
+            k.strafe,
+            k.jump,
+            k.run,
+            k.crouch,
+            k.call,
+            k.change_call,
+            k.binoculars,
+        ]
+        .contains(&q);
+        if bound {
+            KeyCode::KeyG
+        } else {
+            KeyCode::KeyQ
+        }
+    }
+
+    /// Input while the pick screen is up: arrows/W/S or the wheel move,
+    /// 1-9 jump, Enter/click picks, the key again or Esc closes.
+    fn update_picker(&mut self, input: &Input, row: usize) {
+        let list = self.carried();
+        let n = list.len();
+        if n == 0 || input.pressed(KeyCode::Escape) || input.pressed(self.pick_key()) {
+            self.picker = None;
+            return;
+        }
+        let mut row = row.min(n - 1);
+        let up =
+            input.pressed(KeyCode::ArrowUp) || input.pressed(KeyCode::KeyW) || input.scroll > 0.0;
+        let down =
+            input.pressed(KeyCode::ArrowDown) || input.pressed(KeyCode::KeyS) || input.scroll < 0.0;
+        if up {
+            row = (row + n - 1) % n;
+        }
+        if down {
+            row = (row + 1) % n;
+        }
+        const DIGITS: [KeyCode; 9] = [
+            KeyCode::Digit1,
+            KeyCode::Digit2,
+            KeyCode::Digit3,
+            KeyCode::Digit4,
+            KeyCode::Digit5,
+            KeyCode::Digit6,
+            KeyCode::Digit7,
+            KeyCode::Digit8,
+            KeyCode::Digit9,
+        ];
+        let digit = DIGITS
+            .iter()
+            .position(|&k| input.pressed(k))
+            .filter(|&d| d < n);
+        if let Some(d) = digit {
+            row = d;
+        }
+        if digit.is_some() || input.pressed(KeyCode::Enter) {
+            let w = &self.hunt.weapons;
+            let pick = list.get(row).copied();
+            // Picking the weapon in hand leaves it there (selecting it
+            // would put it away).
+            if !(pick == Some(w.current) && w.pose().is_some()) {
+                self.pending.select_weapon = pick;
+            }
+            self.picker = None;
+            return;
+        }
+        self.picker = Some(row);
+    }
+
+    /// The weapon-pick screen: a dimmed world and a list of the carried
+    /// weapons with their ammo, scrolled to keep `row` in view.
+    fn picker_sprites(&self, row: usize, screen: (u32, u32), scale: f32) -> Vec<Sprite> {
+        let mut out = Vec::new();
+        let (sw, sh) = (screen.0 as f32, screen.1 as f32);
+        out.extend(self.hud.rect(0.0, 0.0, sw, sh, [0.0, 0.0, 0.0, 0.45]));
+        let w = &self.hunt.weapons;
+        let list = self.carried();
+        const ROWS: usize = 12;
+        let first = row
+            .saturating_sub(ROWS - 1)
+            .min(list.len().saturating_sub(ROWS));
+        let px = 8.0 * scale;
+        let lh = 14.0 * scale;
+        let bw = 300.0 * scale;
+        let shown = list.len().min(ROWS);
+        let bh = (shown as f32 + 3.0) * lh + 8.0 * scale;
+        let (x, y) = ((sw - bw) / 2.0, (sh - bh) / 2.0);
+        out.extend(self.hud.rect(x, y, bw, bh, [0.05, 0.05, 0.05, 0.85]));
+        let white = [0.9, 0.9, 0.9, 1.0];
+        let grey = [0.5, 0.5, 0.5, 1.0];
+        out.extend(self.hud.label(
+            x + 8.0 * scale,
+            y + 6.0 * scale,
+            px,
+            white,
+            "Choose a weapon",
+        ));
+        for (k, &i) in list.iter().enumerate().skip(first).take(ROWS) {
+            let ry = y + 6.0 * scale + (k - first + 1) as f32 * lh + 4.0 * scale;
+            if k == row {
+                out.extend(self.hud.rect(
+                    x + 4.0 * scale,
+                    ry - 3.0 * scale,
+                    bw - 8.0 * scale,
+                    lh,
+                    [0.2, 0.45, 0.2, 0.9],
+                ));
+            }
+            let shots = w.shots_left.get(i).copied().unwrap_or(0);
+            let color = if shots > 0 { white } else { grey };
+            let num = if k < 9 {
+                format!("{}.", k + 1)
+            } else {
+                "  ".into()
+            };
+            let mark = if i == w.current && w.pose().is_some() {
+                " *"
+            } else {
+                ""
+            };
+            let name = format!("{num} {}{mark}", w.info[i].name);
+            out.extend(self.hud.label(x + 10.0 * scale, ry, px, color, &name));
+            let ammo = if shots > 0 {
+                format!("{shots}")
+            } else {
+                "empty".into()
+            };
+            let aw = self.hud.label_width(px, &ammo);
+            out.extend(
+                self.hud
+                    .label(x + bw - aw - 12.0 * scale, ry, px, color, &ammo),
+            );
+        }
+        let hint = "Up/Down or 1-9, Enter to take, Esc to close";
+        let hy = y + bh - lh;
+        out.extend(self.hud.label(x + 8.0 * scale, hy, px, grey, hint));
+        out
+    }
+
     /// Draws weapon `w` right away (screenshots).
     pub fn draw_weapon(&mut self, w: usize) {
         let input = HuntInput {
@@ -535,6 +702,20 @@ impl HuntView {
                     let how = ["eaten", "drowned", "fell", "killed"];
                     let m = format!("You were {}.", how.get(kind as usize).unwrap_or(&"killed"));
                     self.message = Some((m, 6.0));
+                }
+                GameEvent::Scored {
+                    ctype,
+                    score,
+                    range,
+                    tranq,
+                } => {
+                    let name = self
+                        .hunt
+                        .herd
+                        .species
+                        .get(ctype)
+                        .map_or_else(String::new, |s| s.info.name.clone());
+                    self.kill = Some((name, score, range, tranq, 6.0));
                 }
                 GameEvent::Killed { trophy: true, .. } => {
                     self.message = Some(("Trophy!".into(), 2.0));
@@ -676,8 +857,24 @@ impl Scene for HuntView {
     }
 
     fn update(&mut self, gpu: &Gpu, dt: f32, input: &Input) {
+        if let Some(row) = self.picker {
+            self.update_picker(input, row);
+            self.view.update(gpu, 0.0, &Input::default());
+            return;
+        }
         let k = self.hunt.room.options.keys;
         let pressed = |vk| keys::pressed(input, vk);
+        if input.pressed(self.pick_key())
+            && !self.hunt.paused
+            && self.hunt.death.is_none()
+            && !self.hunt.opts.trophy
+            && !self.hunt.opts.observer
+        {
+            let cur = self.hunt.weapons.current;
+            self.picker = Some(self.carried().iter().position(|&i| i == cur).unwrap_or(0));
+            self.acc_ms = 0.0;
+            return;
+        }
         if pressed(k.run) {
             self.run = !self.run;
         }
@@ -779,6 +976,12 @@ impl Scene for HuntView {
                 self.message = None;
             }
         }
+        if let Some(k) = &mut self.kill {
+            k.4 -= dt;
+            if k.4 <= 0.0 {
+                self.kill = None;
+            }
+        }
 
         match self.hunt.outcome() {
             Some(Outcome::Exited) if !self.done => {
@@ -852,6 +1055,46 @@ impl Scene for HuntView {
         // HUD at an integer scale of the original's 640x480 layout.
         let scale = (screen.1 as f32 / 480.0).floor().max(1.0);
         let mut sprites = self.weapons.hud_sprites(&self.hud, &self.hunt, scale);
+        // The last kill: a box in the bottom right.
+        if let Some((name, score, range, tranq, _)) = &self.kill {
+            let us = self.hunt.room.options.sys != 0;
+            let dist = if us {
+                format!("Range: {:.0} ft", range / 0.3)
+            } else {
+                format!("Range: {range:.0} m")
+            };
+            let lines = [
+                name.clone(),
+                format!("+{score} points"),
+                dist,
+                if *tranq {
+                    "Tranquilized (+25%, no trophy)".to_string()
+                } else {
+                    "Killed".to_string()
+                },
+            ];
+            let px = 8.0 * scale;
+            let w = lines
+                .iter()
+                .map(|l| self.hud.label_width(px, l))
+                .fold(0.0, f32::max)
+                + 16.0 * scale;
+            let h = (lines.len() as f32 * 12.0 + 12.0) * scale;
+            let (x, y) = (
+                screen.0 as f32 - w - 12.0 * scale,
+                screen.1 as f32 - h - 12.0 * scale,
+            );
+            sprites.extend(self.hud.rect(x, y, w, h, [0.0, 0.0, 0.0, 0.7]));
+            for (i, l) in lines.iter().enumerate() {
+                let c = if i == 1 {
+                    [0.95, 0.85, 0.2, 1.0]
+                } else {
+                    [0.9, 0.9, 0.9, 1.0]
+                };
+                let ly = y + (6.0 + 12.0 * i as f32) * scale;
+                sprites.extend(self.hud.label(x + 8.0 * scale, ly, px, c, l));
+            }
+        }
         // Binoculars: what's in the cross-hairs (`Render_LifeInfo`).
         if let Some(li) = self.hunt.life_info(self.view.area()) {
             let green = [0.0, 0.69, 0.0, 1.0];
@@ -936,15 +1179,21 @@ impl Scene for HuntView {
                 }
                 sprites.extend(dot(ccx + 1.0, ccy + 1.0, [0.25, 0.0, 0.0, 1.0]));
                 sprites.extend(dot(ccx, ccy, [0.97, 0.0, 0.0, 1.0]));
+                // Radar: the picked animals green, other huntables that
+                // spawned anyway blue.
                 if self.hunt.opts.radar {
                     for c in &self.hunt.herd.chars {
-                        if c.health > 0 && self.hunt.is_target(c) {
-                            sprites.extend(dot(
-                                c.pos[0] / 1024.0,
-                                c.pos[2] / 1024.0,
-                                [0.0, 0.97, 0.0, 1.0],
-                            ));
+                        if c.health <= 0 {
+                            continue;
                         }
+                        let color = if self.hunt.is_target(c) {
+                            [0.0, 0.97, 0.0, 1.0]
+                        } else if self.hunt.is_huntable(c) {
+                            [0.2, 0.55, 1.0, 1.0]
+                        } else {
+                            continue;
+                        };
+                        sprites.extend(dot(c.pos[0] / 1024.0, c.pos[2] / 1024.0, color));
                     }
                 }
             }
@@ -990,6 +1239,9 @@ impl Scene for HuntView {
                 sprites.push(Sprite::new(id, x, y, scale));
                 sprites.extend(self.plaque_text(slot, x, y, scale));
             }
+        }
+        if let Some(row) = self.picker {
+            sprites.extend(self.picker_sprites(row, screen, scale));
         }
         if self.hunt.paused {
             if let Some((id, w, h)) = self

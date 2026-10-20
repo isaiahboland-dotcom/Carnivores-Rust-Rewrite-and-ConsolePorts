@@ -2,6 +2,24 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-19 — Kill notice, two-colour radar, weapon-pick screen (PC)
+- **Kill notice** (PC, not in the original): for 6 s after a kill a box in
+  the bottom right shows the animal, the points scored, the range (metres or
+  feet, as the options say) and whether it was tranquilized.
+  `GameEvent::Scored` now carries `range` and `tranq`.
+- **Radar colours**: animals picked for the hunt are green, as before; other
+  huntable animals that spawn anyway (spawn tables, add-ons) are blue.
+  Ambients, flyers and fish stay hidden. `Hunt::is_huntable`: AI 10 and up,
+  or MEE AI 10–29.
+- **Weapons past slot 32 had no ammo**: `Weapons::new`/`resupply` still
+  stopped at 32 from the old 32-bit mask, so in big packs those weapons
+  started empty and wouldn't draw. Now 128, like the mask.
+- **Weapon-pick screen** (PC only): `Q` (or `G` when `Q` is bound) pauses
+  the hunt and lists the carried weapons with their ammo; arrows/`W`/`S`/wheel
+  or `1`–`9`, `Enter` takes, `Esc` or the key again closes. The number keys
+  only reach the first six weapons, which isn't enough with add-ons. Picking
+  the weapon already in hand keeps it out.
+
 ## 2026-10-19 — PC render distance and fog
 - **Render distance** (Options → Video, PC only, kept in `c2rs.cfg` in the
   data folder since the original save has no room): from the original

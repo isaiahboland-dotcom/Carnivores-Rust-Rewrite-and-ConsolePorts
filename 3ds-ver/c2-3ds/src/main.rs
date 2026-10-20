@@ -432,7 +432,7 @@ fn hunt(vfs: &Vfs, info: &PackInfo, setup: Setup, gpu: &mut Gpu, io: &mut Io) ->
         for e in game.events.drain(..) {
             match e {
                 GameEvent::Message(m) => message = Some((m, frame + 180)),
-                GameEvent::Scored { ctype, score } => {
+                GameEvent::Scored { ctype, score, .. } => {
                     let name = game
                         .hunt
                         .herd
