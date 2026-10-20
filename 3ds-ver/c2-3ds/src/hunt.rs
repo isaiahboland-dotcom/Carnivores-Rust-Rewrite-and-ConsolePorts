@@ -273,7 +273,11 @@ fn new_hunt(
     let (infos, anims): (Vec<_>, Vec<_>) = weapon_info.iter().cloned().unzip();
     let weapons = Weapons::new(infos, anims, u128::from(carried), setup.double_ammo);
     let opts = HuntOptions {
-        targets: if setup.observer { 0 } else { u128::from(setup.targets) },
+        targets: if setup.observer {
+            0
+        } else {
+            u128::from(setup.targets)
+        },
         radar: o.radar != 0,
         opt_agres: o.agres,
         opt_sens: o.sens,

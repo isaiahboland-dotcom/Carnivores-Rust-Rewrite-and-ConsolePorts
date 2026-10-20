@@ -572,7 +572,7 @@ fn mee_sim(game: &Path, area_n: u32, seconds: u32) -> Result<()> {
 fn tick_bench(game: &Path, area_n: u32) -> Result<()> {
     use c2_core::area::{Area, TimeOfDay};
     use c2_core::dino::{ai, DinoInfo, Herd, PlaceOptions, Species};
-    use c2_core::game::{Hunt, HuntInput, HuntOptions, Weapons};
+    use c2_core::game::{Hunt, HuntInput, HuntOptions, WeaponInfo, Weapons};
     use c2_core::player::Player;
     use c2_core::rng::MsRand;
     let huntdat = find_ci(game, "HUNTDAT").context("no HUNTDAT")?;
@@ -649,33 +649,76 @@ fn tick_bench(game: &Path, area_n: u32) -> Result<()> {
         score_factor: 1.0,
         dino_run_k: 1.0,
     };
-    let weapons = Weapons::new(vec![], vec![], 0, false);
+    // The first weapon, drawn and aimed at the animal: real hits (blood
+    // trail, hit reactions) rather than a scripted kill.
+    let infos: Vec<_> = res.weapons.iter().take(1).map(WeaponInfo::from_def).collect();
+    let n = infos.len();
+    let weapons = Weapons::new(infos, vec![[300; 4]; n], 1, false);
     let room = c2_core::profile::new_player("bench", 0, 0);
     let mut hunt = Hunt::new(&area, player, herd, weapons, rng, opts, room);
-    let input = HuntInput::default();
     let mut out = Vec::new();
     let (mut worst, mut sum, mut n) = (0f64, 0f64, 0u32);
+    let mut hits = 0;
     for t in 0..8000u32 {
-        if t == 2000 {
-            hunt.debug_bag(&area, stego, &mut out);
-            println!("-- killed");
+        let mut input = HuntInput {
+            toggle_weapon: t == 10,
+            ..Default::default()
+        };
+        let alive = hunt.herd.chars.get(stego).is_some_and(|c| c.health > 0);
+        if (1500..6000).contains(&t) && t % 150 == 0 && alive {
+            let c = &hunt.herd.chars[stego];
+            let p = &mut hunt.player;
+            // Keep up with it: 800 units behind, on the ground.
+            p.x = c.pos[0] + 800.0;
+            p.z = c.pos[2];
+            p.y = area.land_height(p.x, p.z);
+            let d = [c.pos[0] - p.x, c.pos[1] + 120.0 - (p.y + p.head_y), c.pos[2] - p.z];
+            p.alpha = d[0].atan2(-d[2]);
+            p.beta = (-d[1]).atan2(d[0].hypot(d[2]));
+            input.fire = true;
         }
+        let before = hunt.herd.chars.get(stego).map_or(0, |c| c.health);
         let t0 = std::time::Instant::now();
         hunt.tick(&area, &cars, &input, 10, &mut out);
         let ms = t0.elapsed().as_secs_f64() * 1000.0;
+        if input.fire {
+            let imp: Vec<_> = out
+                .iter()
+                .filter(|e| matches!(e, c2_core::game::GameEvent::Impact { .. }))
+                .collect();
+            println!(
+                "fire at {}s: weapon {:?} shots {:?} {imp:?}",
+                t / 100,
+                hunt.weapons.pose(),
+                hunt.weapons.shots_left
+            );
+        }
         out.clear();
+        let after = hunt.herd.chars.get(stego).map_or(0, |c| c.health);
+        if after < before {
+            hits += 1;
+            println!("-- hit {hits} at {}s: health {after}, tick {ms:.3} ms", t / 100);
+        }
         worst = worst.max(ms);
         sum += ms;
         n += 1;
         if (t + 1) % 500 == 0 {
             let c = hunt.herd.chars.get(stego);
+            // Subnormal floats in the state: free on PC, but each operation
+            // on one can trap to software on the 3DS's VFP.
+            let dump = format!("{:?} {:?} {:?}", hunt.herd.chars, hunt.player, hunt.weapons);
+            let subnormal = dump
+                .split(|ch: char| !(ch.is_ascii_alphanumeric() || ".-+".contains(ch)))
+                .filter(|t| t.parse::<f32>().is_ok_and(f32::is_subnormal))
+                .count();
             println!(
-                "t={:>3}s worst {:.3} ms mean {:.4} ms  chars {} blood {} ship {} stego state {:?}",
+                "t={:>3}s worst {:.3} ms mean {:.4} ms  subnormal {subnormal}  chars {} blood {} bursts {} ship {} stego state {:?}",
                 (t + 1) / 100,
                 worst,
                 sum / f64::from(n),
                 hunt.herd.chars.len(),
                 hunt.effects.blood.len(),
+                hunt.effects.bursts.len(),
                 hunt.ship.state,
                 c.map(|c| (c.state, c.health, c.afraid_time)),
             );

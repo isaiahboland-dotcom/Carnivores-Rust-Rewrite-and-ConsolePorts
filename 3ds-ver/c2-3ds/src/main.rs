@@ -57,7 +57,13 @@ fn tick_line(game: &hunt::Game) -> String {
         .zip(p.mean.iter().zip(&p.worst))
         .map(|(n, (m, w))| format!("{}{m:.1}/{w:.0}", &n[..1]))
         .collect();
-    format!("{}t {}", game.ticks_last, parts.join(" "))
+    format!(
+        "{}t {} fp {:x}/{:x}",
+        game.ticks_last,
+        parts.join(" "),
+        FPSCR_BOOT.load(std::sync::atomic::Ordering::Relaxed) >> 22,
+        fpscr() >> 22
+    )
 }
 
 fn find_packs() -> Vec<PathBuf> {
@@ -144,6 +150,26 @@ struct MallInfo {
 }
 
 /// Heap in use / reserved, and free linear (GPU-visible) memory.
+/// FPSCR as the system started the app (shown on the pause screen).
+static FPSCR_BOOT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// The VFP status and control register.
+fn fpscr() -> u32 {
+    let v: u32;
+    unsafe { std::arch::asm!("vmrs {}, fpscr", out(reg) v) };
+    v
+}
+
+/// Flush-to-zero and default-NaN ("RunFast"): the ARM11's VFP otherwise
+/// hands every operation on a denormal to slow support code, where a PC
+/// pays almost nothing; a decaying value that reaches the denormal range
+/// could make a tick many times slower on the 3DS only. Rounding is left
+/// as it is. Per thread; the game runs on the main one.
+fn run_fast() {
+    let v = fpscr() | 1 << 24 | 1 << 25;
+    unsafe { std::arch::asm!("vmsr fpscr, {}", in(reg) v) };
+}
+
 fn mem_line() -> String {
     unsafe {
         let used = mallinfo().uordblks as f32 / (1024.0 * 1024.0);
@@ -573,6 +599,8 @@ fn main() {
         // C-Stick and ZL/ZR on New 3DS.
         let _ = ctru_sys::irrstInit();
     }
+    FPSCR_BOOT.store(fpscr(), std::sync::atomic::Ordering::Relaxed);
+    run_fast();
     println!("c2rs for 3DS (test build)\n");
     let packs = find_packs();
     let Some(pack) = packs.first() else {

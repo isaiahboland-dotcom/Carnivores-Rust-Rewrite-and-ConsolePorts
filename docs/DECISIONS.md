@@ -2,6 +2,21 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-19 — 3DS slow ticks, round two: flush-to-zero
+- The report's "sim 93 ms at 40 fps" is consistent: the pause screen freezes
+  the ms averages but keeps measuring fps, so the hunt really ran near
+  10 fps just before pausing, with ticks of about 9 ms.
+- `tick-bench` now draws the first weapon, wounds and kills the
+  Stegosaurus with real shots (hit reactions, blood trail), and counts
+  subnormal floats in the state. On PC: no tick above 0.6 ms, no
+  subnormals.
+- The 3DS start-up code never sets FPSCR, and on the ARM11 every operation
+  on a denormal goes to slow support code (a PC pays almost nothing). The
+  app now sets flush-to-zero and default-NaN ("RunFast") at start, leaving
+  rounding alone. The pause screen's tick line ends `fp boot/now`
+  (FPSCR >> 22): 3 or f in the second means flush-to-zero is on; the first
+  shows whether the system already had it on.
+
 ## 2026-10-19 — Kill notice, two-colour radar, weapon-pick screen (PC)
 - **Kill notice** (PC, not in the original): for 6 s after a kill a box in
   the bottom right shows the animal, the points scored, the range (metres or
