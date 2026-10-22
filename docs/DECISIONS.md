@@ -2,6 +2,20 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-22 — Fixes from the owner's mobile + add-ons test
+- **3DS trophy room**: loads only the species with a trophy on display
+  (and the hunter); it loaded every species, out of memory with add-ons.
+- **Call icons**: an add-on slot with call sounds but no `CALLn.TGA`
+  gets the middle of its menu picture as the icon (`c2-cook`).
+- **3DS hunt menu**: animals sorted by price (cheapest first; ties keep
+  the game's order), not game, then mobile, then add-ons.
+- **Mobile import** keeps the donor's `overwrite charN` block when the
+  animal gets a slot: building moves it to the new slot, so it has the
+  radar flag and the picked spawn group like the PC animals.
+- **Combined game folders** with a long add-on list are named by its
+  start, the count and a hash (Linux limits names to 255 bytes).
+- The 3DS run-speed setting already applies to every AI, modded too.
+
 ## 2026-10-22 — M10: `.cia` builds
 - **Tools are the user's downloads**: makerom (Project_CTR) and
   bannertool, found like our own tools (tools folder, beside the launcher,

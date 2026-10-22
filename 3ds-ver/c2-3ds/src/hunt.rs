@@ -364,7 +364,17 @@ impl Game {
         let rules =
             Rules::load(vfs)?.hunt_with(&setup.area, setup.time, setup.targets, &setup.roamers);
         progress("animals");
+        // The trophy room needs only the species on display (every one a
+        // pack with add-ons has won't fit in an Old 3DS).
+        let trophies: Vec<usize> = room
+            .bodies
+            .iter()
+            .filter_map(|b| usize::try_from(b.ctype).ok().filter(|&c| c != 0))
+            .collect();
         let (mut species, cars) = load::species_with(vfs, &rules.res, &|i| {
+            if setup.trophy() {
+                return trophies.contains(&i) || rules.roles.get(i) == Some(&Role::Hunter);
+            }
             rules.roles.get(i).is_some_and(|&r| setup.keeps_char(i, r))
         });
         if let Some(t) = &rules.tables {

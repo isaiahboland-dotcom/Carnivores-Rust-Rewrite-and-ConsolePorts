@@ -247,6 +247,9 @@ impl Menu {
             }
         }
         dinos.truncate(32);
+        // Cheapest first, left to right and top to bottom (equal prices
+        // keep their order: the game's, then add-ons).
+        dinos.sort_by_key(|d| d.1.price);
         // Where each roamer spawns (its tables, per area).
         let mut roams = std::collections::HashMap::new();
         if dinos.iter().any(|d| matches!(d.0, Pick::Roamer(_))) {

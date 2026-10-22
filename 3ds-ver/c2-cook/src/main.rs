@@ -851,14 +851,31 @@ fn main() -> Result<()> {
             let f = format!("HUNTDAT/SOUNDFX/CALLS/CALL{n}_{l}.WAV");
             c.wav(&vfs, &f, &format!("K{id}_{v}"));
         }
-        if let Some(p) = vfs
-            .read(&format!("HUNTDAT/MENU/PICS/CALL{n}.TGA"))
-            .ok()
-            .and_then(|d| c2_formats::tga::parse(&d).ok())
-        {
+        let pic = |f: &str| {
+            vfs.read(&format!("HUNTDAT/MENU/PICS/{f}"))
+                .ok()
+                .and_then(|d| c2_formats::tga::parse(&d).ok())
+        };
+        if let Some(p) = pic(&format!("CALL{n}.TGA")) {
             let px = image_to_rgba8(&p.pixels, false);
             let px = fit(&px, p.width, p.height, 64, 52, 64, 64);
             c.picture(&format!("C2RS/CALL{id}.TX"), &px, 64, 64);
+        } else if let Some(p) = pic(&format!("DINO{n}.TGA")) {
+            // Add-ons often ship calls without an icon: the animal's menu
+            // picture (its middle, where the animal is) stands in.
+            let px = image_to_rgba8(&p.pixels, false);
+            let (w, h) = (p.width, p.height);
+            let side = h.min(w);
+            let x0 = (w - side) / 2;
+            let mut sq = Vec::with_capacity(side * side * 4);
+            for y in 0..side {
+                let i = (y * w + x0) * 4;
+                sq.extend_from_slice(px.get(i..i + side * 4).unwrap_or_default());
+            }
+            if sq.len() == side * side * 4 {
+                let px = fit(&sq, side, side, 64, 64, 64, 64);
+                c.picture(&format!("C2RS/CALL{id}.TX"), &px, 64, 64);
+            }
         }
     }
     for (i, w) in winfos.iter().enumerate() {

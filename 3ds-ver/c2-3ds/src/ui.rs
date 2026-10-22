@@ -391,7 +391,8 @@ fn draw_map(c: &mut Canvas, gpu: &mut Gpu, game: &Game, map: Option<&Texture>, l
             .call_bit(ch)
             .is_some_and(|b| h.opts.no_call_bonus & 1u128.checked_shl(b as u32).unwrap_or(0) != 0);
         if target && no_call {
-            dot(x, y, 5.0, [250, 200, 60, 255]);
+            // An even ring (2 px) reads as one marker, not two dots.
+            dot(x, y, 8.0, [250, 200, 60, 255]);
             dot(x, y, 4.0, [60, 140, 255, 255]);
         } else if target {
             dot(x, y, 4.0, [0, 248, 0, 255]);

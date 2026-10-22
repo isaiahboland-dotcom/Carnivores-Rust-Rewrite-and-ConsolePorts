@@ -360,7 +360,8 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
 **M11 — Hunt options and 3DS comfort**
 - A hunt options screen before each hunt (3DS first): animal run speed and ambient animals move here.
 - "3DS friendly" (3DS only, off by default so stock play stays for competitive players): animals notice the
-  hunter from shorter range, matching the 3DS's shorter view.
+  hunter from shorter range, matching the 3DS's shorter view. Applies to every animal, modded and mobile
+  ones too (owner: the imported Dilophosaurus flees before the hunter is in range).
 - Stealth crouch toggle (3DS only): while crouched, gyro aim, and the hunter is half as visible and half as
   loud.
 - Modded games: "random ambients", 4 ambient species picked per hunt instead of every one the mods add.
@@ -387,6 +388,10 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
 - Import the mobile game's animals and weapons from an APK the user supplies (local only, like all game
   data); where both exist, choose PC or mobile behaviour (the mobile shotgun differs).
 - Menu styles as an option: the original's, a mod's menu (PC), the mobile menu.
+- Where PC and mobile differ (the shotgun, the new animals' AI and stats), PC is the default; the launcher
+  overrides per difference, or all PC / all mobile (owner's rule).
+- The imported animals take a PC donor's stats: some look too fast for their size (Dilophosaurus); use the
+  mobile game's own values once read.
 
 **M16 — Standalone games in the launcher (PC, last)**
 - Users drop in their own standalone games (full conversions that rewrite Carnivores 2) as well as add-ons;
@@ -394,7 +399,9 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   kept apart and renumbered, spawns tied to its own maps, add-ons on top), or one is played on its own.
 
 **Known issues (next up)**
-- None open.
+- None open. Fixed 2026-10-22 from the owner's mobile + add-ons test: 3DS trophy room out of memory (it
+  loaded every species), blank call buttons for add-ons without a call icon, the roamer map dot, the
+  hunt menu now by price, mobile animals off the radar on some maps, "File name too long" with many add-ons.
 
 ---
 
