@@ -133,6 +133,14 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
             let wanted: Vec<usize> = (0..hr.roles.len())
                 .filter(|&i| keep(i) && matches!(hr.roles[i], Role::Slot(_) | Role::Roamer))
                 .collect();
+            // What else a pick brings (animals sharing its slot).
+            let loads: Vec<String> = wanted
+                .iter()
+                .filter_map(|&i| hr.res.characters.get(i)?.name.clone())
+                .collect();
+            if loads.len() > 1 {
+                println!("  {name}: loads {}", loads.join(", "));
+            }
             let mut rng = MsRand::new(7);
             let cell = area.landings.first().copied().unwrap_or((512, 512));
             let player = Player::new(&area, cell);
