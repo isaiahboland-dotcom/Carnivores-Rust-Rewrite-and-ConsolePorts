@@ -27,6 +27,13 @@ pub enum Step {
         archive: PathBuf,
         to: PathBuf,
     },
+    /// A generated file (the `.cia` build's spec and placeholders).
+    Write {
+        path: PathBuf,
+        bytes: Vec<u8>,
+    },
+    /// A folder for a program's output.
+    Dir(PathBuf),
 }
 
 #[derive(Default)]
@@ -140,6 +147,15 @@ impl Job {
                 std::fs::copy(&from, &to).map_err(|e| format!("{}: {e}", from.display()))?;
                 self.log(format!("Copied {} -> {}", from.display(), to.display()));
                 Ok(())
+            }
+            Step::Write { path, bytes } => {
+                if let Some(d) = path.parent() {
+                    std::fs::create_dir_all(d).map_err(|e| format!("{}: {e}", d.display()))?;
+                }
+                std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+            }
+            Step::Dir(d) => {
+                std::fs::create_dir_all(&d).map_err(|e| format!("{}: {e}", d.display()))
             }
             Step::Unpack { archive, to } => {
                 self.log(format!("Unpacking {}", archive.display()));

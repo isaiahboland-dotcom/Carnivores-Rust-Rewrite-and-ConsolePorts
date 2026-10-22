@@ -303,6 +303,32 @@ impl Launcher {
             from: app,
             to: dir.join(format!("{name}.3dsx")),
         });
+        if t.cia {
+            let (Some(elf), Some(makerom), Some(bannertool)) = (
+                find_tool("c2-3ds.elf", tools.as_deref()),
+                find_tool("makerom", tools.as_deref()),
+                find_tool("bannertool", tools.as_deref()),
+            ) else {
+                self.note = Some((
+                    "For a .cia: c2-3ds.elf, makerom and bannertool are needed (see the 3DS tab)."
+                        .into(),
+                    RED,
+                ));
+                return;
+            };
+            steps.extend(crate::cia::steps(&crate::cia::Cia {
+                name: &name,
+                target: t.target,
+                elf,
+                makerom,
+                bannertool,
+                icon: t.icon.as_deref(),
+                banner: t.banner.as_deref(),
+                sound: t.banner_sound.as_deref(),
+                work: crate::config::data_dir().join("cia").join(&name),
+                out: out.join("cia").join(format!("{name}.cia")),
+            }));
+        }
         self.job = Some(Job::start(
             format!("Building the 3DS install '{name}'"),
             steps,
@@ -562,10 +588,11 @@ impl Launcher {
                 .changed();
             help(
                 ui,
-                "The app asks which pack at start; each keeps its own save. .cia files: coming \
-                 next.",
+                "The app asks which pack at start; each keeps its own save.",
             );
         });
+        ui.add_space(8.0);
+        changed |= self.cia_panel(ui);
         if changed {
             self.save();
         }
@@ -583,13 +610,118 @@ impl Launcher {
         }
     }
 
+    /// The `.cia` options: the tools (with where to get them) and the
+    /// user's home-menu art.
+    fn cia_panel(&mut self, ui: &mut egui::Ui) -> bool {
+        use crate::cia::{png_size, unique_id, BANNER, BANNERTOOL_URL, ICON, MAKEROM_URL};
+        let tools = self.cfg.tools.clone();
+        let mut changed = false;
+        panel(ui, |ui| {
+            let t = &mut self.cfg.three_ds;
+            changed |= ui
+                .checkbox(
+                    &mut t.cia,
+                    "Also make a .cia (installed with FBI, it shows on the home menu)",
+                )
+                .changed();
+            if !t.cia {
+                return;
+            }
+            let name = install_name(&t.name);
+            help(
+                ui,
+                &format!(
+                    "-> cia/{name}.cia, title ID 00040000{:05X}00. It uses the packs in 3ds/{name}/.",
+                    unique_id(&name)
+                ),
+            );
+            ui.add_space(4.0);
+            for (tool, url) in [("makerom", MAKEROM_URL), ("bannertool", BANNERTOOL_URL)] {
+                ui.horizontal(|ui| match find_tool(tool, tools.as_deref()) {
+                    Some(p) => {
+                        ui.label(RichText::new(format!("{tool}: {}", p.display())).color(TEXT));
+                    }
+                    None => {
+                        ui.label(
+                            RichText::new(format!("{tool}: not found. Download it from"))
+                                .color(RED),
+                        );
+                        ui.hyperlink_to(url, url);
+                    }
+                });
+            }
+            if find_tool("c2-3ds.elf", tools.as_deref()).is_none() {
+                ui.label(
+                    RichText::new("c2-3ds.elf: not found (it comes with c2-3ds.3dsx)").color(RED),
+                );
+            }
+            help(
+                ui,
+                "These are separate downloads (not ours): put makerom and bannertool beside this \
+                 launcher or in the tools folder (Settings). On Linux and macOS, make them \
+                 executable (chmod +x).",
+            );
+            ui.add_space(6.0);
+            ui.label(RichText::new("Home menu art (your own)").color(GOLD));
+            for (label, size, slot, filter) in [
+                ("Icon", Some(ICON), &mut t.icon, &["png"][..]),
+                ("Banner", Some(BANNER), &mut t.banner, &["png"][..]),
+                (
+                    "Banner sound",
+                    None,
+                    &mut t.banner_sound,
+                    &["wav", "ogg"][..],
+                ),
+            ] {
+                ui.horizontal(|ui| {
+                    let want = match size {
+                        Some((w, h)) => format!("{w}x{h} PNG"),
+                        None => "WAV or OGG, up to 3 s".into(),
+                    };
+                    ui.label(format!("{label} ({want}):"));
+                    match slot.as_ref() {
+                        Some(p) => {
+                            ui.label(RichText::new(p.display().to_string()).color(SAND));
+                            if let Some(want) = size {
+                                match png_size(p) {
+                                    Some(s) if s == want => {}
+                                    Some((w, h)) => {
+                                        ui.label(RichText::new(format!("is {w}x{h}")).color(RED));
+                                    }
+                                    None => {
+                                        ui.label(RichText::new("not a PNG").color(RED));
+                                    }
+                                }
+                            }
+                        }
+                        None => help(ui, "plain placeholder"),
+                    }
+                    if ui.button("Browse...").clicked() {
+                        if let Some(p) =
+                            rfd::FileDialog::new().add_filter(label, filter).pick_file()
+                        {
+                            *slot = Some(p);
+                            changed = true;
+                        }
+                    }
+                    if slot.is_some() && ui.small_button("Clear").clicked() {
+                        *slot = None;
+                        changed = true;
+                    }
+                });
+            }
+        });
+        changed
+    }
+
     fn settings_tab(&mut self, ui: &mut egui::Ui) {
         heading(ui, "Settings");
         panel(ui, |ui| {
             ui.label(RichText::new("Tools folder").color(GOLD));
             help(
                 ui,
-                "Where c2-pc, c2-cook and c2-3ds.3dsx are, if not beside the launcher.",
+                "Where c2-pc, c2-cook and c2-3ds.3dsx (and for .cia builds c2-3ds.elf, makerom \
+                 and bannertool) are, if not beside the launcher.",
             );
             ui.horizontal(|ui| {
                 let shown = self
@@ -611,7 +743,14 @@ impl Launcher {
                     self.save();
                 }
             });
-            for tool in ["c2-pc", "c2-cook", "c2-3ds.3dsx"] {
+            for tool in [
+                "c2-pc",
+                "c2-cook",
+                "c2-3ds.3dsx",
+                "c2-3ds.elf",
+                "makerom",
+                "bannertool",
+            ] {
                 let found = find_tool(tool, self.cfg.tools.as_deref());
                 let (text, col) = match &found {
                     Some(p) => (format!("{tool}: {}", p.display()), TEXT),

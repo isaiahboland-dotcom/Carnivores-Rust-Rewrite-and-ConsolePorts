@@ -36,8 +36,9 @@ use crate::ui::{Tap, Ui};
 use crate::world::{Poser, World};
 
 /// The app's folder on the SD card: where it was started from
-/// (`sdmc:/3ds/<name>/<name>.3dsx`), so installs under different names keep
-/// their packs, saves and settings apart; `sdmc:/3ds/c2rs` otherwise.
+/// (`sdmc:/3ds/<name>/<name>.3dsx`), or for an installed `.cia` the name
+/// the launcher put in it, so installs under different names keep their
+/// packs, saves and settings apart; `sdmc:/3ds/c2rs` otherwise.
 pub fn dir() -> &'static str {
     static D: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     D.get_or_init(|| {
@@ -49,8 +50,23 @@ pub fn dir() -> &'static str {
                     .map(|(d, _)| d.to_string())
             })
             .filter(|d| d.len() > "sdmc:/3ds/".len() && d.starts_with("sdmc:/3ds/"))
+            .or_else(cia_dir)
             .unwrap_or_else(|| "sdmc:/3ds/c2rs".into())
     })
+}
+
+/// An installed `.cia` has no path to go by: the launcher writes the
+/// install name to `name.txt` in its RomFS (a `.3dsx` has none).
+fn cia_dir() -> Option<String> {
+    let dev = c"romfs";
+    if unsafe { ctru_sys::romfsMountSelf(dev.as_ptr()) } < 0 {
+        return None;
+    }
+    let name = std::fs::read_to_string("romfs:/name.txt").ok();
+    let _ = unsafe { ctru_sys::romfsUnmount(dev.as_ptr()) };
+    let name = name?.trim().to_string();
+    let safe = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
+    (!name.is_empty() && name.chars().all(safe)).then(|| format!("sdmc:/3ds/{name}"))
 }
 
 fn ticks() -> u64 {

@@ -2,6 +2,23 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-22 — M10: `.cia` builds
+- **Tools are the user's downloads**: makerom (Project_CTR) and
+  bannertool, found like our own tools (tools folder, beside the launcher,
+  the source tree's top folder); never committed (`.gitignore`). The GUI and
+  both READMEs (this repo's and `3ds-ver/`, which becomes the 3DS repo)
+  link their GitHub release pages.
+- **One title per install name**: title ID `00040000` + FNV-1a of the
+  name into `F0000`-`FEFFF` + `00`, so several installs sit side by side.
+  The app finds its SD folder from `romfs:/name.txt` (written into the
+  title's RomFS by the builder) when it has no start path, as an installed
+  title has none.
+- **RSF**: the common homebrew application spec (SD access only, the usual
+  services and calls); `SystemModeExt` 124MB for New 3DS builds, Legacy for
+  Old. `makerom -exefslogo` for older firmware.
+- **Art is the owner's** (icon 48x48, banner 256x128 PNG, banner sound);
+  plain olive placeholders, made by the launcher, until set.
+
 ## 2026-10-22 — M10: balance files and the balance editor
 - **A balance file** (`c2_mods::balance`, TOML) lists prices and scores by
   entry name (a repeated name is "Name #2"), so it survives add-ons being

@@ -65,6 +65,13 @@ pub struct ThreeDs {
     pub out: Option<PathBuf>,
     pub vanilla_pack: bool,
     pub addons_pack: bool,
+    /// Also a `.cia` (needs `makerom` and `bannertool`).
+    pub cia: bool,
+    /// The user's home-menu icon (48x48 PNG), banner (256x128 PNG) and
+    /// banner sound (WAV/OGG); plain placeholders if not set.
+    pub icon: Option<PathBuf>,
+    pub banner: Option<PathBuf>,
+    pub banner_sound: Option<PathBuf>,
 }
 
 impl Default for ThreeDs {
@@ -75,6 +82,10 @@ impl Default for ThreeDs {
             out: None,
             vanilla_pack: true,
             addons_pack: true,
+            cia: false,
+            icon: None,
+            banner: None,
+            banner_sound: None,
         }
     }
 }

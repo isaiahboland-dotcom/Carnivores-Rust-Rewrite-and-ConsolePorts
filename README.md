@@ -101,6 +101,19 @@ Add-on mods: append `--mod path/to/mod` (repeatable); see `docs/MODDING.md`.
 to show the 3DS section) or `-p c2-launcher --bin c2-3ds-builder` (3DS only). They run `c2-pc` and `c2-cook`, found
 beside the launcher, in a tools folder set in Settings, or in this source tree's build folders.
 
+### `.cia` builds (optional)
+The 3DS builder can also make a `.cia` (installed with FBI or a similar title manager, so the game shows
+on the home menu). It needs two tools that are **not part of this project**; download them yourself:
+- **makerom** — from Project_CTR: <https://github.com/3DSGuy/Project_CTR/releases>
+- **bannertool** — <https://github.com/Steveice10/bannertool/releases>
+
+Put both beside the launcher, or in the tools folder set in the launcher's Settings (working from the
+source tree, its top folder works too; the files are ignored by git). On Linux and macOS make them
+executable (`chmod +x makerom bannertool`). The `.cia` is built from `c2-3ds.elf`, which comes with
+`c2-3ds.3dsx`. Each install name gets its own title ID and keeps using `sdmc:/3ds/<name>/` for its packs
+and saves. The home-menu icon (48x48 PNG), banner (256x128 PNG) and banner sound (WAV/OGG, up to 3 s)
+are your own files, picked in the 3DS tab; until you pick them, plain placeholders are used.
+
 Hunt mode directly (debugging): `cargo run --release -p c2-pc -- hunt ../source/c2-original/HUNTDAT/AREAS/AREA1.MAP` —
 click to capture the mouse, `WASD` move, mouse look, `LMB` fire, `E` show/hide weapon, `1`-`6` choose weapon, `Q` weapon-pick screen (lists every carried weapon),
 `B` binoculars (`+`/`-` power), `Tab` map, `Alt` call (`C` switch call), `Shift` toggles run, `X` crouch, `Space` jump/swim, arrows turn/look, `Pause`/`P` pause, `Esc` exit prompt (`Y` leave and save, `R` restart).
@@ -483,7 +496,10 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] 3DS: Old/New, install name -> `3ds/<name>/` with `<name>.3dsx` and its packs; the app uses its own folder
   - [x] balance editor: prices and scores (areas, animals incl. roaming add-ons, weapons, starting points) into
         a balance file (`c2_mods::balance`), applied by `c2-pc play --balance` and `c2-cook --balance`
-  - [ ] `.cia`, Ice Age and standalone games in the base slot
+  - [ ] `.cia`: built by the 3DS builder (makerom + bannertool, user-downloaded; own title ID per install
+        name; the user's icon/banner art). Open: the installed app doesn't find its folder yet (Azahar test
+        shows "No pack found")
+  - [ ] Ice Age and standalone games in the base slot (with M14 / M16)
 - [ ] M11 Hunt options and 3DS comfort (planned)
 - [ ] M12 Profiles, statistics, trophy room (planned)
 - [ ] M13 Survival mode (planned)

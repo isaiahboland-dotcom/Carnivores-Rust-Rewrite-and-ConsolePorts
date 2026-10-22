@@ -7,6 +7,7 @@
 
 mod app;
 mod balance;
+mod cia;
 mod config;
 mod jobs;
 
@@ -41,9 +42,10 @@ pub mod theme {
     pub const BLUE: Color32 = Color32::from_rgb(140, 199, 242);
 }
 
-/// A tool the launcher runs (`c2-pc`, `c2-cook`, `c2-3ds.3dsx`): in the
-/// tools folder if set, beside the launcher, or (working from the source
-/// tree) in the other workspace's build folder.
+/// A tool the launcher runs (`c2-pc`, `c2-cook`, `c2-3ds.3dsx`, and for
+/// `.cia` builds `c2-3ds.elf`, `makerom`, `bannertool`): in the tools
+/// folder if set, beside the launcher, or (working from the source tree) in
+/// the other workspace's build folder or the tree's top folder.
 pub fn find_tool(name: &str, tools: Option<&std::path::Path>) -> Option<PathBuf> {
     let file = if cfg!(windows) && !name.contains('.') {
         format!("{name}.exe")
@@ -63,6 +65,7 @@ pub fn find_tool(name: &str, tools: Option<&std::path::Path>) -> Option<PathBuf>
         if let Some(root) = d.ancestors().nth(3) {
             dirs.push(root.join("3ds-ver/target/release"));
             dirs.push(root.join("3ds-ver/target/armv6k-nintendo-3ds/release"));
+            dirs.push(root.to_path_buf());
         }
     }
     dirs.into_iter()

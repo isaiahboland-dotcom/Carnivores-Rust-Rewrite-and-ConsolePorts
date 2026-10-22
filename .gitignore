@@ -33,3 +33,13 @@ target/
 *.3dsx
 *.smdh
 *.elf
+
+# .cia build tools: separate downloads (see README), never committed
+makerom
+makerom.exe
+bannertool
+bannertool.exe
+bannertool (*)
+*.cia
+*.bnr
+*.cxi
