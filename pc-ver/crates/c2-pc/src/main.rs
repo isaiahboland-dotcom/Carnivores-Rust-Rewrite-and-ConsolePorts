@@ -50,7 +50,8 @@ area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distanc
 play:  the menus; a hunt returns to them. --mod (repeatable) plays vanilla plus those add-on mods,
        combined into the data dir (see MERGE_REPORT.md there); --balance applies a balance file's
        prices and scores (see `c2-pc balance`); --menu-art GAME_DIR takes the menu frames from another
-       game (the original's, a mod's, Ice Age's)
+       game (the original's, a mod's, Ice Age's); --mobile-menu the experimental
+       mobile layout of the hunt setup
 mod:   detect prints (or --write saves) an inferred mod.toml; build writes a combined game folder
 hunt:  click to capture mouse; keys follow the player's bindings (default WASD move, mouse look,
        LMB fire, E show/hide weapon, 1-6 choose weapon, Shift toggles run, X crouch, Space jump/swim,
@@ -316,6 +317,10 @@ fn main() -> Result<()> {
             // --menu-art DIR: the menu style (another game's menu frames).
             if let Some(d) = o.value("menu-art") {
                 let _ = menu::MENU_ART.set(PathBuf::from(d));
+            }
+            // --mobile-menu: the experimental mobile layout of the hunt setup.
+            if o.has("mobile-menu") {
+                let _ = menu::MOBILE_MENU.set(true);
             }
             // --script: canvas clicks / typing / keys, applied before the shot.
             let script = o.value("script").map(str::to_owned);

@@ -373,6 +373,10 @@ pub struct Menu {
     /// Last drawn window size, for mapping the cursor to the canvas.
     screen_size: (u32, u32),
     cursor: Option<(f32, f32)>,
+    /// The experimental mobile layout's art, when it's on, and its page
+    /// (0 maps, 1 animals, 2 weapons and gear).
+    mobile: Option<mobile::Art>,
+    mobile_page: usize,
 }
 
 fn read_text(dir: Option<&Path>, name: &str) -> Vec<String> {
@@ -429,6 +433,11 @@ fn wrap(hud: &Hud, px: f32, width: f32, lines: &[String]) -> Vec<String> {
 /// and slider are used (the original's, a mod's, Ice Age's); the pictures
 /// and texts stay the game's.
 pub static MENU_ART: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// The experimental mobile layout of the hunt setup (`--mobile-menu`).
+pub static MOBILE_MENU: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
+mod mobile;
 
 impl Menu {
     /// `game_dir`: the install (or its `HUNTDAT`). `player`: sign straight in
@@ -748,7 +757,14 @@ impl Menu {
 
         let players = save::players(&game_dir);
         let signed_in = player.and_then(|r| players.iter().position(|p| p.reg_number == r));
+        let mobile = MOBILE_MENU
+            .get()
+            .copied()
+            .unwrap_or(false)
+            .then(|| mobile::Art::new(&mut hud, gpu));
         let mut m = Self {
+            mobile,
+            mobile_page: 0,
             hud,
             game_dir,
             huntdat,
@@ -938,6 +954,10 @@ impl Menu {
 
     /// Canvas mapping for the last drawn window size: (scale, x0, y0).
     fn canvas(&self) -> (f32, f32, f32) {
+        // Not drawn yet (a test script): the canvas's own size.
+        if self.screen_size.0 == 0 || self.screen_size.1 == 0 {
+            return (1.0, 0.0, 0.0);
+        }
         let (w, h) = (self.screen_size.0 as f32, self.screen_size.1 as f32);
         let s = (w / CW).min(h / CH);
         (s, (w - CW * s) / 2.0, (h - CH * s) / 2.0)
@@ -1104,58 +1124,71 @@ impl Menu {
                     s.options.tranq = i32::from(s.options.tranq == 0);
                 }
             }
-            6 => {
-                self.choice.observer = !self.choice.observer;
-                if !self.choice.observer && self.remaining() < 0 {
-                    self.choice.dinos = 0;
-                    self.choice.weapons = 0;
-                    self.choice.equip = 0;
-                }
-            }
-            8 if self.can_hunt() => {
-                self.save_equipment();
-                let c = self.choice.clone();
-                let time = [TimeOfDay::Dusk, TimeOfDay::Day, TimeOfDay::Night][c.time];
-                let (targets, weapons) = if c.observer {
-                    (0, 0)
-                } else {
-                    (c.dinos << 10, c.weapons)
-                };
-                let map = self.areas[c.area].clone();
-                let double = !c.observer && c.equip & 8 != 0;
-                self.start(map, time, targets, weapons, double, c.observer);
-            }
+            6 => self.toggle_observer(),
+            8 if self.can_hunt() => self.launch_hunt(),
             _ => {}
         }
         for col in 0..self.columns.len() {
-            let Some(r) = self.row_at(col) else { continue };
-            // Picks are bit masks; animals go to the hunt as bits 10 and up
-            // of 128.
-            let max = match col {
-                1 => 118,
-                2 => 128,
-                _ => 32,
-            };
-            if r >= max {
-                continue;
-            }
-            let bit = 1u128 << r;
-            let price = self.columns[col].prices[r];
-            let old = self.choice.clone();
-            match col {
-                0 => self.choice.area = r,
-                1 => self.choice.dinos ^= bit,
-                2 => self.choice.weapons ^= bit,
-                _ => self.choice.equip ^= bit as u32,
-            }
-            // Can't spend more than the account holds.
-            if self.remaining() < 0 && price > 0 {
-                self.choice = Choice {
-                    focus: Some((col, r)),
-                    ..old
-                };
+            if let Some(r) = self.row_at(col) {
+                self.pick(col, r);
             }
         }
+    }
+
+    /// Observer mode on or off (off: picks the account can't pay go).
+    fn toggle_observer(&mut self) {
+        self.choice.observer = !self.choice.observer;
+        if !self.choice.observer && self.remaining() < 0 {
+            self.choice.dinos = 0;
+            self.choice.weapons = 0;
+            self.choice.equip = 0;
+        }
+    }
+
+    /// Picks (or drops) item `r` of list `col`, unless the account can't
+    /// pay for it.
+    fn pick(&mut self, col: usize, r: usize) {
+        // Picks are bit masks; animals go to the hunt as bits 10 and up of
+        // 128.
+        let max = match col {
+            1 => 118,
+            2 => 128,
+            _ => 32,
+        };
+        if r >= max {
+            return;
+        }
+        let bit = 1u128 << r;
+        let price = self.columns[col].prices[r];
+        let old = self.choice.clone();
+        match col {
+            0 => self.choice.area = r,
+            1 => self.choice.dinos ^= bit,
+            2 => self.choice.weapons ^= bit,
+            _ => self.choice.equip ^= bit as u32,
+        }
+        // Can't spend more than the account holds.
+        if self.remaining() < 0 && price > 0 {
+            self.choice = Choice {
+                focus: Some((col, r)),
+                ..old
+            };
+        }
+    }
+
+    /// Starts the hunt the choices describe.
+    fn launch_hunt(&mut self) {
+        self.save_equipment();
+        let c = self.choice.clone();
+        let time = [TimeOfDay::Dusk, TimeOfDay::Day, TimeOfDay::Night][c.time];
+        let (targets, weapons) = if c.observer {
+            (0, 0)
+        } else {
+            (c.dinos << 10, c.weapons)
+        };
+        let map = self.areas[c.area].clone();
+        let double = !c.observer && c.equip & 8 != 0;
+        self.start(map, time, targets, weapons, double, c.observer);
     }
 
     /// Keeps the accessory choice in the save, as the original does.
@@ -1658,6 +1691,7 @@ impl Scene for Menu {
                     self.screen = Screen::Main;
                 }
             }
+            Screen::Setup if self.mobile.is_some() => self.update_mobile(input),
             Screen::Setup => {
                 let r = self.setup.region(p);
                 self.update_setup(input, r);
@@ -1695,6 +1729,7 @@ impl Scene for Menu {
                 self.board(&mut out, &self.quit_board, &[r]);
             }
             Screen::Credits => self.board(&mut out, &self.credits, &[]),
+            Screen::Setup if self.mobile.is_some() => self.draw_mobile(&mut out),
             Screen::Setup => self.draw_setup(&mut out, self.setup.region(p)),
             Screen::Options => self.draw_options(&mut out, self.options.region(p)),
             Screen::Loading => {

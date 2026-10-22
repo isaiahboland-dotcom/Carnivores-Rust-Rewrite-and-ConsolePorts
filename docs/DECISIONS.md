@@ -2,6 +2,24 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-22 — Menu styles and the experimental mobile layout
+- **PC menu styles** (owner): Original, Mod, Ice Age. `c2-pc play
+  --menu-art GAME_DIR` takes the menu frames, their hit maps, slider and
+  loading picture from another game's `HUNTDAT/MENU` (Ice Age's boards
+  have the same names and button regions); the pictures and texts stay
+  the game's. Mod is the game's own (no flag).
+- **3DS**: Carnivores 2 or Ice Age title art (`c2-cook --menu-art`); the
+  rest of the 3DS menu is our own.
+- **Experimental mobile layout** (`--mobile-menu`, launcher "Experimental
+  mobile layout"): the hunt setup as three pages of hexagons (maps,
+  animals, weapons; cheapest first) like the 3DS menu, with gritty green
+  buttons and a red lamp for dawn / day / night / observer and tranquilizer
+  / radar / cover scent / camouflage. All art is generated (no mobile
+  artwork): pictures under a hexagon-shaped frame of the background colour
+  and a tinted rim, so cells must not overlap (columns a cell apart, every
+  other one half a row down). A quick first version.
+- Menu test scripts work before the first frame (the canvas at 1:1).
+
 ## 2026-10-22 — Owner's mobile + Ice Age test: fixes
 - **Mobile animals racing across the map**: an entry without `jumpAnim`
   gets jump = animation phase 0 (the run), so the jumping AIs (raptors,

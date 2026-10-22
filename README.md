@@ -528,8 +528,11 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] launcher: "Import from the mobile game (APK)" (add-ons), and in Balance "PC or mobile" per entry where
         they differ (PC by default; all PC / all mobile); balance files carry health and weapon stats
   - [x] tested on hardware with the add-on pack (owner, 2026-10-22)
-  - [ ] menu styles (original / a mod's / mobile); Indricothere and the Diatryma (PC-style animation sets with
-        no fitting donor in C2: with the Ice Age base, M14)
+  - [x] menu styles: PC original / mod / Ice Age frames (`--menu-art`), 3DS title Carnivores 2 / Ice Age;
+        "experimental mobile layout" of the PC hunt setup (`--mobile-menu`: hexagon pages for maps, animals,
+        weapons; green buttons with red lamps), a first version to smooth later
+  - [ ] Indricothere and the Diatryma (PC-style animation sets with no fitting donor in C2: with the Ice Age
+        base, M14)
 - [ ] M16 Standalone games in the launcher (planned, PC)
 - [ ] M9 Modder's Edition Engine data — **in progress**
   - [x] nested `_RES.TXT` blocks; `_MENU.TXT` / `.c2map` menu lists; `overwrite` / `addition` resolution
