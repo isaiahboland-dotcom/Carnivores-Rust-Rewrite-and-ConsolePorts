@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use eframe::egui::{self, Color32, RichText};
 
-use crate::config::{describe_game, install_name, AddOn, Config, Target};
+use crate::config::{describe_game, install_name, AddOn, Config, MenuStyle, Target};
 use crate::jobs::{is_archive, Job, Step};
 use crate::theme::*;
 use crate::{find_tool, Mode};
@@ -291,7 +291,79 @@ impl Launcher {
             args.push(a.display().to_string());
         }
         args.extend(self.balance_args());
+        let art = match self.cfg.menu_style {
+            MenuStyle::Original => self.cfg.base.clone(),
+            MenuStyle::IceAge => self.cfg.ice_age.clone(),
+            MenuStyle::Mod => None,
+            MenuStyle::Mobile => {
+                args.push("--mobile-menu".into());
+                None
+            }
+        };
+        if let Some(a) = art {
+            args.push("--menu-art".into());
+            args.push(a.display().to_string());
+        }
         args
+    }
+
+    /// Menu style choice (PC: four; the 3DS: the title art).
+    fn menu_style_ui(&mut self, ui: &mut egui::Ui, three_ds: bool) -> bool {
+        let mut changed = false;
+        ui.horizontal(|ui| {
+            ui.label("Menu:");
+            if three_ds {
+                let t = &mut self.cfg.three_ds;
+                changed |= ui
+                    .radio_value(&mut t.ice_age_title, false, "Carnivores 2")
+                    .changed();
+                changed |= ui
+                    .radio_value(&mut t.ice_age_title, true, "Ice Age")
+                    .changed();
+            } else {
+                for (s, name) in [
+                    (MenuStyle::Original, "Original"),
+                    (MenuStyle::Mod, "Mod"),
+                    (MenuStyle::IceAge, "Ice Age"),
+                    (MenuStyle::Mobile, "Experimental mobile layout"),
+                ] {
+                    changed |= ui.radio_value(&mut self.cfg.menu_style, s, name).changed();
+                }
+            }
+        });
+        let wants_ia = if three_ds {
+            self.cfg.three_ds.ice_age_title
+        } else {
+            self.cfg.menu_style == MenuStyle::IceAge
+        };
+        if wants_ia {
+            ui.horizontal(|ui| {
+                let shown = self
+                    .cfg
+                    .ice_age
+                    .as_ref()
+                    .map_or("Ice Age folder: not set".to_string(), |p| {
+                        format!("Ice Age folder: {}", p.display())
+                    });
+                let ok = self
+                    .cfg
+                    .ice_age
+                    .as_deref()
+                    .is_some_and(|p| describe_game(p).is_some());
+                ui.label(RichText::new(shown).color(if ok { SAND } else { RED }));
+                if ui.button("Browse...").clicked() {
+                    if let Some(p) = rfd::FileDialog::new().pick_folder() {
+                        self.cfg.ice_age = Some(p);
+                        changed = true;
+                    }
+                }
+            });
+            help(
+                ui,
+                "Your own Carnivores: Ice Age folder (the one with HUNTDAT); its menu art only.",
+            );
+        }
+        changed
     }
 
     fn play(&mut self) {
@@ -328,9 +400,13 @@ impl Launcher {
         let name = install_name(&t.name);
         let dir = out.join("3ds").join(&name);
         let mut steps = Vec::new();
+        let title_art = t.ice_age_title.then(|| self.cfg.ice_age.clone()).flatten();
         let cook_args = |extra: Vec<String>, pack: &str| -> Vec<String> {
             let mut a = vec!["--game".to_string(), base.display().to_string()];
             a.extend(extra);
+            if let Some(ia) = &title_art {
+                a.extend(["--menu-art".to_string(), ia.display().to_string()]);
+            }
             a.extend([
                 "--target".into(),
                 t.target.arg().into(),
@@ -617,6 +693,10 @@ impl Launcher {
                 "With add-ons, the combined game is built first (a few seconds; kept until the \
                  list changes).",
             );
+            ui.add_space(4.0);
+            if self.menu_style_ui(ui, false) {
+                self.save();
+            }
         });
         ui.add_space(12.0);
         if big_button(ui, "PLAY", ready && !self.busy()) {
@@ -680,6 +760,7 @@ impl Launcher {
                 "The app asks which pack at start; each keeps its own save.",
             );
         });
+        changed |= panel(ui, |ui| self.menu_style_ui(ui, true));
         ui.add_space(8.0);
         changed |= self.cia_panel(ui);
         if changed {

@@ -38,6 +38,7 @@ const USAGE: &str = "usage:
   --overlay  a game folder copied over GAME_DIR first (e.g. the Modder's
              Edition, which most add-ons are made for); repeatable
   --balance  prices and scores over the game (a balance file; see `c2-pc balance`)
+  --menu-art the menu style: a game folder whose title art is used (Ice Age's)
   --areas    only these areas (default: all, plus the trophy room)
   --target   n3ds (New 3DS, default) or o3ds (Old 3DS / 2DS: smaller textures, shorter view)
   --force    write the pack even if it is over the target's memory budget
@@ -220,6 +221,8 @@ struct Args {
     recipe: Option<PathBuf>,
     mods_dir: Option<PathBuf>,
     balance: Option<PathBuf>,
+    /// Menu style: the game folder whose title art is used (Ice Age's).
+    menu_art: Option<PathBuf>,
     areas: Option<String>,
     target: Option<String>,
     force: bool,
@@ -243,6 +246,7 @@ fn parse_args() -> Result<Args> {
             "--recipe" => a.recipe = Some(val()?.into()),
             "--mods" => a.mods_dir = Some(val()?.into()),
             "--balance" => a.balance = Some(val()?.into()),
+            "--menu-art" => a.menu_art = Some(val()?.into()),
             "--areas" => a.areas = Some(val()?),
             "--target" => a.target = Some(val()?),
             "--out" => a.out = Some(val()?.into()),
@@ -956,9 +960,18 @@ fn main() -> Result<()> {
     }
     // The title screen: the main menu's art (MENUM.TGA, 800x600), its
     // 800x480 middle at 400x240 on a 512x256 canvas.
-    if let Some(p) = vfs
-        .read("HUNTDAT/MENU/MENUM.TGA")
-        .ok()
+    // The menu style's (`--menu-art`), else the game's.
+    let style_title = a.menu_art.as_ref().and_then(|d| {
+        let mut v = Vfs::new();
+        v.push("menu style", Box::new(c2_vfs::DirBackend::new(d).ok()?));
+        let hd = v.files().find_map(|(_, r)| {
+            let l = r.path.to_ascii_lowercase();
+            l.ends_with("menu/menum.tga").then(|| r.path.clone())
+        })?;
+        v.read(&hd).ok()
+    });
+    if let Some(p) = style_title
+        .or_else(|| vfs.read("HUNTDAT/MENU/MENUM.TGA").ok())
         .and_then(|d| c2_formats::tga::parse(&d).ok())
     {
         let px = image_to_rgba8(&p.pixels, false);

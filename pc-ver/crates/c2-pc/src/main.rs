@@ -49,7 +49,8 @@ model: drag to orbit, wheel zoom, [ ] next/prev file, N/P next/prev animation, S
 area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distance
 play:  the menus; a hunt returns to them. --mod (repeatable) plays vanilla plus those add-on mods,
        combined into the data dir (see MERGE_REPORT.md there); --balance applies a balance file's
-       prices and scores (see `c2-pc balance`)
+       prices and scores (see `c2-pc balance`); --menu-art GAME_DIR takes the menu frames from another
+       game (the original's, a mod's, Ice Age's)
 mod:   detect prints (or --write saves) an inferred mod.toml; build writes a combined game folder
 hunt:  click to capture mouse; keys follow the player's bindings (default WASD move, mouse look,
        LMB fire, E show/hide weapon, 1-6 choose weapon, Shift toggles run, X crouch, Space jump/swim,
@@ -60,7 +61,7 @@ hunt:  click to capture mouse; keys follow the player's bindings (default WASD m
 const VALUE_FLAGS: &[&str] = &[
     "anim", "time", "yaw", "shot", "cam", "view", "sim", "ship", "weapon", "target", "fire",
     "screen", "player", "script", "mod", "base", "out", "recipe", "mods", "id", "name", "overlay",
-    "balance",
+    "balance", "menu-art",
 ];
 
 struct Opts {
@@ -312,6 +313,10 @@ fn main() -> Result<()> {
         }
         "play" => {
             let screen = o.value("screen").map(str::to_owned);
+            // --menu-art DIR: the menu style (another game's menu frames).
+            if let Some(d) = o.value("menu-art") {
+                let _ = menu::MENU_ART.set(PathBuf::from(d));
+            }
             // --script: canvas clicks / typing / keys, applied before the shot.
             let script = o.value("script").map(str::to_owned);
             // --mod DIR (repeatable): play a combined game from the data dir.

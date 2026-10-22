@@ -425,6 +425,11 @@ fn wrap(hud: &Hud, px: f32, width: f32, lines: &[String]) -> Vec<String> {
     out
 }
 
+/// Menu style (`--menu-art`): a game folder whose menu frames, hit maps
+/// and slider are used (the original's, a mod's, Ice Age's); the pictures
+/// and texts stay the game's.
+pub static MENU_ART: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
 impl Menu {
     /// `game_dir`: the install (or its `HUNTDAT`). `player`: sign straight in
     /// as this hunter (back from a hunt).
@@ -440,8 +445,15 @@ impl Menu {
         load_res(&huntdat).context("reading the game data (is this a game folder?)")?;
         let dir = find_file(&huntdat, "MENU").unwrap_or_else(|| huntdat.join("MENU"));
         let mut hud = Hud::new(gpu);
+        // The style's frames where it has them (else the game's).
+        let art = MENU_ART
+            .get()
+            .and_then(|d| find_file(d, "HUNTDAT").or_else(|| Some(d.clone())))
+            .and_then(|h| find_file(&h, "MENU"))
+            .filter(|m| find_file(m, "MENUM.TGA").is_some())
+            .unwrap_or_else(|| dir.clone());
         let mut board =
-            |base: &str, on: &str, map: &str| Board::load(&mut hud, gpu, &dir, base, on, map);
+            |base: &str, on: &str, map: &str| Board::load(&mut hud, gpu, &art, base, on, map);
         let main = board("MENUM.TGA", "MENUM_ON.TGA", "MAIN_MAP.RAW");
         let stats_board = board("MENUS.TGA", "MENUM_ON.TGA", "MAIN_MAP.RAW");
         let quit_board = board("MENUQ.TGA", "MENUQ_ON.TGA", "MQ_MAP.RAW");
@@ -452,10 +464,12 @@ impl Menu {
         let options = board("OPT_OFF.TGA", "OPT_ON.TGA", "OPT_MAP.RAW");
         let credits = board("CREDITS.TGA", "", "");
         let mut pic = |name: &str, linear: bool| {
-            read_tga(&dir, name).map(|t| {
-                let rgba = c2_core::color::image_to_rgba8(&t.pixels, false);
-                hud.add_image_filtered(gpu, t.width as u32, t.height as u32, &rgba, linear)
-            })
+            read_tga(&art, name)
+                .or_else(|| read_tga(&dir, name))
+                .map(|t| {
+                    let rgba = c2_core::color::image_to_rgba8(&t.pixels, false);
+                    hud.add_image_filtered(gpu, t.width as u32, t.height as u32, &rgba, linear)
+                })
         };
         let slider = pic("SL_BAR.TGA", true);
         let knob = pic("SL_BUT.TGA", true);

@@ -55,6 +55,20 @@ impl Target {
     }
 }
 
+/// Which menu the PC game shows (its frames and buttons).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum MenuStyle {
+    /// The game's own (with a mod's frames if it brings them).
+    #[default]
+    Mod,
+    /// The original Carnivores 2's.
+    Original,
+    /// Carnivores: Ice Age's (needs its folder).
+    IceAge,
+    /// A touch-style layout after the mobile game's (experimental).
+    Mobile,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct ThreeDs {
@@ -72,6 +86,8 @@ pub struct ThreeDs {
     pub icon: Option<PathBuf>,
     pub banner: Option<PathBuf>,
     pub banner_sound: Option<PathBuf>,
+    /// The title screen: Ice Age's art instead of Carnivores 2's.
+    pub ice_age_title: bool,
 }
 
 impl Default for ThreeDs {
@@ -86,6 +102,7 @@ impl Default for ThreeDs {
             icon: None,
             banner: None,
             banner_sound: None,
+            ice_age_title: false,
         }
     }
 }
@@ -109,6 +126,10 @@ pub struct Config {
     /// The mobile game's values for this game (`mobile-values.toml` from
     /// the last APK import), offered in the balance editor.
     pub mobile_values: Option<PathBuf>,
+    /// The PC menu style, and the Ice Age folder it (and the 3DS title)
+    /// can take art from.
+    pub menu_style: MenuStyle,
+    pub ice_age: Option<PathBuf>,
 }
 
 fn path() -> PathBuf {
