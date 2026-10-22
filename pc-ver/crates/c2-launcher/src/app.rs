@@ -29,6 +29,8 @@ pub struct Launcher {
     base_text: String,
     note: Option<(String, Color32)>,
     balance: crate::balance::Editor,
+    /// An APK import running: where it writes its add-ons.
+    importing: Option<PathBuf>,
 }
 
 fn style(ctx: &egui::Context) {
@@ -90,6 +92,7 @@ impl Launcher {
     pub fn new(cc: &eframe::CreationContext<'_>, mode: Mode) -> Self {
         style(&cc.egui_ctx);
         let cfg = Config::load();
+        let mobile = cfg_mobile(&cfg);
         let base_text = cfg
             .base
             .as_ref()
@@ -102,8 +105,72 @@ impl Launcher {
             job: None,
             base_text,
             note: None,
-            balance: crate::balance::Editor::load(),
+            balance: {
+                let mut b = crate::balance::Editor::load();
+                b.mobile = mobile;
+                b
+            },
+            importing: None,
         }
+    }
+
+    /// Imports the mobile game's animals and weapons from an APK the user
+    /// picked into the data folder (`mobile/<apk>/`); `import_done` adds
+    /// them as add-ons.
+    fn import_apk(&mut self, apk: PathBuf) {
+        let (bases, _) = self.game_folders();
+        if bases.is_empty() {
+            self.note = Some(("Set the game folder first (The game tab).".into(), RED));
+            return;
+        }
+        let stem = apk
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "mobile".into());
+        let out = crate::config::data_dir().join("mobile").join(&stem);
+        let to = out.clone();
+        let step = Step::Task(Box::new(move |job| {
+            job.log(format!("Reading {}", apk.display()));
+            let base = c2_mods::vanilla(&bases).map_err(|e| e.to_string())?;
+            let done = c2_mods::mobile::import(&apk, &base, &to).map_err(|e| e.to_string())?;
+            for a in done {
+                job.log(format!("{} (kind of the {})", a.name, a.donor));
+                for n in a.notes {
+                    job.log(format!("  {n}"));
+                }
+            }
+            Ok(())
+        }));
+        self.importing = Some(out);
+        self.job = Some(Job::start("Importing from the mobile game", vec![step]));
+    }
+
+    /// After an import: its folders become add-ons, its values go to the
+    /// balance editor.
+    fn import_done(&mut self) {
+        let Some(out) = &self.importing else { return };
+        match self.job.as_ref().and_then(Job::result) {
+            None => return,
+            Some(false) => {}
+            Some(true) => {
+                let mut dirs: Vec<PathBuf> = std::fs::read_dir(out)
+                    .map(|rd| {
+                        rd.flatten()
+                            .map(|e| e.path())
+                            .filter(|p| p.is_dir())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                dirs.sort();
+                let values = out.join(c2_mods::mobile::MOBILE_VALUES);
+                self.cfg.mobile_values = values.exists().then_some(values);
+                self.balance.mobile = cfg_mobile(&self.cfg);
+                let n = dirs.len();
+                self.add_addons(dirs);
+                self.note = Some((format!("{n} imported add-ons added (Add-ons tab)."), TEXT));
+            }
+        }
+        self.importing = None;
     }
 
     fn shows_3ds(&self) -> bool {
@@ -417,6 +484,25 @@ impl Launcher {
         );
         ui.add_space(6.0);
         ui.horizontal(|ui| {
+            if ui
+                .add_enabled(
+                    !self.busy(),
+                    egui::Button::new("Import from the mobile game (APK)..."),
+                )
+                .on_hover_text(
+                    "Your own copy of Carnivores: Dinosaur Hunter or Ice Age for Android: its \
+                     animals and weapons this game doesn't have become add-ons (for the \
+                     Modder's Edition: add it as a base overlay first).",
+                )
+                .clicked()
+            {
+                if let Some(p) = rfd::FileDialog::new()
+                    .add_filter("Android app", &["apk"])
+                    .pick_file()
+                {
+                    self.import_apk(p);
+                }
+            }
             if ui.button("Add folder...").clicked() {
                 if let Some(p) = rfd::FileDialog::new().pick_folder() {
                     self.add_addons(vec![p]);
@@ -848,6 +934,7 @@ impl eframe::App for Launcher {
                 .collect()
         });
         self.dropped(dropped);
+        self.import_done();
         if self.busy() {
             ctx.request_repaint_after(std::time::Duration::from_millis(200));
         }
@@ -918,4 +1005,11 @@ impl eframe::App for Launcher {
             self.tab = Tab::Game;
         }
     }
+}
+
+/// The mobile values file the config names, if it reads.
+fn cfg_mobile(cfg: &Config) -> Option<c2_mods::balance::Balance> {
+    cfg.mobile_values
+        .as_deref()
+        .and_then(|p| c2_mods::balance::Balance::load(p).ok())
 }

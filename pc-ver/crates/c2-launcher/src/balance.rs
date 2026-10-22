@@ -41,6 +41,65 @@ pub struct Editor {
     pending: Option<Pending>,
     error: Option<String>,
     filter: String,
+    /// The mobile game's values for this game's entries (written by the
+    /// APK import, `mobile-values.toml`), offered where they differ.
+    pub mobile: Option<Balance>,
+}
+
+/// The values a balance item can carry: name, read, write.
+type Field = (
+    &'static str,
+    fn(&Item) -> Option<f64>,
+    fn(&mut Item, Option<f64>),
+);
+const FIELDS: [Field; 7] = [
+    (
+        "price",
+        |i| i.price.map(f64::from),
+        |i, v| i.price = v.map(|v| v.round() as i32),
+    ),
+    (
+        "score",
+        |i| i.score.map(f64::from),
+        |i, v| i.score = v.map(|v| v as f32),
+    ),
+    (
+        "health",
+        |i| i.health.map(f64::from),
+        |i, v| i.health = v.map(|v| v as f32),
+    ),
+    (
+        "power",
+        |i| i.power.map(f64::from),
+        |i, v| i.power = v.map(|v| v as f32),
+    ),
+    (
+        "precision",
+        |i| i.prec.map(f64::from),
+        |i, v| i.prec = v.map(|v| v as f32),
+    ),
+    (
+        "rate",
+        |i| i.rate.map(f64::from),
+        |i, v| i.rate = v.map(|v| v as f32),
+    ),
+    (
+        "shots",
+        |i| i.shots.map(f64::from),
+        |i, v| i.shots = v.map(|v| v as f32),
+    ),
+];
+
+/// An entry where the mobile game differs: its list, name, and per field
+/// (index in [`FIELDS`]) the game's and the mobile value.
+type Difference = (List, String, Vec<(usize, f64, f64)>);
+
+fn fmt(v: f64) -> String {
+    if v.fract() == 0.0 {
+        format!("{v:.0}")
+    } else {
+        format!("{v:.2}").trim_end_matches('0').to_string()
+    }
 }
 
 /// Which list a row is in.
@@ -157,7 +216,127 @@ impl Editor {
         if let Some(s) = score {
             l[i].score = s;
         }
-        l.retain(|i| i.price.is_some() || i.score.is_some());
+        l.retain(Item::changes);
+    }
+
+    /// Where the mobile game differs from this game: per entry, the fields
+    /// and both values (game, mobile).
+    fn differences(&self, game: &Balance) -> Vec<Difference> {
+        let Some(m) = &self.mobile else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for (list, mine, theirs) in [
+            (List::Areas, &game.areas, &m.areas),
+            (List::Animals, &game.animals, &m.animals),
+            (List::Weapons, &game.weapons, &m.weapons),
+        ] {
+            for t in theirs {
+                let Some(g) = mine.iter().find(|g| g.name.eq_ignore_ascii_case(&t.name)) else {
+                    continue;
+                };
+                let diffs: Vec<(usize, f64, f64)> = FIELDS
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(k, (_, get, _))| {
+                        let (a, b) = (get(g)?, get(t)?);
+                        ((a - b).abs() > 1e-3).then_some((k, a, b))
+                    })
+                    .collect();
+                if !diffs.is_empty() {
+                    out.push((list, t.name.clone(), diffs));
+                }
+            }
+        }
+        out
+    }
+
+    /// Takes the mobile values of one entry (`true`) or the game's.
+    fn choose(&mut self, list: List, name: &str, diffs: &[(usize, f64, f64)], mobile: bool) {
+        let l = self.edits_mut(list);
+        let i = match l.iter().position(|i| i.name.eq_ignore_ascii_case(name)) {
+            Some(i) => i,
+            None => {
+                l.push(Item {
+                    name: name.to_string(),
+                    ..Default::default()
+                });
+                l.len() - 1
+            }
+        };
+        for &(k, _, m) in diffs {
+            (FIELDS[k].2)(&mut l[i], mobile.then_some(m));
+        }
+        l.retain(Item::changes);
+    }
+
+    /// Whether an entry has the mobile values.
+    fn is_mobile(&self, list: List, name: &str, diffs: &[(usize, f64, f64)]) -> bool {
+        self.edit_of(list, name).is_some_and(|e| {
+            diffs
+                .iter()
+                .all(|&(k, _, m)| (FIELDS[k].1)(e).is_some_and(|v| (v - m).abs() < 0.01))
+        })
+    }
+
+    /// PC or mobile, per entry where they differ (the game's by default).
+    fn mobile_ui(&mut self, ui: &mut egui::Ui, game: &Balance) -> bool {
+        let diffs = self.differences(game);
+        if diffs.is_empty() {
+            return false;
+        }
+        let mut changed = false;
+        panel(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("PC or mobile").color(GOLD));
+                help(
+                    ui,
+                    "where the mobile game's values differ; PC unless you pick mobile",
+                );
+            });
+            ui.horizontal(|ui| {
+                if ui.button("All PC").clicked() {
+                    for (l, n, d) in &diffs {
+                        self.choose(*l, n, d, false);
+                    }
+                    changed = true;
+                }
+                if ui.button("All mobile").clicked() {
+                    for (l, n, d) in &diffs {
+                        self.choose(*l, n, d, true);
+                    }
+                    changed = true;
+                }
+            });
+            egui::Grid::new("pc-or-mobile")
+                .striped(true)
+                .num_columns(3)
+                .spacing([16.0, 4.0])
+                .show(ui, |ui| {
+                    for (list, name, d) in &diffs {
+                        let mobile = self.is_mobile(*list, name, d);
+                        ui.label(RichText::new(name).color(if mobile { GOLD } else { TEXT }));
+                        let text: Vec<String> = d
+                            .iter()
+                            .map(|&(k, a, b)| format!("{} {} / {}", FIELDS[k].0, fmt(a), fmt(b)))
+                            .collect();
+                        ui.label(RichText::new(text.join(", ")).color(DIM))
+                            .on_hover_text("PC / mobile");
+                        ui.horizontal(|ui| {
+                            if ui.selectable_label(!mobile, "PC").clicked() && mobile {
+                                self.choose(*list, name, d, false);
+                                changed = true;
+                            }
+                            if ui.selectable_label(mobile, "Mobile").clicked() && !mobile {
+                                self.choose(*list, name, d, true);
+                                changed = true;
+                            }
+                        });
+                        ui.end_row();
+                    }
+                });
+        });
+        changed
     }
 
     /// Edits for names this game doesn't have (kept for other games).
@@ -237,6 +416,8 @@ impl Editor {
                 }
             });
         });
+        ui.add_space(8.0);
+        changed |= self.mobile_ui(ui, &values);
         for (list, title, items) in [
             (List::Areas, "Areas", &values.areas),
             (List::Animals, "Animals", &values.animals),
@@ -336,5 +517,44 @@ impl Editor {
                 });
         });
         changed
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mobile_values_are_offered_and_chosen_per_entry() {
+        let item = |name: &str, price: i32, shots: f32| Item {
+            name: name.into(),
+            price: Some(price),
+            shots: Some(shots),
+            ..Default::default()
+        };
+        let game = Balance {
+            weapons: vec![item("Shotgun", 100, 8.0), item("Pistol", 20, 16.0)],
+            ..Default::default()
+        };
+        let mut e = Editor {
+            mobile: Some(Balance {
+                weapons: vec![item("Shotgun", 40, 10.0), item("Pistol", 20, 16.0)],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        // Only the shotgun differs, in price and shots.
+        let d = e.differences(&game);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].1, "Shotgun");
+        assert_eq!(d[0].2.len(), 2);
+        assert!(!e.is_mobile(List::Weapons, "Shotgun", &d[0].2));
+        e.choose(List::Weapons, "Shotgun", &d[0].2, true);
+        assert!(e.is_mobile(List::Weapons, "Shotgun", &d[0].2));
+        assert_eq!(e.edits.weapons[0].shots, Some(10.0));
+        assert_eq!(e.edits.weapons[0].price, Some(40));
+        // Back to PC: nothing left to change.
+        e.choose(List::Weapons, "Shotgun", &d[0].2, false);
+        assert!(e.edits.weapons.is_empty());
     }
 }

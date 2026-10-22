@@ -106,6 +106,9 @@ pub struct Config {
     /// Where `c2-pc`, `c2-cook` and `c2-3ds.3dsx` are, if not beside the
     /// launcher.
     pub tools: Option<PathBuf>,
+    /// The mobile game's values for this game (`mobile-values.toml` from
+    /// the last APK import), offered in the balance editor.
+    pub mobile_values: Option<PathBuf>,
 }
 
 fn path() -> PathBuf {

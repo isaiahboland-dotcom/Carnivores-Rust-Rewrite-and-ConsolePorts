@@ -7,6 +7,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 
+/// Work a [`Step::Task`] does.
+pub type Task = Box<dyn FnOnce(&Job) -> Result<(), String> + Send>;
+
 pub enum Step {
     /// A program with its arguments; fails the job if it does.
     Run {
@@ -34,6 +37,8 @@ pub enum Step {
     },
     /// A folder for a program's output.
     Dir(PathBuf),
+    /// Work done here (the mobile import), logging to the job.
+    Task(Task),
 }
 
 #[derive(Default)]
@@ -154,6 +159,7 @@ impl Job {
                 }
                 std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))
             }
+            Step::Task(f) => f(self),
             Step::Dir(d) => {
                 std::fs::create_dir_all(&d).map_err(|e| format!("{}: {e}", d.display()))
             }
