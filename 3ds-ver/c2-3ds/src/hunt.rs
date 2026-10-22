@@ -160,6 +160,7 @@ impl Setup {
                 Role::Ambient => self.max_ambient > 0,
                 Role::Slot(k) => k < 118 && self.targets & (1 << (k + 10)) != 0,
                 Role::Roamer => self.roamers.contains(&i),
+                Role::Off => false,
             }
     }
 

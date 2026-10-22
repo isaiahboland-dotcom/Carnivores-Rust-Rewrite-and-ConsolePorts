@@ -375,6 +375,11 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   data); where both exist, choose PC or mobile behaviour (the mobile shotgun differs).
 - Menu styles as an option: the original's, a mod's menu (PC), the mobile menu.
 
+**M16 — Standalone games in the launcher (PC, last)**
+- Users drop in their own standalone games (full conversions that rewrite Carnivores 2) as well as add-ons;
+  several are combined into one game the way combined packs work (each game's areas, animals and weapons
+  kept apart and renumbered, spawns tied to its own maps, add-ons on top), or one is played on its own.
+
 **Known issues (next up)**
 - 3DS add-on pack: roaming add-ons have no menu picture (they have no menu slot); a picked roamer is not a
   hunt target (half score, no call).
@@ -479,6 +484,7 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
 - [ ] M13 Survival mode (planned)
 - [ ] M14 Carnivores: Ice Age (planned)
 - [ ] M15 Mobile assets (planned)
+- [ ] M16 Standalone games in the launcher (planned, PC)
 - [ ] M9 Modder's Edition Engine data — **in progress**
   - [x] nested `_RES.TXT` blocks; `_MENU.TXT` / `.c2map` menu lists; `overwrite` / `addition` resolution
   - [x] spawn / pack tables and placement on PC (dialect game folders hunt with their own rosters and spawns)

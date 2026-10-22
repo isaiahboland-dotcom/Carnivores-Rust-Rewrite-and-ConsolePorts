@@ -151,7 +151,7 @@ fn loose_add_ons_are_placed_merged_and_their_hunters_combined() {
 
 /// A Modder's Edition-style base: entries with spawn tables, and the menu's
 /// own `_MENU.TXT`.
-const MEE_RES: &str = "weapons {\n{\n name = 'Pistol'\n power = 1\n}\n}\ncharacters {\n{\n name = 'Hunter'\n file = 'hunter.car'\n ai = 0\n}\n{\n name = 'Spinosaurus'\n file = 'spino.car'\n ai = 16\n runAnim = 0\n walkAnim = 1\n deathtype {\n  dieAnim = 6\n }\n overwrite char0 {\n  spawninfo{\n   spawngroup = 2\n  }\n }\n spawninfo{\n  spawngroup = 1\n }\n}\n}\n.\n";
+const MEE_RES: &str = "weapons {\n{\n name = 'Pistol'\n power = 1\n}\n}\ncharacters {\n{\n name = 'Hunter'\n file = 'hunter.car'\n ai = 0\n}\n{\n name = 'Spinosaurus'\n file = 'spino.car'\n ai = 16\n runspd = 1.6\n wlkspd = 0.7\n killdist = 300\n runAnim = 0\n walkAnim = 1\n deathtype {\n  dieAnim = 6\n }\n overwrite char0 {\n  spawninfo{\n   spawngroup = 2\n  }\n }\n spawninfo{\n  spawngroup = 1\n }\n}\n}\n.\n";
 const MEE_MENU: &str = "weapons {\n{\n name = 'Pistol'\n power = 1\n}\n}\ncharacters {\n{\n name = 'Spinosaurus'\n ai = 16\n}\n}\nprices {\n start = 100\n dino = 250\n weapon = 20\n}\n.\n";
 
 #[test]
@@ -180,7 +180,7 @@ fn on_a_modders_edition_base_slot_add_ons_get_their_own_slot() {
             ("CALL1_A.wav", b"rx call"),
             (
                 "README.txt",
-                b"{\n name = 'Raptor X'\n file = 'rx.car'\n ai = 16\n}\n",
+                b"{\n name = 'Raptor X'\n file = 'rx.car'\n ai = 16\n runspeed = 2.0\n}\n",
             ),
             (
                 "gun/_RES.TXT",
@@ -225,6 +225,11 @@ fn on_a_modders_edition_base_slot_add_ons_get_their_own_slot() {
     // And its animation keys: an entry for the original game has none.
     assert_eq!(rx.get(&["runAnim"]), Some("0"));
     assert_eq!(rx.get(&["walkAnim"]), Some("1"));
+    // Another engine's speed dropped; the slot's gait borrowed.
+    assert_eq!(rx.get(&["runspeed"]), None);
+    assert_eq!(rx.get(&["runspd"]), Some("1.6"));
+    assert_eq!(rx.get(&["wlkspd"]), Some("0.7"));
+    assert_eq!(rx.get(&["killdist"]), Some("300"));
     let gun = &res.section("weapons").expect("weapons").blocks[1];
     assert_eq!(gun.get(&["pic"]), Some("'bullet2.tga'"));
 }

@@ -20,10 +20,13 @@ pub enum Role {
     Ambient,
     /// A menu animal: loaded when its slot is picked (call id 10 + slot).
     Slot(usize),
-    /// Neither (add-ons that only roam, brachiosaurs, fish): loaded when
-    /// picked in the menu, then placed by its spawn tables. `c2-cook` sorts
-    /// models the same way for its memory figures.
+    /// A huntable AI (10-29) without a menu slot (add-ons that only roam):
+    /// offered in the menu, loaded when picked. `c2-cook` sorts models the
+    /// same way for its memory figures.
     Roamer,
+    /// The big ambient wanderers (brachiosaur-like AIs, fish: 30 and up)
+    /// without a slot: not loaded on the 3DS (a couple of MiB each).
+    Off,
 }
 
 /// One hunt's characters and weapons.
@@ -121,7 +124,8 @@ impl Rules {
                     _ if d.ai == 0 => Role::Hunter,
                     Some(n) => Role::Slot(n as usize),
                     None if (0..10).contains(&d.ai) => Role::Ambient,
-                    None => Role::Roamer,
+                    None if (10..30).contains(&d.ai) => Role::Roamer,
+                    None => Role::Off,
                 }
             })
             .collect();

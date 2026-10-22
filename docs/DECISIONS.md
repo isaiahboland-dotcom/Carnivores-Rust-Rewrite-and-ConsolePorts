@@ -2,6 +2,21 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-22 — Original-game add-ons move like the animal they replace
+A raptor add-on written for the original game (speeds as `runspeed` etc.,
+another engine's keys and units) stood still in a Modder's Edition game:
+that engine reads `runspd` / `wlkspd` / `swmspd` / `jmpspd` only. Besides
+the animation keys (entry below), such an entry now drops those foreign
+speed keys and takes the donor's movement keys it lacks (speeds, kill
+distance, swimming, water level, weave, camera), as the original engine
+gives every animal of an AI the same gait. `c2-cook --check` reports a
+dialect animal that can't move.
+
+The 3DS offers roaming add-ons (huntable AIs 10-29 with no menu slot) in
+its picker; brachiosaur-like and fish AIs (30 and up) without a slot are
+ambient wanderers: not listed and not loaded there (`Role::Off`, a couple
+of MiB each).
+
 ## 2026-10-22 — M10: the launchers
 - **egui / eframe** (owner's pick) with `rfd` for file pickers, in a new crate
   `c2-launcher` with two binaries: `c2-launcher` (PC play; on first start it

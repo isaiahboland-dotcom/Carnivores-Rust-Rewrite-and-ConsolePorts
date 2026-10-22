@@ -84,6 +84,7 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
                 Some(Role::Hunter | Role::Ambient) => true,
                 Some(Role::Slot(k)) => *k < 118 && targets & (1 << (k + 10)) != 0,
                 Some(Role::Roamer) => roamers.contains(&i),
+                Some(Role::Off) => false,
                 None => false,
             };
             let (mut species, cars) = c2_core::load::species_with(&vfs, &hr.res, &keep);
@@ -118,6 +119,14 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
                     && !sp.ani_time.is_empty()
                 {
                     missing.push(format!("animation keys of #{i} ({})", sp.info.name));
+                }
+                let still = sp
+                    .mee
+                    .as_ref()
+                    .is_some_and(|m| m.run_speed <= 0.0 && m.walk_speed <= 0.0);
+                let picked = matches!(hr.roles.get(i), Some(Role::Slot(_) | Role::Roamer));
+                if still && picked && !sp.ani_time.is_empty() {
+                    missing.push(format!("speeds of #{i} ({}): it can't move", sp.info.name));
                 }
             }
             let wanted: Vec<usize> = (0..hr.roles.len())
@@ -255,6 +264,7 @@ fn close_range(
         );
     }
     let mut out = Vec::new();
+    let mut last = hunt.herd.chars[target].pos;
     for t in 0..2000u32 {
         if t == 1000 {
             hunt.debug_bag(area, target, &mut out);
@@ -266,6 +276,8 @@ fn close_range(
             let c = &hunt.herd.chars[target];
             let sp = &hunt.herd.species[c.ctype];
             let anim = sp.anims().get(c.phase).copied();
+            let moved = (c.pos[0] - last[0]).hypot(c.pos[2] - last[2]);
+            last = c.pos;
             let nearby = hunt
                 .herd
                 .chars
@@ -281,14 +293,16 @@ fn close_range(
                 .map(|(n, m)| format!("{}{m:.3}", &n[..1]))
                 .collect();
             println!(
-                "    t={:>2}s {} | #{target} health {} state {} phase {} anim {:?} ftime {} | {nearby} alive in view",
+                "    t={:>2}s {} | #{target} health {} state {} phase {} anim {:?} ftime {} moved {moved:.0} to hunter {:.0} hunter health {} | {nearby} alive in view",
                 (t + 1) / 50,
                 parts.join(" "),
                 c.health,
                 c.state,
                 c.phase,
                 anim,
-                c.ftime
+                c.ftime,
+                (c.pos[0] - hunt.player.x).hypot(c.pos[2] - hunt.player.z),
+                hunt.health
             );
         }
     }

@@ -486,8 +486,53 @@ fn has_anims(b: &Block) -> bool {
     b.entries.iter().any(|e| is_anim_key(&e.key)) || b.subs.iter().any(|s| is_anim_sub(&s.name))
 }
 
-/// `from`'s animation keys and blocks, appended to `to`.
+/// Speeds as some patched games write them (`runspeed = 1.3`): another
+/// engine's keys and units, which the Modder's Edition doesn't read. Its
+/// own speed keys come from the donor instead, as the original engine fixes
+/// speeds per AI (a raptor add-on given them walked at a crawl).
+const OTHER_SPEEDS: [&str; 5] = [
+    "runspeed",
+    "wlkspeed",
+    "walkspeed",
+    "swimspeed",
+    "jumpspeed",
+];
+
+/// Movement keys the Modder's Edition reads per animal (the original
+/// engine fixes them per AI), taken from the donor when missing.
+const MOVE_KEYS: [&str; 15] = [
+    "runspd",
+    "wlkspd",
+    "swmspd",
+    "jmpspd",
+    "runrotatespeed",
+    "killdist",
+    "canswim",
+    "waterLevel",
+    "weaveRange",
+    "CamYLand",
+    "CamYWater",
+    "CamBaseLand",
+    "CamBaseWater",
+    "dogSmell",
+    "aggress",
+];
+
+/// Makes an entry for the original game readable by the Modder's
+/// Edition: `from`'s animation keys and blocks and the movement keys it
+/// lacks (same AI, so the same animation order and gait); other engines'
+/// speed keys dropped.
 fn copy_anims(from: &Block, to: &mut Block) {
+    to.entries
+        .retain(|e| !OTHER_SPEEDS.iter().any(|k| e.key.eq_ignore_ascii_case(k)));
+    let has = |b: &Block, k: &str| b.entries.iter().any(|e| e.key.eq_ignore_ascii_case(k));
+    let missing: Vec<_> = from
+        .entries
+        .iter()
+        .filter(|e| MOVE_KEYS.iter().any(|k| e.key.eq_ignore_ascii_case(k)) && !has(to, &e.key))
+        .cloned()
+        .collect();
+    to.entries.extend(missing);
     to.entries
         .extend(from.entries.iter().filter(|e| is_anim_key(&e.key)).cloned());
     let end = to.entries.len();
