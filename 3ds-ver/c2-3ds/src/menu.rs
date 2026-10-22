@@ -71,6 +71,8 @@ const TEXT: Rgba = [160, 210, 130, 255];
 const DIM: Rgba = [110, 110, 110, 255];
 const RED: Rgba = [240, 80, 60, 255];
 const DIMMED: Rgba = [140, 140, 140, 255];
+/// Roaming add-ons (no call), as the grid rim and the hunt map show them.
+const BLUE: Rgba = [120, 180, 255, 255];
 /// Space between hexagons.
 const GAP: f32 = 3.0;
 
@@ -947,15 +949,6 @@ impl Menu {
             }
             c.text_c(gpu, 160.0, y, 1.0, col, &l);
         }
-        // A roaming add-on picked: its add-on supplies no call.
-        if step == Step::Animals && self.roamer_picked() {
-            for (k, l) in ["No calls supplied,", "proceed with caution"]
-                .iter()
-                .enumerate()
-            {
-                c.text_c(gpu, 160.0, BAR_Y + 2.0 + k as f32 * 11.0, 1.0, GOLD, l);
-            }
-        }
         let next = match step {
             Step::Area if self.trophy() => "Enter",
             Step::Gear => "HUNT",
@@ -1182,49 +1175,58 @@ impl Menu {
             Self::time_icon(&mut c, (24.0, 168.0, 16.0), self.time);
             c.flush(gpu);
             c.text(gpu, 46.0, 164.0, 1.0, WHITE, TIMES[self.time].1);
+            // A roaming add-on picked (blue in the list): it has no call.
+            if !self.observer && self.roamer_picked() {
+                c.text(gpu, 8.0, 192.0, 1.0, GOLD, "No calls supplied,");
+                c.text(gpu, 8.0, 202.0, 1.0, GOLD, "proceed with caution");
+                c.text(gpu, 8.0, 212.0, 1.0, BLUE, "(+10% score)");
+            }
         }
 
         // What is picked, with prices.
         let mut y = 22.0;
-        let mut list = |c: &mut Canvas, gpu: &mut Gpu, head: &str, items: Vec<(String, i32)>| {
-            c.text(gpu, 212.0, y, 1.0, TEXT, head);
-            y += 10.0;
-            if items.is_empty() {
-                c.text(gpu, 220.0, y, 1.0, DIM, "-");
+        // Items: name, price, colour.
+        let mut list =
+            |c: &mut Canvas, gpu: &mut Gpu, head: &str, items: Vec<(String, i32, Rgba)>| {
+                c.text(gpu, 212.0, y, 1.0, TEXT, head);
                 y += 10.0;
-            }
-            for (n, p) in items {
-                let n: String = n.chars().take(16).collect();
-                c.text(gpu, 220.0, y, 1.0, WHITE, &n);
-                if p > 0 {
-                    let ps = p.to_string();
-                    c.text(gpu, 392.0 - ps.len() as f32 * 8.0, y, 1.0, GOLD, &ps);
+                if items.is_empty() {
+                    c.text(gpu, 220.0, y, 1.0, DIM, "-");
+                    y += 10.0;
                 }
-                y += 9.0;
-            }
-            y += 4.0;
-        };
+                for (n, p, col) in items {
+                    let n: String = n.chars().take(16).collect();
+                    c.text(gpu, 220.0, y, 1.0, col, &n);
+                    if p > 0 {
+                        let ps = p.to_string();
+                        c.text(gpu, 392.0 - ps.len() as f32 * 8.0, y, 1.0, GOLD, &ps);
+                    }
+                    y += 9.0;
+                }
+                y += 4.0;
+            };
         if self.trophy() {
             list(&mut c, gpu, "Your trophies", Vec::new());
         } else if self.observer {
             list(&mut c, gpu, "Observer: just watch", Vec::new());
         } else {
-            let pick = |items: &[Item], mask: u32| -> Vec<(String, i32)> {
+            let pick = |items: &[Item], mask: u32| -> Vec<(String, i32, Rgba)> {
                 items
                     .iter()
                     .enumerate()
                     .filter(|(i, _)| mask & (1 << i) != 0)
-                    .map(|(_, it)| (it.name.clone(), it.price))
+                    .map(|(_, it)| (it.name.clone(), it.price, WHITE))
                     .collect()
             };
-            let dinos: Vec<(String, i32)> = self
+            // Roaming add-ons in blue, as in the grid and on the map.
+            let dinos: Vec<(String, i32, Rgba)> = self
                 .dinos
                 .iter()
                 .enumerate()
                 .filter(|(i, _)| self.picked_dinos & (1 << i) != 0)
                 .map(|(_, d)| match d.0 {
-                    Pick::Roamer(_) => (format!("{} (no call, +10%)", d.1.name), d.1.price),
-                    Pick::Slot(_) => (d.1.name.clone(), d.1.price),
+                    Pick::Roamer(_) => (d.1.name.clone(), d.1.price, BLUE),
+                    Pick::Slot(_) => (d.1.name.clone(), d.1.price, WHITE),
                 })
                 .collect();
             list(&mut c, gpu, "Animals", dinos);
@@ -1236,11 +1238,11 @@ impl Menu {
             );
             let mut gear = pick(&self.equip, self.picked_equip);
             if self.save.options.tranq != 0 {
-                gear.push(("Tranquilizer".into(), 0));
+                gear.push(("Tranquilizer".into(), 0, WHITE));
             }
             if let Some((price, n, f)) = self.extra() {
                 let pen = if f < 1.0 { " -5%" } else { "" };
-                gear.push((format!("Ammo x{n}{pen}"), price));
+                gear.push((format!("Ammo x{n}{pen}"), price, WHITE));
             }
             list(&mut c, gpu, "Gear", gear);
         }

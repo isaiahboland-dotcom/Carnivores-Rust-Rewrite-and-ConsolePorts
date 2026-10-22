@@ -31,9 +31,10 @@ Owner's calls after playing the roamers on hardware:
   roamer keeps its slot (target, loading) but the slot can't be called
   (`Setup::callable`). The donor now only sets the price.
 - **+10% score** for such a kill (`HuntOptions::no_call_bonus`), as for
-  night. Menu: a blue rim, "No calls supplied, proceed with caution" while
-  one is picked, "(no call, +10%)" on the top screen. Hunt map: blue with a
-  gold rim.
+  night. Menu: a blue rim in the grid; on the top screen the name in blue
+  and, under the time of day, "No calls supplied, proceed with caution"
+  (+10% score) while one is picked (the bottom bar's middle shows the points
+  left). Hunt map: blue with a gold rim.
 - **Non-target kills keep their full score in dialect games** (PC and
   3DS). Both the upstream source (`Game.cpp`) and the modernized fork
   (`EngineInit.cpp: SubmitDinoScore`) comment out the original's halving.
