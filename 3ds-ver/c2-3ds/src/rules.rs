@@ -72,6 +72,19 @@ impl Rules {
     /// The rules for a hunt in `area` (`AREA3`, `TROPHY`) at `time`, with
     /// `targets` (bit 10 + menu slot) picked.
     pub fn hunt(&self, area: &str, time: TimeOfDay, targets: u128) -> HuntRules {
+        self.hunt_with(area, time, targets, &[])
+    }
+
+    /// [`Rules::hunt`] as played: picked animals (and picked roamers, by
+    /// character index) come on this map even if their tables put them on
+    /// others (`c2_core::mee::spawn_picked_anywhere`).
+    pub fn hunt_with(
+        &self,
+        area: &str,
+        time: TimeOfDay,
+        targets: u128,
+        roamers: &[usize],
+    ) -> HuntRules {
         let (res, tables) = match (&self.raw, &self.vanilla) {
             (Some(raw), _) => {
                 let h = c2_formats::mee::Hunt {
@@ -83,7 +96,8 @@ impl Rules {
                     },
                     picked: targets >> 10,
                 };
-                let m = c2_core::mee::read(raw, &h);
+                let mut m = c2_core::mee::read(raw, &h);
+                c2_core::mee::spawn_picked_anywhere(raw, &h, &mut m.tables, roamers);
                 (m.res, Some(m.tables))
             }
             (None, Some(v)) => (v.clone(), None),

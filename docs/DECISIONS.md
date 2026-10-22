@@ -2,6 +2,18 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-22 — Picked animals come on any map
+Owner's rule: only ambient animals keep to their maps; anything picked can
+be hunted anywhere. The dialect spawns an animal only where its tables say
+(combined games: its own game's maps; roaming add-ons: theirs), so
+`c2_core::mee::spawn_picked_anywhere` adds each picked character (by menu
+slot; on the 3DS also picked roamers) to the map's target group, the spawn
+group that map's own menu animals use, unless it is already in it; its own
+spawns stay. Ambient animals (AI under 10) follow their tables as before,
+and the modpack's random-ambients setting still applies. This replaces the
+"not on this map" dimming (PC) and the roamer lock (3DS) of the entry below;
+the menus still say where each animal is native to.
+
 ## 2026-10-22 — Owner's first add-on pack test: fixes
 - **Original-game add-ons in a Modder's Edition game had no animations.**
   That engine numbers animations only from an entry's `runAnim`,

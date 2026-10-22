@@ -79,7 +79,7 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
         let area = c2_core::load::area_with(&vfs, area_name, TimeOfDay::Day, true)?;
         println!("{area_name}:");
         for (name, targets, roamers) in &picks {
-            let hr = rules.hunt(area_name, TimeOfDay::Day, *targets);
+            let hr = rules.hunt_with(area_name, TimeOfDay::Day, *targets, roamers);
             let keep = |i: usize| match hr.roles.get(i) {
                 Some(Role::Hunter | Role::Ambient) => true,
                 Some(Role::Slot(k)) => *k < 118 && targets & (1 << (k + 10)) != 0,

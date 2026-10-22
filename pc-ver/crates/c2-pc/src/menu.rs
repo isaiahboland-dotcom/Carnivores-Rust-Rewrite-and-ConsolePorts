@@ -353,8 +353,6 @@ pub struct Menu {
     pc: PcSettings,
     observe_text: Vec<String>,
     areas: Vec<PathBuf>,
-    /// Dialect games: the areas each huntable spawns on (`hunt_homes`).
-    homes: Option<Vec<Vec<usize>>>,
     players: Vec<Save>,
     /// Index into `players` of the signed-in hunter.
     player: Option<usize>,
@@ -658,8 +656,8 @@ impl Menu {
                 }
             }
         }
-        // Where each lives (combined games: an animal from one game spawns
-        // on that game's maps only).
+        // Where each comes from (combined games: an animal's own game's
+        // maps). Picked, it comes on any map (`spawn_picked_anywhere`).
         let homes = hunt_homes(&huntdat, &menu, &areas);
         if let (Some(h), Some(c)) = (&homes, cols.get_mut(1)) {
             let area_names: Vec<String> = area_list
@@ -677,7 +675,7 @@ impl Menu {
                 let line = if names.is_empty() {
                     "Spawns on no map by itself.".to_string()
                 } else {
-                    format!("Lives in: {}", names.join(", "))
+                    format!("Native to: {}", names.join(", "))
                 };
                 for t in [c.texts.get_mut(k), c.texts_us.get_mut(k)]
                     .into_iter()
@@ -760,7 +758,6 @@ impl Menu {
             pc: PcSettings::load(),
             observe_text,
             areas,
-            homes,
             players,
             player: signed_in,
             screen: if signed_in.is_some() {
@@ -1471,18 +1468,9 @@ impl Menu {
                 let picked = i < 128 && mask & (1 << i) != 0;
                 let price = col.prices[i];
                 let affordable = c.observer || picked || left - price >= 0;
-                // Animals that don't live on the chosen map.
-                let elsewhere = ci == 1
-                    && self
-                        .homes
-                        .as_ref()
-                        .and_then(|h| h.get(i))
-                        .is_some_and(|l| !l.contains(&c.area));
-                let color = if picked && elsewhere {
-                    [0.9, 0.45, 0.3, 1.0]
-                } else if picked {
+                let color = if picked {
                     PICKED
-                } else if !affordable || elsewhere {
+                } else if !affordable {
                     DIM
                 } else if hover_row == Some(i) {
                     HOVER
@@ -1493,11 +1481,7 @@ impl Menu {
                 let w = self.text_width(12.0, &p);
                 // Long names give way to the price.
                 let room = col.rect.2 - 22.0 - w;
-                let mut name = if elsewhere {
-                    format!("{name} (other maps)")
-                } else {
-                    name.clone()
-                };
+                let mut name = name.clone();
                 while self.text_width(12.0, &name) > room && name.pop().is_some() {}
                 self.text(out, col.rect.0 + 6.0, y, 12.0, color, &name);
                 self.text(out, col.rect.0 + col.rect.2 - 8.0 - w, y, 12.0, color, &p);

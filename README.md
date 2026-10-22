@@ -374,8 +374,6 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
 **Known issues (next up)**
 - 3DS add-on pack: roaming add-ons have no menu picture (they have no menu slot); a picked roamer is not a
   hunt target (half score, no call).
-- Combined games: a "mystery" add-on that always joins the base game's spawns fills them when the picked
-  animals live on other maps.
 
 ---
 

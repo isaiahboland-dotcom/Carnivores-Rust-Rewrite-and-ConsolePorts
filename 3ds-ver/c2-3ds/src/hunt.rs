@@ -349,7 +349,8 @@ impl Game {
         progress(&format!("area {}", setup.area));
         let area = load::area_with(vfs, &setup.area, setup.time, true)?;
         progress("rules (_RES.TXT)");
-        let rules = Rules::load(vfs)?.hunt(&setup.area, setup.time, setup.targets);
+        let rules =
+            Rules::load(vfs)?.hunt_with(&setup.area, setup.time, setup.targets, &setup.roamers);
         progress("animals");
         let (mut species, cars) = load::species_with(vfs, &rules.res, &|i| {
             rules.roles.get(i).is_some_and(|&r| setup.keeps_char(i, r))

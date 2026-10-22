@@ -364,8 +364,6 @@ impl Menu {
             match d.0 {
                 Pick::Slot(s) if s < 118 => targets |= 1 << (s + 10),
                 Pick::Slot(_) => {}
-                // Picked, then the area changed to one it doesn't roam.
-                Pick::Roamer(_) if !self.spawns_here(k) => {}
                 Pick::Roamer(i) => roamers.push(i),
             }
         }
@@ -500,16 +498,7 @@ impl Menu {
         }
     }
 
-    /// Whether menu animal `k` can be in the chosen area (roamers only
-    /// where their tables put them).
-    fn spawns_here(&self, k: usize) -> bool {
-        match self.dinos.get(k).map(|d| d.0) {
-            Some(Pick::Roamer(i)) => self.roams.get(&i).is_some_and(|a| a.contains(&self.area)),
-            _ => true,
-        }
-    }
-
-    /// "Roams in Area 2, Area 3".
+    /// "Native to Area 2, Area 3" (picked, it comes on any map).
     fn roam_text(&self, i: usize) -> String {
         let names: Vec<String> = self
             .roams
@@ -522,9 +511,9 @@ impl Menu {
             })
             .unwrap_or_default();
         if names.is_empty() {
-            "roams nowhere by day".into()
+            "roams; comes when picked".into()
         } else {
-            format!("roams: {}", names.join(", "))
+            format!("native to {}", names.join(", "))
         }
     }
 
@@ -533,11 +522,6 @@ impl Menu {
         if which == Step::Animals {
             if let Some((Pick::Roamer(c), item)) = self.dinos.get(i) {
                 let text = format!("{}  {}", item.name, self.roam_text(*c));
-                // Not in this area: can't be picked (only dropped).
-                if !self.spawns_here(i) && self.picked_dinos & (1 << i) == 0 {
-                    self.message = Some("Not in this area".into());
-                    return text;
-                }
                 self.toggle_bit(which, i, gear);
                 return text;
             }
@@ -896,8 +880,7 @@ impl Menu {
                     if matches!(pick, Pick::Roamer(_)) && !on {
                         c.hex(cell.0, cell.1, cell.2 + 2.0, [60, 120, 230, 255]);
                     }
-                    let ok = item.price <= left && self.spawns_here(i);
-                    Self::draw_hex_item(&mut c, gpu, cell, item, on, ok);
+                    Self::draw_hex_item(&mut c, gpu, cell, item, on, item.price <= left);
                 }
             }
             Step::Gear => {

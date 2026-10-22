@@ -163,7 +163,9 @@ impl HuntView {
             .filter(c2_formats::mee::is_dialect);
         let (res, mee) = match res_txt {
             Some(r) => {
-                let m = c2_core::mee::read(&r, &mee_hunt(&setup));
+                let h = mee_hunt(&setup);
+                let mut m = c2_core::mee::read(&r, &h);
+                c2_core::mee::spawn_picked_anywhere(&r, &h, &mut m.tables, &[]);
                 (m.res, Some(m.tables))
             }
             None => (load_res(&huntdat)?, None),

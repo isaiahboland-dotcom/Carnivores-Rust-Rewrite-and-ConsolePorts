@@ -98,6 +98,59 @@ pub fn read(res: &ResTxt, h: &Hunt) -> MeeHunt {
     }
 }
 
+/// Picked animals come on any map (owner's rule; the dialect spawns them
+/// only where their tables say, so an animal from another game, or a
+/// roaming add-on, picked for this map wouldn't come). A picked character
+/// (its `callNo` slot in `h.picked`, or in `extra` by index) not in the
+/// area's target group (the spawn group this map's own menu animals use)
+/// joins it; its own spawns stay. Ambient animals (AI under 10) keep to
+/// their tables.
+pub fn spawn_picked_anywhere(res: &ResTxt, h: &Hunt, tables: &mut Tables, extra: &[usize]) {
+    let slot = |b: &Block| b.get(&["callNo"]).map(c_atoi).filter(|&n| n >= 0);
+    let all = Tables::read(
+        res,
+        &Hunt {
+            picked: u128::MAX,
+            ..*h
+        },
+    );
+    let mut uses = vec![0usize; all.spawn_groups.len()];
+    for c in all.characters.iter().filter(|c| slot(&c.block).is_some()) {
+        for l in &c.spawn {
+            if let Some(n) = uses.get_mut(l.group) {
+                *n += 1;
+            }
+        }
+    }
+    let Some(target) = (0..uses.len())
+        .filter(|&g| uses[g] > 0)
+        .max_by_key(|&g| uses[g])
+    else {
+        return;
+    };
+    let packs_in: Vec<bool> = tables
+        .pack_groups
+        .iter()
+        .map(|p| p.spawn.iter().any(|l| l.group == target))
+        .collect();
+    for (i, c) in tables.characters.iter_mut().enumerate() {
+        let picked = slot(&c.block).is_some_and(|k| k < 128 && h.picked & (1 << k) != 0)
+            || extra.contains(&i);
+        let ambient = c.block.get(&["ai"]).map(c_atoi).is_some_and(|a| a < 10);
+        // Already among the targets (alone or in a pack)?
+        let in_target = c.spawn.iter().any(|l| l.group == target)
+            || c.packs
+                .iter()
+                .any(|l| packs_in.get(l.group).copied().unwrap_or(false));
+        if picked && !ambient && !in_target {
+            c.spawn.push(c2_formats::mee::SpawnLink {
+                group: target,
+                ratio: 1.0,
+            });
+        }
+    }
+}
+
 fn index(b: &Block, key: &str) -> Option<usize> {
     b.get(&[key])
         .map(c_atoi)
