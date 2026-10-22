@@ -35,7 +35,23 @@ use crate::shot::Script;
 use crate::ui::{Tap, Ui};
 use crate::world::{Poser, World};
 
-pub const DIR: &str = "sdmc:/3ds/c2rs";
+/// The app's folder on the SD card: where it was started from
+/// (`sdmc:/3ds/<name>/<name>.3dsx`), so installs under different names keep
+/// their packs, saves and settings apart; `sdmc:/3ds/c2rs` otherwise.
+pub fn dir() -> &'static str {
+    static D: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    D.get_or_init(|| {
+        std::env::args()
+            .next()
+            .and_then(|a| {
+                a.replace('\\', "/")
+                    .rsplit_once('/')
+                    .map(|(d, _)| d.to_string())
+            })
+            .filter(|d| d.len() > "sdmc:/3ds/".len() && d.starts_with("sdmc:/3ds/"))
+            .unwrap_or_else(|| "sdmc:/3ds/c2rs".into())
+    })
+}
 
 fn ticks() -> u64 {
     unsafe { ctru_sys::svcGetSystemTick() }
@@ -68,7 +84,7 @@ fn tick_line(game: &hunt::Game) -> String {
 }
 
 fn find_packs() -> Vec<PathBuf> {
-    let mut v: Vec<PathBuf> = std::fs::read_dir(DIR)
+    let mut v: Vec<PathBuf> = std::fs::read_dir(dir())
         .map(|rd| {
             rd.flatten()
                 .map(|e| e.path())
@@ -346,7 +362,7 @@ impl Io<'_> {
                 format!("shot{:03}", self.shot_n)
             })
             .or_else(|| self.script.as_ref().and_then(|s| s.shot(self.frame)))?;
-        let p = format!("{DIR}/shots/{name}.tga");
+        let p = format!("{}/shots/{name}.tga", dir());
         Some(match shot::save_top(&p) {
             Ok(()) => format!("saved {p}"),
             Err(e) => format!("screenshot failed: {e}"),
@@ -623,7 +639,7 @@ fn run(pack: &Path, apt: &Apt, hid: &mut Hid) -> Result<()> {
     let mut io = Io {
         apt,
         hid,
-        script: Script::load(&format!("{DIR}/autotest.txt")),
+        script: Script::load(&format!("{}/autotest.txt", dir())),
         frame: 0,
         touch: Touch::default(),
         shot_n: 0,
@@ -668,12 +684,12 @@ fn main() {
     println!("c2rs for 3DS (test build)\n");
     let packs = find_packs();
     if packs.is_empty() {
-        println!("No pack found in {DIR}/.");
+        println!("No pack found in {}/.", dir());
         println!("\nOn your PC, from 3ds-ver/:");
         println!("  cargo run --release -p c2-cook --");
         println!("    --game <your Carnivores 2>");
         println!("    --out c2rs.c2pk");
-        println!("then copy c2rs.c2pk to {DIR}/");
+        println!("then copy c2rs.c2pk to {}/", dir());
         wait_for_start(&apt, &mut hid, &gfx);
         return;
     }

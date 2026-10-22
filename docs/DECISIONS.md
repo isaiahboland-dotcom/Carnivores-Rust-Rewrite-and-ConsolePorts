@@ -2,6 +2,24 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-22 — M10: the launchers
+- **egui / eframe** (owner's pick) with `rfd` for file pickers, in a new crate
+  `c2-launcher` with two binaries: `c2-launcher` (PC play; on first start it
+  asks whether to show the 3DS section) and `c2-3ds-builder` (the 3DS side
+  only), as the owner asked. Themed with the game menus' colours (dark
+  olive panels, pale green text, gold, sand); no original artwork.
+- **They run the existing programs** (`c2-pc play ...`, `c2-cook ...`) rather
+  than linking the game: the launcher stays small, and what it does is what
+  the documented command lines do. Tools are looked up in a chosen folder,
+  beside the launcher, then in this tree's build folders.
+- Settings in `launcher.toml` in the game's data folder. Add-on archives are
+  unpacked there (`addons/<name>/`): `.zip` by the launcher (names leaving
+  the folder are skipped), `.rar` / `.7z` with `7z`, `unrar` or `bsdtar`.
+- **3DS installs by name**: the builder writes `3ds/<name>/<name>.3dsx` with
+  `c2rs.c2pk` and/or `modded.c2pk`, and the app now keeps packs, saves and
+  settings in the folder it was started from (`sdmc:/3ds/c2rs` if it can't
+  tell), so differently named installs don't share anything.
+
 ## 2026-10-22 — Picked animals come on any map
 Owner's rule: only ambient animals keep to their maps; anything picked can
 be hunted anywhere. The dialect spawns an animal only where its tables say

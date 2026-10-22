@@ -5,7 +5,7 @@
 
 use c2_formats::sav::{self, Save};
 
-use crate::DIR;
+use crate::dir;
 
 static PACK: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
@@ -20,8 +20,8 @@ pub fn use_pack(pack: &std::path::Path) {
 
 fn path() -> String {
     match PACK.get().map(String::as_str) {
-        None | Some("c2rs") => format!("{DIR}/trophy00.sav"),
-        Some(p) => format!("{DIR}/trophy00-{p}.sav"),
+        None | Some("c2rs") => format!("{}/trophy00.sav", dir()),
+        Some(p) => format!("{}/trophy00-{p}.sav", dir()),
     }
 }
 

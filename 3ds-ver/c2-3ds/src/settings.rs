@@ -1,7 +1,7 @@
 //! 3DS-only settings, kept beside the save in `sdmc:/3ds/c2rs/settings.txt`
 //! (`key = value` lines), so the save stays in the original's format.
 
-use crate::DIR;
+use crate::dir;
 
 /// Small ambient animals around the hunter at most, when on: more than a
 /// handful in view costs frames on an Old 3DS.
@@ -31,7 +31,7 @@ impl Default for Settings {
 }
 
 fn path() -> String {
-    format!("{DIR}/settings.txt")
+    format!("{}/settings.txt", dir())
 }
 
 impl Settings {

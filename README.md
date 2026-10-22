@@ -97,6 +97,10 @@ from your install), then Hunt / Options / Trophy / Statistics / Credits as in th
 hunt follow the player's bindings (Options > Controls).
 Add-on mods: append `--mod path/to/mod` (repeatable); see `docs/MODDING.md`.
 
+**Launchers** (no command line needed after building): `cargo run --release -p c2-launcher` (PC; asks once whether
+to show the 3DS section) or `-p c2-launcher --bin c2-3ds-builder` (3DS only). They run `c2-pc` and `c2-cook`, found
+beside the launcher, in a tools folder set in Settings, or in this source tree's build folders.
+
 Hunt mode directly (debugging): `cargo run --release -p c2-pc -- hunt ../source/c2-original/HUNTDAT/AREAS/AREA1.MAP` —
 click to capture the mouse, `WASD` move, mouse look, `LMB` fire, `E` show/hide weapon, `1`-`6` choose weapon, `Q` weapon-pick screen (lists every carried weapon),
 `B` binoculars (`+`/`-` power), `Tab` map, `Alt` call (`C` switch call), `Shift` toggles run, `X` crouch, `Space` jump/swim, arrows turn/look, `Pause`/`P` pause, `Esc` exit prompt (`Y` leave and save, `R` restart).
@@ -465,7 +469,11 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] Modder's Edition rules resolved per hunt on the 3DS; roaming add-ons pickable; main and video memory checked per pick
   - [x] `c2-cook --check`; big add-on animations thinned for Old 3DS
   - [ ] tested on hardware
-- [ ] M10 Launchers: PC game manager and 3DS pack builder (planned)
+- [ ] M10 Launchers: PC game manager and 3DS pack builder — **in progress**
+  - [x] `c2-launcher` (PC, 3DS section on request) and `c2-3ds-builder` (3DS only), egui, the game menus' colours
+  - [x] game folder and overlays (drop, browse or paste), add-ons (folders, .zip/.rar/.7z; order, on/off), Play
+  - [x] 3DS: Old/New, install name -> `3ds/<name>/` with `<name>.3dsx` and its packs; the app uses its own folder
+  - [ ] balance editor, `.cia`, Ice Age and standalone games in the base slot
 - [ ] M11 Hunt options and 3DS comfort (planned)
 - [ ] M12 Profiles, statistics, trophy room (planned)
 - [ ] M13 Survival mode (planned)
