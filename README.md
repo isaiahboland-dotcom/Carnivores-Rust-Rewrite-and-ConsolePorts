@@ -346,7 +346,6 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   hunter from shorter range, matching the 3DS's shorter view.
 - Stealth crouch toggle (3DS only): while crouched, gyro aim, and the hunter is half as visible and half as
   loud.
-- Night hunts score +10% (stacks with the tranquilizer's +25%).
 - Modded games: "random ambients", 4 ambient species picked per hunt instead of every one the mods add.
 
 **M12 — Profiles, statistics, trophy room**
@@ -373,10 +372,10 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
 - Menu styles as an option: the original's, a mod's menu (PC), the mobile menu.
 
 **Known issues (next up)**
-- 3DS add-on pack: roaming add-ons show no picture or score, aren't on the radar, and may not spawn in the
-  chosen area (they spawn only where their tables say).
-- 3DS: an add-on's AI (seen with one raptor add-on) is very slow on Old 3DS and keeps running after death.
-- 3DS: the gear screen's messages are hidden behind the Tranq / Observe buttons.
+- 3DS add-on pack: roaming add-ons have no menu picture (they have no menu slot); a picked roamer is not a
+  hunt target (half score, no call).
+- Combined games: a "mystery" add-on that always joins the base game's spawns fills them when the picked
+  animals live on other maps.
 
 ---
 

@@ -269,6 +269,10 @@ pub struct HuntOptions {
     /// The death camera (setting; on in the original): off shows a black
     /// screen and the leave / restart prompt at once.
     pub death_anim: bool,
+    /// `CheckAfraid` every this many ticks (1; the 3DS: 2, i.e. 25 times a
+    /// second, as the original did once a frame at 25 fps). Its look
+    /// traces are the costliest part of a tick on an Old 3DS.
+    pub afraid_every: u32,
 }
 
 impl Default for HuntOptions {
@@ -289,6 +293,7 @@ impl Default for HuntOptions {
             dino_run_k: 1.0,
             blood: true,
             death_anim: true,
+            afraid_every: 1,
         }
     }
 }
@@ -694,7 +699,9 @@ impl Hunt {
             self.wind.speed += self.rng.si_rand(400) as f32 / 6400.0;
         }
         self.wind.speed = self.wind.speed.clamp(4.0, 18.0);
-        self.check_afraid(area);
+        if self.takt.is_multiple_of(self.opts.afraid_every.max(1)) {
+            self.check_afraid(area);
+        }
         self.prof.mark(5);
         if self.opts.trophy {
             self.process_trophy();
@@ -774,8 +781,10 @@ impl Hunt {
         if !self.is_target(c) {
             score /= 2.0;
         }
+        // Night: +10% (not in the original; owner's request).
         for (on, k) in [
             (self.opts.tranq, 1.25),
+            (area.time == crate::area::TimeOfDay::Night, 1.10),
             (self.opts.radar, 0.70),
             (self.opts.scent, 0.80),
             (self.opts.camo, 0.85),

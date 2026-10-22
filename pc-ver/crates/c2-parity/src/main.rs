@@ -650,6 +650,7 @@ fn tick_bench(game: &Path, area_n: u32) -> Result<()> {
         dino_run_k: 1.0,
         blood: true,
         death_anim: true,
+        afraid_every: 1,
     };
     // The first weapon, drawn and aimed at the animal: real hits (blood
     // trail, hit reactions) rather than a scripted kill.

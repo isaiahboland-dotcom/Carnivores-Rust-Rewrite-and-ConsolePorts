@@ -343,6 +343,7 @@ impl HuntView {
             dino_run_k: 1.0,
             blood: setup.pc.blood != 0,
             death_anim: setup.pc.death_anim != 0,
+            afraid_every: 1,
         };
         let mut opts = opts;
         opts.render_r = if trophy {
@@ -1078,7 +1079,11 @@ impl Scene for HuntView {
             };
             let lines = [
                 name.clone(),
-                format!("+{score} points"),
+                if self.setup.time == TimeOfDay::Night {
+                    format!("+{score} points (night +10%)")
+                } else {
+                    format!("+{score} points")
+                },
                 dist,
                 if *tranq {
                     "Tranquilized (+25%, no trophy)".to_string()

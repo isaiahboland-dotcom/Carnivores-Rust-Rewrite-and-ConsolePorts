@@ -372,19 +372,23 @@ fn draw_map(c: &mut Canvas, gpu: &mut Gpu, game: &Game, map: Option<&Texture>, l
         let a = i as f32 / 48.0 * std::f32::consts::TAU;
         dot(hx + a.cos() * r, hy + a.sin() * r, 1.5, [0, 144, 0, 255]);
     }
-    // Animals within view range: huntable bright, others pale. With the
-    // radar, the hunted species everywhere (`DrawHMap`'s radar blips).
+    // Animals within view range: the hunted ones green, other huntable
+    // ones (spawned anyway, or roaming add-ons) blue, the rest pale. With
+    // the radar, the green and blue ones everywhere (`DrawHMap`'s blips).
     let range = h.opts.view_r as f32 * CELL;
     for ch in &h.herd.chars {
         let (dx, dz) = (ch.pos[0] - p.x, ch.pos[2] - p.z);
-        let huntable = h.is_target(ch);
+        let target = h.is_target(ch);
+        let huntable = target || h.is_huntable(ch);
         let in_range = dx * dx + dz * dz <= range * range;
         if ch.health <= 0 || !(in_range || huntable && h.opts.radar) {
             continue;
         }
         let (x, y) = to_screen(px(ch.pos[0]), px(ch.pos[2]));
-        if huntable {
+        if target {
             dot(x, y, 4.0, [0, 248, 0, 255]);
+        } else if huntable {
+            dot(x, y, 4.0, [60, 140, 255, 255]);
         } else {
             dot(x, y, 3.0, [190, 190, 120, 255]);
         }

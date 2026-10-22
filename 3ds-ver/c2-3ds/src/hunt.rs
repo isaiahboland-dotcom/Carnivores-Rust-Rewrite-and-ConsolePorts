@@ -325,6 +325,7 @@ fn new_hunt(
         dino_run_k: setup.dino_run_k,
         blood: setup.blood,
         death_anim: setup.death_anim,
+        afraid_every: 2,
     };
     let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
     hunt.ship_anim_ms = ship_ms;

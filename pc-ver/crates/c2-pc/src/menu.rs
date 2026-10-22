@@ -67,6 +67,47 @@ fn hunt_scores(huntdat: &Path, menu: &MenuData) -> Vec<Option<f32>> {
         .collect()
 }
 
+/// Dialect games: per huntable (menu slot), the areas (index in `maps`)
+/// it spawns on when picked; `None` for an original game (all of them).
+/// Read once per area with every slot picked.
+fn hunt_homes(huntdat: &Path, menu: &MenuData, maps: &[PathBuf]) -> Option<Vec<Vec<usize>>> {
+    let res = find_file(huntdat, "_RES.TXT")
+        .and_then(|p| std::fs::read(p).ok())
+        .and_then(|d| ResTxt::parse(&String::from_utf8_lossy(&d)).ok())?;
+    if !c2_formats::mee::is_dialect(&res) {
+        return None;
+    }
+    let mut homes = vec![Vec::new(); menu.huntables.len()];
+    for (a, map) in maps.iter().enumerate() {
+        let stem = map
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let h = c2_formats::mee::Hunt {
+            area: c2_formats::mee::area_of(&stem),
+            time: 1,
+            picked: u128::MAX,
+        };
+        let t = c2_formats::mee::Tables::read(&res, &h);
+        for c in &t.characters {
+            if c.spawn.is_empty() && c.packs.is_empty() {
+                continue;
+            }
+            let slot = c
+                .block
+                .get(&["callNo"])
+                .map(c2_formats::res_txt::c_atoi)
+                .filter(|&n| n >= 0);
+            if let Some(v) = slot.and_then(|n| homes.get_mut(n as usize)) {
+                if !v.contains(&a) {
+                    v.push(a);
+                }
+            }
+        }
+    }
+    Some(homes)
+}
+
 fn inside(p: Option<(f32, f32)>, r: Rect) -> bool {
     p.is_some_and(|(x, y)| x >= r.0 && y >= r.1 && x < r.0 + r.2 && y < r.1 + r.3)
 }
@@ -312,6 +353,8 @@ pub struct Menu {
     pc: PcSettings,
     observe_text: Vec<String>,
     areas: Vec<PathBuf>,
+    /// Dialect games: the areas each huntable spawns on (`hunt_homes`).
+    homes: Option<Vec<Vec<usize>>>,
     players: Vec<Save>,
     /// Index into `players` of the signed-in hunter.
     player: Option<usize>,
@@ -615,6 +658,36 @@ impl Menu {
                 }
             }
         }
+        // Where each lives (combined games: an animal from one game spawns
+        // on that game's maps only).
+        let homes = hunt_homes(&huntdat, &menu, &areas);
+        if let (Some(h), Some(c)) = (&homes, cols.get_mut(1)) {
+            let area_names: Vec<String> = area_list
+                .iter()
+                .map(|(a, _)| a.name.clone().unwrap_or_else(|| a.project.clone()))
+                .collect();
+            for (k, list) in h.iter().enumerate() {
+                if list.len() == areas.len() {
+                    continue;
+                }
+                let names: Vec<&str> = list
+                    .iter()
+                    .filter_map(|&a| area_names.get(a).map(String::as_str))
+                    .collect();
+                let line = if names.is_empty() {
+                    "Spawns on no map by itself.".to_string()
+                } else {
+                    format!("Lives in: {}", names.join(", "))
+                };
+                for t in [c.texts.get_mut(k), c.texts_us.get_mut(k)]
+                    .into_iter()
+                    .flatten()
+                {
+                    t.push(String::new());
+                    t.push(line.clone());
+                }
+            }
+        }
         // Rows by price (stable, so equal prices keep their order); the
         // equipment keeps its fixed order.
         for (ci, c) in cols.iter_mut().enumerate() {
@@ -687,6 +760,7 @@ impl Menu {
             pc: PcSettings::load(),
             observe_text,
             areas,
+            homes,
             players,
             player: signed_in,
             screen: if signed_in.is_some() {
@@ -1397,9 +1471,18 @@ impl Menu {
                 let picked = i < 128 && mask & (1 << i) != 0;
                 let price = col.prices[i];
                 let affordable = c.observer || picked || left - price >= 0;
-                let color = if picked {
+                // Animals that don't live on the chosen map.
+                let elsewhere = ci == 1
+                    && self
+                        .homes
+                        .as_ref()
+                        .and_then(|h| h.get(i))
+                        .is_some_and(|l| !l.contains(&c.area));
+                let color = if picked && elsewhere {
+                    [0.9, 0.45, 0.3, 1.0]
+                } else if picked {
                     PICKED
-                } else if !affordable {
+                } else if !affordable || elsewhere {
                     DIM
                 } else if hover_row == Some(i) {
                     HOVER
@@ -1410,7 +1493,11 @@ impl Menu {
                 let w = self.text_width(12.0, &p);
                 // Long names give way to the price.
                 let room = col.rect.2 - 22.0 - w;
-                let mut name = name.clone();
+                let mut name = if elsewhere {
+                    format!("{name} (other maps)")
+                } else {
+                    name.clone()
+                };
                 while self.text_width(12.0, &name) > room && name.pop().is_some() {}
                 self.text(out, col.rect.0 + 6.0, y, 12.0, color, &name);
                 self.text(out, col.rect.0 + col.rect.2 - 8.0 - w, y, 12.0, color, &p);

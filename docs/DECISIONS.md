@@ -2,6 +2,32 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-22 — Owner's first add-on pack test: fixes
+- **Original-game add-ons in a Modder's Edition game had no animations.**
+  That engine numbers animations only from an entry's `runAnim`,
+  `deathtype` and so on; the original fixes each AI's order instead, so an
+  entry written for it (a raptor add-on) stood frozen and didn't die
+  properly. When such an entry joins a dialect game, `c2-mods` now copies
+  the animation keys and blocks of the slot it was made for, or of an animal
+  with its AI (same order). `c2-cook --check` reports a dialect animal
+  without them.
+- **CheckAfraid on the 3DS every other tick** (`HuntOptions::afraid_every`,
+  25 times a second, as the original did once a frame at 25 fps): with a
+  pack of alarmed raptors its look traces took 14-40 ms a tick on the Old
+  3DS. The PC keeps every tick.
+- **Where animals live.** In a combined game an animal from one game
+  spawns on that game's maps only, so picking it for another map spawned
+  none of it (and a "mystery" add-on that joins the base game's spawns
+  took every place: what looked like it replacing other animals). The PC
+  menu now says where each lives and dims the ones not on the chosen map;
+  the 3DS menu lists each roaming add-on's areas and won't pick one for a
+  map it doesn't roam.
+- **3DS map**: animals not picked but huntable are blue (picked: green),
+  as on PC.
+- **Night +10% score** (owner's request; PC and 3DS), with the
+  tranquilizer's +25%; the PC kill notice says so.
+- 3DS gear screen: the message line sits above the Tranq / Observe buttons.
+
 ## 2026-10-19 — M8: add-ons on the 3DS (a second pack)
 Owner's plan: the 3DS gets the vanilla pack plus one pack of vanilla and
 add-ons, as the PC plays them (over the Modder's Edition).

@@ -149,6 +149,8 @@ pub struct Menu {
     areas: Vec<(String, Item)>,
     /// The animals offered (at most 32).
     dinos: Vec<(Pick, Item)>,
+    /// The areas (index in `areas`) each roamer spawns in, by character.
+    roams: std::collections::HashMap<usize, Vec<usize>>,
     rules: Rules,
     /// The last memory figure and the picks it was for.
     mem: std::cell::Cell<Option<(MemKey, Memory)>>,
@@ -236,6 +238,23 @@ impl Menu {
             }
         }
         dinos.truncate(32);
+        // Where each roamer spawns (its tables, per area).
+        let mut roams = std::collections::HashMap::new();
+        if dinos.iter().any(|d| matches!(d.0, Pick::Roamer(_))) {
+            for (a, (name, _)) in areas.iter().enumerate() {
+                let hr = rules.hunt(name, TimeOfDay::Day, u128::MAX);
+                let Some(t) = &hr.tables else { continue };
+                for d in &dinos {
+                    if let Pick::Roamer(i) = d.0 {
+                        let c = t.characters.get(i);
+                        let spawns = c.is_some_and(|c| !c.spawn.is_empty() || !c.packs.is_empty());
+                        if spawns {
+                            roams.entry(i).or_insert_with(Vec::new).push(a);
+                        }
+                    }
+                }
+            }
+        }
         let weapons = menu
             .weapons
             .iter()
@@ -277,6 +296,7 @@ impl Menu {
             step: Step::Title,
             areas,
             dinos,
+            roams,
             rules,
             mem: std::cell::Cell::new(None),
             settings: Settings::load(),
@@ -344,6 +364,8 @@ impl Menu {
             match d.0 {
                 Pick::Slot(s) if s < 118 => targets |= 1 << (s + 10),
                 Pick::Slot(_) => {}
+                // Picked, then the area changed to one it doesn't roam.
+                Pick::Roamer(_) if !self.spawns_here(k) => {}
                 Pick::Roamer(i) => roamers.push(i),
             }
         }
@@ -478,8 +500,52 @@ impl Menu {
         }
     }
 
+    /// Whether menu animal `k` can be in the chosen area (roamers only
+    /// where their tables put them).
+    fn spawns_here(&self, k: usize) -> bool {
+        match self.dinos.get(k).map(|d| d.0) {
+            Some(Pick::Roamer(i)) => self.roams.get(&i).is_some_and(|a| a.contains(&self.area)),
+            _ => true,
+        }
+    }
+
+    /// "Roams in Area 2, Area 3".
+    fn roam_text(&self, i: usize) -> String {
+        let names: Vec<String> = self
+            .roams
+            .get(&i)
+            .map(|v| {
+                v.iter()
+                    .filter_map(|&a| self.areas.get(a))
+                    .map(|a| a.1.name.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if names.is_empty() {
+            "roams nowhere by day".into()
+        } else {
+            format!("roams: {}", names.join(", "))
+        }
+    }
+
     /// Toggles bit `i` of `mask` unless that costs more than is left.
     fn toggle(&mut self, which: Step, i: usize, gear: bool) -> String {
+        if which == Step::Animals {
+            if let Some((Pick::Roamer(c), item)) = self.dinos.get(i) {
+                let text = format!("{}  {}", item.name, self.roam_text(*c));
+                // Not in this area: can't be picked (only dropped).
+                if !self.spawns_here(i) && self.picked_dinos & (1 << i) == 0 {
+                    self.message = Some("Not in this area".into());
+                    return text;
+                }
+                self.toggle_bit(which, i, gear);
+                return text;
+            }
+        }
+        self.toggle_bit(which, i, gear)
+    }
+
+    fn toggle_bit(&mut self, which: Step, i: usize, gear: bool) -> String {
         let (name, price) = match (which, gear) {
             (Step::Animals, _) => (self.dinos[i].1.name.clone(), self.dinos[i].1.price),
             (_, false) => (self.weapons[i].name.clone(), self.weapons[i].price),
@@ -830,7 +896,8 @@ impl Menu {
                     if matches!(pick, Pick::Roamer(_)) && !on {
                         c.hex(cell.0, cell.1, cell.2 + 2.0, [60, 120, 230, 255]);
                     }
-                    Self::draw_hex_item(&mut c, gpu, cell, item, on, item.price <= left);
+                    let ok = item.price <= left && self.spawns_here(i);
+                    Self::draw_hex_item(&mut c, gpu, cell, item, on, ok);
                 }
             }
             Step::Gear => {
@@ -867,7 +934,14 @@ impl Menu {
         if let Some(l) = line {
             let col = if self.message.is_some() { RED } else { TEXT };
             let l: String = l.chars().take(38).collect();
-            c.text_c(gpu, 160.0, 200.0, 1.0, col, &l);
+            // On the gear screen the Tranq / Observe buttons sit there: the
+            // line goes above them, on a dark strip.
+            let y = if step == Step::Gear { 164.0 } else { 200.0 };
+            if step == Step::Gear {
+                c.rect([4.0, y - 3.0, 312.0, 13.0], [0, 0, 0, 200]);
+                c.flush(gpu);
+            }
+            c.text_c(gpu, 160.0, y, 1.0, col, &l);
         }
         let next = match step {
             Step::Area if self.trophy() => "Enter",

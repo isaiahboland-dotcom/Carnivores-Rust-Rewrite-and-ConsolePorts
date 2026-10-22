@@ -151,7 +151,7 @@ fn loose_add_ons_are_placed_merged_and_their_hunters_combined() {
 
 /// A Modder's Edition-style base: entries with spawn tables, and the menu's
 /// own `_MENU.TXT`.
-const MEE_RES: &str = "weapons {\n{\n name = 'Pistol'\n power = 1\n}\n}\ncharacters {\n{\n name = 'Hunter'\n file = 'hunter.car'\n ai = 0\n}\n{\n name = 'Spinosaurus'\n file = 'spino.car'\n ai = 16\n overwrite char0 {\n  spawninfo{\n   spawngroup = 2\n  }\n }\n spawninfo{\n  spawngroup = 1\n }\n}\n}\n.\n";
+const MEE_RES: &str = "weapons {\n{\n name = 'Pistol'\n power = 1\n}\n}\ncharacters {\n{\n name = 'Hunter'\n file = 'hunter.car'\n ai = 0\n}\n{\n name = 'Spinosaurus'\n file = 'spino.car'\n ai = 16\n runAnim = 0\n walkAnim = 1\n deathtype {\n  dieAnim = 6\n }\n overwrite char0 {\n  spawninfo{\n   spawngroup = 2\n  }\n }\n spawninfo{\n  spawngroup = 1\n }\n}\n}\n.\n";
 const MEE_MENU: &str = "weapons {\n{\n name = 'Pistol'\n power = 1\n}\n}\ncharacters {\n{\n name = 'Spinosaurus'\n ai = 16\n}\n}\nprices {\n start = 100\n dino = 250\n weapon = 20\n}\n.\n";
 
 #[test]
@@ -221,7 +221,10 @@ fn on_a_modders_edition_base_slot_add_ons_get_their_own_slot() {
     let rx = &res.section("characters").expect("characters").blocks[2];
     // The Spinosaurus slot's spawn tables, its slot condition moved along.
     let subs: Vec<_> = rx.subs.iter().map(|s| s.name.as_str()).collect();
-    assert_eq!(subs, ["overwrite char1", "spawninfo"]);
+    assert_eq!(subs, ["deathtype", "overwrite char1", "spawninfo"]);
+    // And its animation keys: an entry for the original game has none.
+    assert_eq!(rx.get(&["runAnim"]), Some("0"));
+    assert_eq!(rx.get(&["walkAnim"]), Some("1"));
     let gun = &res.section("weapons").expect("weapons").blocks[1];
     assert_eq!(gun.get(&["pic"]), Some("'bullet2.tga'"));
 }

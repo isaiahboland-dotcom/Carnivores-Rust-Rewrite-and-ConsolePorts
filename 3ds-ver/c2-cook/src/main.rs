@@ -32,7 +32,8 @@ const USAGE: &str = "usage:
           [--force] --out <PACK.c2pk>
 
   c2-cook --check <PACK.c2pk>   loads a pack as the 3DS does and plays a short
-                                hunt for each animal (finds missing files)
+                                hunt for each animal (finds missing files);
+                                with --bench NAME, that animal up close, killed
 
   --overlay  a game folder copied over GAME_DIR first (e.g. the Modder's
              Edition, which most add-ons are made for); repeatable
@@ -212,6 +213,7 @@ fn load_peak(
 struct Args {
     game: Option<PathBuf>,
     check: Option<PathBuf>,
+    bench: Option<String>,
     overlays: Vec<PathBuf>,
     mods: Vec<PathBuf>,
     recipe: Option<PathBuf>,
@@ -235,6 +237,7 @@ fn parse_args() -> Result<Args> {
             "--mod" => a.mods.push(val()?.into()),
             "--overlay" => a.overlays.push(val()?.into()),
             "--check" => a.check = Some(val()?.into()),
+            "--bench" => a.bench = Some(val()?),
             "--recipe" => a.recipe = Some(val()?.into()),
             "--mods" => a.mods_dir = Some(val()?.into()),
             "--areas" => a.areas = Some(val()?),
@@ -715,7 +718,7 @@ fn main() -> Result<()> {
         .init();
     let a = parse_args()?;
     if let Some(p) = &a.check {
-        return check::check(p);
+        return check::check(p, a.bench.as_deref());
     }
     let game = a.game.clone().context(USAGE)?;
     let out = a.out.clone().context(USAGE)?;

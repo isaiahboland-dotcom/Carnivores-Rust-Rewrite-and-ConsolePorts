@@ -382,6 +382,29 @@ pub fn read(dir: &Path, base: &Vfs) -> Result<Loose, ModError> {
                 .filter(|&i| i < blocks.len()),
             _ => None,
         };
+        // An entry for the original game has no animation keys: that engine
+        // fixes each AI's animation order. The Modder's Edition reads them
+        // from the entry, so take those of the slot it was made for, or of
+        // another animal with its AI (same order).
+        if dialect && section == "characters" && named.is_none() && !has_anims(&b) {
+            let ai = b.get(&["ai"]).map(c_atoi);
+            let donor = slot
+                .and_then(|i| blocks.get(i))
+                .filter(|d| has_anims(d))
+                .or_else(|| {
+                    blocks
+                        .iter()
+                        .find(|d| has_anims(d) && d.get(&["ai"]).map(c_atoi) == ai)
+                });
+            if let Some(d) = donor {
+                out.notes.push(format!(
+                    "'{}' has no animation keys (an entry for the original game): uses those of '{}'",
+                    id.clone().unwrap_or_default(),
+                    block_id(d).unwrap_or_default()
+                ));
+                copy_anims(d, &mut b);
+            }
+        }
         let change = match (named, slot) {
             (Some(i), _) => Change::Modify {
                 section,
@@ -446,6 +469,38 @@ pub fn read(dir: &Path, base: &Vfs) -> Result<Loose, ModError> {
         out.res_changes.push(change);
     }
     Ok(out)
+}
+
+/// Animation keys (`runAnim`, `lookAnim`...) and blocks (`idlegroup`,
+/// `deathtype`, `killtype`).
+fn is_anim_key(key: &str) -> bool {
+    key.to_ascii_lowercase().ends_with("anim")
+}
+
+fn is_anim_sub(name: &str) -> bool {
+    let n = name.trim().to_ascii_lowercase();
+    ["idlegroup", "idle2group", "deathtype", "killtype"].contains(&n.as_str())
+}
+
+fn has_anims(b: &Block) -> bool {
+    b.entries.iter().any(|e| is_anim_key(&e.key)) || b.subs.iter().any(|s| is_anim_sub(&s.name))
+}
+
+/// `from`'s animation keys and blocks, appended to `to`.
+fn copy_anims(from: &Block, to: &mut Block) {
+    to.entries
+        .extend(from.entries.iter().filter(|e| is_anim_key(&e.key)).cloned());
+    let end = to.entries.len();
+    to.subs.extend(
+        from.subs
+            .iter()
+            .filter(|s| is_anim_sub(&s.name))
+            .cloned()
+            .map(|mut s| {
+                s.at = end;
+                s
+            }),
+    );
 }
 
 /// Spawn or pack tables (`spawninfo`, `spawngroup`, `packinfo`,
