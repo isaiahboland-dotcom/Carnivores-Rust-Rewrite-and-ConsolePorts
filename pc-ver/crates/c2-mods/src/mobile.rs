@@ -134,9 +134,14 @@ fn entry(key: &str, value: impl ToString) -> Entry {
 
 /// The donor's entry made the mobile animal's: name, model, animations
 /// (the donor's own when the animal's are a PC-style numbered set); what
-/// belongs to the donor alone (its slot conditions, trophy poses, menu
-/// slot) dropped.
-fn make_entry(donor: &Block, name: &str, car: &str, cat: &Cat) -> Block {
+/// belongs to the donor alone (trophy poses, menu slot) dropped. Its slot
+/// conditions (`overwrite char5`: radar, the picked spawn group) are kept
+/// when the animal gets a slot of its own (`slot`): building moves them to
+/// that slot.
+fn make_entry(donor: &Block, name: &str, car: &str, cat: &Cat, slot: bool) -> Block {
+    let char_cond = |n: &str| {
+        !slot && (n.starts_with("overwrite") || n.starts_with("addition")) && n.contains("char")
+    };
     let Some(roles) = roles(cat) else {
         let mut b = donor.clone();
         b.entries.retain(|e| {
@@ -145,8 +150,7 @@ fn make_entry(donor: &Block, name: &str, car: &str, cat: &Cat) -> Block {
         });
         b.subs.retain(|s| {
             let n = s.name.trim().to_ascii_lowercase();
-            !(n == "tropinfo"
-                || (n.starts_with("overwrite") || n.starts_with("addition")) && n.contains("char"))
+            !(n == "tropinfo" || char_cond(&n))
         });
         b.entries.insert(0, entry("name", format!("'{name}'")));
         b.entries.insert(1, entry("file", format!("'{car}'")));
@@ -176,7 +180,7 @@ fn make_entry(donor: &Block, name: &str, car: &str, cat: &Cat) -> Block {
             "tropinfo",
         ]
         .contains(&n.as_str())
-            || (n.starts_with("overwrite") || n.starts_with("addition")) && n.contains("char"))
+            || char_cond(&n))
     });
     b.entries.insert(0, entry("name", format!("'{name}'")));
     b.entries.insert(1, entry("file", format!("'{car}'")));
@@ -434,7 +438,13 @@ pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Vec<Imported>, ModEr
             std::fs::write(&p, data).map_err(io(&p))
         };
         write(&car_file, &c2_formats::car::write(&car))?;
-        let b = make_entry(donor, &name, &car_file, &cat);
+        // Menu picture and calls for the donor's slot: a slot of its own.
+        let slot = menu
+            .huntables
+            .iter()
+            .position(|h| h.name.eq_ignore_ascii_case(&donor_name))
+            .map(|i| i + 1);
+        let b = make_entry(donor, &name, &car_file, &cat, slot.is_some());
         write(
             &format!("{name} _RES.txt"),
             format!(
@@ -447,12 +457,6 @@ pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Vec<Imported>, ModEr
             )
             .as_bytes(),
         )?;
-        // Menu picture and calls for the donor's slot: a slot of its own.
-        let slot = menu
-            .huntables
-            .iter()
-            .position(|h| h.name.eq_ignore_ascii_case(&donor_name))
-            .map(|i| i + 1);
         match slot {
             Some(n) => {
                 // `Help/<name>.png`, or one named longer (`pach` ->
@@ -552,7 +556,7 @@ mod tests {
         )
         .unwrap_or_default();
         let donor = &res.sections[0].blocks[0];
-        let b = make_entry(donor, "X", "X.CAR", &cat());
+        let b = make_entry(donor, "X", "X.CAR", &cat(), false);
         let get = |k: &str| b.get(&[k]).map(str::to_string);
         assert_eq!(get("name").as_deref(), Some("'X'"));
         assert_eq!(get("file").as_deref(), Some("'X.CAR'"));

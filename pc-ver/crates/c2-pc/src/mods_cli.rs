@@ -92,7 +92,11 @@ pub fn pack_dir(overlays: &[PathBuf], mods: &[PathBuf]) -> PathBuf {
         let hash = c2_mods::recipe::sha256(name.as_bytes());
         let hash = hash.trim_start_matches("sha256:");
         let start: String = name.chars().take(80).collect();
-        name = format!("{start}+{}-mods-{}", names.len(), &hash[..12.min(hash.len())]);
+        name = format!(
+            "{start}+{}-mods-{}",
+            names.len(),
+            &hash[..12.min(hash.len())]
+        );
     }
     crate::save::data_dir().join("packs").join(name)
 }
