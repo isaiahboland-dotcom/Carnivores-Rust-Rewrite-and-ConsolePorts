@@ -496,9 +496,9 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] 3DS: Old/New, install name -> `3ds/<name>/` with `<name>.3dsx` and its packs; the app uses its own folder
   - [x] balance editor: prices and scores (areas, animals incl. roaming add-ons, weapons, starting points) into
         a balance file (`c2_mods::balance`), applied by `c2-pc play --balance` and `c2-cook --balance`
-  - [ ] `.cia`: built by the 3DS builder (makerom + bannertool, user-downloaded; own title ID per install
-        name; the user's icon/banner art). Open: the installed app doesn't find its folder yet (Azahar test
-        shows "No pack found")
+  - [x] `.cia`: built by the 3DS builder (makerom + bannertool, user-downloaded; own title ID per install
+        name; the user's icon/banner art); works on hardware (owner, 2026-10-22). In Azahar the installed
+        title found no pack: an emulator matter, not looked into further
   - [ ] Ice Age and standalone games in the base slot (with M14 / M16)
 - [ ] M11 Hunt options and 3DS comfort (planned)
 - [ ] M12 Profiles, statistics, trophy room (planned)
