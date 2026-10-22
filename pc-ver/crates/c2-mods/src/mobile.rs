@@ -298,9 +298,7 @@ fn wav(pcm: &[u8], rate: u32) -> Vec<u8> {
     let mut w = b"RIFF".to_vec();
     w.extend_from_slice(&(36 + pcm.len() as u32).to_le_bytes());
     w.extend_from_slice(b"WAVEfmt ");
-    for v in [16u32] {
-        w.extend_from_slice(&v.to_le_bytes());
-    }
+    w.extend_from_slice(&16u32.to_le_bytes());
     for v in [1u16, 1] {
         w.extend_from_slice(&v.to_le_bytes());
     }
