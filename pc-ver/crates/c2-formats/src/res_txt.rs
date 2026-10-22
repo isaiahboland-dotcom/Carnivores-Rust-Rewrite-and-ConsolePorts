@@ -294,6 +294,14 @@ impl ResTxt {
 }
 
 /// A block's entries with its sub-blocks in their places, indented.
+/// One block as an entry to paste into a section (`{` ... `}`).
+pub fn write_block(b: &Block) -> String {
+    let mut s = String::from("{\r\n");
+    write_body(&mut s, b, 1);
+    s.push_str("}\r\n");
+    s
+}
+
 fn write_body(s: &mut String, b: &Block, depth: usize) {
     let pad = " ".repeat(depth);
     let mut subs = b.subs.iter().peekable();

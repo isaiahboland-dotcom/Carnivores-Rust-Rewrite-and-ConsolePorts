@@ -504,7 +504,11 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
 - [ ] M12 Profiles, statistics, trophy room (planned)
 - [ ] M13 Survival mode (planned)
 - [ ] M14 Carnivores: Ice Age (planned)
-- [ ] M15 Mobile assets (planned)
+- [ ] M15 Mobile assets — **in progress**
+  - [x] mobile formats (`c2_formats::mobile`: `.cat`, `.3dn`, `.ani`, ETC1 `.pkm`, `.crt`, IMA ADPCM) rebuilt as `.CAR`
+  - [x] `c2-pc mobile APK --base GAME --overlay ME --out DIR`: each new animal as a loose add-on (entry from a
+        same-kind PC donor, menu picture, calls); 10 from Dinosaur Hunter import, render and get menu slots
+  - [ ] 3DS check, launcher button, revolver, Ice Age APK, PC-vs-mobile behaviour choice, menu styles
 - [ ] M16 Standalone games in the launcher (planned, PC)
 - [ ] M9 Modder's Edition Engine data — **in progress**
   - [x] nested `_RES.TXT` blocks; `_MENU.TXT` / `.c2map` menu lists; `overwrite` / `addition` resolution

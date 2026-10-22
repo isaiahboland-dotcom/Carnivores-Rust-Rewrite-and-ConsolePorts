@@ -598,6 +598,7 @@ version = "0.0.1"
 dependencies = [
  "c2-formats",
  "c2-vfs",
+ "png",
  "serde",
  "sha2",
  "thiserror 2.0.21",

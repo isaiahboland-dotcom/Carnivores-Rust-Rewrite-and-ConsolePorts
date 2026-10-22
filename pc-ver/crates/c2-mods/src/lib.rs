@@ -7,6 +7,7 @@ pub mod detect;
 pub mod hunter;
 pub mod loose;
 pub mod manifest;
+pub mod mobile;
 pub mod pack;
 pub mod patch;
 pub mod recipe;

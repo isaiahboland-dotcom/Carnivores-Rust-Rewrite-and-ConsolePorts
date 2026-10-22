@@ -17,6 +17,7 @@ pub mod cooked;
 pub mod map;
 pub mod mee;
 pub mod menu_txt;
+pub mod mobile;
 pub mod model;
 pub mod res_txt;
 pub mod rsc;
