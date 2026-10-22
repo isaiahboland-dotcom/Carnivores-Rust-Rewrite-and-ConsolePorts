@@ -349,6 +349,29 @@ fn call_set(apk: &Apk, sounds: &[Vec<u8>]) -> Option<Vec<Vec<u8>>> {
     None
 }
 
+/// The mobile game's tuning values (`DINO_T_REX_PRICE` ...), read from
+/// its native library (`c2_formats::mobile_values`), largest first.
+pub fn values(apk: &Path) -> Result<std::collections::BTreeMap<String, f64>, ModError> {
+    let zip = c2_vfs::ZipBackend::new(apk, "")?;
+    let mut libs: Vec<(String, Vec<u8>)> = zip
+        .files()
+        .into_iter()
+        .filter(|f| f.starts_with("lib/arm64-v8a/") && f.ends_with(".so"))
+        .filter_map(|f| zip.read(&f).ok().map(|d| (f, d)))
+        .collect();
+    libs.sort_by_key(|l| std::cmp::Reverse(l.1.len()));
+    for (_, d) in &libs {
+        if let Ok(v) = c2_formats::mobile_values::defaults(d) {
+            if !v.is_empty() {
+                return Ok(v);
+            }
+        }
+    }
+    Err(ModError::Recipe(
+        "no tuning values found in the APK's arm64 libraries".into(),
+    ))
+}
+
 /// Imports the animals of the APK at `apk` that the game in `base` (a
 /// Modder's Edition game: the entries are in its dialect) doesn't have,
 /// one add-on folder each under `out`.

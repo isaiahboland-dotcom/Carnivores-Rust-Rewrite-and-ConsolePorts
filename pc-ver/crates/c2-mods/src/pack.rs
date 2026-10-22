@@ -376,7 +376,7 @@ fn assign_slots(
                 }
             }
             m.files = m.map.iter().map(|(p, _)| p.clone()).collect();
-            let price = if chars {
+            let slot_price = if chars {
                 menu.huntables.get(s.from - 1).map(|i| i.price)
             } else {
                 menu.weapons.get(s.from - 1).map(|i| i.price)
@@ -415,6 +415,12 @@ fn assign_slots(
                     }
                 }
             }
+            // Its own `price` if the entry has one (imported mobile animals),
+            // else the price of the slot it was made for.
+            let price = block
+                .get(&["price"])
+                .map(c2_formats::res_txt::c_atoi)
+                .unwrap_or(slot_price);
             let price = Change::Entry {
                 section: "prices".into(),
                 key: if chars { "dino" } else { "weapon" }.into(),

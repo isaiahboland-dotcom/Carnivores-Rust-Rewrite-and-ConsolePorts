@@ -33,6 +33,7 @@ const USAGE: &str = "usage:
               [--script 'X,Y;'TEXT;enter;esc'] [--shot out.png]
   c2-pc balance <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]...   (prints prices and scores as a balance file)
   c2-pc mobile <APK> --base <GAME_DIR> [--overlay DIR]... --out <DIR>   (the mobile game's animals as add-ons)
+  c2-pc mobile <APK> --values                                         (its tuning values)
   c2-pc mod detect <MOD_DIR>... --base <GAME_DIR> [--write]
   c2-pc mod build  <MOD_DIR>... --base <GAME_DIR> --out <DIR>
   c2-pc recipe verify <RECIPE.toml> --base <GAME_DIR> --mods <DIR>
@@ -151,6 +152,12 @@ fn main() -> Result<()> {
             .positional
             .first()
             .context("c2-pc mobile <APK> --base GAME --out DIR")?;
+        if o.has("values") {
+            for (k, v) in c2_mods::mobile::values(std::path::Path::new(apk))? {
+                println!("{k} {v:?}");
+            }
+            return Ok(());
+        }
         let bases = mods_cli::bases(o.value("base"), &o.values("overlay"))?;
         let out = PathBuf::from(o.value("out").context("--out DIR")?);
         let base = c2_mods::vanilla(&bases)?;
