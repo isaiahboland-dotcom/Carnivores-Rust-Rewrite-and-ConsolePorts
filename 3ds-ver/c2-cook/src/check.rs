@@ -18,7 +18,7 @@ use c2_vfs::Vfs;
 #[allow(dead_code)]
 mod rules;
 
-use rules::{Role, Rules};
+use rules::{Roam, Role, Rules};
 
 static T0: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
 
@@ -55,18 +55,20 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
         rules.menu.weapons.len()
     );
     // Each menu animal, then each roamer, alone on the first area.
-    let mut picks: Vec<(String, u128, Vec<usize>)> = rules
+    let mut picks: Vec<(String, u128, Vec<Roam>)> = rules
         .menu
         .huntables
         .iter()
         .enumerate()
         .map(|(k, d)| (d.name.clone(), 1u128 << (k + 10), Vec::new()))
         .collect();
-    for (i, r) in neutral.roles.iter().enumerate() {
-        if *r == Role::Roamer {
-            let name = neutral.res.characters[i].name.clone().unwrap_or_default();
-            picks.push((format!("{name} (roams)"), 0, vec![i]));
-        }
+    for r in Rules::roams(&neutral) {
+        let name = neutral.res.characters[r.char]
+            .name
+            .clone()
+            .unwrap_or_default();
+        let call = if r.donor.is_some() { "" } else { ", no call" };
+        picks.push((format!("{name} (roams{call})"), 1 << (r.slot + 10), vec![r]));
     }
     if let Some(name) = bench {
         picks.retain(|p| {
@@ -83,7 +85,7 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
             let keep = |i: usize| match hr.roles.get(i) {
                 Some(Role::Hunter | Role::Ambient) => true,
                 Some(Role::Slot(k)) => *k < 118 && targets & (1 << (k + 10)) != 0,
-                Some(Role::Roamer) => roamers.contains(&i),
+                Some(Role::Roamer) => roamers.iter().any(|r| r.char == i),
                 Some(Role::Off) => false,
                 None => false,
             };
@@ -169,6 +171,15 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
                 opts,
                 room,
             );
+            let picked = |c: &c2_core::dino::Character| wanted.contains(&c.ctype);
+            if hunt
+                .herd
+                .chars
+                .iter()
+                .any(|c| picked(c) && !hunt.is_target(c))
+            {
+                missing.push("not a hunt target".into());
+            }
             let car_refs: Vec<_> = cars.iter().map(Option::as_ref).collect();
             let mut out = Vec::new();
             hunt.prof.clock = Some(clock_ms);

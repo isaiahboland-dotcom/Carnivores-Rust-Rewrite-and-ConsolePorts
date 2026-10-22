@@ -14,7 +14,7 @@ use c2_formats::car::Car;
 use c2_formats::sav::Save;
 use c2_vfs::Vfs;
 
-use crate::rules::{Role, Rules};
+use crate::rules::{Roam, Role, Rules};
 use crate::world::DrawInfo;
 
 /// Simulation step: 20 ms, half the PC's rate. Every animal costs about
@@ -125,9 +125,9 @@ pub struct Setup {
     /// Bit 10 + menu slot per target (`TargetDino`; in the original the
     /// slot is the AI - 10, so the bit is the AI).
     pub targets: u128,
-    /// Characters (`_RES.TXT` index) picked that roam rather than being
-    /// hunt targets (add-ons without a menu slot).
-    pub roamers: Vec<usize>,
+    /// Roaming add-ons picked (no menu slot of their own); their call
+    /// slots are among the targets.
+    pub roamers: Vec<Roam>,
     /// Bit per carried weapon.
     pub weapons: u32,
     pub double_ammo: bool,
@@ -159,9 +159,18 @@ impl Setup {
                 Role::Hunter => true,
                 Role::Ambient => self.max_ambient > 0,
                 Role::Slot(k) => k < 118 && self.targets & (1 << (k + 10)) != 0,
-                Role::Roamer => self.roamers.contains(&i),
+                Role::Roamer => self.roamers.iter().any(|r| r.char == i),
                 Role::Off => false,
             }
+    }
+
+    /// Whose call sound and icon call id `id` uses: its own, or for a
+    /// roamer its donor's (`None`: a roamer with no donor, no call).
+    pub fn call_of(&self, id: i32) -> Option<i32> {
+        match self.roamers.iter().find(|r| r.slot as i32 + 10 == id) {
+            Some(r) => r.donor.map(|k| k as i32 + 10),
+            None => Some(id),
+        }
     }
 
     pub fn carried(&self) -> Vec<usize> {

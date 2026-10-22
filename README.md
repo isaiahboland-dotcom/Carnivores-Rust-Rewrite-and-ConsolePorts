@@ -381,8 +381,7 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   kept apart and renumbered, spawns tied to its own maps, add-ons on top), or one is played on its own.
 
 **Known issues (next up)**
-- 3DS add-on pack: roaming add-ons have no menu picture (they have no menu slot); a picked roamer is not a
-  hunt target (half score, no call).
+- None open.
 
 ---
 
@@ -439,7 +438,7 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
         view range, key bindings, mouse), credits, quit; `c2-pc play`
   - [x] trophy room (`TrophyMode`): trophies on display with plaques, `R` removes; kill plaque during hunts
   - [x] pause (`Pause`/`P`, `PAUSE.TGA`), brightness option (`BrightenTexture`), health recovery (`ProcessSyncro`)
-  - [ ] side-by-side check against the retail game (needs the owner's eyes; see DECISIONS for what to compare)
+  - [x] side-by-side check against the retail game (owner, 2026-10-22: plays like it, apart from our changes)
 - [ ] M4 Mod system — **in progress**
   - [x] `c2-vfs`: layered, case-insensitive VFS with provenance (directory + in-memory backends)
   - [x] `c2-mods`: `mod.toml`, auto-detect against vanilla (full-copy mods reduce to their real changes),
@@ -473,7 +472,9 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] pack picker at boot, a save per pack; `c2-cook --overlay`, models cooked by file, calls by menu slot
   - [x] Modder's Edition rules resolved per hunt on the 3DS; roaming add-ons pickable; main and video memory checked per pick
   - [x] `c2-cook --check`; big add-on animations thinned for Old 3DS
-  - [ ] tested on hardware
+  - [x] tested on hardware (owner, 2026-10-22)
+  - [x] roaming add-ons are full hunt targets: own call slot, a donor's call and price, a menu picture drawn
+        from the model
 - [ ] M10 Launchers: PC game manager and 3DS pack builder — **in progress**
   - [x] `c2-launcher` (PC, 3DS section on request) and `c2-3ds-builder` (3DS only), egui, the game menus' colours
   - [x] game folder and overlays (drop, browse or paste), add-ons (folders, .zip/.rar/.7z; order, on/off), Play
@@ -491,7 +492,7 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [ ] the dialect's AI families (interim: run as the closest original AI; aquatic ones not placed)
   - [ ] extended weapons, trophy table, survival mode, weather; 3DS cooking and menus
 
-_Last updated: 2026-10-19 — M9: Modder's Edition game folders show their menus and spawn their rosters on PC; the dialect's shared AI (herbivores, hunters, Ice Age animals) every AI family our game folders use is ported (Titan, Micro and the wary Dimorphodon are not; no folder uses them). Next: the 3DS sim spike, then the dialect's weapons/trophies and the 3DS side, then weapons/trophies and the 3DS side._
+_Last updated: 2026-10-22 — the add-on pack plays on hardware and the Old 3DS slowdown after a kill is gone. Roaming add-ons on the 3DS are now proper hunt targets with a menu picture and a call. Next: M10 (balance editor, `.cia`, Ice Age and standalone games in the base slot)._
 
 
 note from user: quick headsup, the carnivores 2 datafile is copied direct from my library and includes re-shade files as well, please do not port the re-shade files to 3ds or the rust re-write as that would overcomplicate things dramatically

@@ -2,6 +2,25 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-22 — Roaming add-ons are hunt targets on the 3DS
+A picked roaming add-on (huntable AI, no menu slot) spawned but scored half,
+had no call and no menu picture. Its `callNo` also defaulted to 0, so it
+answered the first menu animal's call.
+- **Its own call slot**: the menu numbers roamers from slot 64
+  (`rules::ROAM_SLOT0`, in `_RES.TXT` order); picked, the slot's target bit
+  is set and `Rules::hunt_with` writes it as the roamer's `callNo`. From
+  there it is an ordinary menu animal: a target (full score, green on the
+  radar), answers that call, loads and spawns as picked.
+- **Donor**: the first menu animal with the same `ai`. The roamer borrows
+  its call sound and icon (loaded at hunt start, `Setup::call_of`; nothing
+  extra in the pack) and its price, now that it scores in full (it was
+  free while it scored half). With no donor it has no call button.
+- **Menu picture**: `c2-cook` draws one from the model (rest pose, side
+  view turned 30 degrees, textured and shaded, software rasterizer in
+  `portrait.rs`) as `C2RS/MENU/R/<model>.TX`. Older packs still work, with
+  the name in place of a picture.
+- `c2-cook --check` now reports a picked animal that isn't a hunt target.
+
 ## 2026-10-22 — Original-game add-ons move like the animal they replace
 A raptor add-on written for the original game (speeds as `runspeed` etc.,
 another engine's keys and units) stood still in a Modder's Edition game:

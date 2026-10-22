@@ -80,7 +80,8 @@ impl Ui {
         };
         let calls = (10..128)
             .filter(|ai| game.hunt.opts.targets & (1 << ai) != 0)
-            .map(|ai| (ai, load(vfs, &format!("C2RS/CALL{ai}.TX"))))
+            .filter_map(|ai| Some((ai, game.setup.call_of(ai)?)))
+            .map(|(ai, icon)| (ai, load(vfs, &format!("C2RS/CALL{icon}.TX"))))
             .collect();
         Self {
             c: Canvas::new(load(vfs, "C2RS/FONT.TX")),
@@ -373,7 +374,7 @@ fn draw_map(c: &mut Canvas, gpu: &mut Gpu, game: &Game, map: Option<&Texture>, l
         dot(hx + a.cos() * r, hy + a.sin() * r, 1.5, [0, 144, 0, 255]);
     }
     // Animals within view range: the hunted ones green, other huntable
-    // ones (spawned anyway, or roaming add-ons) blue, the rest pale. With
+    // ones (spawned anyway) blue, the rest pale. With
     // the radar, the green and blue ones everywhere (`DrawHMap`'s blips).
     let range = h.opts.view_r as f32 * CELL;
     for ch in &h.herd.chars {

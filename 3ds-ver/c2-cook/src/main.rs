@@ -25,6 +25,7 @@ use c2_formats::cooked::{tile, write_pack, write_texture, TexFormat};
 use c2_vfs::{MemBackend, Vfs};
 
 mod check;
+mod portrait;
 
 const USAGE: &str = "usage:
   c2-cook --game <GAME_DIR> [--overlay DIR]... [--mod MOD]...
@@ -532,6 +533,24 @@ impl Cooker {
         self.picture(name, &fit(&px, p.width, p.height, w, h, w, w), w, w);
     }
 
+    /// A menu picture of a model (as `menu_picture` lays one out: 128 wide,
+    /// 357:208, on a 128 x 128 canvas), drawn at twice the size and
+    /// averaged down.
+    fn portrait(&mut self, vfs: &Vfs, path: &str, name: &str) {
+        let Some(car) = vfs
+            .read(path)
+            .ok()
+            .and_then(|d| c2_formats::car::parse(&d).ok())
+        else {
+            return;
+        };
+        let (w, h) = (256, 256 * 208 / 357);
+        let Some(px) = portrait::render(&PreparedModel::from_mesh(&car.mesh), w, h, 0.6) else {
+            return;
+        };
+        self.picture(name, &fit(&px, w, h, 128, h / 2, 128, 128), 128, 128);
+    }
+
     /// A model texture (256x256 RGBA8) at the profile's size.
     fn model_texture(&mut self, name: String, rgba: &[u8]) {
         let side = self.profile.model_tex.min(256);
@@ -623,6 +642,9 @@ struct Rules {
     /// Every model a character can use, by `model_key`: (file, loaded
     /// for every hunt). The others load only when picked.
     models: BTreeMap<String, (String, bool)>,
+    /// Models of roaming add-ons (huntable, no menu slot), by `model_key`:
+    /// they get a menu picture drawn from the model.
+    roamers: std::collections::BTreeSet<String>,
     /// The menu: `_MENU.TXT` if there is one, else `_RES.TXT`.
     menu: c2_formats::menu_txt::MenuData,
 }
@@ -674,9 +696,13 @@ fn rules(vfs: &Vfs) -> Result<Rules> {
         (c2_core::load::res(vfs)?, Vec::new())
     };
     let mut models = BTreeMap::new();
+    let mut roamers = std::collections::BTreeSet::new();
     for (i, def) in res.characters.iter().enumerate() {
         let info = DinoInfo::from_def(def);
         let key = c2_formats::cooked::model_key(&info.file);
+        if dialect && !slots.get(i).copied().unwrap_or(false) && (10..30).contains(&info.ai) {
+            roamers.insert(key.clone());
+        }
         let always = if dialect {
             !slots.get(i).copied().unwrap_or(false) && (0..10).contains(&info.ai)
         } else {
@@ -706,6 +732,7 @@ fn rules(vfs: &Vfs) -> Result<Rules> {
         dialect,
         res,
         models,
+        roamers,
         menu,
     })
 }
@@ -794,6 +821,11 @@ fn main() -> Result<()> {
         let rgba = c.car(&vfs, &path, &format!("M/{key}/"))?;
         c.model_texture(format!("C2RS/M/{key}.TX"), &rgba);
         cooked_models.push((key.clone(), *always));
+        if rules.roamers.contains(key) {
+            c.scope = "menu".into();
+            c.portrait(&vfs, &path, &format!("C2RS/MENU/R/{key}.TX"));
+            c.scope = format!("m:{key}");
+        }
     }
     // Calls by menu slot n (call id n + 9; in the original the slot is the
     // AI - 10): MENU/PICS/CALLn.TGA, SOUNDFX/CALLS/CALLn_*.WAV.

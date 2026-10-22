@@ -23,7 +23,7 @@ use c2_vfs::Vfs;
 use crate::draw2d::{in_hex, inside, Canvas, Rgba, WHITE};
 use crate::gpu::{Gpu, Texture, BOTTOM_W, TOP_W};
 use crate::hunt::{PackInfo, Setup};
-use crate::rules::{Role, Rules};
+use crate::rules::{Roam, Role, Rules};
 use crate::settings::Settings;
 use crate::ui::load;
 
@@ -94,9 +94,9 @@ struct Item {
 enum Pick {
     /// A menu slot: a hunt target (call id 10 + slot).
     Slot(usize),
-    /// An add-on that roams (`_RES.TXT` character index): loaded so it
-    /// spawns, but not a target.
-    Roamer(usize),
+    /// An add-on that roams (no menu slot): hunted under its own call
+    /// slot, with a picture `c2-cook` renders from its model.
+    Roamer(Roam),
 }
 
 /// What memory the picks need and what the console has, KiB: linear, then
@@ -220,21 +220,27 @@ impl Menu {
             .collect();
         let first = info.areas.first().cloned().unwrap_or_default();
         let neutral = rules.hunt(&first, TimeOfDay::Day, u128::MAX);
-        for (i, role) in neutral.roles.iter().enumerate() {
+        for r in Rules::roams(&neutral) {
             let name = neutral
                 .res
                 .characters
-                .get(i)
+                .get(r.char)
                 .map(|d| DinoInfo::from_def(d).name)
                 .unwrap_or_default();
-            let cooked = info.costs.contains_key(&format!("m:{}", neutral.keys[i]));
-            if *role == Role::Roamer && cooked && !dinos.iter().any(|d| d.1.name == name) {
+            let key = &neutral.keys[r.char];
+            let cooked = info.costs.contains_key(&format!("m:{key}"));
+            if cooked && !dinos.iter().any(|d| d.1.name == name) {
+                // Priced as the animal whose call it borrows.
+                let price = r
+                    .donor
+                    .and_then(|k| menu.huntables.get(k))
+                    .map_or(0, |d| d.price);
                 let item = Item {
                     name,
-                    price: 0,
-                    pic: None,
+                    price,
+                    pic: load(vfs, &format!("C2RS/MENU/R/{key}.TX")),
                 };
-                dinos.push((Pick::Roamer(i), item));
+                dinos.push((Pick::Roamer(r), item));
             }
         }
         dinos.truncate(32);
@@ -245,7 +251,8 @@ impl Menu {
                 let hr = rules.hunt(name, TimeOfDay::Day, u128::MAX);
                 let Some(t) = &hr.tables else { continue };
                 for d in &dinos {
-                    if let Pick::Roamer(i) = d.0 {
+                    if let Pick::Roamer(r) = d.0 {
+                        let i = r.char;
                         let c = t.characters.get(i);
                         let spawns = c.is_some_and(|c| !c.spawn.is_empty() || !c.packs.is_empty());
                         if spawns {
@@ -353,8 +360,9 @@ impl Menu {
             - self.extra().map_or(0, |e| e.0)
     }
 
-    /// The hunt targets (bit 10 + slot) and roaming add-ons picked.
-    fn picks(&self) -> (u128, Vec<usize>) {
+    /// The hunt targets (bit 10 + slot, roamers' slots too) and roaming
+    /// add-ons picked.
+    fn picks(&self) -> (u128, Vec<Roam>) {
         let mut targets = 0u128;
         let mut roamers = Vec::new();
         for (k, d) in self.dinos.iter().enumerate() {
@@ -364,7 +372,10 @@ impl Menu {
             match d.0 {
                 Pick::Slot(s) if s < 118 => targets |= 1 << (s + 10),
                 Pick::Slot(_) => {}
-                Pick::Roamer(i) => roamers.push(i),
+                Pick::Roamer(r) => {
+                    targets |= 1 << (r.slot + 10);
+                    roamers.push(r);
+                }
             }
         }
         (targets, roamers)
@@ -392,7 +403,9 @@ impl Menu {
         let area = self.areas.get(self.area).map_or("AREA1", |a| a.0.as_str());
         let mut lin = i.cost("hunt") + i.cost(area);
         let mut heap = i.heap(area);
-        let rules = self.rules.hunt(area, TIMES[self.time].0, setup.targets);
+        let rules = self
+            .rules
+            .hunt_with(area, TIMES[self.time].0, setup.targets, &setup.roamers);
         for (c, &role) in rules.roles.iter().enumerate() {
             if !setup.keeps_char(c, role) {
                 continue;
@@ -520,8 +533,8 @@ impl Menu {
     /// Toggles bit `i` of `mask` unless that costs more than is left.
     fn toggle(&mut self, which: Step, i: usize, gear: bool) -> String {
         if which == Step::Animals {
-            if let Some((Pick::Roamer(c), item)) = self.dinos.get(i) {
-                let text = format!("{}  {}", item.name, self.roam_text(*c));
+            if let Some((Pick::Roamer(r), item)) = self.dinos.get(i) {
+                let text = format!("{}  {}", item.name, self.roam_text(r.char));
                 self.toggle_bit(which, i, gear);
                 return text;
             }
@@ -876,7 +889,7 @@ impl Menu {
                 for (i, cell) in self.dino_cells().into_iter().enumerate() {
                     let on = self.picked_dinos & (1 << i) != 0;
                     let (pick, item) = &self.dinos[i];
-                    // Roaming add-ons: a blue rim (blue on the radar too).
+                    // Roaming add-ons: a blue rim.
                     if matches!(pick, Pick::Roamer(_)) && !on {
                         c.hex(cell.0, cell.1, cell.2 + 2.0, [60, 120, 230, 255]);
                     }

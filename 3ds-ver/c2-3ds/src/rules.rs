@@ -29,6 +29,21 @@ pub enum Role {
     Off,
 }
 
+/// The first call slot given to roaming add-ons, after any menu's own
+/// (call id 10 + slot; slots stay under 118 for the 128-bit target mask).
+pub const ROAM_SLOT0: usize = 64;
+
+/// A roaming add-on as a hunt target: its character (`_RES.TXT` index),
+/// the call slot it is hunted under (`ROAM_SLOT0` on, so it is a target,
+/// shows on the radar and answers that call), and the menu slot of an
+/// animal with its AI whose call and price it borrows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Roam {
+    pub char: usize,
+    pub slot: usize,
+    pub donor: Option<usize>,
+}
+
 /// One hunt's characters and weapons.
 pub struct HuntRules {
     pub res: ResData,
@@ -78,15 +93,42 @@ impl Rules {
         self.hunt_with(area, time, targets, &[])
     }
 
-    /// [`Rules::hunt`] as played: picked animals (and picked roamers, by
-    /// character index) come on this map even if their tables put them on
-    /// others (`c2_core::mee::spawn_picked_anywhere`).
+    /// The roaming add-ons the menu offers, in `_RES.TXT` order, each with
+    /// its call slot and donor (see [`Roam`]), from a hunt with everything
+    /// picked (`neutral`).
+    pub fn roams(neutral: &HuntRules) -> Vec<Roam> {
+        let ai = |i: usize| {
+            neutral
+                .tables
+                .as_ref()
+                .and_then(|t| t.characters.get(i))
+                .and_then(|c| c.block.get(&["ai"]))
+                .map(c_atoi)
+        };
+        let roamers = (0..neutral.roles.len()).filter(|&i| neutral.roles[i] == Role::Roamer);
+        roamers
+            .zip(ROAM_SLOT0..118)
+            .map(|(char, slot)| Roam {
+                char,
+                slot,
+                donor: neutral.roles.iter().enumerate().find_map(|(j, r)| match r {
+                    Role::Slot(k) if ai(j).is_some() && ai(j) == ai(char) => Some(*k),
+                    _ => None,
+                }),
+            })
+            .collect()
+    }
+
+    /// [`Rules::hunt`] as played: picked animals (and picked roamers) come
+    /// on this map even if their tables put them on others
+    /// (`c2_core::mee::spawn_picked_anywhere`); each picked roamer takes its
+    /// call slot (`callNo`), so it loads and hunts as a menu animal.
     pub fn hunt_with(
         &self,
         area: &str,
         time: TimeOfDay,
         targets: u128,
-        roamers: &[usize],
+        roamers: &[Roam],
     ) -> HuntRules {
         let (res, tables) = match (&self.raw, &self.vanilla) {
             (Some(raw), _) => {
@@ -100,7 +142,16 @@ impl Rules {
                     picked: targets >> 10,
                 };
                 let mut m = c2_core::mee::read(raw, &h);
-                c2_core::mee::spawn_picked_anywhere(raw, &h, &mut m.tables, roamers);
+                let chars: Vec<usize> = roamers.iter().map(|r| r.char).collect();
+                c2_core::mee::spawn_picked_anywhere(raw, &h, &mut m.tables, &chars);
+                for r in roamers {
+                    if let Some(c) = m.tables.characters.get_mut(r.char) {
+                        c.block.entries.push(c2_formats::res_txt::Entry {
+                            key: "callNo".into(),
+                            value: r.slot.to_string(),
+                        });
+                    }
+                }
                 (m.res, Some(m.tables))
             }
             (None, Some(v)) => (v.clone(), None),

@@ -239,6 +239,22 @@ impl Sound {
                 None => {}
             }
         }
+        // Picked roamers call with their donor's call.
+        for r in &game.setup.roamers {
+            let (Some(k), true) = (r.donor, r.slot < 118) else {
+                continue;
+            };
+            for variant in 0..3 {
+                if let Some(clip) = vfs
+                    .read(&format!("C2RS/SND/K{}_{variant}.PCM", k + 10))
+                    .ok()
+                    .and_then(|d| Clip::new(&d))
+                {
+                    let ai = r.slot as i32 + 10;
+                    s.clips.insert(SoundId::Call { ai, variant }, clip);
+                }
+            }
+        }
         // The loaded animals' sounds, by model (`C2RS/SND/M/{key}/{k}`); the
         // trophies stand still, so none in the room.
         if !game.setup.trophy() {
