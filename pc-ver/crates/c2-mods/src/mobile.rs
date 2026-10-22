@@ -372,11 +372,189 @@ pub fn values(apk: &Path) -> Result<std::collections::BTreeMap<String, f64>, Mod
     ))
 }
 
+/// The file `import` writes beside the add-ons: the mobile game's values
+/// for the game's own areas, animals and weapons (a balance file; the
+/// launcher offers each where it differs).
+pub const MOBILE_VALUES: &str = "mobile-values.toml";
+
+/// Letters and digits, lower case (`T_REX`, `T-Rex` -> `trex`).
+fn norm(s: &str) -> String {
+    s.chars()
+        .filter(char::is_ascii_alphanumeric)
+        .map(|c| c.to_ascii_lowercase())
+        .collect()
+}
+
+/// Whether a mobile key's name and a game's name are the same animal or
+/// weapon (`PACHYCEPHALLOSAURUS` / `Pachycephalosaurus`, `RHINOCEROS` /
+/// `Rhino`): equal, or a long common start.
+fn same(a: &str, b: &str) -> bool {
+    let (a, b) = (norm(a), norm(b));
+    let common = a.bytes().zip(b.bytes()).take_while(|(x, y)| x == y).count();
+    a == b || common >= 5 && common * 10 >= a.len().min(b.len()) * 6
+}
+
+/// `DINO_T_REX_PRICE` -> ("T_REX", "PRICE") for `prefix` `DINO_`.
+fn split_key<'a>(key: &'a str, prefix: &str) -> Option<(&'a str, &'a str)> {
+    let rest = key.strip_prefix(prefix)?;
+    [
+        "HEALTH",
+        "PRICE",
+        "SCORE",
+        "POWER",
+        "PRECISION",
+        "RATE",
+        "SHOTS",
+    ]
+    .iter()
+    .find_map(|f| Some((rest.strip_suffix(&format!("_{f}"))?, *f)))
+}
+
+/// One mobile animal's or weapon's values, by field.
+type Fields = std::collections::BTreeMap<&'static str, f64>;
+
+fn grouped(
+    values: &std::collections::BTreeMap<String, f64>,
+    prefix: &str,
+) -> Vec<(String, Fields)> {
+    let mut out: Vec<(String, Fields)> = Vec::new();
+    for (k, v) in values {
+        let Some((name, field)) = split_key(k, prefix) else {
+            continue;
+        };
+        let field: &'static str = match field {
+            "HEALTH" => "health",
+            "PRICE" => "price",
+            "SCORE" => "score",
+            "POWER" => "power",
+            "PRECISION" => "prec",
+            "RATE" => "rate",
+            _ => "shots",
+        };
+        match out.iter_mut().find(|(n, _)| n == name) {
+            Some((_, f)) => {
+                f.insert(field, *v);
+            }
+            None => out.push((name.to_string(), Fields::from([(field, *v)]))),
+        }
+    }
+    out
+}
+
+/// The mobile games' prices and scores are on their own scale (a T-Rex
+/// costs 1500 there, 500 on PC): the median ratio over the animals both
+/// have, for prices and for scores.
+fn scales(game: &crate::balance::Balance, dinos: &[(String, Fields)]) -> (f64, f64) {
+    let ratio = |field: &str, ours: &dyn Fn(&crate::balance::Item) -> Option<f64>| {
+        let mut r: Vec<f64> = game
+            .animals
+            .iter()
+            .filter_map(|it| {
+                let (_, f) = dinos.iter().find(|(n, _)| same(n, &it.name))?;
+                let (a, b) = (ours(it)?, *f.get(field)?);
+                (a > 0.0 && b > 0.0).then_some(a / b)
+            })
+            .collect();
+        r.sort_by(f64::total_cmp);
+        r.get(r.len() / 2).copied().unwrap_or(1.0 / 3.0)
+    };
+    (
+        ratio("price", &|i| i.price.map(f64::from)),
+        ratio("score", &|i| i.score.map(f64::from)),
+    )
+}
+
+fn round_price(v: f64) -> i32 {
+    ((v / 5.0).round() * 5.0) as i32
+}
+
+fn round_score(v: f64) -> f32 {
+    ((v * 2.0).round() / 2.0) as f32
+}
+
+/// The mobile values for the game's own entries, on the game's scale.
+fn mobile_balance(
+    values: &std::collections::BTreeMap<String, f64>,
+    game: &crate::balance::Balance,
+) -> crate::balance::Balance {
+    use crate::balance::Item;
+    let dinos = grouped(values, "DINO_");
+    let weapons = grouped(values, "WEAPON_");
+    let (pk, sk) = scales(game, &dinos);
+    let get = |f: &Fields, k: &str| f.get(k).copied();
+    let animals = game
+        .animals
+        .iter()
+        .filter_map(|it| {
+            let (_, f) = dinos.iter().find(|(n, _)| same(n, &it.name))?;
+            Some(Item {
+                name: it.name.clone(),
+                price: it.price.and(get(f, "price").map(|p| round_price(p * pk))),
+                score: get(f, "score").map(|s| round_score(s * sk)),
+                health: get(f, "health").map(|h| h as f32),
+                ..Default::default()
+            })
+        })
+        .collect();
+    let weapons = game
+        .weapons
+        .iter()
+        .filter_map(|it| {
+            let (_, f) = weapons.iter().find(|(n, _)| same(n, &it.name))?;
+            let v = |k| get(f, k).map(|v| v as f32);
+            Some(Item {
+                name: it.name.clone(),
+                price: get(f, "price").map(|p| round_price(p * pk)),
+                power: v("power"),
+                prec: v("prec"),
+                rate: v("rate"),
+                shots: v("shots"),
+                ..Default::default()
+            })
+        })
+        .collect();
+    let areas = game
+        .areas
+        .iter()
+        .enumerate()
+        .filter_map(|(i, it)| {
+            let p = values.get(&format!("AREA{}_PRICE", i + 1))?;
+            Some(Item {
+                name: it.name.clone(),
+                price: Some(round_price(p * pk)),
+                ..Default::default()
+            })
+        })
+        .collect();
+    crate::balance::Balance {
+        start: None,
+        areas,
+        animals,
+        weapons,
+    }
+}
+
+/// Sets `key` in an entry (replacing every value it had).
+fn set_key(b: &mut Block, key: &str, value: String) {
+    b.entries.retain(|e| !e.key.eq_ignore_ascii_case(key));
+    b.entries.push(entry(key, value));
+}
+
 /// Imports the animals of the APK at `apk` that the game in `base` (a
 /// Modder's Edition game: the entries are in its dialect) doesn't have,
 /// one add-on folder each under `out`.
 pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Vec<Imported>, ModError> {
     let zip = Apk(c2_vfs::ZipBackend::new(apk, "")?);
+    // The game's tuning in the mobile game (none: the donors' stand).
+    let values = values(apk).unwrap_or_default();
+    let game = crate::balance::read(base)?;
+    let dinos = grouped(&values, "DINO_");
+    let (pk, sk) = scales(&game, &dinos);
+    std::fs::create_dir_all(out).map_err(io(out))?;
+    if !values.is_empty() {
+        let p = out.join(MOBILE_VALUES);
+        std::fs::write(&p, mobile_balance(&values, &game).to_toml()).map_err(io(&p))?;
+    }
     let res_text = String::from_utf8_lossy(&base.read("HUNTDAT/_RES.TXT")?).into_owned();
     let res = ResTxt::parse(&res_text)?;
     if !c2_formats::mee::is_dialect(&res) {
@@ -467,7 +645,23 @@ pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Vec<Imported>, ModEr
             .iter()
             .position(|h| h.name.eq_ignore_ascii_case(&donor_name))
             .map(|i| i + 1);
-        let b = make_entry(donor, &name, &car_file, &cat, slot.is_some());
+        let mut b = make_entry(donor, &name, &car_file, &cat, slot.is_some());
+        // Its own health, score and price from the mobile game, on the
+        // game's scale.
+        match dinos.iter().find(|(n, _)| same(n, &name) || same(n, &stem)) {
+            Some((_, f)) => {
+                if let Some(h) = f.get("health") {
+                    set_key(&mut b, "health", format!("{h}"));
+                }
+                if let Some(s) = f.get("score") {
+                    crate::balance::set_score(&mut b, round_score(s * sk));
+                }
+                if let Some(p) = f.get("price") {
+                    set_key(&mut b, "price", round_price(p * pk).to_string());
+                }
+            }
+            None => notes.push(format!("no mobile values: the {donor_name}'s stats")),
+        }
         write(
             &format!("{name} _RES.txt"),
             format!(

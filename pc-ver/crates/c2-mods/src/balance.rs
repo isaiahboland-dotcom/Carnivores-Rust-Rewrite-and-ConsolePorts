@@ -46,6 +46,44 @@ pub struct Item {
     /// Animals only: points for a kill (`basescore`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub score: Option<f32>,
+    /// Animals: `health`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub health: Option<f32>,
+    /// Weapons: `power` (`land_power`), `prec` (`land_prec`), `rate`,
+    /// `shots` (rounds per load).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub power: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prec: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rate: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shots: Option<f32>,
+}
+
+/// The stats kept in `_RES.TXT` (not the menu): field, the section, its
+/// keys (the Modder's Edition's first, the original's last).
+type Stat = (
+    fn(&mut Item) -> &mut Option<f32>,
+    &'static str,
+    &'static [&'static str],
+);
+const STATS: [Stat; 5] = [
+    (|i| &mut i.health, "characters", &["health"]),
+    (|i| &mut i.power, "weapons", &["land_power", "power"]),
+    (|i| &mut i.prec, "weapons", &["land_prec", "prec"]),
+    (|i| &mut i.rate, "weapons", &["rate"]),
+    (|i| &mut i.shots, "weapons", &["shots"]),
+];
+
+impl Item {
+    /// Whether it changes anything.
+    pub fn changes(&self) -> bool {
+        let mut c = self.clone();
+        self.price.is_some()
+            || self.score.is_some()
+            || STATS.iter().any(|(f, _, _)| f(&mut c).is_some())
+    }
 }
 
 impl Balance {
@@ -70,7 +108,7 @@ impl Balance {
         self.start.is_none()
             && [&self.areas, &self.animals, &self.weapons]
                 .iter()
-                .all(|l| l.iter().all(|i| i.price.is_none() && i.score.is_none()))
+                .all(|l| l.iter().all(|i| !i.changes()))
     }
 }
 
@@ -272,9 +310,14 @@ impl Game {
     /// The animal's `_RES.TXT` entry (by its menu name; "Raptor #2" is
     /// the second entry named Raptor).
     fn res_block(&self, key: &str) -> Option<usize> {
+        self.res_block_in("characters", key)
+    }
+
+    /// The entry named `key` in `_RES.TXT`'s `section`.
+    fn res_block_in(&self, section: &str, key: &str) -> Option<usize> {
         let (name, n) = split_number(key);
         self.res
-            .section("characters")?
+            .section(section)?
             .blocks
             .iter()
             .enumerate()
@@ -307,7 +350,21 @@ pub fn read(vfs: &Vfs) -> Result<Balance, ModError> {
     let item = |f: &Found| Item {
         name: f.key.clone(),
         price: f.price,
-        score: None,
+        ..Default::default()
+    };
+    // Health and weapon stats, as `_RES.TXT` has them.
+    let stats = |mut it: Item, section: &str| {
+        let block = g
+            .res_block_in(section, &it.name)
+            .and_then(|i| g.res.section(section)?.blocks.get(i));
+        if let Some(b) = block {
+            for (field, sec, keys) in STATS {
+                if sec == section {
+                    *field(&mut it) = b.get(keys).map(c_atof);
+                }
+            }
+        }
+        it
     };
     Ok(Balance {
         start: Some(g.start()),
@@ -315,12 +372,21 @@ pub fn read(vfs: &Vfs) -> Result<Balance, ModError> {
         animals: g
             .animals
             .iter()
-            .map(|f| Item {
-                score: score(&f.key),
-                ..item(f)
+            .map(|f| {
+                stats(
+                    Item {
+                        score: score(&f.key),
+                        ..item(f)
+                    },
+                    "characters",
+                )
             })
             .collect(),
-        weapons: g.weapons.iter().map(item).collect(),
+        weapons: g
+            .weapons
+            .iter()
+            .map(|f| stats(item(f), "weapons"))
+            .collect(),
     })
 }
 
@@ -340,16 +406,30 @@ fn set(entries: &mut Vec<Entry>, key: &str, value: String) {
 }
 
 /// `basescore` in the block and in every sub-block that sets one.
-fn set_score(b: &mut Block, value: &str) {
-    set(&mut b.entries, "basescore", value.to_string());
-    for s in &mut b.subs {
-        if s.block.get(&["basescore"]).is_some() {
-            set_score(&mut s.block, value);
+/// `basescore` in the block; the blocks in it that set one (a Modder's
+/// Edition animal scores double while picked: `overwrite char5`) keep their
+/// proportion to it.
+pub(crate) fn set_score(b: &mut Block, value: f32) {
+    let old = b.get(&["basescore"]).map_or(0.0, c_atof);
+    set(&mut b.entries, "basescore", number(value));
+    let k = if old > 0.0 { value / old } else { 1.0 };
+    scale_scores(&mut b.subs, k);
+}
+
+fn scale_scores(subs: &mut [c2_formats::res_txt::Sub], k: f32) {
+    for s in subs {
+        if let Some(v) = s.block.get(&["basescore"]).map(c_atof) {
+            set(
+                &mut s.block.entries,
+                "basescore",
+                number((v * k * 2.0).round() / 2.0),
+            );
         }
+        scale_scores(&mut s.block.subs, k);
     }
 }
 
-fn number(v: f32) -> String {
+pub(crate) fn number(v: f32) -> String {
     if v.fract() == 0.0 {
         format!("{}", v as i64)
     } else {
@@ -470,8 +550,55 @@ pub fn apply(vfs: &Vfs, b: &Balance) -> Result<MemBackend, ModError> {
             .and_then(|sec| sec.blocks.get_mut(i))
         {
             if bl.get(&["basescore"]).map_or(0.0, c_atof) != s {
-                set_score(bl, &number(s));
+                set_score(bl, s);
                 res_changed = true;
+            }
+        }
+    }
+    // Health and weapon stats go to `_RES.TXT`: whichever of the keys the
+    // entry has, else the dialect's (or the original's) own.
+    let dialect = c2_formats::mee::is_dialect(&g.res);
+    for (section, items) in [("characters", &b.animals), ("weapons", &b.weapons)] {
+        for it in items {
+            let Some(i) = g.res_block_in(section, &it.name) else {
+                continue;
+            };
+            let Some(bl) = g
+                .res
+                .sections
+                .iter_mut()
+                .find(|s| s.name.eq_ignore_ascii_case(section))
+                .and_then(|sec| sec.blocks.get_mut(i))
+            else {
+                continue;
+            };
+            let mut it = it.clone();
+            for (field, sec, keys) in STATS {
+                let Some(v) = *field(&mut it) else { continue };
+                if sec != section {
+                    continue;
+                }
+                let have: Vec<&str> = keys
+                    .iter()
+                    .copied()
+                    .filter(|k| bl.get(&[k]).is_some())
+                    .collect();
+                let fallback = if dialect {
+                    keys[0]
+                } else {
+                    keys[keys.len() - 1]
+                };
+                let targets = if have.is_empty() {
+                    vec![fallback]
+                } else {
+                    have
+                };
+                for k in targets {
+                    if bl.get(&[k]).map(c_atof) != Some(v) {
+                        set(&mut bl.entries, k, number(v));
+                        res_changed = true;
+                    }
+                }
             }
         }
     }
@@ -549,6 +676,31 @@ prices {\n start = 100\n area = 20\n dino = 10\n dino = 15\n weapon = 20\n weapo
     }
 
     #[test]
+    fn picked_scores_keep_their_proportion() {
+        let v = game(&[]);
+        let b = Balance {
+            animals: vec![Item {
+                name: "Raptor #2".into(),
+                score: Some(15.0),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let layer = apply(&v, &b).unwrap_or_default();
+        let res = ResTxt::parse(&String::from_utf8_lossy(
+            &layer.read("HUNTDAT/_RES.TXT").unwrap_or_default(),
+        ))
+        .unwrap_or_default();
+        let raptor = &res
+            .section("characters")
+            .map(|s| s.blocks[2].clone())
+            .unwrap_or_default();
+        assert_eq!(raptor.get(&["basescore"]), Some("15"));
+        // 9 was 1.2 x 7.5: now 18.
+        assert_eq!(raptor.subs[0].block.get(&["basescore"]), Some("18"));
+    }
+
+    #[test]
     fn applies_over_the_game() {
         let v = game(&[(
             "HUNTDAT/AREAS/new.c2map",
@@ -559,17 +711,20 @@ prices {\n start = 100\n area = 20\n dino = 10\n dino = 15\n weapon = 20\n weapo
             areas: vec![Item {
                 name: "Isle".into(),
                 price: Some(40),
-                score: None,
+                ..Default::default()
             }],
             animals: vec![Item {
                 name: "Raptor".into(),
                 price: Some(12),
                 score: Some(6.5),
+                health: Some(9.0),
+                ..Default::default()
             }],
             weapons: vec![Item {
                 name: "Rifle".into(),
                 price: Some(150),
-                score: None,
+                shots: Some(30.0),
+                ..Default::default()
             }],
         };
         let mut v2 = game(&[(
@@ -585,6 +740,8 @@ prices {\n start = 100\n area = 20\n dino = 10\n dino = 15\n weapon = 20\n weapo
         // The second raptor (and its overwrite) untouched.
         assert_eq!(after.animals[1].score, Some(7.5));
         assert_eq!(after.weapons[1].price, Some(150));
+        assert_eq!(after.weapons[1].shots, Some(30.0));
+        assert_eq!(after.animals[0].health, Some(9.0));
         // Unchanged balance: no files.
         assert!(apply(&v2, &after).is_ok_and(|l| l.files().is_empty()));
     }
