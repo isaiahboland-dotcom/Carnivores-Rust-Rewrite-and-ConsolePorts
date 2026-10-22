@@ -55,16 +55,28 @@ pub fn dir() -> &'static str {
     })
 }
 
+/// How [`dir`] decided, for the "no pack" screen.
+static DIR_NOTE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
 /// An installed `.cia` has no path to go by: the launcher writes the
 /// install name to `name.txt` in its RomFS (a `.3dsx` has none).
 fn cia_dir() -> Option<String> {
     let dev = c"romfs";
-    if unsafe { ctru_sys::romfsMountSelf(dev.as_ptr()) } < 0 {
+    let rc = unsafe { ctru_sys::romfsMountSelf(dev.as_ptr()) };
+    if rc < 0 {
+        let _ = DIR_NOTE.set(format!("no RomFS (0x{rc:08X})"));
         return None;
     }
-    let name = std::fs::read_to_string("romfs:/name.txt").ok();
+    let name = std::fs::read_to_string("romfs:/name.txt");
     let _ = unsafe { ctru_sys::romfsUnmount(dev.as_ptr()) };
-    let name = name?.trim().to_string();
+    let name = match name {
+        Ok(n) => n.trim().to_string(),
+        Err(e) => {
+            let _ = DIR_NOTE.set(format!("RomFS name.txt: {e}"));
+            return None;
+        }
+    };
+    let _ = DIR_NOTE.set(format!("RomFS name {name:?}"));
     let safe = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
     (!name.is_empty() && name.chars().all(safe)).then(|| format!("sdmc:/3ds/{name}"))
 }
@@ -99,20 +111,18 @@ fn tick_line(game: &hunt::Game) -> String {
     )
 }
 
-fn find_packs() -> Vec<PathBuf> {
-    let mut v: Vec<PathBuf> = std::fs::read_dir(dir())
-        .map(|rd| {
-            rd.flatten()
-                .map(|e| e.path())
-                .filter(|p| {
-                    p.extension()
-                        .is_some_and(|e| e.eq_ignore_ascii_case("c2pk"))
-                })
-                .collect()
+/// The packs in [`dir`], or why the folder can't be read.
+fn find_packs() -> Result<Vec<PathBuf>, std::io::Error> {
+    let mut v: Vec<PathBuf> = std::fs::read_dir(dir())?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("c2pk"))
         })
-        .unwrap_or_default();
+        .collect();
     v.sort();
-    v
+    Ok(v)
 }
 
 /// With several packs (say `c2rs.c2pk` and `modded.c2pk`), asks which one
@@ -698,9 +708,17 @@ fn main() {
     FPSCR_BOOT.store(fpscr(), std::sync::atomic::Ordering::Relaxed);
     run_fast();
     println!("c2rs for 3DS (test build)\n");
-    let packs = find_packs();
+    let found = find_packs();
+    let packs = found.as_ref().cloned().unwrap_or_default();
     if packs.is_empty() {
         println!("No pack found in {}/.", dir());
+        // Why, for bug reports: the folder's error, how it was chosen.
+        if let Err(e) = &found {
+            println!("({e})");
+        }
+        let start = std::env::args().next().unwrap_or_else(|| "none".into());
+        let how = DIR_NOTE.get().map_or("", String::as_str);
+        println!("(start path: {start}; {how})");
         println!("\nOn your PC, from 3ds-ver/:");
         println!("  cargo run --release -p c2-cook --");
         println!("    --game <your Carnivores 2>");
