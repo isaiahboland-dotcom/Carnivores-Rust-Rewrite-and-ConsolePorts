@@ -468,6 +468,8 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] one pack for the whole game; touch menu (area + time, animals, weapons + gear; owner's design) and saves
   - [ ] hunter name entry / several hunters, options screen
   - [ ] trophy room, scope cross-hairs, Old 3DS performance pass
+  - [ ] later (owner, 2026-10-22): view distance on Old 3DS. ~45 fps hunting the Manospondylus add-on at
+        half speed, still playable; revisit once more of the game is built
 - [ ] M8 Modded 3DS — **in progress**
   - [x] pack picker at boot, a save per pack; `c2-cook --overlay`, models cooked by file, calls by menu slot
   - [x] Modder's Edition rules resolved per hunt on the 3DS; roaming add-ons pickable; main and video memory checked per pick
