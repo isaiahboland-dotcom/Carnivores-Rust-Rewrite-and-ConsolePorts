@@ -54,6 +54,8 @@ const QUIT: [f32; 4] = [60.0, 174.0, 200.0, 42.0];
 
 /// Settings screen: run speed bar with - / +, then the toggles.
 // The hunt options screen.
+/// Settings: the crouch button (cycles).
+const CROUCH_KEY: [f32; 4] = [60.0, 112.0, 200.0, 28.0];
 const O_SPEED_BAR: [f32; 4] = [64.0, 24.0, 192.0, 20.0];
 const O_SPEED_DOWN: [f32; 4] = [20.0, 20.0, 36.0, 28.0];
 const O_SPEED_UP: [f32; 4] = [264.0, 20.0, 36.0, 28.0];
@@ -473,6 +475,7 @@ impl Menu {
             time: TimeOfDay::Day,
             targets: 0,
             roamers: Vec::new(),
+            silent_calls: Vec::new(),
             weapons: 0,
             double_ammo: false,
             observer: false,
@@ -485,6 +488,7 @@ impl Menu {
             notice_k: 1.0,
             stealth: false,
             random_ambients: false,
+            crouch_key: self.settings.crouch_key,
         }
     }
 
@@ -498,6 +502,7 @@ impl Menu {
             time: TIMES[self.time].0,
             targets: if self.observer { 0 } else { targets },
             roamers: if self.observer { Vec::new() } else { roamers },
+            silent_calls: Vec::new(),
             weapons: if self.observer {
                 0
             } else {
@@ -518,6 +523,7 @@ impl Menu {
             },
             stealth: self.settings.stealth,
             random_ambients: self.settings.random_ambients && self.rules.dialect(),
+            crouch_key: self.settings.crouch_key,
         }
     }
 
@@ -666,7 +672,9 @@ impl Menu {
             }
             Step::Settings => {
                 let s = &mut self.settings;
-                if inside(BLOOD, x, y) {
+                if inside(CROUCH_KEY, x, y) {
+                    s.crouch_key = s.crouch_key.next();
+                } else if inside(BLOOD, x, y) {
                     s.blood = !s.blood;
                 } else if inside(DEATH_ANIM, x, y) {
                     s.death_anim = !s.death_anim;
@@ -710,9 +718,9 @@ impl Menu {
                 } else if inside(O_STEALTH, x, y) {
                     s.stealth = !s.stealth;
                     self.focus = Some(if s.stealth {
-                        "ZL crouches; turn the 3DS to aim".into()
+                        "Crouch toggles; turn the 3DS to aim".into()
                     } else {
-                        "Hold ZL to crouch".into()
+                        "Crouch while held".into()
                     });
                 }
             }
@@ -1070,7 +1078,16 @@ impl Menu {
         for (r, on, _) in toggles {
             c.rect(r, if on { [60, 110, 60, 255] } else { PANEL });
         }
+        c.rect(CROUCH_KEY, PANEL);
         c.flush(gpu);
+        c.text_c(
+            gpu,
+            160.0,
+            CROUCH_KEY[1] + 10.0,
+            1.0,
+            WHITE,
+            &format!("Crouch: {}", s.crouch_key.name()),
+        );
         c.text_c(
             gpu,
             160.0,
@@ -1173,16 +1190,12 @@ impl Menu {
             ("Settings", GOLD),
             ("", WHITE),
             ("Hunt options (before each hunt)", TEXT),
-            ("  Animal run speed: every species slowed", WHITE),
-            ("  by the same share; 100% is the original.", WHITE),
-            ("  Ambient animals: at most 4 near you; off:", WHITE),
-            ("  none, less memory. Random ambients: 4", WHITE),
-            ("  kinds a hunt in modded games.", WHITE),
-            ("  3DS friendly: animals notice you from", WHITE),
-            ("  closer, as the 3DS sees less far.", WHITE),
-            ("  Stealth crouch: ZL toggles; crouched you", WHITE),
-            ("  aim by turning the 3DS, half as visible", WHITE),
-            ("  and your shots half as loud.", WHITE),
+            ("  Run speed, ambient animals, 3DS friendly", WHITE),
+            ("  (noticed from closer), stealth crouch", WHITE),
+            ("  (crouch toggles, gyro aim, half as seen).", WHITE),
+            ("", WHITE),
+            ("Crouch: ZL (New 3DS); Hold L (tap L jumps);", TEXT),
+            ("  D-Pad Up (walk, run, crouch in turn)", WHITE),
             ("", WHITE),
             ("Blood / Death animation", TEXT),
             ("  Off: no blood sprays or trails; when", WHITE),

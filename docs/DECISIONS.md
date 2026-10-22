@@ -2,6 +2,21 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-22 — Owner's mobile + Ice Age test: fixes
+- **Mobile animals racing across the map**: an entry without `jumpAnim`
+  gets jump = animation phase 0 (the run), so the jumping AIs (raptors,
+  Allosaurus: Titanis, Andrewsarchus, Dilophosaurus...) ran without stop.
+  The import now uses the animal's attack lunge as its jump; headless,
+  they move like the native animals (a Dilophosaurus ~2,500 units a minute,
+  was ~95,000).
+- **Both APKs have the revolver**: an import skips what an import beside it
+  already made (two add-ons named the same can't load together).
+- **3DS calls without a sound** (add-ons and imports with no call): no
+  button, ZR doesn't call them, and the hunt starts on a call that sounds.
+- **Crouch button** (3DS setting; the Old 3DS has no ZL): ZL, Hold L (a tap
+  jumps), or D-Pad Up cycling walk / run / crouch; the default follows the
+  console (`APT_CheckNew3DS`). Stealth crouch toggles with each.
+
 ## 2026-10-22 — M11: hunt options, 3DS friendly, stealth crouch, random ambients
 - **Hunt options** is a 3DS menu step after Gear (HUNT moves there): run
   speed and ambient animals move from Settings, with the new options;

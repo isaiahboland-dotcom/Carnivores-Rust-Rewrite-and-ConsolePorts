@@ -22,6 +22,55 @@ pub struct Settings {
     pub friendly: bool,
     pub stealth: bool,
     pub random_ambients: bool,
+    /// The crouch button (the Old 3DS has no ZL).
+    pub crouch_key: CrouchKey,
+}
+
+/// How the hunter crouches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CrouchKey {
+    /// Hold ZL (New 3DS); L jumps.
+    Zl,
+    /// Hold L to crouch, tap L to jump.
+    L,
+    /// D-Pad Up cycles walk, run, crouch; L jumps.
+    DpadUp,
+}
+
+impl CrouchKey {
+    pub fn name(self) -> &'static str {
+        match self {
+            CrouchKey::Zl => "ZL",
+            CrouchKey::L => "Hold L",
+            CrouchKey::DpadUp => "D-Pad Up",
+        }
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            CrouchKey::Zl => CrouchKey::L,
+            CrouchKey::L => CrouchKey::DpadUp,
+            CrouchKey::DpadUp => CrouchKey::Zl,
+        }
+    }
+
+    fn key(self) -> &'static str {
+        match self {
+            CrouchKey::Zl => "zl",
+            CrouchKey::L => "l",
+            CrouchKey::DpadUp => "dpad",
+        }
+    }
+
+    /// ZL on a New 3DS, L on the others.
+    fn default_for_console() -> Self {
+        let mut new = false;
+        if unsafe { ctru_sys::APT_CheckNew3DS(&mut new) } >= 0 && new {
+            CrouchKey::Zl
+        } else {
+            CrouchKey::L
+        }
+    }
 }
 
 /// How far animals notice the hunter with "3DS friendly" on, as a share
@@ -38,6 +87,7 @@ impl Default for Settings {
             friendly: false,
             stealth: false,
             random_ambients: false,
+            crouch_key: CrouchKey::default_for_console(),
         }
     }
 }
@@ -65,6 +115,13 @@ impl Settings {
                 ("friendly", v) => s.friendly = v != "0",
                 ("stealth_crouch", v) => s.stealth = v != "0",
                 ("random_ambients", v) => s.random_ambients = v != "0",
+                ("crouch_button", v) => {
+                    s.crouch_key = match v {
+                        "zl" => CrouchKey::Zl,
+                        "dpad" => CrouchKey::DpadUp,
+                        _ => CrouchKey::L,
+                    }
+                }
                 _ => {}
             }
         }
@@ -76,14 +133,15 @@ impl Settings {
             path(),
             format!(
                 "run_speed = {}\nambient = {}\nblood = {}\ndeath_animation = {}\n\
-                 friendly = {}\nstealth_crouch = {}\nrandom_ambients = {}\n",
+                 friendly = {}\nstealth_crouch = {}\nrandom_ambients = {}\ncrouch_button = {}\n",
                 self.run_pct,
                 i32::from(self.ambient),
                 i32::from(self.blood),
                 i32::from(self.death_anim),
                 i32::from(self.friendly),
                 i32::from(self.stealth),
-                i32::from(self.random_ambients)
+                i32::from(self.random_ambients),
+                self.crouch_key.key()
             ),
         )
     }

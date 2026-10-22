@@ -79,6 +79,7 @@ saving.
 | D-Pad right | show / hide weapon |
 | L | jump / swim up |
 | ZL / ZR (New 3DS) | crouch (hold; with stealth crouch on: press to toggle) / call |
+| crouch button (Settings) | ZL (New 3DS default); Hold L, tap L jumps (Old 3DS default); D-Pad Up cycles walk, run, crouch |
 | turning the console (stealth crouch, while crouched) | aim (gyroscope) |
 | A / B at the leave prompt | yes / no |
 | SELECT | pause (shows fps, memory, and ms per part of a frame) |

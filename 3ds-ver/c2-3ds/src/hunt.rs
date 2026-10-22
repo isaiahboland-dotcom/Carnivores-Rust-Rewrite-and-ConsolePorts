@@ -128,6 +128,9 @@ pub struct Setup {
     /// Roaming add-ons picked (no menu slot of their own); their call
     /// slots are among the targets.
     pub roamers: Vec<Roam>,
+    /// Target calls the pack has no sound for (add-ons without one): no
+    /// button, and ZR doesn't call them. Filled when the hunt loads.
+    pub silent_calls: Vec<i32>,
     /// Bit per carried weapon.
     pub weapons: u32,
     pub double_ammo: bool,
@@ -149,6 +152,8 @@ pub struct Setup {
     pub notice_k: f32,
     pub stealth: bool,
     pub random_ambients: bool,
+    /// The crouch button (setting).
+    pub crouch_key: crate::settings::CrouchKey,
 }
 
 impl Setup {
@@ -173,7 +178,7 @@ impl Setup {
     /// Whether call id `id` can be called: roamers' slots can't (their
     /// add-ons supply no call; they score +10% instead).
     pub fn callable(&self, id: i32) -> bool {
-        !self.roamers.iter().any(|r| r.slot as i32 + 10 == id)
+        !self.roamers.iter().any(|r| r.slot as i32 + 10 == id) && !self.silent_calls.contains(&id)
     }
 
     pub fn carried(&self) -> Vec<usize> {
@@ -199,6 +204,10 @@ pub struct Game {
     pub run: bool,
     /// Stealth crouch: crouched (ZL toggles).
     pub crouched: bool,
+    /// Crouch on L: how long it has been held (ms).
+    l_ms: f32,
+    /// Crouch on D-Pad Up: 0 walk, 1 run, 2 crouch.
+    gait: u8,
     /// The gyroscope, on for a stealth hunt: raw-to-degrees/s.
     gyro: Option<f32>,
     /// Extra ammo refills left.
@@ -223,6 +232,9 @@ pub struct Pad {
     pub crouch: bool,
     /// ZL pressed this frame (stealth crouch toggles).
     pub crouch_down: bool,
+    /// L held, and released this frame (crouch on L: hold / tap).
+    pub l_held: bool,
+    pub l_up: bool,
     // Pressed this frame:
     pub toggle_weapon: bool,
     pub next_weapon: bool,
@@ -372,6 +384,11 @@ impl Game {
         // The area first, while the heap is empty: its map is the biggest
         // file, and is briefly in memory twice (file and parsed).
         // `c2-cook`'s `load_peak` repeats these steps; keep them in step.
+        let mut setup = setup;
+        setup.silent_calls = (10..128)
+            .filter(|&ai| setup.targets & (1u128 << ai) != 0)
+            .filter(|ai| vfs.resolve(&format!("C2RS/SND/K{ai}_0.PCM")).is_none())
+            .collect();
         progress(&format!("area {}", setup.area));
         let area = load::area_with(vfs, &setup.area, setup.time, true)?;
         progress("rules (_RES.TXT)");
@@ -419,7 +436,7 @@ impl Game {
         }
         let ship_ms = load::ship_anim_ms(vfs);
         let seed = next_seed(seed);
-        let hunt = new_hunt(
+        let mut hunt = new_hunt(
             &area,
             &setup,
             &species,
@@ -429,6 +446,14 @@ impl Game {
             seed,
             room,
         );
+        // Start on a call that sounds.
+        if !setup.callable(hunt.target_call) {
+            if let Some(a) =
+                (10..128).find(|&a| setup.targets & (1u128 << a) != 0 && setup.callable(a))
+            {
+                hunt.target_call = a;
+            }
+        }
         let keys = rules.keys;
         let resupplies = setup.resupplies;
         let setup_stealth = setup.stealth;
@@ -447,6 +472,8 @@ impl Game {
             ticks_last: 0,
             run: false,
             crouched: false,
+            l_ms: 0.0,
+            gait: 0,
             gyro: gyro_on(setup_stealth),
             resupplies,
         })
@@ -462,8 +489,32 @@ impl Game {
 
     /// Runs the simulation for `dt` seconds of real time.
     pub fn update(&mut self, pad: &Pad, dt: f32) {
+        use crate::settings::CrouchKey;
+        let key = self.setup.crouch_key;
         if pad.run {
-            self.run = !self.run;
+            if key == CrouchKey::DpadUp {
+                self.gait = (self.gait + 1) % 3;
+                self.run = self.gait == 1;
+            } else {
+                self.run = !self.run;
+            }
+        }
+        // Crouch on L: held a quarter second it crouches (or toggles the
+        // stealth crouch), a tap jumps.
+        let mut l_jump = false;
+        let mut l_crouch = false;
+        if key == CrouchKey::L {
+            if pad.l_held {
+                let was = self.l_ms;
+                self.l_ms += dt * 1000.0;
+                if was < 250.0 && self.l_ms >= 250.0 && self.setup.stealth {
+                    self.crouched = !self.crouched;
+                }
+                l_crouch = self.l_ms >= 250.0;
+            } else {
+                l_jump = pad.l_up && self.l_ms < 250.0;
+                self.l_ms = 0.0;
+            }
         }
         if pad.pause {
             self.hunt.toggle_pause();
@@ -479,13 +530,18 @@ impl Game {
                 self.hunt.exit_prompt = false;
             }
         }
-        if self.setup.stealth && pad.crouch_down {
+        if self.setup.stealth && key == CrouchKey::Zl && pad.crouch_down {
             self.crouched = !self.crouched;
         }
-        let crouch = if self.setup.stealth {
-            self.crouched
-        } else {
-            pad.crouch
+        let crouch = match key {
+            CrouchKey::DpadUp => self.gait == 2,
+            _ if self.setup.stealth => self.crouched,
+            CrouchKey::Zl => pad.crouch,
+            CrouchKey::L => l_crouch,
+        };
+        let jump = match key {
+            CrouchKey::L => l_jump,
+            _ => pad.jump,
         };
         // Crouched in stealth: aim by turning the console.
         let mut look = pad.look;
@@ -510,7 +566,7 @@ impl Game {
             look_up: pad.look_up,
             look_down: pad.look_down,
             crouch,
-            jump: pad.jump,
+            jump,
             run: self.run,
             mouse: look,
             mouse_sens: f32::from(128u8),
