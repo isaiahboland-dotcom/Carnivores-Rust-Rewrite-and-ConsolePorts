@@ -2,6 +2,7 @@
 //! load order, file and `_RES.TXT` merging, the merge report, combined game
 //! folders, and recipes (mod combinations shared as URLs and file hashes).
 
+pub mod balance;
 pub mod detect;
 pub mod hunter;
 pub mod loose;

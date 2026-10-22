@@ -15,14 +15,47 @@ pub fn bases(base: Option<&str>, overlays: &[&str]) -> Result<Vec<PathBuf>> {
         .collect())
 }
 
-/// Builds the base + `mods` into `out` and prints a summary.
-pub fn build_pack(bases: &[PathBuf], mods: &[PathBuf], out: &Path) -> Result<()> {
+/// The base + `mods`, combined in memory.
+pub fn combine(bases: &[PathBuf], mods: &[PathBuf]) -> Result<c2_mods::Pack> {
     let v = vanilla(bases)?;
     let sources = mods
         .iter()
         .map(|m| load_mod(&v, m).with_context(|| format!("reading mod {}", m.display())))
         .collect::<Result<Vec<_>>>()?;
-    let pack = build(bases, sources)?;
+    Ok(build(bases, sources)?)
+}
+
+/// Puts a balance file's prices and scores over `pack` (a layer of
+/// rewritten `_RES.TXT` / `_MENU.TXT` / `.c2map` files).
+fn balance(pack: &mut c2_mods::Pack, file: Option<&Path>) -> Result<()> {
+    let Some(file) = file else { return Ok(()) };
+    let b = c2_mods::balance::Balance::load(file)?;
+    let layer = c2_mods::balance::apply(&pack.vfs, &b)
+        .with_context(|| format!("applying {}", file.display()))?;
+    pack.vfs.push("balance", Box::new(layer));
+    pack.notes
+        .push(format!("balance file {} applied", file.display()));
+    Ok(())
+}
+
+/// `c2-pc balance`: the combined game's prices and scores as a balance
+/// file (every value), for the launcher's editor.
+pub fn print_balance(bases: &[PathBuf], mods: &[PathBuf]) -> Result<()> {
+    let pack = combine(bases, mods)?;
+    print!("{}", c2_mods::balance::read(&pack.vfs)?.to_toml());
+    Ok(())
+}
+
+/// Builds the base + `mods` (and a balance file) into `out` and prints a
+/// summary.
+pub fn build_pack(
+    bases: &[PathBuf],
+    mods: &[PathBuf],
+    balance_file: Option<&Path>,
+    out: &Path,
+) -> Result<()> {
+    let mut pack = combine(bases, mods)?;
+    balance(&mut pack, balance_file)?;
     materialize(&pack, out).with_context(|| format!("writing {}", out.display()))?;
     let conflicts = pack.file_conflicts().len() + pack.merged.conflicts.len();
     tracing::info!(
@@ -48,7 +81,12 @@ pub fn pack_dir(overlays: &[PathBuf], mods: &[PathBuf]) -> PathBuf {
             )
         })
         .collect();
-    crate::save::data_dir().join("packs").join(names.join("+"))
+    let name = if names.is_empty() {
+        "base".to_string()
+    } else {
+        names.join("+")
+    };
+    crate::save::data_dir().join("packs").join(name)
 }
 
 /// `c2-pc mod detect|build ...`.
@@ -87,7 +125,7 @@ pub fn run(args: &[String], bases: Vec<PathBuf>, out: Option<&str>, write: bool)
         "build" => {
             let out = PathBuf::from(out.context("--out DIR is required")?);
             let mods: Vec<PathBuf> = rest.iter().map(PathBuf::from).collect();
-            build_pack(&bases, &mods, &out)
+            build_pack(&bases, &mods, None, &out)
         }
         _ => bail!("unknown mod command {sub:?}"),
     }
@@ -159,13 +197,15 @@ pub fn build_recipe(
     recipe_path: &Path,
     bases: &[PathBuf],
     mods_dir: &Path,
+    balance_file: Option<&Path>,
     out: &Path,
 ) -> Result<()> {
     let r = c2_mods::recipe::Recipe::load(recipe_path)?;
     let found = verify(recipe_path, &r, bases, mods_dir)?;
     let v = vanilla(bases)?;
     let (sources, opts) = c2_mods::recipe::prepare(recipe_path, &r, &found, &v)?;
-    let pack = c2_mods::build_with(bases, sources, &opts)?;
+    let mut pack = c2_mods::build_with(bases, sources, &opts)?;
+    balance(&mut pack, balance_file)?;
     materialize(&pack, out).with_context(|| format!("writing {}", out.display()))?;
     tracing::info!(
         "built {} — see {}",
@@ -221,7 +261,7 @@ pub fn run_recipe(args: &[String], a: &RecipeArgs<'_>) -> Result<()> {
         "build" => {
             let mods = PathBuf::from(a.mods.context("--mods DIR is required")?);
             let out = PathBuf::from(a.out.context("--out DIR is required")?);
-            build_recipe(&first()?, bases, &mods, &out)
+            build_recipe(&first()?, bases, &mods, None, &out)
         }
         "new" => {
             let id = a.id.context("--id ID is required")?;

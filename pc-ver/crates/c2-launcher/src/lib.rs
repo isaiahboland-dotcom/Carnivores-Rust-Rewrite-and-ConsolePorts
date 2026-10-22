@@ -2,9 +2,11 @@
 //! add-ons, play on PC, and build 3DS installs. Two builds of one app:
 //! `c2-launcher` (PC, with the 3DS section if the user wants it) and
 //! `c2-3ds-builder` (3DS only). The work is done by `c2-pc` and `c2-cook`,
-//! run as programs; this only gathers the choices.
+//! run as programs; this only gathers the choices (the balance editor reads
+//! the game's prices and scores itself, with `c2-mods`).
 
 mod app;
+mod balance;
 mod config;
 mod jobs;
 

@@ -1,5 +1,5 @@
-//! The launcher window: a tab per job (game folders, add-ons, play, 3DS,
-//! settings), the job log at the bottom.
+//! The launcher window: a tab per job (game folders, add-ons, balance,
+//! play, 3DS, settings), the job log at the bottom.
 
 use std::path::PathBuf;
 
@@ -14,6 +14,7 @@ use crate::{find_tool, Mode};
 enum Tab {
     Game,
     AddOns,
+    Balance,
     Play,
     ThreeDs,
     Settings,
@@ -27,6 +28,7 @@ pub struct Launcher {
     /// Text being typed in the path fields.
     base_text: String,
     note: Option<(String, Color32)>,
+    balance: crate::balance::Editor,
 }
 
 fn style(ctx: &egui::Context) {
@@ -56,12 +58,12 @@ fn heading(ui: &mut egui::Ui, text: &str) {
     ui.label(RichText::new(text).size(20.0).color(SAND).strong());
 }
 
-fn help(ui: &mut egui::Ui, text: &str) {
+pub(crate) fn help(ui: &mut egui::Ui, text: &str) {
     ui.label(RichText::new(text).color(DIM));
 }
 
 /// A framed box like the game menus' panels.
-fn panel<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+pub(crate) fn panel<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     egui::Frame::new()
         .fill(PANEL)
         .stroke(egui::Stroke::new(1.0, PANEL_HI))
@@ -100,6 +102,7 @@ impl Launcher {
             job: None,
             base_text,
             note: None,
+            balance: crate::balance::Editor::load(),
         }
     }
 
@@ -178,7 +181,32 @@ impl Launcher {
         self.save();
     }
 
-    /// `play <base> --overlay .. --mod ..`
+    /// The base and its overlays, then the add-ons that are on.
+    fn game_folders(&self) -> (Vec<PathBuf>, Vec<PathBuf>) {
+        let bases = match &self.cfg.base {
+            Some(b) if describe_game(b).is_some() => std::iter::once(b.clone())
+                .chain(self.cfg.overlays.iter().cloned())
+                .collect(),
+            _ => Vec::new(),
+        };
+        let mods = self
+            .cfg
+            .enabled_addons()
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
+        (bases, mods)
+    }
+
+    /// `--balance FILE` if the balance editor changed anything.
+    fn balance_args(&self) -> Vec<String> {
+        match self.balance.file() {
+            Some(f) => vec!["--balance".into(), f.display().to_string()],
+            None => Vec::new(),
+        }
+    }
+
+    /// `play <base> --overlay .. --mod .. [--balance ..]`
     fn play_args(&self) -> Vec<String> {
         let mut args = vec!["play".to_string()];
         if let Some(b) = &self.cfg.base {
@@ -192,6 +220,7 @@ impl Launcher {
             args.push("--mod".into());
             args.push(a.display().to_string());
         }
+        args.extend(self.balance_args());
         args
     }
 
@@ -240,15 +269,23 @@ impl Launcher {
             ]);
             a
         };
+        let addons = self.cfg.enabled_addons();
+        let modded = !addons.is_empty() || !self.cfg.overlays.is_empty();
+        // The balance goes with the game it was made for: the add-ons pack,
+        // or the original game's when there are no add-ons.
         if t.vanilla_pack {
+            let extra = if modded {
+                Vec::new()
+            } else {
+                self.balance_args()
+            };
             steps.push(Step::Run {
                 program: cook.clone(),
-                args: cook_args(Vec::new(), "c2rs.c2pk"),
+                args: cook_args(extra, "c2rs.c2pk"),
             });
         }
-        let addons = self.cfg.enabled_addons();
-        if t.addons_pack && (!addons.is_empty() || !self.cfg.overlays.is_empty()) {
-            let mut extra = Vec::new();
+        if t.addons_pack && modded {
+            let mut extra = self.balance_args();
             for o in &self.cfg.overlays {
                 extra.push("--overlay".into());
                 extra.push(o.display().to_string());
@@ -424,6 +461,22 @@ impl Launcher {
         }
     }
 
+    fn balance_tab(&mut self, ui: &mut egui::Ui) {
+        heading(ui, "Balance");
+        help(
+            ui,
+            "Prices and scores of the game as set up (base, overlays and the add-ons that are \
+             on). Change any of them, to taste or to make add-ons fit together; the game's own \
+             files are never changed. Applies to playing on PC and to the 3DS add-ons pack (or \
+             the original game pack when there are no add-ons).",
+        );
+        ui.add_space(6.0);
+        let (bases, mods) = self.game_folders();
+        if let Some(e) = self.balance.ui(ui, &bases, &mods) {
+            self.note = Some((e, RED));
+        }
+    }
+
     fn play_tab(&mut self, ui: &mut egui::Ui) {
         heading(ui, "Play on PC");
         let ready = self
@@ -441,6 +494,9 @@ impl Launcher {
             ui.label(format!("Overlays: {}", self.cfg.overlays.len()));
             let on = self.cfg.enabled_addons().len();
             ui.label(format!("Add-ons on: {on} of {}", self.cfg.addons.len()));
+            if self.balance.file().is_some() {
+                ui.label(RichText::new("Your balance changes apply.").color(GOLD));
+            }
             help(
                 ui,
                 "With add-ons, the combined game is built first (a few seconds; kept until the \
@@ -668,7 +724,11 @@ impl eframe::App for Launcher {
                             .strong(),
                     );
                     ui.add_space(16.0);
-                    let mut tabs = vec![(Tab::Game, "The game"), (Tab::AddOns, "Add-ons")];
+                    let mut tabs = vec![
+                        (Tab::Game, "The game"),
+                        (Tab::AddOns, "Add-ons"),
+                        (Tab::Balance, "Balance"),
+                    ];
                     if self.mode == Mode::Full {
                         tabs.push((Tab::Play, "Play"));
                     }
@@ -705,6 +765,7 @@ impl eframe::App for Launcher {
             egui::ScrollArea::vertical().show(ui, |ui| match self.tab {
                 Tab::Game => self.game_tab(ui),
                 Tab::AddOns => self.addons_tab(ui),
+                Tab::Balance => self.balance_tab(ui),
                 Tab::Play => self.play_tab(ui),
                 Tab::ThreeDs => self.three_ds_tab(ui),
                 Tab::Settings => self.settings_tab(ui),

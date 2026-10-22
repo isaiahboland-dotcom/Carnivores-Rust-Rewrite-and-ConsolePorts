@@ -481,7 +481,9 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] `c2-launcher` (PC, 3DS section on request) and `c2-3ds-builder` (3DS only), egui, the game menus' colours
   - [x] game folder and overlays (drop, browse or paste), add-ons (folders, .zip/.rar/.7z; order, on/off), Play
   - [x] 3DS: Old/New, install name -> `3ds/<name>/` with `<name>.3dsx` and its packs; the app uses its own folder
-  - [ ] balance editor, `.cia`, Ice Age and standalone games in the base slot
+  - [x] balance editor: prices and scores (areas, animals incl. roaming add-ons, weapons, starting points) into
+        a balance file (`c2_mods::balance`), applied by `c2-pc play --balance` and `c2-cook --balance`
+  - [ ] `.cia`, Ice Age and standalone games in the base slot
 - [ ] M11 Hunt options and 3DS comfort (planned)
 - [ ] M12 Profiles, statistics, trophy room (planned)
 - [ ] M13 Survival mode (planned)
@@ -494,7 +496,7 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [ ] the dialect's AI families (interim: run as the closest original AI; aquatic ones not placed)
   - [ ] extended weapons, trophy table, survival mode, weather; 3DS cooking and menus
 
-_Last updated: 2026-10-22 — the add-on pack plays on hardware and the Old 3DS slowdown after a kill is gone. Roaming add-ons on the 3DS are now proper hunt targets with a menu picture and a call. Next: M10 (balance editor, `.cia`, Ice Age and standalone games in the base slot)._
+_Last updated: 2026-10-22 — the add-on pack plays on hardware and the Old 3DS slowdown after a kill is gone. Roaming add-ons on the 3DS are proper hunt targets (no call, +10%, a menu picture); dialect games no longer halve non-target scores. M10: the launchers' balance editor. Next: `.cia` builds._
 
 
 note from user: quick headsup, the carnivores 2 datafile is copied direct from my library and includes re-shade files as well, please do not port the re-shade files to 3ds or the rust re-write as that would overcomplicate things dramatically

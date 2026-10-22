@@ -77,6 +77,32 @@ To build a combined game folder somewhere else:
 cargo run --release -p c2-pc -- mod build MOD_DIR... --base ../source/c2-original --out DIR
 ```
 
+## Balance files
+Prices and scores of your own, over any game (the launcher's Balance tab
+writes one; add-on weapons are often too cheap next to the others):
+```toml
+start = 500                 # a new hunter's points
+
+[[animals]]
+name = "Manospondylus"      # as the menu lists it; a second "Raptor" is "Raptor #2"
+price = 400                 # roaming add-ons have no price of their own
+score = 45                  # basescore
+
+[[weapons]]
+name = "MP5 SD"
+price = 180
+
+[[areas]]
+name = "Fort Ciskin"
+price = 40
+```
+Only what you list changes; names the game doesn't have are skipped.
+`c2-pc balance GAME [--overlay DIR] [--mod DIR]...` prints every current
+value in this form. `c2-pc play ... --balance FILE` and
+`c2-cook ... --balance FILE` apply it: the rewritten `_RES.TXT` /
+`_MENU.TXT` / `.c2map` files go in a layer over the game, never into your
+folders.
+
 ## How mods are combined
 - **Files:** the last mod that provides a file wins. Two mods providing the
   same file is reported as a conflict.

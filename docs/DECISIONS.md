@@ -2,6 +2,26 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-22 — M10: balance files and the balance editor
+- **A balance file** (`c2_mods::balance`, TOML) lists prices and scores by
+  entry name (a repeated name is "Name #2"), so it survives add-ons being
+  reordered and is skipped where a name is missing. Only changed values
+  are kept.
+- **Applied as a layer of rewritten text files**: `_MENU.TXT` (or
+  `_RES.TXT`) for prices, where the menus read them (a `prices` line wins
+  over the entry's `price`, as `MenuData` reads them; `.c2map` areas in
+  their file); `_RES.TXT` `basescore` for scores, in the entry and in any
+  `overwrite`/`addition` block that sets one. Every reader (PC menus and
+  hunt, `c2-cook`, the 3DS) sees ordinary data. `c2-pc play --balance` builds a
+  combined game even with no add-ons (`packs/base`).
+- **Roaming add-ons** (huntable AI, no menu entry or `callNo`) are listed
+  with a score only; their 3DS price stays the donor's.
+- **The launcher reads the game's values itself** (`c2-mods` linked into
+  `c2-launcher`, off the UI thread), so the 3DS-only builder needs no
+  `c2-pc`. Edits go to `balance.toml` in the data folder and are passed on
+  to play and to the 3DS add-ons pack (the original-game pack when there
+  are no add-ons; otherwise it stays stock).
+
 ## 2026-10-22 — No borrowed calls for roamers; the dialect never halves a score
 Owner's calls after playing the roamers on hardware:
 - **Roamers have no call**, as in the Modder's Edition: it loads calls

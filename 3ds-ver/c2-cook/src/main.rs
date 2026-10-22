@@ -5,7 +5,7 @@
 //!
 //! ```text
 //! c2-cook --game ../source/c2-original [--overlay DIR]... [--mod DIR]...
-//!         [--recipe R.toml --mods DIR] [--areas 1,2] [--target n3ds|o3ds]
+//!         [--recipe R.toml --mods DIR] [--balance FILE] [--areas 1,2] [--target n3ds|o3ds]
 //!         [--force] --out c2rs.c2pk
 //! ```
 
@@ -29,8 +29,8 @@ mod portrait;
 
 const USAGE: &str = "usage:
   c2-cook --game <GAME_DIR> [--overlay DIR]... [--mod MOD]...
-          [--recipe RECIPE.toml --mods DIR] [--areas N,N] [--target n3ds|o3ds]
-          [--force] --out <PACK.c2pk>
+          [--recipe RECIPE.toml --mods DIR] [--balance FILE] [--areas N,N]
+          [--target n3ds|o3ds] [--force] --out <PACK.c2pk>
 
   c2-cook --check <PACK.c2pk>   loads a pack as the 3DS does and plays a short
                                 hunt for each animal (finds missing files);
@@ -38,6 +38,7 @@ const USAGE: &str = "usage:
 
   --overlay  a game folder copied over GAME_DIR first (e.g. the Modder's
              Edition, which most add-ons are made for); repeatable
+  --balance  prices and scores over the game (a balance file; see `c2-pc balance`)
   --areas    only these areas (default: all, plus the trophy room)
   --target   n3ds (New 3DS, default) or o3ds (Old 3DS / 2DS: smaller textures, shorter view)
   --force    write the pack even if it is over the target's memory budget
@@ -219,6 +220,7 @@ struct Args {
     mods: Vec<PathBuf>,
     recipe: Option<PathBuf>,
     mods_dir: Option<PathBuf>,
+    balance: Option<PathBuf>,
     areas: Option<String>,
     target: Option<String>,
     force: bool,
@@ -241,6 +243,7 @@ fn parse_args() -> Result<Args> {
             "--bench" => a.bench = Some(val()?),
             "--recipe" => a.recipe = Some(val()?.into()),
             "--mods" => a.mods_dir = Some(val()?.into()),
+            "--balance" => a.balance = Some(val()?.into()),
             "--areas" => a.areas = Some(val()?),
             "--target" => a.target = Some(val()?),
             "--out" => a.out = Some(val()?.into()),
@@ -257,7 +260,20 @@ fn parse_args() -> Result<Args> {
 
 /// The game as the engine would see it: vanilla (with any overlays), plus
 /// mods or a recipe.
+/// The game, add-ons and recipe merged, with the balance file's prices and
+/// scores over them (`c2_mods::balance`, as `c2-pc play --balance`).
 fn merged(a: &Args, game: &Path) -> Result<Vfs> {
+    let mut vfs = merged_game(a, game)?;
+    if let Some(f) = &a.balance {
+        let b = c2_mods::balance::Balance::load(f)?;
+        let layer = c2_mods::balance::apply(&vfs, &b)
+            .with_context(|| format!("applying {}", f.display()))?;
+        vfs.push("balance", Box::new(layer));
+    }
+    Ok(vfs)
+}
+
+fn merged_game(a: &Args, game: &Path) -> Result<Vfs> {
     let bases: Vec<PathBuf> = std::iter::once(game.to_path_buf())
         .chain(a.overlays.iter().cloned())
         .collect();

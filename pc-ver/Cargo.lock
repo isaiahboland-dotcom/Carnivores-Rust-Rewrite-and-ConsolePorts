@@ -584,6 +584,7 @@ name = "c2-launcher"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "c2-mods",
  "eframe",
  "rfd",
  "serde",

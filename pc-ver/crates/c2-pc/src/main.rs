@@ -28,8 +28,10 @@ use anyhow::{bail, Context, Result};
 use c2_core::area::TimeOfDay;
 
 const USAGE: &str = "usage:
-  c2-pc play  <GAME_DIR> [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR] [--screen main|stats|hunt|options|credits|register|quit]
+  c2-pc play  <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR] [--balance FILE]
+              [--screen main|stats|hunt|options|credits|register|quit]
               [--script 'X,Y;'TEXT;enter;esc'] [--shot out.png]
+  c2-pc balance <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]...   (prints prices and scores as a balance file)
   c2-pc mod detect <MOD_DIR>... --base <GAME_DIR> [--write]
   c2-pc mod build  <MOD_DIR>... --base <GAME_DIR> --out <DIR>
   c2-pc recipe verify <RECIPE.toml> --base <GAME_DIR> --mods <DIR>
@@ -44,7 +46,8 @@ const USAGE: &str = "usage:
 model: drag to orbit, wheel zoom, [ ] next/prev file, N/P next/prev animation, Space pause
 area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distance
 play:  the menus; a hunt returns to them. --mod (repeatable) plays vanilla plus those add-on mods,
-       combined into the data dir (see MERGE_REPORT.md there)
+       combined into the data dir (see MERGE_REPORT.md there); --balance applies a balance file's
+       prices and scores (see `c2-pc balance`)
 mod:   detect prints (or --write saves) an inferred mod.toml; build writes a combined game folder
 hunt:  click to capture mouse; keys follow the player's bindings (default WASD move, mouse look,
        LMB fire, E show/hide weapon, 1-6 choose weapon, Shift toggles run, X crouch, Space jump/swim,
@@ -55,6 +58,7 @@ hunt:  click to capture mouse; keys follow the player's bindings (default WASD m
 const VALUE_FLAGS: &[&str] = &[
     "anim", "time", "yaw", "shot", "cam", "view", "sim", "ship", "weapon", "target", "fire",
     "screen", "player", "script", "mod", "base", "out", "recipe", "mods", "id", "name", "overlay",
+    "balance",
 ];
 
 struct Opts {
@@ -131,6 +135,16 @@ fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
     let cmd = args.next().unwrap_or_default();
     let o = Opts::parse(args);
+    if cmd == "balance" {
+        let mods: Vec<PathBuf> = o.values("mod").into_iter().map(PathBuf::from).collect();
+        return mods_cli::print_balance(
+            &mods_cli::bases(
+                o.positional.first().map(String::as_str),
+                &o.values("overlay"),
+            )?,
+            &mods,
+        );
+    }
     if cmd == "mod" {
         return mods_cli::run(
             &o.positional,
@@ -279,16 +293,18 @@ fn main() -> Result<()> {
             // (the Modder's Edition release over the original game).
             let overlays = o.values("overlay");
             let bases = mods_cli::bases(o.positional.first().map(String::as_str), &overlays)?;
+            // --balance FILE: the player's prices and scores over the game.
+            let balance = o.value("balance").map(std::path::Path::new);
             let path = if let Some(r) = recipe {
                 let mods_dir = PathBuf::from(o.value("mods").context("--recipe needs --mods DIR")?);
                 let out = mods_cli::recipe_pack_dir(&r);
-                mods_cli::build_recipe(&r, &bases, &mods_dir, &out)?;
+                mods_cli::build_recipe(&r, &bases, &mods_dir, balance, &out)?;
                 out
-            } else if mods.is_empty() && overlays.is_empty() {
+            } else if mods.is_empty() && overlays.is_empty() && balance.is_none() {
                 path
             } else {
                 let out = mods_cli::pack_dir(&bases[1..], &mods);
-                mods_cli::build_pack(&bases, &mods, &out)?;
+                mods_cli::build_pack(&bases, &mods, balance, &out)?;
                 out
             };
             Box::new(move |g| {
