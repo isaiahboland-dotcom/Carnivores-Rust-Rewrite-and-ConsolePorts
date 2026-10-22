@@ -133,7 +133,10 @@ impl Launcher {
             job.log(format!("Reading {}", apk.display()));
             let base = c2_mods::vanilla(&bases).map_err(|e| e.to_string())?;
             let done = c2_mods::mobile::import(&apk, &base, &to).map_err(|e| e.to_string())?;
-            for a in done {
+            for s in done.skipped {
+                job.log(format!("Not imported: {s}"));
+            }
+            for a in done.added {
                 job.log(format!("{} (kind of the {})", a.name, a.donor));
                 for n in a.notes {
                     job.log(format!("  {n}"));

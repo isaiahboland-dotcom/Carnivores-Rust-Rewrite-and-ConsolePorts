@@ -686,7 +686,7 @@ fn set_key(b: &mut Block, key: &str, value: String) {
 /// Imports the animals of the APK at `apk` that the game in `base` (a
 /// Modder's Edition game: the entries are in its dialect) doesn't have,
 /// one add-on folder each under `out`.
-pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Vec<Imported>, ModError> {
+pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Import, ModError> {
     let zip = Apk(c2_vfs::ZipBackend::new(apk, "")?);
     // The game's tuning in the mobile game (none: the donors' stand).
     let values = values(apk).unwrap_or_default();
@@ -730,6 +730,7 @@ pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Vec<Imported>, ModEr
         .collect();
     cats.sort();
     let mut done = Vec::new();
+    let mut skipped = Vec::new();
     for path in cats {
         let Some(text) = zip.get(&path) else { continue };
         let Ok(cat) = parse_cat(&String::from_utf8_lossy(&text)) else {
@@ -762,8 +763,17 @@ pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Vec<Imported>, ModEr
             }
             continue;
         }
-        let has = base.resolve(&format!("HUNTDAT/{stem}.car")).is_some();
-        if !is_animal(&cat) || has {
+        // The game has it: a model of that name, or an animal of that name
+        // (the Modder's Edition renames models: `diatr_s.car`). People
+        // (the poacher) aren't animals to hunt.
+        let named = chars.iter().any(|b| {
+            b.get(&["name"]).is_some_and(|n| {
+                let n = n.trim().trim_matches('\'');
+                same(n, &stem) || same(n, &cat.title)
+            })
+        });
+        let has = base.resolve(&format!("HUNTDAT/{stem}.car")).is_some() || named;
+        if !is_animal(&cat) || has || ["poacher", "hunter"].iter().any(|p| stem.starts_with(p)) {
             continue;
         }
         let mut notes = Vec::new();
@@ -786,6 +796,24 @@ pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Vec<Imported>, ModEr
             .get(&["name"])
             .map(|n| n.trim().trim_matches('\'').trim().to_string())
             .unwrap_or_default();
+        // Numbered PC-style animations play as the donor's: only when it
+        // has as many (else they'd play the wrong moves).
+        if roles(&cat).is_none() {
+            let donor_anims = donor
+                .get(&["file"])
+                .map(|f| f.trim().trim_matches('\'').trim().to_string())
+                .and_then(|f| base.read(&format!("HUNTDAT/{f}")).ok())
+                .and_then(|d| c2_formats::car::parse(&d).ok())
+                .map(|c| c.animations.len());
+            if donor_anims != Some(cat.animations.len()) {
+                skipped.push(format!(
+                    "{}: its {} animations don't match the {donor_name}'s: not imported",
+                    cat.title,
+                    cat.animations.len()
+                ));
+                continue;
+            }
+        }
         let name = NAMES
             .iter()
             .find(|(s, _)| *s == stem)
@@ -905,7 +933,17 @@ pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Vec<Imported>, ModEr
             notes,
         });
     }
-    Ok(done)
+    Ok(Import {
+        added: done,
+        skipped,
+    })
+}
+
+/// What an import made, and what it left out (and why).
+#[derive(Debug, Clone, Default)]
+pub struct Import {
+    pub added: Vec<Imported>,
+    pub skipped: Vec<String>,
 }
 
 #[cfg(test)]

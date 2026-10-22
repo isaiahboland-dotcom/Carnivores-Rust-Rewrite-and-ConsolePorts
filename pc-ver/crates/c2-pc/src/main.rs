@@ -161,7 +161,11 @@ fn main() -> Result<()> {
         let bases = mods_cli::bases(o.value("base"), &o.values("overlay"))?;
         let out = PathBuf::from(o.value("out").context("--out DIR")?);
         let base = c2_mods::vanilla(&bases)?;
-        for a in c2_mods::mobile::import(std::path::Path::new(apk), &base, &out)? {
+        let import = c2_mods::mobile::import(std::path::Path::new(apk), &base, &out)?;
+        for s in &import.skipped {
+            println!("not imported: {s}");
+        }
+        for a in import.added {
             println!("{} (kind of the {}): {}", a.name, a.donor, a.dir.display());
             for n in &a.notes {
                 println!("  {n}");
