@@ -68,6 +68,8 @@ The original C++ source (made available on Assembla in 2013) is used **as a refe
 └── source/                    # GITIGNORED: your own local copies
     ├── c2-original/           # your Carnivores 2 install (HUNTDAT etc.)
     ├── c2-source/             # original C++ source (reference only)
+    ├── ice-age/               # your Carnivores: Ice Age install (M14)
+    ├── mobile/                # your own mobile game APKs (M15; assets are read locally only)
     └── mods/                  # one folder per mod
 ```
 
@@ -76,7 +78,9 @@ The original C++ source (made available on Assembla in 2013) is used **as a refe
 2. Optionally clone the original source for reference:
    `git clone https://github.com/videogamepreservation/carnivores2 source/c2-source`
 3. Put each mod you own in its own folder under `source/mods/`.
-4. Check everything parses: `cd pc-ver && cargo run --release -p c2-parity -- scan ../source/c2-original ../source/mods`
+4. Optional: your Carnivores: Ice Age install in `source/ice-age/`, your own mobile game APKs in
+   `source/mobile/`.
+5. Check everything parses: `cd pc-ver && cargo run --release -p c2-parity -- scan ../source/c2-original ../source/mods`
 
 ReShade or other wrapper DLLs in your install are ignored (see `docs/DECISIONS.md`).
 
@@ -319,17 +323,60 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
 **M8 — Modded packs on 3DS**
 - Pack picker at boot, budget reports enforced, test the example recipe on hardware.
 
-**M10 — Launcher and mod manager (PC GUI)**
-- First run: drag and drop (or browse to) the original game folder; it is checked against the base hash
-  list and the game is set up from it, with no command line.
+**M10 — Launchers: PC game manager and 3DS pack builder (GUIs)**
+Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the command line:
+- Base game slot: drop (or paste the path of) the original Carnivores 2 or Carnivores: Ice Age folder; checked
+  against the base hash lists. Standalone game folders (full remakes) can be dropped in too, to play as they
+  are, convert, or add mods on top.
 - Mod manager: drop add-on folders, zips or rars in; enable/disable and reorder them; see conflicts and the
   merge report; one Play button builds the combined game (cached until something changes) and starts it.
+- Balance editor: every area, animal and weapon of the chosen game listed with its price and score; the user
+  edits them (to taste, or to make several mods fit together); kept as a balance file applied over the game.
+- 3DS: pick Old / New 3DS, build the packs (`c2-cook` underneath, memory report in plain words), and the
+  app as `.3dsx` and `.cia` under a name the user picks. The SD folder (`sdmc:/3ds/<name>/`) matches that
+  name and each `.cia` gets its own title ID, so several installs live side by side (say: Carnivores 2,
+  Ice Age, and the two combined).
 - Saved profiles (sets of mods), export as a recipe.
-- 3DS packs from the same screen: pick a target (Old / New 3DS), build the vanilla pack and an add-ons pack
-  (`c2-cook` underneath, its memory report shown in plain words), and copy them to the SD card, or to a
-  folder to copy by hand.
 - ✅ Done when: a new user goes from the original game files plus a few add-ons to hunting without a terminal,
   on PC or on a 3DS.
+
+**M11 — Hunt options and 3DS comfort**
+- A hunt options screen before each hunt (3DS first): animal run speed and ambient animals move here.
+- "3DS friendly" (3DS only, off by default so stock play stays for competitive players): animals notice the
+  hunter from shorter range, matching the 3DS's shorter view.
+- Stealth crouch toggle (3DS only): while crouched, gyro aim, and the hunter is half as visible and half as
+  loud.
+- Night hunts score +10% (stacks with the tranquilizer's +25%).
+- Modded games: "random ambients", 4 ambient species picked per hunt instead of every one the mods add.
+
+**M12 — Profiles, statistics, trophy room**
+- Profile picker at start (several hunters).
+- Statistics: longest shot, highest-scoring kill, kills per mode, every kill in hunt mode and in survival,
+  best survival wave.
+- Trophy room: each trophy's weight, weapon, range, area and score (PC: box bottom right; 3DS: bottom screen,
+  in place of the map, with binoculars and the other hunt controls removed); L / R move a trophy to the free
+  stand on that side, X removes it (confirmed), Y locks it (confirmed; locked ones can't be removed); a
+  setting removes every unlocked trophy.
+
+**M13 — Survival mode (PC and 3DS)**
+- Waves of animals, after the mobile game's survival mode.
+- Hardcore: 1–3 random modded animals per wave (asked before starting).
+- Custom: choose any weapon with unlimited ammo; T-Rex may come after wave 15.
+
+**M14 — Carnivores: Ice Age**
+- Its formats and engine differences; PC and 3DS ports with the same modes.
+- A combined game: Carnivores 2 with Ice Age's areas and animals listed beside the C2 ones.
+
+**M15 — Mobile assets (from the user's own APK)**
+- Import the mobile game's animals and weapons from an APK the user supplies (local only, like all game
+  data); where both exist, choose PC or mobile behaviour (the mobile shotgun differs).
+- Menu styles as an option: the original's, a mod's menu (PC), the mobile menu.
+
+**Known issues (next up)**
+- 3DS add-on pack: roaming add-ons show no picture or score, aren't on the radar, and may not spawn in the
+  chosen area (they spawn only where their tables say).
+- 3DS: an add-on's AI (seen with one raptor add-on) is very slow on Old 3DS and keeps running after death.
+- 3DS: the gear screen's messages are hidden behind the Tranq / Observe buttons.
 
 ---
 
@@ -421,7 +468,12 @@ Each milestone ends with: tests passing, `cargo clippy -- -D warnings` clean, `S
   - [x] Modder's Edition rules resolved per hunt on the 3DS; roaming add-ons pickable; main and video memory checked per pick
   - [x] `c2-cook --check`; big add-on animations thinned for Old 3DS
   - [ ] tested on hardware
-- [ ] M10 Launcher and mod manager (planned)
+- [ ] M10 Launchers: PC game manager and 3DS pack builder (planned)
+- [ ] M11 Hunt options and 3DS comfort (planned)
+- [ ] M12 Profiles, statistics, trophy room (planned)
+- [ ] M13 Survival mode (planned)
+- [ ] M14 Carnivores: Ice Age (planned)
+- [ ] M15 Mobile assets (planned)
 - [ ] M9 Modder's Edition Engine data — **in progress**
   - [x] nested `_RES.TXT` blocks; `_MENU.TXT` / `.c2map` menu lists; `overwrite` / `addition` resolution
   - [x] spawn / pack tables and placement on PC (dialect game folders hunt with their own rosters and spawns)
