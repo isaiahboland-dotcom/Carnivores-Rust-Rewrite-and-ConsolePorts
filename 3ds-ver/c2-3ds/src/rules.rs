@@ -88,6 +88,11 @@ impl Rules {
         })
     }
 
+    /// Whether the pack's rules are the Modder's Edition's (modded games).
+    pub fn dialect(&self) -> bool {
+        self.raw.is_some()
+    }
+
     /// The rules for a hunt in `area` (`AREA3`, `TROPHY`) at `time`, with
     /// `targets` (bit 10 + menu slot) picked.
     pub fn hunt(&self, area: &str, time: TimeOfDay, targets: u128) -> HuntRules {

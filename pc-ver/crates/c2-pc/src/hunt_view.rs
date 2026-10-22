@@ -347,6 +347,8 @@ impl HuntView {
             death_anim: setup.pc.death_anim != 0,
             afraid_every: 1,
             no_call_bonus: 0,
+            notice_k: 1.0,
+            stealth: false,
         };
         let mut opts = opts;
         opts.render_r = if trophy {

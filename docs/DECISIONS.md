@@ -2,6 +2,25 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-22 — M11: hunt options, 3DS friendly, stealth crouch, random ambients
+- **Hunt options** is a 3DS menu step after Gear (HUNT moves there): run
+  speed and ambient animals move from Settings, with the new options;
+  stored in `settings.txt` as before.
+- **3DS friendly** (off by default): `HuntOptions::notice_k` = 0.6 divides
+  into `CheckAfraid`'s distance term, so sight and smell notice the hunter
+  at 60% of the distance, for every animal (vanilla, the dialect's AIs,
+  add-ons, mobile imports). Gunshots are unchanged (they already scale with
+  the view distance).
+- **Stealth crouch** (off by default): ZL toggles crouch instead of being
+  held; while crouched the gyroscope adds to the look (raw x the system's
+  degrees/s factor, as look units of 0.0025 rad, the core's mouse step),
+  `k_look` doubles (half as visible; smell still finds you: the original
+  game has no footstep noise, so "half as loud" is the shot's reach,
+  halved). Gyro direction is a guess until tried on hardware.
+- **Random ambients** (modded games): 4 ambient species picked from the
+  hunt's seed are loaded; the rest aren't, and the spawn tables skip
+  animals without a model (M8).
+
 ## 2026-10-22 — M15: mobile animals, values and the PC-or-mobile choice
 - **Formats**: the mobile games split a `.CAR` into `.cat` (text), `.3dn`
   (mesh: PC vertices; faces with packed 16-bit texel UVs), `.ani` (the

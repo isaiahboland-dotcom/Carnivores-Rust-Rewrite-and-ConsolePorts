@@ -78,7 +78,8 @@ saving.
 | D-Pad left | binoculars |
 | D-Pad right | show / hide weapon |
 | L | jump / swim up |
-| ZL / ZR (New 3DS) | crouch / call |
+| ZL / ZR (New 3DS) | crouch (hold; with stealth crouch on: press to toggle) / call |
+| turning the console (stealth crouch, while crouched) | aim (gyroscope) |
 | A / B at the leave prompt | yes / no |
 | SELECT | pause (shows fps, memory, and ms per part of a frame) |
 | L + SELECT | screenshot to `/3ds/c2rs/shots/` |

@@ -652,6 +652,8 @@ fn tick_bench(game: &Path, area_n: u32) -> Result<()> {
         death_anim: true,
         afraid_every: 1,
         no_call_bonus: 0,
+        notice_k: 1.0,
+        stealth: false,
     };
     // The first weapon, drawn and aimed at the animal: real hits (blood
     // trail, hit reactions) rather than a scripted kill.

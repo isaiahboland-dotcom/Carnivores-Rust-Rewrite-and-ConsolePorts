@@ -507,7 +507,13 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
         name; the user's icon/banner art); works on hardware (owner, 2026-10-22). In Azahar the installed
         title found no pack: an emulator matter, not looked into further
   - [ ] Ice Age and standalone games in the base slot (with M14 / M16)
-- [ ] M11 Hunt options and 3DS comfort (planned)
+- [ ] M11 Hunt options and 3DS comfort — **in progress** (untested on hardware)
+  - [x] 3DS hunt options screen before each hunt: animal run speed, ambient animals, random ambients (4 kinds a
+        hunt, modded games), 3DS friendly, stealth crouch (settings keep blood and the death camera)
+  - [x] 3DS friendly: every animal (vanilla, modded, mobile) notices the hunter at 60% of the distance
+        (`HuntOptions::notice_k`)
+  - [x] stealth crouch: ZL toggles; crouched, gyro aim, half as visible, shots carry half as far
+  - [ ] owner's hardware test (gyro direction and feel, the friendly distance)
 - [ ] M12 Profiles, statistics, trophy room (planned)
 - [ ] M13 Survival mode (planned)
 - [ ] M14 Carnivores: Ice Age (planned)

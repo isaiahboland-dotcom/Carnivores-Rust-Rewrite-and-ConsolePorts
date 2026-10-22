@@ -17,7 +17,16 @@ pub struct Settings {
     pub blood: bool,
     /// The death camera; off: a black screen and the prompt.
     pub death_anim: bool,
+    /// Hunt options: "3DS friendly" (animals notice the hunter from a
+    /// shorter range), stealth crouch, random ambients (modded games).
+    pub friendly: bool,
+    pub stealth: bool,
+    pub random_ambients: bool,
 }
+
+/// How far animals notice the hunter with "3DS friendly" on, as a share
+/// of the original's distance.
+pub const FRIENDLY_NOTICE: f32 = 0.6;
 
 impl Default for Settings {
     fn default() -> Self {
@@ -26,6 +35,9 @@ impl Default for Settings {
             ambient: true,
             blood: true,
             death_anim: true,
+            friendly: false,
+            stealth: false,
+            random_ambients: false,
         }
     }
 }
@@ -50,6 +62,9 @@ impl Settings {
                 ("ambient", v) => s.ambient = v != "0",
                 ("blood", v) => s.blood = v != "0",
                 ("death_animation", v) => s.death_anim = v != "0",
+                ("friendly", v) => s.friendly = v != "0",
+                ("stealth_crouch", v) => s.stealth = v != "0",
+                ("random_ambients", v) => s.random_ambients = v != "0",
                 _ => {}
             }
         }
@@ -60,11 +75,15 @@ impl Settings {
         std::fs::write(
             path(),
             format!(
-                "run_speed = {}\nambient = {}\nblood = {}\ndeath_animation = {}\n",
+                "run_speed = {}\nambient = {}\nblood = {}\ndeath_animation = {}\n\
+                 friendly = {}\nstealth_crouch = {}\nrandom_ambients = {}\n",
                 self.run_pct,
                 i32::from(self.ambient),
                 i32::from(self.blood),
-                i32::from(self.death_anim)
+                i32::from(self.death_anim),
+                i32::from(self.friendly),
+                i32::from(self.stealth),
+                i32::from(self.random_ambients)
             ),
         )
     }

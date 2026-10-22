@@ -321,6 +321,7 @@ fn read_pad(hid: &Hid, held: KeyPad, down: KeyPad, touch: &mut Touch) -> (Pad, O
         run: down.contains(KeyPad::DPAD_UP),
         jump: held.contains(KeyPad::L),
         crouch: held.contains(KeyPad::ZL),
+        crouch_down: down.contains(KeyPad::ZL),
         toggle_weapon: down.contains(KeyPad::DPAD_RIGHT),
         next_weapon: down.contains(KeyPad::DPAD_DOWN),
         binoculars: down.contains(KeyPad::DPAD_LEFT),

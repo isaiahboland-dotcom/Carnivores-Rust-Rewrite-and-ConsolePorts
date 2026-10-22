@@ -143,6 +143,12 @@ pub struct Setup {
     /// Settings: blood, and the death camera.
     pub blood: bool,
     pub death_anim: bool,
+    /// Hunt options: how far animals notice the hunter (1; "3DS friendly"
+    /// less), stealth crouch (ZL toggles; crouched: gyro aim, half as
+    /// visible and loud), and 4 random ambient species (modded games).
+    pub notice_k: f32,
+    pub stealth: bool,
+    pub random_ambients: bool,
 }
 
 impl Setup {
@@ -191,6 +197,10 @@ pub struct Game {
     pub ticks_last: u32,
     /// `RunMode`.
     pub run: bool,
+    /// Stealth crouch: crouched (ZL toggles).
+    pub crouched: bool,
+    /// The gyroscope, on for a stealth hunt: raw-to-degrees/s.
+    gyro: Option<f32>,
     /// Extra ammo refills left.
     pub resupplies: u32,
     pub prev_cam: [f32; 3],
@@ -211,6 +221,8 @@ pub struct Pad {
     pub run: bool,
     pub jump: bool,
     pub crouch: bool,
+    /// ZL pressed this frame (stealth crouch toggles).
+    pub crouch_down: bool,
     // Pressed this frame:
     pub toggle_weapon: bool,
     pub next_weapon: bool,
@@ -333,6 +345,8 @@ fn new_hunt(
         blood: setup.blood,
         death_anim: setup.death_anim,
         afraid_every: 2,
+        notice_k: setup.notice_k,
+        stealth: setup.stealth,
         no_call_bonus: setup
             .roamers
             .iter()
@@ -371,9 +385,22 @@ impl Game {
             .iter()
             .filter_map(|b| usize::try_from(b.ctype).ok().filter(|&c| c != 0))
             .collect();
+        // Random ambients: 4 ambient species this hunt (modded games add
+        // many; the rest aren't loaded, so they don't spawn).
+        let ambients = setup.random_ambients.then(|| {
+            let all: Vec<usize> = (0..rules.roles.len())
+                .filter(|&i| rules.roles[i] == Role::Ambient)
+                .collect();
+            pick(&all, 4, seed)
+        });
         let (mut species, cars) = load::species_with(vfs, &rules.res, &|i| {
             if setup.trophy() {
                 return trophies.contains(&i) || rules.roles.get(i) == Some(&Role::Hunter);
+            }
+            if let Some(a) = &ambients {
+                if rules.roles.get(i) == Some(&Role::Ambient) {
+                    return setup.max_ambient > 0 && a.contains(&i);
+                }
             }
             rules.roles.get(i).is_some_and(|&r| setup.keeps_char(i, r))
         });
@@ -404,6 +431,7 @@ impl Game {
         );
         let keys = rules.keys;
         let resupplies = setup.resupplies;
+        let setup_stealth = setup.stealth;
         Ok(Self {
             prev_cam: hunt.camera().0,
             draw: info.draw_info(vfs, &setup.area),
@@ -418,6 +446,8 @@ impl Game {
             acc_ms: 0.0,
             ticks_last: 0,
             run: false,
+            crouched: false,
+            gyro: gyro_on(setup_stealth),
             resupplies,
         })
     }
@@ -449,6 +479,26 @@ impl Game {
                 self.hunt.exit_prompt = false;
             }
         }
+        if self.setup.stealth && pad.crouch_down {
+            self.crouched = !self.crouched;
+        }
+        let crouch = if self.setup.stealth {
+            self.crouched
+        } else {
+            pad.crouch
+        };
+        // Crouched in stealth: aim by turning the console.
+        let mut look = pad.look;
+        if let (Some(k), true) = (self.gyro, crouch) {
+            let mut r = ctru_sys::angularRate { x: 0, z: 0, y: 0 };
+            unsafe { ctru_sys::hidGyroRead(&mut r) };
+            // Degrees turned this frame, as look units (0.0025 rad each,
+            // as the core turns them).
+            let units =
+                |raw: i16| f32::from(raw) * k * dt * (std::f32::consts::PI / 180.0) / 0.0025;
+            look.0 -= units(r.z);
+            look.1 -= units(r.y);
+        }
         let (sx, sy) = pad.stick;
         let controls = Controls {
             forward: sy > 0.35,
@@ -459,10 +509,10 @@ impl Game {
             turn_right: pad.turn_right,
             look_up: pad.look_up,
             look_down: pad.look_down,
-            crouch: pad.crouch,
+            crouch,
             jump: pad.jump,
             run: self.run,
-            mouse: pad.look,
+            mouse: look,
             mouse_sens: f32::from(128u8),
         };
         if let Some(ai) = pad.select_call {
@@ -516,5 +566,37 @@ impl Game {
     /// Fraction of a tick since the last one (for camera interpolation).
     pub fn alpha(&self) -> f32 {
         self.acc_ms / TICK_MS as f32
+    }
+}
+
+/// `n` of `from`, picked by `seed` (all of them if there are no more).
+fn pick(from: &[usize], n: usize, seed: u32) -> Vec<usize> {
+    let mut left = from.to_vec();
+    let mut x = seed | 1;
+    let mut out = Vec::new();
+    while out.len() < n && !left.is_empty() {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        out.push(left.swap_remove(x as usize % left.len()));
+    }
+    out
+}
+
+/// Turns the gyroscope on for a stealth hunt: its raw-to-degrees/s factor.
+fn gyro_on(stealth: bool) -> Option<f32> {
+    if !stealth || unsafe { ctru_sys::HIDUSER_EnableGyroscope() } < 0 {
+        return None;
+    }
+    let mut k = 0.0f32;
+    let ok = unsafe { ctru_sys::HIDUSER_GetGyroscopeRawToDpsCoefficient(&mut k) } >= 0;
+    Some(if ok && k > 0.0 { k } else { 1.0 / 14.375 })
+}
+
+impl Drop for Game {
+    fn drop(&mut self) {
+        if self.gyro.is_some() {
+            let _ = unsafe { ctru_sys::HIDUSER_DisableGyroscope() };
+        }
     }
 }

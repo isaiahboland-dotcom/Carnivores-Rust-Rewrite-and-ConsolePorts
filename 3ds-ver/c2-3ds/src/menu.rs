@@ -53,10 +53,14 @@ const SETTINGS: [f32; 4] = [60.0, 122.0, 200.0, 42.0];
 const QUIT: [f32; 4] = [60.0, 174.0, 200.0, 42.0];
 
 /// Settings screen: run speed bar with - / +, then the toggles.
-const SPEED_BAR: [f32; 4] = [64.0, 62.0, 192.0, 20.0];
-const SPEED_DOWN: [f32; 4] = [20.0, 58.0, 36.0, 28.0];
-const SPEED_UP: [f32; 4] = [264.0, 58.0, 36.0, 28.0];
-const AMBIENT: [f32; 4] = [60.0, 112.0, 200.0, 28.0];
+// The hunt options screen.
+const O_SPEED_BAR: [f32; 4] = [64.0, 24.0, 192.0, 20.0];
+const O_SPEED_DOWN: [f32; 4] = [20.0, 20.0, 36.0, 28.0];
+const O_SPEED_UP: [f32; 4] = [264.0, 20.0, 36.0, 28.0];
+const O_AMBIENT: [f32; 4] = [40.0, 62.0, 240.0, 26.0];
+const O_RANDOM: [f32; 4] = [40.0, 92.0, 240.0, 26.0];
+const O_FRIENDLY: [f32; 4] = [40.0, 122.0, 240.0, 26.0];
+const O_STEALTH: [f32; 4] = [40.0, 152.0, 240.0, 26.0];
 const BLOOD: [f32; 4] = [60.0, 144.0, 200.0, 28.0];
 const DEATH_ANIM: [f32; 4] = [60.0, 176.0, 200.0, 28.0];
 
@@ -83,6 +87,8 @@ enum Step {
     Area,
     Animals,
     Gear,
+    /// Hunt options, before each hunt.
+    Options,
 }
 
 struct Item {
@@ -476,6 +482,9 @@ impl Menu {
             dino_run_k: 1.0,
             blood: true,
             death_anim: true,
+            notice_k: 1.0,
+            stealth: false,
+            random_ambients: false,
         }
     }
 
@@ -502,6 +511,13 @@ impl Menu {
             dino_run_k: self.settings.run_pct as f32 / 100.0,
             blood: self.settings.blood,
             death_anim: self.settings.death_anim,
+            notice_k: if self.settings.friendly {
+                crate::settings::FRIENDLY_NOTICE
+            } else {
+                1.0
+            },
+            stealth: self.settings.stealth,
+            random_ambients: self.settings.random_ambients && self.rules.dialect(),
         }
     }
 
@@ -650,16 +666,7 @@ impl Menu {
             }
             Step::Settings => {
                 let s = &mut self.settings;
-                if inside(SPEED_DOWN, x, y) {
-                    s.run_pct = (s.run_pct - 5).max(50);
-                } else if inside(SPEED_UP, x, y) {
-                    s.run_pct = (s.run_pct + 5).min(100);
-                } else if inside(SPEED_BAR, x, y) {
-                    let f = (x - SPEED_BAR[0]) / SPEED_BAR[2];
-                    s.run_pct = (50 + (f * 50.0 / 5.0).round() as i32 * 5).clamp(50, 100);
-                } else if inside(AMBIENT, x, y) {
-                    s.ambient = !s.ambient;
-                } else if inside(BLOOD, x, y) {
+                if inside(BLOOD, x, y) {
                     s.blood = !s.blood;
                 } else if inside(DEATH_ANIM, x, y) {
                     s.death_anim = !s.death_anim;
@@ -677,6 +684,36 @@ impl Menu {
             Step::Animals => {
                 if let Some(i) = hit(&self.dino_cells()) {
                     self.focus = Some(self.toggle(Step::Animals, i, false));
+                }
+            }
+            Step::Options => {
+                let dialect = self.rules.dialect();
+                let s = &mut self.settings;
+                if inside(O_SPEED_DOWN, x, y) {
+                    s.run_pct = (s.run_pct - 5).max(50);
+                } else if inside(O_SPEED_UP, x, y) {
+                    s.run_pct = (s.run_pct + 5).min(100);
+                } else if inside(O_SPEED_BAR, x, y) {
+                    let f = (x - O_SPEED_BAR[0]) / O_SPEED_BAR[2];
+                    s.run_pct = (50 + (f * 50.0 / 5.0).round() as i32 * 5).clamp(50, 100);
+                } else if inside(O_AMBIENT, x, y) {
+                    s.ambient = !s.ambient;
+                } else if inside(O_RANDOM, x, y) && dialect {
+                    s.random_ambients = !s.random_ambients;
+                } else if inside(O_FRIENDLY, x, y) {
+                    s.friendly = !s.friendly;
+                    self.focus = Some(if s.friendly {
+                        "Animals notice you from closer".into()
+                    } else {
+                        "Animals notice you as on PC".into()
+                    });
+                } else if inside(O_STEALTH, x, y) {
+                    s.stealth = !s.stealth;
+                    self.focus = Some(if s.stealth {
+                        "ZL crouches; turn the 3DS to aim".into()
+                    } else {
+                        "Hold ZL to crouch".into()
+                    });
                 }
             }
             Step::Gear => {
@@ -724,7 +761,7 @@ impl Menu {
 
     /// B / the Back button.
     pub fn back(&mut self) {
-        if self.step == Step::Settings {
+        if matches!(self.step, Step::Settings | Step::Options) {
             if let Err(e) = self.settings.store() {
                 self.message = Some(format!("settings not saved: {e}"));
             }
@@ -733,6 +770,7 @@ impl Menu {
             Step::Title | Step::Settings | Step::Area => Step::Title,
             Step::Animals => Step::Area,
             Step::Gear => Step::Animals,
+            Step::Options => Step::Gear,
         };
     }
 
@@ -753,9 +791,13 @@ impl Menu {
             Step::Settings => self.back(),
             Step::Area if !self.trophy() => self.step = Step::Animals,
             Step::Animals => self.step = Step::Gear,
+            Step::Gear => self.step = Step::Options,
             _ => match self.can_hunt() {
                 Ok(()) => {
                     self.store_equipment();
+                    if let Err(e) = self.settings.store() {
+                        self.message = Some(format!("settings not saved: {e}"));
+                    }
                     return Some(self.setup());
                 }
                 Err(e) => self.message = Some(e.into()),
@@ -909,6 +951,7 @@ impl Menu {
                     Self::draw_hex_item(&mut c, gpu, cell, item, on, item.price <= left);
                 }
             }
+            Step::Options => self.draw_options(&mut c, gpu),
             Step::Gear => {
                 let (nw, ne) = (self.weapons.len(), self.equip.len());
                 for (i, cell) in self.gear_cells().into_iter().enumerate() {
@@ -954,13 +997,13 @@ impl Menu {
         }
         let next = match step {
             Step::Area if self.trophy() => "Enter",
-            Step::Gear => "HUNT",
+            Step::Options => "HUNT",
             _ => "Next",
         };
         if step != Step::Area {
             c.rect(BACK, PANEL);
         }
-        let ready = step != Step::Gear || self.can_hunt().is_ok();
+        let ready = step != Step::Options || self.can_hunt().is_ok();
         c.rect(NEXT, if ready { [60, 110, 60, 255] } else { PANEL });
         c.flush(gpu);
         if step != Step::Area {
@@ -1019,23 +1062,8 @@ impl Menu {
     /// The settings screen (bottom).
     fn draw_settings(&self, c: &mut Canvas, gpu: &mut Gpu) {
         let s = self.settings;
-        c.text_c(gpu, 160.0, 30.0, 1.0, TEXT, "Dinosaur run speed");
-        c.rect(SPEED_BAR, PANEL);
-        let f = (s.run_pct - 50) as f32 / 50.0;
-        c.rect(
-            [
-                SPEED_BAR[0],
-                SPEED_BAR[1],
-                SPEED_BAR[2] * f.max(0.02),
-                SPEED_BAR[3],
-            ],
-            [60, 110, 60, 255],
-        );
-        for r in [SPEED_DOWN, SPEED_UP, BACK] {
-            c.rect(r, PANEL);
-        }
+        c.rect(BACK, PANEL);
         let toggles = [
-            (AMBIENT, s.ambient, "Ambient animals"),
             (BLOOD, s.blood, "Blood"),
             (DEATH_ANIM, s.death_anim, "Death animation"),
         ];
@@ -1043,16 +1071,30 @@ impl Menu {
             c.rect(r, if on { [60, 110, 60, 255] } else { PANEL });
         }
         c.flush(gpu);
-        c.text_c(gpu, 160.0, 92.0, 2.0, GOLD, &format!("{}%", s.run_pct));
         c.text_c(
             gpu,
-            SPEED_DOWN[0] + 18.0,
-            SPEED_DOWN[1] + 6.0,
-            2.0,
-            WHITE,
-            "-",
+            160.0,
+            40.0,
+            1.0,
+            TEXT,
+            "Run speed, ambient animals, 3DS",
         );
-        c.text_c(gpu, SPEED_UP[0] + 18.0, SPEED_UP[1] + 6.0, 2.0, WHITE, "+");
+        c.text_c(
+            gpu,
+            160.0,
+            52.0,
+            1.0,
+            TEXT,
+            "friendly and stealth crouch are",
+        );
+        c.text_c(
+            gpu,
+            160.0,
+            64.0,
+            1.0,
+            TEXT,
+            "in the hunt options (before a hunt).",
+        );
         for (r, on, name) in toggles {
             let t = format!("{name}: {}", if on { "ON" } else { "OFF" });
             c.text_c(gpu, 160.0, r[1] + 10.0, 1.0, WHITE, &t);
@@ -1067,20 +1109,80 @@ impl Menu {
         );
     }
 
+    /// The hunt options (bottom; the bar is drawn after).
+    fn draw_options(&self, c: &mut Canvas, gpu: &mut Gpu) {
+        let s = self.settings;
+        let dialect = self.rules.dialect();
+        c.rect(O_SPEED_BAR, PANEL);
+        let f = (s.run_pct - 50) as f32 / 50.0;
+        c.rect(
+            [
+                O_SPEED_BAR[0],
+                O_SPEED_BAR[1],
+                O_SPEED_BAR[2] * f.max(0.02),
+                O_SPEED_BAR[3],
+            ],
+            [60, 110, 60, 255],
+        );
+        for r in [O_SPEED_DOWN, O_SPEED_UP] {
+            c.rect(r, PANEL);
+        }
+        let mut toggles = vec![(O_AMBIENT, s.ambient, "Ambient animals")];
+        if dialect {
+            toggles.push((O_RANDOM, s.random_ambients, "Random ambients (4)"));
+        }
+        toggles.push((O_FRIENDLY, s.friendly, "3DS friendly"));
+        toggles.push((O_STEALTH, s.stealth, "Stealth crouch"));
+        for (r, on, _) in &toggles {
+            c.rect(*r, if *on { [60, 110, 60, 255] } else { PANEL });
+        }
+        c.flush(gpu);
+        c.text_c(
+            gpu,
+            160.0,
+            6.0,
+            1.0,
+            TEXT,
+            &format!("Animal run speed {}%", s.run_pct),
+        );
+        c.text_c(
+            gpu,
+            O_SPEED_DOWN[0] + 18.0,
+            O_SPEED_DOWN[1] + 6.0,
+            2.0,
+            WHITE,
+            "-",
+        );
+        c.text_c(
+            gpu,
+            O_SPEED_UP[0] + 18.0,
+            O_SPEED_UP[1] + 6.0,
+            2.0,
+            WHITE,
+            "+",
+        );
+        for (r, on, name) in toggles {
+            let t = format!("{name}: {}", if on { "ON" } else { "OFF" });
+            c.text_c(gpu, 160.0, r[1] + 9.0, 1.0, WHITE, &t);
+        }
+    }
+
     /// What the settings do (top).
     fn draw_settings_top(&self, c: &mut Canvas, gpu: &mut Gpu) {
         let lines = [
             ("Settings", GOLD),
             ("", WHITE),
-            ("Dinosaur run speed", TEXT),
-            ("  Slows every species' run by the same", WHITE),
-            ("  share, so their differences stay.", WHITE),
-            ("  100% is the original.", WHITE),
-            ("", WHITE),
-            ("Ambient animals", TEXT),
-            ("  The small animals that score nothing.", WHITE),
-            ("  On: at most 4 near you (smoother on", WHITE),
-            ("  Old 3DS). Off: none, and less memory.", WHITE),
+            ("Hunt options (before each hunt)", TEXT),
+            ("  Animal run speed: every species slowed", WHITE),
+            ("  by the same share; 100% is the original.", WHITE),
+            ("  Ambient animals: at most 4 near you; off:", WHITE),
+            ("  none, less memory. Random ambients: 4", WHITE),
+            ("  kinds a hunt in modded games.", WHITE),
+            ("  3DS friendly: animals notice you from", WHITE),
+            ("  closer, as the 3DS sees less far.", WHITE),
+            ("  Stealth crouch: ZL toggles; crouched you", WHITE),
+            ("  aim by turning the 3DS, half as visible", WHITE),
+            ("  and your shots half as loud.", WHITE),
             ("", WHITE),
             ("Blood / Death animation", TEXT),
             ("  Off: no blood sprays or trails; when", WHITE),
@@ -1254,7 +1356,7 @@ impl Menu {
         let m = self.memory();
         let over = m.linear.0 > m.linear.1 || m.heap.0 > m.heap.1;
         let (msg, col) = match (self.step, self.can_hunt()) {
-            (_, Ok(())) if self.step == Step::Gear || self.trophy() => (
+            (_, Ok(())) if self.step == Step::Options || self.trophy() => (
                 format!(
                     "Ready. Memory {}/{} + {}/{} MiB",
                     m.heap.0 / 1024,
@@ -1264,10 +1366,13 @@ impl Menu {
                 ),
                 TEXT,
             ),
-            (Step::Gear, Err(e)) => (e.to_string(), if over { RED } else { DIM }),
+            (Step::Options, Err(e)) => (e.to_string(), if over { RED } else { DIM }),
+            // Taken by the arm above.
+            (Step::Options, Ok(())) => (String::new(), DIM),
             (Step::Area, _) => ("Pick a place and the time of day".into(), DIM),
             (Step::Animals, _) => ("Pick the animals to hunt".into(), DIM),
-            (Step::Gear | Step::Title | Step::Settings, _) => (String::new(), DIM),
+            (Step::Gear, _) => ("Pick weapons and gear".into(), DIM),
+            (Step::Title | Step::Settings, _) => (String::new(), DIM),
         };
         c.text(gpu, 8.0, 226.0, 1.0, col, &msg);
         self.c = c;

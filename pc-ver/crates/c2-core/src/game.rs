@@ -276,6 +276,13 @@ pub struct HuntOptions {
     /// Bit `10 + slot` per call slot whose kills score +10% (not in the
     /// original; the 3DS's roaming add-ons, hunted with no call).
     pub no_call_bonus: u128,
+    /// How far animals notice the hunter, by sight or smell, as a share of
+    /// the original's distance (1; the 3DS's "3DS friendly" setting: less,
+    /// to match its shorter view). Every animal, modded ones too.
+    pub notice_k: f32,
+    /// Stealth crouch (a 3DS setting): crouched, the hunter is half as easy
+    /// to see and his shots carry half as far.
+    pub stealth: bool,
 }
 
 impl Default for HuntOptions {
@@ -298,6 +305,8 @@ impl Default for HuntOptions {
             death_anim: true,
             afraid_every: 1,
             no_call_bonus: 0,
+            notice_k: 1.0,
+            stealth: false,
         }
     }
 }
@@ -1026,9 +1035,15 @@ impl Hunt {
             ];
             self.make_shot(area, cars, &info, origin, to, out);
         }
+        // Stealth crouch: crouched, a shot carries half as far.
+        let hush = if self.opts.stealth && self.player.head_y <= 180.0 {
+            0.5
+        } else {
+            1.0
+        };
         self.make_noise(
             [self.player.x, self.player.y, self.player.z],
-            self.opts.view_r as f32 * 200.0 * info.loud,
+            self.opts.view_r as f32 * 200.0 * info.loud * hush,
         );
         self.weapons.shots_left[cur] -= 1;
     }
@@ -1255,6 +1270,8 @@ impl Hunt {
         let wlook = self.wind.nv();
         let kmask = if self.opts.camo { 1.5 } else { 1.0 };
         let kscent = if self.opts.scent { 1.5 } else { 1.0 };
+        // Crouched (`kstand`'s test) with stealth crouch on.
+        let stealthy = self.opts.stealth && head_y <= 180.0;
         for i in 0..self.herd.chars.len() {
             let c = &self.herd.chars[i];
             let Some(sp) = self.herd.species.get(c.ctype) else {
@@ -1279,6 +1296,7 @@ impl Hunt {
                 rlook = [rlook[0] / rl, rlook[1] / rl, rlook[2] / rl];
             }
             kr *= 2.5 / (1.5 + self.opts.opt_sens as f32 / 128.0);
+            kr /= self.opts.notice_k.clamp(0.1, 1.0);
             if kr > 3.0 {
                 continue;
             }
@@ -1311,6 +1329,9 @@ impl Hunt {
                 }
             }
             k_look *= 1.0 + self.objects_on_look as f32 / 6.0;
+            if stealthy {
+                k_look *= 2.0;
+            }
 
             let mut k_smell = kr * ((kwind + 2.0) / 2.0) * ((klook + 3.0) / 3.0) * kscent;
             if kwind > 0.0 {
@@ -2149,6 +2170,52 @@ mod tests {
             hunt.tick(&area, &[], &HuntInput::default(), 10, &mut out);
         }
         assert!(!hunt.effects.blood.is_empty());
+    }
+
+    /// The farthest an animal ahead notices the hunter, in steps of 500.
+    fn notice_range(notice_k: f32, stealth: bool, crouched: bool) -> f32 {
+        notice_range_by(notice_k, stealth, crouched, 1.0)
+    }
+
+    /// [`notice_range`] for an animal with `smell` (0: sight only).
+    fn notice_range_by(notice_k: f32, stealth: bool, crouched: bool, smell: f32) -> f32 {
+        let mut last = 0.0;
+        for k in 1..80 {
+            let d = k as f32 * 500.0;
+            let (area, mut hunt, _) = setup(false);
+            (hunt.opts.notice_k, hunt.opts.stealth) = (notice_k, stealth);
+            if crouched {
+                hunt.player.head_y = 110.0;
+            }
+            hunt.wind.speed = 0.0;
+            hunt.herd.species[1].info.smell_k = smell.max(1e-4);
+            let c = &mut hunt.herd.chars[0];
+            c.pos = [hunt.player.x, c.pos[1], hunt.player.z - d];
+            (c.lookx, c.lookz) = (0.0, 1.0);
+            hunt.check_afraid(&area);
+            if hunt.herd.chars[0].afraid_time != 0 {
+                last = d;
+            }
+        }
+        last
+    }
+
+    #[test]
+    fn friendly_and_stealth_shorten_noticing() {
+        let normal = notice_range(1.0, false, false);
+        assert!(normal > 0.0);
+        let friendly = notice_range(0.6, false, false);
+        assert!(friendly < normal && friendly > 0.0, "{friendly} vs {normal}");
+        // Crouched, stealth halves how visible the hunter is (sight; smell
+        // still finds him).
+        let crouched = notice_range_by(1.0, false, true, 0.0);
+        assert!(crouched > 0.0);
+        assert!(notice_range_by(1.0, true, true, 0.0) < crouched);
+        // Standing, stealth changes nothing.
+        assert_eq!(
+            notice_range_by(1.0, true, false, 0.0),
+            notice_range_by(1.0, false, false, 0.0)
+        );
     }
 
     #[test]
