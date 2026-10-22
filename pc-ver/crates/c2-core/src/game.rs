@@ -2205,7 +2205,10 @@ mod tests {
         let normal = notice_range(1.0, false, false);
         assert!(normal > 0.0);
         let friendly = notice_range(0.6, false, false);
-        assert!(friendly < normal && friendly > 0.0, "{friendly} vs {normal}");
+        assert!(
+            friendly < normal && friendly > 0.0,
+            "{friendly} vs {normal}"
+        );
         // Crouched, stealth halves how visible the hunter is (sight; smell
         // still finds him).
         let crouched = notice_range_by(1.0, false, true, 0.0);

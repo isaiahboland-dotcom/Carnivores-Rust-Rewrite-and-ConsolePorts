@@ -192,12 +192,17 @@ fn make_entry(donor: &Block, name: &str, car: &str, cat: &Cat, slot: bool) -> Bl
         ("run", "runAnim"),
         ("walk", "walkAnim"),
         ("swim", "swimAnim"),
-        ("jump", "jumpAnim"),
         ("growl", "roarAnim"),
     ] {
         if let Some(i) = find(r) {
             b.entries.push(entry(key, i));
         }
+    }
+    // A jump: the animal's own, else its attack (a lunge). Without one the
+    // dialect takes animation phase 0 (the run) as the jump, and the AIs
+    // that jump (raptors, Allosaurus) run without stopping.
+    if let Some(i) = find("jump").or(find("attack")) {
+        b.entries.push(entry("jumpAnim", i));
     }
     let end = b.entries.len();
     let sub = |name: &str, entries: Vec<Entry>| Sub {
@@ -731,6 +736,24 @@ pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Import, ModError> {
     cats.sort();
     let mut done = Vec::new();
     let mut skipped = Vec::new();
+    // What other imports beside this one made (both mobile games have the
+    // revolver): not made twice.
+    let elsewhere: Vec<String> = out
+        .parent()
+        .and_then(|p| std::fs::read_dir(p).ok())
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.path())
+                .filter(|p| p.is_dir() && p != out)
+                .filter_map(|p| std::fs::read_dir(p).ok())
+                .flat_map(|rd| {
+                    rd.flatten()
+                        .map(|e| e.file_name().to_string_lossy().to_lowercase())
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let imported = |name: &str| elsewhere.iter().any(|n| *n == name.to_lowercase());
     for path in cats {
         let Some(text) = zip.get(&path) else { continue };
         let Ok(cat) = parse_cat(&String::from_utf8_lossy(&text)) else {
@@ -747,7 +770,19 @@ pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Import, ModError> {
             .get(&format!("assets/models/weapons/{}", cat.model))
             .is_some()
         {
-            if base
+            let title = if cat.title.chars().any(|c| c.is_ascii_digit()) {
+                let mut c = stem.chars();
+                c.next()
+                    .map(|f| f.to_ascii_uppercase().to_string() + c.as_str())
+                    .unwrap_or_default()
+            } else {
+                cat.title.clone()
+            };
+            if imported(&title) {
+                skipped.push(format!(
+                    "{title}: already imported from the other mobile game"
+                ));
+            } else if base
                 .resolve(&format!("HUNTDAT/WEAPONS/{stem}.car"))
                 .is_none()
             {
@@ -813,6 +848,16 @@ pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Import, ModError> {
                 ));
                 continue;
             }
+        }
+        let shown = NAMES
+            .iter()
+            .find(|(s, _)| *s == stem)
+            .map_or_else(|| cat.title.clone(), |(_, n)| (*n).to_string());
+        if imported(&shown) {
+            skipped.push(format!(
+                "{shown}: already imported from the other mobile game"
+            ));
+            continue;
         }
         let name = NAMES
             .iter()
