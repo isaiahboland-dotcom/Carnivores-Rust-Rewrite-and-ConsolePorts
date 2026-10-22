@@ -515,7 +515,15 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] mobile formats (`c2_formats::mobile`: `.cat`, `.3dn`, `.ani`, ETC1 `.pkm`, `.crt`, IMA ADPCM) rebuilt as `.CAR`
   - [x] `c2-pc mobile APK --base GAME --overlay ME --out DIR`: each new animal as a loose add-on (entry from a
         same-kind PC donor, menu picture, calls); 10 from Dinosaur Hunter import, render and get menu slots
-  - [ ] 3DS check, launcher button, revolver, Ice Age APK, PC-vs-mobile behaviour choice, menu styles
+  - [x] the mobile game's own tuning (health, price, score, weapon stats) read from the APK's native library
+        (`c2_formats::mobile_values`); new animals take it on the PC scale (median ratio over shared animals)
+  - [x] the revolver; Ice Age APK animals (Andrewsarchus, Doedicurus, Hyaenodon, Titanis); menu pictures drawn
+        from the model where the APK has none; see-through mobile textures (muzzle flash)
+  - [x] launcher: "Import from the mobile game (APK)" (add-ons), and in Balance "PC or mobile" per entry where
+        they differ (PC by default; all PC / all mobile); balance files carry health and weapon stats
+  - [x] tested on hardware with the add-on pack (owner, 2026-10-22)
+  - [ ] menu styles (original / a mod's / mobile); Indricothere and the Diatryma (PC-style animation sets with
+        no fitting donor in C2: with the Ice Age base, M14)
 - [ ] M16 Standalone games in the launcher (planned, PC)
 - [ ] M9 Modder's Edition Engine data — **in progress**
   - [x] nested `_RES.TXT` blocks; `_MENU.TXT` / `.c2map` menu lists; `overwrite` / `addition` resolution

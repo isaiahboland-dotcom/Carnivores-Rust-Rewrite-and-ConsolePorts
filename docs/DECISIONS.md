@@ -2,6 +2,37 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-22 — M15: mobile animals, values and the PC-or-mobile choice
+- **Formats**: the mobile games split a `.CAR` into `.cat` (text), `.3dn`
+  (mesh: PC vertices; faces with packed 16-bit texel UVs), `.ani` (the
+  `.CAR` animation block), textures (`.pkm` ETC1, `.crt` raw RGBA, 32-bit
+  `.tga`; up to 512 wide, UVs stay in 256 units) and IMA ADPCM WAVs. Shared
+  animals are byte-identical meshes to the PC ones.
+- **Tuning values are compiled code**, not data: `BalanceManager_
+  SetDefaultValues*` stores `{key[32], double}` entries. We follow its
+  AArch64 (adrp/add for the key, movz/movk/movn/orr/fmov + str at 0x20 for
+  the value) in the user's own APK at import time; nothing extracted is
+  kept in the repo. Only the free-to-play set has values (Classic/IA empty);
+  its prices/scores are on a bigger scale, converted by the median PC/mobile
+  ratio over the animals both games have.
+- **Import = loose add-ons** (one folder per new animal or weapon, as
+  community add-ons ship): an entry from a same-kind PC donor (AI, senses,
+  kill setup, its slot block moved to the new slot) with the animal's own
+  animation roles (named, or the shared 11-animation order), mobile health
+  and score; its own `price` key now sets a new slot's price for any loose
+  add-on. Menu art from `Help/` or drawn from the model; calls from the
+  `callN` set containing its call/growl, else its own call sound.
+- **Not imported**: animals the game has (by model file or by name), people
+  (poacher), PC-style numbered animation sets whose donor differs in count.
+- **See-through textures**: faces mostly on alpha-0 texels (the mobile
+  engine adds a muzzle flash's colour) become colour-keyed and
+  double-sided; dim alpha-0 texels black.
+- **PC or mobile** (owner's rule): PC by default. The import writes
+  `mobile-values.toml` (mobile values for the game's own entries, PC
+  scale); the launcher's Balance tab lists each entry that differs with
+  PC / Mobile, and all PC / all mobile; mobile choices are balance edits.
+- `png` (already in the build via eframe) decodes the Help pictures.
+
 ## 2026-10-22 — Fixes from the owner's mobile + add-ons test
 - **3DS trophy room**: loads only the species with a trophy on display
   (and the hunter); it loaded every species, out of memory with add-ons.
