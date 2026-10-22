@@ -81,11 +81,19 @@ pub fn pack_dir(overlays: &[PathBuf], mods: &[PathBuf]) -> PathBuf {
             )
         })
         .collect();
-    let name = if names.is_empty() {
+    let mut name = if names.is_empty() {
         "base".to_string()
     } else {
         names.join("+")
     };
+    // File names stop at 255 bytes: a long list keeps its start and a hash
+    // of the whole (the full list is in its MERGE_REPORT.md).
+    if name.len() > 120 {
+        let hash = c2_mods::recipe::sha256(name.as_bytes());
+        let hash = hash.trim_start_matches("sha256:");
+        let start: String = name.chars().take(80).collect();
+        name = format!("{start}+{}-mods-{}", names.len(), &hash[..12.min(hash.len())]);
+    }
     crate::save::data_dir().join("packs").join(name)
 }
 
