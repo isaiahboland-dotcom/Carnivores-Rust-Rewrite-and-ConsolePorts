@@ -318,7 +318,8 @@ pub fn decode_texture(name: &str, data: &[u8]) -> Result<Rgba, FormatError> {
 }
 
 /// RGBA into a `.CAR` texture: 256 wide, `RGB555`, rows of the image
-/// (wider or narrower images are resampled to 256 columns).
+/// (wider or narrower images are resampled to 256 columns); dim
+/// see-through texels black.
 fn car_texture(img: &Rgba) -> Vec<u16> {
     let (w, h) = (img.width.max(1), img.height);
     let rows = h * TEXTURE_WIDTH / w;
@@ -328,9 +329,15 @@ fn car_texture(img: &Rgba) -> Vec<u16> {
             let (sx, sy) = (x * w / TEXTURE_WIDTH, y * w / TEXTURE_WIDTH);
             let i = (sy.min(h.saturating_sub(1)) * w + sx) * 4;
             let p = img.pixels.get(i..i + 4).unwrap_or(&[0, 0, 0, 0]);
-            out.push(
-                (u16::from(p[0] >> 3) << 10) | (u16::from(p[1] >> 3) << 5) | u16::from(p[2] >> 3),
-            );
+            // A see-through texel (alpha 0: the mobile games add its colour,
+            // a muzzle flash's glow) keeps its colour if bright, else goes
+            // black, the `.CAR`'s colour key on see-through faces.
+            let dim = (u16::from(p[0]) + u16::from(p[1]) + u16::from(p[2])) / 3 < 96;
+            out.push(if p[3] < 128 && dim {
+                0
+            } else {
+                (u16::from(p[0] >> 3) << 10) | (u16::from(p[1] >> 3) << 5) | u16::from(p[2] >> 3)
+            });
         }
     }
     out
@@ -403,6 +410,33 @@ pub fn decode_wav(data: &[u8]) -> Result<(Vec<u8>, u32), FormatError> {
     Ok((out, f.sample_rate))
 }
 
+/// Faces drawn mostly on see-through texels (the mobile games blend a
+/// muzzle flash by its texture's alpha) become what the PC uses for one:
+/// colour-keyed (`sfOpacity`, black see-through) and double-sided.
+fn mark_see_through(mesh: &mut Mesh, img: &Rgba) {
+    use crate::model::face_flags::{DOUBLE_SIDE, OPACITY};
+    let alpha = |u: i32, v: i32| {
+        let (w, h) = (img.width.max(1), img.height.max(1));
+        let x = (u.max(0) as usize * w / TEXTURE_WIDTH).min(w - 1);
+        let y = (v.max(0) as usize * w / TEXTURE_WIDTH).min(h - 1);
+        img.pixels.get((y * w + x) * 4 + 3).copied().unwrap_or(255)
+    };
+    for f in &mut mesh.faces {
+        let cu = (f.tu[0] + f.tu[1] + f.tu[2]) / 3;
+        let cv = (f.tv[0] + f.tv[1] + f.tv[2]) / 3;
+        let samples = [
+            alpha(cu, cv),
+            alpha(f.tu[0], f.tv[0]),
+            alpha(f.tu[1], f.tv[1]),
+            alpha(f.tu[2], f.tv[2]),
+        ];
+        let mean = samples.iter().map(|&a| u32::from(a)).sum::<u32>() / 4;
+        if mean < 160 {
+            f.flags |= OPACITY | DOUBLE_SIDE;
+        }
+    }
+}
+
 /// Files a character is made of, as asked of the APK.
 pub trait Assets {
     fn get(&self, path: &str) -> Option<Vec<u8>>;
@@ -412,18 +446,26 @@ pub trait Assets {
 /// texture, animations and sounds. Sounds at another rate than 22050 Hz
 /// are kept as they are (the caller resamples if it must).
 pub fn car_from(cat: &Cat, assets: &dyn Assets) -> Result<Car, FormatError> {
+    car_from_in(cat, assets, "characters")
+}
+
+/// [`car_from`] for a character whose files are in `kind` folders
+/// (`characters`, or `weapons` for the hunter's weapons).
+pub fn car_from_in(cat: &Cat, assets: &dyn Assets, kind: &str) -> Result<Car, FormatError> {
     let missing = |what: String| FormatError {
         offset: 0,
         context: what,
         kind: FormatErrorKind::UnexpectedEof { needed: 0 },
     };
-    let model_path = format!("assets/models/characters/{}", cat.model);
+    let model_path = format!("assets/models/{kind}/{}", cat.model);
     let (name, mut mesh) = parse_3dn(&assets.get(&model_path).ok_or_else(|| missing(model_path))?)?;
     let stem = cat.model.trim_end_matches(".3dn");
     for ext in ["pkm", "crt", "tga"] {
-        let p = format!("assets/textures/characters/{stem}.{ext}");
+        let p = format!("assets/textures/{kind}/{stem}.{ext}");
         if let Some(d) = assets.get(&p) {
-            mesh.texture = car_texture(&decode_texture(&p, &d)?);
+            let img = decode_texture(&p, &d)?;
+            mark_see_through(&mut mesh, &img);
+            mesh.texture = car_texture(&img);
             break;
         }
     }
@@ -431,7 +473,7 @@ pub fn car_from(cat: &Cat, assets: &dyn Assets) -> Result<Car, FormatError> {
     let mut animations = Vec::new();
     let mut anim_sounds = [-1i32; ANIFX_SLOTS];
     for (i, (file, sound)) in cat.animations.iter().enumerate() {
-        let p = format!("assets/animations/characters/{file}.ani");
+        let p = format!("assets/animations/{kind}/{file}.ani");
         let d = assets.get(&p).ok_or_else(|| missing(p))?;
         animations.push(parse_ani(&d, file, vc)?);
         if let (Some(s), Some(slot)) = (sound, anim_sounds.get_mut(i)) {
@@ -440,7 +482,7 @@ pub fn car_from(cat: &Cat, assets: &dyn Assets) -> Result<Car, FormatError> {
     }
     let mut sounds = Vec::new();
     for file in &cat.sounds {
-        let p = format!("assets/sounds/characters/{file}.wav");
+        let p = format!("assets/sounds/{kind}/{file}.wav");
         let pcm = match assets.get(&p) {
             Some(d) => decode_wav(&d)?.0,
             None => Vec::new(),

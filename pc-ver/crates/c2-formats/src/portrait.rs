@@ -1,13 +1,64 @@
-//! Menu pictures for animals that have none (roaming add-ons): the model in
-//! its rest pose, seen from the side and a little in front, textured and
-//! shaded, drawn in software on a transparent background.
+//! Menu pictures for animals and weapons that have none (roaming add-ons on
+//! the 3DS, imported mobile animals and weapons): the model in its rest
+//! pose, seen from the side and a little in front, textured and shaded,
+//! drawn in software on a transparent background.
 
-use c2_core::model::{PreparedModel, MODEL_TEXTURE_SIZE};
+use crate::model::{Mesh, TEXTURE_WIDTH};
 
-/// The model drawn into a `w` x `h` RGBA8 picture, filling the middle
+const MODEL_TEXTURE_SIZE: usize = TEXTURE_WIDTH;
+
+/// What the renderer needs of a model: positions in world units (`*2`,
+/// `z` flipped, as the engine loads them), faces with texture coordinates
+/// (0..1) and the texture as RGBA8, 256 x 256.
+struct PreparedModel {
+    positions: Vec<[f32; 3]>,
+    faces: Vec<Face>,
+    texture_rgba: Vec<u8>,
+}
+
+struct Face {
+    v: [u32; 3],
+    uv: [[f32; 2]; 3],
+}
+
+impl PreparedModel {
+    fn from_mesh(mesh: &Mesh) -> Self {
+        let n = mesh.vertices.len() as i64;
+        let mut texture_rgba = vec![0u8; MODEL_TEXTURE_SIZE * MODEL_TEXTURE_SIZE * 4];
+        for (i, px) in mesh
+            .texture
+            .iter()
+            .take(MODEL_TEXTURE_SIZE * MODEL_TEXTURE_SIZE)
+            .enumerate()
+        {
+            let c = |s: u16| ((((px >> s) & 31) << 3) | (((px >> s) & 31) >> 2)) as u8;
+            texture_rgba[i * 4..i * 4 + 4].copy_from_slice(&[c(10), c(5), c(0), 255]);
+        }
+        Self {
+            positions: mesh
+                .vertices
+                .iter()
+                .map(|v| [v.x * 2.0, v.y * 2.0, v.z * -2.0])
+                .collect(),
+            faces: mesh
+                .faces
+                .iter()
+                .filter(|f| f.v.iter().all(|&i| (0..n).contains(&i64::from(i))))
+                .map(|f| Face {
+                    v: f.v.map(|i| i as u32),
+                    uv: [0, 1, 2].map(|k| [f.tu[k] as f32 / 256.0, f.tv[k] as f32 / 256.0]),
+                })
+                .collect(),
+            texture_rgba,
+        }
+    }
+}
+
+/// The mesh drawn into a `w` x `h` RGBA8 picture, filling the middle
 /// `fill` of its width (the 3DS menu shows the middle 2/3 of a picture).
 /// `None` for a model with no faces.
-pub fn render(m: &PreparedModel, w: usize, h: usize, fill: f32) -> Option<Vec<u8>> {
+pub fn render(mesh: &Mesh, w: usize, h: usize, fill: f32) -> Option<Vec<u8>> {
+    let m = &PreparedModel::from_mesh(mesh);
     // Side view (screen x along the body, y up), turned 30 degrees.
     let (s, c) = 0.52f32.sin_cos();
     let view: Vec<[f32; 3]> = m
@@ -127,23 +178,34 @@ fn normalize(v: [f32; 3]) -> [f32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use c2_core::model::PreparedFace;
+    use crate::model::{Face as MeshFace, Vertex};
 
     #[test]
     fn a_triangle_fills_the_middle() {
-        let mut tex = vec![0u8; MODEL_TEXTURE_SIZE * MODEL_TEXTURE_SIZE * 4];
-        tex.chunks_mut(4)
-            .for_each(|p| p.copy_from_slice(&[200, 100, 50, 255]));
-        let m = PreparedModel {
-            positions: vec![[0.0, 0.0, -100.0], [0.0, 0.0, 100.0], [0.0, 80.0, 0.0]],
-            faces: vec![PreparedFace {
-                v: [0, 1, 2],
-                uv: [[0.1, 0.1], [0.9, 0.1], [0.5, 0.9]],
-                flags: 0,
-            }],
-            texture_rgba: tex,
+        let v = |x: f32, y: f32, z: f32| Vertex {
+            x,
+            y,
+            z,
+            owner: 0,
+            hide: 0,
         };
-        let px = render(&m, 64, 32, 0.5).unwrap_or_default();
+        let mesh = Mesh {
+            // Along z (the body), 80 high once loaded (`*2`).
+            vertices: vec![v(0.0, 0.0, 50.0), v(0.0, 0.0, -50.0), v(0.0, 40.0, 0.0)],
+            faces: vec![MeshFace {
+                v: [0, 1, 2],
+                tu: [25, 230, 128],
+                tv: [25, 25, 230],
+                flags: 0,
+                dmask: 0,
+                distant: 0,
+                next: 0,
+                group: 0,
+                reserved: [0; 12],
+            }],
+            texture: vec![0x7C00; MODEL_TEXTURE_SIZE * MODEL_TEXTURE_SIZE],
+        };
+        let px = render(&mesh, 64, 32, 0.5).unwrap_or_default();
         let at = |x: usize, y: usize| px[(y * 64 + x) * 4 + 3];
         // Filled in the middle; nothing at the sides.
         assert_eq!(at(32, 20), 255);

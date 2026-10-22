@@ -25,7 +25,6 @@ use c2_formats::cooked::{tile, write_pack, write_texture, TexFormat};
 use c2_vfs::{MemBackend, Vfs};
 
 mod check;
-mod portrait;
 
 const USAGE: &str = "usage:
   c2-cook --game <GAME_DIR> [--overlay DIR]... [--mod MOD]...
@@ -561,7 +560,7 @@ impl Cooker {
             return;
         };
         let (w, h) = (256, 256 * 208 / 357);
-        let Some(px) = portrait::render(&PreparedModel::from_mesh(&car.mesh), w, h, 0.6) else {
+        let Some(px) = c2_formats::portrait::render(&car.mesh, w, h, 0.6) else {
             return;
         };
         self.picture(name, &fit(&px, w, h, 128, h / 2, 128, 128), 128, 128);

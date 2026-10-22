@@ -534,6 +534,149 @@ fn mobile_balance(
     }
 }
 
+/// A picture of the model (side view), for what the APK has none of.
+fn model_picture(car: &c2_formats::car::Car) -> Option<(usize, usize, Vec<u8>)> {
+    let (w, h) = (357, 208);
+    c2_formats::portrait::render(&car.mesh, w, h, 0.8).map(|px| (w, h, px))
+}
+
+/// What a weapon import needs of the APK and the game.
+struct Weapon<'a> {
+    zip: &'a Apk,
+    res: &'a ResTxt,
+    menu: &'a MenuData,
+    values: &'a std::collections::BTreeMap<String, f64>,
+    price_k: f64,
+    apk: &'a Path,
+}
+
+impl Weapon<'_> {
+    /// A weapon the game doesn't have (the revolver) as an add-on: its
+    /// model, the Pistol's entry with the mobile game's stats, a menu
+    /// picture drawn from the model for the Pistol's slot (a slot of its
+    /// own next to it).
+    fn import(&self, cat: &Cat, stem: &str, out: &Path) -> Result<Option<Imported>, ModError> {
+        let weapons = self
+            .res
+            .section("weapons")
+            .map(|s| s.blocks.as_slice())
+            .unwrap_or_default();
+        let named = |n: &str| {
+            weapons.iter().find(|b| {
+                crate::res_merge::block_id(b).is_some_and(|id| id.eq_ignore_ascii_case(n))
+            })
+        };
+        let Some(donor) = named("Pistol").or(weapons.first()) else {
+            return Ok(None);
+        };
+        let donor_name = donor
+            .get(&["name"])
+            .map(|n| n.trim().trim_matches('\'').trim().to_string())
+            .unwrap_or_default();
+        let name = if cat.title.chars().any(|c| c.is_ascii_digit()) || cat.title.is_empty() {
+            let mut c = stem.chars();
+            c.next()
+                .map(|f| f.to_ascii_uppercase().to_string() + c.as_str())
+                .unwrap_or_default()
+        } else {
+            cat.title.clone()
+        };
+        let car = c2_formats::mobile::car_from_in(cat, self.zip, "weapons")?;
+        let car_file = format!("{}.CAR", stem.to_ascii_uppercase());
+        let dir = out.join(&name);
+        if dir.exists() {
+            std::fs::remove_dir_all(&dir).map_err(io(&dir))?;
+        }
+        std::fs::create_dir_all(dir.join("WEAPONS")).map_err(io(&dir))?;
+        let write = |file: &str, data: &[u8]| -> Result<(), ModError> {
+            let p = dir.join(file);
+            std::fs::write(&p, data).map_err(io(&p))
+        };
+        write(
+            &format!("WEAPONS/{car_file}"),
+            &c2_formats::car::write(&car),
+        )?;
+        let mut b = donor.clone();
+        set_key(&mut b, "name", format!("'{name}'"));
+        set_key(&mut b, "file", format!("'{car_file}'"));
+        let mut notes = Vec::new();
+        let stats = grouped(self.values, "WEAPON_");
+        match stats.iter().find(|(n, _)| same(n, &name) || same(n, stem)) {
+            Some((_, f)) => {
+                let dialect = c2_formats::mee::is_dialect(self.res);
+                for (field, keys) in [
+                    ("power", &["land_power", "power"][..]),
+                    ("prec", &["land_prec", "prec"][..]),
+                    ("rate", &["rate"][..]),
+                    ("shots", &["shots"][..]),
+                ] {
+                    let Some(v) = f.get(field) else { continue };
+                    let have: Vec<&str> = keys
+                        .iter()
+                        .copied()
+                        .filter(|k| b.get(&[k]).is_some())
+                        .collect();
+                    let fallback = if dialect {
+                        keys[0]
+                    } else {
+                        keys[keys.len() - 1]
+                    };
+                    for k in if have.is_empty() {
+                        vec![fallback]
+                    } else {
+                        have
+                    } {
+                        set_key(&mut b, k, format!("{v}"));
+                    }
+                }
+                if let Some(p) = f.get("price") {
+                    set_key(&mut b, "price", round_price(p * self.price_k).to_string());
+                }
+            }
+            None => notes.push(format!("no mobile values: the {donor_name}'s stats")),
+        }
+        write(
+            &format!("{name} _RES.txt"),
+            format!(
+                "// {name}, imported from your copy of the mobile game ({}).\r\n\
+                 // Modder's Edition weapon entry, from the {donor_name}'s.\r\n\r\n{}",
+                self.apk
+                    .file_name()
+                    .map(|f| f.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                write_block(&b)
+            )
+            .as_bytes(),
+        )?;
+        let slot = self
+            .menu
+            .weapons
+            .iter()
+            .position(|w| w.name.eq_ignore_ascii_case(&donor_name))
+            .map(|i| i + 1);
+        match (slot, model_picture(&car)) {
+            (Some(n), Some((w, h, px))) => {
+                write(&format!("WEAPON{n}.TGA"), &menu_picture(w, h, &px))?;
+            }
+            _ => notes.push("no menu slot: it isn't offered".into()),
+        }
+        write(
+            "README.txt",
+            format!(
+                "{name}: imported by c2rs from your own copy of the mobile game.\r\n\
+                 For your own use only: don't share these files.\r\n"
+            )
+            .as_bytes(),
+        )?;
+        Ok(Some(Imported {
+            name,
+            dir,
+            donor: donor_name,
+            notes,
+        }))
+    }
+}
+
 /// Sets `key` in an entry (replacing every value it had).
 fn set_key(b: &mut Block, key: &str, value: String) {
     b.entries.retain(|e| !e.key.eq_ignore_ascii_case(key));
@@ -597,6 +740,28 @@ pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Vec<Imported>, ModEr
             .trim_end_matches(".3dn")
             .trim_end_matches("_model")
             .to_ascii_lowercase();
+        // A weapon (its model in `weapons`): new when the game has no
+        // weapon model of that name (the revolver).
+        if zip
+            .get(&format!("assets/models/weapons/{}", cat.model))
+            .is_some()
+        {
+            if base
+                .resolve(&format!("HUNTDAT/WEAPONS/{stem}.car"))
+                .is_none()
+            {
+                let w = Weapon {
+                    zip: &zip,
+                    res: &res,
+                    menu: &menu,
+                    values: &values,
+                    price_k: pk,
+                    apk,
+                };
+                done.extend(w.import(&cat, &stem, out)?);
+            }
+            continue;
+        }
         let has = base.resolve(&format!("HUNTDAT/{stem}.car")).is_some();
         if !is_animal(&cat) || has {
             continue;
@@ -695,9 +860,11 @@ pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Vec<Imported>, ModEr
                     })
                     .and_then(|f| zip.get(f))
                     .and_then(|d| decode_png(&d));
+                // None in the APK: one drawn from the model.
+                let pic = pic.or_else(|| model_picture(&car));
                 match pic {
                     Some((w, h, px)) => write(&format!("DINO{n}.TGA"), &menu_picture(w, h, &px))?,
-                    None => notes.push("no menu picture in the APK".into()),
+                    None => notes.push("no menu picture".into()),
                 }
                 // Its calls: the `callN` set with its call (or growl) in
                 // it, else its own `<name>_call.wav` (not always listed).
