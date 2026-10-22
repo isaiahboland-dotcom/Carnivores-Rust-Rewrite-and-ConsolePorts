@@ -34,9 +34,10 @@ pub enum Role {
 pub const ROAM_SLOT0: usize = 64;
 
 /// A roaming add-on as a hunt target: its character (`_RES.TXT` index),
-/// the call slot it is hunted under (`ROAM_SLOT0` on, so it is a target,
-/// shows on the radar and answers that call), and the menu slot of an
-/// animal with its AI whose call and price it borrows.
+/// the call slot it is hunted under (`ROAM_SLOT0` on, so it is a target
+/// and shows on the radar; the slot is never called, as its add-on
+/// supplies no call), and the menu slot of an animal with its AI whose
+/// price it takes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Roam {
     pub char: usize,

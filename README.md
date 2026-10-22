@@ -475,8 +475,8 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] Modder's Edition rules resolved per hunt on the 3DS; roaming add-ons pickable; main and video memory checked per pick
   - [x] `c2-cook --check`; big add-on animations thinned for Old 3DS
   - [x] tested on hardware (owner, 2026-10-22)
-  - [x] roaming add-ons are full hunt targets: own call slot, a donor's call and price, a menu picture drawn
-        from the model
+  - [x] roaming add-ons are full hunt targets: no call (as their add-ons supply none), +10% score, a menu
+        picture drawn from the model; Modder's Edition games no longer halve non-target kills
 - [ ] M10 Launchers: PC game manager and 3DS pack builder — **in progress**
   - [x] `c2-launcher` (PC, 3DS section on request) and `c2-3ds-builder` (3DS only), egui, the game menus' colours
   - [x] game folder and overlays (drop, browse or paste), add-ons (folders, .zip/.rar/.7z; order, on/off), Play

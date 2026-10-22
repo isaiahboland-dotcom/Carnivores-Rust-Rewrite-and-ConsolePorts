@@ -346,6 +346,7 @@ impl HuntView {
             blood: setup.pc.blood != 0,
             death_anim: setup.pc.death_anim != 0,
             afraid_every: 1,
+            no_call_bonus: 0,
         };
         let mut opts = opts;
         opts.render_r = if trophy {

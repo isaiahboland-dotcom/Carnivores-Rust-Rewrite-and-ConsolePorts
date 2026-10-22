@@ -95,7 +95,8 @@ enum Pick {
     /// A menu slot: a hunt target (call id 10 + slot).
     Slot(usize),
     /// An add-on that roams (no menu slot): hunted under its own call
-    /// slot, with a picture `c2-cook` renders from its model.
+    /// slot, which can't be called (+10% score), with a picture `c2-cook`
+    /// renders from its model.
     Roamer(Roam),
 }
 
@@ -230,7 +231,7 @@ impl Menu {
             let key = &neutral.keys[r.char];
             let cooked = info.costs.contains_key(&format!("m:{key}"));
             if cooked && !dinos.iter().any(|d| d.1.name == name) {
-                // Priced as the animal whose call it borrows.
+                // Priced as the menu animal with its AI.
                 let price = r
                     .donor
                     .and_then(|k| menu.huntables.get(k))
@@ -509,6 +510,13 @@ impl Menu {
         if let Err(e) = crate::save::store(&self.save) {
             self.message = Some(format!("save failed: {e}"));
         }
+    }
+
+    fn roamer_picked(&self) -> bool {
+        self.dinos
+            .iter()
+            .enumerate()
+            .any(|(i, d)| matches!(d.0, Pick::Roamer(_)) && self.picked_dinos & (1 << i) != 0)
     }
 
     /// "Native to Area 2, Area 3" (picked, it comes on any map).
@@ -939,6 +947,15 @@ impl Menu {
             }
             c.text_c(gpu, 160.0, y, 1.0, col, &l);
         }
+        // A roaming add-on picked: its add-on supplies no call.
+        if step == Step::Animals && self.roamer_picked() {
+            for (k, l) in ["No calls supplied,", "proceed with caution"]
+                .iter()
+                .enumerate()
+            {
+                c.text_c(gpu, 160.0, BAR_Y + 2.0 + k as f32 * 11.0, 1.0, GOLD, l);
+            }
+        }
         let next = match step {
             Step::Area if self.trophy() => "Enter",
             Step::Gear => "HUNT",
@@ -1205,7 +1222,10 @@ impl Menu {
                 .iter()
                 .enumerate()
                 .filter(|(i, _)| self.picked_dinos & (1 << i) != 0)
-                .map(|(_, d)| (d.1.name.clone(), d.1.price))
+                .map(|(_, d)| match d.0 {
+                    Pick::Roamer(_) => (format!("{} (no call, +10%)", d.1.name), d.1.price),
+                    Pick::Slot(_) => (d.1.name.clone(), d.1.price),
+                })
                 .collect();
             list(&mut c, gpu, "Animals", dinos);
             list(

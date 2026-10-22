@@ -273,6 +273,9 @@ pub struct HuntOptions {
     /// second, as the original did once a frame at 25 fps). Its look
     /// traces are the costliest part of a tick on an Old 3DS.
     pub afraid_every: u32,
+    /// Bit `10 + slot` per call slot whose kills score +10% (not in the
+    /// original; the 3DS's roaming add-ons, hunted with no call).
+    pub no_call_bonus: u128,
 }
 
 impl Default for HuntOptions {
@@ -294,6 +297,7 @@ impl Default for HuntOptions {
             blood: true,
             death_anim: true,
             afraid_every: 1,
+            no_call_bonus: 0,
         }
     }
 }
@@ -778,13 +782,24 @@ impl Hunt {
         if self.successes > 1 {
             score *= 1.0 + self.successes as f32 / 10.0;
         }
-        if !self.is_target(c) {
+        // The original halves a kill that isn't a target; the Modder's
+        // Edition doesn't (`SubmitDinoScore`: the line is commented out).
+        let dialect = self
+            .herd
+            .species
+            .get(c.ctype)
+            .is_some_and(|s| s.tuning.mee_ai.is_some());
+        if !dialect && !self.is_target(c) {
             score /= 2.0;
         }
-        // Night: +10% (not in the original; owner's request).
+        let no_call = self.call_bit(c).is_some_and(|b| {
+            self.opts.no_call_bonus & 1u128.checked_shl(b as u32).unwrap_or(0) != 0
+        });
+        // Night and no-call: +10% each (not in the original; owner's requests).
         for (on, k) in [
             (self.opts.tranq, 1.25),
             (area.time == crate::area::TimeOfDay::Night, 1.10),
+            (no_call, 1.10),
             (self.opts.radar, 0.70),
             (self.opts.scent, 0.80),
             (self.opts.camo, 0.85),
@@ -1773,13 +1788,20 @@ impl Hunt {
         let Some(sp) = self.herd.species.get(c.ctype) else {
             return false;
         };
-        let bit = match &sp.mee {
+        sp.tuning.radar.unwrap_or_else(|| {
+            self.call_bit(c)
+                .is_some_and(|b| self.opts.targets & 1u128.checked_shl(b as u32).unwrap_or(0) != 0)
+        })
+    }
+
+    /// The target bit (call id) `c` is picked by: `10 + callNo` in Modder's
+    /// Edition data, its AI in the original's.
+    pub fn call_bit(&self, c: &crate::dino::Character) -> Option<i32> {
+        let sp = self.herd.species.get(c.ctype)?;
+        Some(match &sp.mee {
             Some(m) => 10 + m.call_no,
             None => c.ai,
-        };
-        sp.tuning
-            .radar
-            .unwrap_or_else(|| self.opts.targets & 1u128.checked_shl(bit as u32).unwrap_or(0) != 0)
+        })
     }
 
     /// A huntable animal (a menu animal, picked or not), not an ambient,
@@ -2127,6 +2149,25 @@ mod tests {
             hunt.tick(&area, &[], &HuntInput::default(), 10, &mut out);
         }
         assert!(!hunt.effects.blood.is_empty());
+    }
+
+    #[test]
+    fn non_targets_score_half_only_in_the_original() {
+        let score = |dialect: bool, targets: u128, bonus: u128| {
+            let (area, mut hunt, _) = setup(false);
+            hunt.herd.species[1].info.base_score = 100.0;
+            if dialect {
+                hunt.herd.species[1].tuning.mee_ai = Some(ai::STEGO);
+            }
+            (hunt.opts.targets, hunt.opts.no_call_bonus) = (targets, bonus);
+            hunt.add_ship_task(&area, 0, &mut Vec::new());
+            hunt.room.score
+        };
+        let stego = 1u128 << ai::STEGO;
+        assert_eq!(score(false, stego, 0), 100);
+        assert_eq!(score(false, 0, 0), 50);
+        assert_eq!(score(true, 0, 0), 100);
+        assert_eq!(score(true, stego, stego), 110);
     }
 
     #[test]

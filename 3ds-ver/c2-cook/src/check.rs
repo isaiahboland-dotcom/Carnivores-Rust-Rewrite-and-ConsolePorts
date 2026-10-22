@@ -67,8 +67,7 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
             .name
             .clone()
             .unwrap_or_default();
-        let call = if r.donor.is_some() { "" } else { ", no call" };
-        picks.push((format!("{name} (roams{call})"), 1 << (r.slot + 10), vec![r]));
+        picks.push((format!("{name} (roams)"), 1 << (r.slot + 10), vec![r]));
     }
     if let Some(name) = bench {
         picks.retain(|p| {

@@ -2,6 +2,23 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-22 — No borrowed calls for roamers; the dialect never halves a score
+Owner's calls after playing the roamers on hardware:
+- **Roamers have no call**, as in the Modder's Edition: it loads calls
+  only per menu slot (`CharacterLoader.cpp`: `call%d.tga`,
+  `call%d_a.wav` for slots 1-10), and these add-ons set no `callNo` and
+  ship no call files. The borrowed donor call (entry below) is gone; the
+  roamer keeps its slot (target, loading) but the slot can't be called
+  (`Setup::callable`). The donor now only sets the price.
+- **+10% score** for such a kill (`HuntOptions::no_call_bonus`), as for
+  night. Menu: a blue rim, "No calls supplied, proceed with caution" while
+  one is picked, "(no call, +10%)" on the top screen. Hunt map: blue with a
+  gold rim.
+- **Non-target kills keep their full score in dialect games** (PC and
+  3DS). Both the upstream source (`Game.cpp`) and the modernized fork
+  (`EngineInit.cpp: SubmitDinoScore`) comment out the original's halving.
+  Original-data hunts still halve, as retail does.
+
 ## 2026-10-22 — Roaming add-ons are hunt targets on the 3DS
 A picked roaming add-on (huntable AI, no menu slot) spawned but scored half,
 had no call and no menu picture. Its `callNo` also defaulted to 0, so it

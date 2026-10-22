@@ -80,8 +80,8 @@ impl Ui {
         };
         let calls = (10..128)
             .filter(|ai| game.hunt.opts.targets & (1 << ai) != 0)
-            .filter_map(|ai| Some((ai, game.setup.call_of(ai)?)))
-            .map(|(ai, icon)| (ai, load(vfs, &format!("C2RS/CALL{icon}.TX"))))
+            .filter(|&ai| game.setup.callable(ai))
+            .map(|ai| (ai, load(vfs, &format!("C2RS/CALL{ai}.TX"))))
             .collect();
         Self {
             c: Canvas::new(load(vfs, "C2RS/FONT.TX")),
@@ -373,9 +373,10 @@ fn draw_map(c: &mut Canvas, gpu: &mut Gpu, game: &Game, map: Option<&Texture>, l
         let a = i as f32 / 48.0 * std::f32::consts::TAU;
         dot(hx + a.cos() * r, hy + a.sin() * r, 1.5, [0, 144, 0, 255]);
     }
-    // Animals within view range: the hunted ones green, other huntable
-    // ones (spawned anyway) blue, the rest pale. With
-    // the radar, the green and blue ones everywhere (`DrawHMap`'s blips).
+    // Animals within view range: the hunted ones green (roaming add-ons,
+    // which have no call, blue with a gold rim), other huntable ones
+    // (spawned anyway) blue, the rest pale. With the radar, the green and
+    // blue ones everywhere (`DrawHMap`'s blips).
     let range = h.opts.view_r as f32 * CELL;
     for ch in &h.herd.chars {
         let (dx, dz) = (ch.pos[0] - p.x, ch.pos[2] - p.z);
@@ -386,7 +387,13 @@ fn draw_map(c: &mut Canvas, gpu: &mut Gpu, game: &Game, map: Option<&Texture>, l
             continue;
         }
         let (x, y) = to_screen(px(ch.pos[0]), px(ch.pos[2]));
-        if target {
+        let no_call = h
+            .call_bit(ch)
+            .is_some_and(|b| h.opts.no_call_bonus & 1u128.checked_shl(b as u32).unwrap_or(0) != 0);
+        if target && no_call {
+            dot(x, y, 5.0, [250, 200, 60, 255]);
+            dot(x, y, 4.0, [60, 140, 255, 255]);
+        } else if target {
             dot(x, y, 4.0, [0, 248, 0, 255]);
         } else if huntable {
             dot(x, y, 4.0, [60, 140, 255, 255]);

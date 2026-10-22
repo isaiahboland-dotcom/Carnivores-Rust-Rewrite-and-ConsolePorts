@@ -164,13 +164,10 @@ impl Setup {
             }
     }
 
-    /// Whose call sound and icon call id `id` uses: its own, or for a
-    /// roamer its donor's (`None`: a roamer with no donor, no call).
-    pub fn call_of(&self, id: i32) -> Option<i32> {
-        match self.roamers.iter().find(|r| r.slot as i32 + 10 == id) {
-            Some(r) => r.donor.map(|k| k as i32 + 10),
-            None => Some(id),
-        }
+    /// Whether call id `id` can be called: roamers' slots can't (their
+    /// add-ons supply no call; they score +10% instead).
+    pub fn callable(&self, id: i32) -> bool {
+        !self.roamers.iter().any(|r| r.slot as i32 + 10 == id)
     }
 
     pub fn carried(&self) -> Vec<usize> {
@@ -336,6 +333,11 @@ fn new_hunt(
         blood: setup.blood,
         death_anim: setup.death_anim,
         afraid_every: 2,
+        no_call_bonus: setup
+            .roamers
+            .iter()
+            .filter(|r| r.slot < 118)
+            .fold(0, |m, r| m | 1 << (r.slot + 10)),
     };
     let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
     hunt.ship_anim_ms = ship_ms;
@@ -478,7 +480,7 @@ impl Game {
             toggle_weapon: pad.toggle_weapon,
             select_weapon: select,
             toggle_binoculars: pad.binoculars,
-            call: pad.call,
+            call: pad.call && self.setup.callable(self.hunt.target_call),
             ..Default::default()
         };
         // At most `MAX_TICKS` per frame: past that the game slows down
