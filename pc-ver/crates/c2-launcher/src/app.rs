@@ -306,8 +306,8 @@ impl Launcher {
             ui.label("Survival:");
             for (m, name) in [
                 (SurvivalModes::Ours, "Ours"),
-                (SurvivalModes::Mobile, "Mobile"),
-                (SurvivalModes::Both, "Both (choose in the game)"),
+                (SurvivalModes::Mobile, "Classic (mobile)"),
+                (SurvivalModes::Both, "Both"),
             ] {
                 let r = ui.add_enabled(
                     have || m == SurvivalModes::Ours,
@@ -325,8 +325,9 @@ impl Launcher {
         help(
             ui,
             if have {
-                "Mobile: the mobile game's own Survive mode, read from your APK (its waves, on \
-                 Mount Ravan). Ours: waves of the animals you pick, hardcore and custom kinds."
+                "Classic: the mobile game's own Survive mode, read from your APK (its waves on \
+                 Mount Ravan, straight in with the shotgun). Ours: random dangerous animals on a \
+                 random area, you pick the guns; hardcore and custom kinds. Both: a button each."
             } else {
                 "The mobile game's Survive mode comes with importing your Carnivores 2 (Dinosaur \
                  Hunter) APK (Add-ons tab); until then, ours only."

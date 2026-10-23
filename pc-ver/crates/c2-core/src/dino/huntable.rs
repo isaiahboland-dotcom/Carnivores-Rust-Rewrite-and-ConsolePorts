@@ -108,12 +108,14 @@ pub fn animate(
                 }
                 (a.agress_multi * m.aggress + ctx.opt_agres / 8) as f32
             };
-            let mut flee = pdist > a_dist
-                || m.aggress <= 0
-                || !c.aware_hunter
-                || (m.defensive && !c.damaged)
-                || (m.fear_shot && c.damaged)
-                || (m.fear_hear_shot && c.heard_shot);
+            // A survival wave's never backs off (ours).
+            let mut flee = c.wave == 0
+                && (pdist > a_dist
+                    || m.aggress <= 0
+                    || !c.aware_hunter
+                    || (m.defensive && !c.damaged)
+                    || (m.fear_shot && c.damaged)
+                    || (m.fear_hear_shot && c.heard_shot));
             if !flee {
                 if let Some(p) = w.pack.as_deref_mut() {
                     p.attack = true;

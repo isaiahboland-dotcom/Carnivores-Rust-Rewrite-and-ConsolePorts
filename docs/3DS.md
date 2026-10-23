@@ -39,14 +39,15 @@ The title screen shows the original's main menu art with your hunter's
 record; the bottom screen has **Play**, **Survival**, **Hunter**,
 **Trophies** (the trophy room), **Settings** and **Quit**.
 
-**Survival** goes through the same steps for free: pick at least one animal
-that hunts you; waves of them come, bigger each time (at most 6), with
-health and ammunition back between waves. The options page switches
-Survival / Hardcore (1–3 mods' animals join each wave; the top screen names
-them) / Custom (unlimited ammunition, the T-Rex from wave 15). No trophies;
-your kills and best wave go in the record. With the mobile game's Survive mode
-imported from your Carnivores 2 APK (launcher: Survival Mobile or Both),
-"Survival: mobile" is its waves on Mount Ravan.
+**Survival** is free and shows only the gun screen: the button where Tranq /
+Observe usually are switches Survival / Hardcore (1–3 mods' animals join each
+wave) / Custom (unlimited ammunition, the T-Rex from wave 15). The area, time
+of day and up to three dangerous animals are picked at random; waves of them
+come, bigger each time (at most 6), always after you, with health and
+ammunition back between waves. **Classic** (with the mobile game's Survive
+mode imported from your Carnivores 2 APK; launcher: Classic or Both) starts
+at once: its waves on Mount Ravan, with the shotgun. No trophies; your kills
+and best wave go in the record.
 
 **Settings** (kept in `/3ds/c2rs/settings.txt`):
 - **Dinosaur run speed**, 50–100%: every species' running speed times the

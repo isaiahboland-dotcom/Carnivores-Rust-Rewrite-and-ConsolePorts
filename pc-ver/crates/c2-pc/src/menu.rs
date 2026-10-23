@@ -461,17 +461,26 @@ pub struct Survivals {
 
 pub static SURVIVALS: std::sync::OnceLock<Survivals> = std::sync::OnceLock::new();
 
-/// The survivals the switch goes through, in order.
-fn survival_kinds() -> Vec<SurvivalKind> {
-    let s = SURVIVALS.get();
-    let mut v = Vec::new();
-    if s.is_none_or(|s| s.ours || s.mobile.is_none()) {
-        v.extend(SurvivalKind::ALL);
-    }
-    if s.is_some_and(|s| s.mobile.is_some()) {
-        v.push(SurvivalKind::Mobile);
-    }
-    v
+/// Our survival offered (its button on the main menu).
+fn ours_offered() -> bool {
+    SURVIVALS.get().is_none_or(|s| s.ours || s.mobile.is_none())
+}
+
+/// The classic (mobile) survival, if offered.
+fn classic() -> Option<c2_formats::mobile_arcade::Survive> {
+    SURVIVALS.get().and_then(|s| s.mobile.clone())
+}
+
+/// Main menu buttons (ours, under the original's): survival (to the gun
+/// pick) and classic survival (straight in with the shotgun).
+const SURVIVAL_BUTTON: Rect = (330.0, 518.0, 260.0, 30.0);
+const CLASSIC_BUTTON: Rect = (330.0, 554.0, 260.0, 30.0);
+
+/// A seed from the clock (random area and time of a survival).
+fn clock_seed() -> u32 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(1, |d| d.subsec_nanos() ^ d.as_secs() as u32)
 }
 
 mod mobile;
@@ -1107,6 +1116,19 @@ impl Menu {
         if !input.clicked {
             return;
         }
+        if inside(self.cursor, SURVIVAL_BUTTON) && ours_offered() {
+            self.choice.survival = Some(SurvivalKind::Normal);
+            self.choice.observer = false;
+            self.choice.focus = None;
+            self.screen = Screen::Setup;
+            return;
+        }
+        if inside(self.cursor, CLASSIC_BUTTON) {
+            if let Some(m) = classic() {
+                self.launch_classic(&m);
+            }
+            return;
+        }
         // The name field: change hunter.
         if inside(self.cursor, (84.0, 4.0, 272.0, 34.0)) {
             self.name = self.me().map(|p| p.player_name()).unwrap_or_default();
@@ -1115,7 +1137,10 @@ impl Menu {
             return;
         }
         match region {
-            1 => self.screen = Screen::Setup,
+            1 => {
+                self.choice.survival = None;
+                self.screen = Screen::Setup;
+            }
             2 => self.screen = Screen::Options,
             3 => {
                 if let Some(trophy) =
@@ -1137,22 +1162,14 @@ impl Menu {
     }
 
     fn update_setup(&mut self, input: &Input, region: u8) {
-        let on_mode = inside(self.cursor, MODE_RECT);
+        let on_mode = inside(self.cursor, MODE_RECT) && self.choice.survival.is_some();
         let region = if on_mode { 0 } else { region };
         if input.clicked && on_mode {
-            // Hunt -> survival -> hardcore -> custom -> mobile -> hunt (as
-            // offered).
-            let all = survival_kinds();
-            self.choice.survival = match self.choice.survival {
-                None => Some(all[0]),
-                Some(k) => all
-                    .iter()
-                    .position(|&a| a == k)
-                    .and_then(|i| all.get(i + 1))
-                    .copied(),
-            };
-            if self.choice.survival.is_some() {
-                self.choice.observer = false;
+            // Survival -> hardcore -> custom -> survival.
+            let all = SurvivalKind::ALL;
+            if let Some(k) = self.choice.survival {
+                let i = all.iter().position(|&a| a == k).unwrap_or(0);
+                self.choice.survival = Some(all[(i + 1) % all.len()]);
             }
             return;
         }
@@ -1173,12 +1190,22 @@ impl Menu {
             }
         }
         // Hovering a list item shows it.
+        let survival = self.choice.survival.is_some();
         for col in 0..self.columns.len() {
-            if let Some(r) = self.row_at(col) {
+            if let Some(r) = self.row_at(col).filter(|_| !survival || col == 2) {
                 self.choice.focus = Some((col, r));
             }
         }
         if !input.clicked {
+            return;
+        }
+        // A survival: only the guns are picked (the rest is random).
+        if survival {
+            if region == 8 && self.can_hunt() {
+                self.launch_hunt();
+            } else if let Some(r) = self.row_at(2) {
+                self.pick(2, r);
+            }
             return;
         }
         match region {
@@ -1252,31 +1279,61 @@ impl Menu {
     /// Starts the hunt the choices describe.
     fn launch_hunt(&mut self) {
         self.save_equipment();
-        let c = self.choice.clone();
+        let mut c = self.choice.clone();
+        // A survival: a random area and time of day, every animal there to
+        // draw on, no gear.
+        if c.survival.is_some() {
+            let seed = clock_seed() as usize;
+            c.area = seed % self.areas.len().max(1);
+            c.time = seed / 7 % 3;
+            c.dinos = u128::MAX >> 10;
+            c.equip = 0;
+        }
         let time = [TimeOfDay::Dusk, TimeOfDay::Day, TimeOfDay::Night][c.time];
         let (targets, weapons) = if c.observer {
             (0, 0)
         } else {
             (c.dinos << 10, c.weapons)
         };
-        let mut map = self.areas[c.area].clone();
-        // The mobile survival is on its own area (Mount Ravan).
-        let mobile = SURVIVALS.get().and_then(|s| s.mobile.clone());
-        if let (Some(SurvivalKind::Mobile), Some(m)) = (c.survival, &mobile) {
-            let name = format!("AREA{}.MAP", m.area);
-            match self.areas.iter().find(|a| {
-                a.file_name()
-                    .is_some_and(|f| f.to_string_lossy().eq_ignore_ascii_case(&name))
-            }) {
-                Some(a) => map = a.clone(),
-                None => return,
-            }
-        }
+        let map = self.areas[c.area].clone();
         let double = !c.observer && c.equip & 8 != 0;
         self.start(map, time, targets, weapons, double, c.observer);
         if let Some(l) = &mut self.launch {
             l.survival = c.survival;
-            l.mobile_survival = mobile;
+        }
+    }
+
+    /// Classic survival (the mobile game's): straight in, on its area, with
+    /// the shotgun.
+    fn launch_classic(&mut self, m: &c2_formats::mobile_arcade::Survive) {
+        let name = format!("AREA{}.MAP", m.area);
+        let Some(map) = self.areas.iter().find(|a| {
+            a.file_name()
+                .is_some_and(|f| f.to_string_lossy().eq_ignore_ascii_case(&name))
+        }) else {
+            return;
+        };
+        let names = &self.columns[2].names;
+        let shotgun = names
+            .iter()
+            .position(|n| n.trim().eq_ignore_ascii_case("shotgun"))
+            .or_else(|| {
+                names
+                    .iter()
+                    .position(|n| n.to_ascii_lowercase().contains("shotgun"))
+            })
+            .unwrap_or(0);
+        self.start(
+            map.clone(),
+            TimeOfDay::Day,
+            u128::MAX,
+            1 << shotgun,
+            false,
+            false,
+        );
+        if let Some(l) = &mut self.launch {
+            l.survival = Some(SurvivalKind::Mobile);
+            l.mobile_survival = Some(m.clone());
         }
     }
 
@@ -1540,6 +1597,20 @@ impl Menu {
         let Some(p) = self.me() else { return };
         self.text(out, 92.0, 14.0, 16.0, SAND, &p.player_name());
         self.text(out, 474.0, 14.0, 16.0, SAND, &p.score.to_string());
+        // Our survival buttons.
+        let mut buttons = Vec::new();
+        if ours_offered() {
+            buttons.push((SURVIVAL_BUTTON, "SURVIVAL"));
+        }
+        if classic().is_some() {
+            buttons.push((CLASSIC_BUTTON, "CLASSIC SURVIVAL"));
+        }
+        for (r, label) in buttons {
+            self.fill(out, r, [0.0, 0.0, 0.0, 0.6]);
+            let col = if inside(self.cursor, r) { HOVER } else { SAND };
+            let x = r.0 + (r.2 - self.text_width(16.0, label)) / 2.0;
+            self.text(out, x, r.1 + 7.0, 16.0, col, label);
+        }
         if !self.stats {
             return;
         }
@@ -1604,7 +1675,7 @@ impl Menu {
     }
 
     fn draw_setup(&self, out: &mut Vec<Sprite>, region: u8) {
-        let on_mode = inside(self.cursor, MODE_RECT);
+        let on_mode = inside(self.cursor, MODE_RECT) && self.choice.survival.is_some();
         let region = if on_mode { 0 } else { region };
         let c = &self.choice;
         let mut lit = vec![region, c.time as u8 + 1];
@@ -1642,6 +1713,13 @@ impl Menu {
         }
         let us = self.me().is_some_and(|s| s.options.sys != 0);
         for (ci, col) in self.columns.iter().enumerate() {
+            // A survival: only the guns; the rest is random.
+            if c.survival.is_some() && ci != 2 {
+                let note = ["Random area", "Random animals", "", "-"][ci.min(3)];
+                let note = if ci == 1 { "Random, dangerous" } else { note };
+                self.text(out, col.rect.0 + 6.0, col.rect.1 + 6.0, 12.0, DIM, note);
+                continue;
+            }
             let mask = self.picked_mask(ci);
             let hover_row = self.row_at(ci);
             let shown = col.scroll..col.scroll + col.visible();
@@ -1681,12 +1759,12 @@ impl Menu {
                 self.text(out, mid, col.rect.1 + col.rect.3 - 8.0, 12.0, TEXT, "v");
             }
         }
-        // Our hunt / survival switch.
-        let mode = c.survival.map_or("HUNT", |k| match k {
+        // Our survival switch (a survival only).
+        let mode = c.survival.map_or("", |k| match k {
             SurvivalKind::Normal => "SURVIVAL",
             SurvivalKind::Hardcore => "SURVIVAL: HARDCORE",
             SurvivalKind::Custom => "SURVIVAL: CUSTOM",
-            SurvivalKind::Mobile => "SURVIVAL: MOBILE",
+            SurvivalKind::Mobile => "CLASSIC SURVIVAL",
         });
         let mc = if on_mode {
             HOVER
@@ -1698,36 +1776,23 @@ impl Menu {
         let (mx, my, mw, _) = MODE_RECT;
         let mx = mx + (mw - self.text_width(14.0, mode)) / 2.0;
         self.text(out, mx, my + 8.0, 14.0, mc, mode);
-        let mobile_text = [
-            "The mobile game's Survive mode (read",
-            "from your APK): its waves, in turn,",
-            "on Mount Ravan, whatever area is",
-            "picked. Chasmosaurs, allosaurs,",
-            "raptors, spinosaurs, ceratosaurs.",
+        let mode_text: Vec<String> = [
+            "Survival (click to change the kind).",
+            "",
+            "Waves of dangerous animals, picked",
+            "at random, come for you, more each",
+            "wave, on a random area. Health and",
+            "ammunition come back between waves.",
             "Free; no trophies or score.",
-        ];
-        let mode_text: Vec<String> = if c.survival == Some(SurvivalKind::Mobile) {
-            mobile_text.map(String::from).to_vec()
-        } else {
-            [
-                "Hunt or survive (click to change).",
-                "",
-                "Survival: waves of hunting animals",
-                "come for you, more each wave. Health",
-                "and ammunition come back between",
-                "waves. Free; no trophies or score.",
-                "The animals picked come (none: all",
-                "but the T-Rex).",
-                "Hardcore: 1-3 mods' animals join",
-                "each wave. Custom: unlimited ammo,",
-                "and the T-Rex from wave 15.",
-            ]
-            .map(String::from)
-            .to_vec()
-        };
+            "Hardcore: 1-3 mods' animals join",
+            "each wave. Custom: unlimited ammo,",
+            "and the T-Rex from wave 15.",
+        ]
+        .map(String::from)
+        .to_vec();
         // The view and info panels: the focused item, or a hovered toggle.
         let (pic, text): (Option<usize>, &[String]) = match region {
-            _ if on_mode => (None, &mode_text),
+            _ if on_mode || (c.survival.is_some() && c.focus.is_none()) => (None, &mode_text),
             1..=3 => (None, &self.day_texts[region as usize - 1]),
             4 => (None, &self.fog_text),
             5 => (None, &self.tranq_text),

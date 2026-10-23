@@ -2,6 +2,22 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-23 — M13: survival as the owner wants it
+- **Ours**: the only screen is the gun pick (PC: the setup screen with only
+  the weapons list, the kind switch in the bottom bar; 3DS: the gear screen,
+  the kind in place of Tranq / Observe). The area and time of day are random;
+  the waves are random **dangerous** animals: the original's hunters and its
+  Chasmosaurus, or in a dialect game a carnivore AI or any huntable with an
+  attack (`aggress` > 0); the T-Rex only as custom's. Wave animals never back
+  off (`Character::wave` stops the dialect's flee rule and makes the
+  Chasmosaurus charge). PC: every dangerous animal of the game can come; 3DS:
+  up to three at random that fit in memory (plus hardcore's / custom's).
+- **Classic** (the mobile one): no screen; straight in on Mount Ravan with
+  the shotgun (the weapon named "Shotgun", else the first with "shotgun").
+- Entry: PC main menu SURVIVAL / CLASSIC SURVIVAL (our text under the
+  original's buttons); 3DS title SURVIVAL / CLASSIC (one button if only one
+  is offered). The launcher's choice says which.
+
 ## 2026-10-23 — M13: the mobile game's Survive mode, from the player's APK
 - **What it is** (read from `libdinHunter.so`, `c2_formats::mobile_arcade`):
   `Game::ArcadeGameGenerateWave` is a switch over 19 waves (then one for

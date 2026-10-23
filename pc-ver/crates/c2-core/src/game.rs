@@ -20,7 +20,7 @@ use c2_formats::sav::{Save, TrophyItem};
 
 mod survival;
 pub use survival::{
-    hunts, hunts_ai, is_trex, modded, MobileWaves, Survival, SurvivalKind, SurvivalOptions,
+    dangerous, dangerous_ai, is_trex, modded, MobileWaves, Survival, SurvivalKind, SurvivalOptions,
     TREX_WAVE,
 };
 
@@ -2311,7 +2311,7 @@ mod tests {
     fn survival_sends_growing_waves_and_awards_no_trophies() {
         let (area, mut hunt, car) = setup(false);
         hunt.herd.species.push(Species::new(info(ai::VELO), &car));
-        assert!(hunts(&hunt.herd.species[2]) && !hunts(&hunt.herd.species[1]));
+        assert!(dangerous(&hunt.herd.species[2]) && !dangerous(&hunt.herd.species[1]));
         hunt.start_survival(
             &area,
             SurvivalOptions {

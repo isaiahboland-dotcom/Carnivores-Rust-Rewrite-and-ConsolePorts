@@ -1,5 +1,6 @@
-//! Survival (README M13), after the mobile games' mode: waves of hunting
-//! animals come for the hunter, each wave bigger; between waves a short
+//! Survival (README M13), after the mobile games' mode: waves of dangerous
+//! animals, picked at random, come for the hunter (always: they never
+//! back off), each wave bigger; between waves a short
 //! rest (health and ammunition back). It ends when the hunter dies. Kills
 //! give no trophy and no score; the frontends record them (and the wave
 //! reached) in the hunter's record.
@@ -219,7 +220,7 @@ impl SurvivalKind {
             Self::Normal => "Survival",
             Self::Hardcore => "Survival: hardcore",
             Self::Custom => "Survival: custom",
-            Self::Mobile => "Survival: mobile",
+            Self::Mobile => "Classic survival",
         }
     }
 }
@@ -254,32 +255,38 @@ pub fn modded(name: &str) -> bool {
 /// The first wave a T-Rex may come in.
 pub const TREX_WAVE: u32 = 15;
 
-/// Whether a species hunts the hunter (a wave animal).
-pub fn hunts(sp: &crate::dino::Species) -> bool {
-    hunts_ai(sp.info.ai, sp.mee.is_some())
+/// Whether a species is dangerous to the hunter (a survival animal): the
+/// original's hunters and its Chasmosaurus (which charges); in a dialect
+/// game, a carnivore AI or any huntable with an attack (`aggress`).
+pub fn dangerous(sp: &crate::dino::Species) -> bool {
+    dangerous_ai(sp.info.ai, sp.mee.as_ref().map(|m| m.aggress))
 }
 
-/// [`hunts`] by AI: the original's carnivore AIs, or a dialect AI marked
-/// carnivore.
-pub fn hunts_ai(ai_id: i32, dialect: bool) -> bool {
-    if dialect {
-        crate::dino::mee::ai_info(ai_id).carnivore
-    } else {
-        matches!(
+/// [`dangerous`] by AI and, in a dialect game, `aggress` (`None`: the
+/// original's rules).
+pub fn dangerous_ai(ai_id: i32, aggress: Option<i32>) -> bool {
+    use crate::dino::mee;
+    match aggress {
+        Some(a) => {
+            (mee::is_huntable(ai_id) || ai_id == ai::TREX)
+                && (mee::ai_info(ai_id).carnivore || a > 0)
+        }
+        None => matches!(
             ai_id,
-            ai::ALLO | ai::VELO | ai::SPINO | ai::CERAT | ai::TREX
-        )
+            ai::ALLO | ai::VELO | ai::SPINO | ai::CERAT | ai::TREX | ai::CHASM
+        ),
     }
 }
 
 impl SurvivalOptions {
-    /// The waves for a hunt: the hunting animals picked as targets (none
-    /// picked: every hunting animal but the T-Rex); hardcore extras from the
-    /// mods' hunting animals, those not in the waves first (the game's own
+    /// The waves for a hunt: the dangerous animals among the targets (the
+    /// frontends make every loaded animal one), at random each wave, but the
+    /// T-Rex (none: every dangerous animal but it); hardcore extras from the
+    /// mods' dangerous animals, those not in the waves first (the game's own
     /// if there are none).
     pub fn pick(hunt: &Hunt, kind: SurvivalKind, max_wave: usize) -> Self {
         let sp = &hunt.herd.species;
-        let hunting: Vec<usize> = (0..sp.len()).filter(|&i| hunts(&sp[i])).collect();
+        let hunting: Vec<usize> = (0..sp.len()).filter(|&i| dangerous(&sp[i])).collect();
         let target = |i: &usize| {
             hunt.is_target(&Character {
                 ctype: *i,
@@ -365,7 +372,8 @@ impl Hunt {
             .collect();
         while let Some(i) = self.herd.chars.iter().position(|c| {
             c.wave == 0
-                && (waves.contains(&c.ctype) || self.herd.species.get(c.ctype).is_some_and(hunts))
+                && (waves.contains(&c.ctype)
+                    || self.herd.species.get(c.ctype).is_some_and(dangerous))
         }) {
             self.remove_character(i);
         }

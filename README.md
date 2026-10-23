@@ -532,6 +532,8 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] the mobile game's own Survive mode from the user's APK (its 19 waves and after, its box and spot, on
         the user's PC Mount Ravan — the mobile map is the same heights); launcher: Ours / Mobile / Both
   - [x] wave animals find a walkable way to the hunter (ridges no longer hold them up)
+  - [x] owner's design: ours = random dangerous animals (always aggressive) on a random area, only the gun
+        pick shown; classic = straight in on Mount Ravan with the shotgun; main menu / title buttons
   - [ ] owner's hardware test (wave size and pace on Old 3DS)
   - [ ] Ice Age's Arcade (its own map; with M14)
 - [ ] M14 Carnivores: Ice Age (planned)
