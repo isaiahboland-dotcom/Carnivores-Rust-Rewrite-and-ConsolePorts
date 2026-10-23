@@ -545,7 +545,9 @@ pub fn build_with(
                 .map(|n| format!("{id}-{n}"))
                 .find(|n| !seen.contains(n))
                 .unwrap_or_default();
-            notes.push(format!("two add-ons are both `{id}`: the later one is `{new}`"));
+            notes.push(format!(
+                "two add-ons are both `{id}`: the later one is `{new}`"
+            ));
             seen.insert(new.clone());
             m.manifest.info.id = new;
         }

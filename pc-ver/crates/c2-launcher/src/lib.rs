@@ -10,6 +10,7 @@ mod balance;
 mod cia;
 mod config;
 mod jobs;
+mod options;
 
 use std::path::PathBuf;
 

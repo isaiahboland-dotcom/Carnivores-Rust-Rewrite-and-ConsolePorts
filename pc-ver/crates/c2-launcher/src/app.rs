@@ -997,6 +997,52 @@ impl Launcher {
     fn settings_tab(&mut self, ui: &mut egui::Ui) {
         heading(ui, "Settings");
         panel(ui, |ui| {
+            ui.label(RichText::new("Engine options").color(GOLD));
+            help(
+                ui,
+                "One file with the balance (prices, scores, and PC or mobile for each entry where \
+                 they differ), the survival choice, the menu style, the PC game's settings and the \
+                 3DS target: keep it, share it, or bring it to another machine. No folders, no game \
+                 data.",
+            );
+            ui.horizontal(|ui| {
+                if ui.button("Export options...").clicked() {
+                    if let Some(p) = rfd::FileDialog::new()
+                        .set_file_name("c2rs.c2rs-options.toml")
+                        .add_filter("c2rs options", &["toml"])
+                        .save_file()
+                    {
+                        let text = crate::options::Options::current(&self.cfg, &self.balance.edits)
+                            .to_toml();
+                        self.note = Some(match std::fs::write(&p, text) {
+                            Ok(()) => (format!("Options written to {}", p.display()), TEXT),
+                            Err(e) => (format!("Not written: {e}"), RED),
+                        });
+                    }
+                }
+                if ui.button("Import options...").clicked() {
+                    if let Some(p) = rfd::FileDialog::new()
+                        .add_filter("c2rs options", &["toml"])
+                        .pick_file()
+                    {
+                        let r = std::fs::read_to_string(&p)
+                            .map_err(|e| e.to_string())
+                            .and_then(|t| crate::options::Options::from_toml(&t))
+                            .and_then(|o| o.apply(&mut self.cfg, &mut self.balance.edits));
+                        self.note = Some(match r {
+                            Ok(done) => {
+                                self.save();
+                                let _ = self.balance.store();
+                                (format!("Imported: {}.", done.join(", ")), TEXT)
+                            }
+                            Err(e) => (format!("Not imported: {e}"), RED),
+                        });
+                    }
+                }
+            });
+        });
+        ui.add_space(8.0);
+        panel(ui, |ui| {
             ui.label(RichText::new("Tools folder").color(GOLD));
             help(
                 ui,

@@ -128,7 +128,7 @@ impl Editor {
         (!self.edits.is_empty() && p.exists()).then_some(p)
     }
 
-    fn store(&self) -> Result<(), String> {
+    pub fn store(&self) -> Result<(), String> {
         let p = path();
         if self.edits.is_empty() {
             if p.exists() {
