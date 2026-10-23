@@ -1,0 +1,156 @@
+# Ten add-on animals for Carnivores 2 on the Modder's Edition Engine 1.1.1, as
+# loose add-ons. This file holds credits, download pages and file hashes only:
+# download each add-on from its page (unpack it into its own folder under one
+# downloads folder) and get the Modder's Edition yourself. See docs/MODDING.md.
+#
+#   ME="PATH/Carnivores Modders Edition 1.1.1 Standalone/Carnivores 2"
+#   c2-pc recipe verify ../recipes/c2-mee-addons.toml --base ../source/c2-original --overlay "$ME" --mods DOWNLOADS
+#   c2-pc play ../source/c2-original --overlay "$ME" --recipe ../recipes/c2-mee-addons.toml --mods DOWNLOADS
+#
+# Each mod's files are listed by their path inside its download. With the
+# Modder's Edition overlay, the c2-vanilla base check reports the files the
+# overlay changes; that is expected.
+
+[recipe]
+id = "c2-mee-addons"
+name = "Carnivores 2: Modder's Edition add-ons"
+version = "0.1"
+base = "c2-vanilla"
+
+[[mods]]
+id = "agathaumas-mee-1-1-1"
+credit = "Barger53"
+url = "https://www.moddb.com/games/carnivores-2/addons/agathaumas-for-mee-111"
+loose = true
+
+[mods.files]
+"Agathaumas MEE 1.1.1/Agathaumas Res.txt" = "sha256:b3f145bd0e5a7c5c6b559e4c407702fdd4b5420a3002318f0747f9464ce44160"
+"Agathaumas MEE 1.1.1/agatha1.car" = "sha256:ba0f7f5571debd4419c57344829e3dd4e3eb0e9b90961761bd0e059ff3ba3a3a"
+
+[[mods]]
+id = "anatotitan-addon"
+credit = "Barger53"
+url = "https://www.moddb.com/games/carnivores-2/addons/anatotitan"
+loose = true
+
+[mods.files]
+"Anatotitan Addon/Edmonto.car" = "sha256:06ac49583f0586bc72e12c4b990e21bbf0063dd371ec4d62d6bc0930ef939ef9"
+"Anatotitan Addon/_RES Entry.txt" = "sha256:41ad500709acf7288574b0d1415b9bc4de0caf3ff7f8bfa6b279c442c10c5e14"
+
+[[mods]]
+id = "burian-chasmosaurus-2"
+credit = "inspector_lupin, P.Rex, That1Cactus, LastFlareZ, Herrea"
+url = "https://www.moddb.com/games/carnivores-2/addons/burian-chasmosaurus"
+loose = true
+
+[mods.files]
+"Burian Chasmosaurus/CALL5.TGA" = "sha256:054eab096de4a678a69761e47486414fb861a07464255b2ed9d3e66543fcbb56"
+"Burian Chasmosaurus/CALL5_A.wav" = "sha256:06c9913d27acf56c162753c95b4d2e3a0bb01f52b420204bcdb3611db1a2927e"
+"Burian Chasmosaurus/CALL5_B.wav" = "sha256:dca7c6f7c6b9cc797d6152ac55111c2a8f19254b38a330b6df635c9e6979f6b1"
+"Burian Chasmosaurus/CALL5_C.wav" = "sha256:f3cf526c4ce0451a0d5595a727a375c8432add10df50dc1c8f219d61f7fa1c9b"
+"Burian Chasmosaurus/DINO5.TGA" = "sha256:faeb8eab38bc4712ea77ad4bf17b01e0c68426964f05d50dc138abea2f4ecccf"
+"Burian Chasmosaurus/MEE Version/_RES INFO.txt" = "sha256:c6a040933ea330d8dbc015b53dc81535899258c119a71bd11190b08cd1e1b28d"
+"Burian Chasmosaurus/MEE Version/chasmosa.car" = "sha256:45a56be8d19db54637b86c1c3f386e979414567a5e8b8184b55adaa9610fe185"
+"Burian Chasmosaurus/MEE Version/chasmosaALT.car" = "sha256:4fcc3966b0a6a10e83f78f1f10a669fd974d6d99c7dbc68db001c2a9ec234e32"
+
+[[mods]]
+id = "indoraptor-addon"
+credit = "StarFreak22, Raptor Claw / Jake Sutton"
+url = "https://www.moddb.com/games/carnivores-2/addons/indoraptor-addon"
+loose = true
+
+[mods.files]
+"Indoraptor_Addon/INDO.CAR" = "sha256:ea1bd7c7e01d894400e1935b151ae7a6354bff110deb9f675ae9f8c8e7da85e2"
+"Indoraptor_Addon/MENU/PICS/DINO7.TGA" = "sha256:2264d27353d62b24e5ce96de2fe699e0015f507bee7a382d9b80df41d6a52bf8"
+"Indoraptor_Addon/MENU/TXT/DINO7.TXM" = "sha256:f9bd0eeacef7c16f6a56fc6a8d0d14956ec4155eb9d00aad2c3e69a7b134d54f"
+"Indoraptor_Addon/MENU/TXT/DINO7.TXU" = "sha256:17a9137761e590cd0123f6b9d85718bb24483d4b84b5f4afbc25f72ba3e3fcc9"
+"Indoraptor_Addon/SOUNDFX/CALLS/CALL7_A.wav" = "sha256:6039942d1c87be813173aa1b2ff013078bdd4037ea83a93fceed73f8dbfe3d5b"
+"Indoraptor_Addon/SOUNDFX/CALLS/CALL7_B.wav" = "sha256:c25053f6fc3bb22f832235224b80e64e567d5c2447d15850c9a2d09810535e83"
+"Indoraptor_Addon/SOUNDFX/CALLS/CALL7_C.wav" = "sha256:b3fb0e84afa203b7db43f3f7375dc6022b44c87133ea49787d9078489f85b4fc"
+"Indoraptor_Addon/_RES Entry.txt" = "sha256:562e54aec4de58000fdfb51591715c15845d73a35eea10bcef9b36b526990813"
+"Indoraptor_Addon/indo_alt.car" = "sha256:6e82f11f2748a16a1d7d7c71b5d977af81f3d46c65db13e8e665f593219aa0aa"
+
+[[mods]]
+id = "majungasaurus-add-on"
+credit = "G.Carno, SekkerDraws, LS Lead Dev Timothee"
+url = "https://www.moddb.com/games/carnivores-2/addons/majungasaurus-add-on"
+loose = true
+
+[mods.files]
+"Majungasaurus Add-on/Hunt The Majungasaurus!.txt" = "sha256:c69b4933478881f203656feb50efcef99ebbfbfc8c3cfa9d0e4874db0c13be6a"
+"Majungasaurus Add-on/MAJUNGASAURUS.car" = "sha256:6a51cf1f53c684dc886edd8d1c999ba0cb34361d8bcfedd4ceb9092fbec7d0a0"
+
+[[mods]]
+id = "manospondylus-addon-1"
+credit = "Ophious, ScrungusGrungus, Will_Nobody, RaptorKlaw"
+url = "https://www.moddb.com/games/carnivores-2/addons/manospondylus-addon"
+loose = true
+
+[mods.files]
+"Manospondylus_Addon/Assets/MANOS.CAR" = "sha256:a6e989af1b4bcb540a48e84f3416121444963317f85923950fd564e7df923878"
+"Manospondylus_Addon/Assets/hunter_manos.car" = "sha256:7b104fc7a0e106bf62f6f00c98f615aa15f96c1e79f58a7d7e3bf1c861dc4b46"
+"Manospondylus_Addon/Manos_RES.txt" = "sha256:5962613f49706d724f6157635832fb126d52d580a71d6da23b04afd6f32baa28"
+
+[[mods]]
+id = "suchomimus-addon-2"
+credit = "ScrungusGrungus, Will_Nobody"
+url = "https://www.moddb.com/games/carnivores-2/addons/suchomimus-addon"
+loose = true
+
+[mods.files]
+"Suchomimus Addon/Assets/ZUHOMIM.car" = "sha256:615664fe5414995a77bc47383fd64ce7c00b7f207a0baf84cda23590ba7ce89e"
+"Suchomimus Addon/Assets/hunter_zuh.car" = "sha256:15d33ea59f82a2760a59bda3bc4f1877dc25cd07b2aa5883a1a3adcf6e9db2b2"
+"Suchomimus Addon/SUCHO _RES.txt" = "sha256:64c921cccdc8ea4c35b66a30b36dcaa5909195787e18594718ff2aff38cfa82a"
+
+[[mods]]
+id = "carcharadontosaurus-2-0-4"
+credit = "g.carno151"
+url = "https://www.moddb.com/games/carnivores-2/addons/carcharadontosaurus1"
+loose = true
+
+[mods.files]
+"carcharadontosaurus/CALL8.tga" = "sha256:dbf207a8d1bc4a77da2047dca05a7854c9026e30ddf348e8705c0e23264dad2a"
+"carcharadontosaurus/CALL8_A.wav" = "sha256:7219b0a8c8962508ab04c6dc9710b6eac572841f03c103b450e74bbf11283408"
+"carcharadontosaurus/CALL8_B.wav" = "sha256:53d87bcde3539fb3f7791a0e22437125600f05f526f933b7701f72d5685639bf"
+"carcharadontosaurus/CALL8_C.wav" = "sha256:54969ca61acd10722c975e8f43b22a4e686dccce45c1f3c47595e84a0979f88e"
+"carcharadontosaurus/DINO8.TXM" = "sha256:153253836c32b07f201e8e9992240dfcc1c32d313046548cefe9021fd59ea870"
+"carcharadontosaurus/DINO8.TXU" = "sha256:26e6c0bc18021d4e27764655aa21ab576de7822763acdc835449bcdf76c50fbb"
+"carcharadontosaurus/DINO8.tga" = "sha256:01aaf3c9a8248280dc42daff80d21ab664fb8e32950d4cdaad4006478153ad9e"
+"carcharadontosaurus/_RES.txt" = "sha256:9b531a299154f484ad25aa3638bae8035de5a633fe57ae280253fc142cc7e09f"
+"carcharadontosaurus/carcharodontosaurus1.car" = "sha256:49efd0c154eebeebe94a2e68bb317e75b250ccdbf446371072f053ee3890d0c3"
+"carcharadontosaurus/hunter1_brach_mosa12.car" = "sha256:3dc9d482f5d46442983aefc87e243ad6709302f6064bddae59f09e60d5507da7"
+
+[[mods]]
+id = "lifranyx-1"
+credit = "poharex, frontier, ScrungusGrungus"
+url = "https://www.moddb.com/games/carnivores-2/addons/feathered-lifranyx"
+loose = true
+
+[mods.files]
+"lifranyx/lifranyx.car" = "sha256:eb39e099bff68fc6bb7721efa7096d5ddaae90f73e54fa27af905de4aa7f7556"
+"lifranyx/res.txt" = "sha256:092939ffffb7a5be7f412a02db50009e99e4e7675ee13c6bf4721c83340290f0"
+
+[[mods]]
+id = "sigilmassosaurus"
+credit = "TimmyMajungatholus"
+url = "https://www.moddb.com/games/carnivores-2/addons/sigilmassosaurus-mee-update"
+loose = true
+
+[mods.files]
+"Sigil_RES.txt" = "sha256:4451945492066920540dca97096c695d772120de3376f604a92a42d837bc2787"
+"hunter1_brach_mosa12.car" = "sha256:9194f0c381084e3d3a9a0c0d69a30e26786a79a6b721bab1dded2e9033717787"
+"sigilmasso.car" = "sha256:0f49889d7c6dfd1c55fa588d8b212664e5df39d69c64f8be3de8108382890179"
+
+[load_order]
+order = [
+    "agathaumas-mee-1-1-1",
+    "anatotitan-addon",
+    "burian-chasmosaurus-2",
+    "indoraptor-addon",
+    "majungasaurus-add-on",
+    "manospondylus-addon-1",
+    "suchomimus-addon-2",
+    "carcharadontosaurus-2-0-4",
+    "lifranyx-1",
+    "sigilmassosaurus",
+]

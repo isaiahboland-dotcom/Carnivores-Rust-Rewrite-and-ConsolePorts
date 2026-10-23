@@ -476,7 +476,8 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
         `recipes/bases/c2-vanilla.toml` (hashes only)
   - [x] recipes for loose add-ons (`loose = true`: files pinned from the add-on's folder, installed from
         those only); the owner's 14 add-ons as a recipe build the same game as `mod build`, file for file
-  - [ ] a first real recipe in `recipes/` (needs each add-on's author credit and download page)
+  - [x] first real recipe: `recipes/c2-mee-addons.toml` (10 Modder's Edition add-ons, credits and ModDB pages)
+  - [ ] the owner's other four add-ons (Achillobator, Dilophosaurus, SkinPack, MP5 SD) once their pages are found
 - [x] M6 Cooker + 3DS boot
   - [x] `.c2pk` pack format (`c2_formats::cooked`, `c2_vfs::PackBackend`); shared loading in `c2_core::load`
   - [x] `c2-cook`: chosen area / animals / weapons / time of day, mods or recipe, PICA200 textures, n3ds/o3ds profiles, measured 3DS loading peak
