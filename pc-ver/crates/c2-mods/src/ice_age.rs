@@ -317,6 +317,14 @@ fn prices_of(res: &ResTxt, key: &str) -> Vec<i32> {
         .unwrap_or_default()
 }
 
+/// A block's `key = value` lines (for a small sub-block written by hand).
+fn entries_text(b: &Block) -> String {
+    b.entries
+        .iter()
+        .map(|e| format!(" {} = {}\r\n", e.key, e.value))
+        .collect()
+}
+
 /// The first non-empty line of a menu text.
 fn first_line(d: &[u8]) -> Option<String> {
     String::from_utf8_lossy(d)
@@ -460,6 +468,72 @@ pub fn import(ia: &std::path::Path, base: &Vfs, out: &std::path::Path) -> Result
         if let Some(h) = &hunter {
             write(dir.join("hunter_ice_age.car"), h)?;
         }
+        write(
+            dir.join("README.txt"),
+            format!("{name}, {note} (c2rs). Keep it local: it is game data.\r\n").as_bytes(),
+        )?;
+        done.added.push(dir);
+    }
+    // Ambients (the pig, the archaeopteryx): only on Ice Age's areas (they
+    // spawn there through `addition areaN`; C2's maps keep their own).
+    let first = (1..=99)
+        .rev()
+        .find(|n| {
+            base.resolve(&format!("HUNTDAT/AREAS/AREA{n}.MAP"))
+                .is_some()
+        })
+        .unwrap_or(0)
+        + 1;
+    let ia_areas = (1..=99u32)
+        .take_while(|i| v.resolve(&format!("HUNTDAT/AREAS/AREA{i}.MAP")).is_some())
+        .count() as u32;
+    let header: Vec<String> = (first..first + ia_areas)
+        .map(|n| format!("area{n}"))
+        .collect();
+    for b in res
+        .section("characters")
+        .map(|s| s.blocks.as_slice())
+        .unwrap_or_default()
+    {
+        let ai = b.get(&["ai"]).map_or(0, c2_formats::res_txt::c_atoi);
+        let (Some(name), Some(file)) = (b.get(&["name"]), b.get(&["file"])) else {
+            continue;
+        };
+        if !(1..10).contains(&ai) || header.is_empty() {
+            continue;
+        }
+        let (name, file) = (
+            name.trim_matches('\'').to_string(),
+            file.trim_matches('\'').to_string(),
+        );
+        let Ok(car) = v.read(&format!("HUNTDAT/{file}")) else {
+            done.skipped.push(format!("{name}: no {file}"));
+            continue;
+        };
+        let dir = out.join(&name);
+        write(dir.join(&file), &car)?;
+        let mut b = b.clone();
+        let spawn: Vec<String> = b
+            .subs
+            .iter()
+            .filter(|s| s.name.eq_ignore_ascii_case("spawninfo"))
+            .map(|s| format!("spawninfo{{\r\n{}}}\r\n", entries_text(&s.block)))
+            .collect();
+        b.subs.retain(|s| !s.name.eq_ignore_ascii_case("spawninfo"));
+        let mut entry = c2_formats::res_txt::write_block(&b);
+        let close = entry.rfind('}').unwrap_or(entry.len());
+        entry.insert_str(
+            close,
+            &format!(
+                "addition {} {{\r\n{}}}\r\n",
+                header.join(" "),
+                spawn.concat()
+            ),
+        );
+        write(
+            dir.join(format!("{name} _RES.txt")),
+            format!("// {name}, {note}: on Ice Age's areas only.\r\n\r\n{entry}").as_bytes(),
+        )?;
         write(
             dir.join("README.txt"),
             format!("{name}, {note} (c2rs). Keep it local: it is game data.\r\n").as_bytes(),

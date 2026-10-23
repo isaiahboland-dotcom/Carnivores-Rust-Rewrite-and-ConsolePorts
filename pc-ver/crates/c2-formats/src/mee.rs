@@ -83,7 +83,7 @@ pub fn applies(header: &str, h: &Hunt) -> bool {
         return false;
     }
     if header.contains("char")
-        && !(0..32).any(|i| h.picked & (1 << i) != 0 && mentions_char(header, i))
+        && !(0..118).any(|i| h.picked & (1u128 << i) != 0 && mentions_char(header, i))
     {
         return false;
     }

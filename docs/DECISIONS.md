@@ -46,8 +46,12 @@ Newest first. Each entry: what, why, and what it affects.
   `snow = TRUE` (ours; the Modder's Edition ignores unknown keys). PC reads
   it for the map; `c2-cook` lists such areas in `INFO.TXT` (`snow = ...`)
   for the 3DS.
-- Ice Age's ambient animals (pig, archaeopteryx) aren't imported: C2's
-  ambients roam its areas.
+- Ice Age's ambient animals (pig, archaeopteryx) are imported too, spawning
+  only on Ice Age's areas (`addition area6 area7 … { spawninfo }`; C2's maps
+  keep their own ambients).
+- Conditions on picked slots (`overwrite charN`) were checked for slots
+  0–31 only: in an all-in game (35+ menu animals) a picked animal past
+  slot 31 didn't get its "picked" spawn group or radar. Now 0–117.
 - Checked: the combined pack (C2 + ME + the import) hunts all 19 menu
   animals on all 10 areas (`c2-cook --check`, Old 3DS budget).
 
