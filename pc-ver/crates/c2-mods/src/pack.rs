@@ -932,11 +932,11 @@ mod tests {
         let one = root.join("one");
         addon(&one.join("Thing MEE"));
         addon(&one.join("Thing Legacy"));
-        assert_eq!(expand_addons(&one), [one.clone()]);
+        assert_eq!(expand_addons(&one), std::slice::from_ref(&one));
         // A plain add-on: itself.
         let plain = root.join("plain");
         addon(&plain);
-        assert_eq!(expand_addons(&plain), [plain.clone()]);
+        assert_eq!(expand_addons(&plain), std::slice::from_ref(&plain));
         let _ = std::fs::remove_dir_all(&root);
     }
 }
