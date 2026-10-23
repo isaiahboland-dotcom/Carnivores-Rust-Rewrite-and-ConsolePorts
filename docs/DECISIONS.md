@@ -2,6 +2,17 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-23 — M16: standalones in the launcher
+- **PC**: the Add-ons tab lists standalone games (a folder each, as
+  extracted; on / off); Play passes the enabled ones as `--standalone`, so
+  they are combined beside the base (the overlays and add-ons as before).
+- **3DS** (owner: one pack per standalone): the builder cooks
+  `<game>.c2pk` from each enabled standalone's game folder ("A pack per
+  standalone game" in the 3DS tab, on by default), beside the original and
+  add-ons packs; the app's pack chooser picks one at start, each with its
+  own save. Checked: an original-engine standalone cooks and passes
+  `c2-cook --check`.
+
 ## 2026-10-23 — M16: standalone recipes
 - A recipe lists `[[overlays]]` (releases copied over the base game, the
   Modder's Edition) and `[[standalones]]` like mods: id, credit, URL, folder

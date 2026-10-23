@@ -576,7 +576,7 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
         the one that falls; Ice Age's mobile animals keep its PC layout); the Pachycephalosaurus and Ice Age's
         four 11-clip animals played wrong moves before (re-import them); Ice Age kinds as donors on an Ice Age
         base; the PC games' own animals in the APKs are left to the PC files
-- [ ] M16 Standalone games in the launcher — **in progress** (PC)
+- [ ] M16 Standalone games in the launcher — **in progress** (owner's test)
   - [x] `c2_mods::standalone`: standalones combined beside the base (areas, menu slots, weapons renumbered;
         files under `MODS/<game>/`; each game's animals on its own maps; add-ons on the base's), `c2-pc combine`,
         `c2-pc play --standalone DIR`; original-engine games read as dialect ones (animations and spawns from
@@ -584,7 +584,9 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] up to 502 huntables (picked slots and targets in a 512-bit set, `c2_formats::bits::Bits`, PC and 3DS)
   - [x] standalone recipes: `[[overlays]]`, `[[standalones]]` (pinned whole, found a few folders down under any
         name), `[combine]`; `recipe new --standalone`, `recipe build` / `play --recipe` combine; patches apply
-  - [ ] the launcher, 3DS packs per standalone
+  - [x] launcher: Standalone games (Add-ons tab; folders as extracted, on/off), combined into Play; the 3DS
+        builder cooks a pack per standalone that is on (each played alone; the app asks which at start)
+  - [ ] later: a standalone whose hunter model has another body keeps its kill animations unmerged
 - [x] M9 Modder's Edition Engine data (weapon extras still listed below)
   - [x] nested `_RES.TXT` blocks; `_MENU.TXT` / `.c2map` menu lists; `overwrite` / `addition` resolution
   - [x] spawn / pack tables and placement on PC (dialect game folders hunt with their own rosters and spawns)

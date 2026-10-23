@@ -147,6 +147,9 @@ pub struct ThreeDs {
     pub out: Option<PathBuf>,
     pub vanilla_pack: bool,
     pub addons_pack: bool,
+    /// A pack per standalone game that is on (`<game>.c2pk`, each played
+    /// on its own: the 3DS has no combined game).
+    pub standalone_packs: bool,
     /// Also a `.cia` (needs `makerom` and `bannertool`).
     pub cia: bool,
     /// The user's home-menu icon (48x48 PNG), banner (256x128 PNG) and
@@ -166,6 +169,7 @@ impl Default for ThreeDs {
             out: None,
             vanilla_pack: true,
             addons_pack: true,
+            standalone_packs: true,
             cia: false,
             icon: None,
             banner: None,
@@ -185,6 +189,9 @@ pub struct Config {
     pub overlays: Vec<PathBuf>,
     /// In load order: later ones win.
     pub addons: Vec<AddOn>,
+    /// Standalone games (whole games made from Carnivores 2), combined
+    /// beside the base on PC (README M16).
+    pub standalones: Vec<AddOn>,
     /// Full launcher: the 3DS section shown (asked on first launch).
     pub show_3ds: Option<bool>,
     pub three_ds: ThreeDs,
@@ -224,6 +231,15 @@ impl Config {
 
     /// The add-ons to load, in order: a folder of add-ons (dropped as one)
     /// is its add-ons (`c2_mods::expand_addons`).
+    /// The standalone games that are on.
+    pub fn enabled_standalones(&self) -> Vec<PathBuf> {
+        self.standalones
+            .iter()
+            .filter(|a| a.enabled)
+            .map(|a| a.path.clone())
+            .collect()
+    }
+
     pub fn enabled_addons(&self) -> Vec<PathBuf> {
         self.addons
             .iter()

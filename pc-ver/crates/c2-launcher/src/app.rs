@@ -359,6 +359,10 @@ impl Launcher {
             args.push("--overlay".into());
             args.push(o.display().to_string());
         }
+        for s in self.cfg.enabled_standalones() {
+            args.push("--standalone".into());
+            args.push(s.display().to_string());
+        }
         for a in self.cfg.enabled_addons() {
             args.push("--mod".into());
             args.push(a.display().to_string());
@@ -517,9 +521,32 @@ impl Launcher {
                 extra.push(a.display().to_string());
             }
             steps.push(Step::Run {
-                program: cook,
+                program: cook.clone(),
                 args: cook_args(extra, "modded.c2pk"),
             });
+        }
+        // A pack per standalone, each its own game (as on PC played alone).
+        if t.standalone_packs {
+            for s in self.cfg.enabled_standalones() {
+                let Some(root) = c2_mods::pack::find_game_root(&s) else {
+                    continue;
+                };
+                let pack = format!(
+                    "{}.c2pk",
+                    c2_mods::manifest::slug(
+                        &s.file_name()
+                            .map_or_else(|| "game".into(), |n| n.to_string_lossy().into_owned())
+                    )
+                );
+                let mut a = cook_args(Vec::new(), &pack);
+                if let Some(i) = a.iter().position(|x| x == "--game") {
+                    a[i + 1] = root.display().to_string();
+                }
+                steps.push(Step::Run {
+                    program: cook.clone(),
+                    args: a,
+                });
+            }
         }
         steps.push(Step::Copy {
             from: app,
@@ -744,6 +771,67 @@ impl Launcher {
         if changed {
             self.save();
         }
+        ui.add_space(12.0);
+        self.standalones_ui(ui);
+    }
+
+    /// Standalone games: whole games made from Carnivores 2, combined beside
+    /// the base on PC; a 3DS pack each.
+    fn standalones_ui(&mut self, ui: &mut egui::Ui) {
+        heading(ui, "Standalone games");
+        help(
+            ui,
+            "Whole games made from Carnivores 2 (the folder you extracted). On PC each one's \
+             areas, animals and weapons are added beside the base game's, its animals on its \
+             own maps; most need the Modder's Edition as a base overlay. On the 3DS each one \
+             is a pack of its own.",
+        );
+        ui.add_space(6.0);
+        if ui.button("Add game folder...").clicked() {
+            if let Some(p) = rfd::FileDialog::new().pick_folder() {
+                if c2_mods::pack::find_game_root(&p).is_some() {
+                    if !self.cfg.standalones.iter().any(|s| s.path == p) {
+                        self.cfg.standalones.push(crate::config::AddOn {
+                            path: p,
+                            enabled: true,
+                        });
+                        self.save();
+                    }
+                } else {
+                    self.note = Some((
+                        "No game (HUNTDAT with _RES.TXT) in that folder.".into(),
+                        RED,
+                    ));
+                }
+            }
+        }
+        ui.add_space(6.0);
+        let mut changed = false;
+        let mut remove = None;
+        panel(ui, |ui| {
+            if self.cfg.standalones.is_empty() {
+                help(ui, "No standalone games yet.");
+            }
+            for (i, a) in self.cfg.standalones.iter_mut().enumerate() {
+                ui.horizontal(|ui| {
+                    changed |= ui.checkbox(&mut a.enabled, "").changed();
+                    let name = RichText::new(a.name()).color(if a.enabled { TEXT } else { DIM });
+                    ui.label(name).on_hover_text(a.path.display().to_string());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.small_button("Remove").clicked() {
+                            remove = Some(i);
+                        }
+                    });
+                });
+            }
+        });
+        if let Some(i) = remove {
+            self.cfg.standalones.remove(i);
+            changed = true;
+        }
+        if changed {
+            self.save();
+        }
     }
 
     fn balance_tab(&mut self, ui: &mut egui::Ui) {
@@ -849,6 +937,12 @@ impl Launcher {
                     "Add-ons pack (modded.c2pk: base overlays and the add-ons that are on)",
                 )
                 .changed();
+            changed |= ui
+                .checkbox(
+                    &mut t.standalone_packs,
+                    "A pack per standalone game that is on (each played on its own)",
+                )
+                .changed();
             help(
                 ui,
                 "The app asks which pack at start; each keeps its own save.",
@@ -868,7 +962,7 @@ impl Launcher {
             .as_deref()
             .is_some_and(|b| describe_game(b).is_some())
             && t.out.is_some()
-            && (t.vanilla_pack || t.addons_pack);
+            && (t.vanilla_pack || t.addons_pack || t.standalone_packs);
         if big_button(ui, "BUILD", ready && !self.busy()) {
             self.build_3ds();
         }
