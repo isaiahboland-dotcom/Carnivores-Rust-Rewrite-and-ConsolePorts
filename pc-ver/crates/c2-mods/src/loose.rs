@@ -203,6 +203,20 @@ fn place(p: &Path, base: &Vfs, root: Option<&Path>) -> Option<String> {
     Some(format!("{dir}/{name}"))
 }
 
+/// Is `p` only a note for people (a list of links, a picture, a readme
+/// without an entry), which an add-on's install would leave out?
+pub fn is_note(p: &Path) -> bool {
+    match ext(p).as_str() {
+        "txt" | "md" => std::fs::read(p).is_ok_and(|d| {
+            let text = String::from_utf8_lossy(&d).replace('\r', "");
+            !blocks_in(&text).iter().any(|(_, b)| entry(b).is_some())
+        }),
+        "url" | "htm" | "html" | "pdf" | "png" | "jpg" | "jpeg" | "gif" | "webp" | "doc"
+        | "docx" | "rtf" => true,
+        _ => false,
+    }
+}
+
 /// The `{ ... }` blocks in `text` with what precedes each.
 fn blocks_in(text: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();

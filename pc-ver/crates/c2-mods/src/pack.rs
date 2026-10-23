@@ -64,7 +64,7 @@ fn is_zip(p: &Path) -> bool {
 }
 
 /// The add-ons a folder given as one stands for: a collection (no files
-/// of its own, and three or more add-on folders in it, or two not named
+/// of its own but notes such as a list of links, and three or more add-on folders in it, or two not named
 /// like versions of one add-on: "MEE", "Legacy"...) is its add-ons, each
 /// on its own; anything else is itself. Read as one, a collection's add-ons
 /// would trample each other's menu files.
@@ -81,7 +81,10 @@ pub fn expand_addons(dir: &Path) -> Vec<PathBuf> {
         p.file_name()
             .is_some_and(|n| n.to_string_lossy().starts_with('.'))
     };
-    if entries.iter().any(|p| p.is_file() && !hidden(p)) {
+    if entries
+        .iter()
+        .any(|p| p.is_file() && !hidden(p) && !crate::loose::is_note(p))
+    {
         return itself();
     }
     let mut subs: Vec<PathBuf> = entries
@@ -953,6 +956,16 @@ mod tests {
         }
         let got = expand_addons(&all);
         assert_eq!(got.len(), 3);
+        // A list of links beside them is a note, not an add-on's own file;
+        // a text with an entry is.
+        std::fs::write(
+            all.join("links.txt"),
+            b"link: https://example.com\nname: A\n",
+        )
+        .unwrap();
+        assert_eq!(expand_addons(&all).len(), 3);
+        std::fs::write(all.join("entry.txt"), b"{\n name = 'X'\n ai = 12\n}\n").unwrap();
+        assert_eq!(expand_addons(&all), std::slice::from_ref(&all));
         // One add-on with two versions: itself.
         let one = root.join("one");
         addon(&one.join("Thing MEE"));
