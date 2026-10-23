@@ -233,3 +233,90 @@ fn on_a_modders_edition_base_slot_add_ons_get_their_own_slot() {
     let gun = &res.section("weapons").expect("weapons").blocks[1];
     assert_eq!(gun.get(&["pic"]), Some("'bullet2.tga'"));
 }
+
+/// A recipe pins a loose add-on's files (from its folder) and rebuilds it
+/// from those only: a different download folder with extra files gives the
+/// same game.
+#[test]
+fn recipes_pin_loose_add_ons() {
+    use c2_mods::recipe::{locate, new_recipe, prepare, Recipe};
+    let base = tmp("rbase");
+    write(
+        &base,
+        &[
+            ("HUNTDAT/_RES.TXT", RES.as_bytes()),
+            ("HUNTDAT/hunter.car", &model(&[0, 1])),
+        ],
+    );
+    let entry: &[u8] =
+        b"{\n name = 'Big'\n file = 'big.car'\n ai = 12\n killtype{\n  hunterAnim = 2\n }\n}\n";
+    let authoring = tmp("rauthor");
+    write(
+        &authoring,
+        &[
+            ("Big Dino/big.car", b"big"),
+            ("Big Dino/hunter_big.car", &model(&[0, 1, 9])),
+            ("Big Dino/Big _RES.txt", entry),
+            ("Big Dino/credits.txt", b"thanks to everyone"),
+        ],
+    );
+    let bases = [base.clone()];
+    let v = vanilla(&bases).expect("vanilla");
+    let m = load_mod(&v, &authoring.join("Big Dino")).expect("mod");
+    let r = new_recipe("big", "Big", "", &[m]).expect("recipe");
+    let rm = &r.mods[0];
+    assert!(rm.loose);
+    let pinned: Vec<&str> = rm.files.keys().map(String::as_str).collect();
+    // The readme without an entry isn't pinned.
+    assert_eq!(pinned, ["Big _RES.txt", "big.car", "hunter_big.car"]);
+    let r = Recipe::parse(&r.to_toml()).expect("round trip");
+    assert!(r.mods[0].loose);
+
+    // Someone else's copy: another folder name, plus a stray entry file the
+    // recipe doesn't list (it must not add an animal).
+    let downloads = tmp("rdown");
+    write(
+        &downloads,
+        &[
+            ("bigdino_v1/big.car", b"big"),
+            ("bigdino_v1/hunter_big.car", &model(&[0, 1, 9])),
+            ("bigdino_v1/Big _RES.txt", entry),
+            (
+                "bigdino_v1/extra.txt",
+                b"{\n name = 'Stray'\n file = 'big.car'\n ai = 12\n}\n",
+            ),
+        ],
+    );
+    let rpath = downloads.join("big.toml");
+    let found = locate(&r, &downloads);
+    assert!(found[0].complete(), "{found:?}");
+    let (sources, opts) = prepare(&rpath, &r, &found, &v).expect("prepare");
+    assert_eq!(sources[0].manifest.info.id, "big-dino");
+    let pack = c2_mods::build_with(&bases, sources, &opts).expect("build");
+    let res = c2_formats::res_txt::ResTxt::parse(&String::from_utf8_lossy(
+        &pack.vfs.read("HUNTDAT/_RES.TXT").expect("res"),
+    ))
+    .expect("parse");
+    let names: Vec<_> = res
+        .section("characters")
+        .expect("characters")
+        .blocks
+        .iter()
+        .filter_map(|b| b.get(&["name"]))
+        .collect();
+    assert_eq!(
+        names,
+        ["'Hunter'", "'Parasaurolophus'", "'Spinosaurus'", "'Big'"]
+    );
+    let hunter = car::parse(&pack.vfs.read("HUNTDAT/hunter.car").expect("hunter")).expect("car");
+    assert_eq!(hunter.animations.len(), 3, "the add-on's hunter is merged");
+
+    // A changed model is caught.
+    write(&downloads, &[("bigdino_v1/big.car", b"big v2")]);
+    let found = locate(&r, &downloads);
+    assert_eq!(found[0].mismatched.len(), 1);
+    assert!(prepare(&rpath, &r, &found, &v).is_err());
+    for d in [base, authoring, downloads] {
+        let _ = std::fs::remove_dir_all(d);
+    }
+}

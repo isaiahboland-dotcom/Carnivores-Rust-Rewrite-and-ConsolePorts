@@ -9,11 +9,11 @@ use std::path::{Component, Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use c2_vfs::{key, Backend, Vfs};
+use c2_vfs::{key, Backend, DirBackend, Vfs};
 
 use crate::detect::{is_data, read_res, RES_TXT};
 use crate::manifest::{slug, Manifest};
-use crate::pack::{mod_root, open_root, BuildOptions, ModSource};
+use crate::pack::{load_loose, mod_root, open_root, BuildOptions, ModSource};
 use crate::res_merge::diff;
 use crate::ModError;
 
@@ -48,9 +48,19 @@ pub struct RecipeMod {
     /// Folder name hint under `--mods` (defaults to a folder named like `id`).
     #[serde(skip_serializing_if = "String::is_empty")]
     pub folder: String,
+    /// A loose add-on (`crate::loose`): `files` are paths from the add-on's
+    /// folder (its models, menu files, sounds and the texts holding its
+    /// entries), and it is installed from those files only.
+    #[serde(skip_serializing_if = "is_false")]
+    pub loose: bool,
     /// `path = "sha256:<hex>"` for every file used (paths from the mod's
-    /// `HUNTDAT` parent). Only these files are taken from the mod.
+    /// `HUNTDAT` parent, or a loose add-on's folder). Only these files are
+    /// taken from the mod.
     pub files: BTreeMap<String, String>,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -175,7 +185,8 @@ fn check(m: &RecipeMod, root: &Path, dir: &dyn Backend) -> Located {
 /// Finds each recipe mod under `mods_dir`: the folder named by `folder` or
 /// like the id, else the folder where most listed files match their hashes.
 pub fn locate(r: &Recipe, mods_dir: &Path) -> Vec<Located> {
-    let mut cands: Vec<(String, PathBuf, Box<dyn Backend>)> = Vec::new();
+    // (folder name, root, files, loose add-on)
+    let mut cands: Vec<(String, PathBuf, Box<dyn Backend>, bool)> = Vec::new();
     let mut dirs = vec![mods_dir.to_path_buf()];
     if let Ok(rd) = std::fs::read_dir(mods_dir) {
         let mut subs: Vec<PathBuf> = rd
@@ -187,29 +198,37 @@ pub fn locate(r: &Recipe, mods_dir: &Path) -> Vec<Located> {
         dirs.extend(subs);
     }
     for d in dirs {
-        let Some(root) = mod_root(&d) else { continue };
         let name = if d.is_file() {
             d.file_stem()
         } else {
             d.file_name()
         }
         .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-        if let Ok(b) = open_root(&root) {
-            cands.push((name, root, b));
+        match mod_root(&d) {
+            Some(root) => {
+                if let Ok(b) = open_root(&root) {
+                    cands.push((name, root, b, false));
+                }
+            }
+            None if crate::loose::is_loose(&d) => {
+                if let Ok(b) = DirBackend::new(&d) {
+                    cands.push((name, d, Box::new(b), true));
+                }
+            }
+            None => {}
         }
     }
     r.mods
         .iter()
         .map(|m| {
-            let named = cands.iter().find(|(n, _, _)| {
+            let kind = cands.iter().filter(|c| c.3 == m.loose);
+            let named = kind.clone().find(|(n, ..)| {
                 (!m.folder.is_empty() && n.eq_ignore_ascii_case(&m.folder)) || slug(n) == m.id
             });
-            if let Some((_, root, b)) = named {
+            if let Some((_, root, b, _)) = named {
                 return check(m, root, b.as_ref());
             }
-            cands
-                .iter()
-                .map(|(_, root, b)| check(m, root, b.as_ref()))
+            kind.map(|(_, root, b, _)| check(m, root, b.as_ref()))
                 .filter(|l| !l.ok.is_empty())
                 .max_by_key(|l| l.ok.len())
                 .unwrap_or_else(|| Located {
@@ -282,16 +301,32 @@ pub fn new_recipe(
         ..Default::default()
     };
     for m in mods {
-        let dir = open_root(&m.root)?;
         let mut files = BTreeMap::new();
-        let mut used = m.files.clone();
-        if !m.res_changes.is_empty() {
-            if let Some(f) = dir.files().into_iter().find(|f| key(f) == RES_TXT) {
-                used.push(f);
+        if m.is_loose() {
+            for p in m.loose_inputs() {
+                let rel = p.strip_prefix(&m.root).unwrap_or(&p);
+                let rel = rel
+                    .components()
+                    .map(|c| c.as_os_str().to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join("/");
+                let data = std::fs::read(&p).map_err(|source| ModError::Io {
+                    path: p.clone(),
+                    source,
+                })?;
+                files.insert(rel, sha256(&data));
             }
-        }
-        for f in used {
-            files.insert(f.clone(), sha256(&dir.read(&f)?));
+        } else {
+            let dir = open_root(&m.root)?;
+            let mut used = m.files.clone();
+            if !m.res_changes.is_empty() {
+                if let Some(f) = dir.files().into_iter().find(|f| key(f) == RES_TXT) {
+                    used.push(f);
+                }
+            }
+            for f in used {
+                files.insert(f.clone(), sha256(&dir.read(&f)?));
+            }
         }
         let info = &m.manifest.info;
         r.mods.push(RecipeMod {
@@ -306,6 +341,7 @@ pub fn new_recipe(
             .map(|n| n.to_string_lossy().into_owned())
             .filter(|n| slug(n) != info.id && !n.eq_ignore_ascii_case("huntdat"))
             .unwrap_or_default(),
+            loose: m.is_loose(),
             files,
         });
         r.load_order.order.push(info.id.clone());
@@ -345,6 +381,18 @@ pub fn prepare(
     let mut sources = Vec::new();
     for (m, l) in r.mods.iter().zip(located) {
         let Some(root) = &l.root else { continue };
+        if m.loose {
+            // Installed as the loose reader would, from the pinned files only.
+            let pinned: Vec<PathBuf> = l.ok.values().map(|f| root.join(f)).collect();
+            let mut s = load_loose(vanilla, root, &|p| pinned.iter().any(|q| q == p))?;
+            let info = &mut s.manifest.info;
+            info.id = m.id.clone();
+            info.authors = vec![m.credit.clone()];
+            info.source_url = m.url.clone();
+            s.inferred = false;
+            sources.push(s);
+            continue;
+        }
         let dir = open_root(root)?;
         let mut files = Vec::new();
         let mut res_changes = Vec::new();

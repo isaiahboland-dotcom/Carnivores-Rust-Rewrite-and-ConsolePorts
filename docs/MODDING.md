@@ -166,7 +166,15 @@ cargo run --release -p c2-pc -- play ../source/c2-original --recipe ../recipes/m
 `verify` finds each mod by its `folder` hint, a folder named like its id, or
 the folder whose files match the hashes, and lists every missing or different
 file with the URL to get it. Only the listed files are used, so a recipe
-builds the same game everywhere. `recipe build ... --out DIR` writes the
+builds the same game everywhere.
+
+Loose add-ons work the same way (`loose = true` on the mod): their files are
+listed by their path in the add-on's folder (the models, menu files, sounds,
+the hunter model and the text files holding the entries; readmes without an
+entry are left out), and the add-on is installed from those files only, so
+a download with extra files in it builds the same game. A recipe of
+Modder's Edition add-ons needs the same `--overlay` when it is verified and
+built. `recipe build ... --out DIR` writes the
 combined game to a folder instead of playing it.
 
 - `[[resolve]] path = "HUNTDAT/..."`, `winner = "mod-id"`: that mod's copy of

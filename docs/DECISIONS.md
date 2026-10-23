@@ -2,6 +2,21 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-23 — Recipes for loose add-ons
+- A loose add-on in a recipe is marked `loose = true`; its `files` are paths
+  from the add-on's folder (not from a `HUNTDAT` parent) and cover what the
+  loose reader used: placed files, the hunter model, and only the text files
+  an entry was read from (a readme without one changes nothing, and pinning
+  it would make an edited readme a mismatch).
+- Building, the add-on is read by the same loose reader, limited to the
+  pinned files (`loose::read_only`), so a stray text with another entry in
+  someone's download can't add an animal. Placement depends on the base
+  too; a Modder's Edition recipe needs the same `--overlay`.
+- `locate` matches loose recipe mods only against loose folders, and
+  `HUNTDAT` ones only against `HUNTDAT` folders.
+- Checked: the owner's 14 add-ons (on the Modder's Edition) as a recipe
+  build the same game as `mod build`, every file identical.
+
 ## 2026-10-23 — All-in test; engine options file; Ice Age + Android on Ice Age
 - **All in** (C2 + ME + 14 add-ons + both APK imports + the Ice Age import):
   builds with 3 conflicts, all understood: the Dilophosaurus add-on and the

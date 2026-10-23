@@ -173,11 +173,35 @@ pub struct ModSource {
     pub notes: Vec<String>,
     /// Loose add-on entries that get a menu slot of their own.
     pub slots: Vec<crate::loose::SlotAdd>,
+    /// A loose add-on's text files its entries came from.
+    pub texts: Vec<PathBuf>,
 }
 
-/// Reads a loose add-on (`crate::loose`) as a mod.
-fn load_loose(vanilla: &Vfs, dir: &Path) -> Result<ModSource, ModError> {
-    let l = crate::loose::read(dir, vanilla)?;
+impl ModSource {
+    /// Read as a loose add-on (not from a `HUNTDAT` layout).
+    pub fn is_loose(&self) -> bool {
+        !self.map.is_empty() || self.hunter.is_some() || !self.texts.is_empty()
+    }
+
+    /// The files on disk a loose add-on was built from.
+    pub fn loose_inputs(&self) -> Vec<PathBuf> {
+        let mut v: Vec<PathBuf> = self.map.iter().map(|(_, p)| p.clone()).collect();
+        v.extend(self.hunter.iter().cloned());
+        v.extend(self.texts.iter().cloned());
+        v.sort();
+        v.dedup();
+        v
+    }
+}
+
+/// Reads a loose add-on (`crate::loose`) as a mod, from the files `keep`
+/// allows.
+pub(crate) fn load_loose(
+    vanilla: &Vfs,
+    dir: &Path,
+    keep: &dyn Fn(&Path) -> bool,
+) -> Result<ModSource, ModError> {
+    let l = crate::loose::read_only(dir, vanilla, keep)?;
     let name = dir
         .file_name()
         .map_or_else(|| "mod".into(), |n| n.to_string_lossy().into_owned());
@@ -217,6 +241,7 @@ fn load_loose(vanilla: &Vfs, dir: &Path) -> Result<ModSource, ModError> {
         hunter: l.hunter,
         notes: l.notes,
         slots: l.slots,
+        texts: l.texts,
     })
 }
 
@@ -254,7 +279,7 @@ pub fn vanilla(bases: &[PathBuf]) -> Result<Vfs, ModError> {
 pub fn load_mod(vanilla: &Vfs, dir: &Path) -> Result<ModSource, ModError> {
     let Some(root) = mod_root(dir) else {
         if crate::loose::is_loose(dir) {
-            return load_loose(vanilla, dir);
+            return load_loose(vanilla, dir, &|_| true);
         }
         return Err(ModError::NoHuntdat(dir.to_path_buf()));
     };

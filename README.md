@@ -474,7 +474,9 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] recipe schema (§6) with `folder` hint and `[[resolve]] entry = "section:name"`; SHA-256 pinning
   - [x] `c2-pc recipe verify|build|new|base`, `play --recipe`; unified-diff patches; `recipes/example.toml`,
         `recipes/bases/c2-vanilla.toml` (hashes only)
-  - [ ] recipes for loose add-ons (hash pinning of their files), then a first real recipe
+  - [x] recipes for loose add-ons (`loose = true`: files pinned from the add-on's folder, installed from
+        those only); the owner's 14 add-ons as a recipe build the same game as `mod build`, file for file
+  - [ ] a first real recipe in `recipes/` (needs each add-on's author credit and download page)
 - [x] M6 Cooker + 3DS boot
   - [x] `.c2pk` pack format (`c2_formats::cooked`, `c2_vfs::PackBackend`); shared loading in `c2_core::load`
   - [x] `c2-cook`: chosen area / animals / weapons / time of day, mods or recipe, PICA200 textures, n3ds/o3ds profiles, measured 3DS loading peak

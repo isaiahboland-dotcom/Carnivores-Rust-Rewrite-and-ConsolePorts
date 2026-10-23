@@ -49,6 +49,8 @@ pub struct Loose {
     pub notes: Vec<String>,
     /// Entries drawn for a menu slot that get one of their own instead.
     pub slots: Vec<SlotAdd>,
+    /// The text files its entries were read from (pinned by recipes).
+    pub texts: Vec<PathBuf>,
 }
 
 /// An add-on animal or weapon made for menu slot `from` (its `DINOn` /
@@ -282,11 +284,18 @@ fn menu_slot(base: &Vfs, res: &ResTxt, n: usize) -> Option<usize> {
 
 /// Reads the loose add-on in `dir` against the base game `base`.
 pub fn read(dir: &Path, base: &Vfs) -> Result<Loose, ModError> {
+    read_only(dir, base, &|_| true)
+}
+
+/// [`read`], looking only at the files `keep` allows: a recipe's pinned
+/// files, so other files in the user's copy change nothing.
+pub fn read_only(dir: &Path, base: &Vfs, keep: &dyn Fn(&Path) -> bool) -> Result<Loose, ModError> {
     let res = read_res(&base.read(RES_TXT)?)?;
     let dialect = c2_formats::mee::is_dialect(&res);
     let mut out = Loose::default();
     let mut files = Vec::new();
     gather(dir, dialect, &mut out.notes, &mut files);
+    files.retain(|f| keep(f));
     // A folder holding the game's own folders stands for HUNTDAT.
     let root = files.iter().find_map(|f| {
         f.ancestors().skip(1).find(|a| {
@@ -348,6 +357,9 @@ pub fn read(dir: &Path, base: &Vfs) -> Result<Loose, ModError> {
             let Some((section, b)) = entry(&body) else {
                 continue;
             };
+            if !out.texts.contains(t) {
+                out.texts.push(t.clone());
+            }
             let mee = before.to_ascii_lowercase().contains("modders edition");
             let id = block_id(&b);
             match picked.iter_mut().find(|(_, p, _)| block_id(p) == id) {
