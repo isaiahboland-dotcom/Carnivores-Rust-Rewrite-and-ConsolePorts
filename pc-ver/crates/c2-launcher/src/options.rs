@@ -99,7 +99,10 @@ mod tests {
     fn options_round_trip_and_leave_the_rest() {
         let o = Options {
             about: "x".into(),
-            survival: Some(SurvivalModes::Mobile),
+            survival: Some(SurvivalModes {
+                classic: true,
+                modded: false,
+            }),
             menu_style: Some(MenuStyle::IceAge),
             ..Default::default()
         };
@@ -110,7 +113,16 @@ mod tests {
         let mut b = c2_mods::balance::Balance::default();
         let done = back.apply(&mut cfg, &mut b).unwrap();
         assert_eq!(done, ["survival", "menu style"]);
-        assert_eq!(cfg.survival_modes, SurvivalModes::Mobile);
+        assert_eq!(
+            cfg.survival_modes,
+            SurvivalModes {
+                classic: true,
+                modded: false
+            }
+        );
+        // An older file's single choice still reads.
+        let old: Config = toml::from_str("survival_modes = \"Ours\"\n").unwrap();
+        assert!(!old.survival_modes.classic && old.survival_modes.modded);
         assert!(cfg.three_ds.ice_age_title);
     }
 }

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use eframe::egui::{self, Color32, RichText};
 
-use crate::config::{describe_game, install_name, AddOn, Config, MenuStyle, SurvivalModes, Target};
+use crate::config::{describe_game, install_name, AddOn, Config, MenuStyle, Target};
 use crate::jobs::{is_archive, Job, Step};
 use crate::theme::*;
 use crate::{find_tool, Mode};
@@ -304,18 +304,14 @@ impl Launcher {
         }
     }
 
-    /// `--mobile-survival FILE --survival-modes ..` once an APK import has
-    /// made the file.
+    /// `--survival-modes ..`, and `--mobile-survival FILE` once an APK
+    /// import has made the file.
     fn survival_args(&self) -> Vec<String> {
-        match self.cfg.mobile_survival.as_ref().filter(|f| f.exists()) {
-            Some(f) => vec![
-                "--mobile-survival".into(),
-                f.display().to_string(),
-                "--survival-modes".into(),
-                self.cfg.survival_modes.arg().into(),
-            ],
-            None => Vec::new(),
+        let mut v = vec!["--survival-modes".into(), self.cfg.survival_modes.arg()];
+        if let Some(f) = self.cfg.mobile_survival.as_ref().filter(|f| f.exists()) {
+            v.extend(["--mobile-survival".into(), f.display().to_string()]);
         }
+        v
     }
 
     /// Survival choice (PC and 3DS alike).
@@ -326,35 +322,28 @@ impl Launcher {
             .as_ref()
             .is_some_and(|f| f.exists());
         let mut changed = false;
+        let m = &mut self.cfg.survival_modes;
         ui.horizontal(|ui| {
             ui.label("Survival:");
-            for (m, name) in [
-                (SurvivalModes::Ours, "Ours"),
-                (SurvivalModes::Mobile, "Classic (mobile)"),
-                (SurvivalModes::Both, "Both"),
-            ] {
-                let r = ui.add_enabled(
-                    have || m == SurvivalModes::Ours,
-                    egui::RadioButton::new(
-                        have && self.cfg.survival_modes == m || !have && m == SurvivalModes::Ours,
-                        name,
-                    ),
-                );
-                if r.clicked() {
-                    self.cfg.survival_modes = m;
-                    changed = true;
-                }
-            }
+            changed |= ui
+                .add_enabled(
+                    have,
+                    egui::Checkbox::new(&mut m.classic, "Classic (Android)"),
+                )
+                .changed();
+            changed |= ui.checkbox(&mut m.modded, "Modded").changed();
         });
         help(
             ui,
             if have {
                 "Classic: the mobile game's own Survive mode, read from your APK (its waves on \
-                 Mount Ravan, straight in with the shotgun). Ours: random dangerous animals on a \
-                 random area, you pick the guns; hardcore and custom kinds. Both: a button each."
+                 Mount Ravan, straight in with the shotgun; on Ice Age, Ice Age animals stand \
+                 in). Modded: a Modder's Edition game's own survival, where its data has one. \
+                 With both, the game asks which when you pick Survival."
             } else {
-                "The mobile game's Survive mode comes with importing your Carnivores 2 (Dinosaur \
-                 Hunter) APK (Add-ons tab); until then, ours only."
+                "Modded: a Modder's Edition game's own survival, where its data has one. The \
+                 mobile game's classic Survive mode comes with importing your Carnivores 2 \
+                 (Dinosaur Hunter) APK (Add-ons tab)."
             },
         );
         changed

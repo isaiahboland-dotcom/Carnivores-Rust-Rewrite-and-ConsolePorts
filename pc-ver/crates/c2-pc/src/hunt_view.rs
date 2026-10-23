@@ -408,7 +408,15 @@ impl HuntView {
             .or_else(|| c2map_snow(&setup.map))
             .filter(|_| !trophy)
             .map(|s| c2_core::effects::Snowfall::new(s, 2000));
-        if let Some(kind) = setup.survival {
+        // The dialect game's own survival: its roster from the area's box.
+        let modded = mee
+            .filter(|_| setup.survival == Some(SurvivalKind::Mee))
+            .and_then(|t| {
+                SurvivalOptions::mee(&t.survival_roster(), t.survival.as_ref()?, SURVIVAL_MAX)
+            });
+        if let Some(o) = modded {
+            hunt.start_survival(area, o);
+        } else if let Some(kind) = setup.survival {
             let mobile = setup
                 .mobile_survival
                 .as_ref()

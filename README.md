@@ -586,7 +586,12 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
         darts on the map (`radar`), per-weapon animation slots; weather is the per-map snow (done with M14)
   - [ ] weapons, later: muzzle flash, bullets drawn in flight (`bModel`), chambered rounds and part
         reloads (`rldAnimPart`, `picc`), underwater stats, harpoons, retrieving arrows
-  - [ ] the dialect's survival mode (`-survival`: `survivalDino` waves, the map's survival box)
+  - [x] the dialect's survival mode ("modded"): `survivalIndex` roster, waves of `2^n` points bought dearest
+        first, from the area's box, at its spot, area / weapon / time from `common {}`, unlimited ammo
+        (PC and 3DS; `c2-cook --check` plays its waves)
+  - [x] survival menus (owner, 2026-10-23): one SURVIVAL button; with more than one mode a chooser (Classic
+        (Android) / Modded); our own survival benched (not offered; `--survival-modes ours` for tests); the
+        launcher's Classic / Modded checkboxes
 
 _Last updated: 2026-10-22 — the add-on pack plays on hardware and the Old 3DS slowdown after a kill is gone. Roaming add-ons on the 3DS are proper hunt targets (no call, +10%, a menu picture); dialect games no longer halve non-target scores. M10: the launchers' balance editor. Next: `.cia` builds._
 

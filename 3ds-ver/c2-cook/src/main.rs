@@ -29,7 +29,7 @@ mod check;
 const USAGE: &str = "usage:
   c2-cook --game <GAME_DIR> [--overlay DIR]... [--mod MOD]...
           [--recipe RECIPE.toml --mods DIR] [--balance FILE] [--areas N,N]
-          [--mobile-survival FILE [--survival-modes ours|mobile|both]]
+          [--mobile-survival FILE] [--survival-modes classic,modded,ours]
           [--target n3ds|o3ds] [--force] --out <PACK.c2pk>
 
   c2-cook --check <PACK.c2pk>   loads a pack as the 3DS does and plays a short
@@ -41,7 +41,8 @@ const USAGE: &str = "usage:
   --balance  prices and scores over the game (a balance file; see `c2-pc balance`)
   --menu-art the menu style: a game folder whose title art is used (Ice Age's)
   --mobile-survival  the mobile game's Survive mode (mobile-survival.txt from an
-             APK import), and --survival-modes ours|mobile|both which are offered
+             APK import); --survival-modes which survivals are offered (default
+             classic,modded: the mobile one, the dialect game's own; ours is benched)
   --areas    only these areas (default: all, plus the trophy room)
   --target   n3ds (New 3DS, default) or o3ds (Old 3DS / 2DS: smaller textures, shorter view)
   --force    write the pack even if it is over the target's memory budget
@@ -1162,11 +1163,13 @@ fn main() -> Result<()> {
     if let Some(f) = &a.mobile_survival {
         let t = std::fs::read_to_string(f).with_context(|| format!("reading {}", f.display()))?;
         c.entries.push(("C2RS/SURVIVE.TXT".into(), t.into_bytes()));
-        info += &format!(
-            "survival = {}\n",
-            a.survival_modes.as_deref().unwrap_or("both")
-        );
     }
+    // Which survivals the app offers: classic (needs the file above),
+    // modded (the dialect game's own, if it has one); ours is benched.
+    info += &format!(
+        "survival = {}\n",
+        a.survival_modes.as_deref().unwrap_or("classic,modded")
+    );
     c.entries.push(("C2RS/INFO.TXT".into(), info.into_bytes()));
     let bytes = write_pack(&c.entries);
     if let Some(dir) = out.parent().filter(|d| !d.as_os_str().is_empty()) {

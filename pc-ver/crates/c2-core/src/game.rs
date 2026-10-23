@@ -2623,6 +2623,29 @@ mod tests {
     }
 
     #[test]
+    fn modded_survival_waves_buy_the_dearest_first() {
+        let w = super::survival::mee_waves(&[7, 8, 9]);
+        assert_eq!(w.len(), 26);
+        // 2, 4, 8, 16 points; costs 1, 3, 9.
+        assert_eq!(w[0], [7, 7]);
+        assert_eq!(w[1], [8, 7]);
+        assert_eq!(w[2], [8, 8, 7, 7]);
+        assert_eq!(w[3], [9, 8, 8, 7]);
+        let spot = c2_formats::mee::SurvivalSpot {
+            hunter: (345, 245),
+            angle: 90.0,
+            spawn: [318, 336, 170, 180],
+        };
+        let o = SurvivalOptions::mee(&[7, 8, 9], &spot, 6).expect("roster");
+        let m = o.mobile.expect("waves");
+        assert!(o.unlimited);
+        assert_eq!(m.hunter, [345.0 * 256.0 + 128.0, 245.0 * 256.0 + 128.0]);
+        assert!((m.spawn[0] - (327.0 * 256.0 + 128.0)).abs() < 1.0);
+        assert!((m.hunter_alpha.unwrap_or(0.0) - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+        assert!(SurvivalOptions::mee(&[], &spot, 6).is_none());
+    }
+
+    #[test]
     fn mobile_survival_on_ice_age_takes_stand_ins_round_the_hunter() {
         let (area, mut hunt, car) = setup(false);
         for (name, a) in [("Smilodon", ai::ALLO), ("Wooly rhinoceros", ai::CHASM)] {

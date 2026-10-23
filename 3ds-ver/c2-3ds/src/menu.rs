@@ -47,12 +47,49 @@ const TIMES: [(TimeOfDay, &str); 3] = [
 /// on kill scores) for x1, x2, x3.
 const EXTRA_AMMO: [(i32, u32, f32); 3] = [(10, 1, 0.95), (50, 2, 0.95), (150, 3, 1.0)];
 
+/// The pack's dialect game's own survival (its `_RES.TXT`'s `common {}`,
+/// the area's spot, a `survivalIndex` roster), with the roster's names.
+fn modded_survival(
+    vfs: &Vfs,
+    areas: &[String],
+) -> Option<(c2_formats::mee::SurvivalCommon, Vec<String>)> {
+    let res = c2_formats::res_txt::ResTxt::parse(&String::from_utf8_lossy(
+        &vfs.read("HUNTDAT/_RES.TXT").ok()?,
+    ))
+    .ok()?;
+    if !c2_formats::mee::is_dialect(&res) {
+        return None;
+    }
+    let c = c2_formats::mee::survival_common(&res)?;
+    if !areas
+        .iter()
+        .any(|a| a.eq_ignore_ascii_case(&format!("AREA{}", c.area)))
+    {
+        return None;
+    }
+    let h = c2_formats::mee::Hunt {
+        area: Some(c.area),
+        time: c.time,
+        picked: 0,
+    };
+    let t = c2_formats::mee::Tables::read(&res, &h);
+    t.survival?;
+    let names: Vec<String> = t
+        .survival_roster()
+        .iter()
+        .filter_map(|&i| t.characters.get(i)?.block.get(&["name"]))
+        .map(|n| n.trim().trim_matches('\'').trim().to_string())
+        .collect();
+    (!names.is_empty()).then_some((c, names))
+}
+
 /// Title screen buttons.
 const PLAY: [f32; 4] = [60.0, 6.0, 200.0, 30.0];
 const SURVIVAL: [f32; 4] = [60.0, 42.0, 200.0, 30.0];
-/// With both survivals: ours on the left, classic on the right.
-const SURVIVAL_L: [f32; 4] = [60.0, 42.0, 98.0, 30.0];
-const CLASSIC_R: [f32; 4] = [162.0, 42.0, 98.0, 30.0];
+/// The survival chooser's `i`-th button (more than one survival offered).
+fn pick_rect(i: usize) -> [f32; 4] {
+    [60.0, 42.0 + 36.0 * i as f32, 200.0, 30.0]
+}
 const HUNTER: [f32; 4] = [60.0, 78.0, 200.0, 30.0];
 const TROPHIES: [f32; 4] = [60.0, 114.0, 200.0, 30.0];
 const SETTINGS: [f32; 4] = [60.0, 150.0, 200.0, 30.0];
@@ -223,6 +260,10 @@ pub struct Menu {
     /// survival), and whether ours is offered too (the launcher's choice).
     mobile_survival: Option<c2_formats::mobile_arcade::Survive>,
     ours: bool,
+    /// The dialect game's own survival and its roster's names, if offered.
+    modded: Option<(c2_formats::mee::SurvivalCommon, Vec<String>)>,
+    /// Choosing which survival (more than one offered).
+    survival_pick: bool,
 }
 
 pub(crate) fn title(vfs: &Vfs, file: &str, fallback: String) -> String {
@@ -305,6 +346,9 @@ impl Menu {
         // Cheapest first, left to right and top to bottom (equal prices
         // keep their order: the game's, then add-ons).
         dinos.sort_by_key(|d| d.1.price);
+        // Which survivals the pack offers (`survival = classic,modded`).
+        let modes = info.survival.to_ascii_lowercase();
+        let offered = |names: &[&str]| modes.split(',').any(|m| names.contains(&m.trim()));
         // The mobile Survive mode: only on its area (and if offered).
         let mobile_survival = vfs
             .read("C2RS/SURVIVE.TXT")
@@ -315,8 +359,12 @@ impl Menu {
                     .iter()
                     .any(|a| a.eq_ignore_ascii_case(&format!("AREA{}", s.area)))
             })
-            .filter(|_| info.survival != "ours");
-        let ours = mobile_survival.is_none() || info.survival != "mobile";
+            .filter(|_| offered(&["classic", "mobile", "android", "both"]));
+        // Ours is benched (owner, 2026-10-23): only when the pack asks.
+        let ours = offered(&["ours"]);
+        let modded = offered(&["modded", "mee", "both"])
+            .then(|| modded_survival(vfs, &info.areas))
+            .flatten();
         let dialect = rules.dialect();
         let kinds = dinos
             .iter()
@@ -413,6 +461,8 @@ impl Menu {
             special_dinos: 0,
             ours,
             mobile_survival,
+            modded,
+            survival_pick: false,
             weapons,
             equip,
             area: 0,
@@ -713,24 +763,93 @@ impl Menu {
         }
     }
 
-    /// The survival buttons on the title: (rectangle, label, classic).
-    fn survival_buttons(&self) -> Vec<([f32; 4], &'static str, bool)> {
-        match (self.ours, self.mobile_survival.is_some()) {
-            (true, true) => vec![
-                (SURVIVAL_L, "SURVIVAL", false),
-                (CLASSIC_R, "CLASSIC", true),
-            ],
-            (_, true) => vec![(SURVIVAL, "CLASSIC SURVIVAL", true)],
-            _ => vec![(SURVIVAL, "SURVIVAL", false)],
+    /// The survivals offered: the mobile game's, the dialect game's, ours
+    /// (benched).
+    fn survival_modes(&self) -> Vec<(SurvivalKind, &'static str)> {
+        let mut v = Vec::new();
+        if self.mobile_survival.is_some() {
+            v.push((SurvivalKind::Mobile, "CLASSIC (ANDROID)"));
+        }
+        if self.modded.is_some() {
+            v.push((SurvivalKind::Mee, "MODDED"));
+        }
+        if self.ours {
+            v.push((SurvivalKind::Normal, "OURS"));
+        }
+        v
+    }
+
+    /// Starts survival `kind` (a hunt setup, or our gun pick).
+    fn start_survival(&mut self, kind: SurvivalKind) -> Option<Setup> {
+        let r = match kind {
+            SurvivalKind::Mobile => self.classic_setup(),
+            SurvivalKind::Mee => self.modded_setup(),
+            _ => {
+                // Ours: only the guns are picked.
+                self.survival = Some(SurvivalKind::Normal);
+                self.observer = false;
+                self.step = Step::Gear;
+                return None;
+            }
+        };
+        match r {
+            Ok(s) => Some(s),
+            Err(e) => {
+                self.survival = None;
+                self.message = Some(e.into());
+                None
+            }
         }
     }
 
-    /// Which survival button is at (`x`, `y`): `Some(classic)`.
-    fn survival_button(&self, x: f32, y: f32) -> Option<bool> {
-        self.survival_buttons()
-            .into_iter()
-            .find(|b| inside(b.0, x, y))
-            .map(|b| b.2)
+    /// The dialect game's survival: on its area at its time, with its
+    /// weapon and its roster (`common {}`); the hunt's picks come back
+    /// afterwards.
+    fn modded_setup(&mut self) -> Result<Setup, &'static str> {
+        let (c, roster) = self.modded.clone().ok_or("No modded survival")?;
+        let kept = (
+            self.area,
+            self.time,
+            self.picked_weapons,
+            self.picked_equip,
+            self.extra_ammo,
+        );
+        let out = (|| {
+            let name = format!("AREA{}", c.area);
+            self.area = self
+                .areas
+                .iter()
+                .position(|a| a.0.eq_ignore_ascii_case(&name))
+                .ok_or("The survival's area isn't in this pack")?;
+            // The dialect's 0 dusk, 1 day, 2 night: TIMES' order.
+            self.time = usize::from(c.time).min(TIMES.len() - 1);
+            self.survival = Some(SurvivalKind::Mee);
+            self.observer = false;
+            self.extra_dinos = (0..self.dinos.len())
+                .filter(|&i| {
+                    roster
+                        .iter()
+                        .any(|n| n.eq_ignore_ascii_case(&self.dinos[i].1.name))
+                })
+                .fold(0, |a, i| a | 1 << i);
+            if self.extra_dinos == 0 {
+                return Err("None of the survival's animals is in this pack");
+            }
+            self.special_dinos = 0;
+            self.picked_weapons = 1 << c.weapon.min(self.weapons.len().saturating_sub(1)).min(63);
+            self.picked_equip = 0;
+            self.extra_ammo = 0;
+            self.can_hunt()?;
+            Ok(self.setup())
+        })();
+        (
+            self.area,
+            self.time,
+            self.picked_weapons,
+            self.picked_equip,
+            self.extra_ammo,
+        ) = kept;
+        out
     }
 
     /// Classic survival: the mobile game's, on its area, with its animals
@@ -935,26 +1054,28 @@ impl Menu {
                 .position(|&(cx, cy, r)| in_hex(cx, cy, r, x, y))
         };
         match self.step {
+            Step::Title if self.survival_pick => {
+                // Which survival: a button each; elsewhere goes back.
+                self.survival_pick = false;
+                let modes = self.survival_modes();
+                if let Some(&(kind, _)) = (0..modes.len())
+                    .find(|&i| inside(pick_rect(i), x, y))
+                    .map(|i| &modes[i])
+                {
+                    return self.start_survival(kind);
+                }
+            }
             Step::Title => {
                 if inside(PLAY, x, y) {
                     self.survival = None;
                     self.extra_dinos = 0;
                     self.step = Step::Area;
-                } else if let Some(classic) = self.survival_button(x, y) {
-                    if classic {
-                        match self.classic_setup() {
-                            Ok(s) => return Some(s),
-                            Err(e) => {
-                                self.survival = None;
-                                self.message = Some(e.into());
-                            }
-                        }
-                    } else {
-                        // Ours: only the guns are picked.
-                        self.survival = Some(SurvivalKind::Normal);
-                        self.observer = false;
-                        self.step = Step::Gear;
+                } else if inside(SURVIVAL, x, y) && !self.survival_modes().is_empty() {
+                    let modes = self.survival_modes();
+                    if let [(one, _)] = modes[..] {
+                        return self.start_survival(one);
                     }
+                    self.survival_pick = true;
                 } else if inside(TROPHIES, x, y) && self.trophy_room {
                     return Some(self.trophy_setup());
                 } else if inside(SETTINGS, x, y) {
@@ -1298,13 +1419,26 @@ impl Menu {
         let step = self.step;
         let mut c = std::mem::replace(&mut self.c, Canvas::new(None));
         match step {
+            Step::Title if self.survival_pick => {
+                let modes = self.survival_modes();
+                for i in 0..modes.len() {
+                    let r = pick_rect(i);
+                    c.rect([r[0] - 2.0, r[1] - 2.0, r[2] + 4.0, r[3] + 4.0], GOLD);
+                    c.rect(r, PANEL);
+                }
+                c.flush(gpu);
+                c.text_c(gpu, 160.0, 18.0, 1.0, TEXT, "Which survival?");
+                for (i, (_, label)) in modes.iter().enumerate() {
+                    let r = pick_rect(i);
+                    c.text_c(gpu, r[0] + r[2] / 2.0, r[1] + 11.0, 1.0, WHITE, label);
+                }
+                c.text_c(gpu, 160.0, 220.0, 1.0, DIMMED, "Tap elsewhere to go back");
+            }
             Step::Title => {
                 let mut buttons = vec![(PLAY, "PLAY", true)];
-                buttons.extend(
-                    self.survival_buttons()
-                        .into_iter()
-                        .map(|b| (b.0, b.1, true)),
-                );
+                if !self.survival_modes().is_empty() {
+                    buttons.push((SURVIVAL, "SURVIVAL", true));
+                }
                 buttons.extend([
                     (TROPHIES, "TROPHIES", self.trophy_room),
                     (SETTINGS, "SETTINGS", true),

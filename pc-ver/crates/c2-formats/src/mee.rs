@@ -267,6 +267,80 @@ pub struct Tables {
     pub trophies: Vec<TrophySpot>,
     /// The hunt's area's snow (its `areatable` entry's `snow{}`).
     pub snow: Option<Snow>,
+    /// The hunt's area's survival spot (its `areatable` entry).
+    pub survival: Option<SurvivalSpot>,
+}
+
+/// The dialect's survival mode (`-survival`) as the `common {}` section
+/// sets it (the modernized fork's `ScriptParser`): its area (1-based), its
+/// weapon (`survivalWeapon` is one-based; here an index) and time of day
+/// (the dialect's: 0 dusk, 1 day, 2 night).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SurvivalCommon {
+    pub area: u32,
+    pub weapon: usize,
+    pub time: u8,
+}
+
+/// `common {}`'s survival defaults, if it names an area.
+pub fn survival_common(res: &ResTxt) -> Option<SurvivalCommon> {
+    let sec = res
+        .sections
+        .iter()
+        .find(|s| s.name.to_ascii_lowercase().contains("common"))?;
+    let get = |k: &str| {
+        sec.entries
+            .iter()
+            .chain(sec.blocks.iter().flat_map(|b| b.entries.iter()))
+            .find(|e| e.key.eq_ignore_ascii_case(k))
+            .map(|e| c_atoi(&e.value))
+    };
+    let area = u32::try_from(get("survivalArea")?)
+        .ok()
+        .filter(|&a| a > 0)?;
+    Some(SurvivalCommon {
+        area,
+        weapon: get("survivalWeapon").map_or(0, |w| usize::try_from(w - 1).unwrap_or(0)),
+        time: get("survivalDTM").map_or(1, |t| t.clamp(0, 2) as u8),
+    })
+}
+
+/// An area's survival spot (`areatable`: `survivalPlayerX/Y/A`,
+/// `survivalDinoXMin/XMax/YMin/YMax`), in cells (`A` in degrees).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SurvivalSpot {
+    pub hunter: (i32, i32),
+    pub angle: f32,
+    /// x min, x max, y min, y max.
+    pub spawn: [i32; 4],
+}
+
+fn survival_spot(b: &Block) -> Option<SurvivalSpot> {
+    Some(SurvivalSpot {
+        hunter: (int(b, "survivalPlayerX")?, int(b, "survivalPlayerY")?),
+        angle: float(b, "survivalPlayerA").unwrap_or(0.0),
+        spawn: [
+            int(b, "survivalDinoXMin")?,
+            int(b, "survivalDinoXMax")?,
+            int(b, "survivalDinoYMin")?,
+            int(b, "survivalDinoYMax")?,
+        ],
+    })
+}
+
+impl Tables {
+    /// The survival animals in their `survivalIndex` order (1 first): the
+    /// waves' cheapest first. A later entry with an index takes it over, as
+    /// the engine's `SurvivalIndex[n] = TotalC`.
+    pub fn survival_roster(&self) -> Vec<usize> {
+        let mut by: std::collections::BTreeMap<i32, usize> = Default::default();
+        for (i, c) in self.characters.iter().enumerate() {
+            if let Some(n) = int(&c.block, "survivalIndex").filter(|&n| n > 0) {
+                by.insert(n, i);
+            }
+        }
+        by.into_values().collect()
+    }
 }
 
 /// `TSnowType` (`ScriptParser: ReadSnowType`): falling speed, sideways
@@ -484,6 +558,7 @@ impl Tables {
                     .and_then(|a| sec.blocks.get(a))
                     .and_then(|b| b.subs_named("snow").next().map(snow))
                     .filter(|s| s.dens > 0);
+                t.survival = area.and_then(|a| sec.blocks.get(a)).and_then(survival_spot);
             } else if name.contains("packtable") {
                 t.pack_groups.clear();
                 for s in sec.subs.iter().filter(|s| s.name.contains("packgroup")) {

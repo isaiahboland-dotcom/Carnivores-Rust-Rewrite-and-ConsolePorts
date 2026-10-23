@@ -423,7 +423,18 @@ fn new_hunt(
         .as_ref()
         .filter(|_| setup.survival == Some(SurvivalKind::Mobile))
         .and_then(|m| SurvivalOptions::mobile(&hunt, m, SURVIVAL_MAX));
-    if let Some(o) = mobile {
+    // The dialect game's own survival: its roster (those loaded) from the
+    // area's box.
+    let modded = tables
+        .filter(|_| setup.survival == Some(SurvivalKind::Mee))
+        .and_then(|t| {
+            let mut roster = t.survival_roster();
+            roster.retain(|&c| species.get(c).is_some_and(|s| !s.ani_time.is_empty()));
+            SurvivalOptions::mee(&roster, t.survival.as_ref()?, SURVIVAL_MAX)
+        });
+    if let Some(o) = modded {
+        hunt.start_survival(area, o);
+    } else if let Some(o) = mobile {
         hunt.start_survival(area, o);
     } else if let Some(kind) = setup.survival {
         let kind = if kind == SurvivalKind::Mobile {

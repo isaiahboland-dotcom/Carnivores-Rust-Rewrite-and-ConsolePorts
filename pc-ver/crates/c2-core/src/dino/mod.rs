@@ -1637,6 +1637,7 @@ mod tests {
             ],
             trophies: Vec::new(),
             snow: None,
+            survival: None,
         };
         let mut herd = Herd {
             species: vec![

@@ -69,22 +69,70 @@ pub enum MenuStyle {
     Mobile,
 }
 
-/// Which survivals the games offer (README M13): ours, the mobile game's
-/// (from a Carnivores 2 APK import), or both (the player picks in the game).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub enum SurvivalModes {
-    Ours,
-    Mobile,
-    #[default]
-    Both,
+/// Which survivals the games offer (owner, 2026-10-23): the mobile game's
+/// classic one (from a Carnivores 2 APK import; on Ice Age with its
+/// stand-ins) and a dialect game's own ("modded"). With more than one, the
+/// game asks which. Ours is benched (not offered).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(from = "SurvivalModesFile")]
+pub struct SurvivalModes {
+    pub classic: bool,
+    pub modded: bool,
+}
+
+impl Default for SurvivalModes {
+    fn default() -> Self {
+        Self {
+            classic: true,
+            modded: true,
+        }
+    }
+}
+
+/// As saved: the table, or an older single choice (`"Ours"`, `"Mobile"`,
+/// `"Both"`).
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum SurvivalModesFile {
+    Old(String),
+    New {
+        #[serde(default = "yes")]
+        classic: bool,
+        #[serde(default = "yes")]
+        modded: bool,
+    },
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl From<SurvivalModesFile> for SurvivalModes {
+    fn from(f: SurvivalModesFile) -> Self {
+        match f {
+            SurvivalModesFile::New { classic, modded } => Self { classic, modded },
+            SurvivalModesFile::Old(s) => Self {
+                classic: !s.eq_ignore_ascii_case("ours"),
+                modded: true,
+            },
+        }
+    }
 }
 
 impl SurvivalModes {
-    pub fn arg(self) -> &'static str {
-        match self {
-            Self::Ours => "ours",
-            Self::Mobile => "mobile",
-            Self::Both => "both",
+    /// `--survival-modes` for `c2-pc` / `c2-cook`.
+    pub fn arg(self) -> String {
+        let mut v = Vec::new();
+        if self.classic {
+            v.push("classic");
+        }
+        if self.modded {
+            v.push("modded");
+        }
+        if v.is_empty() {
+            "none".into()
+        } else {
+            v.join(",")
         }
     }
 }

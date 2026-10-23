@@ -2,6 +2,36 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-23 — Survival modes: classic, modded; ours benched
+- **Owner's choice**: the survivals offered are the mobile game's classic
+  (from the Carnivores 2 APK; on Ice Age with its stand-ins) and a dialect
+  game's own ("modded"). Ours (and its hardcore / custom kinds) is benched:
+  the code stays, nothing offers it unless `--survival-modes` names `ours`.
+  A game with neither (plain C2, no APK import) has no survival button.
+- **One button**: SURVIVAL on the PC main menu and the 3DS title; with more
+  than one mode, a chooser (PC over the menu, 3DS on the bottom screen).
+  `--survival-modes classic,modded` (`c2-pc`, `c2-cook`'s `INFO.TXT`); the
+  launcher's two checkboxes (older saved choices still read: `Ours` meant
+  no classic).
+- **Modded** (the Modder's Edition's `-survival`; the modernized fork's
+  `ScriptParser` for `common {}`): `survivalArea` (1-based), `survivalWeapon`
+  (one-based there; an index here), `survivalDTM` (0 dusk, 1 day, 2 night);
+  the area's `areatable` entry gives `survivalPlayerX/Y/A` and the spawn box
+  `survivalDinoXMin/XMax/YMin/YMax` (cells). The roster is the characters
+  with `survivalIndex` in its order; a later entry with the same index takes
+  it over (`SurvivalIndex[n] = TotalC`). Deviation: the engine counts every
+  `survivalIndex` line (`SurvivalIndexCh++`), so a repeated index made it
+  reach past the roster into type 0 (the hunter); we count the roster.
+- **Waves** (`PlaceCharactersSurvival`): wave `n` has `2^n`; the `k`-th
+  costs `3^k`; the dearest that fits first, as often as it fits. Worked out
+  to the engine's limit of 26 (then the 26th again), capped at our wave size
+  (the dearest kept). From the box (`spawn_in_box`), the hunter at the spot
+  facing `survivalPlayerA`, unlimited ammunition, the next wave 2 s after
+  one falls (`WaveNoteTime`). 3DS: only roster animals the pack loaded.
+- Checked: CClassic MEE's pack (`c2-cook --check`): roster Allosaurus,
+  Lifranyx, Laelaps, Stokesosaurus, T-Rex; five waves growing as the rule
+  says, each coming to the hunter.
+
 ## 2026-10-23 — M9: the dialect's weapons
 - **Scope**: the keys the dialect games here use (counted over every
   `_RES.TXT` we have): `land_veloc`, `land_fall`, `recoil`, `shake`,

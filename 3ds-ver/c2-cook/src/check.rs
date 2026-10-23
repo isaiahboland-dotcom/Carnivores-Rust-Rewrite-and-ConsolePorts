@@ -243,6 +243,9 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
                 problems += 1;
             }
         }
+        if !modded(&vfs, &rules)? {
+            problems += 1;
+        }
     }
     if problems > 0 {
         anyhow::bail!("{problems} hunts with missing files");
@@ -251,17 +254,25 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-/// Classic survival on its area with every animal loaded: the hunter
-/// stands; each wave, once it has come, is felled. Prints what each wave
-/// brought and how near it came. `false`: it didn't run.
-fn classic(vfs: &Vfs, rules: &Rules, m: &c2_formats::mobile_arcade::Survive) -> Result<bool> {
-    let area_name = format!("AREA{}", m.area);
-    println!("classic survival ({area_name}):");
-    let Ok(area) = c2_core::load::area_with(vfs, &area_name, TimeOfDay::Day, true) else {
+/// A survival's hunt on `area_name` with every animal loaded.
+struct SurvivalHunt {
+    area: c2_core::area::Area,
+    hunt: Hunt,
+    cars: Vec<Option<c2_formats::car::Car>>,
+    tables: Option<c2_formats::mee::Tables>,
+}
+
+fn survival_hunt(
+    vfs: &Vfs,
+    rules: &Rules,
+    area_name: &str,
+    time: TimeOfDay,
+) -> Option<SurvivalHunt> {
+    let Ok(area) = c2_core::load::area_with(vfs, area_name, time, true) else {
         println!("  MISSING: its area");
-        return Ok(false);
+        return None;
     };
-    let hr = rules.hunt(&area_name, TimeOfDay::Day, u128::MAX);
+    let hr = rules.hunt(area_name, time, u128::MAX);
     let keep = |i: usize| !matches!(hr.roles.get(i), Some(Role::Off) | None);
     let (mut species, cars) = c2_core::load::species_with(vfs, &hr.res, &keep);
     if let Some(t) = &hr.tables {
@@ -281,7 +292,7 @@ fn classic(vfs: &Vfs, rules: &Rules, m: &c2_formats::mobile_arcade::Survive) -> 
         ..Default::default()
     };
     let room = c2_core::profile::new_player("check", 0, 0);
-    let mut hunt = Hunt::new(
+    let hunt = Hunt::new(
         &area,
         player,
         herd,
@@ -290,21 +301,97 @@ fn classic(vfs: &Vfs, rules: &Rules, m: &c2_formats::mobile_arcade::Survive) -> 
         opts,
         room,
     );
-    let Some(o) = SurvivalOptions::mobile(&hunt, m, 6) else {
+    Some(SurvivalHunt {
+        area,
+        hunt,
+        cars,
+        tables: hr.tables,
+    })
+}
+
+/// Classic survival on its area with every animal loaded. `false`: it
+/// didn't run.
+fn classic(vfs: &Vfs, rules: &Rules, m: &c2_formats::mobile_arcade::Survive) -> Result<bool> {
+    let area_name = format!("AREA{}", m.area);
+    println!("classic survival ({area_name}):");
+    let Some(mut s) = survival_hunt(vfs, rules, &area_name, TimeOfDay::Day) else {
+        return Ok(false);
+    };
+    let Some(o) = SurvivalOptions::mobile(&s.hunt, m, 6) else {
         println!("  MISSING: its animals (or their stand-ins)");
         return Ok(false);
     };
     if o.mobile.as_ref().is_some_and(|w| w.stand_ins) {
         println!("  with stand-ins, round the hunter");
     }
-    hunt.start_survival(&area, o);
+    Ok(play_waves(&mut s, o))
+}
+
+/// The dialect game's own survival, if the pack's game has one: on its
+/// area at its time, its roster from the area's box. `false`: it has one
+/// that didn't run.
+fn modded(vfs: &Vfs, rules: &Rules) -> Result<bool> {
+    let Some(res) = vfs
+        .read("HUNTDAT/_RES.TXT")
+        .ok()
+        .and_then(|d| c2_formats::res_txt::ResTxt::parse(&String::from_utf8_lossy(&d)).ok())
+        .filter(c2_formats::mee::is_dialect)
+    else {
+        return Ok(true);
+    };
+    let Some(c) = c2_formats::mee::survival_common(&res) else {
+        return Ok(true);
+    };
+    let area_name = format!("AREA{}", c.area);
+    println!("modded survival ({area_name}):");
+    let time = match c.time {
+        0 => TimeOfDay::Dusk,
+        2 => TimeOfDay::Night,
+        _ => TimeOfDay::Day,
+    };
+    let Some(mut s) = survival_hunt(vfs, rules, &area_name, time) else {
+        return Ok(false);
+    };
+    let Some(t) = s.tables.clone() else {
+        println!("  MISSING: the dialect's tables");
+        return Ok(false);
+    };
+    let mut roster = t.survival_roster();
+    let names: Vec<String> = roster
+        .iter()
+        .map(|&i| {
+            s.hunt
+                .herd
+                .species
+                .get(i)
+                .map_or("?".into(), |sp| sp.info.name.clone())
+        })
+        .collect();
+    println!("  roster (cheapest first): {}", names.join(", "));
+    roster.retain(|&i| s.cars.get(i).is_some_and(Option::is_some));
+    let Some(o) = t
+        .survival
+        .as_ref()
+        .and_then(|spot| SurvivalOptions::mee(&roster, spot, 6))
+    else {
+        println!("  MISSING: the area's survival spot, or the roster's models");
+        return Ok(false);
+    };
+    Ok(play_waves(&mut s, o))
+}
+
+/// The hunter stands; each wave, once it has come, is felled. Prints what
+/// each wave brought and how near it came. `false`: no wave came.
+fn play_waves(s: &mut SurvivalHunt, o: SurvivalOptions) -> bool {
+    let (area, hunt, cars) = (&s.area, &mut s.hunt, &s.cars);
+    hunt.start_survival(area, o);
     let car_refs: Vec<_> = cars.iter().map(Option::as_ref).collect();
     let mut out = Vec::new();
     let mut near = f32::MAX;
     let mut shown = 0;
     for t in 0..15_000u32 {
         hunt.health = c2_core::game::MAX_HEALTH;
-        hunt.tick(&area, &car_refs, &HuntInput::default(), 20, &mut out);
+        hunt.tick(area, &car_refs, &HuntInput::default(), 20, &mut out);
         out.clear();
         let alive: Vec<usize> = (0..hunt.herd.chars.len())
             .filter(|&i| hunt.herd.chars[i].wave > 0 && hunt.herd.chars[i].health > 0)
@@ -333,7 +420,7 @@ fn classic(vfs: &Vfs, rules: &Rules, m: &c2_formats::mobile_arcade::Survive) -> 
         if !alive.is_empty() && (close || t % 2000 == 1999) {
             println!("    came to {:.0} cells", near / 256.0);
             for i in alive {
-                hunt.debug_bag(&area, i, &mut out);
+                hunt.debug_bag(area, i, &mut out);
             }
             out.clear();
             near = f32::MAX;
@@ -342,7 +429,7 @@ fn classic(vfs: &Vfs, rules: &Rules, m: &c2_formats::mobile_arcade::Survive) -> 
             break;
         }
     }
-    Ok(shown > 0)
+    shown > 0
 }
 
 /// The hunter 1200 units from the first animal of `wanted`, standing for

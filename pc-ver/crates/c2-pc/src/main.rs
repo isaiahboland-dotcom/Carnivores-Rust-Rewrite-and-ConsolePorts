@@ -31,7 +31,7 @@ use c2_core::game::SurvivalKind;
 const USAGE: &str = "usage:
   c2-pc play  <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR] [--balance FILE]
               [--screen main|stats|hunt|options|credits|register|quit]
-              [--script 'X,Y;'TEXT;enter;esc'] [--shot out.png]\n              [--survival-modes ours|mobile|both] [--mobile-survival FILE]
+              [--script 'X,Y;'TEXT;enter;esc'] [--shot out.png]\n              [--survival-modes classic,modded,ours] [--mobile-survival FILE]
   c2-pc balance <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]...   (prints prices and scores as a balance file)
   c2-pc mobile <APK> --base <GAME_DIR> [--overlay DIR]... --out <DIR>   (the mobile game's animals as add-ons)
   c2-pc mobile <APK> --values                                         (its tuning values)
@@ -332,12 +332,13 @@ fn main() -> Result<()> {
                 weapons: u128::MAX,
                 double_ammo: false,
                 observer: o.has("observer"),
-                // --survival normal|hardcore|custom (README M13).
+                // --survival normal|hardcore|custom|mobile|modded (README M13).
                 survival: match o.value("survival") {
                     None => None,
                     Some("hardcore") => Some(SurvivalKind::Hardcore),
                     Some("custom") => Some(SurvivalKind::Custom),
                     Some("mobile") => Some(SurvivalKind::Mobile),
+                    Some("modded") => Some(SurvivalKind::Mee),
                     Some(_) => Some(SurvivalKind::Normal),
                 },
                 // --mobile-survival FILE (`mobile-survival.txt` from an APK import).
@@ -390,11 +391,22 @@ fn main() -> Result<()> {
             if o.has("mobile-menu") {
                 let _ = menu::MOBILE_MENU.set(true);
             }
-            // --survival-modes ours|mobile|both, --mobile-survival FILE.
-            let mobile = mobile_survival(&o)?;
-            let ours = !matches!(o.value("survival-modes"), Some("mobile")) || mobile.is_none();
-            let mobile = mobile.filter(|_| !matches!(o.value("survival-modes"), Some("ours")));
-            let _ = menu::SURVIVALS.set(menu::Survivals { ours, mobile });
+            // --survival-modes classic,modded[,ours] (which are offered;
+            // default the first two; ours is benched), --mobile-survival FILE.
+            let modes: Vec<String> = o
+                .value("survival-modes")
+                .unwrap_or("classic,modded")
+                .split(',')
+                .map(|m| m.trim().to_ascii_lowercase())
+                .collect();
+            let has = |names: &[&str]| modes.iter().any(|m| names.contains(&m.as_str()));
+            let mobile =
+                mobile_survival(&o)?.filter(|_| has(&["classic", "mobile", "android", "both"]));
+            let _ = menu::SURVIVALS.set(menu::Survivals {
+                ours: has(&["ours"]),
+                mobile,
+                modded: has(&["modded", "mee", "both"]),
+            });
             // --script: canvas clicks / typing / keys, applied before the shot.
             let script = o.value("script").map(str::to_owned);
             // --mod DIR (repeatable): play a combined game from the data dir.

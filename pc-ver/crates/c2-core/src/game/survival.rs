@@ -45,6 +45,9 @@ pub struct MobileWaves {
     /// Ice Age stand-ins, away from Mount Ravan: the hunter keeps his start
     /// and the waves come round him as in our survival (no box).
     pub stand_ins: bool,
+    /// Which way the hunter faces at his spot (rad; the dialect's
+    /// `survivalPlayerA`), if set.
+    pub hunter_alpha: Option<f32>,
 }
 
 impl MobileWaves {
@@ -72,6 +75,7 @@ impl MobileWaves {
             first_ms: s.first_ms,
             rest_ms: s.rest_ms,
             stand_ins: s.stand_ins,
+            hunter_alpha: None,
         })
     }
 
@@ -217,6 +221,8 @@ pub enum SurvivalKind {
     Custom,
     /// The mobile game's Survive mode (from the player's APK).
     Mobile,
+    /// The Modder's Edition's own (`-survival`), from the game's data.
+    Mee,
 }
 
 impl SurvivalKind {
@@ -228,6 +234,7 @@ impl SurvivalKind {
             Self::Hardcore => "Survival: hardcore",
             Self::Custom => "Survival: custom",
             Self::Mobile => "Classic survival",
+            Self::Mee => "Modded survival",
         }
     }
 }
@@ -332,7 +339,68 @@ impl SurvivalOptions {
     }
 }
 
+/// Waves the dialect's survival makes (`PlaceCharactersSurvival`) up to its
+/// limit of 26: wave `n` has `2^n` to spend; the `k`-th animal of the roster
+/// (0 first) costs `3^k`; the dearest that fits is bought first, as often as
+/// it fits, then the next cheaper.
+pub fn mee_waves(roster: &[usize]) -> Vec<Vec<usize>> {
+    (1..=26u32)
+        .map(|n| {
+            let mut left = 1u64 << n;
+            let mut wave = Vec::new();
+            for (k, &ctype) in roster.iter().enumerate().rev() {
+                let cost = 3u64.saturating_pow(k as u32);
+                while left >= cost && wave.len() < 255 {
+                    wave.push(ctype);
+                    left -= cost;
+                }
+            }
+            wave
+        })
+        .collect()
+}
+
 impl SurvivalOptions {
+    /// The dialect's survival: its `roster` (character types in
+    /// `survivalIndex` order) from the area's box, the hunter at its spot
+    /// facing its way, unlimited ammunition; the next wave 2 s after one
+    /// falls (`WaveNoteTime`). `None` without a roster.
+    pub fn mee(
+        roster: &[usize],
+        spot: &c2_formats::mee::SurvivalSpot,
+        max_wave: usize,
+    ) -> Option<Self> {
+        if roster.is_empty() {
+            return None;
+        }
+        let cell = |c: i32| c as f32 * 256.0 + 128.0;
+        let [x0, x1, y0, y1] = spot.spawn;
+        let (x0, x1) = (x0.min(x1), x0.max(x1));
+        let (y0, y1) = (y0.min(y1), y0.max(y1));
+        let mut waves = mee_waves(roster);
+        let after = waves.pop().unwrap_or_default();
+        Some(Self {
+            mobile: Some(MobileWaves {
+                waves,
+                after,
+                spawn: [
+                    (cell(x0) + cell(x1)) / 2.0,
+                    (cell(y0) + cell(y1)) / 2.0,
+                    (x1 - x0) as f32 * 128.0 + 128.0,
+                    (y1 - y0) as f32 * 128.0 + 128.0,
+                ],
+                hunter: [cell(spot.hunter.0), cell(spot.hunter.1)],
+                first_ms: 500,
+                rest_ms: 2000,
+                stand_ins: false,
+                hunter_alpha: Some(spot.angle.to_radians()),
+            }),
+            unlimited: true,
+            max_wave,
+            ..Default::default()
+        })
+    }
+
     /// The mobile game's Survive mode (`s`) with this hunt's species, or
     /// `None` if one of its animals is missing.
     pub fn mobile(
@@ -387,6 +455,9 @@ impl Hunt {
         if let Some(m) = opts.mobile.as_ref().filter(|m| !m.stand_ins) {
             let cell = |v: f32| (v / 256.0).clamp(1.0, 1022.0) as u16;
             self.player = crate::player::Player::new(area, (cell(m.hunter[0]), cell(m.hunter[1])));
+            if let Some(a) = m.hunter_alpha {
+                self.player.alpha = a;
+            }
         }
         self.survival = Some(Survival::new(opts));
     }
