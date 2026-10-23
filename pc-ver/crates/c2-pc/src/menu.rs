@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use c2_core::area::TimeOfDay;
+use c2_core::game::SurvivalKind;
 use c2_formats::menu_txt::{parse_c2map, MenuArea, MenuData};
 use c2_formats::res_txt::ResTxt;
 use c2_formats::sav::{KeyMap, Save};
@@ -195,6 +196,9 @@ impl Board {
     }
 }
 
+/// The hunt / survival switch in the setup screen's bottom bar (ours).
+const MODE_RECT: Rect = (150.0, 558.0, 240.0, 30.0);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Screen {
     Register,
@@ -219,6 +223,8 @@ struct Choice {
     /// 0 dawn, 1 day, 2 night.
     time: usize,
     observer: bool,
+    /// A survival instead of a hunt (README M13): free, the animals come.
+    survival: Option<SurvivalKind>,
     /// The list item whose picture and description show: (column, row).
     focus: Option<(usize, usize)>,
 }
@@ -944,7 +950,7 @@ impl Menu {
     /// Account left after paying for the choices.
     fn remaining(&self) -> i32 {
         let score = self.me().map_or(0, |s| s.score);
-        if self.choice.observer {
+        if self.choice.observer || self.choice.survival.is_some() {
             return score;
         }
         let mut spent = 0;
@@ -961,7 +967,9 @@ impl Menu {
 
     fn can_hunt(&self) -> bool {
         self.choice.area < self.areas.len()
-            && (self.choice.observer || (self.choice.dinos != 0 && self.choice.weapons != 0))
+            && (self.choice.observer
+                || (self.choice.dinos != 0 || self.choice.survival.is_some())
+                    && self.choice.weapons != 0)
             && self.remaining() >= 0
     }
 
@@ -1106,6 +1114,24 @@ impl Menu {
     }
 
     fn update_setup(&mut self, input: &Input, region: u8) {
+        let on_mode = inside(self.cursor, MODE_RECT);
+        let region = if on_mode { 0 } else { region };
+        if input.clicked && on_mode {
+            // Hunt -> survival -> hardcore -> custom -> hunt.
+            let all = SurvivalKind::ALL;
+            self.choice.survival = match self.choice.survival {
+                None => Some(all[0]),
+                Some(k) => all
+                    .iter()
+                    .position(|&a| a == k)
+                    .and_then(|i| all.get(i + 1))
+                    .copied(),
+            };
+            if self.choice.survival.is_some() {
+                self.choice.observer = false;
+            }
+            return;
+        }
         if input.pressed(KeyCode::Escape) || (input.clicked && region == 7) {
             self.save_equipment();
             self.screen = Screen::Main;
@@ -1142,7 +1168,12 @@ impl Menu {
                     s.options.tranq = i32::from(s.options.tranq == 0);
                 }
             }
-            6 => self.toggle_observer(),
+            6 => {
+                self.toggle_observer();
+                if self.choice.observer {
+                    self.choice.survival = None;
+                }
+            }
             8 if self.can_hunt() => self.launch_hunt(),
             _ => {}
         }
@@ -1207,6 +1238,9 @@ impl Menu {
         let map = self.areas[c.area].clone();
         let double = !c.observer && c.equip & 8 != 0;
         self.start(map, time, targets, weapons, double, c.observer);
+        if let Some(l) = &mut self.launch {
+            l.survival = c.survival;
+        }
     }
 
     /// Keeps the accessory choice in the save, as the original does.
@@ -1243,6 +1277,7 @@ impl Menu {
             weapons,
             double_ammo,
             observer,
+            survival: None,
             reg,
             from_menu: true,
             pc: self.pc,
@@ -1531,6 +1566,8 @@ impl Menu {
     }
 
     fn draw_setup(&self, out: &mut Vec<Sprite>, region: u8) {
+        let on_mode = inside(self.cursor, MODE_RECT);
+        let region = if on_mode { 0 } else { region };
         let c = &self.choice;
         let mut lit = vec![region, c.time as u8 + 1];
         if self.tranq() {
@@ -1606,8 +1643,40 @@ impl Menu {
                 self.text(out, mid, col.rect.1 + col.rect.3 - 8.0, 12.0, TEXT, "v");
             }
         }
+        // Our hunt / survival switch.
+        let mode = c.survival.map_or("HUNT", |k| match k {
+            SurvivalKind::Normal => "SURVIVAL",
+            SurvivalKind::Hardcore => "SURVIVAL: HARDCORE",
+            SurvivalKind::Custom => "SURVIVAL: CUSTOM",
+        });
+        let mc = if on_mode {
+            HOVER
+        } else if c.survival.is_some() {
+            PICKED
+        } else {
+            DIM
+        };
+        let (mx, my, mw, _) = MODE_RECT;
+        let mx = mx + (mw - self.text_width(14.0, mode)) / 2.0;
+        self.text(out, mx, my + 8.0, 14.0, mc, mode);
+        let mode_text: Vec<String> = [
+            "Hunt or survive (click to change).",
+            "",
+            "Survival: waves of hunting animals",
+            "come for you, more each wave. Health",
+            "and ammunition come back between",
+            "waves. Free; no trophies or score.",
+            "The animals picked come (none: all",
+            "but the T-Rex).",
+            "Hardcore: 1-3 mods' animals join",
+            "each wave. Custom: unlimited ammo,",
+            "and the T-Rex from wave 15.",
+        ]
+        .map(String::from)
+        .to_vec();
         // The view and info panels: the focused item, or a hovered toggle.
         let (pic, text): (Option<usize>, &[String]) = match region {
+            _ if on_mode => (None, &mode_text),
             1..=3 => (None, &self.day_texts[region as usize - 1]),
             4 => (None, &self.fog_text),
             5 => (None, &self.tranq_text),
@@ -1629,7 +1698,7 @@ impl Menu {
             self.text(out, 416.0, 80.0 + i as f32 * 17.0, 12.0, TEXT, l);
         }
         if !self.can_hunt() && region == 8 {
-            let why = if self.choice.dinos == 0 {
+            let why = if self.choice.dinos == 0 && self.choice.survival.is_none() {
                 "Choose dinosaurs to hunt"
             } else {
                 "Choose a weapon"

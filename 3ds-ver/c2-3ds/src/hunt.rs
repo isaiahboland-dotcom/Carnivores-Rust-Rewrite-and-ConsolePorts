@@ -6,7 +6,9 @@ use std::collections::HashMap;
 use anyhow::Result;
 use c2_core::area::{Area, TimeOfDay};
 use c2_core::dino::{Herd, PlaceOptions};
-use c2_core::game::{GameEvent, Hunt, HuntInput, HuntOptions, Weapons};
+use c2_core::game::{
+    GameEvent, Hunt, HuntInput, HuntOptions, SurvivalKind, SurvivalOptions, Weapons,
+};
 use c2_core::load;
 use c2_core::player::{Controls, Player};
 use c2_core::rng::MsRand;
@@ -154,7 +156,15 @@ pub struct Setup {
     pub random_ambients: bool,
     /// The crouch button (setting).
     pub crouch_key: crate::settings::CrouchKey,
+    /// A survival instead of a hunt (README M13).
+    pub survival: Option<SurvivalKind>,
+    /// Animals loaded for the survival only (bit 10 + slot, among the
+    /// targets): hardcore's extras, custom's T-Rex. Not in the waves.
+    pub survival_extra: u128,
 }
+
+/// The most animals in a survival wave on the 3DS.
+pub const SURVIVAL_MAX: usize = 6;
 
 impl Setup {
     pub fn trophy(&self) -> bool {
@@ -386,6 +396,25 @@ fn new_hunt(
     };
     let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
     hunt.ship_anim_ms = ship_ms;
+    if let Some(kind) = setup.survival {
+        let mut o = SurvivalOptions::pick(&hunt, kind, SURVIVAL_MAX);
+        // The menu's extras come only as extras.
+        let extra = |&i: &usize| {
+            let c = c2_core::dino::Character {
+                ctype: i,
+                ..Default::default()
+            };
+            hunt.call_bit(&c).is_some_and(|b| {
+                setup.survival_extra & 1u128.checked_shl(b as u32).unwrap_or(0) != 0
+            })
+        };
+        let extras: Vec<usize> = (0..species.len()).filter(extra).collect();
+        o.roster.retain(|i| !extras.contains(i));
+        if kind == SurvivalKind::Hardcore && !extras.is_empty() {
+            o.hardcore = extras;
+        }
+        hunt.start_survival(o);
+    }
     hunt
 }
 
@@ -505,16 +534,22 @@ impl Game {
     pub fn record_kills(&mut self, vfs: &Vfs) -> std::io::Result<()> {
         use c2_core::record::{Kill, Mode};
         let kills = std::mem::take(&mut self.hunt.kills);
-        if kills.is_empty() {
+        let wave = self.hunt.wave();
+        if kills.is_empty() && wave == 0 {
             return Ok(());
         }
+        let mode = if self.hunt.survival.is_some() {
+            Mode::Survival
+        } else {
+            Mode::Hunt
+        };
         let n = self.hunt.area_no;
         let area = crate::menu::title(vfs, &format!("AREA{n}.TXT"), format!("Area {n}"));
         let (y, mo, d, _, _) = self.hunt.clock;
         let mut r = crate::save::load_record();
         for k in kills {
             r.kills.push(Kill {
-                mode: Mode::Hunt,
+                mode,
                 animal: self
                     .hunt
                     .herd
@@ -533,6 +568,7 @@ impl Game {
                 date: (y << 20) + (mo << 10) + d,
             });
         }
+        r.best_wave = r.best_wave.max(wave);
         crate::save::store_record(&r)
     }
 
@@ -733,7 +769,7 @@ impl Game {
 }
 
 /// `n` of `from`, picked by `seed` (all of them if there are no more).
-fn pick(from: &[usize], n: usize, seed: u32) -> Vec<usize> {
+pub(crate) fn pick(from: &[usize], n: usize, seed: u32) -> Vec<usize> {
     let mut left = from.to_vec();
     let mut x = seed | 1;
     let mut out = Vec::new();
@@ -781,5 +817,11 @@ fn clock() -> (i32, i32, i32, i32, i32) {
     let d = doy - (153 * mp + 2) / 5 + 1;
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = yoe + era * 400 + i64::from(m <= 2);
-    (y as i32, m as i32, d as i32, (rem / 3600) as i32, (rem / 60 % 60) as i32)
+    (
+        y as i32,
+        m as i32,
+        d as i32,
+        (rem / 3600) as i32,
+        (rem / 60 % 60) as i32,
+    )
 }

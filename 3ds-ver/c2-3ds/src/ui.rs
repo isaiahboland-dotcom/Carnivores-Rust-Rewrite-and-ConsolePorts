@@ -247,6 +247,11 @@ impl Ui {
             "Underwater".to_string()
         } else if game.run {
             "Running".to_string()
+        } else if let Some(s) = &h.survival {
+            match s.wave {
+                0 => format!("Get ready  Kills: {}", h.kills.len()),
+                n => format!("Wave {n}  Kills: {}", h.kills.len()),
+            }
         } else {
             format!("Bagged: {}", h.successes)
         };

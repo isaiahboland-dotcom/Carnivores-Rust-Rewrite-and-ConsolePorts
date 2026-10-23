@@ -26,6 +26,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
 use c2_core::area::TimeOfDay;
+use c2_core::game::SurvivalKind;
 
 const USAGE: &str = "usage:
   c2-pc play  <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR] [--balance FILE]
@@ -43,7 +44,7 @@ const USAGE: &str = "usage:
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
   c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--shot out.png]
   c2-pc hunt  <AREA.MAP|TROPHY.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all]
-              [--weapon N] [--bino] [--observer] [--player N] [--shot out.png]
+              [--weapon N] [--bino] [--observer] [--player N] [--survival normal|hardcore|custom]\n              [--shot out.png]
 
 model: drag to orbit, wheel zoom, [ ] next/prev file, N/P next/prev animation, Space pause
 area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distance
@@ -62,7 +63,7 @@ hunt:  click to capture mouse; keys follow the player's bindings (default WASD m
 const VALUE_FLAGS: &[&str] = &[
     "anim", "time", "yaw", "shot", "cam", "view", "sim", "ship", "weapon", "target", "fire",
     "screen", "player", "script", "mod", "base", "out", "recipe", "mods", "id", "name", "overlay",
-    "balance", "menu-art",
+    "balance", "menu-art", "survival",
 ];
 
 struct Opts {
@@ -274,6 +275,13 @@ fn main() -> Result<()> {
                 weapons: u128::MAX,
                 double_ammo: false,
                 observer: o.has("observer"),
+                // --survival normal|hardcore|custom (README M13).
+                survival: match o.value("survival") {
+                    None => None,
+                    Some("hardcore") => Some(SurvivalKind::Hardcore),
+                    Some("custom") => Some(SurvivalKind::Custom),
+                    Some(_) => Some(SurvivalKind::Normal),
+                },
                 reg: o.num("player", 0i32)?,
                 from_menu: false,
                 pc: settings::PcSettings::load(),

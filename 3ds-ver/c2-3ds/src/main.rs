@@ -597,6 +597,12 @@ fn hunt(
                     Err(e) => format!("save failed: {e}"),
                 }));
             }
+            // A survival ends this way: its kills and wave are recorded.
+            Some(Outcome::Died) if game.hunt.survival.is_some() => {
+                let (wave, kills) = (game.hunt.wave(), game.hunt.kills.len());
+                let _ = game.record_kills(vfs);
+                return Ok(Some(format!("Survived to wave {wave}, {kills} kills")));
+            }
             // Dying discards this hunt's trophies (the save isn't written).
             Some(Outcome::Died) => return Ok(Some("You died. Nothing was saved.".into())),
             None => {}

@@ -296,6 +296,8 @@ pub struct Character {
     /// Index into `Herd::groups` (`SpawnGroupType`).
     pub spawn_group: Option<usize>,
     /// Chosen kill type and death type of the species.
+    /// The survival wave it came in (0: not a wave animal).
+    pub wave: u32,
     pub kill_type: usize,
     pub death_type: usize,
     /// The idle group being played (`currentIdleGroup`).

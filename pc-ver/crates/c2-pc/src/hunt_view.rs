@@ -9,7 +9,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::Result;
 use c2_core::area::TimeOfDay;
 use c2_core::dino::{Herd, PlaceOptions};
-use c2_core::game::{GameEvent, Hunt, HuntInput, HuntOptions, Outcome, WeaponInfo, Weapons};
+use c2_core::game::{
+    GameEvent, Hunt, HuntInput, HuntOptions, Outcome, SurvivalKind, SurvivalOptions, WeaponInfo,
+    Weapons,
+};
 use c2_core::player::{Controls, Player};
 use c2_core::rng::MsRand;
 use c2_formats::car::Car;
@@ -33,6 +36,8 @@ use c2_core::sound::SoundCmd;
 /// Simulation step. The original runs on variable `TimeDt`; a fixed step keeps
 /// the simulation deterministic (needed for logic parity later).
 const TICK_MS: u32 = 10;
+/// The most animals in a survival wave on the PC.
+const SURVIVAL_MAX: usize = 12;
 
 /// What to hunt with. The original menu passes these to the game on its
 /// command line (`prj=`, `din=`, `wep=`, `dtm=`, `-double`, `-observ`); the
@@ -59,6 +64,8 @@ pub struct HuntSetup {
     pub weapons: u128,
     pub double_ammo: bool,
     pub observer: bool,
+    /// A survival instead of a hunt (README M13).
+    pub survival: Option<SurvivalKind>,
     /// The player (`trophy0N.sav`).
     pub reg: i32,
     /// Return to the menu afterwards (otherwise close the window).
@@ -372,6 +379,9 @@ impl HuntView {
             setup.pc.render_cells(opts.view_r)
         };
         let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
+        if let Some(kind) = setup.survival {
+            hunt.start_survival(SurvivalOptions::pick(&hunt, kind, SURVIVAL_MAX));
+        }
         hunt.clock = local_clock();
         hunt.area_no = setup
             .map
@@ -822,16 +832,22 @@ impl HuntView {
     fn record_kills(&mut self) {
         use c2_core::record::{Kill, Mode};
         let kills = std::mem::take(&mut self.hunt.kills);
-        if kills.is_empty() {
+        let wave = self.hunt.wave();
+        if kills.is_empty() && wave == 0 {
             return;
         }
+        let mode = if self.hunt.survival.is_some() {
+            Mode::Survival
+        } else {
+            Mode::Hunt
+        };
         let reg = self.setup.reg;
         let mut r = crate::save::load_record(reg);
         let area = crate::save::area_title(&self.setup.game_dir, self.hunt.area_no);
         let (y, mo, d, _, _) = self.hunt.clock;
         for k in kills {
             r.kills.push(Kill {
-                mode: Mode::Hunt,
+                mode,
                 animal: self
                     .hunt
                     .herd
@@ -848,6 +864,7 @@ impl HuntView {
                 date: (y << 20) + (mo << 10) + d,
             });
         }
+        r.best_wave = r.best_wave.max(wave);
         if let Err(e) = crate::save::store_record(reg, &r) {
             tracing::error!("{e:#}");
         }
@@ -1100,8 +1117,10 @@ impl Scene for HuntView {
                 self.done = true;
             }
             // Dying discards this hunt's trophies (the save isn't written).
-            // From the menu, go back to it; otherwise start over.
+            // From the menu, go back to it; otherwise start over. A
+            // survival ends this way: its kills and wave are recorded.
             Some(Outcome::Died) if !self.done => {
+                self.record_kills();
                 if self.setup.from_menu {
                     self.audio.stop_all();
                     self.done = true;
@@ -1211,6 +1230,34 @@ impl Scene for HuntView {
                 };
                 let ly = y + (6.0 + 12.0 * i as f32) * scale;
                 sprites.extend(self.hud.label(x + 8.0 * scale, ly, px, c, l));
+            }
+        }
+        // A survival: the wave and kills (top left), and its messages.
+        if let Some(s) = &self.hunt.survival {
+            let px = 8.0 * scale;
+            let wave = if s.wave == 0 {
+                "Get ready".to_string()
+            } else {
+                format!("Wave {}", s.wave)
+            };
+            let lines = [wave, format!("Kills: {}", self.hunt.kills.len())];
+            let (x, y) = (12.0 * scale, 12.0 * scale);
+            let w = lines
+                .iter()
+                .map(|l| self.hud.label_width(px, l))
+                .fold(0.0, f32::max)
+                + 16.0 * scale;
+            sprites.extend(self.hud.rect(x, y, w, 36.0 * scale, [0.0, 0.0, 0.0, 0.7]));
+            for (i, l) in lines.iter().enumerate() {
+                let ly = y + (6.0 + 12.0 * i as f32) * scale;
+                let c = [0.95, 0.85, 0.2, 1.0];
+                sprites.extend(self.hud.label(x + 8.0 * scale, ly, px, c, l));
+            }
+            if let Some((m, _)) = &self.message {
+                let w = self.hud.label_width(px * 2.0, m);
+                let (x, y) = ((screen.0 as f32 - w) / 2.0, screen.1 as f32 * 0.25);
+                let c = [0.95, 0.85, 0.2, 1.0];
+                sprites.extend(self.hud.label(x, y, px * 2.0, c, m));
             }
         }
         // Binoculars: what's in the cross-hairs (`Render_LifeInfo`).

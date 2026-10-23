@@ -18,6 +18,11 @@ use crate::ship::{Ship, ShipEvent};
 use crate::trace::{trace_look, trace_shot, Hit};
 use c2_formats::sav::{Save, TrophyItem};
 
+mod survival;
+pub use survival::{
+    hunts, hunts_ai, is_trex, modded, Survival, SurvivalKind, SurvivalOptions, TREX_WAVE,
+};
+
 /// `MAX_HEALTH`.
 pub const MAX_HEALTH: i32 = 128_000;
 
@@ -409,6 +414,8 @@ pub struct Hunt {
     pub area_no: i32,
     /// This hunt's kills (for the hunter's record).
     pub kills: Vec<HuntKill>,
+    /// A survival (README M13) instead of a hunt.
+    pub survival: Option<Survival>,
     /// Distance walked / time spent this hunt (`TrophyRoom.Last.path/time`).
     pub path: f32,
     pub time_s: f32,
@@ -534,6 +541,7 @@ impl Hunt {
             takt: 0,
             health: MAX_HEALTH,
             death: None,
+            survival: None,
             objects_on_look: 0,
             shots_made: 0,
             successes: 0,
@@ -742,6 +750,7 @@ impl Hunt {
             }
         }
         self.exit_step(dt);
+        self.survival_step(area, dt, out);
         if (self.opts.observer || self.opts.trophy) && self.health > 0 {
             self.health = MAX_HEALTH;
         }
@@ -785,6 +794,21 @@ impl Hunt {
         let Some(c) = self.herd.chars.get(index) else {
             return;
         };
+        if self.survival.is_some() {
+            // No ship, trophy or score in a survival; the kill is recorded.
+            let p = &self.player;
+            let range =
+                ((c.pos[0] - p.x).powi(2) + (c.pos[1] - p.y).powi(2) + (c.pos[2] - p.z).powi(2))
+                    .sqrt()
+                    / 64.0;
+            self.kills.push(HuntKill {
+                ctype: c.ctype,
+                score: 0,
+                range,
+                weapon: self.weapons.current,
+            });
+            return;
+        }
         let water = area.land_up_h(c.pos[0], c.pos[2]) - area.land_height(c.pos[0], c.pos[2]);
         if water < 100.0 && !self.opts.tranq {
             self.ship.tasks.push_back(index);
@@ -1184,7 +1208,9 @@ impl Hunt {
                 self.successes += 1;
                 self.add_ship_task(area, index, out);
             }
-            if mee {
+            if self.herd.chars[index].wave > 0 {
+                // A wave animal isn't replaced.
+            } else if mee {
                 let p = (self.player.x, self.player.z);
                 let agres = self.opts.opt_agres;
                 self.herd
@@ -2278,6 +2304,76 @@ mod tests {
             }
         }
         last
+    }
+
+    #[test]
+    fn survival_sends_growing_waves_and_awards_no_trophies() {
+        let (area, mut hunt, car) = setup(false);
+        hunt.herd.species.push(Species::new(info(ai::VELO), &car));
+        assert!(hunts(&hunt.herd.species[2]) && !hunts(&hunt.herd.species[1]));
+        hunt.start_survival(SurvivalOptions {
+            roster: vec![2],
+            max_wave: 3,
+            ..Default::default()
+        });
+        // The plant-eater stays; the first wave comes after a rest.
+        assert_eq!(hunt.herd.chars.len(), 1);
+        let cars = [None, Some(&car), Some(&car)];
+        let mut out = Vec::new();
+        let wave = |hunt: &Hunt, n: u32| hunt.herd.chars.iter().filter(|c| c.wave == n).count();
+        let run = |hunt: &mut Hunt, ms: i32, out: &mut Vec<GameEvent>| {
+            for _ in 0..ms / 10 {
+                hunt.tick(&area, &cars, &HuntInput::default(), 10, out);
+            }
+        };
+        run(&mut hunt, 3100, &mut out);
+        assert_eq!((hunt.wave(), wave(&hunt, 1)), (1, 3));
+        assert!(out
+            .iter()
+            .any(|e| matches!(e, GameEvent::Message(m) if m == "Wave 1")));
+        for c in hunt.herd.chars.iter().filter(|c| c.wave == 1) {
+            assert!(c.aware_hunter && c.state != 0);
+            let d = (c.pos[0] - hunt.player.x).hypot(c.pos[2] - hunt.player.z);
+            assert!(d >= 20.0 * 256.0, "{d}");
+        }
+        // Killed: logged, but no score, trophy or ship.
+        while let Some(i) = hunt
+            .herd
+            .chars
+            .iter()
+            .position(|c| c.wave == 1 && c.health > 0)
+        {
+            hunt.debug_bag(&area, i, &mut out);
+        }
+        assert_eq!((hunt.kills.len(), hunt.room.score), (3, 0));
+        assert!(hunt.ship.tasks.is_empty() && hunt.room.bodies.iter().all(|b| b.ctype == 0));
+        // The next wave (capped at 3) replaces the fallen; health is back.
+        hunt.health = 1000;
+        run(&mut hunt, 4100, &mut out);
+        assert_eq!((hunt.wave(), wave(&hunt, 1), wave(&hunt, 2)), (2, 0, 3));
+        assert_eq!(hunt.health, MAX_HEALTH);
+    }
+
+    #[test]
+    fn survival_picks_waves_mods_and_the_t_rex() {
+        let (_, mut hunt, car) = setup(false);
+        for (name, a) in [
+            ("Allosaurus", ai::ALLO),
+            ("Utahraptor", ai::VELO),
+            ("T-Rex", ai::TREX),
+        ] {
+            let mut i = info(a);
+            i.name = name.into();
+            hunt.herd.species.push(Species::new(i, &car));
+        }
+        // Nothing hunting picked: every hunter but the T-Rex; the mod's
+        // animal is the hardcore extra.
+        let o = SurvivalOptions::pick(&hunt, SurvivalKind::Hardcore, 5);
+        assert_eq!((o.roster, o.hardcore, o.trex), (vec![2, 3], vec![3], None));
+        // The allosaur picked: it alone comes; custom brings the T-Rex.
+        hunt.opts.targets = 1 << ai::ALLO;
+        let o = SurvivalOptions::pick(&hunt, SurvivalKind::Custom, 5);
+        assert_eq!((o.roster, o.trex, o.unlimited), (vec![2], Some(4), true));
     }
 
     #[test]

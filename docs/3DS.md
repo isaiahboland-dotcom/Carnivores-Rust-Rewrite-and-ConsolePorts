@@ -36,8 +36,15 @@ share it (README §2).
 
 ## The menu
 The title screen shows the original's main menu art with your hunter's
-record; the bottom screen has **Play**, **Trophies** (the trophy room),
-**Settings** and **Quit**.
+record; the bottom screen has **Play**, **Survival**, **Hunter**,
+**Trophies** (the trophy room), **Settings** and **Quit**.
+
+**Survival** goes through the same steps for free: pick at least one animal
+that hunts you; waves of them come, bigger each time (at most 6), with
+health and ammunition back between waves. The options page switches
+Survival / Hardcore (1–3 mods' animals join each wave; the top screen names
+them) / Custom (unlimited ammunition, the T-Rex from wave 15). No trophies;
+your kills and best wave go in the record.
 
 **Settings** (kept in `/3ds/c2rs/settings.txt`):
 - **Dinosaur run speed**, 50–100%: every species' running speed times the

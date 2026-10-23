@@ -2,6 +2,29 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-23 — M13: survival
+- **Waves** (`c2_core::game::Survival`): the map's own hunting animals go
+  (plant-eaters stay as scenery); after a 3 s start, each wave is 2 + n
+  hunting animals (at most 12 on PC, 6 on the 3DS), placed on land in a ring
+  of about 20–40 cells around the hunter, already after him. A wave animal
+  that calms down takes up the hunt again; the dead go when the next wave
+  comes, after a 4 s rest that brings health and ammunition back. It ends
+  when the hunter dies (or leaves).
+- **Who comes**: the hunting animals picked (PC: none picked means every
+  hunting animal but the T-Rex). Survival is free (no points spent) and
+  gives no trophies, score or ship; kills and the best wave go in the
+  hunter's record (also on death, unlike a hunt's trophies).
+- **Hardcore** adds 1–3 mods' animals (by name: not one of the original's
+  hunters; the game's own if there are none) to every wave. On the 3DS
+  they're rolled on the options page and listed on the top screen before
+  starting (they need loading, so they must fit in memory); on PC they come
+  from every hunting animal the game has. **Custom**: unlimited ammunition,
+  and the T-Rex joins every wave from 15. "Choose any weapon" is how
+  survival is anyway (free).
+- PC: the switch is our text in the setup screen's empty bottom bar
+  (Hunt / Survival / Hardcore / Custom), `--survival` for `c2-pc hunt`. 3DS:
+  a SURVIVAL title button; the same steps, the kind on the options page.
+
 ## 2026-10-23 — M12: records, trophy room, hunters
 - **The record** (`c2_core::record`) is a text file beside each save
   (`trophy0N.rec`): one line per kill (mode, animal, score, range, weapon,

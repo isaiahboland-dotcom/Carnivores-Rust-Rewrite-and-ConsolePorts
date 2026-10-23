@@ -522,7 +522,14 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
         lock (L / Y), both asked; an option removes every unlocked trophy (PC options, 3DS settings)
   - [x] 3DS: several hunters per pack (HUNTER on the title; a new one named on the system keyboard), dates
         from the console's clock
-- [ ] M13 Survival mode (planned)
+- [ ] M13 Survival mode — **in progress** (untested on hardware)
+  - [x] waves of hunting animals, bigger each wave, health and ammunition back between them
+        (`c2_core::game::Survival`); free, no trophies; kills and the best wave in the record
+  - [x] hardcore (1–3 mods' animals a wave; on the 3DS rolled and shown before starting) and custom
+        (unlimited ammunition, the T-Rex from wave 15)
+  - [x] PC: Hunt / Survival / Hardcore / Custom in the setup screen's bottom bar (`--survival` for `hunt`);
+        3DS: SURVIVAL on the title, the kind on the options page; wave and kills in the HUD
+  - [ ] owner's hardware test (wave size and pace on Old 3DS)
 - [ ] M14 Carnivores: Ice Age (planned)
 - [ ] M15 Mobile assets — **in progress**
   - [x] mobile formats (`c2_formats::mobile`: `.cat`, `.3dn`, `.ani`, ETC1 `.pkm`, `.crt`, IMA ADPCM) rebuilt as `.CAR`
