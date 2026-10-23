@@ -310,6 +310,8 @@ pub struct Character {
     pub idle_group: Option<usize>,
     /// Phase of the zig-zag while alarmed (`tgalphaOffset`).
     pub tgalpha_offset: f32,
+    /// The wary flyer has called its alarm since it was alarmed (`_State`).
+    pub alarm_called: bool,
     /// The roar this animal uses (`roarAnim`, picked at reset).
     pub roar_anim: usize,
     /// Its death in water (`waterDieAnim`, picked at reset).
@@ -1276,11 +1278,7 @@ impl Character {
             );
             self.pos[1] = up - (up - land) / 2.0;
         }
-        if let Some(m) = sp
-            .mee
-            .as_ref()
-            .filter(|m| matches!(m.ai, ai::DIMOR | ai::PTERA))
-        {
+        if let Some(m) = sp.mee.as_ref().filter(|m| mee::is_flyer(m.ai)) {
             self.pos[1] += m.min_depth as f32;
         }
         true

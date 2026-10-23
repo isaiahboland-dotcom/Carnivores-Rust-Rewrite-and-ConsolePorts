@@ -129,6 +129,8 @@ pub struct MeeInfo {
     /// `dontWeave`.
     pub weave_range: f32,
     pub dont_weave: bool,
+    /// The wary flyer's alarm (`alarmCall`, a sound of its model).
+    pub alarm_call: Option<usize>,
     pub can_swim: bool,
     /// Water deeper than this (times scale) is swum (`waterLevel`).
     pub water_level: i32,
@@ -200,6 +202,7 @@ impl MeeInfo {
             fear_hear_shot: false,
             weave_range: 0.0,
             dont_weave: false,
+            alarm_call: None,
             can_swim: false,
             water_level: 0,
             morph_time: 1.0,
@@ -499,7 +502,10 @@ pub fn is_brachi(ai_id: i32) -> bool {
 
 /// AIs that run `AnimateDimor` (and fall with `AnimateIcthDead`).
 pub fn is_flyer(ai_id: i32) -> bool {
-    matches!(ai_id, super::ai::DIMOR | super::ai::PTERA)
+    matches!(
+        ai_id,
+        super::ai::DIMOR | super::ai::PTERA | mee_ai::WARYDIMOR
+    )
 }
 
 /// AIs that run `AnimateClassicAmbient`.

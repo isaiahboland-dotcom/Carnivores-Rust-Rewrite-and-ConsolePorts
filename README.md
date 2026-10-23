@@ -399,6 +399,9 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   kept apart and renumbered, spawns tied to its own maps, add-ons on top), or one is played on its own.
 
 **Known issues (next up)**
+- To investigate (2026-10-23): C2 Classic MEE's pack check reports three animals as "not a hunt target"
+  (Parasaurolophus, Elaphrosaurus and Dysalotosaurus roaming); likely its own data (a second
+  Parasaurolophus entry, roamers without a slot), not checked yet.
 - None open. Fixed 2026-10-22 from the owner's mobile + add-ons test: 3DS trophy room out of memory (it
   loaded every species), blank call buttons for add-ons without a call icon, the roamer map dot, the
   hunt menu now by price, mobile animals off the radar on some maps, "File name too long" with many add-ons.
@@ -574,10 +577,12 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
         four 11-clip animals played wrong moves before (re-import them); Ice Age kinds as donors on an Ice Age
         base; the PC games' own animals in the APKs are left to the PC files
 - [ ] M16 Standalone games in the launcher (planned, PC)
-- [ ] M9 Modder's Edition Engine data — **in progress**
+- [x] M9 Modder's Edition Engine data (weapon extras still listed below)
   - [x] nested `_RES.TXT` blocks; `_MENU.TXT` / `.c2map` menu lists; `overwrite` / `addition` resolution
   - [x] spawn / pack tables and placement on PC (dialect game folders hunt with their own rosters and spawns)
-  - [ ] the dialect's AI families (interim: run as the closest original AI; aquatic ones not placed)
+  - [x] the dialect's AI families: every one the game folders use (AI 0-6, 10-27, 30-35), and the wary
+        flyer (36); Titan (28, unfinished upstream, undocumented) and Micro (29, switched off upstream)
+        run as the closest original AI; poacher and dog are multiplayer-only upstream
   - [x] trophy table: the trophy room's spots (`tropinfo`, `trophytable` groups, `tropgroup`) place trophies
         (landing point, offsets growing with size, facing, pose) and a kill takes the first free spot made
         for its animal (PC and 3DS); older trophies move to a fitting spot; the save keeps 24

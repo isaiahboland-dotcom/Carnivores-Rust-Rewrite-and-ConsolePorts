@@ -2,6 +2,26 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-23 — M9: the wary flyer; the AI families done
+- **Survey**: every dialect `_RES.TXT` here (game folders, add-ons, the
+  APK imports) uses AI 0-6, 10-27 and 30-35, all ported already. None uses
+  28 (Titan), 29 (Micro), 36 (wary flyer), 8 (poacher) or 9 (dog).
+- **Wary flyer** (`AnimateWaryDimor`, 36; manual 1.2: "Wary Flyer AI",
+  needs `hearK` / `lookK` / `smellK`): the flyer of `mee_flyer` plus
+  alarm. Alarmed by `CheckAfraid` (a sniffer: state 2), its pack, or the
+  hunter within 812 (5-10 s); it flies straight away weaving
+  (`tGAIncrement` 2), scared 15-20 s while he is within 2048, calm past
+  4096 unless its pack is alarmed (then a target 4048 off). Its
+  `alarmCall` sound plays once on alarm, then instead of its usual calls
+  while alarmed. Placed like the other flyers (at `minalt`).
+- **Not ported**: Titan is in the upstream source (`AnimateTitan`) but
+  marked unfinished and not in the manual; Micro's AI is commented out
+  upstream (its animals stand still there). Both keep the interim
+  original AI (Ceratosaurus, Velociraptor) so a mod using them still plays.
+- Checked: a synthetic wary flyer (spooked, calls, flies off, calms);
+  `c2-parity mee-sim` over CClassic, Anachronous, Genesis Redux, the
+  Modder's Edition, Triassic and C2DE: no failures, slowest step 0.71 ms.
+
 ## 2026-10-23 — Survival modes: classic, modded; ours benched
 - **Owner's choice**: the survivals offered are the mobile game's classic
   (from the Carnivores 2 APK; on Ice Age with its stand-ins) and a dialect

@@ -2,11 +2,12 @@
 //! `_RES.TXT` resolved for a hunt, and their species mapped onto the AIs
 //! this engine has. Format side: `c2_formats::mee`.
 //!
-//! The dialect's shared huntable AI (`AnimateHuntable`: the original's
-//! herbivores and hunters plus the Ice Age animals and Pachycephalosaurus)
-//! is ported (`crate::dino::huntable`). **Interim:** until its other
-//! families are, [`family`] runs each as the closest original AI, and
-//! families with nothing close (aquatic, poacher, dog) are not placed.
+//! The dialect's AI families are ported (`crate::dino::huntable`, `mee_*`):
+//! the shared huntable AI, T-Rex, ambients, flyers (the wary one too),
+//! brachiosaurs, fish and Mosasaurus, Ichthyornis. [`family`] runs the rest
+//! as the closest original AI: Titan (unfinished upstream) and Micro
+//! (switched off upstream); poacher and dog (multiplayer only) are not
+//! placed.
 
 use c2_formats::mee::{flag, Hunt, Tables};
 use c2_formats::res_txt::{c_atof, c_atoi, Block, CharacterDef, Entry, ResData, ResTxt, WeaponDef};
@@ -257,6 +258,7 @@ fn info_line(m: &mut MeeInfo, key: &str, v: &str) {
         "fearshothear" => m.fear_hear_shot = truthy(v),
         "fearshothit" => m.fear_shot = truthy(v),
         "weaverange" => m.weave_range = c_atof(v),
+        "alarmcall" => m.alarm_call = usize::try_from(c_atoi(v)).ok(),
         "dontweave" => m.dont_weave = truthy(v),
         "canswim" => m.can_swim = truthy(v),
         "waterlevel" => m.water_level = c_atoi(v),

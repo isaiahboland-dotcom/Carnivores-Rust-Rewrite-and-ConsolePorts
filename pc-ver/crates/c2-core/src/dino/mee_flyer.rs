@@ -1,7 +1,10 @@
 //! The Modder's Edition Engine's flyers (`Characters.cpp: AnimateDimor`,
-//! dialect AI 3 and 4) and the fall of a shot flyer (`AnimateIcthDead`).
-//! A flyer flaps up to `maxalt * 1.5` above the ground, glides down once
-//! above `maxalt`, flaps again below `minalt`, and never notices the hunter.
+//! dialect AI 3 and 4; `AnimateWaryDimor`, 36) and the fall of a shot flyer
+//! (`AnimateIcthDead`). A flyer flaps up to `maxalt * 1.5` above the
+//! ground, glides down once above `maxalt`, flaps again below `minalt`. The
+//! plain ones never notice the hunter; the wary one is spooked by him
+//! within 812, or by what it sees, hears and smells (`CheckAfraid`), flies
+//! off weaving with an alarm call, and calms beyond 4096.
 
 use super::huntable::{wander, World};
 use super::mee::{mee_ai, MeeInfo};
@@ -22,7 +25,17 @@ pub fn animate(
     w: &mut World<'_>,
 ) {
     let dt = ctx.dt;
+    let wary = m.ai == mee_ai::WARYDIMOR;
+    let a = super::mee::ai_info(m.ai);
     let mut new_phase = false;
+    if wary {
+        c.afraid_time = (c.afraid_time - dt).max(0);
+        let pack_alarm = w.pack.as_ref().is_some_and(|p| p.alert_prev);
+        if c.state == 2 || (c.state == 0 && pack_alarm) {
+            new_phase = true;
+            c.state = 1;
+        }
+    }
     let old_phase = c.phase;
     let old_ftime = c.ftime;
     let ground = |c: &Character, ctx: &Ctx<'_>| ctx.area.land_height(c.pos[0], c.pos[2]);
@@ -34,19 +47,66 @@ pub fn animate(
         let targetdx = c.tgx - c.pos[0];
         let targetdz = c.tgz - c.pos[2];
         let tdist = (targetdx * targetdx + targetdz * targetdz).sqrt();
-        let pdist = ((ctx.hunter.x - c.pos[0]).powi(2) + (ctx.hunter.z - c.pos[2]).powi(2)).sqrt();
+        let (playerdx, playerdz) = (ctx.hunter.x - c.pos[0], ctx.hunter.z - c.pos[2]);
+        let pdist = (playerdx * playerdx + playerdz * playerdz).sqrt();
         if rethink < MAX_RETHINK {
             if pdist > ((ctx.render_r + 20) * 256) as f32 && c.replace_forward_in(sp, ctx, w.group)
             {
                 continue;
             }
-            if wander(c, sp, w, ctx, tdist, 1024.0, 4048.0) {
-                continue;
+            if wary && c.state != 0 {
+                // Away from the hunter; scared a while when he is near;
+                // calm again beyond 4096 (unless the pack is alarmed).
+                let l = pdist.max(1e-6);
+                c.tgx = c.pos[0] - playerdx / l * 2048.0;
+                c.tgz = c.pos[2] - playerdz / l * 2048.0;
+                c.tgtime = 0;
+                if c.afraid_time == 0 {
+                    if pdist < 2048.0 {
+                        c.afraid_time = (15 + ctx.rng.r_rand(5)) * 1024;
+                        if let Some(p) = w.pack.as_deref_mut() {
+                            p.alert = true;
+                        }
+                    }
+                    let calm = match w.pack.as_deref_mut() {
+                        Some(p) if pdist > 4096.0 => !p.alert_prev,
+                        Some(p) => {
+                            p.alert = true;
+                            false
+                        }
+                        None => pdist > 4096.0,
+                    };
+                    if calm {
+                        c.retarget(sp, ctx.area, ctx.rng, a.target_distance, w.group);
+                        c.state = 0;
+                    }
+                } else if let Some(p) = w.pack.as_deref_mut() {
+                    p.alert = true;
+                }
+            }
+            if !wary || c.state == 0 {
+                if wary {
+                    c.alarm_called = false;
+                    c.afraid_time = 0;
+                    if pdist < 812.0 {
+                        c.state = 1;
+                        c.afraid_time = (5 + ctx.rng.r_rand(5)) * 1024;
+                        continue;
+                    }
+                }
+                if wander(c, sp, w, ctx, tdist, 1024.0, 4048.0) {
+                    continue;
+                }
             }
         }
         break (targetdx, targetdz);
     };
     c.tgalpha = corrected_alpha(find_vector_alpha(targetdx, targetdz), c.alpha);
+    let pdist = ((ctx.hunter.x - c.pos[0]).powi(2) + (ctx.hunter.z - c.pos[2]).powi(2)).sqrt();
+    if wary && c.state != 0 && pdist > m.weave_range && !m.dont_weave {
+        c.tgalpha +=
+            (c.tgalpha_offset + ctx.real_time as f32 / 1024.0).sin() / a.tga_increment.max(1e-3);
+    }
     wrap_angle(&mut c.tgalpha);
 
     c.process_prev_phase(sp, dt);
@@ -69,9 +129,28 @@ pub fn animate(
             c.phase = m.fly;
         }
     }
-    // Calls now and then.
-    if (old_phase != c.phase || new_phase) && (ctx.rng.rand() & 1023) > 980 {
-        c.activate_fx(index, sp, ctx);
+    // Calls now and then; the wary one its alarm, once alarmed and then
+    // now and then while it is.
+    let alarm = |c: &Character, ctx: &mut Ctx<'_>| {
+        if let Some(sound) = m.alarm_call {
+            ctx.events.push(DinoEvent::Sound {
+                index,
+                sound,
+                pos: c.pos,
+            });
+        }
+    };
+    if old_phase != c.phase || new_phase {
+        if wary && c.state != 0 && !c.alarm_called {
+            c.alarm_called = true;
+            alarm(c, ctx);
+        } else if (ctx.rng.rand() & 1023) > 980 {
+            if wary && c.state != 0 && m.alarm_call.is_some() {
+                alarm(c, ctx);
+            } else {
+                c.activate_fx(index, sp, ctx);
+            }
+        }
     }
     if old_phase != c.phase {
         if !new_phase {

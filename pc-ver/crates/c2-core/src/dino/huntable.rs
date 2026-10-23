@@ -1022,6 +1022,35 @@ mod tests {
     }
 
     #[test]
+    fn wary_flyer_is_spooked_calls_flies_off_and_calms() {
+        let area = Area::flat(10);
+        let h = hunter();
+        let mut m = info(mee_ai::WARYDIMOR);
+        (m.fly, m.glide) = (IDLE, IDLE + 1);
+        (m.fly_speed, m.glide_speed) = (0.6, 0.6);
+        (m.min_depth, m.max_depth) = (300, 1200);
+        m.alarm_call = Some(0);
+        let mut herd = Herd {
+            species: vec![species(m)],
+            ..Default::default()
+        };
+        let i = add(&mut herd, 0, &area, h.x + 600.0, h.z);
+        let ev = run(&mut herd, &area, h, 1000);
+        assert_eq!(herd.chars[i].state, 1, "spooked within 812");
+        assert!(
+            ev.iter()
+                .any(|e| matches!(e, DinoEvent::Sound { index, sound: 0, .. } if *index == i)),
+            "its alarm call"
+        );
+        run(&mut herd, &area, h, 4000);
+        assert!(dist(&herd.chars[i], &h) > 1500.0, "flies off");
+        run(&mut herd, &area, h, 40_000);
+        let c = &herd.chars[i];
+        assert_eq!(c.state, 0, "calm again");
+        assert!(dist(c, &h) > 4096.0, "{}", dist(c, &h));
+    }
+
+    #[test]
     fn land_brachiosaur_charges_or_wanders() {
         let area = Area::flat(10);
         let h = hunter();
