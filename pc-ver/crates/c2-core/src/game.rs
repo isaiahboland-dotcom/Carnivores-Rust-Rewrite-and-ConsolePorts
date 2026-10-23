@@ -45,6 +45,96 @@ pub struct WeaponInfo {
     pub optic: bool,
     /// Bullet drop (crossbow).
     pub fall: bool,
+    /// The Modder's Edition's weapon keys, when the weapon has any.
+    pub mee: Option<MeeWeapon>,
+}
+
+/// A dialect weapon's extras (`Resources.cpp: ReadWeaponLine` in the
+/// Modder's Edition): flying bullets, recoil, firing modes, trackers.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MeeWeapon {
+    /// `land_veloc`: bullets fly `64 * veloc` units per 17 ms
+    /// (`AddBullet`); 0 (not given) keeps the original's instant trace, as
+    /// the engine's own bullets wouldn't move.
+    pub veloc: f32,
+    /// `land_fall`: what a bullet's fall speed grows by per 17 ms.
+    pub fall: f32,
+    /// `recoil`: the view kicks up by `recoil / 100` rad (`ProcessShoot`).
+    pub recoil: f32,
+    /// `shake`: the aim's sway starts at `shake * 4` when drawn.
+    pub shake: Option<f32>,
+    /// `canRun`: the hunter may run with it out.
+    pub can_run: bool,
+    /// `fullAuto`: fires while the trigger is held; else once per pull.
+    pub full_auto: bool,
+    /// `cannotMortal`: a vital hit only does its power.
+    pub cannot_mortal: bool,
+    /// `radar` (`radR`, `radG`, `radB`, `radTime`): an animal it hits shows
+    /// on the map in this colour, for `radTime` ms (0: for good).
+    pub radar: Option<([u8; 3], i32)>,
+    /// Model animations for draw, fire, hide, reload (`getAnim`, `shtAnim`,
+    /// `putAnim`, `rldAnimFull`); the original order when not given.
+    pub anims: [usize; 4],
+}
+
+impl MeeWeapon {
+    /// The keys that make a weapon a dialect one.
+    const KEYS: &[&str] = &[
+        "land_veloc",
+        "land_fall",
+        "recoil",
+        "shake",
+        "canrun",
+        "fullauto",
+        "cannotmortal",
+        "radar",
+        "getanim",
+        "shtanim",
+        "putanim",
+        "rldanimfull",
+    ];
+
+    fn from_def(d: &WeaponDef) -> Option<Self> {
+        let get = |k: &str| {
+            d.extra
+                .iter()
+                .find(|e| e.key.eq_ignore_ascii_case(k))
+                .map(|e| e.value.trim().to_string())
+        };
+        if !Self::KEYS.iter().any(|k| get(k).is_some()) {
+            return None;
+        }
+        let num = |k: &str| get(k).map_or(0.0, |v| c2_formats::res_txt::c_atof(&v));
+        let flag = |k: &str| get(k).is_some_and(|v| v.eq_ignore_ascii_case("true") || v == "1");
+        let anim = |k: &str, default: usize| {
+            get(k)
+                .map(|v| c2_formats::res_txt::c_atoi(&v))
+                .and_then(|n| usize::try_from(n).ok())
+                .unwrap_or(default)
+        };
+        let colour = |k: &str| num(k).clamp(0.0, 255.0) as u8;
+        Some(Self {
+            veloc: num("land_veloc").max(0.0),
+            fall: num("land_fall"),
+            recoil: num("recoil"),
+            shake: get("shake").map(|v| c2_formats::res_txt::c_atof(&v)),
+            can_run: flag("canRun"),
+            full_auto: flag("fullAuto"),
+            cannot_mortal: flag("cannotMortal"),
+            radar: flag("radar").then(|| {
+                (
+                    [colour("radR"), colour("radG"), colour("radB")],
+                    num("radTime") as i32,
+                )
+            }),
+            anims: [
+                anim("getAnim", 0),
+                anim("shtAnim", 1),
+                anim("putAnim", 2),
+                anim("rldAnimFull", 3),
+            ],
+        })
+    }
 }
 
 impl WeaponInfo {
@@ -62,7 +152,16 @@ impl WeaponInfo {
             trace_c: d.trace.unwrap_or(0) - 1,
             optic: d.optic.unwrap_or(0) != 0,
             fall: d.fall.unwrap_or(0) != 0,
+            mee: MeeWeapon::from_def(d),
         }
+    }
+
+    /// The model animation (and sound) for a `weapon_anim` slot.
+    pub fn anim_of(&self, slot: usize) -> usize {
+        self.mee
+            .as_ref()
+            .and_then(|m| m.anims.get(slot).copied())
+            .unwrap_or(slot)
     }
 }
 
@@ -72,6 +171,15 @@ pub mod weapon_anim {
     pub const FIRE: usize = 1;
     pub const HIDE: usize = 2;
     pub const RELOAD: usize = 3;
+}
+
+/// A dialect round in flight (`TBullet`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Bullet {
+    pub pos: [f32; 3],
+    /// Units per 17 ms.
+    pub vel: [f32; 3],
+    pub weapon: usize,
 }
 
 /// `Weapon.state`.
@@ -162,12 +270,24 @@ impl Weapons {
         self.anim_ms.get(self.current).map_or(0, |a| a[slot])
     }
 
-    /// The animation slot and time to pose the view model with.
+    /// The model animation and time to pose the view model with.
     pub fn pose(&self) -> Option<(usize, i32)> {
         match self.state {
             WeaponState::Hidden => None,
-            s => Some((s as usize - 1, self.ftime)),
+            s => {
+                let slot = s as usize - 1;
+                let anim = self
+                    .info
+                    .get(self.current)
+                    .map_or(slot, |i| i.anim_of(slot));
+                Some((anim, self.ftime))
+            }
         }
+    }
+
+    /// The current weapon's dialect extras, if any.
+    pub fn mee(&self) -> Option<&MeeWeapon> {
+        self.info.get(self.current).and_then(|i| i.mee.as_ref())
     }
 
     /// Sway of the aim (`wpnDAlpha`, `wpnDBeta`).
@@ -394,6 +514,12 @@ pub struct Hunt {
     pub death: Option<DeathCam>,
     /// `ObjectsOnLook` (global in the original; persists between checks).
     objects_on_look: i32,
+    /// Dialect bullets in flight (`bullet[]`).
+    pub bullets: Vec<Bullet>,
+    /// The view's recoil still to come, yaw and pitch per 17 ms (`Recoil`).
+    recoil: [f32; 2],
+    /// The trigger was held last tick (`alreadyFired`).
+    fire_held: bool,
     /// Shots fired / animals bagged this hunt (`TrophyRoom.Last`).
     pub shots_made: u32,
     pub successes: u32,
@@ -544,6 +670,9 @@ impl Hunt {
             death: None,
             survival: None,
             objects_on_look: 0,
+            bullets: Vec::new(),
+            recoil: [0.0; 2],
+            fire_held: false,
             shots_made: 0,
             successes: 0,
         }
@@ -613,7 +742,13 @@ impl Hunt {
                     .collect();
             }
             let mut pev = Vec::new();
-            self.player.tick(area, &input.controls, dt as u32, &mut pev);
+            // Hunt2.cpp: running only with the weapon away (the dialect's
+            // `canRun` weapons too).
+            let mut controls = input.controls;
+            controls.run &= self.weapons.state == WeaponState::Hidden
+                || self.weapons.mee().is_some_and(|m| m.can_run);
+            self.player.tick(area, &controls, dt as u32, &mut pev);
+            self.apply_recoil(dt);
             self.prof.mark(0);
             self.player_effects(area, &pev);
             out.extend(pev.into_iter().map(GameEvent::Player));
@@ -645,6 +780,8 @@ impl Hunt {
             }
         }
         self.weapon_step(dt, out);
+        self.animate_bullets(area, cars, dt, out);
+        self.track_step(dt);
         self.prof.mark(1);
 
         let mut dev = Vec::new();
@@ -952,9 +1089,13 @@ impl Hunt {
         if input.toggle_weapon {
             self.hide_weapon(out);
         }
-        if input.fire {
+        // A dialect weapon fires once per pull unless `fullAuto`; the
+        // original's fire whenever ready while the trigger is held.
+        let once = self.weapons.mee().is_some_and(|m| !m.full_auto);
+        if input.fire && !(once && self.fire_held) {
             self.process_shoot(area, cars, out);
         }
+        self.fire_held = input.fire;
     }
 
     /// `HideWeapon`: draw if hidden, put away if ready.
@@ -978,7 +1119,7 @@ impl Hunt {
             });
             w.ftime = 0;
             w.state = WeaponState::Drawing;
-            w.shakel = 0.2;
+            w.shakel = w.mee().and_then(|m| m.shake).map_or(0.2, |s| s * 4.0);
             return;
         }
         if w.state != WeaponState::Ready || w.ftime != 0 {
@@ -1098,12 +1239,28 @@ impl Hunt {
         let origin = [p.x, p.y + p.head_y, p.z];
         let (alpha, beta) = (p.alpha, p.beta);
         let reach = 256.0 * self.opts.render_r.max(self.opts.view_r) as f32;
+        if let Some(m) = &info.mee {
+            // ProcessShoot: Recoil.y = -recoil / 100; x by up to half that.
+            let r = m.recoil / 100.0;
+            self.recoil[1] = -r;
+            self.recoil[0] += (self.rng.r_rand(8) - 4) as f32 / 8.0 * r;
+        }
+        let flying = info.mee.as_ref().filter(|m| m.veloc > 0.0).map(|m| m.veloc);
         for _ in 0..=info.trace_c.max(0) {
             let ra = self.rng.si_rand(128) as f32 * 0.0001 * (2.0 - info.prec);
             let rb = self.rng.si_rand(128) as f32 * 0.0001 * (2.0 - info.prec);
             let (sa, ca) = (alpha + da + ra).sin_cos();
             let (sb, cb) = (beta + db + rb).sin_cos();
             let nv = [sa * cb, -sb, -ca * cb];
+            if let Some(v) = flying {
+                // AddBullet: 64 * veloc units per 17 ms.
+                self.bullets.push(Bullet {
+                    pos: origin,
+                    vel: nv.map(|n| n * 64.0 * v),
+                    weapon: cur,
+                });
+                continue;
+            }
             let to = [
                 origin[0] + nv[0] * reach,
                 origin[1] + nv[1] * reach,
@@ -1158,6 +1315,19 @@ impl Hunt {
             r
         };
         let Some((hit, pos)) = res else { return };
+        self.apply_hit(area, info, hit, pos, out);
+    }
+
+    /// A round's hit (`MakeShot` / `AnimateBullet`): impact effects, then
+    /// damage to an animal.
+    fn apply_hit(
+        &mut self,
+        area: &Area,
+        info: &WeaponInfo,
+        hit: Hit,
+        pos: [f32; 3],
+        out: &mut Vec<GameEvent>,
+    ) {
         out.push(GameEvent::Impact { hit, pos });
         // AddElements per surface (MakeShot).
         let a = self.camera().1;
@@ -1203,6 +1373,10 @@ impl Hunt {
         // The dialect's `registerDamage` also marks the animal hurt and
         // aware of the hunter.
         c.damaged = true;
+        if let Some((rgb, ms)) = info.mee.as_ref().and_then(|m| m.radar) {
+            c.tracked = Some((rgb, (ms > 0).then_some(ms)));
+        }
+        let mortal = mortal && !info.mee.as_ref().is_some_and(|m| m.cannot_mortal);
         if mortal {
             c.health = 0;
         } else {
@@ -1246,6 +1420,82 @@ impl Hunt {
         if c.ai == ai::TREX {
             c.state = if c.state != 0 { 5 } else { 1 };
         }
+    }
+
+    /// `AnimateBullets`: each flying round moves its way for this tick
+    /// (scaled from the engine's 17 ms step), tracing what it passes; it
+    /// falls by its weapon's `land_fall` a step, and is gone on a hit or
+    /// past the view range.
+    fn animate_bullets(
+        &mut self,
+        area: &Area,
+        cars: &[Option<&Car>],
+        dt: i32,
+        out: &mut Vec<GameEvent>,
+    ) {
+        if self.bullets.is_empty() {
+            return;
+        }
+        let k = dt as f32 / 17.0;
+        let reach = 256.0 * self.opts.render_r.max(self.opts.view_r) as f32;
+        let bullets = std::mem::take(&mut self.bullets);
+        let mut kept = Vec::with_capacity(bullets.len());
+        for mut b in bullets {
+            let Some(info) = self.weapons.info.get(b.weapon).cloned() else {
+                continue;
+            };
+            let to = [
+                b.pos[0] + b.vel[0] * k,
+                b.pos[1] + b.vel[1] * k,
+                b.pos[2] + b.vel[2] * k,
+            ];
+            let res = trace_shot(area, &self.herd.chars, &self.herd.species, cars, b.pos, to);
+            if let Some((hit, pos)) = res {
+                self.apply_hit(area, &info, hit, pos, out);
+                continue;
+            }
+            let (dx, dz) = (self.player.x - to[0], self.player.z - to[2]);
+            if dx * dx + dz * dz > reach * reach {
+                continue;
+            }
+            b.pos = to;
+            b.vel[1] -= info.mee.as_ref().map_or(0.0, |m| m.fall) * k;
+            kept.push(b);
+        }
+        kept.append(&mut self.bullets);
+        self.bullets = kept;
+    }
+
+    /// Trackers run out (`RTime -= TimeDt`).
+    fn track_step(&mut self, dt: i32) {
+        for c in &mut self.herd.chars {
+            if let Some((_, Some(ms))) = &mut c.tracked {
+                *ms -= dt;
+                if *ms <= 0 {
+                    c.tracked = None;
+                }
+            }
+        }
+    }
+
+    /// The recoil moves the view each step and eases off, 0.005 rad per
+    /// 17 ms (`Recoil` in the dialect's camera code).
+    fn apply_recoil(&mut self, dt: i32) {
+        if self.recoil == [0.0; 2] {
+            return;
+        }
+        let k = dt as f32 / 17.0;
+        let p = &mut self.player;
+        p.alpha += self.recoil[0] * k;
+        p.beta = (p.beta + self.recoil[1] * k).clamp(-1.26, 1.46);
+        let ease = 0.005 * k;
+        self.recoil[1] = (self.recoil[1] + ease).min(0.0);
+        let x = self.recoil[0];
+        self.recoil[0] = if x.abs() <= ease {
+            0.0
+        } else {
+            x - ease * x.signum()
+        };
     }
 
     /// `Characters_AddSecondaryOne`: replace a killed ambient animal.
@@ -2213,6 +2463,7 @@ mod tests {
             trace_c: 0,
             optic: false,
             fall: false,
+            mee: None,
         }
     }
 
@@ -2577,8 +2828,62 @@ mod tests {
     ) {
         for _ in 0..n {
             h.weapon_input(area, cars, &input, out);
+            h.apply_recoil(10);
             h.weapon_step(10, out);
+            h.animate_bullets(area, cars, 10, out);
+            h.track_step(10);
         }
+    }
+
+    #[test]
+    fn dialect_weapons_fly_kick_track_and_fire_once_per_pull() {
+        let res = c2_formats::res_txt::ResTxt::parse(
+            "weapons {\n{\n name = 'Rifle'\n land_power = 4\n land_veloc = 23.0\n land_prec = 1.8\n \
+             shots = 7\n recoil = 4\n shake = 0.05\n radar = TRUE\n radR = 255\n radG = 0\n \
+             radB = 0\n radTime = 1000\n land_fall = 0.6\n}\n}\n.\n",
+        )
+        .unwrap_or_default();
+        let block = crate::mee::vanilla_keys_for_test(&res.sections[0].blocks[0]);
+        let info = WeaponInfo::from_def(&WeaponDef::from_block(&block));
+        let m = info.mee.clone().expect("dialect keys");
+        assert_eq!((m.veloc, m.fall, m.recoil), (23.0, 0.6, 4.0));
+        assert_eq!(m.radar, Some(([255, 0, 0], 1000)));
+        assert!(!info.fall, "land_fall isn't the crossbow flag");
+
+        let (area, mut h, car) = setup(false);
+        h.weapons = Weapons::new(vec![info], vec![[100, 100, 100, 100]], 1, false);
+        let cars = [Some(&car), Some(&car)];
+        let mut ev = Vec::new();
+        let toggle = HuntInput {
+            toggle_weapon: true,
+            ..Default::default()
+        };
+        weapon_ticks(&mut h, &area, &cars, toggle, 1, &mut ev);
+        assert!((h.weapons.shakel - 0.2).abs() < 0.01, "shake * 4");
+        weapon_ticks(&mut h, &area, &cars, HuntInput::default(), 12, &mut ev);
+        let fire = HuntInput {
+            fire: true,
+            ..Default::default()
+        };
+        let beta = h.player.beta;
+        let health = h.herd.chars[0].health;
+        weapon_ticks(&mut h, &area, &cars, fire, 1, &mut ev);
+        assert_eq!(h.bullets.len(), 1, "a round in flight, not a trace");
+        // 2000 units off at 1472 a 17 ms step: there within a few ticks.
+        weapon_ticks(&mut h, &area, &cars, fire, 4, &mut ev);
+        assert!(h.bullets.is_empty());
+        assert!(h.herd.chars[0].health < health, "hit");
+        assert!(h.herd.chars[0].tracked.is_some(), "tracked");
+        assert!(h.player.beta < beta, "the recoil lifts the aim");
+        // Held past the fire animation: no second shot until released.
+        weapon_ticks(&mut h, &area, &cars, fire, 20, &mut ev);
+        assert_eq!(h.weapons.shots_left[0], 6);
+        weapon_ticks(&mut h, &area, &cars, HuntInput::default(), 1, &mut ev);
+        weapon_ticks(&mut h, &area, &cars, fire, 1, &mut ev);
+        assert_eq!(h.weapons.shots_left[0], 5);
+        // The tracker runs out after its second.
+        weapon_ticks(&mut h, &area, &cars, HuntInput::default(), 120, &mut ev);
+        assert!(h.herd.chars[0].tracked.is_none());
     }
 
     #[test]

@@ -51,13 +51,14 @@ pub struct MeeHunt {
 }
 
 /// The dialect renamed some weapon keys (manual, "Note: As of 1.1.0").
+/// `land_fall` is a bullet's drop, not the original's crossbow flag: it
+/// stays for [`crate::game::MeeWeapon`].
 fn vanilla_weapon_keys(b: &Block) -> Block {
     let mut b = b.clone();
     for e in &mut b.entries {
         let k = match e.key.to_ascii_lowercase().as_str() {
             "land_power" => "power",
             "land_prec" => "prec",
-            "land_fall" => "fall",
             "pic1" => "pic",
             _ => continue,
         };
@@ -67,6 +68,11 @@ fn vanilla_weapon_keys(b: &Block) -> Block {
         };
     }
     b
+}
+
+#[cfg(test)]
+pub(crate) fn vanilla_keys_for_test(b: &Block) -> Block {
+    vanilla_weapon_keys(b)
 }
 
 /// `_RES.TXT` resolved for hunt `h`.

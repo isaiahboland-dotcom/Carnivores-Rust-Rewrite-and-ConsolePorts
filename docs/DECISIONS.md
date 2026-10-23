@@ -2,6 +2,38 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-23 — M9: the dialect's weapons
+- **Scope**: the keys the dialect games here use (counted over every
+  `_RES.TXT` we have): `land_veloc`, `land_fall`, `recoil`, `shake`,
+  `fullAuto`, `canRun`, `cannotMortal`, `radar`/`radR/G/B`/`radTime`, the
+  animation slots (`getAnim`, `shtAnim`, `putAnim`, `rldAnimFull`).
+  `game::MeeWeapon`, present when a weapon has any of them; plain C2
+  weapons are unchanged.
+- **Bullets** (`AddBullet`, `AnimateBullets`, `AnimateBullet`): a round
+  flies `64 * veloc` units per 17 ms, its fall speed growing by
+  `land_fall` a step; each tick traces the stretch it covers; gone on a hit
+  or past the view range. Scaled by the tick (the engine steps per frame).
+  A weapon without `land_veloc` keeps the original's instant trace (the
+  engine's would never move). Fix: `land_fall` was read as the original's
+  whole-number crossbow flag (0.6 -> 0), so the dialect crossbow didn't drop.
+- **Recoil**: the view kicks `-recoil/100` rad up and up to half that
+  sideways, moving each 17 ms and easing 0.005 rad a step (the dialect's
+  camera code). **Shake**: the sway starts at `shake * 4` when drawn.
+- **Firing**: a dialect weapon fires once per pull unless `fullAuto`
+  (`alreadyFired` / `FiringMode`); the original's keep firing while held.
+- **Running** (`Hunt2.cpp`: `RunMode && Weapon.state == 0`): only with the
+  weapon away, as the original; we let the hunter run with it drawn before
+  (undocumented). The dialect's `canRun` weapons allow it.
+- **Trackers**: an animal hit by a `radar` weapon shows on the map (PC and
+  3DS), radar or not, in the weapon's colour, for `radTime` ms (0: for good).
+- **Animation slots**: the model animation for draw / fire / hide / reload;
+  the sound stays the slot's own (the dialect plays the animation's
+  `Anifx`; every dialect weapon here numbers them 0-3, so the same).
+- Not yet: muzzle flash, bullets drawn in flight (`bModel`), chambered
+  rounds and part reloads (`rldAnimPart`, `picc`; C2DE's double shotgun),
+  underwater stats, harpoons, retrieving arrows, held breath.
+- **Weather** in the dialect is the area table's snow, done with M14.
+
 ## 2026-10-23 — M2 polish: far sprites, `RandomMap`, ground light
 - **Far sprites** (`_RenderObject`, `RenderBMPModel`, `LoadBMPModel`): past
   `ctViewRM` = 24 cells (3D distance) an object but an `ofNOBMP` one is its

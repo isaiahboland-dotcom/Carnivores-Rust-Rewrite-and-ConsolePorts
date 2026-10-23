@@ -60,7 +60,7 @@ pub fn load_weapons(
             for (slot, t) in a.iter_mut().enumerate() {
                 *t = c
                     .animations
-                    .get(slot)
+                    .get(info.anim_of(slot))
                     .map_or(0, |an| car_anim_duration_ms(an) as i32);
             }
         }

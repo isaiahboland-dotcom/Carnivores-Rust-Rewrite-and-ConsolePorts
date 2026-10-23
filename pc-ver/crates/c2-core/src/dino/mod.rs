@@ -289,6 +289,9 @@ pub struct Character {
     pub heard_shot: bool,
     /// Has been hit (`damaged`).
     pub damaged: bool,
+    /// Hit by a tracker (a dialect weapon's `radar`): shown on the map in
+    /// this colour, for the ms left (`None`: for good) (`tracker`, `RTime`).
+    pub tracked: Option<([u8; 3], Option<i32>)>,
     /// Index into `Herd::packs` (`packId`).
     pub pack: Option<usize>,
     pub follow_leader: bool,

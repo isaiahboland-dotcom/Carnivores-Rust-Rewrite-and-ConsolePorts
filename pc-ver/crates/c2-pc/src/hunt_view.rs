@@ -1402,6 +1402,17 @@ impl Scene for HuntView {
                         sprites.extend(dot(c.pos[0] / 1024.0, c.pos[2] / 1024.0, color));
                     }
                 }
+                // Hit by a tracker: in its colour, radar or not.
+                for c in &self.hunt.herd.chars {
+                    if let Some((rgb, _)) = c.tracked {
+                        let color = [rgb[0], rgb[1], rgb[2]].map(|v| f32::from(v) / 255.0);
+                        sprites.extend(dot(
+                            c.pos[0] / 1024.0,
+                            c.pos[2] / 1024.0,
+                            [color[0], color[1], color[2], 1.0],
+                        ));
+                    }
+                }
             }
         }
         // The selected call's icon (top right) after pressing change-call.

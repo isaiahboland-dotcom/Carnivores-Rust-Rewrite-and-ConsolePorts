@@ -514,6 +514,12 @@ fn draw_map(c: &mut Canvas, gpu: &mut Gpu, game: &Game, map: Option<&Texture>, l
         let target = h.is_target(ch);
         let huntable = target || h.is_huntable(ch);
         let in_range = dx * dx + dz * dz <= range * range;
+        // Hit by a tracker (a dialect weapon's `radar`): in its colour.
+        if let Some((rgb, _)) = ch.tracked {
+            let (x, y) = to_screen(px(ch.pos[0]), px(ch.pos[2]));
+            dot(x, y, 4.0, [rgb[0], rgb[1], rgb[2], 255]);
+            continue;
+        }
         if ch.health <= 0 || !(in_range || huntable && h.opts.radar) {
             continue;
         }

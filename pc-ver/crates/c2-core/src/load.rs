@@ -116,7 +116,7 @@ pub fn weapons_with(vfs: &Vfs, res: &ResData, keep: &dyn Fn(usize) -> bool) -> V
                 for (slot, t) in anims.iter_mut().enumerate() {
                     *t = c
                         .animations
-                        .get(slot)
+                        .get(info.anim_of(slot))
                         .map_or(0, |a| car_anim_duration_ms(a) as i32);
                 }
             }

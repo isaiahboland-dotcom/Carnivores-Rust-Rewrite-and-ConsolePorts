@@ -581,7 +581,12 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] trophy table: the trophy room's spots (`tropinfo`, `trophytable` groups, `tropgroup`) place trophies
         (landing point, offsets growing with size, facing, pose) and a kill takes the first free spot made
         for its animal (PC and 3DS); older trophies move to a fitting spot; the save keeps 24
-  - [ ] extended weapons, survival mode, weather
+  - [x] extended weapons (the keys the dialect games use): flying bullets with drop (`land_veloc`,
+        `land_fall`), recoil, shake, one shot per pull unless `fullAuto`, `canRun`, `cannotMortal`, tracker
+        darts on the map (`radar`), per-weapon animation slots; weather is the per-map snow (done with M14)
+  - [ ] weapons, later: muzzle flash, bullets drawn in flight (`bModel`), chambered rounds and part
+        reloads (`rldAnimPart`, `picc`), underwater stats, harpoons, retrieving arrows
+  - [ ] the dialect's survival mode (`-survival`: `survivalDino` waves, the map's survival box)
 
 _Last updated: 2026-10-22 — the add-on pack plays on hardware and the Old 3DS slowdown after a kill is gone. Roaming add-ons on the 3DS are proper hunt targets (no call, +10%, a menu picture); dialect games no longer halve non-target scores. M10: the launchers' balance editor. Next: `.cia` builds._
 
