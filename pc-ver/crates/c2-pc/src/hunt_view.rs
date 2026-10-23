@@ -64,8 +64,10 @@ pub struct HuntSetup {
     pub weapons: u128,
     pub double_ammo: bool,
     pub observer: bool,
-    /// A survival instead of a hunt (README M13).
+    /// A survival instead of a hunt (README M13), and the mobile game's
+    /// rules for a mobile one.
     pub survival: Option<SurvivalKind>,
+    pub mobile_survival: Option<c2_formats::mobile_arcade::Survive>,
     /// The player (`trophy0N.sav`).
     pub reg: i32,
     /// Return to the menu afterwards (otherwise close the window).
@@ -380,7 +382,19 @@ impl HuntView {
         };
         let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
         if let Some(kind) = setup.survival {
-            hunt.start_survival(SurvivalOptions::pick(&hunt, kind, SURVIVAL_MAX));
+            let mobile = setup
+                .mobile_survival
+                .as_ref()
+                .filter(|_| kind == SurvivalKind::Mobile);
+            let opts = match mobile.map(|m| SurvivalOptions::mobile(&hunt, m, SURVIVAL_MAX)) {
+                Some(Some(o)) => o,
+                Some(None) => {
+                    tracing::warn!("the mobile survival's animals aren't all in this game");
+                    SurvivalOptions::pick(&hunt, SurvivalKind::Normal, SURVIVAL_MAX)
+                }
+                None => SurvivalOptions::pick(&hunt, kind, SURVIVAL_MAX),
+            };
+            hunt.start_survival(area, opts);
         }
         hunt.clock = local_clock();
         hunt.area_no = setup

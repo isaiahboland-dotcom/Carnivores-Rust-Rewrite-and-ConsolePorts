@@ -20,7 +20,8 @@ use c2_formats::sav::{Save, TrophyItem};
 
 mod survival;
 pub use survival::{
-    hunts, hunts_ai, is_trex, modded, Survival, SurvivalKind, SurvivalOptions, TREX_WAVE,
+    hunts, hunts_ai, is_trex, modded, MobileWaves, Survival, SurvivalKind, SurvivalOptions,
+    TREX_WAVE,
 };
 
 /// `MAX_HEALTH`.
@@ -2311,11 +2312,14 @@ mod tests {
         let (area, mut hunt, car) = setup(false);
         hunt.herd.species.push(Species::new(info(ai::VELO), &car));
         assert!(hunts(&hunt.herd.species[2]) && !hunts(&hunt.herd.species[1]));
-        hunt.start_survival(SurvivalOptions {
-            roster: vec![2],
-            max_wave: 3,
-            ..Default::default()
-        });
+        hunt.start_survival(
+            &area,
+            SurvivalOptions {
+                roster: vec![2],
+                max_wave: 3,
+                ..Default::default()
+            },
+        );
         // The plant-eater stays; the first wave comes after a rest.
         assert_eq!(hunt.herd.chars.len(), 1);
         let cars = [None, Some(&car), Some(&car)];
@@ -2352,6 +2356,69 @@ mod tests {
         run(&mut hunt, 4100, &mut out);
         assert_eq!((hunt.wave(), wave(&hunt, 1), wave(&hunt, 2)), (2, 0, 3));
         assert_eq!(hunt.health, MAX_HEALTH);
+    }
+
+    #[test]
+    fn mobile_survival_sends_its_waves_from_its_box() {
+        let (area, mut hunt, car) = setup(false);
+        for (name, a) in [("Chasmosaurus", ai::CHASM), ("Allosaurus", ai::ALLO)] {
+            let mut i = info(a);
+            i.name = name.into();
+            hunt.herd.species.push(Species::new(i, &car));
+        }
+        let sv = c2_formats::mobile_arcade::Survive {
+            area: 5,
+            hunter: [100_000.0, 100_000.0],
+            spawn: [100_000.0, 110_000.0, 500.0, 500.0],
+            first_ms: 500,
+            rest_ms: 2000,
+            waves: vec![vec!["Chasmosaurus".into()], vec!["Allosaurus".into(); 2]],
+            after: vec!["Chasmosaurus".into(); 3],
+        };
+        let missing = c2_formats::mobile_arcade::Survive {
+            after: vec!["Utahraptor".into()],
+            ..sv.clone()
+        };
+        assert!(SurvivalOptions::mobile(&hunt, &missing, 8).is_none());
+        let o = SurvivalOptions::mobile(&hunt, &sv, 8).unwrap();
+        hunt.start_survival(&area, o);
+        assert!((hunt.player.x - 100_000.0).abs() < 256.0);
+        let cars = [None, Some(&car), Some(&car), Some(&car)];
+        let mut out = Vec::new();
+        for _ in 0..60 {
+            hunt.tick(&area, &cars, &HuntInput::default(), 10, &mut out);
+        }
+        let wave: Vec<&Character> = hunt.herd.chars.iter().filter(|c| c.wave == 1).collect();
+        assert_eq!(wave.len(), 1);
+        let c = wave[0];
+        assert_eq!(c.ctype, 2);
+        assert!((c.pos[2] - 110_000.0).abs() <= 500.0 && (c.pos[0] - 100_000.0).abs() <= 500.0);
+        // 39 cells off, the Chasmosaurus still comes (not away), by a
+        // way 8 cells ahead.
+        let (lx, lz) = c.lure.expect("a lure while far off");
+        assert!(
+            (lz - c.pos[2]).abs() <= 9.0 * 256.0 && lz < c.pos[2],
+            "{lz} {}",
+            c.pos[2]
+        );
+        assert!((c.tgz - lz).abs() < 1.0 && (c.tgx - lx).abs() < 1.0);
+        // Then the next wave in turn, 2 s after this one falls.
+        hunt.debug_bag(
+            &area,
+            hunt.herd.chars.iter().position(|c| c.wave == 1).unwrap(),
+            &mut out,
+        );
+        for _ in 0..210 {
+            hunt.tick(&area, &cars, &HuntInput::default(), 10, &mut out);
+        }
+        let w2: Vec<usize> = hunt
+            .herd
+            .chars
+            .iter()
+            .filter(|c| c.wave == 2)
+            .map(|c| c.ctype)
+            .collect();
+        assert_eq!(w2, [3, 3]);
     }
 
     #[test]

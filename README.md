@@ -529,7 +529,11 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
         (unlimited ammunition, the T-Rex from wave 15)
   - [x] PC: Hunt / Survival / Hardcore / Custom in the setup screen's bottom bar (`--survival` for `hunt`);
         3DS: SURVIVAL on the title, the kind on the options page; wave and kills in the HUD
+  - [x] the mobile game's own Survive mode from the user's APK (its 19 waves and after, its box and spot, on
+        the user's PC Mount Ravan — the mobile map is the same heights); launcher: Ours / Mobile / Both
+  - [x] wave animals find a walkable way to the hunter (ridges no longer hold them up)
   - [ ] owner's hardware test (wave size and pace on Old 3DS)
+  - [ ] Ice Age's Arcade (its own map; with M14)
 - [ ] M14 Carnivores: Ice Age (planned)
 - [ ] M15 Mobile assets — **in progress**
   - [x] mobile formats (`c2_formats::mobile`: `.cat`, `.3dn`, `.ani`, ETC1 `.pkm`, `.crt`, IMA ADPCM) rebuilt as `.CAR`

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use eframe::egui::{self, Color32, RichText};
 
-use crate::config::{describe_game, install_name, AddOn, Config, MenuStyle, Target};
+use crate::config::{describe_game, install_name, AddOn, Config, MenuStyle, SurvivalModes, Target};
 use crate::jobs::{is_archive, Job, Step};
 use crate::theme::*;
 use crate::{find_tool, Mode};
@@ -167,6 +167,10 @@ impl Launcher {
                 dirs.sort();
                 let values = out.join(c2_mods::mobile::MOBILE_VALUES);
                 self.cfg.mobile_values = values.exists().then_some(values);
+                let survive = out.join(c2_mods::mobile::MOBILE_SURVIVAL);
+                if survive.exists() {
+                    self.cfg.mobile_survival = Some(survive);
+                }
                 self.balance.mobile = cfg_mobile(&self.cfg);
                 let n = dirs.len();
                 self.add_addons(dirs);
@@ -276,6 +280,61 @@ impl Launcher {
         }
     }
 
+    /// `--mobile-survival FILE --survival-modes ..` once an APK import has
+    /// made the file.
+    fn survival_args(&self) -> Vec<String> {
+        match self.cfg.mobile_survival.as_ref().filter(|f| f.exists()) {
+            Some(f) => vec![
+                "--mobile-survival".into(),
+                f.display().to_string(),
+                "--survival-modes".into(),
+                self.cfg.survival_modes.arg().into(),
+            ],
+            None => Vec::new(),
+        }
+    }
+
+    /// Survival choice (PC and 3DS alike).
+    fn survival_ui(&mut self, ui: &mut egui::Ui) -> bool {
+        let have = self
+            .cfg
+            .mobile_survival
+            .as_ref()
+            .is_some_and(|f| f.exists());
+        let mut changed = false;
+        ui.horizontal(|ui| {
+            ui.label("Survival:");
+            for (m, name) in [
+                (SurvivalModes::Ours, "Ours"),
+                (SurvivalModes::Mobile, "Mobile"),
+                (SurvivalModes::Both, "Both (choose in the game)"),
+            ] {
+                let r = ui.add_enabled(
+                    have || m == SurvivalModes::Ours,
+                    egui::RadioButton::new(
+                        have && self.cfg.survival_modes == m || !have && m == SurvivalModes::Ours,
+                        name,
+                    ),
+                );
+                if r.clicked() {
+                    self.cfg.survival_modes = m;
+                    changed = true;
+                }
+            }
+        });
+        help(
+            ui,
+            if have {
+                "Mobile: the mobile game's own Survive mode, read from your APK (its waves, on \
+                 Mount Ravan). Ours: waves of the animals you pick, hardcore and custom kinds."
+            } else {
+                "The mobile game's Survive mode comes with importing your Carnivores 2 (Dinosaur \
+                 Hunter) APK (Add-ons tab); until then, ours only."
+            },
+        );
+        changed
+    }
+
     /// `play <base> --overlay .. --mod .. [--balance ..]`
     fn play_args(&self) -> Vec<String> {
         let mut args = vec!["play".to_string()];
@@ -291,6 +350,7 @@ impl Launcher {
             args.push(a.display().to_string());
         }
         args.extend(self.balance_args());
+        args.extend(self.survival_args());
         let art = match self.cfg.menu_style {
             MenuStyle::Original => self.cfg.base.clone(),
             MenuStyle::IceAge => self.cfg.ice_age.clone(),
@@ -401,9 +461,11 @@ impl Launcher {
         let dir = out.join("3ds").join(&name);
         let mut steps = Vec::new();
         let title_art = t.ice_age_title.then(|| self.cfg.ice_age.clone()).flatten();
+        let survival = self.survival_args();
         let cook_args = |extra: Vec<String>, pack: &str| -> Vec<String> {
             let mut a = vec!["--game".to_string(), base.display().to_string()];
             a.extend(extra);
+            a.extend(survival.clone());
             if let Some(ia) = &title_art {
                 a.extend(["--menu-art".to_string(), ia.display().to_string()]);
             }
@@ -694,7 +756,7 @@ impl Launcher {
                  list changes).",
             );
             ui.add_space(4.0);
-            if self.menu_style_ui(ui, false) {
+            if self.menu_style_ui(ui, false) | self.survival_ui(ui) {
                 self.save();
             }
         });
@@ -760,7 +822,7 @@ impl Launcher {
                 "The app asks which pack at start; each keeps its own save.",
             );
         });
-        changed |= panel(ui, |ui| self.menu_style_ui(ui, true));
+        changed |= panel(ui, |ui| self.menu_style_ui(ui, true) | self.survival_ui(ui));
         ui.add_space(8.0);
         changed |= self.cia_panel(ui);
         if changed {

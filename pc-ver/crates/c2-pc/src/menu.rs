@@ -451,6 +451,29 @@ pub static MENU_ART: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 /// The experimental mobile layout of the hunt setup (`--mobile-menu`).
 pub static MOBILE_MENU: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 
+/// Which survivals are offered (the launcher's choice): ours, and the
+/// mobile game's (`--mobile-survival FILE`, from the player's APK).
+#[derive(Debug, Clone)]
+pub struct Survivals {
+    pub ours: bool,
+    pub mobile: Option<c2_formats::mobile_arcade::Survive>,
+}
+
+pub static SURVIVALS: std::sync::OnceLock<Survivals> = std::sync::OnceLock::new();
+
+/// The survivals the switch goes through, in order.
+fn survival_kinds() -> Vec<SurvivalKind> {
+    let s = SURVIVALS.get();
+    let mut v = Vec::new();
+    if s.is_none_or(|s| s.ours || s.mobile.is_none()) {
+        v.extend(SurvivalKind::ALL);
+    }
+    if s.is_some_and(|s| s.mobile.is_some()) {
+        v.push(SurvivalKind::Mobile);
+    }
+    v
+}
+
 mod mobile;
 
 impl Menu {
@@ -1117,8 +1140,9 @@ impl Menu {
         let on_mode = inside(self.cursor, MODE_RECT);
         let region = if on_mode { 0 } else { region };
         if input.clicked && on_mode {
-            // Hunt -> survival -> hardcore -> custom -> hunt.
-            let all = SurvivalKind::ALL;
+            // Hunt -> survival -> hardcore -> custom -> mobile -> hunt (as
+            // offered).
+            let all = survival_kinds();
             self.choice.survival = match self.choice.survival {
                 None => Some(all[0]),
                 Some(k) => all
@@ -1235,11 +1259,24 @@ impl Menu {
         } else {
             (c.dinos << 10, c.weapons)
         };
-        let map = self.areas[c.area].clone();
+        let mut map = self.areas[c.area].clone();
+        // The mobile survival is on its own area (Mount Ravan).
+        let mobile = SURVIVALS.get().and_then(|s| s.mobile.clone());
+        if let (Some(SurvivalKind::Mobile), Some(m)) = (c.survival, &mobile) {
+            let name = format!("AREA{}.MAP", m.area);
+            match self.areas.iter().find(|a| {
+                a.file_name()
+                    .is_some_and(|f| f.to_string_lossy().eq_ignore_ascii_case(&name))
+            }) {
+                Some(a) => map = a.clone(),
+                None => return,
+            }
+        }
         let double = !c.observer && c.equip & 8 != 0;
         self.start(map, time, targets, weapons, double, c.observer);
         if let Some(l) = &mut self.launch {
             l.survival = c.survival;
+            l.mobile_survival = mobile;
         }
     }
 
@@ -1278,6 +1315,7 @@ impl Menu {
             double_ammo,
             observer,
             survival: None,
+            mobile_survival: None,
             reg,
             from_menu: true,
             pc: self.pc,
@@ -1648,6 +1686,7 @@ impl Menu {
             SurvivalKind::Normal => "SURVIVAL",
             SurvivalKind::Hardcore => "SURVIVAL: HARDCORE",
             SurvivalKind::Custom => "SURVIVAL: CUSTOM",
+            SurvivalKind::Mobile => "SURVIVAL: MOBILE",
         });
         let mc = if on_mode {
             HOVER
@@ -1659,21 +1698,33 @@ impl Menu {
         let (mx, my, mw, _) = MODE_RECT;
         let mx = mx + (mw - self.text_width(14.0, mode)) / 2.0;
         self.text(out, mx, my + 8.0, 14.0, mc, mode);
-        let mode_text: Vec<String> = [
-            "Hunt or survive (click to change).",
-            "",
-            "Survival: waves of hunting animals",
-            "come for you, more each wave. Health",
-            "and ammunition come back between",
-            "waves. Free; no trophies or score.",
-            "The animals picked come (none: all",
-            "but the T-Rex).",
-            "Hardcore: 1-3 mods' animals join",
-            "each wave. Custom: unlimited ammo,",
-            "and the T-Rex from wave 15.",
-        ]
-        .map(String::from)
-        .to_vec();
+        let mobile_text = [
+            "The mobile game's Survive mode (read",
+            "from your APK): its waves, in turn,",
+            "on Mount Ravan, whatever area is",
+            "picked. Chasmosaurs, allosaurs,",
+            "raptors, spinosaurs, ceratosaurs.",
+            "Free; no trophies or score.",
+        ];
+        let mode_text: Vec<String> = if c.survival == Some(SurvivalKind::Mobile) {
+            mobile_text.map(String::from).to_vec()
+        } else {
+            [
+                "Hunt or survive (click to change).",
+                "",
+                "Survival: waves of hunting animals",
+                "come for you, more each wave. Health",
+                "and ammunition come back between",
+                "waves. Free; no trophies or score.",
+                "The animals picked come (none: all",
+                "but the T-Rex).",
+                "Hardcore: 1-3 mods' animals join",
+                "each wave. Custom: unlimited ammo,",
+                "and the T-Rex from wave 15.",
+            ]
+            .map(String::from)
+            .to_vec()
+        };
         // The view and info panels: the focused item, or a hovered toggle.
         let (pic, text): (Option<usize>, &[String]) = match region {
             _ if on_mode => (None, &mode_text),

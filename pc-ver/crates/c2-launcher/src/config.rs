@@ -69,6 +69,26 @@ pub enum MenuStyle {
     Mobile,
 }
 
+/// Which survivals the games offer (README M13): ours, the mobile game's
+/// (from a Carnivores 2 APK import), or both (the player picks in the game).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum SurvivalModes {
+    Ours,
+    Mobile,
+    #[default]
+    Both,
+}
+
+impl SurvivalModes {
+    pub fn arg(self) -> &'static str {
+        match self {
+            Self::Ours => "ours",
+            Self::Mobile => "mobile",
+            Self::Both => "both",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct ThreeDs {
@@ -126,6 +146,10 @@ pub struct Config {
     /// The mobile game's values for this game (`mobile-values.toml` from
     /// the last APK import), offered in the balance editor.
     pub mobile_values: Option<PathBuf>,
+    /// The mobile game's Survive mode (`mobile-survival.txt` from the last
+    /// Carnivores 2 APK import), and which survivals are offered.
+    pub mobile_survival: Option<PathBuf>,
+    pub survival_modes: SurvivalModes,
     /// The PC menu style, and the Ice Age folder it (and the 3DS title)
     /// can take art from.
     pub menu_style: MenuStyle,

@@ -29,6 +29,7 @@ mod check;
 const USAGE: &str = "usage:
   c2-cook --game <GAME_DIR> [--overlay DIR]... [--mod MOD]...
           [--recipe RECIPE.toml --mods DIR] [--balance FILE] [--areas N,N]
+          [--mobile-survival FILE [--survival-modes ours|mobile|both]]
           [--target n3ds|o3ds] [--force] --out <PACK.c2pk>
 
   c2-cook --check <PACK.c2pk>   loads a pack as the 3DS does and plays a short
@@ -39,6 +40,8 @@ const USAGE: &str = "usage:
              Edition, which most add-ons are made for); repeatable
   --balance  prices and scores over the game (a balance file; see `c2-pc balance`)
   --menu-art the menu style: a game folder whose title art is used (Ice Age's)
+  --mobile-survival  the mobile game's Survive mode (mobile-survival.txt from an
+             APK import), and --survival-modes ours|mobile|both which are offered
   --areas    only these areas (default: all, plus the trophy room)
   --target   n3ds (New 3DS, default) or o3ds (Old 3DS / 2DS: smaller textures, shorter view)
   --force    write the pack even if it is over the target's memory budget
@@ -223,6 +226,9 @@ struct Args {
     balance: Option<PathBuf>,
     /// Menu style: the game folder whose title art is used (Ice Age's).
     menu_art: Option<PathBuf>,
+    /// The mobile game's Survive mode, and which survivals are offered.
+    mobile_survival: Option<PathBuf>,
+    survival_modes: Option<String>,
     areas: Option<String>,
     target: Option<String>,
     force: bool,
@@ -247,6 +253,8 @@ fn parse_args() -> Result<Args> {
             "--mods" => a.mods_dir = Some(val()?.into()),
             "--balance" => a.balance = Some(val()?.into()),
             "--menu-art" => a.menu_art = Some(val()?.into()),
+            "--mobile-survival" => a.mobile_survival = Some(val()?.into()),
+            "--survival-modes" => a.survival_modes = Some(val()?),
             "--areas" => a.areas = Some(val()?),
             "--target" => a.target = Some(val()?),
             "--out" => a.out = Some(val()?.into()),
@@ -1117,6 +1125,15 @@ fn main() -> Result<()> {
     }
     for (area, kb) in &base_heap {
         info += &format!("heap.{area} = {kb}\n");
+    }
+    // The mobile Survive mode, from the player's own APK import.
+    if let Some(f) = &a.mobile_survival {
+        let t = std::fs::read_to_string(f).with_context(|| format!("reading {}", f.display()))?;
+        c.entries.push(("C2RS/SURVIVE.TXT".into(), t.into_bytes()));
+        info += &format!(
+            "survival = {}\n",
+            a.survival_modes.as_deref().unwrap_or("both")
+        );
     }
     c.entries.push(("C2RS/INFO.TXT".into(), info.into_bytes()));
     let bytes = write_pack(&c.entries);

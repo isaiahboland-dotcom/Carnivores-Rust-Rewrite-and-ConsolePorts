@@ -167,7 +167,9 @@ pub fn animate(
                 c.set_new_target_place(ctx.area, ctx.rng, 8048.0);
                 continue;
             }
-            if p.defensive && pdist <= 256.0 * 16.0 + (ctx.opt_agres / 8) as f32 {
+            // A survival wave's comes all the way (the mobile game's
+            // Chasmosaurus waves).
+            if p.defensive && (pdist <= 256.0 * 16.0 + (ctx.opt_agres / 8) as f32 || c.wave > 0) {
                 c.tgx = ctx.hunter.x;
                 c.tgz = ctx.hunter.z;
             } else {

@@ -377,6 +377,45 @@ pub fn values(apk: &Path) -> Result<std::collections::BTreeMap<String, f64>, Mod
     ))
 }
 
+/// The file `import` writes beside the add-ons for the Carnivores 2 APK:
+/// its Survive mode (`c2_formats::mobile_arcade`), played on the PC's
+/// Mount Ravan.
+pub const MOBILE_SURVIVAL: &str = "mobile-survival.txt";
+
+/// The Survive mode of a Carnivores 2 (Dinosaur Hunter) APK: its rules from
+/// the native library, its animals' English names from its strings. `None`
+/// for another game's APK (Ice Age's is on an Ice Age map).
+pub fn survive(apk: &Path) -> Result<Option<c2_formats::mobile_arcade::Survive>, ModError> {
+    let zip = c2_vfs::ZipBackend::new(apk, "")?;
+    let Some(lib) = zip
+        .files()
+        .into_iter()
+        .find(|f| f.starts_with("lib/arm64-v8a/") && f.contains("dinHunter"))
+    else {
+        return Ok(None);
+    };
+    let arcade = c2_formats::mobile_arcade::arcade(&zip.read(&lib)?)?;
+    let csv = zip
+        .read("assets/localizations/strings.csv")
+        .map(|d| String::from_utf8_lossy(&d).into_owned())
+        .unwrap_or_default();
+    let english = |key: &str| {
+        csv.lines()
+            .find_map(|l| l.strip_prefix(key)?.strip_prefix(",\""))
+            .and_then(|r| r.split('"').next())
+            .map(|n| {
+                // "ALLOSAURUS" or "Allosaurus": as a name.
+                let mut c = n.chars();
+                c.next().map_or_else(String::new, |f| {
+                    f.to_uppercase().collect::<String>() + &c.as_str().to_lowercase()
+                })
+            })
+            .unwrap_or_else(|| key.trim_start_matches("STR_").to_string())
+    };
+    // The mobile Survive map: `area5`, Mount Ravan (`Menu::StartPlayingTheGame`).
+    Ok(Some(arcade.survive(5, &english)))
+}
+
 /// The file `import` writes beside the add-ons: the mobile game's values
 /// for the game's own areas, animals and weapons (a balance file; the
 /// launcher offers each where it differs).
@@ -702,6 +741,10 @@ pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Import, ModError> {
     if !values.is_empty() {
         let p = out.join(MOBILE_VALUES);
         std::fs::write(&p, mobile_balance(&values, &game).to_toml()).map_err(io(&p))?;
+    }
+    if let Ok(Some(sv)) = survive(apk) {
+        let p = out.join(MOBILE_SURVIVAL);
+        std::fs::write(&p, sv.write()).map_err(io(&p))?;
     }
     let res_text = String::from_utf8_lossy(&base.read("HUNTDAT/_RES.TXT")?).into_owned();
     let res = ResTxt::parse(&res_text)?;

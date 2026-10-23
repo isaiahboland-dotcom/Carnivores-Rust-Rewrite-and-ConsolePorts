@@ -59,6 +59,9 @@ pub struct PackInfo {
     /// and ambient animals (`AREAn`), and each model and weapon.
     pub heap_kb: usize,
     pub heaps: HashMap<String, usize>,
+    /// Which survivals are offered: `ours`, `mobile` or `both` (the mobile
+    /// one only with its `C2RS/SURVIVE.TXT`, from the player's APK).
+    pub survival: String,
 }
 
 impl PackInfo {
@@ -82,6 +85,7 @@ impl PackInfo {
             costs: Self::prefixed(&m, "cost."),
             heap_kb: num("heap_kb", 34 * 1024) as usize,
             heaps: Self::prefixed(&m, "heap."),
+            survival: get("survival"),
         }
     }
 
@@ -161,6 +165,8 @@ pub struct Setup {
     /// Animals loaded for the survival only (bit 10 + slot, among the
     /// targets): hardcore's extras, custom's T-Rex. Not in the waves.
     pub survival_extra: u128,
+    /// The mobile game's Survive mode, for a mobile survival.
+    pub mobile_survival: Option<c2_formats::mobile_arcade::Survive>,
 }
 
 /// The most animals in a survival wave on the 3DS.
@@ -396,7 +402,19 @@ fn new_hunt(
     };
     let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
     hunt.ship_anim_ms = ship_ms;
-    if let Some(kind) = setup.survival {
+    let mobile = setup
+        .mobile_survival
+        .as_ref()
+        .filter(|_| setup.survival == Some(SurvivalKind::Mobile))
+        .and_then(|m| SurvivalOptions::mobile(&hunt, m, SURVIVAL_MAX));
+    if let Some(o) = mobile {
+        hunt.start_survival(area, o);
+    } else if let Some(kind) = setup.survival {
+        let kind = if kind == SurvivalKind::Mobile {
+            SurvivalKind::Normal
+        } else {
+            kind
+        };
         let mut o = SurvivalOptions::pick(&hunt, kind, SURVIVAL_MAX);
         // The menu's extras come only as extras.
         let extra = |&i: &usize| {
@@ -413,7 +431,7 @@ fn new_hunt(
         if kind == SurvivalKind::Hardcore && !extras.is_empty() {
             o.hardcore = extras;
         }
-        hunt.start_survival(o);
+        hunt.start_survival(area, o);
     }
     hunt
 }

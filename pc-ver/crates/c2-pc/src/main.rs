@@ -31,7 +31,7 @@ use c2_core::game::SurvivalKind;
 const USAGE: &str = "usage:
   c2-pc play  <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR] [--balance FILE]
               [--screen main|stats|hunt|options|credits|register|quit]
-              [--script 'X,Y;'TEXT;enter;esc'] [--shot out.png]
+              [--script 'X,Y;'TEXT;enter;esc'] [--shot out.png]\n              [--survival-modes ours|mobile|both] [--mobile-survival FILE]
   c2-pc balance <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]...   (prints prices and scores as a balance file)
   c2-pc mobile <APK> --base <GAME_DIR> [--overlay DIR]... --out <DIR>   (the mobile game's animals as add-ons)
   c2-pc mobile <APK> --values                                         (its tuning values)
@@ -44,7 +44,7 @@ const USAGE: &str = "usage:
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
   c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--shot out.png]
   c2-pc hunt  <AREA.MAP|TROPHY.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all]
-              [--weapon N] [--bino] [--observer] [--player N] [--survival normal|hardcore|custom]\n              [--shot out.png]
+              [--weapon N] [--bino] [--observer] [--player N] [--survival normal|hardcore|custom|mobile]\n              [--mobile-survival FILE]\n              [--shot out.png]
 
 model: drag to orbit, wheel zoom, [ ] next/prev file, N/P next/prev animation, Space pause
 area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distance
@@ -61,9 +61,33 @@ hunt:  click to capture mouse; keys follow the player's bindings (default WASD m
 
 /// Flags followed by a value (`--flag VALUE`).
 const VALUE_FLAGS: &[&str] = &[
-    "anim", "time", "yaw", "shot", "cam", "view", "sim", "ship", "weapon", "target", "fire",
-    "screen", "player", "script", "mod", "base", "out", "recipe", "mods", "id", "name", "overlay",
-    "balance", "menu-art", "survival",
+    "anim",
+    "time",
+    "yaw",
+    "shot",
+    "cam",
+    "view",
+    "sim",
+    "ship",
+    "weapon",
+    "target",
+    "fire",
+    "screen",
+    "player",
+    "script",
+    "mod",
+    "base",
+    "out",
+    "recipe",
+    "mods",
+    "id",
+    "name",
+    "overlay",
+    "balance",
+    "menu-art",
+    "survival",
+    "survival-modes",
+    "mobile-survival",
 ];
 
 struct Opts {
@@ -118,6 +142,16 @@ impl Opts {
                 .map_err(|_| anyhow::anyhow!("--{f}: invalid value {v:?}")),
         }
     }
+}
+
+/// `--mobile-survival FILE`: the mobile game's Survive mode.
+fn mobile_survival(o: &Opts) -> Result<Option<c2_formats::mobile_arcade::Survive>> {
+    o.value("mobile-survival")
+        .map(|f| {
+            let t = std::fs::read_to_string(f).with_context(|| format!("reading {f}"))?;
+            Ok(c2_formats::mobile_arcade::Survive::parse(&t))
+        })
+        .transpose()
 }
 
 fn time_of_day(o: &Opts) -> TimeOfDay {
@@ -280,8 +314,11 @@ fn main() -> Result<()> {
                     None => None,
                     Some("hardcore") => Some(SurvivalKind::Hardcore),
                     Some("custom") => Some(SurvivalKind::Custom),
+                    Some("mobile") => Some(SurvivalKind::Mobile),
                     Some(_) => Some(SurvivalKind::Normal),
                 },
+                // --mobile-survival FILE (`mobile-survival.txt` from an APK import).
+                mobile_survival: mobile_survival(&o)?,
                 reg: o.num("player", 0i32)?,
                 from_menu: false,
                 pc: settings::PcSettings::load(),
@@ -330,6 +367,11 @@ fn main() -> Result<()> {
             if o.has("mobile-menu") {
                 let _ = menu::MOBILE_MENU.set(true);
             }
+            // --survival-modes ours|mobile|both, --mobile-survival FILE.
+            let mobile = mobile_survival(&o)?;
+            let ours = !matches!(o.value("survival-modes"), Some("mobile")) || mobile.is_none();
+            let mobile = mobile.filter(|_| !matches!(o.value("survival-modes"), Some("ours")));
+            let _ = menu::SURVIVALS.set(menu::Survivals { ours, mobile });
             // --script: canvas clicks / typing / keys, applied before the shot.
             let script = o.value("script").map(str::to_owned);
             // --mod DIR (repeatable): play a combined game from the data dir.

@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 use crate::error::{FormatError, FormatErrorKind};
 
-fn bad(what: &str) -> FormatError {
+pub(crate) fn bad(what: &str) -> FormatError {
     FormatError {
         offset: 0,
         context: what.into(),
@@ -30,7 +30,7 @@ fn u64_at(d: &[u8], o: usize) -> Option<u64> {
 }
 
 /// An ELF64 section: type, address, file offset, size, link.
-struct Section {
+pub(crate) struct Section {
     kind: u32,
     addr: u64,
     off: usize,
@@ -38,7 +38,7 @@ struct Section {
     link: usize,
 }
 
-fn sections(d: &[u8]) -> Option<Vec<Section>> {
+pub(crate) fn sections(d: &[u8]) -> Option<Vec<Section>> {
     if d.get(..5)? != b"\x7fELF\x02" {
         return None;
     }
@@ -59,7 +59,7 @@ fn sections(d: &[u8]) -> Option<Vec<Section>> {
 }
 
 /// The file bytes at a virtual address (not in a `NOBITS` section).
-fn at_va<'a>(d: &'a [u8], secs: &[Section], va: u64) -> Option<&'a [u8]> {
+pub(crate) fn at_va<'a>(d: &'a [u8], secs: &[Section], va: u64) -> Option<&'a [u8]> {
     let s = secs
         .iter()
         .find(|s| s.addr != 0 && s.kind != 8 && va >= s.addr && va < s.addr + s.size as u64)?;
@@ -67,7 +67,7 @@ fn at_va<'a>(d: &'a [u8], secs: &[Section], va: u64) -> Option<&'a [u8]> {
 }
 
 /// `(name, address, size)` of every symbol.
-fn symbols(d: &[u8], secs: &[Section]) -> Vec<(String, u64, u64)> {
+pub(crate) fn symbols(d: &[u8], secs: &[Section]) -> Vec<(String, u64, u64)> {
     let mut out = Vec::new();
     for s in secs.iter().filter(|s| s.kind == 2 || s.kind == 11) {
         let Some(strs) = secs.get(s.link) else {
@@ -103,7 +103,7 @@ fn is_key(s: &str) -> bool {
 }
 
 /// `DecodeBitMasks` for a 64-bit logical immediate.
-fn bitmask(n: u32, immr: u32, imms: u32) -> Option<u64> {
+pub(crate) fn bitmask(n: u32, immr: u32, imms: u32) -> Option<u64> {
     let combined = (n << 6) | (!imms & 0x3F);
     let len = 31 - combined.leading_zeros();
     if combined == 0 || len < 1 {

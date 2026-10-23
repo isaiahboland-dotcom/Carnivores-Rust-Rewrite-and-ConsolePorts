@@ -2,6 +2,41 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-23 — M13: the mobile game's Survive mode, from the player's APK
+- **What it is** (read from `libdinHunter.so`, `c2_formats::mobile_arcade`):
+  `Game::ArcadeGameGenerateWave` is a switch over 19 waves (then one for
+  every later wave) of 2–8 animals of types 19–23, which
+  `CharacterInfo_SetDefaultParams_DH` names Allosaurus, Chasmosaurus,
+  Velociraptor, Spinosaurus, Ceratosaurus; they appear at random good spots
+  in a ±2000×±3000 box; the next wave comes 2 s after the last one falls (the
+  first after 0.5 s); `Menu::StartPlayingTheGame` loads `area5`.
+- **No separate map**: the mobile `area5.man`'s heights are byte for byte the
+  PC `AREA5.MAP`'s (Mount Ravan), so the mode is played on the player's own
+  PC area. The mobile map is the PC one transposed (PC x = mobile −z, PC z =
+  mobile x; from `Player::placeHunter`'s height lookup, checked in game).
+  The APK is needed only for these rules; the import writes them to
+  `mobile-survival.txt` beside the add-ons (the player's machine only, as
+  the tuning values) for the Carnivores 2 APK. Ice Age's APK has its own
+  Arcade on an Ice Age map: with M14.
+- **Ours on top**: health and ammunition come back between waves as in our
+  survival (not checked in the mobile code); waves are capped as ours (12 PC,
+  6 3DS; the mobile game sends up to 8).
+- **Wave Chasmosaurs come all the way** (our Chasmosaurus AI only charges
+  within 16 cells and otherwise backs off; wave 1 is two of them).
+- **Ways to the hunter** (both survivals): the AIs only steer round what is
+  just ahead, so the mobile box's animals stuck on the ridge above the
+  hunter's gully. Survival keeps a breadth-first map of walkable cells (no
+  water, no steeper than `CheckPlaceCollision`) over 192×192 cells round the
+  hunter, renewed when he moves 3 cells; a wave animal more than 12 cells off
+  is told he is 8 cells along its way (`Character::lure`). Closer, as before.
+- **Choice** (launcher, PC and 3DS alike): Ours / Mobile / Both. Both: the
+  PC setup switch and the 3DS options page include "Survival: mobile"; Mobile
+  only: it's the only survival. A mobile survival goes to Mount Ravan
+  whatever area is picked; on the 3DS its five animals load as extras (they
+  fit an Old 3DS with a weapon). `c2-pc --mobile-survival FILE
+  --survival-modes ..`; `c2-cook` the same (pack `C2RS/SURVIVE.TXT`,
+  `INFO.TXT survival =`).
+
 ## 2026-10-23 — M13: survival
 - **Waves** (`c2_core::game::Survival`): the map's own hunting animals go
   (plant-eaters stay as scenery); after a 3 s start, each wave is 2 + n

@@ -298,6 +298,9 @@ pub struct Character {
     /// Chosen kill type and death type of the species.
     /// The survival wave it came in (0: not a wave animal).
     pub wave: u32,
+    /// Survival: where its AI is told the hunter is while it is far off (a
+    /// point on a walkable way to him; ours).
+    pub lure: Option<(f32, f32)>,
     pub kill_type: usize,
     pub death_type: usize,
     /// The idle group being played (`currentIdleGroup`).
@@ -1352,6 +1355,7 @@ pub struct Herd {
 impl Herd {
     /// `AnimateCharacters`.
     pub fn step(&mut self, ctx: &mut Ctx<'_>) {
+        let hunter = ctx.hunter;
         for p in &mut self.packs {
             p.alert_prev = std::mem::take(&mut p.alert);
             p.attack_prev = std::mem::take(&mut p.attack);
@@ -1381,6 +1385,10 @@ impl Herd {
                     gamma: t.gamma,
                 });
             let c = &mut self.chars[i];
+            ctx.hunter = hunter;
+            if let (Some((x, z)), true) = (c.lure, c.health != 0) {
+                (ctx.hunter.x, ctx.hunter.z) = (x, z);
+            }
             if c.state_f == 0xff {
                 continue;
             }
@@ -1492,6 +1500,7 @@ impl Herd {
                 }
             }
         }
+        ctx.hunter = hunter;
     }
 }
 

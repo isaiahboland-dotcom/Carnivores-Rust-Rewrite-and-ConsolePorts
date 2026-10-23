@@ -201,8 +201,13 @@ pub struct Menu {
     /// Per animal in `dinos`: hunts the hunter, a mod's, the T-Rex.
     kinds: Vec<(bool, bool, bool)>,
     /// Animals (bits by position in `dinos`) the survival brings besides
-    /// the picks: hardcore's 1-3 mods' animals, custom's T-Rex.
+    /// the picks: hardcore's 1-3 mods' animals, custom's T-Rex, the mobile
+    /// one's animals.
     extra_dinos: u32,
+    /// The mobile game's Survive mode (`C2RS/SURVIVE.TXT`), and the
+    /// survivals offered (the launcher's choice).
+    mobile_survival: Option<c2_formats::mobile_arcade::Survive>,
+    survival_kinds: Vec<SurvivalKind>,
 }
 
 pub(crate) fn title(vfs: &Vfs, file: &str, fallback: String) -> String {
@@ -285,6 +290,24 @@ impl Menu {
         // Cheapest first, left to right and top to bottom (equal prices
         // keep their order: the game's, then add-ons).
         dinos.sort_by_key(|d| d.1.price);
+        // The mobile Survive mode: only on its area (and if offered).
+        let mobile_survival = vfs
+            .read("C2RS/SURVIVE.TXT")
+            .ok()
+            .map(|d| c2_formats::mobile_arcade::Survive::parse(&String::from_utf8_lossy(&d)))
+            .filter(|s| {
+                info.areas
+                    .iter()
+                    .any(|a| a.eq_ignore_ascii_case(&format!("AREA{}", s.area)))
+            })
+            .filter(|_| info.survival != "ours");
+        let mut survival_kinds = Vec::new();
+        if mobile_survival.is_none() || info.survival != "mobile" {
+            survival_kinds.extend(SurvivalKind::ALL);
+        }
+        if mobile_survival.is_some() {
+            survival_kinds.push(SurvivalKind::Mobile);
+        }
         let dialect = rules.dialect();
         let kinds = dinos
             .iter()
@@ -374,6 +397,8 @@ impl Menu {
             survival: None,
             kinds,
             extra_dinos: 0,
+            survival_kinds,
+            mobile_survival,
             weapons,
             equip,
             area: 0,
@@ -501,12 +526,16 @@ impl Menu {
         if self.trophy() {
             return Ok(());
         }
-        if !self.observer && (self.picked_dinos == 0 || self.picked_weapons == 0) {
+        if !self.observer && self.picked_weapons == 0 {
+            return Err("Pick a weapon");
+        }
+        if !self.observer && self.picked_dinos == 0 && self.survival.is_none() {
             return Err("Pick an animal and a weapon");
         }
         let hunting = (0..self.dinos.len())
             .any(|i| self.picked_dinos & (1 << i) != 0 && self.kinds.get(i).is_some_and(|k| k.0));
-        if self.survival.is_some() && !hunting {
+        let mobile = self.survival == Some(SurvivalKind::Mobile);
+        if self.survival.is_some() && !hunting && !mobile {
             return Err("Pick an animal that hunts you");
         }
         if self.remaining() < 0 {
@@ -550,6 +579,7 @@ impl Menu {
             crouch_key: self.settings.crouch_key,
             survival: None,
             survival_extra: 0,
+            mobile_survival: None,
         }
     }
 
@@ -586,6 +616,7 @@ impl Menu {
             random_ambients: self.settings.random_ambients && self.rules.dialect(),
             crouch_key: self.settings.crouch_key,
             survival: self.survival.filter(|_| !self.observer),
+            mobile_survival: self.mobile_survival.clone(),
             survival_extra: self.extra_targets(),
         }
     }
@@ -628,6 +659,28 @@ impl Menu {
                 let t = (0..self.dinos.len()).find(|&i| free(self, i) && self.kinds[i].2);
                 t.into_iter().collect()
             }
+            // The mobile one: its animals, on its area.
+            Some(SurvivalKind::Mobile) => {
+                let m = self.mobile_survival.clone().unwrap_or_default();
+                let name = format!("AREA{}", m.area);
+                if let Some(a) = self
+                    .areas
+                    .iter()
+                    .position(|a| a.0.eq_ignore_ascii_case(&name))
+                {
+                    self.area = a;
+                }
+                let norm = |n: &str| -> String {
+                    n.chars()
+                        .filter(char::is_ascii_alphanumeric)
+                        .map(|c| c.to_ascii_lowercase())
+                        .collect()
+                };
+                let wanted: Vec<String> = m.animals().iter().map(|n| norm(n)).collect();
+                (0..self.dinos.len())
+                    .filter(|&i| free(self, i) && wanted.contains(&norm(&self.dinos[i].1.name)))
+                    .collect()
+            }
             _ => Vec::new(),
         };
         self.extra_dinos = pool.iter().fold(0, |m, &i| m | 1 << i);
@@ -641,6 +694,7 @@ impl Menu {
             Some(SurvivalKind::Hardcore) if names.is_empty() => "Hardcore: no mods' animals".into(),
             Some(SurvivalKind::Hardcore) => format!("Also: {}", names.join(", ")),
             Some(SurvivalKind::Custom) => "Unlimited ammo; T-Rex from wave 15".into(),
+            Some(SurvivalKind::Mobile) => "The mobile game's waves, Mount Ravan".into(),
         });
     }
 
@@ -782,7 +836,7 @@ impl Menu {
                     self.extra_dinos = 0;
                     self.step = Step::Area;
                 } else if inside(SURVIVAL, x, y) {
-                    self.survival = Some(SurvivalKind::Normal);
+                    self.survival = self.survival_kinds.first().copied();
                     self.extra_dinos = 0;
                     self.step = Step::Area;
                 } else if inside(TROPHIES, x, y) && self.trophy_room {
@@ -862,7 +916,7 @@ impl Menu {
                         "Animals notice you as on PC".into()
                     });
                 } else if inside(O_SURVIVAL, x, y) && self.survival.is_some() {
-                    let all = SurvivalKind::ALL;
+                    let all = self.survival_kinds.clone();
                     let i = all
                         .iter()
                         .position(|&k| Some(k) == self.survival)
