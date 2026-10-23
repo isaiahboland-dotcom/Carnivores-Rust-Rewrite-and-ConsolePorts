@@ -292,12 +292,7 @@ impl Launcher {
                 .collect(),
             _ => Vec::new(),
         };
-        let mods = self
-            .cfg
-            .enabled_addons()
-            .into_iter()
-            .map(PathBuf::from)
-            .collect();
+        let mods = self.cfg.enabled_addons();
         (bases, mods)
     }
 
