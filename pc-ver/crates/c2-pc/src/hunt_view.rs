@@ -42,6 +42,26 @@ const SURVIVAL_MAX: usize = 12;
 /// What to hunt with. The original menu passes these to the game on its
 /// command line (`prj=`, `din=`, `wep=`, `dtm=`, `-double`, `-observ`); the
 /// accessories come from the player's save.
+/// Snow for a map whose `.c2map` beside it says so (Ice Age's areas in
+/// the combined game).
+fn c2map_snow(map: &Path) -> Option<c2_formats::mee::Snow> {
+    let stem = map.file_stem()?.to_string_lossy().to_ascii_lowercase();
+    std::fs::read_dir(map.parent()?)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("c2map"))
+        })
+        .filter_map(|p| {
+            c2_formats::menu_txt::parse_c2map(&String::from_utf8_lossy(&std::fs::read(p).ok()?))
+        })
+        .find(|a| a.project.eq_ignore_ascii_case(&stem))
+        .filter(|a| a.snow)
+        .map(|_| c2_formats::mee::Snow::ICE_AGE)
+}
+
 /// What the trophy room asks before doing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Ask {
@@ -384,6 +404,7 @@ impl HuntView {
         // The area's snow (Ice Age).
         hunt.effects.snow = mee
             .and_then(|t| t.snow)
+            .or_else(|| c2map_snow(&setup.map))
             .filter(|_| !trophy)
             .map(|s| c2_core::effects::Snowfall::new(s, 2000));
         if let Some(kind) = setup.survival {

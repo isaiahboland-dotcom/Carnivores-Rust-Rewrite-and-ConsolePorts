@@ -540,7 +540,10 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] Ice Age as a base game on PC and 3DS: its `_RES.TXT` rewritten in the dialect (`c2_mods::ice_age`;
         its own models, maps, menus, the Modder's Edition's Ice Age AIs); every animal hunts on every area
         (`c2-cook --check`); snow; its own saves
-  - [ ] the combined game: Carnivores 2 with Ice Age's areas and animals beside the C2 ones
+  - [x] the combined game: Carnivores 2 with Ice Age's areas and animals beside the C2 ones (launcher "Import
+        Ice Age...", `c2-pc iceage`: add-ons from your Ice Age folder; Ice Age's kill animations merged into the
+        hunter; its areas snow)
+  - [ ] Ice Age's ambient animals in the combined game; Ice Age's Arcade (classic survival on its map)
   - [ ] owner's test (PC and hardware)
 - [ ] M15 Mobile assets — **in progress**
   - [x] mobile formats (`c2_formats::mobile`: `.cat`, `.3dn`, `.ani`, ETC1 `.pkm`, `.crt`, IMA ADPCM) rebuilt as `.CAR`

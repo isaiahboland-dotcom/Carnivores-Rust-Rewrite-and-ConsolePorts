@@ -59,6 +59,8 @@ pub struct PackInfo {
     /// and ambient animals (`AREAn`), and each model and weapon.
     pub heap_kb: usize,
     pub heaps: HashMap<String, usize>,
+    /// Areas where it snows by their `.c2map` (Ice Age's beside C2's).
+    pub snow: Vec<String>,
     /// Which survivals are offered: `ours`, `mobile` or `both` (the mobile
     /// one only with its `C2RS/SURVIVE.TXT`, from the player's APK).
     pub survival: String,
@@ -86,6 +88,12 @@ impl PackInfo {
             heap_kb: num("heap_kb", 34 * 1024) as usize,
             heaps: Self::prefixed(&m, "heap."),
             survival: get("survival"),
+            snow: get("snow")
+                .split(',')
+                .map(str::trim)
+                .filter(|a| !a.is_empty())
+                .map(str::to_string)
+                .collect(),
         }
     }
 
@@ -522,6 +530,16 @@ impl Game {
         );
         hunt.area_no = c2_formats::mee::area_of(&setup.area).map_or(0, |n| n as i32);
         hunt.clock = clock();
+        // Snow by the area's `.c2map` (Ice Age's areas beside C2's).
+        if hunt.effects.snow.is_none()
+            && info
+                .snow
+                .iter()
+                .any(|a| a.eq_ignore_ascii_case(&setup.area))
+        {
+            let s = c2_formats::mee::Snow::ICE_AGE;
+            hunt.effects.snow = Some(c2_core::effects::Snowfall::new(s, SNOW_MAX));
+        }
         // Start on a call that sounds.
         if !setup.callable(hunt.target_call) {
             if let Some(a) =

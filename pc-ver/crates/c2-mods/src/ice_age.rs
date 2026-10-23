@@ -290,6 +290,234 @@ pub fn layer(vfs: &Vfs) -> Result<Option<MemBackend>, ModError> {
     Ok(Some(m))
 }
 
+/// What [`import`] made: add-on folders, and what it left out.
+#[derive(Debug, Clone, Default)]
+pub struct Import {
+    pub added: Vec<std::path::PathBuf>,
+    pub skipped: Vec<String>,
+}
+
+fn io(path: &std::path::Path) -> impl Fn(std::io::Error) -> ModError + '_ {
+    move |source| ModError::Io {
+        path: path.to_path_buf(),
+        source,
+    }
+}
+
+/// The `prices` section's `key` lines (`area`, `dino`), in order.
+fn prices_of(res: &ResTxt, key: &str) -> Vec<i32> {
+    res.section("prices")
+        .map(|p| {
+            p.entries
+                .iter()
+                .filter(|e| e.key.eq_ignore_ascii_case(key))
+                .map(|e| c2_formats::res_txt::c_atoi(&e.value))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The first non-empty line of a menu text.
+fn first_line(d: &[u8]) -> Option<String> {
+    String::from_utf8_lossy(d)
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .map(str::to_string)
+}
+
+/// The combined game (README M14): Carnivores: Ice Age's animals and areas
+/// as add-ons for the Carnivores 2 game in `base` (a Modder's Edition game:
+/// the entries are in its dialect), from the player's Ice Age folder `ia`,
+/// under `out`:
+///
+/// - one folder per animal: its model, its entry (made for its Ice Age menu
+///   slot, so it gets a slot of its own beside C2's), menu picture and
+///   texts, call icon and sounds, and Ice Age's hunter model (its kill
+///   animations, merged into the game's hunter);
+/// - "Ice Age areas": its maps as `AREAn` after the base game's last, with
+///   `.c2map` descriptors (name, price, picture, text, and `snow = TRUE`,
+///   ours: they snow).
+pub fn import(ia: &std::path::Path, base: &Vfs, out: &std::path::Path) -> Result<Import, ModError> {
+    let game = ResTxt::parse(&String::from_utf8_lossy(&base.read("HUNTDAT/_RES.TXT")?))?;
+    if !c2_formats::mee::is_dialect(&game) {
+        return Err(ModError::Recipe(
+            "Ice Age's animals beside C2's need a Modder's Edition game: add its folder as an overlay"
+                .into(),
+        ));
+    }
+    let v = crate::vanilla(&[ia.to_path_buf()])?;
+    if !v.layers().iter().any(|l| l.name == LAYER) {
+        return Err(ModError::Recipe(format!(
+            "{} isn't Carnivores: Ice Age",
+            ia.display()
+        )));
+    }
+    let res = ResTxt::parse(&String::from_utf8_lossy(&v.read("HUNTDAT/_RES.TXT")?))?;
+    let mut done = Import::default();
+    let write = |p: std::path::PathBuf, d: &[u8]| -> Result<(), ModError> {
+        if let Some(dir) = p.parent() {
+            std::fs::create_dir_all(dir).map_err(io(dir))?;
+        }
+        std::fs::write(&p, d).map_err(io(&p))
+    };
+    let hunter = v.read("HUNTDAT/HUNTER1.CAR").ok();
+    // The base game's menu slots: each entry is made for one of them (Ice
+    // Age's slot, wrapped round), so each is added in a new slot of its
+    // own beside that slot's animal (`crate::loose::SlotAdd`), not left in
+    // a slot past the base's that another add-on takes.
+    let menu = match base.read("HUNTDAT/_MENU.TXT") {
+        Ok(d) => {
+            c2_formats::menu_txt::MenuData::from_res(&ResTxt::parse(&String::from_utf8_lossy(&d))?)
+        }
+        Err(_) => c2_formats::menu_txt::MenuData::from_res(&game),
+    };
+    let base_slots = menu.huntables.len().max(1) as i32;
+    let dino_prices = prices_of(&res, "dino");
+    let note = "imported from your copy of Carnivores: Ice Age";
+    // Animals: the menu ones (`callNo` = their Ice Age slot).
+    for b in res
+        .section("characters")
+        .map(|s| s.blocks.as_slice())
+        .unwrap_or_default()
+    {
+        let (Some(name), Some(file)) = (b.get(&["name"]), b.get(&["file"])) else {
+            continue;
+        };
+        let Some(slot) = b.get(&["callNo"]).map(c2_formats::res_txt::c_atoi) else {
+            continue;
+        };
+        let (name, file) = (
+            name.trim_matches('\'').to_string(),
+            file.trim_matches('\'').to_string(),
+        );
+        let Ok(car) = v.read(&format!("HUNTDAT/{file}")) else {
+            done.skipped.push(format!("{name}: no {file}"));
+            continue;
+        };
+        let dir = out.join(&name);
+        let t = slot % base_slots;
+        let n = t + 1;
+        write(dir.join(&file), &car)?;
+        let mut b = b.clone();
+        // Ice Age's price for it (else the slot it is drawn for gives its own).
+        if let Some(p) = dino_prices.get(slot as usize) {
+            b.entries.push(c2_formats::res_txt::Entry {
+                key: "price".into(),
+                value: p.to_string(),
+            });
+        }
+        for e in b
+            .entries
+            .iter_mut()
+            .filter(|e| e.key.eq_ignore_ascii_case("callNo"))
+        {
+            e.value = t.to_string();
+        }
+        for sub in b.subs.iter_mut() {
+            if sub
+                .name
+                .eq_ignore_ascii_case(&format!("overwrite char{slot}"))
+            {
+                sub.name = format!("overwrite char{t}");
+            }
+        }
+        let entry = format!(
+            "// {name}, {note}.\r\n// Modder's Edition entry (menu slot {n}; Ice Age's {}).\r\n\r\n{}",
+            slot + 1,
+            c2_formats::res_txt::write_block(&b)
+        );
+        let ia_n = slot + 1;
+        write(dir.join(format!("{name} _RES.txt")), entry.as_bytes())?;
+        let copy = |from: &str, to: &str| -> Result<(), ModError> {
+            if let Ok(d) = v.read(from) {
+                write(dir.join(to), &d)?;
+            }
+            Ok(())
+        };
+        copy(
+            &format!("HUNTDAT/MENU/PICS/DINO{ia_n}.TGA"),
+            &format!("DINO{n}.TGA"),
+        )?;
+        copy(
+            &format!("HUNTDAT/MENU/TXT/DINO{ia_n}.TXM"),
+            &format!("DINO{n}.TXM"),
+        )?;
+        copy(
+            &format!("HUNTDAT/MENU/TXT/DINO{ia_n}.TXU"),
+            &format!("DINO{n}.TXU"),
+        )?;
+        copy(
+            &format!("HUNTDAT/MENU/PICS/CALL{ia_n}.TGA"),
+            &format!("CALL{n}.TGA"),
+        )?;
+        for l in ['A', 'B', 'C'] {
+            copy(
+                &format!("HUNTDAT/SOUNDFX/CALLS/CALL{ia_n}_{l}.WAV"),
+                &format!("CALL{n}_{l}.WAV"),
+            )?;
+        }
+        if let Some(h) = &hunter {
+            write(dir.join("hunter_ice_age.car"), h)?;
+        }
+        write(
+            dir.join("README.txt"),
+            format!("{name}, {note} (c2rs). Keep it local: it is game data.\r\n").as_bytes(),
+        )?;
+        done.added.push(dir);
+    }
+    // Areas: after the base game's last `AREAn`.
+    let last = (1..=99)
+        .rev()
+        .find(|n| {
+            base.resolve(&format!("HUNTDAT/AREAS/AREA{n}.MAP"))
+                .is_some()
+        })
+        .unwrap_or(0);
+    let prices = prices_of(&res, "area");
+    let dir = out.join("Ice Age areas");
+    let mut areas = 0;
+    for i in 1..=99u32 {
+        let (Ok(map), Ok(rsc)) = (
+            v.read(&format!("HUNTDAT/AREAS/AREA{i}.MAP")),
+            v.read(&format!("HUNTDAT/AREAS/AREA{i}.RSC")),
+        ) else {
+            break;
+        };
+        let n = last + i;
+        write(dir.join(format!("AREAS/AREA{n}.MAP")), &map)?;
+        write(dir.join(format!("AREAS/AREA{n}.RSC")), &rsc)?;
+        let text = v.read(&format!("HUNTDAT/MENU/TXT/AREA{i}.TXT")).ok();
+        if let Some(t) = &text {
+            write(dir.join(format!("MENU/TXT/AREA{n}.TXT")), t)?;
+        }
+        if let Ok(p) = v.read(&format!("HUNTDAT/MENU/PICS/AREA{i}.TGA")) {
+            write(dir.join(format!("MENU/PICS/AREA{n}.TGA")), &p)?;
+        }
+        let name = text
+            .as_deref()
+            .and_then(first_line)
+            .unwrap_or_else(|| format!("Ice Age area {i}"));
+        let price = prices.get(i as usize - 1).copied().unwrap_or(0);
+        let c2map = format!(
+            "info\r\n{{\r\n name    = '{name}'\r\n mapfile = 'huntdat\\areas\\area{n}'\r\n \
+             rscfile = 'huntdat\\areas\\area{n}.rsc'\r\n pic     = 'huntdat\\menu\\pics\\area{n}.tga'\r\n \
+             text    = 'huntdat\\menu\\txt\\area{n}.txt'\r\n price   = {price}\r\n snow    = TRUE\r\n}}\r\n.\r\n"
+        );
+        write(dir.join(format!("AREAS/AREA{n}.c2map")), c2map.as_bytes())?;
+        areas += 1;
+    }
+    if areas > 0 {
+        write(
+            dir.join("README.txt"),
+            format!("Ice Age's areas, {note} (c2rs). Keep it local: it is game data.\r\n")
+                .as_bytes(),
+        )?;
+        done.added.push(dir);
+    }
+    Ok(done)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

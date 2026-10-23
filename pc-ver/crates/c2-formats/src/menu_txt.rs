@@ -45,6 +45,9 @@ pub struct MenuArea {
     /// Picture and description paths from a `.c2map`.
     pub pic: Option<String>,
     pub text: Option<String>,
+    /// It snows there (`snow = TRUE` in a `.c2map`: ours, for Ice Age's
+    /// areas beside C2's; the dialect gives snow by area number).
+    pub snow: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -111,6 +114,7 @@ impl MenuData {
                             number: Some(area),
                             pic: None,
                             text: None,
+                            snow: false,
                         });
                     }
                     "dino" => {
@@ -163,6 +167,7 @@ pub fn parse_c2map(src: &str) -> Option<MenuArea> {
         number: None,
         pic: None,
         text: None,
+        snow: false,
     };
     let mut inside = false;
     for line in src.lines() {
@@ -190,6 +195,7 @@ pub fn parse_c2map(src: &str) -> Option<MenuArea> {
             "price" => a.price = c_atoi(&v),
             "pic" => a.pic = path().filter(|p| !p.is_empty()),
             "text" => a.text = path().filter(|p| !p.is_empty()),
+            "snow" => a.snow = v.contains("TRUE"),
             "mapfile" => {
                 let p = v.replace('\\', "/");
                 let stem = p.rsplit('/').next().unwrap_or(&p);

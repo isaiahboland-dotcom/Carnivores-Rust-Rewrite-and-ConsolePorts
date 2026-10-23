@@ -2,6 +2,33 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-23 — M14: the combined game (Ice Age beside Carnivores 2)
+- **An import, like the APK one** (`c2_mods::ice_age::import`, `c2-pc iceage`,
+  launcher "Import Ice Age..."): from the player's Ice Age folder, add-ons
+  for their Carnivores 2 + Modder's Edition game (the entries are dialect;
+  a plain C2 base is refused as for mobile animals):
+  - one per animal: model, entry, menu picture and texts, call icon and
+    sounds, and Ice Age's `HUNTER1.CAR` as `hunter_ice_age.car`. The hunter
+    merge (`crate::hunter`) appends its kill animations to the game's hunter
+    (same 475-vertex body) and moves each entry's `hunterAnim` (the wolf's 5
+    becomes `Hr_wolf` wherever it lands). Each entry is presented as made for
+    one of the base's menu slots (Ice Age's slot modulo the base count) so it
+    is added in a slot of its own (`SlotAdd`) rather than left in a slot
+    past the base's that another takes (the Yeti, Ice Age's tenth, collided
+    with the Bear); its own `price` keeps Ice Age's.
+  - "Ice Age areas": its maps as `AREAn` after the base's last (6–10 on C2)
+    with `.c2map` descriptors (name, price, picture, text) — numbered, not
+    named, so the 3DS cook (which packs `AREAn` only) takes them too.
+- **Snow there**: the dialect gives snow by area number (its `areatable`),
+  which an add-on can't extend in place, so the `.c2map` carries
+  `snow = TRUE` (ours; the Modder's Edition ignores unknown keys). PC reads
+  it for the map; `c2-cook` lists such areas in `INFO.TXT` (`snow = ...`)
+  for the 3DS.
+- Ice Age's ambient animals (pig, archaeopteryx) aren't imported: C2's
+  ambients roam its areas.
+- Checked: the combined pack (C2 + ME + the import) hunts all 19 menu
+  animals on all 10 areas (`c2-cook --check`, Old 3DS budget).
+
 ## 2026-10-23 — M14: Carnivores: Ice Age as a base game
 - **How**: Ice Age's engine is C2's with its own animals' AIs (its `_RES.TXT`
   `ai` 10–19 are Brontotherium … Yeti, 1 the pig, 2 the archaeopteryx). We

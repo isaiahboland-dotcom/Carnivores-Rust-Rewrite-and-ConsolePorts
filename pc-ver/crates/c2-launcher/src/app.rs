@@ -148,6 +148,35 @@ impl Launcher {
         self.job = Some(Job::start("Importing from the mobile game", vec![step]));
     }
 
+    /// Carnivores: Ice Age's animals and areas as add-ons beside C2's (the
+    /// combined game, `c2_mods::ice_age::import`).
+    fn import_ice_age(&mut self, ia: PathBuf) {
+        let (bases, _) = self.game_folders();
+        if bases.is_empty() {
+            self.note = Some(("Set the game folder first (The game tab).".into(), RED));
+            return;
+        }
+        self.cfg.ice_age = Some(ia.clone());
+        self.save();
+        let out = crate::config::data_dir().join("ice-age");
+        let to = out.clone();
+        let step = Step::Task(Box::new(move |job| {
+            job.log(format!("Reading {}", ia.display()));
+            let base = c2_mods::vanilla(&bases).map_err(|e| e.to_string())?;
+            let _ = std::fs::remove_dir_all(&to);
+            let done = c2_mods::ice_age::import(&ia, &base, &to).map_err(|e| e.to_string())?;
+            for s in done.skipped {
+                job.log(format!("Not imported: {s}"));
+            }
+            for d in done.added {
+                job.log(d.display().to_string());
+            }
+            Ok(())
+        }));
+        self.importing = Some(out);
+        self.job = Some(Job::start("Importing from Carnivores: Ice Age", vec![step]));
+    }
+
     /// After an import: its folders become add-ons, its values go to the
     /// balance editor.
     fn import_done(&mut self) {
@@ -643,6 +672,24 @@ impl Launcher {
                     .pick_file()
                 {
                     self.import_apk(p);
+                }
+            }
+            if ui
+                .add_enabled(!self.busy(), egui::Button::new("Import Ice Age..."))
+                .on_hover_text(
+                    "Your own Carnivores: Ice Age folder: its animals and areas become add-ons \
+                     listed beside Carnivores 2's (for the Modder's Edition: add it as a base \
+                     overlay first).",
+                )
+                .clicked()
+            {
+                let start = self.cfg.ice_age.clone();
+                let mut d = rfd::FileDialog::new();
+                if let Some(s) = &start {
+                    d = d.set_directory(s);
+                }
+                if let Some(p) = d.pick_folder() {
+                    self.import_ice_age(p);
                 }
             }
             if ui.button("Add folder...").clicked() {

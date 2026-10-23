@@ -1126,6 +1126,20 @@ fn main() -> Result<()> {
     for (area, kb) in &base_heap {
         info += &format!("heap.{area} = {kb}\n");
     }
+    // Areas whose `.c2map` says it snows (Ice Age's beside C2's).
+    let snowy: Vec<&String> = areas
+        .iter()
+        .filter(|n| {
+            vfs.read(&format!("HUNTDAT/AREAS/{n}.c2map"))
+                .ok()
+                .and_then(|d| c2_formats::menu_txt::parse_c2map(&String::from_utf8_lossy(&d)))
+                .is_some_and(|a| a.snow)
+        })
+        .collect();
+    if !snowy.is_empty() {
+        let names: Vec<&str> = snowy.iter().map(|s| s.as_str()).collect();
+        info += &format!("snow = {}\n", names.join(","));
+    }
     // The mobile Survive mode, from the player's own APK import.
     if let Some(f) = &a.mobile_survival {
         let t = std::fs::read_to_string(f).with_context(|| format!("reading {}", f.display()))?;

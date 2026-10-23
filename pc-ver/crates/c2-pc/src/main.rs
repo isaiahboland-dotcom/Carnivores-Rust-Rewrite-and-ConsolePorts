@@ -35,6 +35,8 @@ const USAGE: &str = "usage:
   c2-pc balance <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]...   (prints prices and scores as a balance file)
   c2-pc mobile <APK> --base <GAME_DIR> [--overlay DIR]... --out <DIR>   (the mobile game's animals as add-ons)
   c2-pc mobile <APK> --values                                         (its tuning values)
+  c2-pc iceage <ICE_AGE_DIR> --base <GAME_DIR> [--overlay DIR]... --out <DIR>
+                                        (Ice Age's animals and areas as add-ons beside C2's)
   c2-pc mod detect <MOD_DIR>... --base <GAME_DIR> [--write]
   c2-pc mod build  <MOD_DIR>... --base <GAME_DIR> --out <DIR>
   c2-pc recipe verify <RECIPE.toml> --base <GAME_DIR> --mods <DIR>
@@ -207,6 +209,23 @@ fn main() -> Result<()> {
             for n in &a.notes {
                 println!("  {n}");
             }
+        }
+        return Ok(());
+    }
+    if cmd == "iceage" {
+        let ia = o
+            .positional
+            .first()
+            .context("c2-pc iceage <ICE_AGE_DIR> --base GAME --out DIR")?;
+        let bases = mods_cli::bases(o.value("base"), &o.values("overlay"))?;
+        let out = PathBuf::from(o.value("out").context("--out DIR")?);
+        let base = c2_mods::vanilla(&bases)?;
+        let import = c2_mods::ice_age::import(std::path::Path::new(ia), &base, &out)?;
+        for s in &import.skipped {
+            println!("not imported: {s}");
+        }
+        for d in import.added {
+            println!("{}", d.display());
         }
         return Ok(());
     }

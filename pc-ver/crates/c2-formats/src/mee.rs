@@ -280,6 +280,17 @@ pub struct Snow {
     pub rad: f32,
 }
 
+impl Snow {
+    /// Ice Age's snow (the Modder's Edition's for its areas).
+    pub const ICE_AGE: Snow = Snow {
+        v_spd: 192,
+        h_spd: 4,
+        dens: 2000,
+        rgba: [240, 240, 240, 255],
+        rad: 1.0,
+    };
+}
+
 fn snow(b: &Block) -> Snow {
     let byte = |k: &str| int(b, k).unwrap_or(255).clamp(0, 255) as u8;
     Snow {

@@ -569,6 +569,7 @@ impl Menu {
                     number: Some(n),
                     pic: None,
                     text: None,
+                    snow: false,
                 });
             }
         }
