@@ -2,6 +2,43 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-23 — M15: numbered mobile animation sets by their clips
+- **Bugs found**: numbered sets were given roles by count. 11 clips took the
+  Dinosaur Hunter's order (death 6th), and other counts played as the
+  donor's when the donor had as many. Both wrong in shipped imports: Ice
+  Age's Andrewsarchus, Doedicurus, Hyaenodon and Titanis (death 5th) growled
+  with their death and died into the sleep pose; the Pachycephalosaurus on
+  a plain C2 donor idled with its death. Old imports must be made again.
+- **Two layouts**: the Dinosaur Hunter's 11, and the PC one, which Ice
+  Age's mobile animals keep (its Bear, Wolf, Mammoth... match the PC models
+  clip for clip, frame counts and speeds): walk, run, idles, death, sleep,
+  extras (jump, trophy poses).
+- **Roles from motion** (`mobile::roles`): the death is the one clip whose
+  vertices end below 80% of their starting mean height (exactly one per
+  animal in both APKs); 11 clips with it 6th keep the Dinosaur Hunter's
+  order; else walk / run are the first two (the slower cycle walks), the
+  clips before the death idle, the one after it sleeps if it lies as the
+  death ends, and the extra lifting the body highest (over 1.2x) jumps
+  (Wolf's and Smilodon's known jumps are picked). No falling clip, or
+  several: not imported. Named sets and the tables are checked the same
+  way (their death must fall).
+- **Known PC layouts** (`PC_SETS`): the Diatryma is Ice Age's `Diatr.car`
+  and the Pachycephalosaurus the Modder's Edition's `PACH.CAR`, clip for
+  clip; their slide and trophy pose get no role. Only role orders are kept,
+  read from the PC files' animation names.
+- **Donors on an Ice Age base**: after each Carnivores 2 kind, an Ice Age
+  one (raptors the Wolf, Carnotaurus the Smilodon, Gigantoraptor the
+  Diatryma, Pachycephalosaurus the Wooly rhinoceros...); they all became the
+  Brontotherium before. The Diatryma takes the Velociraptor's kind on C2.
+- **The PC games' own animals** in the APKs (C2's `allo`, `tirex`...; Ice
+  Age's `bear`, `wolf`...) aren't imported: they come from the PC files
+  (with roles found, Ice Age bases got `Rapt73` and `Tirex1e`). The Diatryma
+  is the exception, for players without the Ice Age import; a game with one
+  skips it by name.
+- Checked: both APKs on C2 + ME and on Ice Age; a pack with all 18 imports
+  hunts each on every area (`c2-cook --check`); the Indricothere and
+  Diatryma render in the viewer.
+
 ## 2026-10-23 — Recipes for loose add-ons
 - A loose add-on in a recipe is marked `loose = true`; its `files` are paths
   from the add-on's folder (not from a `HUNTDAT` parent) and cover what the

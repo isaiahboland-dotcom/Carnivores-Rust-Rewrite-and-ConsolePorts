@@ -565,8 +565,10 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] menu styles: PC original / mod / Ice Age frames (`--menu-art`), 3DS title Carnivores 2 / Ice Age;
         "experimental mobile layout" of the PC hunt setup (`--mobile-menu`: hexagon pages for maps, animals,
         weapons; green buttons with red lamps), a first version to smooth later
-  - [ ] Indricothere and the Diatryma (PC-style animation sets with no fitting donor in C2: with the Ice Age
-        base, M14)
+  - [x] Indricothere and the Diatryma: numbered animation sets get their roles from the clips (the death is
+        the one that falls; Ice Age's mobile animals keep its PC layout); the Pachycephalosaurus and Ice Age's
+        four 11-clip animals played wrong moves before (re-import them); Ice Age kinds as donors on an Ice Age
+        base; the PC games' own animals in the APKs are left to the PC files
 - [ ] M16 Standalone games in the launcher (planned, PC)
 - [ ] M9 Modder's Edition Engine data — **in progress**
   - [x] nested `_RES.TXT` blocks; `_MENU.TXT` / `.c2map` menu lists; `overwrite` / `addition` resolution

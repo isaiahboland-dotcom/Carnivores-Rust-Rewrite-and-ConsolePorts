@@ -18,6 +18,7 @@
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
+use c2_formats::car::Car;
 use c2_formats::menu_txt::MenuData;
 use c2_formats::mobile::{car_from, decode_wav, parse_cat, Assets, Cat};
 use c2_formats::res_txt::{write_block, Block, Entry, ResTxt, Sub};
@@ -28,25 +29,74 @@ use crate::ModError;
 /// The PC animals a mobile one takes its kind from, in order of preference
 /// (the first the game has).
 const DONORS: &[(&str, &[&str])] = &[
-    ("amargasaurus", &["Stegosaurus"]),
-    ("carnotaurus", &["Ceratosaurus", "Allosaurus"]),
-    ("coelophysis", &["Velociraptor"]),
-    ("dilophosaurus", &["Allosaurus"]),
-    ("gigantoraptor", &["Allosaurus"]),
-    ("iguanodon", &["Parasaurolophus"]),
-    ("oviraptor", &["Parasaurolophus"]),
-    ("pach", &["Chasmosaurus"]),
-    ("troodon", &["Velociraptor"]),
-    ("utahraptor", &["Velociraptor"]),
+    // After the Carnivores 2 kind, Ice Age's (its animals' names there).
+    ("amargasaurus", &["Stegosaurus", "Mammoth"]),
+    ("carnotaurus", &["Ceratosaurus", "Allosaurus", "Smilodon"]),
+    ("coelophysis", &["Velociraptor", "Wolf"]),
+    ("dilophosaurus", &["Allosaurus", "Wolf"]),
+    ("gigantoraptor", &["Allosaurus", "Diatryma"]),
+    ("iguanodon", &["Parasaurolophus", "Brontoteriy"]),
+    ("oviraptor", &["Parasaurolophus", "Giant deer"]),
+    ("pach", &["Chasmosaurus", "Wooly rhinoceros"]),
+    ("troodon", &["Velociraptor", "Wolf"]),
+    ("utahraptor", &["Velociraptor", "Wolf"]),
     ("andrewsarchus", &["Bear", "Allosaurus"]),
-    ("doedicurus", &["Ankylosaurus"]),
+    ("doedicurus", &["Ankylosaurus", "Brontoteriy"]),
     ("hyaenodon", &["Wolf", "Velociraptor"]),
-    ("indricothere", &["Stegosaurus"]),
+    ("indricothere", &["Stegosaurus", "Brontoteriy"]),
     ("titanis", &["Diatryma", "Velociraptor"]),
+    ("diatr", &["Velociraptor"]),
+];
+
+/// The PC games' own animals in the APKs (Carnivores 2's, Ice Age's), by
+/// model: they come from the player's PC files (the base, or the Ice Age
+/// import), not as mobile copies with working titles (`Rapt73`). The
+/// Diatryma is the exception: Ice Age's, offered on Carnivores 2 to players
+/// without the Ice Age import (a game that has one skips it by name).
+const PC_OWN: &[&str] = &[
+    "allo", "ankylo1", "brachi1", "cerato1", "chasmosa", "dimet", "dimor2", "gall", "mosh", "par2",
+    "ptera", "spino", "stego", "tirex", "velo2", "archeo", "bear", "bigfoot", "bronto", "deer",
+    "hog", "mamm", "pig1", "rhino", "smilo", "wolf",
 ];
 
 /// Names for animals whose descriptor has a working title (`Pach1`).
-const NAMES: &[(&str, &str)] = &[("pach", "Pachycephalosaurus")];
+const NAMES: &[(&str, &str)] = &[("pach", "Pachycephalosaurus"), ("diatr", "Diatryma")];
+
+/// Numbered PC-style animation sets in a known order: each matches a PC
+/// model's clip for clip (frame counts and speeds), whose names give the
+/// roles. The Diatryma is Ice Age's `Diatr.car` (`Dm_wlk, Dm_run, Dm_idle1,
+/// Dm_idle2, Dm_jmp, Dm_sld, Dm_die, Dm_slp, Dm_hero`), the
+/// Pachycephalosaurus the Modder's Edition's `PACH.CAR` (`Pac_wlk, Pac_run,
+/// Pac_sld, Pac_die1, Pac_idle1, Pac_idle2, Pac_slp`). The slide and the
+/// trophy pose have no role here.
+const PC_SETS: &[(&str, &[Option<&str>])] = &[
+    (
+        "diatr",
+        &[
+            Some("walk"),
+            Some("run"),
+            Some("idle"),
+            Some("idle"),
+            Some("jump"),
+            None,
+            Some("die"),
+            Some("sleep"),
+            None,
+        ],
+    ),
+    (
+        "pach",
+        &[
+            Some("walk"),
+            Some("run"),
+            None,
+            Some("die"),
+            Some("idle"),
+            Some("idle"),
+            Some("sleep"),
+        ],
+    ),
+];
 
 /// One imported animal.
 #[derive(Debug, Clone)]
@@ -103,17 +153,69 @@ const ORDER: [&str; 11] = [
     "walk", "run", "idle", "idle", "growl", "die", "sleep", "eat", "swim", "attack", "call",
 ];
 
-/// Each animation's role: from its name, or for 11 numbered ones the
-/// usual order. `None`: numbered otherwise (a PC-style set, as its donor's).
-fn roles(cat: &Cat) -> Option<Vec<Option<&'static str>>> {
+/// Each animation's role: from its name; for a known PC-style set (by
+/// model, `stem`) its order; else from the clips themselves. `None`: no
+/// clip, or more than one, looks like a death.
+///
+/// Numbered sets come in two layouts. The Dinosaur Hunter's 11 (`ORDER`:
+/// the death 6th) and the PC's, which Ice Age's mobile animals keep (its
+/// Bear, Wolf, Mammoth... are its PC models clip for clip): walk and run,
+/// the idles, the death, the sleep, then extras (a jump, trophy poses). So
+/// the death is found by its motion (the one clip that ends much lower than
+/// it starts), the idles are the clips before it, the sleep the one after,
+/// and the jump the extra that lifts the body highest.
+fn roles(cat: &Cat, stem: &str, car: &Car) -> Option<Vec<Option<&'static str>>> {
     let named: Vec<_> = cat.animations.iter().map(|(f, _)| role(f)).collect();
+    let n = cat.animations.len();
     if named.contains(&Some("die")) {
-        Some(named)
-    } else if cat.animations.len() == ORDER.len() {
-        Some(ORDER.iter().map(|r| Some(*r)).collect())
-    } else {
-        None
+        return Some(named);
     }
+    if let Some((_, set)) = PC_SETS.iter().find(|(s, set)| *s == stem && set.len() == n) {
+        return Some(set.to_vec());
+    }
+    let falling: Vec<usize> = (0..n).filter(|&i| falls(car, i)).collect();
+    let [d] = falling[..] else { return None };
+    if n == ORDER.len() && ORDER.get(d) == Some(&"die") {
+        return Some(ORDER.iter().map(|r| Some(*r)).collect());
+    }
+    if d < 2 {
+        return None;
+    }
+    let mut r = vec![None; n];
+    // The walk is the slower cycle of the first two.
+    let ms = |i: usize| {
+        car.animations
+            .get(i)
+            .map_or(0, |a| a.frames as i64 * 1000 / i64::from(a.kps.max(1)))
+    };
+    let (walk, run) = if ms(0) >= ms(1) { (0, 1) } else { (1, 0) };
+    r[walk] = Some("walk");
+    r[run] = Some("run");
+    for x in r.iter_mut().take(d).skip(2) {
+        *x = Some("idle");
+    }
+    r[d] = Some("die");
+    // The sleep lies as the death ends (an armoured Doedicurus barely drops).
+    let stand = heights(car, 0).first().copied().unwrap_or(0.0);
+    let lying = heights(car, d).last().copied().unwrap_or(0.0);
+    let low = |i: usize| {
+        heights(car, i)
+            .iter()
+            .all(|&h| h < lying * 1.25 + stand * 0.05)
+    };
+    let mut extras = d + 1;
+    if d + 1 < n && low(d + 1) {
+        r[d + 1] = Some("sleep");
+        extras = d + 2;
+    }
+    let peak = |i: usize| heights(car, i).into_iter().fold(0.0, f64::max);
+    if let Some(j) = (extras..n)
+        .filter(|&i| peak(i) > stand * 1.2)
+        .max_by(|&a, &b| peak(a).total_cmp(&peak(b)))
+    {
+        r[j] = Some("jump");
+    }
+    Some(r)
 }
 
 /// Is this a mobile animal (it has a death animation, or numbered ones)?
@@ -125,6 +227,36 @@ fn is_animal(cat: &Cat) -> bool {
             .all(|(f, _)| role(f).is_some() || f.contains("_animation_"))
 }
 
+/// Mean height of animation `i`'s vertices, frame by frame.
+fn heights(car: &Car, i: usize) -> Vec<f64> {
+    let vc = car.mesh.vertices.len();
+    let Some(a) = car.animations.get(i).filter(|_| vc > 0) else {
+        return Vec::new();
+    };
+    (0..a.frames)
+        .filter_map(|f| a.data.get(f * vc * 3..(f + 1) * vc * 3))
+        .map(|frame| {
+            frame
+                .iter()
+                .skip(1)
+                .step_by(3)
+                .map(|&y| f64::from(y))
+                .sum::<f64>()
+                / vc as f64
+        })
+        .collect()
+}
+
+/// Does animation `i` look like a death: the body ends much lower than it
+/// starts?
+fn falls(car: &Car, i: usize) -> bool {
+    let h = heights(car, i);
+    match (h.first(), h.last()) {
+        (Some(&start), Some(&end)) if h.len() >= 2 => start > 0.0 && end < start * 0.8,
+        _ => false,
+    }
+}
+
 fn entry(key: &str, value: impl ToString) -> Entry {
     Entry {
         key: key.into(),
@@ -132,32 +264,15 @@ fn entry(key: &str, value: impl ToString) -> Entry {
     }
 }
 
-/// The donor's entry made the mobile animal's: name, model, animations
-/// (the donor's own when the animal's are a PC-style numbered set); what
+/// The donor's entry made the mobile animal's: name, model, its animations
+/// by `roles` (one per animation); what
 /// belongs to the donor alone (trophy poses, menu slot) dropped. Its slot
 /// conditions (`overwrite char5`: radar, the picked spawn group) are kept
 /// when the animal gets a slot of its own (`slot`): building moves them to
 /// that slot.
-fn make_entry(donor: &Block, name: &str, car: &str, cat: &Cat, slot: bool) -> Block {
+fn make_entry(donor: &Block, name: &str, car: &str, roles: &[Option<&str>], slot: bool) -> Block {
     let char_cond = |n: &str| {
         !slot && (n.starts_with("overwrite") || n.starts_with("addition")) && n.contains("char")
-    };
-    let Some(roles) = roles(cat) else {
-        let mut b = donor.clone();
-        b.entries.retain(|e| {
-            let k = e.key.to_ascii_lowercase();
-            !["name", "file", "callno", "survivalindex"].contains(&k.as_str())
-        });
-        b.subs.retain(|s| {
-            let n = s.name.trim().to_ascii_lowercase();
-            !(n == "tropinfo" || char_cond(&n))
-        });
-        b.entries.insert(0, entry("name", format!("'{name}'")));
-        b.entries.insert(1, entry("file", format!("'{car}'")));
-        for s in &mut b.subs {
-            s.at = (s.at + 2).min(b.entries.len());
-        }
-        return b;
     };
     let mut b = donor.clone();
     let drop_key = |k: &str| {
@@ -853,11 +968,16 @@ pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Import, ModError> {
         let named = chars.iter().any(|b| {
             b.get(&["name"]).is_some_and(|n| {
                 let n = n.trim().trim_matches('\'');
-                same(n, &stem) || same(n, &cat.title)
+                let shown = NAMES.iter().find(|(s, _)| *s == stem).map(|(_, n)| *n);
+                same(n, &stem) || same(n, &cat.title) || shown.is_some_and(|s| same(n, s))
             })
         });
         let has = base.resolve(&format!("HUNTDAT/{stem}.car")).is_some() || named;
-        if !is_animal(&cat) || has || ["poacher", "hunter"].iter().any(|p| stem.starts_with(p)) {
+        if !is_animal(&cat)
+            || has
+            || PC_OWN.contains(&stem.as_str())
+            || ["poacher", "hunter"].iter().any(|p| stem.starts_with(p))
+        {
             continue;
         }
         let mut notes = Vec::new();
@@ -880,24 +1000,24 @@ pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Import, ModError> {
             .get(&["name"])
             .map(|n| n.trim().trim_matches('\'').trim().to_string())
             .unwrap_or_default();
-        // Numbered PC-style animations play as the donor's: only when it
-        // has as many (else they'd play the wrong moves).
-        if roles(&cat).is_none() {
-            let donor_anims = donor
-                .get(&["file"])
-                .map(|f| f.trim().trim_matches('\'').trim().to_string())
-                .and_then(|f| base.read(&format!("HUNTDAT/{f}")).ok())
-                .and_then(|d| c2_formats::car::parse(&d).ok())
-                .map(|c| c.animations.len());
-            if donor_anims != Some(cat.animations.len()) {
-                skipped.push(format!(
-                    "{}: its {} animations don't match the {donor_name}'s: not imported",
-                    cat.title,
-                    cat.animations.len()
-                ));
-                continue;
-            }
-        }
+        // Which animation is which. Numbered ones in an order we don't know
+        // aren't guessed (a donor's order played the wrong moves: the
+        // Pachycephalosaurus idled with its death), and a known order is
+        // checked against the clips: its death must fall.
+        let car = car_from(&cat, &zip)?;
+        let roles = roles(&cat, &stem, &car).filter(|r| {
+            r.iter()
+                .position(|x| *x == Some("die"))
+                .is_some_and(|i| falls(&car, i))
+        });
+        let Some(roles) = roles else {
+            skipped.push(format!(
+                "{}: its {} animations are numbered in an order we don't know: not imported",
+                cat.title,
+                cat.animations.len()
+            ));
+            continue;
+        };
         let shown = NAMES
             .iter()
             .find(|(s, _)| *s == stem)
@@ -914,7 +1034,6 @@ pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Import, ModError> {
             .map(|(_, n)| (*n).to_string())
             .or_else(|| Some(cat.title.clone()).filter(|t| !t.is_empty()))
             .unwrap_or_else(|| stem.clone());
-        let car = car_from(&cat, &zip)?;
         let car_file = format!("{}.car", stem.to_ascii_uppercase());
         let dir = out.join(&name);
         if dir.exists() {
@@ -932,7 +1051,7 @@ pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Import, ModError> {
             .iter()
             .position(|h| h.name.eq_ignore_ascii_case(&donor_name))
             .map(|i| i + 1);
-        let mut b = make_entry(donor, &name, &car_file, &cat, slot.is_some());
+        let mut b = make_entry(donor, &name, &car_file, &roles, slot.is_some());
         // Its own health, score and price from the mobile game, on the
         // game's scale.
         match dinos.iter().find(|(n, _)| same(n, &name) || same(n, &stem)) {
@@ -1062,6 +1181,104 @@ mod tests {
         }
     }
 
+    /// A two-vertex model; each animation is `(frames, heights)`, the
+    /// height of both vertices per frame.
+    fn model(anims: &[(i32, &[i16])]) -> Car {
+        use c2_formats::car::Animation;
+        use c2_formats::model::{Mesh, Vertex};
+        let v = Vertex {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            owner: 0,
+            hide: 0,
+        };
+        Car {
+            name_raw: [0; 32],
+            mesh: Mesh {
+                vertices: vec![v; 2],
+                faces: vec![],
+                texture: vec![],
+            },
+            animations: anims
+                .iter()
+                .map(|&(kps, hs)| Animation {
+                    name_raw: [0; 32],
+                    kps,
+                    frames: hs.len(),
+                    data: hs.iter().flat_map(|&h| [0, h, 0, 0, h, 0]).collect(),
+                })
+                .collect(),
+            sounds: vec![],
+            anim_sounds: None,
+            trailing: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn numbered_pc_style_sets_get_roles_from_their_clips() {
+        let cat = Cat {
+            animations: (0..9).map(|i| (format!("x_animation_{i}"), None)).collect(),
+            ..Default::default()
+        };
+        // Ice Age's layout: run (fast) and walk swapped here, two idles, the
+        // death, the sleep, a trophy pose, a jump, another pose.
+        let car = model(&[
+            (20, &[100, 104, 100]),
+            (5, &[100, 110, 100]),
+            (10, &[100, 98, 100]),
+            (10, &[100, 101, 100]),
+            (10, &[100, 60, 20]),
+            (5, &[20, 21, 20]),
+            (10, &[90, 95, 90]),
+            (10, &[100, 180, 100]),
+            (10, &[100, 105, 100]),
+        ]);
+        let r = roles(&cat, "x", &car).unwrap_or_default();
+        assert_eq!(
+            r,
+            [
+                Some("run"),
+                Some("walk"),
+                Some("idle"),
+                Some("idle"),
+                Some("die"),
+                Some("sleep"),
+                None,
+                Some("jump"),
+                None
+            ]
+        );
+        // Two falling clips: not guessed.
+        let car = model(&[
+            (10, &[100, 100]),
+            (10, &[100, 100]),
+            (10, &[100, 20]),
+            (10, &[100, 20]),
+            (10, &[100, 100]),
+            (10, &[100, 100]),
+        ]);
+        let cat6 = Cat {
+            animations: (0..6).map(|i| (format!("x_animation_{i}"), None)).collect(),
+            ..Default::default()
+        };
+        assert!(roles(&cat6, "x", &car).is_none());
+        // The Dinosaur Hunter's 11, the death 6th.
+        let mut eleven: Vec<(i32, &[i16])> = vec![(10, &[100, 100]); 11];
+        eleven[5] = (10, &[100, 10]);
+        let cat11 = Cat {
+            animations: (0..11)
+                .map(|i| (format!("x_animation_{i}"), None))
+                .collect(),
+            ..Default::default()
+        };
+        let r = roles(&cat11, "x", &model(&eleven)).unwrap_or_default();
+        assert_eq!(
+            (r[4], r[5], r[10]),
+            (Some("growl"), Some("die"), Some("call"))
+        );
+    }
+
     #[test]
     fn entry_takes_the_donors_kind_and_its_own_animations() {
         let res = ResTxt::parse(
@@ -1072,7 +1289,8 @@ mod tests {
         )
         .unwrap_or_default();
         let donor = &res.sections[0].blocks[0];
-        let b = make_entry(donor, "X", "X.CAR", &cat(), false);
+        let roles = roles(&cat(), "x", &model(&[])).unwrap_or_default();
+        let b = make_entry(donor, "X", "X.CAR", &roles, false);
         let get = |k: &str| b.get(&[k]).map(str::to_string);
         assert_eq!(get("name").as_deref(), Some("'X'"));
         assert_eq!(get("file").as_deref(), Some("'X.CAR'"));
