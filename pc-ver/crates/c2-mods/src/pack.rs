@@ -533,6 +533,27 @@ pub fn build_with(
     let n_bases = bases.len();
     let mut notes = Vec::new();
     let vanilla_res = read_res(&vfs.read(RES_TXT)?)?;
+    // Two add-ons whose ids are the same (ids made up from folder names: a
+    // Dilophosaurus add-on and the mobile import's): the later one is told
+    // apart, not refused.
+    let mut mods = mods;
+    let mut seen = std::collections::HashSet::new();
+    for m in &mut mods {
+        let id = m.manifest.info.id.clone();
+        if !seen.insert(id.clone()) {
+            let new = (2..)
+                .map(|n| format!("{id}-{n}"))
+                .find(|n| !seen.contains(n))
+                .unwrap_or_default();
+            notes.push(format!("two add-ons are both `{id}`: the later one is `{new}`"));
+            seen.insert(new.clone());
+            m.manifest.info.id = new;
+        }
+    }
+    // Animals imported from the mobile games load first: where a PC add-on
+    // brings the same animal, the PC one wins (PC is the default where both
+    // exist, owner's rule).
+    mods.sort_by_key(|m| !crate::mobile::is_import(&m.root));
     let manifests: Vec<Manifest> = mods.iter().map(|m| m.manifest.clone()).collect();
     let ord = order(&manifests)?;
     let mut slots: Vec<Option<ModSource>> = mods.into_iter().map(Some).collect();

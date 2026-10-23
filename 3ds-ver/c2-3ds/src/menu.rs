@@ -133,7 +133,7 @@ struct Memory {
 }
 
 /// Area, time, animals, weapons, ambient on.
-type MemKey = (usize, usize, u32, u32, bool);
+type MemKey = (usize, usize, u64, u64, bool);
 
 /// One cell of a hexagon grid: centre and radius.
 type Cell = (f32, f32, f32);
@@ -172,7 +172,7 @@ pub struct Menu {
     step: Step,
     /// Areas (`AREA1`..), then the trophy room if packed.
     areas: Vec<(String, Item)>,
-    /// The animals offered (at most 32).
+    /// The animals offered (at most 64).
     dinos: Vec<(Pick, Item)>,
     /// The areas (index in `areas`) each roamer spawns in, by character.
     roams: std::collections::HashMap<usize, Vec<usize>>,
@@ -185,9 +185,9 @@ pub struct Menu {
     area: usize,
     time: usize,
     /// Bits by position in `dinos`, `weapons`, `equip`.
-    picked_dinos: u32,
-    picked_weapons: u32,
-    picked_equip: u32,
+    picked_dinos: u64,
+    picked_weapons: u64,
+    picked_equip: u64,
     observer: bool,
     /// The last item tapped, for its name and price under the grid.
     focus: Option<String>,
@@ -205,10 +205,10 @@ pub struct Menu {
     /// Animals (bits by position in `dinos`) the survival brings besides
     /// the picks: hardcore's 1-3 mods' animals, custom's T-Rex, the mobile
     /// one's animals.
-    extra_dinos: u32,
+    extra_dinos: u64,
     /// The animals among `extra_dinos` that are hardcore's or custom's (not
     /// in the waves).
-    special_dinos: u32,
+    special_dinos: u64,
     /// The mobile game's Survive mode (`C2RS/SURVIVE.TXT`; classic
     /// survival), and whether ours is offered too (the launcher's choice).
     mobile_survival: Option<c2_formats::mobile_arcade::Survive>,
@@ -291,7 +291,7 @@ impl Menu {
                 dinos.push((Pick::Roamer(r), item));
             }
         }
-        dinos.truncate(32);
+        dinos.truncate(64);
         // Cheapest first, left to right and top to bottom (equal prices
         // keep their order: the game's, then add-ons).
         dinos.sort_by_key(|d| d.1.price);
@@ -426,7 +426,7 @@ impl Menu {
             .is_some_and(|a| a.0.eq_ignore_ascii_case("TROPHY"))
     }
 
-    fn sum(items: &[Item], mask: u32) -> i32 {
+    fn sum(items: &[Item], mask: u64) -> i32 {
         items
             .iter()
             .enumerate()
@@ -598,7 +598,7 @@ impl Menu {
             weapons: if self.observer {
                 0
             } else {
-                self.picked_weapons
+                self.picked_weapons as u32
             },
             double_ammo: false,
             observer: self.observer,
@@ -623,7 +623,7 @@ impl Menu {
     }
 
     /// The animals loaded: a survival's own, else the picks.
-    fn dino_mask(&self) -> u32 {
+    fn dino_mask(&self) -> u64 {
         if self.survival.is_some() {
             self.extra_dinos
         } else {
@@ -891,7 +891,8 @@ impl Menu {
         match n {
             0..=15 => grid(n, 5, 32.0, 2.0),
             16..=24 => grid(n, 7, 24.0, 2.0),
-            _ => grid(n, 8, 19.0, 2.0),
+            25..=40 => grid(n, 8, 19.0, 2.0),
+            _ => grid(n, 10, 15.0, 2.0),
         }
     }
 
@@ -1787,7 +1788,7 @@ impl Menu {
         } else if self.observer {
             list(&mut c, gpu, "Observer: just watch", Vec::new());
         } else {
-            let pick = |items: &[Item], mask: u32| -> Vec<(String, i32, Rgba)> {
+            let pick = |items: &[Item], mask: u64| -> Vec<(String, i32, Rgba)> {
                 items
                     .iter()
                     .enumerate()

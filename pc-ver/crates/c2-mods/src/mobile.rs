@@ -354,6 +354,12 @@ fn call_set(apk: &Apk, sounds: &[Vec<u8>]) -> Option<Vec<Vec<u8>>> {
     None
 }
 
+/// Whether `dir` is an add-on [`import`] made (its README says so).
+pub fn is_import(dir: &Path) -> bool {
+    std::fs::read_to_string(dir.join("README.txt"))
+        .is_ok_and(|t| t.contains("from your own copy of the mobile game"))
+}
+
 /// The mobile game's tuning values (`DINO_T_REX_PRICE` ...), read from
 /// its native library (`c2_formats::mobile_values`), largest first.
 pub fn values(apk: &Path) -> Result<std::collections::BTreeMap<String, f64>, ModError> {
