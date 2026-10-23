@@ -168,6 +168,31 @@ the folder whose files match the hashes, and lists every missing or different
 file with the URL to get it. Only the listed files are used, so a recipe
 builds the same game everywhere.
 
+### Standalone games
+Whole games made from Carnivores 2 (most need the Modder's Edition as the
+overlay) are combined beside the base: each keeps its own areas, animals
+(on its own maps) and weapons, renumbered after the base's; add-ons go on
+top, on the base's maps.
+```
+cargo run --release -p c2-pc -- combine GAME_DIR... --base ../source/c2-original --overlay "PATH/Carnivores 2" [--mod ADDON]... [--ambients tied|random] --out DIR
+cargo run --release -p c2-pc -- play ../source/c2-original --overlay "PATH/Carnivores 2" --standalone GAME_DIR... [--mod ADDON]...
+```
+A game folder can be the folder you extracted (the game may be a few
+folders down). Games made for the original engine are read as dialect
+games: each animal takes the animations and spawns of the base's animal
+with the same AI. `COMBINED.md` in the result says what each game got.
+
+In a recipe, `[[overlays]]` (the Modder's Edition release) and
+`[[standalones]]` are listed like mods, with their files' paths in each
+game's folder; `[combine] ambients = "tied"` (or `"random"`); `[[mods]]`
+are then add-ons over the combined game, and patches apply to it:
+```
+cargo run --release -p c2-pc -- recipe new ADDON... --base ../source/c2-original --overlay "PATH/Carnivores 2" --standalone GAME_DIR... --id my-pack --out my-pack.toml
+cargo run --release -p c2-pc -- recipe build my-pack.toml --base ../source/c2-original --mods DOWNLOADS --out DIR
+```
+`--mods DOWNLOADS` holds each download in a folder of its own; the overlay
+comes from the recipe.
+
 Loose add-ons work the same way (`loose = true` on the mod): their files are
 listed by their path in the add-on's folder (the models, menu files, sounds,
 the hunter model and the text files holding the entries; readmes without an

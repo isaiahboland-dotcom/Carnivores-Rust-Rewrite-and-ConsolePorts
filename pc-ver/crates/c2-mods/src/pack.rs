@@ -117,6 +117,40 @@ pub fn expand_addons(dir: &Path) -> Vec<PathBuf> {
     }
 }
 
+/// A whole game's folder (a standalone, an overlay release) inside `dir`:
+/// the shallowest folder, up to five down, holding a `HUNTDAT` with a
+/// `_RES.TXT` (downloads often wrap the game in a few folders).
+pub fn find_game_root(dir: &Path) -> Option<PathBuf> {
+    let is_game = |d: &Path| find_path(d, "HUNTDAT/_RES.TXT").is_some_and(|p| p.is_file());
+    let mut level = vec![dir.to_path_buf()];
+    for _ in 0..6 {
+        let mut found: Vec<PathBuf> = level.iter().filter(|d| is_game(d)).cloned().collect();
+        found.sort();
+        if let Some(d) = found.into_iter().next() {
+            return Some(d);
+        }
+        let mut next = Vec::new();
+        for d in &level {
+            if let Ok(rd) = std::fs::read_dir(d) {
+                let mut subs: Vec<PathBuf> = rd
+                    .flatten()
+                    .map(|e| e.path())
+                    .filter(|p| {
+                        p.is_dir()
+                            && !p
+                                .file_name()
+                                .is_some_and(|n| n.eq_ignore_ascii_case("huntdat"))
+                    })
+                    .collect();
+                subs.sort();
+                next.extend(subs);
+            }
+        }
+        level = next;
+    }
+    None
+}
+
 /// Where a mod's game data is: a `.zip` (its `HUNTDAT` found inside when
 /// opened), else the folder holding `HUNTDAT` (see [`find_root`]).
 pub fn mod_root(path: &Path) -> Option<PathBuf> {

@@ -21,6 +21,16 @@ use crate::ModError;
 #[serde(default)]
 pub struct Recipe {
     pub recipe: Info,
+    /// Releases copied over the base game first (the Modder's Edition):
+    /// pinned like mods, files from the release's folder.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub overlays: Vec<RecipeMod>,
+    /// Standalone games combined beside the base (README M16), files from
+    /// each game's folder; `mods` are then add-ons over the combined game.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub standalones: Vec<RecipeMod>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub combine: Option<Combine>,
     pub mods: Vec<RecipeMod>,
     pub load_order: LoadOrder,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -61,6 +71,15 @@ pub struct RecipeMod {
 
 fn is_false(b: &bool) -> bool {
     !*b
+}
+
+/// How standalones are combined.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Combine {
+    /// `tied` (each game's ambient animals on its own maps, the default)
+    /// or `random` (on every map).
+    pub ambients: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -182,6 +201,56 @@ fn check(m: &RecipeMod, root: &Path, dir: &dyn Backend) -> Located {
     l
 }
 
+/// A whole game folder (a standalone or an overlay release) as a recipe
+/// entry: every data file under its game folder (the one holding
+/// `HUNTDAT`), credit and URL to fill in.
+pub fn pin_game(dir: &Path) -> Result<RecipeMod, ModError> {
+    let root =
+        crate::pack::find_game_root(dir).ok_or_else(|| ModError::NoHuntdat(dir.to_path_buf()))?;
+    let b = open_root(&root)?;
+    let mut files = BTreeMap::new();
+    for f in b.files() {
+        if is_data(&key(&f)) {
+            files.insert(f.clone(), sha256(&b.read(&f)?));
+        }
+    }
+    let name = dir
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    Ok(RecipeMod {
+        id: slug(&name),
+        folder: name,
+        files,
+        ..Default::default()
+    })
+}
+
+/// Finds each of `games` (standalones or overlays) under `mods_dir`, as
+/// [`locate`] does mods, its game folder possibly a few folders down.
+pub fn locate_games(games: &[RecipeMod], mods_dir: &Path) -> Vec<Located> {
+    let mut cands: Vec<(String, PathBuf, Box<dyn Backend>, bool)> = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(mods_dir) {
+        let mut subs: Vec<PathBuf> = rd
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_dir())
+            .collect();
+        subs.sort();
+        for d in subs {
+            let name = d
+                .file_name()
+                .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+            if let Some(root) = crate::pack::find_game_root(&d) {
+                if let Ok(b) = open_root(&root) {
+                    cands.push((name, root, b, false));
+                }
+            }
+        }
+    }
+    locate_among(games, &cands)
+}
+
 /// Finds each recipe mod under `mods_dir`: the folder named by `folder` or
 /// like the id, else the folder where most listed files match their hashes.
 pub fn locate(r: &Recipe, mods_dir: &Path) -> Vec<Located> {
@@ -218,8 +287,15 @@ pub fn locate(r: &Recipe, mods_dir: &Path) -> Vec<Located> {
             None => {}
         }
     }
-    r.mods
-        .iter()
+    locate_among(&r.mods, &cands)
+}
+
+/// Each of `list` among the candidate folders: `(name, root, files, loose)`.
+fn locate_among(
+    list: &[RecipeMod],
+    cands: &[(String, PathBuf, Box<dyn Backend>, bool)],
+) -> Vec<Located> {
+    list.iter()
         .map(|m| {
             let kind = cands.iter().filter(|c| c.3 == m.loose);
             let named = kind.clone().find(|(n, ..)| {

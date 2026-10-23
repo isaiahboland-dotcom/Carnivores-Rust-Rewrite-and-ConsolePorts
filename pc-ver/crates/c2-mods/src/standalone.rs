@@ -660,7 +660,7 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
 
     let mut slugs: HashSet<String> = HashSet::new();
     for dir in games {
-        let root = crate::pack::find_root(dir)
+        let root = crate::pack::find_game_root(dir)
             .and_then(|r| find_ci(&r, "HUNTDAT"))
             .ok_or_else(|| ModError::NoHuntdat(dir.clone()))?;
         // Named after the first telling folder up its path (not `Game`).
@@ -992,14 +992,26 @@ pub fn add_ons(
     built: &Built,
     o: &Options,
 ) -> Result<crate::Pack> {
-    use crate::res_merge::{block_id, Change};
-    let base_areas = built.base_areas;
-    let bases = vec![games.to_path_buf()];
-    let v = crate::vanilla(&bases)?;
-    let mut sources = addons
+    let v = crate::vanilla(&[games.to_path_buf()])?;
+    let sources = addons
         .iter()
         .map(|a| crate::load_mod(&v, a))
         .collect::<Result<Vec<_>>>()?;
+    add_on_sources(games, sources, built, o, &crate::BuildOptions::default())
+}
+
+/// [`add_ons`] for add-ons already read against the combined game (a
+/// recipe's, with its decisions and patches in `opts`).
+pub fn add_on_sources(
+    games: &Path,
+    mut sources: Vec<crate::ModSource>,
+    built: &Built,
+    o: &Options,
+    opts: &crate::BuildOptions,
+) -> Result<crate::Pack> {
+    use crate::res_merge::{block_id, Change};
+    let base_areas = built.base_areas;
+    let bases = vec![games.to_path_buf()];
     // An add-on named like one of the games' animals is a different animal:
     // added alongside under its own name, not changing the game's.
     for m in &mut sources {
@@ -1034,7 +1046,7 @@ pub fn add_ons(
             _ => None,
         })
         .collect();
-    let mut pack = crate::build(&bases, sources)?;
+    let mut pack = crate::build_with(&bases, sources, opts)?;
     let mut res = pack.merged.res.clone();
     let areas: Vec<u32> = (1..=base_areas).collect();
     if let Some(s) = res

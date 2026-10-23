@@ -2,6 +2,23 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-23 — M16: standalone recipes
+- A recipe lists `[[overlays]]` (releases copied over the base game, the
+  Modder's Edition) and `[[standalones]]` like mods: id, credit, URL, folder
+  hint and the hash of every data file, by path in the game's folder (the
+  one holding `HUNTDAT`). `[combine] ambients` says how they combine;
+  `[[mods]]` are add-ons over the combined game (read against it, with the
+  recipe's resolutions and patches).
+- Games are found under `--mods` by folder name or id, else by matching
+  hashes, their game folder up to five folders down (downloads nest it).
+  A recipe listing overlays uses them instead of `--overlay`; that also
+  answers add-on recipes needing the Modder's Edition.
+- Only the pinned files are checked; the combining reads the game folder
+  as it is (a standalone's files are its whole game).
+- Checked: a recipe of the Modder's Edition, three standalones (one for the
+  original engine, one five folders down) and two add-ons, verified and
+  built from a folder of downloads under other names.
+
 ## 2026-10-23 — M16: standalone games combined (`c2_mods::standalone`)
 - **Owner's choice**: the combining is public, generic code (users drop
   their own standalones in); no standalone is named in public files. The

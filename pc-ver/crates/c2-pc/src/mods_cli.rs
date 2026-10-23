@@ -195,7 +195,7 @@ fn verify(
     r: &c2_mods::recipe::Recipe,
     bases: &[PathBuf],
     mods_dir: &Path,
-) -> Result<Vec<c2_mods::recipe::Located>> {
+) -> Result<Verified> {
     use c2_mods::recipe::{check_base, load_base, locate};
     let v = vanilla(bases)?;
     println!(
@@ -226,7 +226,14 @@ fn verify(
         ),
     }
     let found = locate(r, mods_dir);
-    for l in &found {
+    let overlays = c2_mods::recipe::locate_games(&r.overlays, mods_dir);
+    let games = c2_mods::recipe::locate_games(&r.standalones, mods_dir);
+    let kinds = overlays
+        .iter()
+        .map(|l| ("overlay", l))
+        .chain(games.iter().map(|l| ("standalone", l)))
+        .chain(found.iter().map(|l| ("mod", l)));
+    for (kind, l) in kinds {
         let status = if l.complete() {
             "ok"
         } else {
@@ -236,7 +243,7 @@ fn verify(
             .root
             .as_ref()
             .map_or_else(|| "not found".to_string(), |p| p.display().to_string());
-        println!("  mod {}: {status} ({at})", l.id);
+        println!("  {kind} {}: {status} ({at})", l.id);
         for p in &l.missing {
             println!("    missing {p}");
         }
@@ -247,7 +254,42 @@ fn verify(
             println!("    get it from {}", l.url);
         }
     }
-    Ok(found)
+    Ok(Verified {
+        mods: found,
+        overlays,
+        games,
+    })
+}
+
+/// What [`verify`] found: the recipe's mods, overlays and standalones.
+pub struct Verified {
+    pub mods: Vec<c2_mods::recipe::Located>,
+    pub overlays: Vec<c2_mods::recipe::Located>,
+    pub games: Vec<c2_mods::recipe::Located>,
+}
+
+impl Verified {
+    fn complete(&self) -> bool {
+        self.mods
+            .iter()
+            .chain(&self.overlays)
+            .chain(&self.games)
+            .all(|l| l.complete())
+    }
+
+    /// The game folders of `list`, or an error naming one to download.
+    fn roots(list: &[c2_mods::recipe::Located]) -> Result<Vec<PathBuf>> {
+        list.iter()
+            .map(|l| match (&l.root, l.complete()) {
+                (Some(r), true) => Ok(r.clone()),
+                _ => bail!(
+                    "'{}' is missing or doesn't match (get it from {})",
+                    l.id,
+                    if l.url.is_empty() { "?" } else { &l.url }
+                ),
+            })
+            .collect()
+    }
 }
 
 /// Verifies and builds a recipe into `out`.
@@ -260,9 +302,36 @@ pub fn build_recipe(
 ) -> Result<()> {
     let r = c2_mods::recipe::Recipe::load(recipe_path)?;
     let found = verify(recipe_path, &r, bases, mods_dir)?;
-    let v = vanilla(bases)?;
-    let (sources, opts) = c2_mods::recipe::prepare(recipe_path, &r, &found, &v)?;
-    let mut pack = c2_mods::build_with(bases, sources, &opts)?;
+    // The recipe's own overlays, when it lists them, over the given game.
+    let bases: Vec<PathBuf> = if r.overlays.is_empty() {
+        bases.to_vec()
+    } else {
+        std::iter::once(bases.first().context("which game?")?.clone())
+            .chain(Verified::roots(&found.overlays)?)
+            .collect()
+    };
+    let bases = &bases[..];
+    let mut pack = if r.standalones.is_empty() {
+        let v = vanilla(bases)?;
+        let (sources, opts) = c2_mods::recipe::prepare(recipe_path, &r, &found.mods, &v)?;
+        c2_mods::build_with(bases, sources, &opts)?
+    } else {
+        // Standalones combined beside the base; the add-ons over that.
+        use c2_mods::standalone::{add_on_sources, build, Ambients, Options};
+        let o = Options {
+            ambients: match r.combine.as_ref().map(|c| c.ambients.as_str()) {
+                Some("random") => Ambients::Random,
+                _ => Ambients::Tied,
+            },
+        };
+        let games = Verified::roots(&found.games)?;
+        let games_dir = PathBuf::from(format!("{}.games", out.display()));
+        let built = build(bases, &games, &games_dir, &o)?;
+        print!("{}", built.report);
+        let v = vanilla(std::slice::from_ref(&games_dir))?;
+        let (sources, opts) = c2_mods::recipe::prepare(recipe_path, &r, &found.mods, &v)?;
+        add_on_sources(&games_dir, sources, &built, &o, &opts)?
+    };
     balance(&mut pack, balance_file)?;
     materialize(&pack, out).with_context(|| format!("writing {}", out.display()))?;
     tracing::info!(
@@ -294,6 +363,8 @@ pub struct RecipeArgs<'a> {
     pub out: Option<&'a str>,
     pub id: Option<&'a str>,
     pub name: Option<&'a str>,
+    /// `recipe new --standalone DIR`: standalone games to pin.
+    pub standalones: Vec<PathBuf>,
 }
 
 /// `c2-pc recipe verify|build|new|base ...`.
@@ -309,7 +380,7 @@ pub fn run_recipe(args: &[String], a: &RecipeArgs<'_>) -> Result<()> {
             let r = c2_mods::recipe::Recipe::load(&p)?;
             let mods = PathBuf::from(a.mods.context("--mods DIR is required")?);
             let found = verify(&p, &r, bases, &mods)?;
-            if found.iter().all(|l| l.complete()) {
+            if found.complete() {
                 println!("everything matches; `recipe build` will work");
                 Ok(())
             } else {
@@ -328,7 +399,21 @@ pub fn run_recipe(args: &[String], a: &RecipeArgs<'_>) -> Result<()> {
                 .iter()
                 .map(|m| load_mod(&v, Path::new(m)).with_context(|| format!("reading mod {m}")))
                 .collect::<Result<Vec<_>>>()?;
-            let r = c2_mods::recipe::new_recipe(id, a.name.unwrap_or(id), "c2-vanilla", &sources)?;
+            let mut r =
+                c2_mods::recipe::new_recipe(id, a.name.unwrap_or(id), "c2-vanilla", &sources)?;
+            // Overlays and standalones, pinned whole (credits and URLs to
+            // fill in).
+            for o in bases.iter().skip(1) {
+                r.overlays.push(c2_mods::recipe::pin_game(o)?);
+            }
+            for g in &a.standalones {
+                r.standalones.push(c2_mods::recipe::pin_game(g)?);
+            }
+            if !r.standalones.is_empty() {
+                r.combine = Some(c2_mods::recipe::Combine {
+                    ambients: "tied".into(),
+                });
+            }
             write_new(a.out, &r.to_toml())
         }
         "base" => {
