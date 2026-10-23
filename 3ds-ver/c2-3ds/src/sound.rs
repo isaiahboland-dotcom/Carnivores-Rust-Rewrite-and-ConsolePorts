@@ -193,7 +193,7 @@ impl Sound {
             Some(Name::Id(SoundId::Species { .. })) => false,
             Some(Name::Id(SoundId::Weapon { weapon, .. })) => carried.contains(&weapon),
             Some(Name::Id(SoundId::Call { ai, .. })) => {
-                (0..128).contains(&ai) && game.hunt.opts.targets & (1 << ai) != 0
+                usize::try_from(ai).is_ok_and(|a| game.hunt.opts.targets.has(a))
             }
             Some(Name::Id(SoundId::Random(_)) | Name::Ambient(_)) => false,
             Some(_) => true,

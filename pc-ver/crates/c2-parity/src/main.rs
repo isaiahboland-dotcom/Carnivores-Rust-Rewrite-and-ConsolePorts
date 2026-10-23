@@ -297,7 +297,7 @@ fn dinos_sim(map_path: &Path, seconds: u32) -> Result<()> {
         PlaceOptions {
             density: 128,
             opt_agres: 128,
-            targets: 0,
+            targets: c2_formats::bits::Bits::NONE,
             max_ambient: None,
         },
     );
@@ -376,7 +376,7 @@ fn mee_report(game: &Path, area: u32, time: u8, picked: u128) -> Result<()> {
     let h = Hunt {
         area: Some(area),
         time,
-        picked,
+        picked: c2_formats::bits::Bits::from(picked),
     };
     let t = Tables::read(&res, &h);
     println!("area {area}, time {time}, picked slots {picked:#b}");
@@ -435,7 +435,7 @@ fn mee_sim(game: &Path, area_n: u32, seconds: u32) -> Result<()> {
     let h = Hunt {
         area: Some(area_n),
         time: 1,
-        picked: 0,
+        picked: c2_formats::bits::Bits::NONE,
     };
     let m = c2_core::mee::read(&res, &h);
     let areas = find_ci(&huntdat, "AREAS").context("no AREAS")?;
@@ -619,7 +619,7 @@ fn tick_bench(game: &Path, area_n: u32) -> Result<()> {
         PlaceOptions {
             density: 128,
             opt_agres: 128,
-            targets: 1 << ai::STEGO,
+            targets: c2_formats::bits::Bits::bit(ai::STEGO as usize),
             max_ambient: Some(4),
         },
     );
@@ -635,7 +635,7 @@ fn tick_bench(game: &Path, area_n: u32) -> Result<()> {
     player.y = area.land_height(player.x, player.z);
     println!("{} animals; Stegosaurus #{stego}", herd.chars.len());
     let opts = HuntOptions {
-        targets: 1 << ai::STEGO,
+        targets: c2_formats::bits::Bits::bit(ai::STEGO as usize),
         radar: false,
         opt_agres: 128,
         opt_sens: 128,
@@ -651,7 +651,7 @@ fn tick_bench(game: &Path, area_n: u32) -> Result<()> {
         blood: true,
         death_anim: true,
         afraid_every: 1,
-        no_call_bonus: 0,
+        no_call_bonus: c2_formats::bits::Bits::NONE,
         notice_k: 1.0,
         stealth: false,
     };

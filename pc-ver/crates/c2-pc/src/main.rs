@@ -325,19 +325,15 @@ fn main() -> Result<()> {
             // --target AI[,AI...] or `all`: hunt targets (no menu yet). Calls,
             // placement of T-Rex/Cerato and score depend on them.
             let targets = match o.value("target") {
-                None => 0,
-                Some("all") => (10..=18).fold(0u128, |m, a| m | 1 << a),
+                None => c2_formats::bits::Bits::NONE,
+                Some("all") => (10..=18).collect(),
                 Some(v) => v
                     .split(',')
-                    .map(|a| {
-                        a.trim()
-                            .parse::<u32>()
-                            .map(|a| 1u128.checked_shl(a).unwrap_or(0))
-                    })
+                    .map(|a| a.trim().parse::<u32>().map(|a| a as usize))
                     .collect::<Result<Vec<_>, _>>()
                     .context("--target AI[,AI...]")?
                     .into_iter()
-                    .fold(0, |m, b| m | b),
+                    .collect(),
             };
             // --ship AI,MS[,DIST]: bag an animal, wait, look at the ship.
             let ship: Option<Vec<f32>> = o

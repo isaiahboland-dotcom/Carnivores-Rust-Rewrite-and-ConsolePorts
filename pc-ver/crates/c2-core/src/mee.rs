@@ -117,7 +117,7 @@ pub fn spawn_picked_anywhere(res: &ResTxt, h: &Hunt, tables: &mut Tables, extra:
     let all = Tables::read(
         res,
         &Hunt {
-            picked: u128::MAX,
+            picked: c2_formats::bits::Bits::ALL,
             ..*h
         },
     );
@@ -141,8 +141,7 @@ pub fn spawn_picked_anywhere(res: &ResTxt, h: &Hunt, tables: &mut Tables, extra:
         .map(|p| p.spawn.iter().any(|l| l.group == target))
         .collect();
     for (i, c) in tables.characters.iter_mut().enumerate() {
-        let picked = slot(&c.block).is_some_and(|k| k < 128 && h.picked & (1 << k) != 0)
-            || extra.contains(&i);
+        let picked = slot(&c.block).is_some_and(|k| h.picked.has(k as usize)) || extra.contains(&i);
         let ambient = c.block.get(&["ai"]).map(c_atoi).is_some_and(|a| a < 10);
         // Already among the targets (alone or in a pack)?
         let in_target = c.spawn.iter().any(|l| l.group == target)

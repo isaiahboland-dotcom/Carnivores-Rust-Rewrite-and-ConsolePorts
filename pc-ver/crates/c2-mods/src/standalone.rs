@@ -349,8 +349,28 @@ pub fn to_dialect(
     base: &ResTxt,
     model: &dyn Fn(&str) -> Option<c2_formats::car::Car>,
 ) -> (ResTxt, Vec<String>) {
-    let mut out = g.clone();
+    // Entries without a name (stray blocks) aren't animals.
+    let mut g = g.clone();
     let mut notes = Vec::new();
+    if let Some(sec) = g
+        .sections
+        .iter_mut()
+        .find(|s| s.name.eq_ignore_ascii_case("characters"))
+    {
+        let before = sec.blocks.len();
+        sec.blocks.retain(|b| {
+            b.get(&["name"])
+                .is_some_and(|n| !unquote(n).trim().is_empty())
+        });
+        if sec.blocks.len() < before {
+            notes.push(format!(
+                "{} entries without a name left out",
+                before - sec.blocks.len()
+            ));
+        }
+    }
+    let g = &g;
+    let mut out = g.clone();
     let donors = blocks(base, "characters");
     let ai_of = |b: &Block| b.get(&["ai"]).map(c_atoi);
     let menu = MenuData::from_res(g);
@@ -936,10 +956,11 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
         "\nIn all: {n_areas} areas, {n_dinos} huntables, {n_weapons} weapons; hunter model {} animations.\n",
         hunter.animations.len()
     ));
-    if n_dinos > 118 {
-        report.push_str(
-            "\n**Warning:** more than 118 huntables; the menu can pick only the first 118.\n",
-        );
+    let max = c2_formats::bits::Bits::LEN - 10;
+    if n_dinos > max {
+        report.push_str(&format!(
+            "\n**Warning:** more than {max} huntables; the menu can pick only the first {max}.\n"
+        ));
     }
     if n_weapons > 128 {
         report.push_str("\n**Warning:** more than 128 weapons; only the first 128 can be taken.\n");

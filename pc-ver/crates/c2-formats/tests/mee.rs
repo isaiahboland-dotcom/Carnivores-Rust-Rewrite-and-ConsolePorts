@@ -4,6 +4,7 @@ use c2_formats::mee::{applies, is_dialect, resolve, Hunt, Tables};
 use c2_formats::res_txt::ResTxt;
 
 fn hunt(area: u32, time: u8, picked: u128) -> Hunt {
+    let picked = c2_formats::bits::Bits::from(picked);
     Hunt {
         area: Some(area),
         time,
@@ -36,7 +37,7 @@ fn conditions_match_like_the_engine() {
     let trophy = Hunt {
         area: None,
         time: 1,
-        picked: 0,
+        picked: c2_formats::bits::Bits::NONE,
     };
     assert!(applies("overwrite area5 time2 char9", &trophy));
 }

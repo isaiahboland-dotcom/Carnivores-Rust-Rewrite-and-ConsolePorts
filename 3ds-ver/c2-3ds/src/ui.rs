@@ -83,7 +83,7 @@ impl Ui {
                 .collect()
         };
         let calls = (10..128)
-            .filter(|ai| game.hunt.opts.targets & (1 << ai) != 0)
+            .filter(|&ai| usize::try_from(ai).is_ok_and(|a| game.hunt.opts.targets.has(a)))
             .filter(|&ai| game.setup.callable(ai))
             .map(|ai| (ai, load(vfs, &format!("C2RS/CALL{ai}.TX"))))
             .collect();
@@ -526,7 +526,7 @@ fn draw_map(c: &mut Canvas, gpu: &mut Gpu, game: &Game, map: Option<&Texture>, l
         let (x, y) = to_screen(px(ch.pos[0]), px(ch.pos[2]));
         let no_call = h
             .call_bit(ch)
-            .is_some_and(|b| h.opts.no_call_bonus & 1u128.checked_shl(b as u32).unwrap_or(0) != 0);
+            .is_some_and(|b| h.opts.no_call_bonus.has(b as usize));
         if target && no_call {
             // An even ring (2 px) reads as one marker, not two dots.
             dot(x, y, 8.0, [250, 200, 60, 255]);

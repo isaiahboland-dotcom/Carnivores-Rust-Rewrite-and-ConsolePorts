@@ -5,6 +5,7 @@
 //! machine in `DrawPostObjects`, `MakeShot`, `MakeNoise`, `CheckAfraid`,
 //! `AnimateProcesses` (wind), `AddDeadBody`, `ProcessDemoMovement`.
 
+use c2_formats::bits::Bits;
 use c2_formats::car::Car;
 use c2_formats::res_txt::WeaponDef;
 
@@ -376,7 +377,7 @@ pub struct HuntKill {
 #[derive(Debug, Clone, Copy)]
 pub struct HuntOptions {
     /// Bit `ai` set for each species chosen as a target (`TargetDino`).
-    pub targets: u128,
+    pub targets: Bits,
     pub radar: bool,
     pub opt_agres: i32,
     pub opt_sens: i32,
@@ -411,7 +412,7 @@ pub struct HuntOptions {
     pub afraid_every: u32,
     /// Bit `10 + slot` per call slot whose kills score +10% (not in the
     /// original; the 3DS's roaming add-ons, hunted with no call).
-    pub no_call_bonus: u128,
+    pub no_call_bonus: Bits,
     /// How far animals notice the hunter, by sight or smell, as a share of
     /// the original's distance (1; the 3DS's "3DS friendly" setting: less,
     /// to match its shorter view). Every animal, modded ones too.
@@ -424,7 +425,7 @@ pub struct HuntOptions {
 impl Default for HuntOptions {
     fn default() -> Self {
         Self {
-            targets: 0,
+            targets: Bits::NONE,
             radar: false,
             opt_agres: 128,
             opt_sens: 128,
@@ -440,7 +441,7 @@ impl Default for HuntOptions {
             blood: true,
             death_anim: true,
             afraid_every: 1,
-            no_call_bonus: 0,
+            no_call_bonus: Bits::NONE,
             notice_k: 1.0,
             stealth: false,
         }
@@ -448,8 +449,8 @@ impl Default for HuntOptions {
 }
 
 /// Call ids are `10 + menu slot` (the original's AI number); one past the
-/// last a 128-bit target mask can hold.
-pub const MAX_CALL: i32 = 128;
+/// last the target set (`Bits`) can hold.
+pub const MAX_CALL: i32 = Bits::LEN as i32;
 
 /// One tick of player input.
 #[derive(Debug, Clone, Copy, Default)]
@@ -650,7 +651,7 @@ impl Hunt {
             effects: Default::default(),
             prof: Default::default(),
             target_call: (10..MAX_CALL)
-                .find(|a| opts.targets & (1 << a) != 0)
+                .find(|&a| opts.targets.has(a as usize))
                 .unwrap_or(0),
             call_icon_time: 0,
             call_lock: 0,
@@ -1007,9 +1008,9 @@ impl Hunt {
         if !dialect && !self.is_target(c) {
             score /= 2.0;
         }
-        let no_call = self.call_bit(c).is_some_and(|b| {
-            self.opts.no_call_bonus & 1u128.checked_shl(b as u32).unwrap_or(0) != 0
-        });
+        let no_call = self
+            .call_bit(c)
+            .is_some_and(|b| self.opts.no_call_bonus.has(b as usize));
         // Night and no-call: +10% each (not in the original; owner's requests).
         for (on, k) in [
             (self.opts.tranq, 1.25),
@@ -1911,14 +1912,14 @@ impl Hunt {
             }
         }
         let targets = self.opts.targets;
-        if input.change_call && targets != 0 {
+        if input.change_call && !targets.is_empty() {
             if self.call_icon_time > 0 {
                 for _ in 0..MAX_CALL {
                     self.target_call += 1;
                     if self.target_call >= MAX_CALL {
                         self.target_call = 10;
                     }
-                    if targets & (1 << self.target_call) != 0 {
+                    if usize::try_from(self.target_call).is_ok_and(|c| targets.has(c)) {
                         break;
                     }
                 }
@@ -1926,7 +1927,7 @@ impl Hunt {
             self.call_icon_time = 2048;
         }
         if !input.call
-            || targets == 0
+            || targets.is_empty()
             || self.player.underwater
             || self.opts.observer
             || self.opts.trophy
@@ -2139,7 +2140,7 @@ impl Hunt {
         };
         sp.tuning.radar.unwrap_or_else(|| {
             self.call_bit(c)
-                .is_some_and(|b| self.opts.targets & 1u128.checked_shl(b as u32).unwrap_or(0) != 0)
+                .is_some_and(|b| self.opts.targets.has(b as usize))
         })
     }
 
@@ -2763,7 +2764,7 @@ mod tests {
         let o = SurvivalOptions::pick(&hunt, SurvivalKind::Hardcore, 5);
         assert_eq!((o.roster, o.hardcore, o.trex), (vec![2, 3], vec![3], None));
         // The allosaur picked: it alone comes; custom brings the T-Rex.
-        hunt.opts.targets = 1 << ai::ALLO;
+        hunt.opts.targets = Bits::bit(ai::ALLO as usize);
         let o = SurvivalOptions::pick(&hunt, SurvivalKind::Custom, 5);
         assert_eq!((o.roster, o.trex, o.unlimited), (vec![2], Some(4), true));
     }
@@ -2791,7 +2792,7 @@ mod tests {
 
     #[test]
     fn non_targets_score_half_only_in_the_original() {
-        let score = |dialect: bool, targets: u128, bonus: u128| {
+        let score = |dialect: bool, targets: Bits, bonus: Bits| {
             let (area, mut hunt, _) = setup(false);
             hunt.herd.species[1].info.base_score = 100.0;
             if dialect {
@@ -2801,10 +2802,11 @@ mod tests {
             hunt.add_ship_task(&area, 0, &mut Vec::new());
             hunt.room.score
         };
-        let stego = 1u128 << ai::STEGO;
-        assert_eq!(score(false, stego, 0), 100);
-        assert_eq!(score(false, 0, 0), 50);
-        assert_eq!(score(true, 0, 0), 100);
+        let stego = Bits::bit(ai::STEGO as usize);
+        let none = Bits::NONE;
+        assert_eq!(score(false, stego, none), 100);
+        assert_eq!(score(false, none, none), 50);
+        assert_eq!(score(true, none, none), 100);
         assert_eq!(score(true, stego, stego), 110);
     }
 
@@ -2818,7 +2820,7 @@ mod tests {
         // Can't see or smell the hunter: only calls move it.
         hunt.herd.species[1].info.look_k = 0.0;
         hunt.herd.species[1].info.smell_k = 0.0;
-        hunt.opts.targets = 1 << 13 | 1 << 15;
+        hunt.opts.targets = Bits::bit(13) | Bits::bit(15);
         let call = HuntInput {
             call: true,
             ..Default::default()

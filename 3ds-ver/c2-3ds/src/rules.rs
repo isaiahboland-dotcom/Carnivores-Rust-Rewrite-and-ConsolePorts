@@ -145,7 +145,7 @@ impl Rules {
                         TimeOfDay::Day => 1,
                         TimeOfDay::Night => 2,
                     },
-                    picked: targets >> 10,
+                    picked: c2_formats::bits::Bits::from(targets).down(10),
                 };
                 let mut m = c2_core::mee::read(raw, &h);
                 let chars: Vec<usize> = roamers.iter().map(|r| r.char).collect();

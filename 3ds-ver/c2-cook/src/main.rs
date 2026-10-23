@@ -194,7 +194,7 @@ fn load_peak(
         let h = c2_formats::mee::Hunt {
             area: c2_formats::mee::area_of(area),
             time: 1,
-            picked: u128::MAX,
+            picked: c2_formats::bits::Bits::ALL,
         };
         c2_core::mee::read(&raw, &h).res
     } else {
@@ -728,7 +728,7 @@ fn rules(vfs: &Vfs) -> Result<Rules> {
         let h = c2_formats::mee::Hunt {
             area: Some(1),
             time: 1,
-            picked: u128::MAX,
+            picked: c2_formats::bits::Bits::ALL,
         };
         let m = c2_core::mee::read(&raw, &h);
         let slots: Vec<bool> = m

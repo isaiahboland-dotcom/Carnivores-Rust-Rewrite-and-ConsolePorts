@@ -45,7 +45,7 @@ impl SoundBank {
         weapons: &[Option<&Car>],
         ship: Option<&Car>,
         rsc: &Rsc,
-        targets: u128,
+        targets: c2_formats::bits::Bits,
     ) -> Self {
         let fx = find_file(huntdat, "SOUNDFX");
         let steps_dir = fx.as_deref().and_then(|d| find_file(d, "STEPS"));
@@ -90,7 +90,7 @@ impl SoundBank {
                 // add-ons there can be a hundred slots.
                 (1..=c2_core::game::MAX_CALL - 10)
                     .map(|n| {
-                        if targets & (1 << (n + 9)) == 0 {
+                        if !targets.has(n as usize + 9) {
                             return vec![None, None, None];
                         }
                         ["A", "B", "C"]

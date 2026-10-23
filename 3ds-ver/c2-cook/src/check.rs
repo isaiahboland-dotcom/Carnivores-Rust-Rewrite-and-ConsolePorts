@@ -158,13 +158,13 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
                     PlaceOptions {
                         density: 128,
                         opt_agres: 128,
-                        targets: *targets,
+                        targets: c2_formats::bits::Bits::from(*targets),
                         max_ambient: Some(4),
                     },
                 ),
             }
             let opts = HuntOptions {
-                targets: *targets,
+                targets: c2_formats::bits::Bits::from(*targets),
                 view_r: 34,
                 render_r: 34,
                 ..Default::default()
@@ -286,7 +286,7 @@ fn survival_hunt(
         ..Default::default()
     };
     let opts = HuntOptions {
-        targets: u128::MAX,
+        targets: c2_formats::bits::Bits::ALL,
         view_r: 34,
         render_r: 34,
         ..Default::default()

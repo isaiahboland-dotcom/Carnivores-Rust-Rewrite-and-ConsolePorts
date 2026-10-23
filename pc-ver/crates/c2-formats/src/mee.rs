@@ -33,7 +33,7 @@ pub struct Hunt {
     /// 0 dawn, 1 day, 2 night.
     pub time: u8,
     /// Picked menu slots, bit `i` = slot `i` (`char<i>`).
-    pub picked: u128,
+    pub picked: crate::bits::Bits,
 }
 
 /// Keys whose repeated values form a list (wiped by an `overwrite`).
@@ -82,9 +82,7 @@ pub fn applies(header: &str, h: &Hunt) -> bool {
     if header.contains("time") && !header.contains(&format!("time{}", h.time)) {
         return false;
     }
-    if header.contains("char")
-        && !(0..118).any(|i| h.picked & (1u128 << i) != 0 && mentions_char(header, i))
-    {
+    if header.contains("char") && !h.picked.iter().any(|i| mentions_char(header, i as u32)) {
         return false;
     }
     true
@@ -647,7 +645,7 @@ mod trophy_tests {
             &Hunt {
                 area: None,
                 time: 1,
-                picked: 0,
+                picked: crate::bits::Bits::NONE,
             },
         );
         assert_eq!(t.trophies.len(), 3);

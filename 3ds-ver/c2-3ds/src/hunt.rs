@@ -372,7 +372,7 @@ fn new_hunt(
             PlaceOptions {
                 density: o.dens,
                 opt_agres: o.agres,
-                targets: setup.targets,
+                targets: c2_formats::bits::Bits::from(setup.targets),
                 max_ambient: Some(setup.max_ambient),
             },
         );
@@ -385,7 +385,7 @@ fn new_hunt(
     let (infos, anims): (Vec<_>, Vec<_>) = weapon_info.iter().cloned().unzip();
     let weapons = Weapons::new(infos, anims, u128::from(carried), setup.double_ammo);
     let opts = HuntOptions {
-        targets: if setup.observer { 0 } else { setup.targets },
+        targets: if setup.observer { c2_formats::bits::Bits::NONE } else { c2_formats::bits::Bits::from(setup.targets) },
         radar: o.radar != 0,
         opt_agres: o.agres,
         opt_sens: o.sens,
@@ -409,7 +409,8 @@ fn new_hunt(
             .roamers
             .iter()
             .filter(|r| r.slot < 118)
-            .fold(0, |m, r| m | 1 << (r.slot + 10)),
+            .map(|r| r.slot + 10)
+            .collect(),
     };
     let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
     hunt.ship_anim_ms = ship_ms;

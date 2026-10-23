@@ -341,7 +341,7 @@ impl Menu {
         for (i, cx, cy, w) in self.mobile_cells() {
             let h = w * 0.866;
             let r = (cx - w / 2.0, cy - h / 2.0, w, h);
-            let on = i < 128 && mask & (1 << i) != 0;
+            let on = mask.has(i);
             let afford = on || c.prices.get(i).is_some_and(|&p| p <= left) || self.choice.observer;
             let dim = if afford {
                 [1.0; 4]

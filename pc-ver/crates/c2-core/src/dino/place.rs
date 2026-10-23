@@ -16,7 +16,7 @@ pub struct PlaceOptions {
     pub opt_agres: i32,
     /// Bit `ai` set for each target species chosen in the menu
     /// (`TargetDino`); 0 = none chosen.
-    pub targets: u128,
+    pub targets: c2_formats::bits::Bits,
     /// At most this many small ambient animals (`None`: the original's
     /// 5 + density / 80; the 3DS caps it, or turns them off with 0).
     pub max_ambient: Option<i32>,
@@ -159,7 +159,7 @@ impl Herd {
 
         // Main population: the first 4 (or all, with no targets chosen) are
         // random among the 7 species from AI 10 on; the rest cycle the targets.
-        let targets: Vec<i32> = (10..20).filter(|a| o.targets & (1 << a) != 0).collect();
+        let targets: Vec<i32> = (10..20).filter(|&a| o.targets.has(a as usize)).collect();
         let first_main = self.by_ai(10);
         let mc = 8 + o.density / 30 + rng.r_rand(6);
         let mut tr = 0;

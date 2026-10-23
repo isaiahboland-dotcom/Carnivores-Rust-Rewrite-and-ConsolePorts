@@ -70,7 +70,7 @@ fn modded_survival(
     let h = c2_formats::mee::Hunt {
         area: Some(c.area),
         time: c.time,
-        picked: 0,
+        picked: c2_formats::bits::Bits::NONE,
     };
     let t = c2_formats::mee::Tables::read(&res, &h);
     t.survival?;

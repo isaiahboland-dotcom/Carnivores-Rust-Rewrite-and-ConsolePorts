@@ -38,8 +38,14 @@ Newest first. Each entry: what, why, and what it affects.
 - Checked: the owner's 13 standalones (6 dialect, 7 original-engine or
   similar) combine in under a second into 86 areas, 130 huntables and 101
   weapons; `c2-parity mee-sim` places and runs animals on each game's areas.
-  Open: past 118 huntables the menu can't pick (slot bits); a hunter model
-  with another body (one game's) keeps its kills unmerged.
+  Open: a hunter model with another body (one game's) keeps its kills
+  unmerged.
+- **Past 118 huntables**: picked slots (`mee::Hunt::picked`) and hunt
+  targets (`HuntOptions::targets`, the no-call bonus, placement) are a
+  512-bit set (`c2_formats::bits::Bits`) instead of a `u128` (slot + 10
+  left 118); `MAX_CALL` follows. The 3DS keeps its 64-animal menu and
+  converts at the boundary; weapons stay a `u128` (128). Stray entries
+  without a name in an original-engine game are left out.
 
 ## 2026-10-23 — M9: the wary flyer; the AI families done
 - **Survey**: every dialect `_RES.TXT` here (game folders, add-ons, the

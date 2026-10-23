@@ -581,7 +581,8 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
         files under `MODS/<game>/`; each game's animals on its own maps; add-ons on the base's), `c2-pc combine`,
         `c2-pc play --standalone DIR`; original-engine games read as dialect ones (animations and spawns from
         the base's same-AI animal; extra-slot AIs by their model's animation names)
-  - [ ] past 118 huntables (the menu's slot limit), standalone recipes, the launcher, 3DS packs per standalone
+  - [x] up to 502 huntables (picked slots and targets in a 512-bit set, `c2_formats::bits::Bits`, PC and 3DS)
+  - [ ] standalone recipes, the launcher, 3DS packs per standalone
 - [x] M9 Modder's Edition Engine data (weapon extras still listed below)
   - [x] nested `_RES.TXT` blocks; `_MENU.TXT` / `.c2map` menu lists; `overwrite` / `addition` resolution
   - [x] spawn / pack tables and placement on PC (dialect game folders hunt with their own rosters and spawns)

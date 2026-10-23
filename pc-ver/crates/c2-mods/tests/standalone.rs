@@ -143,20 +143,27 @@ fn standalones_are_renumbered_tied_to_their_maps_and_original_ones_converted() {
     .expect("combine");
     let report = &built.report;
     assert!(report.contains("original engine"), "{report}");
-    assert!(report.contains("lists 2 areas, it has maps for 1"), "{report}");
+    assert!(
+        report.contains("lists 2 areas, it has maps for 1"),
+        "{report}"
+    );
 
     // Areas: base 1, A 2, B 3 (B's second, without a map, left out).
     let h = out.join("HUNTDAT");
-    assert_eq!(std::fs::read(h.join("AREAS/AREA2.MAP")).ok(), Some(b"a map".to_vec()));
-    assert_eq!(std::fs::read(h.join("AREAS/AREA3.MAP")).ok(), Some(b"b map".to_vec()));
+    assert_eq!(
+        std::fs::read(h.join("AREAS/AREA2.MAP")).ok(),
+        Some(b"a map".to_vec())
+    );
+    assert_eq!(
+        std::fs::read(h.join("AREAS/AREA3.MAP")).ok(),
+        Some(b"b map".to_vec())
+    );
     assert!(!h.join("AREAS/AREA4.MAP").exists());
     // Menu files follow the slots: A's first huntable is slot 2.
     assert!(h.join("MENU/DINO2.TGA").exists());
 
-    let res = ResTxt::parse(
-        &std::fs::read_to_string(h.join("_RES.TXT")).expect("res"),
-    )
-    .expect("parse");
+    let res =
+        ResTxt::parse(&std::fs::read_to_string(h.join("_RES.TXT")).expect("res")).expect("parse");
     let chars = &res.section("characters").expect("characters").blocks;
     let by = |n: &str| {
         chars
@@ -174,7 +181,10 @@ fn standalones_are_renumbered_tied_to_their_maps_and_original_ones_converted() {
         .iter()
         .find(|s| s.name.starts_with("overwrite area2"))
         .expect("A's area 1 is area 2");
-    assert_eq!(snow.block.get(&["file"]), Some("'MODS/game-a/raptor_snow.car'"));
+    assert_eq!(
+        snow.block.get(&["file"]),
+        Some("'MODS/game-a/raptor_snow.car'")
+    );
     assert!(ra.subs.iter().any(|s| s.name == "addition area2"));
     // B's Utahraptor: the base raptor's animations and spawns, its picked
     // spawn at its own slot (3: after the base's and A's), on area 3 only.
@@ -188,7 +198,10 @@ fn standalones_are_renumbered_tied_to_their_maps_and_original_ones_converted() {
         .find(|s| s.name.starts_with("overwrite char2"))
         .expect("picked condition at its slot");
     assert!(picked.name.contains("area3"));
-    assert!(picked.block.get(&["basescore"]).is_none(), "not the donor's score");
+    assert!(
+        picked.block.get(&["basescore"]).is_none(),
+        "not the donor's score"
+    );
     assert!(u.subs.iter().any(|s| s.name == "addition area3"));
     // B's Big (AI 19): a hunter's kind, animations by their names.
     let big = by("Big");

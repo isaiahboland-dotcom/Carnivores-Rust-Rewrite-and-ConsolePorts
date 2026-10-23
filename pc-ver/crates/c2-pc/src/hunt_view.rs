@@ -79,7 +79,7 @@ pub struct HuntSetup {
     /// Fixed RNG seed (reproducible runs); `None` = from the clock.
     pub seed: Option<u32>,
     /// `TargetDino`: bit per AI.
-    pub targets: u128,
+    pub targets: c2_formats::bits::Bits,
     /// `WeaponPres`: bit per `_RES.TXT` weapon.
     pub weapons: u128,
     pub double_ammo: bool,
@@ -166,7 +166,7 @@ fn mee_hunt(setup: &HuntSetup) -> c2_formats::mee::Hunt {
         },
         // Menu slot i is target bit 10 + i, so up to 22 slots (add-ons
         // past the engine's 10 get slots of their own).
-        picked: setup.targets >> 10,
+        picked: setup.targets.down(10),
     }
 }
 
@@ -250,7 +250,7 @@ impl HuntView {
         let pics = find_file(&huntdat, "MENU").and_then(|m| find_file(&m, "PICS"));
         let call_imgs: Vec<Option<usize>> = (1..=c2_core::game::MAX_CALL - 10)
             .map(|n| {
-                if setup.targets & (1 << (n + 9)) == 0 {
+                if !setup.targets.has(n as usize + 9) {
                     return None;
                 }
                 let p = find_file(pics.as_deref()?, &format!("CALL{n}.TGA"))?;
@@ -391,7 +391,7 @@ impl HuntView {
             blood: setup.pc.blood != 0,
             death_anim: setup.pc.death_anim != 0,
             afraid_every: 1,
-            no_call_bonus: 0,
+            no_call_bonus: c2_formats::bits::Bits::NONE,
             notice_k: 1.0,
             stealth: false,
         };

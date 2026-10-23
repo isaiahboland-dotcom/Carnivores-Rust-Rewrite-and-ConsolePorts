@@ -28,6 +28,7 @@ use crate::keys;
 use crate::save;
 use crate::scene::{MakeScene, Scene};
 use crate::settings::PcSettings;
+use c2_formats::bits::Bits;
 
 /// The menus are drawn on an 800x600 canvas, scaled to fit the window.
 const CW: f32 = 800.0;
@@ -60,7 +61,7 @@ fn hunt_scores(huntdat: &Path, menu: &MenuData) -> Vec<Option<f32>> {
             let picked = c2_formats::mee::Hunt {
                 area: Some(0),
                 time: 1,
-                picked: 1u128.checked_shl(k as u32).unwrap_or(0),
+                picked: Bits::bit(k),
             };
             let b = c2_formats::mee::resolve(b, &picked);
             b.get(&["basescore"]).map(c2_formats::res_txt::c_atof)
@@ -87,7 +88,7 @@ fn hunt_homes(huntdat: &Path, menu: &MenuData, maps: &[PathBuf]) -> Option<Vec<V
         let h = c2_formats::mee::Hunt {
             area: c2_formats::mee::area_of(&stem),
             time: 1,
-            picked: u128::MAX,
+            picked: Bits::ALL,
         };
         let t = c2_formats::mee::Tables::read(&res, &h);
         for c in &t.characters {
@@ -217,7 +218,7 @@ enum Screen {
 struct Choice {
     area: usize,
     /// Bit per dinosaur (AI 10 + i) / weapon / accessory.
-    dinos: u128,
+    dinos: Bits,
     weapons: u128,
     equip: u32,
     /// 0 dawn, 1 day, 2 night.
@@ -486,7 +487,7 @@ fn modded_survival(huntdat: &Path) -> Option<c2_formats::mee::SurvivalCommon> {
     let h = c2_formats::mee::Hunt {
         area: Some(c.area),
         time: c.time,
-        picked: 0,
+        picked: Bits::NONE,
     };
     let t = c2_formats::mee::Tables::read(&res, &h);
     (t.survival.is_some() && !t.survival_roster().is_empty()).then_some(c)
@@ -910,7 +911,7 @@ impl Menu {
             }
             "hunt" => {
                 // Something picked, to show the lists and account.
-                self.choice.dinos = 1;
+                self.choice.dinos = Bits::bit(0);
                 self.choice.weapons = 1;
                 self.choice.focus = Some((1, 0));
                 Screen::Setup
@@ -1001,13 +1002,13 @@ impl Menu {
         self.me().is_some_and(|s| s.options.tranq != 0)
     }
 
-    fn picked_mask(&self, col: usize) -> u128 {
+    fn picked_mask(&self, col: usize) -> Bits {
         let c = &self.choice;
         match col {
-            0 => 1u128.checked_shl(c.area as u32).unwrap_or(0),
+            0 => Bits::bit(c.area),
             1 => c.dinos,
-            2 => c.weapons,
-            _ => u128::from(c.equip),
+            2 => Bits::from(c.weapons),
+            _ => Bits::from(u128::from(c.equip)),
         }
     }
 
@@ -1021,7 +1022,7 @@ impl Menu {
         for (ci, c) in self.columns.iter().enumerate() {
             let mask = self.picked_mask(ci);
             for (i, p) in c.prices.iter().enumerate() {
-                if i < 128 && mask & (1 << i) != 0 {
+                if mask.has(i) {
                     spent += p;
                 }
             }
@@ -1032,7 +1033,7 @@ impl Menu {
     fn can_hunt(&self) -> bool {
         self.choice.area < self.areas.len()
             && (self.choice.observer
-                || (self.choice.dinos != 0 || self.choice.survival.is_some())
+                || (!self.choice.dinos.is_empty() || self.choice.survival.is_some())
                     && self.choice.weapons != 0)
             && self.remaining() >= 0
     }
@@ -1188,7 +1189,7 @@ impl Menu {
                 if let Some(trophy) =
                     find_file(&self.huntdat, "AREAS").and_then(|a| find_file(&a, "TROPHY.MAP"))
                 {
-                    self.start(trophy, TimeOfDay::Day, 0, 0, false, false);
+                    self.start(trophy, TimeOfDay::Day, Bits::NONE, 0, false, false);
                 }
             }
             4 => self.screen = Screen::Credits,
@@ -1281,7 +1282,7 @@ impl Menu {
     fn toggle_observer(&mut self) {
         self.choice.observer = !self.choice.observer;
         if !self.choice.observer && self.remaining() < 0 {
-            self.choice.dinos = 0;
+            self.choice.dinos = Bits::NONE;
             self.choice.weapons = 0;
             self.choice.equip = 0;
         }
@@ -1290,22 +1291,27 @@ impl Menu {
     /// Picks (or drops) item `r` of list `col`, unless the account can't
     /// pay for it.
     fn pick(&mut self, col: usize, r: usize) {
-        // Picks are bit masks; animals go to the hunt as bits 10 and up of
-        // 128.
+        // Picks are bit masks; animals go to the hunt as bits 10 and up.
         let max = match col {
-            1 => 118,
+            1 => Bits::LEN - 10,
             2 => 128,
             _ => 32,
         };
         if r >= max {
             return;
         }
-        let bit = 1u128 << r;
+        let bit = 1u128.checked_shl(r as u32).unwrap_or(0);
         let price = self.columns[col].prices[r];
         let old = self.choice.clone();
         match col {
             0 => self.choice.area = r,
-            1 => self.choice.dinos ^= bit,
+            1 => {
+                if self.choice.dinos.has(r) {
+                    self.choice.dinos.clear(r);
+                } else {
+                    self.choice.dinos.set(r);
+                }
+            }
             2 => self.choice.weapons ^= bit,
             _ => self.choice.equip ^= bit as u32,
         }
@@ -1328,14 +1334,14 @@ impl Menu {
             let seed = clock_seed() as usize;
             c.area = seed % self.areas.len().max(1);
             c.time = seed / 7 % 3;
-            c.dinos = u128::MAX >> 10;
+            c.dinos = Bits::ALL;
             c.equip = 0;
         }
         let time = [TimeOfDay::Dusk, TimeOfDay::Day, TimeOfDay::Night][c.time];
         let (targets, weapons) = if c.observer {
-            (0, 0)
+            (Bits::NONE, 0)
         } else {
-            (c.dinos << 10, c.weapons)
+            (c.dinos.up(10), c.weapons)
         };
         let map = self.areas[c.area].clone();
         let double = !c.observer && c.equip & 8 != 0;
@@ -1406,7 +1412,7 @@ impl Menu {
         };
         let n = self.columns[2].names.len().max(1);
         let weapon = c.weapon.min(n - 1).min(127);
-        self.start(map.clone(), time, u128::MAX, 1 << weapon, false, false);
+        self.start(map.clone(), time, Bits::ALL, 1 << weapon, false, false);
         if let Some(l) = &mut self.launch {
             l.survival = Some(SurvivalKind::Mee);
         }
@@ -1435,7 +1441,7 @@ impl Menu {
         self.start(
             map.clone(),
             TimeOfDay::Day,
-            u128::MAX,
+            Bits::ALL,
             1 << shotgun,
             false,
             false,
@@ -1463,7 +1469,7 @@ impl Menu {
         &mut self,
         map: PathBuf,
         time: TimeOfDay,
-        targets: u128,
+        targets: Bits,
         weapons: u128,
         double_ammo: bool,
         observer: bool,
@@ -1846,7 +1852,7 @@ impl Menu {
                 }
                 let name = &col.names[i];
                 let y = col.rect.1 + 6.0 + (row - col.scroll) as f32 * ROW_H;
-                let picked = i < 128 && mask & (1 << i) != 0;
+                let picked = mask.has(i);
                 let price = col.prices[i];
                 let affordable = c.observer || picked || left - price >= 0;
                 let color = if picked {
@@ -1932,7 +1938,7 @@ impl Menu {
             self.text(out, 416.0, 80.0 + i as f32 * 17.0, 12.0, TEXT, l);
         }
         if !self.can_hunt() && region == 8 {
-            let why = if self.choice.dinos == 0 && self.choice.survival.is_none() {
+            let why = if self.choice.dinos.is_empty() && self.choice.survival.is_none() {
                 "Choose dinosaurs to hunt"
             } else {
                 "Choose a weapon"

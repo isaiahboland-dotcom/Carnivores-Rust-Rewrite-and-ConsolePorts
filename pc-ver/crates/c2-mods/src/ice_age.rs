@@ -629,7 +629,7 @@ mod tests {
         let h = |area| c2_formats::mee::Hunt {
             area,
             time: 1,
-            picked: 0,
+            picked: c2_formats::bits::Bits::NONE,
         };
         let t = c2_formats::mee::Tables::read(&d, &h(Some(3)));
         assert_eq!(t.snow.map(|s| (s.dens, s.v_spd)), Some((2000, 192)));
