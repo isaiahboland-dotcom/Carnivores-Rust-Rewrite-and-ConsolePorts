@@ -14,6 +14,7 @@ pub mod patch;
 pub mod recipe;
 pub mod res_merge;
 pub mod resolve;
+pub mod standalone;
 
 use std::path::PathBuf;
 
@@ -46,4 +47,6 @@ pub enum ModError {
     Recipe(String),
     #[error("{0} is not empty and was not built by c2rs; refusing to overwrite it")]
     NotAPack(PathBuf),
+    #[error("standalone games: {0}")]
+    Standalone(String),
 }

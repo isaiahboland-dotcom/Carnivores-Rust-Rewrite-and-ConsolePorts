@@ -514,7 +514,7 @@ fn is_anim_sub(name: &str) -> bool {
     ["idlegroup", "idle2group", "deathtype", "killtype"].contains(&n.as_str())
 }
 
-fn has_anims(b: &Block) -> bool {
+pub(crate) fn has_anims(b: &Block) -> bool {
     b.entries.iter().any(|e| is_anim_key(&e.key)) || b.subs.iter().any(|s| is_anim_sub(&s.name))
 }
 
@@ -554,7 +554,7 @@ const MOVE_KEYS: [&str; 15] = [
 /// Edition: `from`'s animation keys and blocks and the movement keys it
 /// lacks (same AI, so the same animation order and gait); other engines'
 /// speed keys dropped.
-fn copy_anims(from: &Block, to: &mut Block) {
+pub(crate) fn copy_anims(from: &Block, to: &mut Block) {
     to.entries
         .retain(|e| !OTHER_SPEEDS.iter().any(|k| e.key.eq_ignore_ascii_case(k)));
     let has = |b: &Block, k: &str| b.entries.iter().any(|e| e.key.eq_ignore_ascii_case(k));
@@ -582,13 +582,13 @@ fn copy_anims(from: &Block, to: &mut Block) {
 
 /// Spawn or pack tables (`spawninfo`, `spawngroup`, `packinfo`,
 /// `packgroup`).
-fn is_spawn_sub(name: &str) -> bool {
+pub(crate) fn is_spawn_sub(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
     n.contains("spawn") || n.contains("pack")
 }
 
 /// Does `b` (or an `overwrite` / `addition` in it) say where it spawns?
-fn has_spawns(b: &Block) -> bool {
+pub(crate) fn has_spawns(b: &Block) -> bool {
     b.subs
         .iter()
         .any(|s| is_spawn_sub(&s.name) || has_spawns(&s.block))

@@ -2,6 +2,45 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-23 — M16: standalone games combined (`c2_mods::standalone`)
+- **Owner's choice**: the combining is public, generic code (users drop
+  their own standalones in); no standalone is named in public files. The
+  3DS keeps one pack per standalone; the PC combines them all.
+- **How** (`build`): the base is the game with the Modder's Edition over it
+  (its `_MENU.TXT` is required). Each standalone gets the next area numbers,
+  huntable and weapon slots (menu pictures, texts, calls renumbered;
+  `_MENU.TXT` extended), its files under `HUNTDAT/MODS/<game>/` (weapons as
+  `WEAPONS/<game>_<file>`), its characters appended with `areaN` / `charN`
+  conditions, `callNo` / `fearCall`, spawn and pack table numbers and
+  `hunterAnim` (merged hunter) moved. **Tied**: a game's animals spawn on its
+  own maps only (the base's on the base's); `--ambients random` lets
+  ambients roam every map. Same-name animals get " (<game>)"; a weapon the
+  game already has (same name and model) is shared.
+- **Fixes on real data**: models a condition switches to per area
+  (`overwrite areaN { file = ... }`) are moved too (they pointed nowhere);
+  a menu listing more areas than the game has maps keeps those it has.
+- **Original-engine standalones** (`to_dialect`), and dialect-looking ones
+  without spawn tables: that engine fixes each AI's animation order, gait
+  and placement, so each animal takes the base's same-AI animal's animation
+  and movement keys (unless it has its own) and its spawn blocks, its
+  "picked" condition moved to the animal's own slot (only the spawn part: the
+  donor's score or radar there are its own); the base's spawn and pack
+  tables come along. The original's brachiosaur (AI 6; the dialect's 6 is
+  the pig) takes the base's brachiosaur. An AI the base doesn't have (a
+  patched engine's extra slot, 19) takes a hunter's kind if `danger`ous,
+  else a grazer's, with roles from its model's animation names
+  (`run`, `wlk`, `die`, `slp`, `idle`, `jmp`, `swim`, `eat`, `roar`...);
+  its own health, mass, score and senses stay.
+- `c2-pc combine GAME... --base --overlay [--mod] [--ambients] --out`;
+  `c2-pc play BASE --overlay ME --standalone DIR...` builds it in the data
+  dir (`packs/combined-...`); add-ons over it are kept to the base's maps,
+  then the balance file.
+- Checked: the owner's 13 standalones (6 dialect, 7 original-engine or
+  similar) combine in under a second into 86 areas, 130 huntables and 101
+  weapons; `c2-parity mee-sim` places and runs animals on each game's areas.
+  Open: past 118 huntables the menu can't pick (slot bits); a hunter model
+  with another body (one game's) keeps its kills unmerged.
+
 ## 2026-10-23 — M9: the wary flyer; the AI families done
 - **Survey**: every dialect `_RES.TXT` here (game folders, add-ons, the
   APK imports) uses AI 0-6, 10-27 and 30-35, all ported already. None uses
@@ -19,8 +58,8 @@ Newest first. Each entry: what, why, and what it affects.
   upstream (its animals stand still there). Both keep the interim
   original AI (Ceratosaurus, Velociraptor) so a mod using them still plays.
 - Checked: a synthetic wary flyer (spooked, calls, flies off, calms);
-  `c2-parity mee-sim` over CClassic, Anachronous, Genesis Redux, the
-  Modder's Edition, Triassic and C2DE: no failures, slowest step 0.71 ms.
+  `c2-parity mee-sim` over the Modder's Edition and the five other dialect
+  game folders we have: no failures, slowest step 0.71 ms.
 
 ## 2026-10-23 — Survival modes: classic, modded; ours benched
 - **Owner's choice**: the survivals offered are the mobile game's classic
@@ -48,9 +87,9 @@ Newest first. Each entry: what, why, and what it affects.
   (the dearest kept). From the box (`spawn_in_box`), the hunter at the spot
   facing `survivalPlayerA`, unlimited ammunition, the next wave 2 s after
   one falls (`WaveNoteTime`). 3DS: only roster animals the pack loaded.
-- Checked: CClassic MEE's pack (`c2-cook --check`): roster Allosaurus,
-  Lifranyx, Laelaps, Stokesosaurus, T-Rex; five waves growing as the rule
-  says, each coming to the hunter.
+- Checked: a dialect game's pack (`c2-cook --check`): a roster of five
+  (an Allosaurus first, a T-Rex last); five waves growing as the rule says,
+  each coming to the hunter.
 
 ## 2026-10-23 — M9: the dialect's weapons
 - **Scope**: the keys the dialect games here use (counted over every
@@ -80,7 +119,7 @@ Newest first. Each entry: what, why, and what it affects.
   the sound stays the slot's own (the dialect plays the animation's
   `Anifx`; every dialect weapon here numbers them 0-3, so the same).
 - Not yet: muzzle flash, bullets drawn in flight (`bModel`), chambered
-  rounds and part reloads (`rldAnimPart`, `picc`; C2DE's double shotgun),
+  rounds and part reloads (`rldAnimPart`, `picc`; one game's double shotgun),
   underwater stats, harpoons, retrieving arrows, held breath.
 - **Weather** in the dialect is the area table's snow, done with M14.
 

@@ -270,7 +270,13 @@ fn entry(key: &str, value: impl ToString) -> Entry {
 /// conditions (`overwrite char5`: radar, the picked spawn group) are kept
 /// when the animal gets a slot of its own (`slot`): building moves them to
 /// that slot.
-fn make_entry(donor: &Block, name: &str, car: &str, roles: &[Option<&str>], slot: bool) -> Block {
+pub(crate) fn make_entry(
+    donor: &Block,
+    name: &str,
+    car: &str,
+    roles: &[Option<&str>],
+    slot: bool,
+) -> Block {
     let char_cond = |n: &str| {
         !slot && (n.starts_with("overwrite") || n.starts_with("addition")) && n.contains("char")
     };

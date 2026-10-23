@@ -29,7 +29,7 @@ use c2_core::area::TimeOfDay;
 use c2_core::game::SurvivalKind;
 
 const USAGE: &str = "usage:
-  c2-pc play  <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR] [--balance FILE]
+  c2-pc play  <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR] [--balance FILE]
               [--screen main|stats|hunt|options|credits|register|quit]
               [--script 'X,Y;'TEXT;enter;esc'] [--shot out.png]\n              [--survival-modes classic,modded,ours] [--mobile-survival FILE]
   c2-pc balance <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]...   (prints prices and scores as a balance file)
@@ -37,6 +37,8 @@ const USAGE: &str = "usage:
   c2-pc mobile <APK> --values                                         (its tuning values)
   c2-pc iceage <ICE_AGE_DIR> --base <GAME_DIR> [--overlay DIR]... --out <DIR>
                                         (Ice Age's animals and areas as add-ons beside C2's)
+  c2-pc combine <GAME_DIR>... --base <GAME_DIR> --overlay <ME_DIR> [--mod DIR]... [--ambients tied|random] --out <DIR>
+                                        (standalone games beside the base, add-ons over them)
   c2-pc mod detect <MOD_DIR>... --base <GAME_DIR> [--write]
   c2-pc mod build  <MOD_DIR>... --base <GAME_DIR> --out <DIR>
   c2-pc recipe verify <RECIPE.toml> --base <GAME_DIR> --mods <DIR>
@@ -85,6 +87,8 @@ const VALUE_FLAGS: &[&str] = &[
     "id",
     "name",
     "overlay",
+    "standalone",
+    "ambients",
     "balance",
     "menu-art",
     "survival",
@@ -144,6 +148,16 @@ impl Opts {
                 .map_err(|_| anyhow::anyhow!("--{f}: invalid value {v:?}")),
         }
     }
+}
+
+/// `--ambients tied|random`: where standalones' ambient animals live.
+fn ambients(o: &Opts) -> Result<c2_mods::standalone::Ambients> {
+    use c2_mods::standalone::Ambients;
+    Ok(match o.value("ambients") {
+        None | Some("tied") => Ambients::Tied,
+        Some("random") => Ambients::Random,
+        Some(v) => bail!("--ambients tied|random, not {v:?}"),
+    })
 }
 
 /// `--mobile-survival FILE`: the mobile game's Survive mode.
@@ -231,6 +245,28 @@ fn main() -> Result<()> {
         for d in import.added {
             println!("{}", d.display());
         }
+        return Ok(());
+    }
+    // Standalone games combined beside the base (README M16).
+    if cmd == "combine" {
+        let bases = mods_cli::bases(o.value("base"), &o.values("overlay"))?;
+        let out = PathBuf::from(o.value("out").context("--out DIR")?);
+        let games: Vec<PathBuf> = o.positional.iter().map(PathBuf::from).collect();
+        if games.is_empty() {
+            bail!("c2-pc combine GAME_DIR... --base GAME --overlay ME --out DIR");
+        }
+        let mods: Vec<PathBuf> = o
+            .values("mod")
+            .into_iter()
+            .flat_map(|m| c2_mods::expand_addons(std::path::Path::new(m)))
+            .collect();
+        let balance = o.value("balance").map(std::path::Path::new);
+        mods_cli::build_combined(&bases, &games, &mods, balance, ambients(&o)?, &out)?;
+        println!(
+            "\nWritten to {}. Play: c2-pc play \"{}\"",
+            out.display(),
+            out.display()
+        );
         return Ok(());
     }
     if cmd == "mod" {
@@ -426,7 +462,24 @@ fn main() -> Result<()> {
             if mods_cli::is_ice_age(&path) {
                 let _ = save::PROFILE.set("ice-age");
             }
-            let path = if let Some(r) = recipe {
+            // --standalone DIR (repeatable): standalone games beside the base.
+            let standalones: Vec<PathBuf> = o
+                .values("standalone")
+                .into_iter()
+                .map(PathBuf::from)
+                .collect();
+            let path = if !standalones.is_empty() {
+                let out = mods_cli::combined_dir(&standalones, &mods);
+                mods_cli::build_combined(
+                    &bases,
+                    &standalones,
+                    &mods,
+                    balance,
+                    ambients(&o)?,
+                    &out,
+                )?;
+                out
+            } else if let Some(r) = recipe {
                 let mods_dir = PathBuf::from(o.value("mods").context("--recipe needs --mods DIR")?);
                 let out = mods_cli::recipe_pack_dir(&r);
                 mods_cli::build_recipe(&r, &bases, &mods_dir, balance, &out)?;

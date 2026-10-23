@@ -74,6 +74,43 @@ pub fn build_pack(
     Ok(())
 }
 
+/// Standalone games combined beside the base (README M16) into `out`, then
+/// add-ons and a balance file over that.
+pub fn build_combined(
+    bases: &[PathBuf],
+    standalones: &[PathBuf],
+    mods: &[PathBuf],
+    balance_file: Option<&Path>,
+    ambients: c2_mods::standalone::Ambients,
+    out: &Path,
+) -> Result<()> {
+    use c2_mods::standalone::{add_ons, build, Options};
+    let o = Options { ambients };
+    let games = if mods.is_empty() && balance_file.is_none() {
+        out.to_path_buf()
+    } else {
+        PathBuf::from(format!("{}.games", out.display()))
+    };
+    let built = build(bases, standalones, &games, &o)?;
+    print!("{}", built.report);
+    if games != out {
+        let mut pack = add_ons(&games, mods, &built, &o)?;
+        balance(&mut pack, balance_file)?;
+        materialize(&pack, out).with_context(|| format!("writing {}", out.display()))?;
+    }
+    Ok(())
+}
+
+/// Where `play --standalone` keeps its combined game (named after the
+/// standalones; add-ons, if any, after them).
+pub fn combined_dir(standalones: &[PathBuf], mods: &[PathBuf]) -> PathBuf {
+    let p = pack_dir(standalones, mods);
+    let name = p
+        .file_name()
+        .map_or_else(|| "base".into(), |n| n.to_string_lossy().into_owned());
+    p.with_file_name(format!("combined-{name}"))
+}
+
 /// Where `play --mod` keeps its combined games (named after the overlays
 /// and mods).
 pub fn pack_dir(overlays: &[PathBuf], mods: &[PathBuf]) -> PathBuf {
