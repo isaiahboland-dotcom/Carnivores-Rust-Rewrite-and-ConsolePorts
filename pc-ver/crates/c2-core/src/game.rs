@@ -2372,6 +2372,43 @@ mod tests {
     }
 
     #[test]
+    fn mobile_survival_on_ice_age_takes_stand_ins_round_the_hunter() {
+        let (area, mut hunt, car) = setup(false);
+        for (name, a) in [("Smilodon", ai::ALLO), ("Wooly rhinoceros", ai::CHASM)] {
+            let mut i = info(a);
+            i.name = name.into();
+            hunt.herd.species.push(Species::new(i, &car));
+        }
+        let sv = c2_formats::mobile_arcade::Survive {
+            area: 5,
+            hunter: [100_000.0, 100_000.0],
+            spawn: [100_000.0, 110_000.0, 500.0, 500.0],
+            first_ms: 500,
+            rest_ms: 2000,
+            waves: vec![vec!["Allosaurus".into(), "Chasmosaurus".into()]],
+            after: vec!["Allosaurus".into()],
+            stand_ins: false,
+        };
+        let start = (hunt.player.x, hunt.player.z);
+        let o = SurvivalOptions::mobile(&hunt, &sv, 8).expect("stand-ins");
+        let m = o.mobile.clone().unwrap_or_default();
+        assert!(m.stand_ins);
+        assert_eq!(m.waves, vec![vec![2, 3]]);
+        hunt.start_survival(&area, o);
+        // Not moved to Mount Ravan's spot.
+        assert_eq!((hunt.player.x, hunt.player.z), start);
+        let cars = [None, Some(&car), Some(&car), Some(&car)];
+        let mut out = Vec::new();
+        for _ in 0..60 {
+            hunt.tick(&area, &cars, &HuntInput::default(), 10, &mut out);
+        }
+        let wave: Vec<&Character> = hunt.herd.chars.iter().filter(|c| c.wave == 1).collect();
+        assert_eq!(wave.len(), 2);
+        // Round the hunter, not in the box.
+        assert!(wave.iter().all(|c| (c.pos[2] - 110_000.0).abs() > 500.0));
+    }
+
+    #[test]
     fn mobile_survival_sends_its_waves_from_its_box() {
         let (area, mut hunt, car) = setup(false);
         for (name, a) in [("Chasmosaurus", ai::CHASM), ("Allosaurus", ai::ALLO)] {
@@ -2387,6 +2424,7 @@ mod tests {
             rest_ms: 2000,
             waves: vec![vec!["Chasmosaurus".into()], vec!["Allosaurus".into(); 2]],
             after: vec!["Chasmosaurus".into(); 3],
+            stand_ins: false,
         };
         let missing = c2_formats::mobile_arcade::Survive {
             after: vec!["Utahraptor".into()],

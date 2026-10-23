@@ -42,14 +42,20 @@ pub struct MobileWaves {
     pub hunter: [f32; 2],
     pub first_ms: i32,
     pub rest_ms: i32,
+    /// Ice Age stand-ins, away from Mount Ravan: the hunter keeps his start
+    /// and the waves come round him as in our survival (no box).
+    pub stand_ins: bool,
 }
 
 impl MobileWaves {
-    /// `s`'s animals found among `species` by name; `None` if one isn't.
+    /// `s`'s animals found among `species` by name, or their stand-ins
+    /// (`Survive::for_game`); `None` if one isn't.
     pub fn new(
         s: &c2_formats::mobile_arcade::Survive,
         species: &[crate::dino::Species],
     ) -> Option<Self> {
+        let names: Vec<String> = species.iter().map(|sp| sp.info.name.clone()).collect();
+        let s = &s.for_game(&names)?;
         let norm = |n: &str| -> String {
             n.chars()
                 .filter(char::is_ascii_alphanumeric)
@@ -65,6 +71,7 @@ impl MobileWaves {
             hunter: s.hunter,
             first_ms: s.first_ms,
             rest_ms: s.rest_ms,
+            stand_ins: s.stand_ins,
         })
     }
 
@@ -377,7 +384,7 @@ impl Hunt {
         }) {
             self.remove_character(i);
         }
-        if let Some(m) = &opts.mobile {
+        if let Some(m) = opts.mobile.as_ref().filter(|m| !m.stand_ins) {
             let cell = |v: f32| (v / 256.0).clamp(1.0, 1022.0) as u16;
             self.player = crate::player::Player::new(area, (cell(m.hunter[0]), cell(m.hunter[1])));
         }
@@ -466,7 +473,11 @@ impl Hunt {
         let s = self.survival.clone().unwrap_or_default();
         if let Some(m) = &s.opts.mobile {
             for &ctype in m.wave(n).iter().take(s.opts.max_wave.max(1)) {
-                self.spawn_in_box(area, ctype, n, m.spawn);
+                if m.stand_ins {
+                    self.spawn_wave_animal(area, ctype, n);
+                } else {
+                    self.spawn_in_box(area, ctype, n, m.spawn);
+                }
             }
             self.health = MAX_HEALTH;
             self.weapons.resupply();

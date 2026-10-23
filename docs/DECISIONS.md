@@ -2,6 +2,22 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-23 — Classic survival on Ice Age, in place of its Arcade
+- **Owner's choice**: Ice Age's own mobile Arcade isn't ported. The Ice Age
+  game has our survival, and the Dinosaur Hunter's classic survival when
+  that APK has been imported (`mobile-survival.txt`), "for now".
+- **Stand-ins** (`mobile_arcade::STAND_INS`, `Survive::for_game`): an
+  animal of the mode the game lacks becomes an Ice Age one alike in role:
+  Allosaurus the Smilodon, Velociraptor the Wolf, Spinosaurus the Bear,
+  Ceratosaurus the Diatryma, Chasmosaurus the Wooly rhinoceros. A game with
+  the originals (C2, the combined game) is unchanged.
+- **Where**: the 5th area, as the mobile mode uses Mount Ravan's slot. The
+  box and the hunter's spot are Mount Ravan's, so with stand-ins the hunter
+  keeps the normal start and the waves come round him as in our survival;
+  the waves, their sizes and the timing stay the mobile game's.
+- `c2-cook --check` now plays the first five classic waves of a pack that
+  has the mode (hunter kept alive; each wave felled once it has come).
+
 ## 2026-10-23 — M15: numbered mobile animation sets by their clips
 - **Bugs found**: numbered sets were given roles by count. 11 clips took the
   Dinosaur Hunter's order (death 6th), and other counts played as the

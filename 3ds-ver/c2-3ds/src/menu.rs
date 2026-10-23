@@ -765,7 +765,7 @@ impl Menu {
             .areas
             .iter()
             .position(|a| a.0.eq_ignore_ascii_case(&name))
-            .ok_or("Mount Ravan isn't in this pack")?;
+            .ok_or("Classic survival's area isn't in this pack")?;
         self.time = 1;
         self.survival = Some(SurvivalKind::Mobile);
         self.observer = false;
@@ -775,6 +775,11 @@ impl Menu {
                 .map(|c| c.to_ascii_lowercase())
                 .collect()
         };
+        // Ice Age's stand-ins where the game lacks the mode's animals.
+        let names: Vec<String> = self.dinos.iter().map(|d| d.1.name.clone()).collect();
+        let m = m
+            .for_game(&names)
+            .ok_or("This game lacks classic survival's animals")?;
         let wanted: Vec<String> = m.animals().iter().map(|n| norm(n)).collect();
         self.extra_dinos = (0..self.dinos.len())
             .filter(|&i| wanted.contains(&norm(&self.dinos[i].1.name)))

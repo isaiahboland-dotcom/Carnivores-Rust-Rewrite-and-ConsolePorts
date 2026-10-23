@@ -1,14 +1,15 @@
 //! `c2-cook --check PACK`: loads a cooked pack the way `c2-3ds` does (its
 //! own `rules.rs`) and plays a short hunt for each animal on the PC, to find
 //! pack problems without a console: missing models, textures or sounds,
-//! animals that never spawn.
+//! animals that never spawn. A pack with classic survival plays a few of
+//! its waves too.
 
 use std::path::Path;
 
 use anyhow::{Context, Result};
 use c2_core::area::TimeOfDay;
 use c2_core::dino::{Herd, PlaceOptions};
-use c2_core::game::{Hunt, HuntInput, HuntOptions, Weapons};
+use c2_core::game::{Hunt, HuntInput, HuntOptions, SurvivalOptions, Weapons};
 use c2_core::player::Player;
 use c2_core::rng::MsRand;
 use c2_vfs::PackBackend;
@@ -235,11 +236,113 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
             );
         }
     }
+    if bench.is_none() {
+        if let Some(d) = vfs.read("C2RS/SURVIVE.TXT").ok() {
+            let m = c2_formats::mobile_arcade::Survive::parse(&String::from_utf8_lossy(&d));
+            if !classic(&vfs, &rules, &m)? {
+                problems += 1;
+            }
+        }
+    }
     if problems > 0 {
         anyhow::bail!("{problems} hunts with missing files");
     }
     println!("ok");
     Ok(())
+}
+
+/// Classic survival on its area with every animal loaded: the hunter
+/// stands; each wave, once it has come, is felled. Prints what each wave
+/// brought and how near it came. `false`: it didn't run.
+fn classic(vfs: &Vfs, rules: &Rules, m: &c2_formats::mobile_arcade::Survive) -> Result<bool> {
+    let area_name = format!("AREA{}", m.area);
+    println!("classic survival ({area_name}):");
+    let Ok(area) = c2_core::load::area_with(vfs, &area_name, TimeOfDay::Day, true) else {
+        println!("  MISSING: its area");
+        return Ok(false);
+    };
+    let hr = rules.hunt(&area_name, TimeOfDay::Day, u128::MAX);
+    let keep = |i: usize| !matches!(hr.roles.get(i), Some(Role::Off) | None);
+    let (mut species, cars) = c2_core::load::species_with(vfs, &hr.res, &keep);
+    if let Some(t) = &hr.tables {
+        c2_core::mee::tune(&mut species, t);
+    }
+    let rng = MsRand::new(7);
+    let cell = area.landings.first().copied().unwrap_or((512, 512));
+    let player = Player::new(&area, cell);
+    let herd = Herd {
+        species,
+        ..Default::default()
+    };
+    let opts = HuntOptions {
+        targets: u128::MAX,
+        view_r: 34,
+        render_r: 34,
+        ..Default::default()
+    };
+    let room = c2_core::profile::new_player("check", 0, 0);
+    let mut hunt = Hunt::new(
+        &area,
+        player,
+        herd,
+        Weapons::new(vec![], vec![], 0, false),
+        rng,
+        opts,
+        room,
+    );
+    let Some(o) = SurvivalOptions::mobile(&hunt, m, 6) else {
+        println!("  MISSING: its animals (or their stand-ins)");
+        return Ok(false);
+    };
+    if o.mobile.as_ref().is_some_and(|w| w.stand_ins) {
+        println!("  with stand-ins, round the hunter");
+    }
+    hunt.start_survival(&area, o);
+    let car_refs: Vec<_> = cars.iter().map(Option::as_ref).collect();
+    let mut out = Vec::new();
+    let mut near = f32::MAX;
+    let mut shown = 0;
+    for t in 0..15_000u32 {
+        hunt.health = c2_core::game::MAX_HEALTH;
+        hunt.tick(&area, &car_refs, &HuntInput::default(), 20, &mut out);
+        out.clear();
+        let alive: Vec<usize> = (0..hunt.herd.chars.len())
+            .filter(|&i| hunt.herd.chars[i].wave > 0 && hunt.herd.chars[i].health > 0)
+            .collect();
+        for &i in &alive {
+            let c = &hunt.herd.chars[i];
+            near = near.min((c.pos[0] - hunt.player.x).hypot(c.pos[2] - hunt.player.z));
+        }
+        let wave = hunt.wave();
+        if wave > shown && !alive.is_empty() {
+            let names: Vec<String> = alive
+                .iter()
+                .map(|&i| {
+                    hunt.herd.species[hunt.herd.chars[i].ctype]
+                        .info
+                        .name
+                        .clone()
+                })
+                .collect();
+            println!("  wave {wave}: {}", names.join(", "));
+            shown = wave;
+            near = f32::MAX;
+        }
+        // Felled once it is close (or after 40 s).
+        let close = near < 256.0 * 6.0;
+        if !alive.is_empty() && (close || t % 2000 == 1999) {
+            println!("    came to {:.0} cells", near / 256.0);
+            for i in alive {
+                hunt.debug_bag(&area, i, &mut out);
+            }
+            out.clear();
+            near = f32::MAX;
+        }
+        if shown >= 5 {
+            break;
+        }
+    }
+    Ok(shown > 0)
 }
 
 /// The hunter 1200 units from the first animal of `wanted`, standing for

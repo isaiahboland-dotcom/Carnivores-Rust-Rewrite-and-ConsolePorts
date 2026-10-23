@@ -540,7 +540,9 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] owner's design: ours = random dangerous animals (always aggressive) on a random area, only the gun
         pick shown; classic = straight in on Mount Ravan with the shotgun; main menu / title buttons
   - [ ] owner's hardware test (wave size and pace on Old 3DS)
-  - [ ] Ice Age's Arcade (its own map; with M14)
+  - [x] instead of Ice Age's own Arcade (owner, 2026-10-23): the Ice Age game gets our survival, and the
+        Dinosaur Hunter's classic survival when that APK is imported, with Ice Age stand-ins (Smilodon, Wolf,
+        Bear, Diatryma, Wooly rhinoceros) on its 5th area, round the hunter; `c2-cook --check` plays its waves
 - [ ] M14 Carnivores: Ice Age — **in progress**
   - [x] Ice Age as a base game on PC and 3DS: its `_RES.TXT` rewritten in the dialect (`c2_mods::ice_age`;
         its own models, maps, menus, the Modder's Edition's Ice Age AIs); every animal hunts on every area
@@ -549,7 +551,6 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
         Ice Age...", `c2-pc iceage`: add-ons from your Ice Age folder; Ice Age's kill animations merged into the
         hunter; its areas snow)
   - [x] Ice Age's ambient animals in the combined game (on its areas only)
-  - [ ] Ice Age's Arcade (classic survival on its map)
   - [ ] owner's test (PC and hardware)
 - [ ] M15 Mobile assets — **in progress**
   - [x] mobile formats (`c2_formats::mobile`: `.cat`, `.3dn`, `.ani`, ETC1 `.pkm`, `.crt`, IMA ADPCM) rebuilt as `.CAR`

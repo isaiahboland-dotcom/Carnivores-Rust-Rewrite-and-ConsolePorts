@@ -346,6 +346,28 @@ pub struct Survive {
     pub rest_ms: i32,
     pub waves: Vec<Vec<String>>,
     pub after: Vec<String>,
+    /// Played with stand-ins ([`Survive::for_game`]), away from Mount
+    /// Ravan: no box or hunter's spot (not written).
+    pub stand_ins: bool,
+}
+
+/// Ice Age's animals in place of the Carnivores 2 ones the mode sends
+/// (owner's choice), for an Ice Age game, which has neither them nor Mount
+/// Ravan: alike in role (a raptor's pack hunter, the big killer...).
+pub const STAND_INS: &[(&str, &str)] = &[
+    ("Allosaurus", "Smilodon"),
+    ("Velociraptor", "Wolf"),
+    ("Spinosaurus", "Bear"),
+    ("Ceratosaurus", "Diatryma"),
+    ("Chasmosaurus", "Wooly rhinoceros"),
+];
+
+/// Lower-case letters and digits only (`T-Rex` = `trex`).
+fn norm(n: &str) -> String {
+    n.chars()
+        .filter(char::is_ascii_alphanumeric)
+        .map(|c| c.to_ascii_lowercase())
+        .collect()
 }
 
 impl Arcade {
@@ -371,6 +393,7 @@ impl Arcade {
             rest_ms: (self.rest_s * 1000.0).round() as i32,
             waves: self.waves.iter().map(named).collect(),
             after: named(&self.after),
+            stand_ins: false,
         }
     }
 }
@@ -434,6 +457,29 @@ impl Survive {
     }
 
     /// Every animal it sends.
+    /// This mode for a game with these animals (`names`): one it lacks
+    /// becomes its stand-in ([`STAND_INS`]), which also drops the box and
+    /// the hunter's spot (they are Mount Ravan's). `None`: an animal and its
+    /// stand-in are both missing.
+    pub fn for_game(&self, names: &[String]) -> Option<Self> {
+        let have: Vec<String> = names.iter().map(|n| norm(n)).collect();
+        let has = |n: &str| have.contains(&norm(n));
+        let mut out = self.clone();
+        let mut stood = false;
+        for n in out.waves.iter_mut().flatten().chain(out.after.iter_mut()) {
+            if has(n) {
+                continue;
+            }
+            let (_, to) = STAND_INS
+                .iter()
+                .find(|(from, to)| norm(from) == norm(n) && has(to))?;
+            *n = (*to).to_string();
+            stood = true;
+        }
+        out.stand_ins |= stood;
+        Some(out)
+    }
+
     pub fn animals(&self) -> Vec<String> {
         let mut v: Vec<String> = self
             .waves
