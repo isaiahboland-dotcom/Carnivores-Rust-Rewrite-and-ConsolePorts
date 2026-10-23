@@ -174,11 +174,13 @@ impl Config {
         std::fs::write(path(), text).map_err(|e| e.to_string())
     }
 
-    pub fn enabled_addons(&self) -> Vec<&Path> {
+    /// The add-ons to load, in order: a folder of add-ons (dropped as one)
+    /// is its add-ons (`c2_mods::expand_addons`).
+    pub fn enabled_addons(&self) -> Vec<PathBuf> {
         self.addons
             .iter()
             .filter(|a| a.enabled)
-            .map(|a| a.path.as_path())
+            .flat_map(|a| c2_mods::expand_addons(&a.path))
             .collect()
     }
 }

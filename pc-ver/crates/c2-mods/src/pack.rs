@@ -63,6 +63,57 @@ fn is_zip(p: &Path) -> bool {
     p.is_file() && p.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip"))
 }
 
+/// The add-ons a folder given as one stands for: a collection (no files
+/// of its own, and three or more add-on folders in it, or two not named
+/// like versions of one add-on: "MEE", "Legacy"...) is its add-ons, each
+/// on its own; anything else is itself. Read as one, a collection's add-ons
+/// would trample each other's menu files.
+pub fn expand_addons(dir: &Path) -> Vec<PathBuf> {
+    let itself = || vec![dir.to_path_buf()];
+    if !dir.is_dir() || find_root(dir).as_deref() == Some(dir) {
+        return itself();
+    }
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return itself();
+    };
+    let entries: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
+    let hidden = |p: &PathBuf| {
+        p.file_name()
+            .is_some_and(|n| n.to_string_lossy().starts_with('.'))
+    };
+    if entries.iter().any(|p| p.is_file() && !hidden(p)) {
+        return itself();
+    }
+    let mut subs: Vec<PathBuf> = entries
+        .into_iter()
+        .filter(|p| p.is_dir() && !hidden(p))
+        .filter(|p| mod_root(p).is_some() || crate::loose::is_loose(p))
+        .collect();
+    subs.sort();
+    let versions = subs.iter().any(|p| {
+        let n = p
+            .file_name()
+            .map(|n| n.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
+        [
+            "mee",
+            "modder",
+            "legacy",
+            "classic",
+            "vanilla",
+            "speed patch",
+            "version",
+        ]
+        .iter()
+        .any(|w| n.contains(w))
+    });
+    if subs.len() >= 3 || (subs.len() == 2 && !versions) {
+        subs
+    } else {
+        itself()
+    }
+}
+
 /// Where a mod's game data is: a `.zip` (its `HUNTDAT` found inside when
 /// opened), else the folder holding `HUNTDAT` (see [`find_root`]).
 pub fn mod_root(path: &Path) -> Option<PathBuf> {
@@ -856,4 +907,36 @@ pub fn materialize(pack: &Pack, out: &Path) -> Result<(), ModError> {
     std::fs::write(out.join(REPORT_FILE), pack.report()).map_err(io(out))?;
     std::fs::write(out.join(PACK_MARKER), "built by c2rs\n").map_err(io(out))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_folder_of_add_ons_is_its_add_ons_but_versions_are_one() {
+        let root = std::env::temp_dir().join(format!("c2rs-expand-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let addon = |p: &Path| {
+            std::fs::create_dir_all(p).unwrap();
+            std::fs::write(p.join("x.car"), b"").unwrap();
+        };
+        // A collection: three add-ons, no files of its own.
+        let all = root.join("all");
+        for n in ["A", "B", "C"] {
+            addon(&all.join(n).join("inner"));
+        }
+        let got = expand_addons(&all);
+        assert_eq!(got.len(), 3);
+        // One add-on with two versions: itself.
+        let one = root.join("one");
+        addon(&one.join("Thing MEE"));
+        addon(&one.join("Thing Legacy"));
+        assert_eq!(expand_addons(&one), [one.clone()]);
+        // A plain add-on: itself.
+        let plain = root.join("plain");
+        addon(&plain);
+        assert_eq!(expand_addons(&plain), [plain.clone()]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

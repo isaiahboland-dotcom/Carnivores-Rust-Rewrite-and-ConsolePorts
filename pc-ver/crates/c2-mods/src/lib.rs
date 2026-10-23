@@ -18,7 +18,9 @@ pub mod resolve;
 use std::path::PathBuf;
 
 pub use manifest::Manifest;
-pub use pack::{build, build_with, load_mod, materialize, vanilla, BuildOptions, ModSource, Pack};
+pub use pack::{
+    build, build_with, expand_addons, load_mod, materialize, vanilla, BuildOptions, ModSource, Pack,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ModError {

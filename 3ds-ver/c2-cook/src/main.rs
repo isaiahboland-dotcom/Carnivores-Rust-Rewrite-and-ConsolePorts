@@ -245,7 +245,9 @@ fn parse_args() -> Result<Args> {
         };
         match arg.as_str() {
             "--game" => a.game = Some(val()?.into()),
-            "--mod" => a.mods.push(val()?.into()),
+            "--mod" => a
+                .mods
+                .extend(c2_mods::expand_addons(std::path::Path::new(&val()?))),
             "--overlay" => a.overlays.push(val()?.into()),
             "--check" => a.check = Some(val()?.into()),
             "--bench" => a.bench = Some(val()?),

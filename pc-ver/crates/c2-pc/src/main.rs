@@ -177,7 +177,11 @@ fn main() -> Result<()> {
     let cmd = args.next().unwrap_or_default();
     let o = Opts::parse(args);
     if cmd == "balance" {
-        let mods: Vec<PathBuf> = o.values("mod").into_iter().map(PathBuf::from).collect();
+        let mods: Vec<PathBuf> = o
+            .values("mod")
+            .into_iter()
+            .flat_map(|m| c2_mods::expand_addons(std::path::Path::new(m)))
+            .collect();
         return mods_cli::print_balance(
             &mods_cli::bases(
                 o.positional.first().map(String::as_str),
@@ -394,7 +398,11 @@ fn main() -> Result<()> {
             // --script: canvas clicks / typing / keys, applied before the shot.
             let script = o.value("script").map(str::to_owned);
             // --mod DIR (repeatable): play a combined game from the data dir.
-            let mods: Vec<PathBuf> = o.values("mod").into_iter().map(PathBuf::from).collect();
+            let mods: Vec<PathBuf> = o
+                .values("mod")
+                .into_iter()
+                .flat_map(|m| c2_mods::expand_addons(std::path::Path::new(m)))
+                .collect();
             let recipe = o.value("recipe").map(PathBuf::from);
             // --overlay DIR (repeatable): files copied over the game first
             // (the Modder's Edition release over the original game).

@@ -142,7 +142,10 @@ pub fn run(args: &[String], bases: Vec<PathBuf>, out: Option<&str>, write: bool)
         }
         "build" => {
             let out = PathBuf::from(out.context("--out DIR is required")?);
-            let mods: Vec<PathBuf> = rest.iter().map(PathBuf::from).collect();
+            let mods: Vec<PathBuf> = rest
+                .iter()
+                .flat_map(|m| c2_mods::expand_addons(Path::new(m)))
+                .collect();
             build_pack(&bases, &mods, None, &out)
         }
         _ => bail!("unknown mod command {sub:?}"),

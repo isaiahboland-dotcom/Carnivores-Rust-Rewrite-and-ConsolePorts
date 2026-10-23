@@ -36,23 +36,38 @@ use crate::ui::{Tap, Ui};
 use crate::world::{Poser, World};
 
 /// The app's folder on the SD card: where it was started from
-/// (`sdmc:/3ds/<name>/<name>.3dsx`), or for an installed `.cia` the name
-/// the launcher put in it, so installs under different names keep their
-/// packs, saves and settings apart; `sdmc:/3ds/c2rs` otherwise.
+/// (`sdmc:/3ds/<name>/<name>.3dsx`; one put straight in `sdmc:/3ds/` uses
+/// `sdmc:/3ds/<name>/` if there is one), or for an installed `.cia` the
+/// name the launcher put in it, so installs under different names keep
+/// their packs, saves and settings apart; `sdmc:/3ds/c2rs` otherwise.
 pub fn dir() -> &'static str {
     static D: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     D.get_or_init(|| {
         std::env::args()
             .next()
-            .and_then(|a| {
-                a.replace('\\', "/")
-                    .rsplit_once('/')
-                    .map(|(d, _)| d.to_string())
-            })
-            .filter(|d| d.len() > "sdmc:/3ds/".len() && d.starts_with("sdmc:/3ds/"))
+            .and_then(|a| from_path(&a))
             .or_else(cia_dir)
             .unwrap_or_else(|| "sdmc:/3ds/c2rs".into())
     })
+}
+
+/// The folder for a start path (`sdmc:/3ds/x/x.3dsx`, `/3ds/x/x.3dsx`,
+/// `sdmc:/3ds/x.3dsx` with a `sdmc:/3ds/x/` beside it).
+fn from_path(start: &str) -> Option<String> {
+    let p = start.replace('\\', "/");
+    let p = match p.strip_prefix("sdmc:") {
+        Some(rest) => rest.to_string(),
+        None => p,
+    };
+    let (d, file) = p.rsplit_once('/')?;
+    let d = format!("sdmc:{d}");
+    if d.len() > "sdmc:/3ds/".len() && d.starts_with("sdmc:/3ds/") {
+        return Some(d);
+    }
+    // Straight in /3ds/: its own folder, if there.
+    let stem = file.rsplit_once('.').map_or(file, |(s, _)| s);
+    let own = format!("sdmc:/3ds/{stem}");
+    (d == "sdmc:/3ds" && !stem.is_empty() && std::path::Path::new(&own).is_dir()).then_some(own)
 }
 
 /// How [`dir`] decided, for the "no pack" screen.
@@ -142,12 +157,14 @@ fn choose_pack(packs: &[PathBuf], apt: &Apt, hid: &mut Hid, gfx: &Gfx) -> Option
         if drawn != Some(at) {
             // Clear and home (the console understands ANSI codes).
             print!("\x1b[2J\x1b[1;1H");
-            println!("c2rs for 3DS\n\nWhich game?\n");
+            println!("c2rs for 3DS\n\nWhich game? (in {}/)\n", dir());
             for (i, p) in packs.iter().enumerate() {
                 let mark = if i == at { '>' } else { ' ' };
                 println!(" {mark} {}", name(p));
             }
             println!("\nD-Pad to choose, A to play, START to quit.");
+            let start = std::env::args().next().unwrap_or_else(|| "none".into());
+            println!("\n(started as {start})");
             drawn = Some(at);
         }
         hid.scan_input();
