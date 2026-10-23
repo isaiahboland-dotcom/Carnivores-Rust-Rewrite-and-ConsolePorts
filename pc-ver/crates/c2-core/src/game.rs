@@ -788,8 +788,14 @@ impl Hunt {
                     .unwrap_or(23),
             )
         } else {
-            (0..spots.len().min(self.room.bodies.len()))
-                .find(|&t| self.room.bodies[t].ctype == 0 && spots[t].chars.contains(&c.ctype))
+            // A spot made for it, else any free one (add-ons written
+            // without `tropinfo` would never have a trophy).
+            let free = |t: &usize| self.room.bodies[*t].ctype == 0;
+            let n = spots.len().min(self.room.bodies.len());
+            (0..n)
+                .filter(free)
+                .find(|&t| spots[t].chars.contains(&c.ctype))
+                .or_else(|| (0..n).find(free))
         };
         let base = self
             .herd
@@ -2453,12 +2459,17 @@ mod tests {
         h.herd.trophy_spots = vec![spot(0), spot(1)];
         h.add_ship_task(&area, 0, &mut Vec::new());
         assert_eq!((h.room.bodies[0].ctype, h.room.bodies[1].ctype), (0, 1));
-        // No spot made for it: no trophy.
+        // None made for it: any free spot.
         let (area, mut h, _) = setup(false);
         h.herd.trophy_spots = vec![spot(0)];
+        h.add_ship_task(&area, 0, &mut Vec::new());
+        assert_eq!(h.room.bodies[0].ctype, 1);
+        // All taken: no trophy.
+        let (area, mut h, _) = setup(false);
+        h.herd.trophy_spots = vec![spot(0)];
+        h.room.bodies[0].ctype = 5;
         let mut ev = Vec::new();
         h.add_ship_task(&area, 0, &mut ev);
-        assert!(h.room.bodies.iter().all(|b| b.ctype == 0));
         assert!(!ev.iter().any(|e| matches!(e, GameEvent::Trophy { .. })));
     }
 

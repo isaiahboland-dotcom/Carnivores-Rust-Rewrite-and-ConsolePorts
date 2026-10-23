@@ -16,6 +16,9 @@ placed them on the original's fixed stands, onto the room's paths.
   (`TrophyRoom2`). Spots past 24 aren't used yet.
 - Trophies saved before (by the original's stands) stand on the first free
   spot made for them, the save unchanged (removing still works by slot).
+- **Deviation**: an animal no spot is made for (add-ons written without
+  `tropinfo`, the mobile imports) takes any free spot instead of getting no
+  trophy, posed as it stands (another animal's `tropAnim` would be wrong).
 
 ## 2026-10-22 — Menu styles and the experimental mobile layout
 - **PC menu styles** (owner): Original, Mod, Ice Age. `c2-pc play

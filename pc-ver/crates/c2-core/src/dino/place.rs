@@ -575,7 +575,11 @@ impl Herd {
                 .is_some_and(|s| s.chars.contains(&ctype))
         };
         let mut used: Vec<bool> = (0..self.trophy_spots.len())
-            .map(|t| room.bodies.get(t).is_some_and(|b| b.ctype > 0 && fits(t, b.ctype as usize)))
+            .map(|t| {
+                room.bodies
+                    .get(t)
+                    .is_some_and(|b| b.ctype > 0 && fits(t, b.ctype as usize))
+            })
             .collect();
         let mut at = vec![None; room.bodies.len()];
         for (slot, b) in room.bodies.iter().enumerate() {
@@ -585,12 +589,16 @@ impl Herd {
             let ctype = b.ctype as usize;
             at[slot] = if fits(slot, ctype) {
                 Some(slot)
-            } else {
+            } else if (0..used.len()).any(|t| fits(t, ctype)) {
                 let free = (0..used.len()).find(|&t| !used[t] && fits(t, ctype));
                 if let Some(t) = free {
                     used[t] = true;
                 }
                 free
+            } else {
+                // No spot made for it (an add-on without `tropinfo`): its
+                // own slot's spot (where a kill put it).
+                (slot < used.len()).then_some(slot)
             };
         }
         for (slot, b) in room.bodies.iter().enumerate() {
@@ -627,8 +635,10 @@ impl Herd {
             c.gamma = deg(spot.gamma);
             c.state = slot as i32;
             c.scale = b.scale;
-            // The pose: a model animation, shown by a phase of its own.
-            if let (Some(a), Some(m)) = (spot.anim, self.species[ctype].mee.as_mut()) {
+            // The pose: a model animation, shown by a phase of its own
+            // (only for the animals the spot is made for).
+            let own = spot.chars.contains(&ctype);
+            if let (Some(a), Some(m), true) = (spot.anim, self.species[ctype].mee.as_mut(), own) {
                 c.phase = m
                     .anim_index
                     .iter()
