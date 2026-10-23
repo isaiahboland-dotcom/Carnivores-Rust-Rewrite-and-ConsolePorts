@@ -669,7 +669,8 @@ fn hunt(
             .as_ref()
             .filter(|k| k.2 > frame)
             .map(|k| (k.0.as_str(), k.1));
-        ui.draw_top(gpu, &game, &game.hunt, &debug, shown);
+        let scope = world.aim_point.filter(|_| !black).map(|p| (p, fovy));
+        ui.draw_top(gpu, &game, &game.hunt, &debug, shown, scope);
         ui.draw_bottom(gpu, &game, msg.as_deref());
         gpu.end();
         let m_ui = ms_of(t_ui);

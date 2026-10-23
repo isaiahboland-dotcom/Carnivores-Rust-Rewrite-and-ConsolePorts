@@ -486,8 +486,10 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] bottom screen: touch weapon picker | map with animals in range | call picker (owner's design)
   - [x] sound on the DSP (shared event mapping and levels in `c2_core::sound`)
   - [x] one pack for the whole game; touch menu (area + time, animals, weapons + gear; owner's design) and saves
-  - [ ] hunter name entry / several hunters, options screen
-  - [ ] trophy room, scope cross-hairs, Old 3DS performance pass
+  - [x] hunter name entry / several hunters (M12), options screen (settings: the original's aggressiveness,
+        density and sensitivity; blood, death camera, crouch button; hunt options before each hunt)
+  - [x] trophy room (M12), scope cross-hairs (`DrawOpticCross` at the view model's aim point)
+  - [ ] Old 3DS performance pass
   - [ ] later (owner, 2026-10-22): view distance on Old 3DS. ~45 fps hunting the Manospondylus add-on at
         half speed, still playable; revisit once more of the game is built
 - [ ] M8 Modded 3DS — **in progress**

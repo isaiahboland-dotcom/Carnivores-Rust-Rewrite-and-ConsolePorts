@@ -214,6 +214,9 @@ pub struct World {
     /// One buffer per character slot, refilled when it is drawn.
     char_bufs: Vec<Option<LinearBuf<Vertex>>>,
     weapon_buf: Option<LinearBuf<Vertex>>,
+    /// Camera-space position of the view model's last vertex: the scope's
+    /// aim point (`DrawOpticCross(VCount-1)`).
+    pub aim_point: Option<[f32; 3]>,
     frame: u32,
     pub sky: [u8; 3],
     water_alpha: Vec<u8>,
@@ -353,6 +356,7 @@ impl World {
             weapons: posed(weapon_cars, &|i| format!("C2RS/WPN{i}.TX")),
             char_bufs: Vec::new(),
             weapon_buf: None,
+            aim_point: None,
             frame: 0,
             sky,
             water_alpha,
@@ -827,6 +831,7 @@ impl World {
     /// The view model, in camera space, drawn in front of everything.
     fn draw_weapon(&mut self, gpu: &mut Gpu, area: &Area, hunt: &Hunt, poser: &Poser<'_>) {
         let w = &hunt.weapons;
+        self.aim_point = None;
         if hunt.death.is_some() {
             return;
         }
@@ -889,6 +894,7 @@ impl World {
                 [x, v[1] * cb - vz * sb, vz * cb + v[1] * sb]
             })
             .collect();
+        self.aim_point = cam.last().copied();
         let (v, _) = corners(&model.prepared, Some(&cam), &[]);
         if self.weapon_buf.as_ref().is_none_or(|b| b.cap() < v.len()) {
             self.weapon_buf = LinearBuf::new(v.len());

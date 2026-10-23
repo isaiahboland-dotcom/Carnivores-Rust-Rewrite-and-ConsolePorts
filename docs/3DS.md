@@ -194,6 +194,4 @@ with the PC. 16 voices as the original, plus two channels to crossfade the
 ambience and one for the ship's engine.
 
 ## Not yet (M7)
-Hunter name entry and more than one hunter, the options screen
-(aggressiveness, density, ...), scope cross-hairs, stereo 3D, gyro aim, the
-pack picker, an Old 3DS performance pass.
+Stereo 3D, an Old 3DS performance pass.

@@ -59,6 +59,16 @@ const SETTINGS: [f32; 4] = [60.0, 150.0, 200.0, 30.0];
 const QUIT: [f32; 4] = [60.0, 186.0, 200.0, 30.0];
 /// Settings: remove every unlocked trophy (a second tap does it).
 const CLEAR_TROPHIES: [f32; 4] = [60.0, 80.0, 200.0, 26.0];
+/// The original's game options (`Options > Game`), 0..=255, kept in the
+/// save: bars for aggressiveness, density and sensitivity.
+const GAME_OPTS: [(&str, f32); 3] = [
+    ("Aggressive", 6.0),
+    ("Density", 30.0),
+    ("Sensitivity", 54.0),
+];
+const OPT_BAR_X: f32 = 120.0;
+const OPT_BAR_W: f32 = 180.0;
+const OPT_BAR_H: f32 = 18.0;
 /// The hunters list: row `i`.
 fn hunter_row(i: usize) -> [f32; 4] {
     [40.0, 8.0 + i as f32 * 30.0, 240.0, 26.0]
@@ -970,6 +980,15 @@ impl Menu {
                 }
                 self.clear_armed = !self.clear_armed;
             }
+            Step::Settings if Self::game_opt_hit(x, y).is_some() => {
+                self.clear_armed = false;
+                if let Some(i) = Self::game_opt_hit(x, y) {
+                    let v = ((x - OPT_BAR_X) / OPT_BAR_W * 255.0)
+                        .round()
+                        .clamp(0.0, 255.0) as i32;
+                    *self.game_opt(i) = v;
+                }
+            }
             Step::Settings => {
                 self.clear_armed = false;
                 let s = &mut self.settings;
@@ -1086,11 +1105,33 @@ impl Menu {
         }
     }
 
+    /// Which game option's bar (x, y) is on.
+    fn game_opt_hit(x: f32, y: f32) -> Option<usize> {
+        GAME_OPTS
+            .iter()
+            .position(|&(_, top)| inside([OPT_BAR_X, top, OPT_BAR_W, OPT_BAR_H], x, y))
+    }
+
+    fn game_opt(&mut self, i: usize) -> &mut i32 {
+        let o = &mut self.save.options;
+        match i {
+            0 => &mut o.agres,
+            1 => &mut o.dens,
+            _ => &mut o.sens,
+        }
+    }
+
     /// B / the Back button.
     pub fn back(&mut self) {
         if matches!(self.step, Step::Settings | Step::Options) {
             if let Err(e) = self.settings.store() {
                 self.message = Some(format!("settings not saved: {e}"));
+            }
+        }
+        // The game options live in the save, as on PC.
+        if self.step == Step::Settings {
+            if let Err(e) = crate::save::store(&self.save) {
+                self.message = Some(format!("save failed: {e}"));
             }
         }
         self.step = match self.step {
@@ -1532,30 +1573,29 @@ impl Menu {
             WHITE,
             &format!("Crouch: {}", s.crouch_key.name()),
         );
-        c.text_c(
-            gpu,
-            160.0,
-            40.0,
-            1.0,
-            TEXT,
-            "Run speed, ambient animals, 3DS",
-        );
-        c.text_c(
-            gpu,
-            160.0,
-            52.0,
-            1.0,
-            TEXT,
-            "friendly and stealth crouch are",
-        );
-        c.text_c(
-            gpu,
-            160.0,
-            64.0,
-            1.0,
-            TEXT,
-            "in the hunt options (before a hunt).",
-        );
+        let o = self.save.options;
+        let values = [o.agres, o.dens, o.sens];
+        for (&(_, top), v) in GAME_OPTS.iter().zip(values) {
+            c.rect([OPT_BAR_X, top, OPT_BAR_W, OPT_BAR_H], PANEL);
+            let f = v.clamp(0, 255) as f32 / 255.0;
+            c.rect(
+                [OPT_BAR_X, top, OPT_BAR_W * f.max(0.02), OPT_BAR_H],
+                [60, 110, 60, 255],
+            );
+        }
+        c.flush(gpu);
+        for ((name, top), v) in GAME_OPTS.iter().zip(values) {
+            c.text(gpu, 16.0, top + 5.0, 1.0, TEXT, name);
+            let pct = format!("{}%", v.clamp(0, 255) * 100 / 255);
+            c.text_c(
+                gpu,
+                OPT_BAR_X + OPT_BAR_W / 2.0,
+                top + 5.0,
+                1.0,
+                WHITE,
+                &pct,
+            );
+        }
         for (r, on, name) in toggles {
             let t = format!("{name}: {}", if on { "ON" } else { "OFF" });
             c.text_c(gpu, 160.0, r[1] + 10.0, 1.0, WHITE, &t);
@@ -1632,7 +1672,8 @@ impl Menu {
     fn draw_settings_top(&self, c: &mut Canvas, gpu: &mut Gpu) {
         let lines = [
             ("Settings", GOLD),
-            ("", WHITE),
+            ("Aggressive / Density / Sensitivity: as the", TEXT),
+            ("  original's game options (tap the bars)", WHITE),
             ("Hunt options (before each hunt)", TEXT),
             ("  Run speed, ambient animals, 3DS friendly", WHITE),
             ("  (noticed from closer), stealth crouch", WHITE),

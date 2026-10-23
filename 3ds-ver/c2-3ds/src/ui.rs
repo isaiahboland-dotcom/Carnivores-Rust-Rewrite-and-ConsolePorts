@@ -19,7 +19,7 @@ use c2_core::CELL;
 use c2_vfs::Vfs;
 
 use crate::draw2d::{inside, Canvas, Rgba, WHITE};
-use crate::gpu::{Gpu, Texture, BOTTOM_H, TOP_W};
+use crate::gpu::{Gpu, Texture, BOTTOM_H, TOP_H, TOP_W};
 use crate::hunt::Game;
 
 const LEFT_W: f32 = 72.0;
@@ -395,10 +395,28 @@ impl Ui {
         hunt: &Hunt,
         debug: &str,
         kill: Option<(&str, i32)>,
+        scope: Option<([f32; 3], f32)>,
     ) {
         gpu.begin_2d(None);
         let c = &mut self.c;
         let cx = TOP_W as f32 / 2.0;
+        // Scope cross-hairs at the view model's aim point (`DrawOpticCross`),
+        // projected like the world (camera space, vertical field `fovy`).
+        if let Some((p, fovy)) = scope.filter(|_| hunt.zoom() > 1.0 && !hunt.bin_mode) {
+            let cy = TOP_H as f32 / 2.0;
+            let f = 1.0 / (fovy / 2.0).tan();
+            if p[2] < 0.0 {
+                let sx = cx + p[0] / -p[2] * f / (cx / cy) * cx;
+                let sy = cy - p[1] / -p[2] * f * cy;
+                if (cx - sx).abs() <= cx && (cy - sy).abs() <= cy / 2.0 {
+                    let w = TOP_W as f32 / 12.0;
+                    let col = [0, 0, 16, 128];
+                    c.rect([sx - w, sy, 2.0 * w, 1.0], col);
+                    c.rect([sx, sy - w, 1.0, 2.0 * w], col);
+                    c.flush(gpu);
+                }
+            }
+        }
         if let Some((name, score)) = kill {
             let name: String = name.chars().take(18).collect();
             let w = 8.0 * name.len().max(10) as f32 + 16.0;
