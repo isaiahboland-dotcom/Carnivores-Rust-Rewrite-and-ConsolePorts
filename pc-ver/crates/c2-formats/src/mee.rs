@@ -262,6 +262,48 @@ pub struct Tables {
     pub pack_groups: Vec<PackGroup>,
     /// In `characters` order (the character type index).
     pub characters: Vec<Character>,
+    /// Trophy room spots, in the order the engine numbers them (the
+    /// `trophytable`'s, then each character's).
+    pub trophies: Vec<TrophySpot>,
+}
+
+/// A trophy room spot (`tropinfo`; `ScriptParser.cpp: ReadTrophyTypeInfo`,
+/// placed by `CharacterSpawn.cpp`): the landing point `pos` of the trophy
+/// room's map, offsets (world units, plus `scale` times how much bigger than
+/// usual the animal is), its facing (degrees), its pose.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct TrophySpot {
+    /// The characters (type index) it takes: the one it is written in,
+    /// and those naming its `trophygroup` (`tropgroup = n`).
+    pub chars: Vec<usize>,
+    /// Its `trophytable` group, if it is in one.
+    pub group: Option<i32>,
+    pub pos: usize,
+    pub alpha: f32,
+    pub beta: f32,
+    pub gamma: f32,
+    pub offset: [i32; 3],
+    pub scale: [i32; 3],
+    /// `tropAnim`: an animation of the model.
+    pub anim: Option<usize>,
+    /// `playAnim`: the pose plays rather than standing still.
+    pub play: bool,
+}
+
+fn trophy_spot(b: &Block, group: Option<i32>) -> TrophySpot {
+    let i = |k: &str| int(b, k).unwrap_or(0);
+    TrophySpot {
+        chars: Vec::new(),
+        group,
+        pos: i("tropPos").max(0) as usize,
+        alpha: i("alpha") as f32,
+        beta: i("beta") as f32,
+        gamma: i("gamma") as f32,
+        offset: [i("xoffset"), i("yoffset"), i("zoffset")],
+        scale: [i("xscale"), i("yscale"), i("zscale")],
+        anim: int(b, "tropAnim").filter(|&a| a >= 0).map(|a| a as usize),
+        play: b.get(&["playAnim"]).is_some_and(|v| v.contains("TRUE")),
+    }
 }
 
 /// The area a map is, from its file name (`huntdat/areas/<name>`): `areaN`
@@ -405,8 +447,31 @@ impl Tables {
                 for s in sec.subs.iter().filter(|s| s.name.contains("packgroup")) {
                     t.pack_group(&resolve(&s.block, h));
                 }
+            } else if name.contains("trophytable") {
+                let groups = sec.subs.iter().filter(|s| s.name.contains("trophygroup"));
+                for (g, s) in groups.enumerate() {
+                    for ti in s.block.subs.iter().filter(|x| x.name.contains("tropinfo")) {
+                        t.trophies.push(trophy_spot(&ti.block, Some(g as i32)));
+                    }
+                }
             } else if name.contains("characters") {
                 for b in &sec.blocks {
+                    // Its trophy spots, and the groups it joins.
+                    let ci = t.characters.len();
+                    for ti in b
+                        .subs
+                        .iter()
+                        .filter(|x| x.name.trim().eq_ignore_ascii_case("tropinfo"))
+                    {
+                        let mut spot = trophy_spot(&ti.block, None);
+                        spot.chars.push(ci);
+                        t.trophies.push(spot);
+                    }
+                    for g in b.all("tropgroup").map(c_atoi) {
+                        for spot in t.trophies.iter_mut().filter(|s| s.group == Some(g)) {
+                            spot.chars.push(ci);
+                        }
+                    }
                     let block = resolve(b, h);
                     let mut c = Character::default();
                     for s in &block.subs {
@@ -444,5 +509,44 @@ impl Tables {
             }
         }
         t
+    }
+}
+
+#[cfg(test)]
+mod trophy_tests {
+    use super::*;
+
+    #[test]
+    fn trophy_spots_in_engine_order() {
+        let res = ResTxt::parse(
+            "trophytable {\n trophygroup {\n  tropinfo {\n   tropPos = 3\n  }\n }\n}\n\
+             characters {\n{\n name = 'A'\n tropgroup = 0\n}\n\
+             {\n name = 'B'\n tropinfo {\n  tropPos = 9\n  alpha = 240\n  tropAnim = 12\n  \
+             zoffset = -400\n  yscale = 30\n }\n tropinfo {\n  tropPos = 9\n }\n}\n}\n.\n",
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        let t = Tables::read(
+            &res,
+            &Hunt {
+                area: None,
+                time: 1,
+                picked: 0,
+            },
+        );
+        assert_eq!(t.trophies.len(), 3);
+        // The table's spot first, taken by A through its group.
+        assert_eq!(
+            (t.trophies[0].pos, t.trophies[0].chars.clone()),
+            (3, vec![0])
+        );
+        let b = &t.trophies[1];
+        assert_eq!(
+            (b.pos, b.alpha, b.anim, b.offset, b.scale),
+            (9, 240.0, Some(12), [0, 0, -400], [0, 30, 0])
+        );
+        assert_eq!(
+            (b.chars.clone(), t.trophies[2].chars.clone()),
+            (vec![1], vec![1])
+        );
     }
 }

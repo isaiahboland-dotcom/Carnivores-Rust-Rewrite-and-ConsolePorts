@@ -538,7 +538,10 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] nested `_RES.TXT` blocks; `_MENU.TXT` / `.c2map` menu lists; `overwrite` / `addition` resolution
   - [x] spawn / pack tables and placement on PC (dialect game folders hunt with their own rosters and spawns)
   - [ ] the dialect's AI families (interim: run as the closest original AI; aquatic ones not placed)
-  - [ ] extended weapons, trophy table, survival mode, weather; 3DS cooking and menus
+  - [x] trophy table: the trophy room's spots (`tropinfo`, `trophytable` groups, `tropgroup`) place trophies
+        (landing point, offsets growing with size, facing, pose) and a kill takes the first free spot made
+        for its animal (PC and 3DS); older trophies move to a fitting spot; the save keeps 24
+  - [ ] extended weapons, survival mode, weather
 
 _Last updated: 2026-10-22 — the add-on pack plays on hardware and the Old 3DS slowdown after a kill is gone. Roaming add-ons on the 3DS are proper hunt targets (no call, +10%, a menu picture); dialect games no longer halve non-target scores. M10: the launchers' balance editor. Next: `.cia` builds._
 

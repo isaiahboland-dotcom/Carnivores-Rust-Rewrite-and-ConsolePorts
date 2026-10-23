@@ -2,6 +2,21 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-22 — M9: the Modder's Edition trophy room
+The dialect's trophy room (`CharacterSpawn.cpp`, `Ship.cpp`): every
+`tropinfo` (in a `trophytable` group, or in a character, in file order) is
+a spot: a landing point of the trophy room's map (`tropPos`), offsets plus
+offsets per `scaleA` the trophy is bigger than `scale0`, facing (degrees),
+a pose (`tropAnim`, a model animation: Majungasaurus' 9 and 10 are past its
+logical phases) and which characters it takes (its own; `tropgroup = n`
+joins group n's). Trophy slot n stands on spot n; a kill takes the first
+free spot made for its animal, none: no trophy (as the engine). We had
+placed them on the original's fixed stands, onto the room's paths.
+- Our save keeps 24 trophies (the original's format); the engine keeps 128
+  (`TrophyRoom2`). Spots past 24 aren't used yet.
+- Trophies saved before (by the original's stands) stand on the first free
+  spot made for them, the save unchanged (removing still works by slot).
+
 ## 2026-10-22 — Menu styles and the experimental mobile layout
 - **PC menu styles** (owner): Original, Mod, Ice Age. `c2-pc play
   --menu-art GAME_DIR` takes the menu frames, their hit maps, slider and

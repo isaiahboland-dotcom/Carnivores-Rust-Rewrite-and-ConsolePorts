@@ -314,6 +314,11 @@ fn new_hunt(
         demo_index: None,
         ..Default::default()
     };
+    // Dialect games: the trophy room's spots (where trophies stand, and
+    // which a kill takes).
+    if let Some(t) = tables {
+        herd.trophy_spots = t.trophies.clone();
+    }
     if trophy {
         herd.place_trophies(area, &room, &mut rng);
     } else if let Some(t) = tables {

@@ -775,13 +775,22 @@ impl Hunt {
             let slot = crate::ship::ship_sound::CALL;
             out.push(GameEvent::Ship(ShipEvent::Sound { slot, at: None }));
         }
-        let t = self
-            .room
-            .bodies
-            .iter()
-            .take(23)
-            .position(|b| b.ctype == 0)
-            .unwrap_or(23);
+        // The first free stand; in a dialect game the first free spot made
+        // for this animal (none: no trophy, as `AddShipTask` there).
+        let spots = &self.herd.trophy_spots;
+        let t = if spots.is_empty() {
+            Some(
+                self.room
+                    .bodies
+                    .iter()
+                    .take(23)
+                    .position(|b| b.ctype == 0)
+                    .unwrap_or(23),
+            )
+        } else {
+            (0..spots.len().min(self.room.bodies.len()))
+                .find(|&t| self.room.bodies[t].ctype == 0 && spots[t].chars.contains(&c.ctype))
+        };
         let base = self
             .herd
             .species
@@ -829,7 +838,7 @@ impl Hunt {
             range,
             tranq: self.opts.tranq,
         });
-        if !self.opts.tranq {
+        if let (false, Some(t)) = (self.opts.tranq, t) {
             let (y, mo, d, h, mi) = self.clock;
             self.room.bodies[t] = TrophyItem {
                 ctype: c.ctype as i32,
@@ -2430,6 +2439,27 @@ mod tests {
         assert_eq!(c.health, 1, "5 - power 4");
         assert_eq!(c.state, 2, "alarmed");
         assert!(c.afraid_time > 0 && c.blood_ttime > 0);
+    }
+
+    #[test]
+    fn dialect_trophies_take_a_spot_made_for_them() {
+        use c2_formats::mee::TrophySpot;
+        let spot = |c: usize| TrophySpot {
+            chars: vec![c],
+            ..Default::default()
+        };
+        let (area, mut h, _) = setup(false);
+        // The animal (type 1) has the second spot.
+        h.herd.trophy_spots = vec![spot(0), spot(1)];
+        h.add_ship_task(&area, 0, &mut Vec::new());
+        assert_eq!((h.room.bodies[0].ctype, h.room.bodies[1].ctype), (0, 1));
+        // No spot made for it: no trophy.
+        let (area, mut h, _) = setup(false);
+        h.herd.trophy_spots = vec![spot(0)];
+        let mut ev = Vec::new();
+        h.add_ship_task(&area, 0, &mut ev);
+        assert!(h.room.bodies.iter().all(|b| b.ctype == 0));
+        assert!(!ev.iter().any(|e| matches!(e, GameEvent::Trophy { .. })));
     }
 
     #[test]

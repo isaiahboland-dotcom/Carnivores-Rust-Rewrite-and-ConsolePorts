@@ -529,6 +529,10 @@ impl Herd {
     pub fn place_trophies(&mut self, area: &Area, room: &Save, rng: &mut MsRand) {
         use std::f32::consts::PI;
         self.chars.clear();
+        if !self.trophy_spots.is_empty() {
+            self.place_trophy_spots(area, room, rng);
+            return;
+        }
         for (slot, b) in room.bodies.iter().enumerate().take(24) {
             let ctype = b.ctype as usize;
             if b.ctype <= 0 || ctype >= self.species.len() {
@@ -553,6 +557,86 @@ impl Herd {
             c.reset(&self.species[ctype], rng, 128);
             c.state = slot as i32;
             c.scale = b.scale;
+            self.chars.push(c);
+        }
+    }
+
+    /// The trophy room of a dialect game (`CharacterSpawn.cpp`, placing
+    /// trophies): trophy n at spot n's landing point plus its offsets (more
+    /// for a bigger than usual animal), facing and pose.
+    fn place_trophy_spots(&mut self, area: &Area, room: &Save, rng: &mut MsRand) {
+        let deg = |d: f32| d * std::f32::consts::PI / 180.0;
+        // Each trophy on its own spot when it is made for that animal; the
+        // others (saved before, or by the original's stands) on the first
+        // free spot that is. The save keeps its slots.
+        let fits = |t: usize, ctype: usize| {
+            self.trophy_spots
+                .get(t)
+                .is_some_and(|s| s.chars.contains(&ctype))
+        };
+        let mut used: Vec<bool> = (0..self.trophy_spots.len())
+            .map(|t| room.bodies.get(t).is_some_and(|b| b.ctype > 0 && fits(t, b.ctype as usize)))
+            .collect();
+        let mut at = vec![None; room.bodies.len()];
+        for (slot, b) in room.bodies.iter().enumerate() {
+            if b.ctype <= 0 {
+                continue;
+            }
+            let ctype = b.ctype as usize;
+            at[slot] = if fits(slot, ctype) {
+                Some(slot)
+            } else {
+                let free = (0..used.len()).find(|&t| !used[t] && fits(t, ctype));
+                if let Some(t) = free {
+                    used[t] = true;
+                }
+                free
+            };
+        }
+        for (slot, b) in room.bodies.iter().enumerate() {
+            let ctype = b.ctype as usize;
+            let Some(spot) = at[slot].and_then(|t| self.trophy_spots.get(t)).cloned() else {
+                continue;
+            };
+            let Some(&(lx, lz)) = area.landings.get(spot.pos) else {
+                continue;
+            };
+            let Some(sp) = self.species.get(ctype) else {
+                continue;
+            };
+            // How much bigger than usual, in `scaleA`s.
+            let (s0, sa) = (
+                sp.info.scale0 as f32 / 1000.0,
+                sp.info.scale_a as f32 / 1000.0,
+            );
+            let k = if sa != 0.0 { (b.scale - s0) / sa } else { 0.0 };
+            let x =
+                f32::from(lx) * 256.0 + 128.0 + spot.offset[0] as f32 + k * spot.scale[0] as f32;
+            let z =
+                f32::from(lz) * 256.0 + 128.0 + spot.offset[2] as f32 + k * spot.scale[2] as f32;
+            let y = area.land_height(x, z) + spot.offset[1] as f32 + k * spot.scale[1] as f32;
+            let mut c = Character {
+                ctype,
+                pos: [x, y, z],
+                ..Default::default()
+            };
+            c.reset(sp, rng, 128);
+            c.pos = [x, y, z];
+            c.alpha = deg(spot.alpha);
+            c.beta = deg(spot.beta);
+            c.gamma = deg(spot.gamma);
+            c.state = slot as i32;
+            c.scale = b.scale;
+            // The pose: a model animation, shown by a phase of its own.
+            if let (Some(a), Some(m)) = (spot.anim, self.species[ctype].mee.as_mut()) {
+                c.phase = m
+                    .anim_index
+                    .iter()
+                    .position(|&x| x == a)
+                    .unwrap_or_else(|| m.add_anim(a as i32));
+                c.prev_phase = c.phase;
+                c.ftime = 0;
+            }
             self.chars.push(c);
         }
     }

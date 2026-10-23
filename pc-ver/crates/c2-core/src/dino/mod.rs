@@ -1342,6 +1342,9 @@ pub struct Herd {
     /// Dialect hunts: packs, and the spawn groups characters keep to.
     pub packs: Vec<Pack>,
     pub groups: Vec<SpawnGroup>,
+    /// Dialect games: the trophy room's spots (trophy slot n = spot n);
+    /// empty: the original's stands.
+    pub trophy_spots: Vec<c2_formats::mee::TrophySpot>,
 }
 
 impl Herd {
@@ -1618,6 +1621,7 @@ mod tests {
                     ..Default::default()
                 },
             ],
+            trophies: Vec::new(),
         };
         let mut herd = Herd {
             species: vec![
