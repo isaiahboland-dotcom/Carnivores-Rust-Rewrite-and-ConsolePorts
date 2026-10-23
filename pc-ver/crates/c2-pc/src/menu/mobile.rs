@@ -249,7 +249,7 @@ impl Menu {
     }
 
     /// A filled rectangle on the canvas.
-    fn fill(&self, out: &mut Vec<Sprite>, r: Rect, color: [f32; 4]) {
+    pub(super) fn fill(&self, out: &mut Vec<Sprite>, r: Rect, color: [f32; 4]) {
         let (s, ox, oy) = self.canvas();
         out.extend(
             self.hud

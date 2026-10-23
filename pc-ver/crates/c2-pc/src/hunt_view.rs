@@ -37,6 +37,13 @@ const TICK_MS: u32 = 10;
 /// What to hunt with. The original menu passes these to the game on its
 /// command line (`prj=`, `din=`, `wep=`, `dtm=`, `-double`, `-observ`); the
 /// accessories come from the player's save.
+/// What the trophy room asks before doing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Ask {
+    Remove,
+    Lock,
+}
+
 #[derive(Debug, Clone)]
 pub struct HuntSetup {
     /// The game install (`HUNTDAT`'s parent).
@@ -98,6 +105,8 @@ pub struct HuntView {
     /// The last kill's notice (bottom right): animal, points, metres,
     /// tranquilized; seconds left.
     kill: Option<(String, i32, f32, bool, f32)>,
+    /// The trophy room's question waiting for Y / N.
+    ask: Option<Ask>,
     /// The weapon-pick screen (PC only): open with the highlighted row.
     /// The hunt doesn't tick while it's up.
     picker: Option<usize>,
@@ -274,6 +283,7 @@ impl HuntView {
             events: Vec::new(),
             message: None,
             kill: None,
+            ask: None,
             picker: None,
             seed,
             done: false,
@@ -363,6 +373,11 @@ impl HuntView {
         };
         let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
         hunt.clock = local_clock();
+        hunt.area_no = setup
+            .map
+            .file_stem()
+            .and_then(|s| c2_formats::mee::area_of(&s.to_string_lossy()))
+            .map_or(0, |n| n as i32);
         hunt
     }
 
@@ -764,6 +779,80 @@ impl HuntView {
 
 impl HuntView {
     /// `DrawTrophyText`: the trophy's record on its plaque.
+    /// The trophy room: `[` / `]` move the trophy shown to the next free
+    /// stand that way, R removes it, L locks or unlocks it (both asked
+    /// first: Y / N).
+    fn trophy_keys(&mut self, input: &Input) {
+        if let Some(a) = self.ask {
+            if input.pressed(KeyCode::KeyY) {
+                match a {
+                    Ask::Remove => self.hunt.remove_current_trophy(),
+                    Ask::Lock => {
+                        let _ = self.hunt.toggle_lock_current();
+                    }
+                }
+                self.ask = None;
+            } else if input.pressed(KeyCode::KeyN) || input.pressed(KeyCode::Escape) {
+                self.ask = None;
+            }
+            return;
+        }
+        let Some(slot) = self.hunt.trophy_body else {
+            return;
+        };
+        let locked = self.hunt.room.bodies.get(slot).is_some_and(|b| b.locked());
+        if input.pressed(KeyCode::KeyR) {
+            if locked {
+                self.message = Some(("Locked: L to unlock it first".into(), 3.0));
+            } else {
+                self.ask = Some(Ask::Remove);
+            }
+        }
+        if input.pressed(KeyCode::KeyL) {
+            self.ask = Some(Ask::Lock);
+        }
+        for (key, dir) in [(KeyCode::BracketLeft, -1), (KeyCode::BracketRight, 1)] {
+            if input.pressed(key) && !self.hunt.move_current_trophy(self.view.area(), dir) {
+                self.message = Some(("No free stand that way".into(), 2.0));
+            }
+        }
+    }
+
+    /// This hunt's kills into the hunter's record (`trophy0N.rec`).
+    fn record_kills(&mut self) {
+        use c2_core::record::{Kill, Mode};
+        let kills = std::mem::take(&mut self.hunt.kills);
+        if kills.is_empty() {
+            return;
+        }
+        let reg = self.setup.reg;
+        let mut r = crate::save::load_record(reg);
+        let area = crate::save::area_title(&self.setup.game_dir, self.hunt.area_no);
+        let (y, mo, d, _, _) = self.hunt.clock;
+        for k in kills {
+            r.kills.push(Kill {
+                mode: Mode::Hunt,
+                animal: self
+                    .hunt
+                    .herd
+                    .species
+                    .get(k.ctype)
+                    .map_or_else(String::new, |s| s.info.name.clone()),
+                score: k.score,
+                range: k.range,
+                weapon: self
+                    .weapon_infos
+                    .get(k.weapon)
+                    .map_or_else(String::new, |w| w.name.clone()),
+                area: area.clone(),
+                date: (y << 20) + (mo << 10) + d,
+            });
+        }
+        if let Err(e) = crate::save::store_record(reg, &r) {
+            tracing::error!("{e:#}");
+        }
+    }
+
     fn plaque_text(&self, slot: usize, x0: f32, y0: f32, scale: f32) -> Vec<Sprite> {
         let Some(b) = self.hunt.room.bodies.get(slot) else {
             return Vec::new();
@@ -803,14 +892,16 @@ impl HuntView {
             format!("{d}.{m}.{y}")
         };
         let time = format!("{}:{:02}", (time >> 10) & 255, time & 255);
+        let lock = if b.locked() { "  (locked)" } else { "" };
+        let area = crate::save::area_title(&self.setup.game_dir, b.area());
         let lines: [&[(&str, String)]; 5] = [
-            &[("Name: ", name)],
+            &[("Name: ", name + lock)],
             &[("Weight: ", weight + " "), ("Length: ", len)],
             &[
                 ("Weapon: ", format!("{weapon}    ")),
                 ("Score: ", b.score.to_string()),
             ],
-            &[("Range of kill: ", range)],
+            &[("Range: ", range + "  "), ("Area: ", area)],
             &[("Date: ", date + "   "), ("Time: ", time)],
         ];
         let (grey, yellow) = ([0.75, 0.75, 0.75, 1.0], [0.75, 0.75, 0.0, 1.0]);
@@ -932,12 +1023,10 @@ impl Scene for HuntView {
         if input.pressed(KeyCode::KeyN) {
             self.hunt.exit_prompt = false;
         }
-        if input.pressed(KeyCode::KeyR) {
-            if self.hunt.opts.trophy {
-                self.hunt.remove_current_trophy();
-            } else if self.hunt.show_exit() {
-                self.restart();
-            }
+        if self.hunt.opts.trophy {
+            self.trophy_keys(input);
+        } else if input.pressed(KeyCode::KeyR) && self.hunt.show_exit() {
+            self.restart();
         }
         if pressed(k.show) {
             self.pending.toggle_weapon = true;
@@ -1006,6 +1095,7 @@ impl Scene for HuntView {
                 if let Err(e) = crate::save::store(&self.hunt.room) {
                     tracing::error!("{e:#}");
                 }
+                self.record_kills();
                 self.audio.stop_all();
                 self.done = true;
             }
@@ -1270,6 +1360,40 @@ impl Scene for HuntView {
         }
         if let Some(row) = self.picker {
             sprites.extend(self.picker_sprites(row, screen, scale));
+        }
+        // The trophy room's question, or its hint.
+        if self.hunt.opts.trophy {
+            let t = match self.ask {
+                Some(Ask::Remove) => "Remove this trophy?  Y / N".to_string(),
+                Some(Ask::Lock) => {
+                    let locked = self
+                        .hunt
+                        .trophy_body
+                        .and_then(|s| self.hunt.room.bodies.get(s))
+                        .is_some_and(|b| b.locked());
+                    if locked {
+                        "Unlock this trophy?  Y / N".into()
+                    } else {
+                        "Lock this trophy (it can't be removed)?  Y / N".into()
+                    }
+                }
+                None if self.hunt.trophy_body.is_some() => {
+                    "[ ] move   R remove   L lock".to_string()
+                }
+                None => String::new(),
+            };
+            if !t.is_empty() {
+                let px = 8.0 * scale;
+                let w = self.hud.label_width(px, &t) + 16.0 * scale;
+                let (x, y) = ((screen.0 as f32 - w) / 2.0, 40.0 * scale);
+                sprites.extend(self.hud.rect(x, y, w, 20.0 * scale, [0.0, 0.0, 0.0, 0.7]));
+                let c = if self.ask.is_some() {
+                    [0.95, 0.85, 0.2, 1.0]
+                } else {
+                    [0.8, 0.8, 0.8, 1.0]
+                };
+                sprites.extend(self.hud.label(x + 8.0 * scale, y + 6.0 * scale, px, c, &t));
+            }
         }
         if self.hunt.paused {
             if let Some((id, w, h)) = self

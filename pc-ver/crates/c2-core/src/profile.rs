@@ -44,6 +44,16 @@ pub fn default_options() -> Options {
 }
 
 /// A newly registered hunter with `score` points to spend.
+/// Removes every trophy not locked; how many went.
+pub fn clear_unlocked(s: &mut Save) -> usize {
+    let mut n = 0;
+    for b in s.bodies.iter_mut().filter(|b| b.ctype != 0 && !b.locked()) {
+        b.ctype = 0;
+        n += 1;
+    }
+    n
+}
+
 pub fn new_player(name: &str, reg: i32, score: i32) -> Save {
     let mut raw = [0u8; 128];
     for (d, b) in raw.iter_mut().zip(name.bytes().take(127)) {
@@ -58,5 +68,20 @@ pub fn new_player(name: &str, reg: i32, score: i32) -> Save {
         total: Default::default(),
         bodies: [TrophyItem::default(); 24],
         options: default_options(),
+    }
+}
+
+#[cfg(test)]
+mod clear_tests {
+    use super::*;
+
+    #[test]
+    fn clearing_keeps_locked_trophies() {
+        let mut s = new_player("a", 0, 0);
+        s.bodies[2].ctype = 3;
+        s.bodies[5].ctype = 4;
+        s.bodies[5].set_locked(true);
+        assert_eq!(clear_unlocked(&mut s), 1);
+        assert_eq!((s.bodies[2].ctype, s.bodies[5].ctype), (0, 4));
     }
 }

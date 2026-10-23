@@ -24,6 +24,27 @@ pub struct TrophyItem {
     pub reserved: [i32; 4],
 }
 
+impl TrophyItem {
+    /// Ours, in `reserved` (the original never reads it): the area it was
+    /// won in (1-based map number; 0 unknown).
+    pub fn area(&self) -> i32 {
+        self.reserved[0]
+    }
+
+    pub fn set_area(&mut self, n: i32) {
+        self.reserved[0] = n;
+    }
+
+    /// Ours, in `reserved`: locked (can't be removed).
+    pub fn locked(&self) -> bool {
+        self.reserved[1] & 1 != 0
+    }
+
+    pub fn set_locked(&mut self, on: bool) {
+        self.reserved[1] = (self.reserved[1] & !1) | i32::from(on);
+    }
+}
+
 /// `TStats`.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Stats {

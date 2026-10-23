@@ -15,6 +15,7 @@ pub mod model;
 pub mod player;
 pub mod prof;
 pub mod profile;
+pub mod record;
 pub mod rng;
 pub mod ship;
 pub mod sound;

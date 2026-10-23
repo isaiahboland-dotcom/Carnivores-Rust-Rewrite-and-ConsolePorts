@@ -265,15 +265,18 @@ enum Opt {
     PcSlider(&'static str, fn(&mut PcSettings) -> &mut i32),
     /// An on/off PC-only setting.
     PcToggle(&'static str, fn(&mut PcSettings) -> &mut i32),
+    /// Removes every trophy not locked (asked first: a second click).
+    ClearTrophies,
 }
 
-const GAME_OPTS: [Opt; 6] = [
+const GAME_OPTS: [Opt; 7] = [
     Opt::Slider("Aggressiveness", |s| &mut s.options.agres),
     Opt::Slider("Density", |s| &mut s.options.dens),
     Opt::Slider("Sensitivity", |s| &mut s.options.sens),
     Opt::Toggle("Measurement", ["Metric", "US"], |s| &mut s.options.sys),
     Opt::PcToggle("Blood", |p| &mut p.blood),
     Opt::PcToggle("Death animation", |p| &mut p.death_anim),
+    Opt::ClearTrophies,
 ];
 
 const VIDEO_OPTS: [Opt; 3] = [
@@ -377,6 +380,11 @@ pub struct Menu {
     /// (0 maps, 1 animals, 2 weapons and gear).
     mobile: Option<mobile::Art>,
     mobile_page: usize,
+    /// The signed-in hunter's record (`trophy0N.rec`), read when the
+    /// statistics open.
+    record: c2_core::record::Record,
+    /// "Remove unlocked trophies" was clicked once (a second click does it).
+    clear_armed: bool,
 }
 
 fn read_text(dir: Option<&Path>, name: &str) -> Vec<String> {
@@ -765,6 +773,8 @@ impl Menu {
         let mut m = Self {
             mobile,
             mobile_page: 0,
+            record: Default::default(),
+            clear_armed: false,
             hud,
             game_dir,
             huntdat,
@@ -823,6 +833,9 @@ impl Menu {
             "main" => Screen::Main,
             "stats" => {
                 self.stats = true;
+                if let Some(p) = self.me() {
+                    self.record = crate::save::load_record(p.reg_number);
+                }
                 Screen::Main
             }
             "hunt" => {
@@ -1082,7 +1095,12 @@ impl Menu {
             }
             4 => self.screen = Screen::Credits,
             5 => self.screen = Screen::Quit,
-            6 => self.stats = !self.stats,
+            6 => {
+                self.stats = !self.stats;
+                if let (true, Some(p)) = (self.stats, self.me()) {
+                    self.record = crate::save::load_record(p.reg_number);
+                }
+            }
             _ => {}
         }
     }
@@ -1293,6 +1311,20 @@ impl Menu {
         }
         let rows = self.option_rows();
         if input.clicked {
+            let on_clear = rows
+                .iter()
+                .any(|(o, r)| matches!(o, Opt::ClearTrophies) && inside(self.cursor, *r));
+            if on_clear {
+                if self.clear_armed {
+                    if let Some(s) = self.me_mut() {
+                        c2_core::profile::clear_unlocked(s);
+                    }
+                    self.store_me();
+                }
+                self.clear_armed = !self.clear_armed;
+                return;
+            }
+            self.clear_armed = false;
             for (i, _) in ACTIONS.iter().enumerate() {
                 let r = (
                     KEYS_PANEL.0,
@@ -1321,6 +1353,7 @@ impl Menu {
                         let v = f(&mut self.pc);
                         *v = i32::from(*v == 0);
                     }
+                    Opt::ClearTrophies => {}
                 }
             }
         }
@@ -1463,6 +1496,37 @@ impl Menu {
             for (i, l) in lines.iter().chain(extra.iter()).enumerate() {
                 self.text(out, 612.0, y0 + i as f32 * 18.0, 12.0, SAND, l);
             }
+        }
+        // Records (ours: `trophy0N.rec`).
+        use c2_core::record::Mode;
+        let r = &self.record;
+        let dist = |m: f32| {
+            if us {
+                format!("{:.0} ft", m / 0.3)
+            } else {
+                format!("{m:.0} m")
+            }
+        };
+        let short = |s: &str| s.chars().take(12).collect::<String>();
+        let mut lines = vec![("Records".to_string(), PICKED)];
+        if let Some(k) = r.longest() {
+            lines.push((format!("Longest: {}", dist(k.range)), SAND));
+            lines.push((
+                format!("  {} ({})", short(&k.animal), short(&k.weapon)),
+                TEXT,
+            ));
+        }
+        if let Some(k) = r.best() {
+            lines.push((format!("Best kill: {}", k.score), SAND));
+            lines.push((format!("  {}", short(&k.animal)), TEXT));
+        }
+        lines.push((format!("Kills: {} hunt", r.count(Mode::Hunt)), SAND));
+        lines.push((format!("  {} survival", r.count(Mode::Survival)), SAND));
+        lines.push((format!("Best wave: {}", r.best_wave), SAND));
+        let h = lines.len() as f32 * 18.0 + 10.0;
+        self.fill(out, (604.0, 322.0, 186.0, h), [0.0, 0.0, 0.0, 0.65]);
+        for (i, (l, c)) in lines.iter().enumerate() {
+            self.text(out, 612.0, 330.0 + i as f32 * 18.0, 12.0, *c, l);
         }
     }
 
@@ -1607,6 +1671,20 @@ impl Menu {
                     self.text(out, r.0, r.1 + 4.0, 12.0, color, name);
                     let v = ["Off", "On"][usize::from(*f(&mut self.pc.clone()) != 0)];
                     self.text(out, r.0 + SLIDER_X, r.1 + 4.0, 12.0, SAND, v);
+                }
+                Opt::ClearTrophies => {
+                    let n = copy
+                        .bodies
+                        .iter()
+                        .filter(|b| b.ctype != 0 && !b.locked())
+                        .count();
+                    let t = if self.clear_armed {
+                        format!("Click again: remove {n}")
+                    } else {
+                        "Remove unlocked trophies".into()
+                    };
+                    let c = if self.clear_armed { PICKED } else { color };
+                    self.text(out, r.0, r.1 + 4.0, 12.0, c, &t);
                 }
             }
         }

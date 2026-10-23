@@ -110,6 +110,63 @@ pub fn store(s: &Save) -> Result<()> {
     Ok(())
 }
 
+/// The hunter's record (`trophy0N.rec`, beside the save; see
+/// `c2_core::record`).
+pub fn load_record(reg: i32) -> c2_core::record::Record {
+    std::fs::read_to_string(slot_path(reg).with_extension("rec"))
+        .map(|t| c2_core::record::Record::parse(&t))
+        .unwrap_or_default()
+}
+
+pub fn store_record(reg: i32, r: &c2_core::record::Record) -> Result<()> {
+    let p = slot_path(reg).with_extension("rec");
+    std::fs::write(&p, r.write()).with_context(|| format!("writing {}", p.display()))
+}
+
+/// The first line of `MENU/TXT/AREAn.TXT` (the menus' name of map `n`).
+pub fn area_title(game_dir: &Path, n: i32) -> String {
+    let p = game_dir
+        .join("HUNTDAT/MENU/TXT")
+        .join(format!("AREA{n}.TXT"));
+    let found = std::fs::read(&p).ok().or_else(|| {
+        // Any case.
+        let dir = std::fs::read_dir(game_dir).ok()?.flatten().find(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .eq_ignore_ascii_case("huntdat")
+        })?;
+        let menu = std::fs::read_dir(dir.path())
+            .ok()?
+            .flatten()
+            .find(|e| e.file_name().to_string_lossy().eq_ignore_ascii_case("menu"))?;
+        let txt = std::fs::read_dir(menu.path())
+            .ok()?
+            .flatten()
+            .find(|e| e.file_name().to_string_lossy().eq_ignore_ascii_case("txt"))?;
+        let f = std::fs::read_dir(txt.path()).ok()?.flatten().find(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .eq_ignore_ascii_case(&format!("AREA{n}.TXT"))
+        })?;
+        std::fs::read(f.path()).ok()
+    });
+    found
+        .and_then(|d| {
+            String::from_utf8_lossy(&d)
+                .lines()
+                .map(str::trim)
+                .find(|l| !l.is_empty())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| {
+            if n > 0 {
+                format!("Area {n}")
+            } else {
+                "-".into()
+            }
+        })
+}
+
 pub fn delete(reg: i32) -> Result<()> {
     let p = slot_path(reg);
     std::fs::remove_file(&p).with_context(|| format!("deleting {}", p.display()))

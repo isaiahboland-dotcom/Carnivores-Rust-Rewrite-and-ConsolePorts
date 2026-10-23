@@ -236,6 +236,16 @@ pub enum GameEvent {
     Message(String),
 }
 
+/// A kill this hunt (the frontends name its parts for the record).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HuntKill {
+    pub ctype: usize,
+    pub score: i32,
+    /// Metres.
+    pub range: f32,
+    pub weapon: usize,
+}
+
 /// Hunt options (from the menu / save file).
 #[derive(Debug, Clone, Copy)]
 pub struct HuntOptions {
@@ -395,6 +405,10 @@ pub struct Hunt {
     /// Countdown to leaving after confirming (`ExitTime`), ms.
     exit_time: i32,
     outcome: Option<Outcome>,
+    /// The area's map number (1-based; 0 unknown), kept with trophies.
+    pub area_no: i32,
+    /// This hunt's kills (for the hunter's record).
+    pub kills: Vec<HuntKill>,
     /// Distance walked / time spent this hunt (`TrophyRoom.Last.path/time`).
     pub path: f32,
     pub time_s: f32,
@@ -489,6 +503,8 @@ impl Hunt {
             paused: false,
             exit_time: 0,
             outcome: None,
+            area_no: 0,
+            kills: Vec::new(),
             path: 0.0,
             time_s: 0.0,
             amb_rnd,
@@ -844,6 +860,12 @@ impl Hunt {
             range,
             tranq: self.opts.tranq,
         });
+        self.kills.push(HuntKill {
+            ctype: c.ctype,
+            score: score as i32,
+            range,
+            weapon: self.weapons.current,
+        });
         if let (false, Some(t)) = (self.opts.tranq, t) {
             let (y, mo, d, h, mi) = self.clock;
             self.room.bodies[t] = TrophyItem {
@@ -857,6 +879,7 @@ impl Hunt {
                 range,
                 ..Default::default()
             };
+            self.room.bodies[t].set_area(self.area_no);
             self.trophy_time = 20 * 1000;
             self.trophy_body = Some(t);
             out.push(GameEvent::Trophy {
@@ -1950,7 +1973,12 @@ impl Hunt {
         let Some(slot) = self.trophy_body else {
             return;
         };
-        if self.room.bodies.get(slot).is_none_or(|b| b.ctype == 0) {
+        if self
+            .room
+            .bodies
+            .get(slot)
+            .is_none_or(|b| b.ctype == 0 || b.locked())
+        {
             return;
         }
         self.room.bodies[slot].ctype = 0;
@@ -1964,6 +1992,43 @@ impl Hunt {
         }
         self.trophy_time = 0;
         self.trophy_body = None;
+    }
+
+    /// Locks or unlocks the trophy whose plaque is showing (locked ones
+    /// can't be removed). Whether it is now locked.
+    pub fn toggle_lock_current(&mut self) -> Option<bool> {
+        let slot = self.trophy_body.filter(|_| self.opts.trophy)?;
+        let b = self.room.bodies.get_mut(slot).filter(|b| b.ctype != 0)?;
+        b.set_locked(!b.locked());
+        Some(b.locked())
+    }
+
+    /// Moves the trophy whose plaque is showing to the next free stand
+    /// before it (`-1`) or after it (`1`); its stuffed animal goes there.
+    pub fn move_current_trophy(&mut self, area: &Area, dir: i32) -> bool {
+        let Some(slot) = self.trophy_body.filter(|_| self.opts.trophy) else {
+            return false;
+        };
+        let n = if self.herd.trophy_spots.is_empty() {
+            self.room.bodies.len().min(area.landings.len())
+        } else {
+            self.herd.trophy_spots.len().min(self.room.bodies.len())
+        };
+        let mut t = slot as i32;
+        let to = loop {
+            t += dir;
+            if t < 0 || t >= n as i32 {
+                return false;
+            }
+            if self.room.bodies[t as usize].ctype == 0 {
+                break t as usize;
+            }
+        };
+        self.room.bodies.swap(slot, to);
+        let room = self.room.clone();
+        self.herd.place_trophies(area, &room, &mut self.rng);
+        self.trophy_body = Some(to);
+        true
     }
 
     /// Counts down a confirmed exit; on leaving alive, folds this hunt into
@@ -2574,6 +2639,20 @@ mod tests {
         };
         let mut h = Hunt::new(&area, player, herd, weapons, rng, opts, room);
         let mut ev = Vec::new();
+        h.tick(&area, &[], &HuntInput::default(), 10, &mut ev);
+        assert_eq!(h.trophy_body, Some(0));
+        // Locked, it stays; unlocked, R removes it.
+        assert_eq!(h.toggle_lock_current(), Some(true));
+        h.remove_current_trophy();
+        assert_eq!(h.room.bodies[0].ctype, 1);
+        assert_eq!(h.toggle_lock_current(), Some(false));
+        // Moved to the next free stand after it (slot 1), and back.
+        assert!(h.move_current_trophy(&area, 1));
+        assert_eq!((h.room.bodies[0].ctype, h.room.bodies[1].ctype), (0, 1));
+        assert_eq!(h.trophy_body, Some(1));
+        assert!(h.herd.chars.iter().any(|c| c.state == 1));
+        assert!(h.move_current_trophy(&area, -1));
+        assert!(!h.move_current_trophy(&area, -1));
         h.tick(&area, &[], &HuntInput::default(), 10, &mut ev);
         assert_eq!(h.trophy_body, Some(0));
         h.remove_current_trophy();
