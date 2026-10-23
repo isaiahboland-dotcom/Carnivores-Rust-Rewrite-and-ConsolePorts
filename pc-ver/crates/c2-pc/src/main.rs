@@ -44,7 +44,7 @@ const USAGE: &str = "usage:
   c2-pc recipe new    <MOD_DIR>... --base <GAME_DIR> --id ID [--name NAME] [--out RECIPE.toml]
   c2-pc recipe base   --base <GAME_DIR> [--out recipes/bases/c2-vanilla.toml]
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
-  c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--shot out.png]
+  c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--models] [--shot out.png]
   c2-pc hunt  <AREA.MAP|TROPHY.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all]
               [--weapon N] [--bino] [--observer] [--player N] [--survival normal|hardcore|custom|mobile]\n              [--mobile-survival FILE]\n              [--shot out.png]
 
@@ -463,8 +463,11 @@ fn main() -> Result<()> {
                 .transpose()?;
             // 74 = ctViewR for the default OptViewR of 128 (Game.cpp: 42 + OptViewR/8*2).
             let view = o.num("view", 74u32)?;
+            // --models: far objects as models too (no sprites).
+            let far_sprites = !o.has("models");
             Box::new(move |g| {
                 let mut a = area_view::AreaView::load(g, &path, time)?;
+                a.far_sprites = far_sprites;
                 if let Some(c) = cam {
                     a.cam.pos = glam::Vec3::new(c[0], c[1], c[2]);
                     a.cam.yaw = c[3];

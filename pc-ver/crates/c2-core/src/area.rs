@@ -71,6 +71,16 @@ pub struct Area {
     pub bad_object_cells: usize,
     /// Collision data per RSC object, in world units.
     pub shapes: Vec<crate::collide::ObjectShape>,
+    /// `RandomMap[32][32]` (0..1023): darkens objects a little per cell.
+    /// The original fills it with `rand()` once per run; ours is a fixed
+    /// sequence of the same generator.
+    pub random_map: Vec<i32>,
+}
+
+/// `Resources.cpp`: `RandomMap[y][x] = rand() * 1024 / RAND_MAX`.
+fn random_map() -> Vec<i32> {
+    let mut r = crate::rng::MsRand::new(1);
+    (0..32 * 32).map(|_| r.rand() * 1024 / 32767).collect()
 }
 
 pub(crate) fn idx(x: usize, y: usize) -> usize {
@@ -94,6 +104,7 @@ impl Area {
             time,
             landings,
             bad_object_cells: bad,
+            random_map: random_map(),
         }
     }
 
@@ -191,8 +202,7 @@ impl Area {
             })
     }
 
-    /// Object brightness 0..1, `renderd3d.cpp: _RenderObject` (`RandomMap`
-    /// jitter omitted).
+    /// Object brightness 0..1, `renderd3d.cpp: _RenderObject`.
     pub fn object_light(&self, p: &Placement) -> f32 {
         let Some(o) = self.rsc.objects.get(usize::from(p.model)) else {
             return 0.5;
@@ -203,16 +213,65 @@ impl Area {
             .copied()
             .unwrap_or(128);
         // Ground-lit objects take the light of the ground under each vertex
-        // (CalcModelGroundLight: 128 + LandLt - 128). Approximated per object.
+        // (CalcModelGroundLight: 128 + LandLt - 128); here, under the object
+        // (the PC lights them per vertex, `ground_light`).
         if o.info.flags & object_flags::GROUND_LIGHT != 0 {
-            return f32::from(l) / 255.0;
+            return self.ground_light(p.pos[0], p.pos[2]) / 255.0;
         }
+        let (x, y) = (usize::from(p.cell.0), usize::from(p.cell.1));
         let l = if o.info.flags & object_flags::DEF_LIGHT != 0 {
             o.info.default_light
         } else {
-            i32::from(l >> 1) + 96
+            let r = self
+                .random_map
+                .get((y & 31) * 32 + (x & 31))
+                .copied()
+                .unwrap_or(0);
+            -(r >> 5) + i32::from(l >> 1) + 96
         };
         l.clamp(64, 192) as f32 / 255.0
+    }
+
+    /// The light of a far object's sprite: its light less 16
+    /// (`RenderBMPModel(.., mlight-16)`; ground-lit ones from 128).
+    pub fn sprite_light(&self, p: &Placement) -> f32 {
+        let ground = self
+            .rsc
+            .objects
+            .get(usize::from(p.model))
+            .is_some_and(|o| o.info.flags & object_flags::GROUND_LIGHT != 0);
+        let l = if ground {
+            128.0 / 255.0
+        } else {
+            self.object_light(p)
+        };
+        (l - 16.0 / 255.0).max(0.0)
+    }
+
+    /// `Game.cpp: GetLandLt2`: the ground light at (x, z), 0..255, bilinear
+    /// between every other cell's light.
+    pub fn ground_light(&self, x: f32, z: f32) -> f32 {
+        let lm = self.light_map();
+        let max = MAP_SIZE as i32 - 1;
+        let at = |cx: i32, cy: i32| {
+            f32::from(
+                lm.get(idx(cx.clamp(0, max) as usize, cy.clamp(0, max) as usize))
+                    .copied()
+                    .unwrap_or(128),
+            )
+        };
+        let (xi, zi) = (x.max(0.0) as i32, z.max(0.0) as i32);
+        let (cx, cy) = ((xi / 512) * 2, (zi / 512) * 2);
+        let (dx, dy) = ((xi % 512) as f32, (zi % 512) as f32);
+        let (h1, h2, h3, h4) = (
+            at(cx, cy),
+            at(cx + 2, cy),
+            at(cx + 2, cy + 2),
+            at(cx, cy + 2),
+        );
+        ((h1 * (512.0 - dx) + h2 * dx) * (512.0 - dy) + (h4 * (512.0 - dx) + h3 * dx) * dy)
+            / 512.0
+            / 512.0
     }
 
     /// Sky fade colour for the current time of day (`FadeRGB`), 0..=255.

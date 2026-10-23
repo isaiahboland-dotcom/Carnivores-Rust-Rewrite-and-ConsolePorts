@@ -20,6 +20,9 @@ pub struct PcSettings {
     pub blood: i32,
     /// The death camera (1 = on); off: a black screen and the prompt.
     pub death_anim: i32,
+    /// Far objects as their sprites (1 = on, as the original); off: as
+    /// models all the way.
+    pub far_sprites: i32,
 }
 
 impl Default for PcSettings {
@@ -29,6 +32,7 @@ impl Default for PcSettings {
             fog: 0,
             blood: 1,
             death_anim: 1,
+            far_sprites: 1,
         }
     }
 }
@@ -55,6 +59,7 @@ impl PcSettings {
                 "fog" => s.fog = i32::from(v != 0),
                 "blood" => s.blood = i32::from(v != 0),
                 "death_animation" => s.death_anim = i32::from(v != 0),
+                "far_sprites" => s.far_sprites = i32::from(v != 0),
                 _ => {}
             }
         }
@@ -63,8 +68,8 @@ impl PcSettings {
 
     pub fn store(&self) {
         let text = format!(
-            "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\n",
-            self.render, self.fog, self.blood, self.death_anim
+            "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nfar_sprites = {}\n",
+            self.render, self.fog, self.blood, self.death_anim, self.far_sprites
         );
         if let Some(dir) = path().parent() {
             let _ = std::fs::create_dir_all(dir);

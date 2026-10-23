@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use c2_core::area::{Area, Placement, TimeOfDay};
-use c2_core::model::{pose_object, vertex_lights, PreparedModel};
+use c2_core::model::{pose_object, sprite_mesh, vertex_lights, PreparedModel, SPRITE_CELLS};
 use c2_core::CELL;
 use c2_formats::rsc::object_flags;
 use c2_formats::{map, rsc, three_df};
@@ -98,9 +98,15 @@ pub struct AreaView {
     terrain: TerrainRenderer,
     sky: SkyRenderer,
     models: Vec<GpuModel>,
+    /// Each object's far sprite (`None`: `ofNOBMP`); its texture is layer
+    /// `models.len() + i`.
+    sprites: Vec<Option<GpuModel>>,
     renderer: ModelRenderer,
-    /// Placements bucketed by chunk, with their precomputed light.
-    chunks: Vec<Vec<(Placement, f32)>>,
+    /// Placements bucketed by chunk, with their precomputed light (negative:
+    /// ground-lit, per vertex) and their sprite's.
+    chunks: Vec<Vec<(Placement, f32, f32)>>,
+    /// Objects past [`SPRITE_CELLS`] as sprites (the original's look).
+    pub far_sprites: bool,
     pub cam: FlyCam,
     /// Free-fly controls; off when another scene drives the camera.
     pub fly: bool,
@@ -163,20 +169,48 @@ impl AreaView {
             .collect();
         let sky_rgba = c2_core::color::image_to_rgba8(&area.rsc.skies[time as usize], false);
         let sky = SkyRenderer::new(gpu, &globals, &sky_rgba, load_sun(map_path, time).as_ref());
-        let textures: Vec<&[u8]> = prepared.iter().map(|p| p.texture_rgba.as_slice()).collect();
+        // RenderBMPModel: a sprite per object, but for ofNOBMP ones.
+        let sprite_prep: Vec<Option<PreparedModel>> = area
+            .rsc
+            .objects
+            .iter()
+            .map(|o| {
+                (o.info.flags & object_flags::NO_BMP == 0)
+                    .then(|| PreparedModel::from_mesh(&sprite_mesh(&o.model.mesh, &o.sprite)))
+            })
+            .collect();
+        let sprites = sprite_prep
+            .iter()
+            .map(|p| p.as_ref().map(|p| GpuModel::new(gpu, p, Vec::new())))
+            .collect();
+        let blank = vec![0u8; 256 * 256 * 4];
+        let textures: Vec<&[u8]> = prepared
+            .iter()
+            .map(|p| p.texture_rgba.as_slice())
+            .chain(sprite_prep.iter().map(|p| {
+                p.as_ref()
+                    .map_or(blank.as_slice(), |p| p.texture_rgba.as_slice())
+            }))
+            .collect();
         let fallback = vec![0u8; 256 * 256 * 4];
         let textures = if textures.is_empty() {
             vec![fallback.as_slice()]
         } else {
             textures
         };
-        let renderer = ModelRenderer::new(gpu, &globals, &textures);
+        let renderer = ModelRenderer::with_ground(gpu, &globals, &textures, area.light_map());
 
         let mut chunks = vec![Vec::new(); CHUNKS * CHUNKS];
         for p in area.placements() {
             let c = usize::from(p.cell.1) / CHUNK * CHUNKS + usize::from(p.cell.0) / CHUNK;
-            let l = area.object_light(&p);
-            chunks[c].push((p, l));
+            let ground = area
+                .rsc
+                .objects
+                .get(usize::from(p.model))
+                .is_some_and(|o| o.info.flags & object_flags::GROUND_LIGHT != 0);
+            let l = if ground { -1.0 } else { area.object_light(&p) };
+            let s = area.sprite_light(&p);
+            chunks[c].push((p, l, s));
         }
 
         let (lx, ly) = area.landings.first().copied().unwrap_or((512, 512));
@@ -207,6 +241,8 @@ impl AreaView {
             models,
             renderer,
             chunks,
+            sprites,
+            far_sprites: true,
             cam,
             fly: true,
             zoom: 1.0,
@@ -335,6 +371,11 @@ impl AreaView {
 
         // Collect object instances within the view radius, grouped by model.
         let mut per_model: Vec<Vec<Instance>> = vec![Vec::new(); self.models.len()];
+        let mut per_sprite: Vec<Vec<Instance>> = vec![Vec::new(); self.sprites.len()];
+        // Sprites stand upright, turned to the camera.
+        let facing = self.cam.yaw / std::f32::consts::FRAC_PI_2;
+        let sprite_d2 = (SPRITE_CELLS * CELL).powi(2);
+        let n_models = self.models.len() as u32;
         let r = self.radius as i32;
         let r2 = (r * r) as f32 * CELL * CELL;
         let (c0x, c0y) = (
@@ -347,9 +388,22 @@ impl AreaView {
         );
         for cy in c0y..=c1y {
             for cx in c0x..=c1x {
-                for (p, light) in &self.chunks[cy * CHUNKS + cx] {
+                for (p, light, sprite_light) in &self.chunks[cy * CHUNKS + cx] {
                     let d = Vec3::from(p.pos) - self.cam.pos;
                     if d.x * d.x + d.z * d.z > r2 {
+                        continue;
+                    }
+                    let m = usize::from(p.model);
+                    if self.far_sprites
+                        && d.length_squared() > sprite_d2
+                        && self.sprites.get(m).is_some_and(Option::is_some)
+                    {
+                        per_sprite[m].push(Instance {
+                            offset: p.pos,
+                            turns: facing,
+                            light: *sprite_light,
+                            layer: n_models + u32::from(p.model),
+                        });
                         continue;
                     }
                     per_model[usize::from(p.model)].push(Instance {
@@ -366,6 +420,12 @@ impl AreaView {
             .iter()
             .zip(&per_model)
             .map(|(m, i)| (m, i.as_slice()))
+            .chain(
+                self.sprites
+                    .iter()
+                    .zip(&per_sprite)
+                    .filter_map(|(m, i)| Some((m.as_ref()?, i.as_slice()))),
+            )
             .collect();
         self.renderer.draw(gpu, pass, &self.globals, &batches);
         extra(gpu, pass, &self.globals);

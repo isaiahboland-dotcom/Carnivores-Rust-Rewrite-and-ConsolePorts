@@ -9,7 +9,10 @@ use c2_core::area::{cell_flags, Area, Placement, NO_WATER};
 use c2_core::dino::pose;
 use c2_core::effects::Effects;
 use c2_core::game::Hunt;
-use c2_core::model::{car_anim_duration_ms, pose_car, pose_object, vertex_lights, PreparedModel};
+use c2_core::model::{
+    car_anim_duration_ms, pose_car, pose_object, sprite_mesh, vertex_lights, PreparedModel,
+    SPRITE_CELLS,
+};
 use c2_core::{CELL, H_SCALE};
 use c2_formats::car::Car;
 use c2_formats::cooked::parse_texture;
@@ -208,7 +211,13 @@ pub struct World {
     flat_buf: Option<LinearBuf<FlatVertex>>,
     /// Snowflakes (their own buffer: the discs' is in use the same frame).
     snow_buf: Option<LinearBuf<FlatVertex>>,
-    placements: Vec<Vec<(Placement, f32)>>,
+    /// Placements by chunk, with their light and their sprite's.
+    placements: Vec<Vec<(Placement, f32, f32)>>,
+    /// Far sprites (`RenderBMPModel`) per object: texture and quad corners
+    /// (model space, top-left first); `None`: ofNOBMP or not in the pack.
+    sprites: Vec<Option<(Texture, [[f32; 3]; 4])>>,
+    /// Each object's sprites this frame, in one buffer.
+    sprite_bufs: Vec<Option<LinearBuf<Vertex>>>,
     species: Vec<Option<Posed>>,
     weapons: Vec<Option<Posed>>,
     /// One buffer per character slot, refilled when it is drawn.
@@ -293,11 +302,24 @@ impl World {
                     load_texture(vfs, &format!("C2RS/{sun_name}.TX")),
                 )
             });
+        let sprites = area
+            .rsc
+            .objects
+            .iter()
+            .enumerate()
+            .map(|(k, o)| {
+                let tex = load_texture(vfs, &format!("{dir}/SPR{k}.TX"))?;
+                let p = PreparedModel::from_mesh(&sprite_mesh(&o.model.mesh, &[]));
+                let c: [[f32; 3]; 4] = p.positions.get(..4)?.try_into().ok()?;
+                Some((tex, c))
+            })
+            .collect();
         let mut placements = vec![Vec::new(); CHUNKS * CHUNKS];
         for p in area.placements() {
             let c = usize::from(p.cell.1) / CHUNK * CHUNKS + usize::from(p.cell.0) / CHUNK;
             let l = area.object_light(&p);
-            placements[c].push((p, l));
+            let sl = area.sprite_light(&p);
+            placements[c].push((p, l, sl));
         }
         let posed = |cars: &[Option<Car>], tex: &dyn Fn(usize) -> String| -> Vec<Option<Posed>> {
             cars.iter()
@@ -350,6 +372,8 @@ impl World {
             flat_buf: None,
             snow_buf: None,
             placements,
+            sprites,
+            sprite_bufs: Vec::new(),
             species: posed(cars, &|i| {
                 format!("C2RS/M/{}.TX", keys.get(i).map_or("", String::as_str))
             }),
@@ -524,14 +548,26 @@ impl World {
             }
         }
 
-        // Objects within their view distance, by model.
+        // Objects within their view distance, by model; past
+        // `SPRITE_CELLS` (or that distance, if nearer) as sprites, out to
+        // the ground's view (`_RenderObject`).
         let ov = self.info.object_view as f32 * CELL;
+        let sprite_from = SPRITE_CELLS.min(self.info.object_view as f32) * CELL;
         let mut by_model: Vec<Vec<(Placement, f32)>> = vec![Vec::new(); self.objects.len()];
+        let mut by_sprite: Vec<Vec<(Placement, f32)>> = vec![Vec::new(); self.sprites.len()];
         for k in &vis {
-            for (p, l) in &self.placements[k.1 * CHUNKS + k.0] {
+            for (p, l, sl) in &self.placements[k.1 * CHUNKS + k.0] {
                 let d = Vec3::from(p.pos) - eye;
-                if d.x * d.x + d.z * d.z <= ov * ov {
-                    if let Some(v) = by_model.get_mut(usize::from(p.model)) {
+                let m = usize::from(p.model);
+                let flat2 = d.x * d.x + d.z * d.z;
+                if self.sprites.get(m).is_some_and(Option::is_some)
+                    && d.length_squared() > sprite_from * sprite_from
+                {
+                    if flat2 <= radius * radius * CELL * CELL {
+                        by_sprite[m].push((*p, *sl));
+                    }
+                } else if flat2 <= ov * ov {
+                    if let Some(v) = by_model.get_mut(m) {
                         v.push((*p, *l));
                     }
                 }
@@ -566,6 +602,8 @@ impl World {
                 m.draw(gpu, Lit::Signed);
             }
         }
+
+        self.draw_sprites(gpu, view, fwd, &by_sprite);
 
         self.draw_animals(gpu, hunt, poser, view, eye);
         self.draw_ship(gpu, hunt, view, eye);
@@ -825,6 +863,53 @@ impl World {
             gpu.set_model_view(&mv);
             tex.bind();
             gpu.draw(buf, Lit::Signed, 0, buf.len());
+        }
+    }
+
+    /// Far objects as their sprites: upright quads turned to the camera
+    /// (`RenderBMPModel`), one buffer and draw per object.
+    fn draw_sprites(
+        &mut self,
+        gpu: &mut Gpu,
+        view: &Mat4,
+        fwd: Vec3,
+        by_sprite: &[Vec<(Placement, f32)>],
+    ) {
+        let rot = Mat4::from_rotation_y(f32::atan2(-fwd.x, -fwd.z));
+        self.sprite_bufs.resize_with(self.sprites.len(), || None);
+        gpu.set_model_view(view);
+        gpu.set_light(0.0, Some(0));
+        const UV: [[f32; 2]; 4] = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
+        for ((sprite, slot), list) in self
+            .sprites
+            .iter()
+            .zip(&mut self.sprite_bufs)
+            .zip(by_sprite)
+        {
+            let Some((tex, quad)) = sprite else { continue };
+            if list.is_empty() {
+                continue;
+            }
+            let mut v = Vec::with_capacity(list.len() * 6);
+            for (p, l) in list {
+                let at = Vec3::from(p.pos);
+                let c = quad.map(|q| (at + rot.transform_vector3(Vec3::from(q))).to_array());
+                let lit = [(l * 255.0).clamp(0.0, 255.0) as u8, 0, 0, 0];
+                for i in [0, 1, 2, 0, 2, 3] {
+                    v.push(Vertex {
+                        pos: c[i],
+                        uv: UV[i],
+                        lit,
+                    });
+                }
+            }
+            if slot.as_ref().is_none_or(|b| b.cap() < v.len()) {
+                *slot = LinearBuf::new(v.len().next_power_of_two());
+            }
+            let Some(buf) = slot.as_mut() else { continue };
+            buf.write(&v);
+            tex.bind();
+            gpu.draw(buf, Lit::Unsigned, 0, buf.len());
         }
     }
 

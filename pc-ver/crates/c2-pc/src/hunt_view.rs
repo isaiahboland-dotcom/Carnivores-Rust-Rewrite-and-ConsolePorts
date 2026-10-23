@@ -288,6 +288,7 @@ impl HuntView {
             view.fog_start = 0.85;
         }
         view.brightness = (hunt.room.options.brightness + 128) as f32 / 256.0;
+        view.far_sprites = setup.pc.far_sprites != 0;
         let prev_cam = hunt.camera().0;
         let effects = EffectsView::new(gpu, view.globals(), &huntdat);
         Ok(Self {

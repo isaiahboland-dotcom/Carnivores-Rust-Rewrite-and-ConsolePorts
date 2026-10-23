@@ -634,6 +634,22 @@ fn cook_area(c: &mut Cooker, vfs: &Vfs, name: &str) -> Result<()> {
         c.model_texture(format!("C2RS/{name}/OBJ{k}.TX"), &p.texture_rgba);
         // Vertex buffer: 24 bytes per face corner.
         c.count("vertex buffers", p.faces.len() * 3 * 24);
+        // Its far sprite (`LoadBMPModel`; none for ofNOBMP), at the model
+        // texture's sharpness: 128x128 of the 256 is half its side.
+        if o.info.flags & c2_formats::rsc::object_flags::NO_BMP == 0 {
+            let sp =
+                PreparedModel::from_mesh(&c2_core::model::sprite_mesh(&o.model.mesh, &o.sprite));
+            let s = c2_formats::rsc::SPRITE_SIZE;
+            let crop: Vec<u8> = sp
+                .texture_rgba
+                .chunks(256 * 4)
+                .take(s)
+                .flat_map(|row| row[..s * 4].iter().copied())
+                .collect();
+            let side = (profile.model_tex / 2).clamp(16, s);
+            let px = downscale(&crop, s, s, side, side);
+            c.picture(&format!("C2RS/{name}/SPR{k}.TX"), &px, side, side);
+        }
     }
     // The RSC without what is now in the .TX files or only the PC uses:
     // terrain and object textures, sounds (kept as empty sounds).

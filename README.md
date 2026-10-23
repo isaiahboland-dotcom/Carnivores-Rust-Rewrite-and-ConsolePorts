@@ -441,8 +441,11 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] menu `.RAW` hit-maps (read by the menus), saves
 - [x] M2 Viewer — all 29 vanilla models and all 6 areas render: terrain, texture rotation, water, objects
       with `CalcLights` shading, object animation, fog, scrolling sky plane, cloud shadows, sun/moon, night vision
-  - [ ] later polish: distant object billboards (needed for 3DS perf anyway), `RandomMap` light jitter,
-        per-vertex ground light, side-by-side check vs retail (`sfTransparent` blend, object rotation direction)
+  - [x] distant objects as their sprites past 24 cells (`RenderBMPModel`; PC option "Far sprites", on as the
+        original; 3DS: out to the ground's view, where objects used to stop), `RandomMap` light offset,
+        per-vertex ground light (PC; the 3DS lights those objects from the ground under them)
+  - [ ] later polish: `sfTransparent` blend factor, object rotation direction, water's `RandomMap` shimmer
+        (the original's water light 168 ± 24 per cell, ours a flat 1.0)
 - [ ] M3 Vanilla PC — **in progress**
   - [x] hunter movement: walk/run/crouch/jump, slope slide, object + bound-box collision, swimming/diving (`c2-pc hunt`)
   - [x] dinosaur AI: all 15 vanilla species, placement, animation blending, death animations

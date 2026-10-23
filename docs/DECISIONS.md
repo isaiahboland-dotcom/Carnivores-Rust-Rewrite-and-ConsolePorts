@@ -2,6 +2,33 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-23 — M2 polish: far sprites, `RandomMap`, ground light
+- **Far sprites** (`_RenderObject`, `RenderBMPModel`, `LoadBMPModel`): past
+  `ctViewRM` = 24 cells (3D distance) an object but an `ofNOBMP` one is its
+  RSC 128x128 sprite on an upright quad over the model's x / y extent,
+  turned to the camera, light `mlight - 16` (ground-lit: 112). The
+  original's top-edge start (`mxy` from vertex 0's x) is kept.
+  `c2_core::model::sprite_mesh` makes it a plain mesh (texel 0 see-through),
+  so the PC draws it as a model. PC: on by default, option "Far sprites"
+  (`far_sprites` in `c2rs.cfg`), `c2-pc area --models` to compare. 3DS: the
+  cooker packs each sprite at the model textures' sharpness (`SPRn.TX`,
+  64x64 n3ds, 32x32 o3ds); the app draws them out to the ground's view
+  (objects used to stop at 28 / 24 cells), batched per object kind on the
+  CPU; packs without sprites draw as before.
+- **`RandomMap`**: `rand() * 1024 / RAND_MAX` per run in the original; ours
+  is the MS generator from seed 1, fixed. Objects lit by the light map lose
+  `RandomMap >> 5` (0..31).
+- **Ground light** (`CalcModelGroundLight`, `GetLandLt2`): the PC object
+  shader reads the light map (a storage buffer) under each vertex, bilinear
+  between every other cell. The 3DS (no texture reads in the vertex shader;
+  per-placement buffers would cost Old 3DS video memory, for at most ~600
+  objects an area) takes `GetLandLt2` under the object for the whole model.
+- Checked: PC shots of AREA1 with sprites and with `--models` match in
+  place and size; AREA3 (607 ground-lit objects) renders; the 3DS hunt runs
+  at 60 fps in Azahar on an o3ds pack.
+- Seen, not changed: the original's water light shimmers per cell
+  (`168 - wdelta * 24`, `wdelta` from `RandomMap` and time); ours is flat.
+
 ## 2026-10-23 — Classic survival on Ice Age, in place of its Arcade
 - **Owner's choice**: Ice Age's own mobile Arcade isn't ported. The Ice Age
   game has our survival, and the Dinosaur Hunter's classic survival when
@@ -1240,11 +1267,10 @@ does it: `BrightenTexture` maps every texel to `(G/8, G, G/8)`, i.e. night
 vision. The sun/moon is drawn additively (the original's black quad corners
 are invisible in-game).
 
-**Known approximations** (to check against the retail game): no `RandomMap`
-light jitter; ground-lit objects use one light value per object instead of
-per vertex; `sfTransparent` faces blend at 50%; object quarter-turn direction
-is unverified; no distant billboards (`bmpmodel`) yet; sun is not occluded
-by terrain (`SkyTraceK` = 1).
+**Known approximations** (to check against the retail game): `sfTransparent`
+faces blend at 50%; object quarter-turn direction is unverified; sun is not
+occluded by terrain (`SkyTraceK` = 1). (`RandomMap`, per-vertex ground light
+and distant sprites: done, 2026-10-23.)
 
 ## 2026-10-17 — TGA/WAV: read the header instead of assuming it
 

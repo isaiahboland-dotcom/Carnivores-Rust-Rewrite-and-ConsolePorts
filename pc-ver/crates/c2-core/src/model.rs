@@ -38,6 +38,64 @@ pub struct PreparedModel {
 
 pub const MODEL_TEXTURE_SIZE: usize = 256;
 
+/// Past this distance (cells) an object is drawn as its sprite
+/// (`ctViewRM`, `_RenderObject`), unless `ofNOBMP`.
+pub const SPRITE_CELLS: f32 = 24.0;
+
+/// An RSC object's distance billboard (`Resources.cpp: LoadBMPModel`) as a
+/// mesh on the model's scale: a quad over the model's x / y extent, its
+/// 128x128 `sprite` in the top-left of the texture, texel 0 see-through.
+/// It is drawn upright, turned to face the camera (`RenderBMPModel`).
+pub fn sprite_mesh(model: &Mesh, sprite: &[u16]) -> Mesh {
+    use c2_formats::model::{Face, Vertex};
+    let v0 = model.vertices.first().map_or((0.0, 0.0), |v| (v.x, v.y));
+    // As the original: the top starts from the first vertex's x.
+    let (mut mnx, mut mxx, mut mny, mut mxy) = (v0.0 - 0.5, v0.0 + 0.5, v0.1 - 0.5, v0.0 + 0.5);
+    for v in &model.vertices {
+        mnx = mnx.min(v.x);
+        mxx = mxx.max(v.x);
+        mny = mny.min(v.y);
+        mxy = mxy.max(v.y);
+    }
+    let corner = |x, y| Vertex {
+        x,
+        y,
+        z: 0.0,
+        owner: 0,
+        hide: 0,
+    };
+    let s = c2_formats::rsc::SPRITE_SIZE;
+    let mut texture = vec![0u16; TEXTURE_WIDTH * MODEL_TEXTURE_SIZE];
+    for (y, row) in sprite.chunks(s).take(s).enumerate() {
+        texture[y * TEXTURE_WIDTH..y * TEXTURE_WIDTH + row.len()].copy_from_slice(row);
+    }
+    let t = s as i32 - 1;
+    let face = |v: [i32; 3], tu: [i32; 3], tv: [i32; 3]| Face {
+        v,
+        tu,
+        tv,
+        flags: face_flags::OPACITY | face_flags::DOUBLE_SIDE,
+        dmask: 0,
+        distant: 0,
+        next: 0,
+        group: 0,
+        reserved: [0; 12],
+    };
+    Mesh {
+        vertices: vec![
+            corner(mnx, mxy),
+            corner(mxx, mxy),
+            corner(mxx, mny),
+            corner(mnx, mny),
+        ],
+        faces: vec![
+            face([0, 1, 2], [0, t, t], [0, 0, t]),
+            face([0, 2, 3], [0, t, 0], [0, t, t]),
+        ],
+        texture,
+    }
+}
+
 impl PreparedModel {
     pub fn from_mesh(mesh: &Mesh) -> Self {
         let positions = mesh

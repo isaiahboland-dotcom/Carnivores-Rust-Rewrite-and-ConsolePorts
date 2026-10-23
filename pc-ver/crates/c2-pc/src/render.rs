@@ -393,17 +393,26 @@ const INSTANCE_ATTRS: [wgpu::VertexAttribute; 4] =
 impl ModelRenderer {
     /// `textures`: one 256x256 RGBA8 texture per model, indexed by `Instance::layer`.
     pub fn new(gpu: &Gpu, globals: &Globals, textures: &[&[u8]]) -> Self {
-        Self::with_entry(gpu, globals, textures, "vs")
+        Self::with_entry(gpu, globals, textures, "vs", &[0; 4])
+    }
+
+    /// For an area's objects: `light_map` (1024x1024) lights instances with
+    /// a negative light per vertex from the ground under them
+    /// (`CalcModelGroundLight`).
+    pub fn with_ground(gpu: &Gpu, globals: &Globals, textures: &[&[u8]], light_map: &[u8]) -> Self {
+        let mut packed = light_map.to_vec();
+        packed.resize(packed.len().div_ceil(4).max(1) * 4, 0);
+        Self::with_entry(gpu, globals, textures, "vs", &packed)
     }
 
     /// For the first-person weapon (always in front of the world).
     pub fn near(gpu: &Gpu, globals: &Globals, textures: &[&[u8]]) -> Self {
-        Self::with_entry(gpu, globals, textures, "vs_near")
+        Self::with_entry(gpu, globals, textures, "vs_near", &[0; 4])
     }
 
     /// Additive, depth-tested (water rings).
     pub fn additive(gpu: &Gpu, globals: &Globals, textures: &[&[u8]]) -> Self {
-        let mut r = Self::with_entry(gpu, globals, textures, "vs");
+        let mut r = Self::with_entry(gpu, globals, textures, "vs", &[0; 4]);
         r.opaque = r.blend_variant(gpu, globals, "fs_add", Blend::AdditiveDepth);
         r.blend = r.blend_variant(gpu, globals, "fs_add", Blend::AdditiveDepth);
         r
@@ -433,10 +442,48 @@ impl ModelRenderer {
         )
     }
 
-    fn with_entry(gpu: &Gpu, globals: &Globals, textures: &[&[u8]], vs: &str) -> Self {
+    fn with_entry(
+        gpu: &Gpu,
+        globals: &Globals,
+        textures: &[&[u8]],
+        vs: &str,
+        ground: &[u8],
+    ) -> Self {
         let size = MODEL_TEXTURE_SIZE as u32;
         let view = gpu.texture_array("model textures", size, size, textures);
-        let (tex_layout, group) = texture_group(gpu, "model tex", &view, &gpu.sampler(true, false));
+        let [t0, t1] = texture_entries(0);
+        let tex_layout = gpu
+            .device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("model tex"),
+                entries: &[t0, t1, storage_entry(2)],
+            });
+        let ground = gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("ground light"),
+                contents: ground,
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        let sampler = gpu.sampler(true, false);
+        let group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("model tex"),
+            layout: &tex_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: ground.as_entire_binding(),
+                },
+            ],
+        });
         let layout = pipeline_layout(gpu, "model", &[&globals.layout, &tex_layout]);
         let module = shader(gpu, "model", include_str!("shaders/model.wgsl"));
         let buffers = model_buffers();

@@ -285,10 +285,11 @@ const GAME_OPTS: [Opt; 7] = [
     Opt::ClearTrophies,
 ];
 
-const VIDEO_OPTS: [Opt; 3] = [
+const VIDEO_OPTS: [Opt; 4] = [
     Opt::Slider("View range", |s| &mut s.options.view_r),
     Opt::PcSlider("Render distance", |p| &mut p.render),
     Opt::Slider("Brightness", |s| &mut s.options.brightness),
+    Opt::PcToggle("Far sprites", |p| &mut p.far_sprites),
 ];
 
 const MOUSE_OPTS: [Opt; 2] = [
