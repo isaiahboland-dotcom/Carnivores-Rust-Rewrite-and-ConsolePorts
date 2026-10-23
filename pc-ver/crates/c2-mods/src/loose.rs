@@ -258,14 +258,20 @@ fn menu_slot(base: &Vfs, res: &ResTxt, n: usize) -> Option<usize> {
         .ok()
         .and_then(|d| read_res(&d).ok())
         .map(|m| MenuData::from_res(&m));
-    match menu {
-        Some(m) if !m.huntables.is_empty() => {
+    // The menu's list: `_MENU.TXT`, else in a dialect game `_RES.TXT`'s
+    // animals with AI 10 and up in order (Ice Age rewritten in the dialect
+    // numbers its AIs its own way); in the original's data slot n is AI 9 + n.
+    let m = menu
+        .filter(|m| !m.huntables.is_empty())
+        .or_else(|| c2_formats::mee::is_dialect(res).then(|| MenuData::from_res(res)));
+    match m {
+        Some(m) => {
             let name = m.huntables.get(n - 1)?.name.to_ascii_lowercase();
             chars
                 .iter()
                 .position(|b| block_id(b).as_deref() == Some(&name))
         }
-        _ => {
+        None => {
             let ai = 9 + n as i32;
             chars
                 .iter()

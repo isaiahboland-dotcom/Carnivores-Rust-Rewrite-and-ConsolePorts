@@ -2,6 +2,28 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-23 — All-in test; engine options file; Ice Age + Android on Ice Age
+- **All in** (C2 + ME + 14 add-ons + both APK imports + the Ice Age import):
+  builds with 3 conflicts, all understood: the Dilophosaurus add-on and the
+  mobile import's (now: ids that clash are told apart instead of refused,
+  and mobile imports load first so the PC add-on wins — PC is the default
+  where both exist); `Edmonto.car` from Anatotitan and SkinPack (the skin
+  pack's, as meant). The 3DS pack hunts every animal on all 10 areas;
+  Majungasaurus still shares the Ankylosaurus's slot (its own `callNo`).
+- **3DS menu: up to 64 animals** (was 32; the all-in game has 34): animal
+  masks are 64-bit; past 40 a 10-column grid of smaller hexagons.
+- **Engine options** (launcher Settings: Export / Import options): one TOML
+  with the balance file (its prices, scores and the PC-or-mobile choices,
+  which are balance edits), the survival choice, the menu style, the PC
+  game's `c2rs.cfg`, the 3DS target and title art; no paths, no game data;
+  what a file leaves out stays.
+- **Add-ons on a dialect base without `_MENU.TXT`** find "slot n" by the
+  menu's order (the n-th animal with AI 10+), not AI 9 + n (the original
+  game's rule, kept for it): Ice Age rewritten in the dialect numbers its
+  AIs otherwise, so the APK's animals on an Ice Age base became roamers.
+  On Ice Age they take fitting donors (Andrewsarchus the Bear's, Doedicurus
+  the Brontotherium's, Hyaenodon the Wolf's, Titanis the Diatryma's).
+
 ## 2026-10-23 — M14: the combined game (Ice Age beside Carnivores 2)
 - **An import, like the APK one** (`c2_mods::ice_age::import`, `c2-pc iceage`,
   launcher "Import Ice Age..."): from the player's Ice Age folder, add-ons
