@@ -2,6 +2,22 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-23 — M12: records, trophy room, hunters
+- **The record** (`c2_core::record`) is a text file beside each save
+  (`trophy0N.rec`): one line per kill (mode, animal, score, range, weapon,
+  area, date) and the best survival wave. The original's save has no room;
+  statistics (longest shot, best kill, kills per mode) are worked out from
+  it. Kills go in when a hunt is left alive (as its trophies are saved).
+- **Trophies' area and lock** use the save's `reserved` ints (the original
+  never reads them), so saves stay the original's format.
+- **Trophy room**: move = the next free stand that way (`[` `]` on PC, L/R
+  on the 3DS; in a dialect game, its spots); remove and lock are asked first
+  (Y/N on PC, A/B on the 3DS); a locked trophy can't be removed. "Remove
+  unlocked trophies" (PC options, 3DS settings) takes a second click / tap.
+- **3DS hunters**: `trophy0N[-pack].sav`, N 0..=5 as the PC numbers them; the
+  last one played is in `settings.txt`; a new one's name comes from the
+  system keyboard (`swkbd`).
+
 ## 2026-10-22 — M9: the Modder's Edition trophy room
 The dialect's trophy room (`CharacterSpawn.cpp`, `Ship.cpp`): every
 `tropinfo` (in a `trophytable` group, or in a character, in file order) is

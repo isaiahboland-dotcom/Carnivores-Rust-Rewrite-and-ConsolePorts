@@ -208,11 +208,20 @@ pub struct Game {
     l_ms: f32,
     /// Crouch on D-Pad Up: 0 walk, 1 run, 2 crouch.
     gait: u8,
+    /// The trophy room's question waiting for A / B.
+    pub ask: Option<TrophyAsk>,
     /// The gyroscope, on for a stealth hunt: raw-to-degrees/s.
     gyro: Option<f32>,
     /// Extra ammo refills left.
     pub resupplies: u32,
     pub prev_cam: [f32; 3],
+}
+
+/// What the trophy room asks before doing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrophyAsk {
+    Remove,
+    Lock,
 }
 
 /// What the hunter does with the 3DS controls.
@@ -246,6 +255,11 @@ pub struct Pad {
     pub cancel: bool,
     /// Y / X at the leave prompt (or once dead): a new hunt, same setup.
     pub restart: bool,
+    /// Pressed this frame: L, R, X, Y (the trophy room's controls).
+    pub l_down: bool,
+    pub r_down: bool,
+    pub x_down: bool,
+    pub y_down: bool,
     /// From the bottom screen: a weapon (index), a call (AI).
     pub select_weapon: Option<usize>,
     pub select_call: Option<i32>,
@@ -451,6 +465,8 @@ impl Game {
             seed,
             room,
         );
+        hunt.area_no = c2_formats::mee::area_of(&setup.area).map_or(0, |n| n as i32);
+        hunt.clock = clock();
         // Start on a call that sounds.
         if !setup.callable(hunt.target_call) {
             if let Some(a) =
@@ -479,9 +495,45 @@ impl Game {
             crouched: false,
             l_ms: 0.0,
             gait: 0,
+            ask: None,
             gyro: gyro_on(setup_stealth),
             resupplies,
         })
+    }
+
+    /// This hunt's kills into the hunter's record.
+    pub fn record_kills(&mut self, vfs: &Vfs) -> std::io::Result<()> {
+        use c2_core::record::{Kill, Mode};
+        let kills = std::mem::take(&mut self.hunt.kills);
+        if kills.is_empty() {
+            return Ok(());
+        }
+        let n = self.hunt.area_no;
+        let area = crate::menu::title(vfs, &format!("AREA{n}.TXT"), format!("Area {n}"));
+        let (y, mo, d, _, _) = self.hunt.clock;
+        let mut r = crate::save::load_record();
+        for k in kills {
+            r.kills.push(Kill {
+                mode: Mode::Hunt,
+                animal: self
+                    .hunt
+                    .herd
+                    .species
+                    .get(k.ctype)
+                    .map_or_else(String::new, |s| s.info.name.clone()),
+                score: k.score,
+                range: k.range,
+                weapon: self
+                    .hunt
+                    .weapons
+                    .info
+                    .get(k.weapon)
+                    .map_or_else(String::new, |w| w.name.clone()),
+                area: area.clone(),
+                date: (y << 20) + (mo << 10) + d,
+            });
+        }
+        crate::save::store_record(&r)
     }
 
     /// Frees load-time data; call once the GPU copies exist.
@@ -493,6 +545,56 @@ impl Game {
     }
 
     /// Runs the simulation for `dt` seconds of real time.
+    /// The trophy room's buttons: L / R move the trophy shown to the next
+    /// free stand that way, X removes it, Y locks or unlocks it (both
+    /// asked: A yes, B no). They don't do their hunt jobs here. A message
+    /// to show, if any.
+    pub fn trophy_buttons(&mut self, pad: &mut Pad) -> Option<String> {
+        if !self.hunt.opts.trophy {
+            return None;
+        }
+        let mut msg = None;
+        let asked = self.ask.is_some();
+        if let Some(a) = self.ask {
+            if pad.confirm {
+                match a {
+                    TrophyAsk::Remove => self.hunt.remove_current_trophy(),
+                    TrophyAsk::Lock => {
+                        let _ = self.hunt.toggle_lock_current();
+                    }
+                }
+                self.ask = None;
+            } else if pad.cancel {
+                self.ask = None;
+            }
+        } else if let Some(slot) = self.hunt.trophy_body {
+            let locked = self.hunt.room.bodies.get(slot).is_some_and(|b| b.locked());
+            for (on, dir) in [(pad.l_down, -1), (pad.r_down, 1)] {
+                if on && !self.hunt.move_current_trophy(&self.area, dir) {
+                    msg = Some("No free stand that way".into());
+                }
+            }
+            if pad.x_down {
+                if locked {
+                    msg = Some("Locked: Y to unlock".into());
+                } else {
+                    self.ask = Some(TrophyAsk::Remove);
+                }
+            }
+            if pad.y_down {
+                self.ask = Some(TrophyAsk::Lock);
+            }
+        }
+        // Not their hunt jobs.
+        (pad.fire, pad.jump, pad.restart) = (false, false, false);
+        (pad.look_up, pad.turn_left) = (false, false);
+        // A / B answered the question (else they answer the leave prompt).
+        if asked {
+            (pad.confirm, pad.cancel) = (false, false);
+        }
+        msg
+    }
+
     pub fn update(&mut self, pad: &Pad, dt: f32) {
         use crate::settings::CrouchKey;
         let key = self.setup.crouch_key;
@@ -660,4 +762,24 @@ impl Drop for Game {
             let _ = unsafe { ctru_sys::HIDUSER_DisableGyroscope() };
         }
     }
+}
+
+/// The date and time (`Hunt::clock`: year, month, day, hour, minute) from
+/// the console's clock (local time).
+fn clock() -> (i32, i32, i32, i32, i32) {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64);
+    let (days, rem) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
+    // Days since 1970 to a civil date (H. Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    (y as i32, m as i32, d as i32, (rem / 3600) as i32, (rem / 60 % 60) as i32)
 }

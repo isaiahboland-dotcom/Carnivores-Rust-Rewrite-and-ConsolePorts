@@ -37,6 +37,7 @@ const LOCAL_SPAN: f32 = 64.0;
 
 const GREEN: Rgba = [0, 176, 0, 255];
 const GREY: Rgba = [150, 150, 150, 255];
+const GOLD: Rgba = [240, 200, 70, 255];
 const PANEL: Rgba = [24, 32, 24, 255];
 const HILITE: Rgba = [60, 110, 60, 255];
 
@@ -61,6 +62,9 @@ pub struct Ui {
     /// Calls of the hunted animals: (call id = 10 + menu slot, icon).
     calls: Vec<(i32, Option<Texture>)>,
     pub map_local: bool,
+    /// The trophy room: area names (map n at n - 1) and weapon names, for
+    /// the plaque.
+    trophy_names: Option<(Vec<String>, Vec<String>)>,
 }
 
 pub fn load(vfs: &Vfs, path: &str) -> Option<Texture> {
@@ -83,12 +87,29 @@ impl Ui {
             .filter(|&ai| game.setup.callable(ai))
             .map(|ai| (ai, load(vfs, &format!("C2RS/CALL{ai}.TX"))))
             .collect();
+        let trophy_names = game.setup.trophy().then(|| {
+            let areas = (1..=16)
+                .map(|n| crate::menu::title(vfs, &format!("AREA{n}.TXT"), format!("Area {n}")))
+                .collect();
+            let weapons = crate::rules::Rules::load(vfs)
+                .map(|r| {
+                    r.hunt("TROPHY", c2_core::area::TimeOfDay::Day, 0)
+                        .res
+                        .weapons
+                        .iter()
+                        .map(|w| w.name.clone().unwrap_or_default())
+                        .collect()
+                })
+                .unwrap_or_default();
+            (areas, weapons)
+        });
         Self {
             c: Canvas::new(load(vfs, "C2RS/FONT.TX")),
             map: load(vfs, &format!("C2RS/{}/MAP.TX", game.setup.area)),
             weapons,
             calls,
             map_local: true,
+            trophy_names,
         }
     }
 
@@ -131,6 +152,10 @@ impl Ui {
     pub fn draw_bottom(&mut self, gpu: &mut Gpu, game: &Game, message: Option<&str>) {
         let h = &game.hunt;
         gpu.begin_2d(Some([0, 0, 0]));
+        if h.opts.trophy {
+            self.draw_trophy(gpu, game, message);
+            return;
+        }
         let c = &mut self.c;
 
         // Panels and highlights.
@@ -275,6 +300,89 @@ impl Ui {
     /// shows while paused.
     /// `kill`: the last kill's species name and points, shown for a while
     /// in the bottom right.
+    /// The trophy room's bottom screen: the plaque of the trophy in front
+    /// (in place of the map), its buttons, and a question waiting.
+    fn draw_trophy(&mut self, gpu: &mut Gpu, game: &Game, message: Option<&str>) {
+        let h = &game.hunt;
+        let c = &mut self.c;
+        c.rect([0.0, 0.0, 320.0, BOTTOM_H as f32], PANEL);
+        c.flush(gpu);
+        c.text_c(gpu, 160.0, 8.0, 1.0, GOLD, "Trophy room");
+        let body = h
+            .trophy_body
+            .and_then(|s| h.room.bodies.get(s))
+            .filter(|b| b.ctype != 0);
+        let mut y = 28.0;
+        let mut line = |c: &mut Canvas, t: &str, col: Rgba| {
+            c.text(gpu, 12.0, y, 1.0, col, t);
+            y += 14.0;
+        };
+        match body {
+            Some(b) => {
+                let sp = h.herd.species.get(b.ctype.max(0) as usize).map(|s| &s.info);
+                let name = sp.map_or_else(String::new, |i| i.name.clone());
+                let (mass, len) = sp.map_or((0.0, 0.0), |i| (i.mass, i.length));
+                let us = h.room.options.sys != 0;
+                let sc = b.scale;
+                let (weight, length, range) = if us {
+                    (
+                        format!("{:.2} t", mass * sc * sc / 0.907),
+                        format!("{:.2} ft", len * sc / 0.3),
+                        format!("{:.0} ft", b.range / 0.3),
+                    )
+                } else {
+                    (
+                        format!("{:.2} T", mass * sc * sc),
+                        format!("{:.2} m", len * sc),
+                        format!("{:.0} m", b.range),
+                    )
+                };
+                let (areas, weapons) = self.trophy_names.clone().unwrap_or_default();
+                let area = usize::try_from(b.area() - 1)
+                    .ok()
+                    .and_then(|i| areas.get(i).cloned())
+                    .unwrap_or_else(|| "-".into());
+                let weapon = weapons
+                    .get(b.weapon.max(0) as usize)
+                    .cloned()
+                    .unwrap_or_default();
+                let (d, m, yr) = (b.date & 255, (b.date >> 10) & 255, b.date >> 20);
+                line(c, &name, WHITE);
+                if b.locked() {
+                    line(c, "Locked", GOLD);
+                }
+                line(c, &format!("Weight {weight}   Length {length}"), GREY);
+                line(c, &format!("Weapon {weapon}"), GREY);
+                line(c, &format!("Range {range}   Score {}", b.score), GREY);
+                line(c, &format!("Area {area}"), GREY);
+                if b.date != 0 {
+                    line(c, &format!("Date {d}.{m}.{yr}"), GREY);
+                }
+            }
+            None => line(c, "Walk up to a trophy to read it.", GREY),
+        }
+        let (prompt, col) = match game.ask {
+            Some(crate::hunt::TrophyAsk::Remove) => ("Remove this trophy?  A yes, B no", GOLD),
+            Some(crate::hunt::TrophyAsk::Lock) if body.is_some_and(|b| b.locked()) => {
+                ("Unlock this trophy?  A yes, B no", GOLD)
+            }
+            Some(crate::hunt::TrophyAsk::Lock) => ("Lock it (no removing)?  A / B", GOLD),
+            None if body.is_some() => ("L / R move   X remove   Y lock", WHITE),
+            None => ("", WHITE),
+        };
+        c.text_c(gpu, 160.0, 176.0, 1.0, col, prompt);
+        if let Some(m) = message {
+            let m: String = m.chars().take(38).collect();
+            c.text_c(gpu, 160.0, 192.0, 1.0, GREEN, &m);
+        }
+        let leave = if h.exit_prompt {
+            "Leave? A yes, B no"
+        } else {
+            "START: leave"
+        };
+        c.text_c(gpu, 160.0, 220.0, 1.0, GREY, leave);
+    }
+
     pub fn draw_top(
         &mut self,
         gpu: &mut Gpu,

@@ -47,10 +47,17 @@ const TIMES: [(TimeOfDay, &str); 3] = [
 const EXTRA_AMMO: [(i32, u32, f32); 3] = [(10, 1, 0.95), (50, 2, 0.95), (150, 3, 1.0)];
 
 /// Title screen buttons.
-const PLAY: [f32; 4] = [60.0, 18.0, 200.0, 42.0];
-const TROPHIES: [f32; 4] = [60.0, 70.0, 200.0, 42.0];
-const SETTINGS: [f32; 4] = [60.0, 122.0, 200.0, 42.0];
-const QUIT: [f32; 4] = [60.0, 174.0, 200.0, 42.0];
+const PLAY: [f32; 4] = [60.0, 10.0, 200.0, 34.0];
+const HUNTER: [f32; 4] = [60.0, 54.0, 200.0, 34.0];
+const TROPHIES: [f32; 4] = [60.0, 98.0, 200.0, 34.0];
+const SETTINGS: [f32; 4] = [60.0, 142.0, 200.0, 34.0];
+const QUIT: [f32; 4] = [60.0, 186.0, 200.0, 34.0];
+/// Settings: remove every unlocked trophy (a second tap does it).
+const CLEAR_TROPHIES: [f32; 4] = [60.0, 80.0, 200.0, 26.0];
+/// The hunters list: row `i`.
+fn hunter_row(i: usize) -> [f32; 4] {
+    [40.0, 8.0 + i as f32 * 30.0, 240.0, 26.0]
+}
 
 /// Settings screen: run speed bar with - / +, then the toggles.
 // The hunt options screen.
@@ -91,6 +98,8 @@ enum Step {
     Gear,
     /// Hunt options, before each hunt.
     Options,
+    /// Pick a hunter, or make one.
+    Hunters,
 }
 
 struct Item {
@@ -178,9 +187,15 @@ pub struct Menu {
     /// The last item tapped, for its name and price under the grid.
     focus: Option<String>,
     message: Option<String>,
+    /// The menu loop shows the system keyboard for a new hunter's name.
+    pub want_name: bool,
+    /// Settings: "Remove unlocked trophies" tapped once.
+    clear_armed: bool,
+    /// The hunter's record (the title shows it).
+    record: c2_core::record::Record,
 }
 
-fn title(vfs: &Vfs, file: &str, fallback: String) -> String {
+pub(crate) fn title(vfs: &Vfs, file: &str, fallback: String) -> String {
     vfs.read(&format!("HUNTDAT/MENU/TXT/{file}"))
         .ok()
         .and_then(|d| {
@@ -198,6 +213,8 @@ impl Menu {
     pub fn new(vfs: &Vfs, info: PackInfo) -> anyhow::Result<Self> {
         let rules = Rules::load(vfs)?;
         let menu = &rules.menu;
+        let settings = Settings::load();
+        crate::save::use_hunter(settings.hunter);
         let save = crate::save::load(menu.start);
         let price = |v: &Vec<i32>, i: usize| v.get(i).copied().unwrap_or(0);
         let mut areas = Vec::new();
@@ -320,7 +337,10 @@ impl Menu {
             roams,
             rules,
             mem: std::cell::Cell::new(None),
-            settings: Settings::load(),
+            settings,
+            want_name: false,
+            clear_armed: false,
+            record: crate::save::load_record(),
             weapons,
             equip,
             area: 0,
@@ -666,11 +686,34 @@ impl Menu {
                     return Some(self.trophy_setup());
                 } else if inside(SETTINGS, x, y) {
                     self.step = Step::Settings;
+                } else if inside(HUNTER, x, y) {
+                    self.step = Step::Hunters;
                 } else if inside(QUIT, x, y) {
                     self.quit = true;
                 }
             }
+            Step::Hunters => {
+                let list = crate::save::hunters();
+                if let Some(i) = (0..list.len() + 1).find(|&i| inside(hunter_row(i), x, y)) {
+                    match list.get(i) {
+                        Some(&(n, _)) => self.switch_hunter(n),
+                        None if crate::save::free_slot().is_some() => self.want_name = true,
+                        None => self.message = Some("Six hunters already".into()),
+                    }
+                }
+            }
+            Step::Settings if inside(CLEAR_TROPHIES, x, y) => {
+                if self.clear_armed {
+                    let n = c2_core::profile::clear_unlocked(&mut self.save);
+                    self.message = Some(match crate::save::store(&self.save) {
+                        Ok(()) => format!("{n} trophies removed"),
+                        Err(e) => format!("save failed: {e}"),
+                    });
+                }
+                self.clear_armed = !self.clear_armed;
+            }
             Step::Settings => {
+                self.clear_armed = false;
                 let s = &mut self.settings;
                 if inside(CROUCH_KEY, x, y) {
                     s.crouch_key = s.crouch_key.next();
@@ -775,7 +818,7 @@ impl Menu {
             }
         }
         self.step = match self.step {
-            Step::Title | Step::Settings | Step::Area => Step::Title,
+            Step::Title | Step::Settings | Step::Area | Step::Hunters => Step::Title,
             Step::Animals => Step::Area,
             Step::Gear => Step::Animals,
             Step::Options => Step::Gear,
@@ -796,7 +839,7 @@ impl Menu {
     pub fn next(&mut self) -> Option<Setup> {
         match self.step {
             Step::Title => self.step = Step::Area,
-            Step::Settings => self.back(),
+            Step::Settings | Step::Hunters => self.back(),
             Step::Area if !self.trophy() => self.step = Step::Animals,
             Step::Animals => self.step = Step::Gear,
             Step::Gear => self.step = Step::Options,
@@ -812,6 +855,36 @@ impl Menu {
             },
         }
         None
+    }
+
+    /// Hunter `n` plays (its save and record), from now on and next time.
+    fn switch_hunter(&mut self, n: i32) {
+        crate::save::use_hunter(n);
+        self.save = crate::save::load(self.rules.menu.start);
+        self.record = crate::save::load_record();
+        let o = self.save.options;
+        self.picked_equip = [o.camo, o.radar, o.scent]
+            .iter()
+            .enumerate()
+            .filter(|(_, &on)| on != 0)
+            .fold(0, |m, (i, _)| m | 1 << i);
+        self.settings.hunter = n;
+        if let Err(e) = self.settings.store() {
+            self.message = Some(format!("settings not saved: {e}"));
+        }
+        self.step = Step::Title;
+    }
+
+    /// A new hunter called `name` (from the system keyboard).
+    pub fn new_hunter(&mut self, name: &str) {
+        let Some(n) = crate::save::free_slot() else {
+            return;
+        };
+        let name = if name.is_empty() { "Hunter" } else { name };
+        match crate::save::create(n, name, self.rules.menu.start) {
+            Ok(_) => self.switch_hunter(n),
+            Err(e) => self.message = Some(format!("save failed: {e}")),
+        }
     }
 
     pub fn set_message(&mut self, m: String) {
@@ -900,6 +973,7 @@ impl Menu {
                     (TROPHIES, "TROPHIES", self.trophy_room),
                     (SETTINGS, "SETTINGS", true),
                     (QUIT, "QUIT", true),
+                    (HUNTER, "HUNTER", true),
                 ];
                 for (r, _, on) in buttons {
                     c.rect(
@@ -929,6 +1003,45 @@ impl Menu {
             }
             Step::Settings => {
                 self.draw_settings(&mut c, gpu);
+                self.c = c;
+                return;
+            }
+            Step::Hunters => {
+                let list = crate::save::hunters();
+                let me = crate::save::hunter();
+                let mut rows: Vec<(String, bool)> = list
+                    .iter()
+                    .map(|(n, name)| (name.clone(), *n == me))
+                    .collect();
+                if crate::save::free_slot().is_some() {
+                    rows.push(("+ New hunter".into(), false));
+                }
+                for (i, (_, on)) in rows.iter().enumerate() {
+                    let r = hunter_row(i);
+                    if *on {
+                        c.rect([r[0] - 2.0, r[1] - 2.0, r[2] + 4.0, r[3] + 4.0], GOLD);
+                    }
+                    c.rect(r, PANEL);
+                }
+                c.rect(BACK, PANEL);
+                c.flush(gpu);
+                for (i, (name, _)) in rows.iter().enumerate() {
+                    let r = hunter_row(i);
+                    let n: String = name.chars().take(26).collect();
+                    c.text_c(gpu, r[0] + r[2] / 2.0, r[1] + 9.0, 1.0, WHITE, &n);
+                }
+                c.text_c(
+                    gpu,
+                    BACK[0] + BACK[2] / 2.0,
+                    BAR_Y + 8.0,
+                    1.0,
+                    WHITE,
+                    "Back",
+                );
+                if let Some(m) = self.message.clone() {
+                    let m: String = m.chars().take(38).collect();
+                    c.text_c(gpu, 160.0, 200.0, 1.0, TEXT, &m);
+                }
                 self.c = c;
                 return;
             }
@@ -1071,6 +1184,27 @@ impl Menu {
     fn draw_settings(&self, c: &mut Canvas, gpu: &mut Gpu) {
         let s = self.settings;
         c.rect(BACK, PANEL);
+        c.rect(
+            CLEAR_TROPHIES,
+            if self.clear_armed {
+                [140, 60, 30, 255]
+            } else {
+                PANEL
+            },
+        );
+        c.flush(gpu);
+        let unlocked = self
+            .save
+            .bodies
+            .iter()
+            .filter(|b| b.ctype != 0 && !b.locked())
+            .count();
+        let t = if self.clear_armed {
+            format!("Tap again: remove {unlocked}")
+        } else {
+            "Remove unlocked trophies".into()
+        };
+        c.text_c(gpu, 160.0, CLEAR_TROPHIES[1] + 9.0, 1.0, WHITE, &t);
         let toggles = [
             (BLOOD, s.blood, "Blood"),
             (DEATH_ANIM, s.death_anim, "Death animation"),
@@ -1236,6 +1370,17 @@ impl Menu {
             (format!("Trophies {trophies}"), WHITE),
             (format!("Kills   {}", self.save.total.success), WHITE),
         ];
+        let r = &self.record;
+        let mut lines = lines.to_vec();
+        if let Some(k) = r.longest() {
+            lines.push((format!("Longest {:.0} m", k.range), TEXT));
+        }
+        if let Some(k) = r.best() {
+            lines.push((format!("Best    {} {}", k.score, k.animal), TEXT));
+        }
+        if r.best_wave > 0 {
+            lines.push((format!("Wave    {}", r.best_wave), TEXT));
+        }
         for (i, (l, col)) in lines.iter().enumerate() {
             let l: String = l.chars().take(18).collect();
             c.text(gpu, 12.0, 92.0 + 16.0 * i as f32, 1.0, *col, &l);
@@ -1245,7 +1390,7 @@ impl Menu {
     fn draw_top(&mut self, gpu: &mut Gpu) {
         gpu.begin_2d(None);
         let mut c = std::mem::replace(&mut self.c, Canvas::new(None));
-        if self.step == Step::Title {
+        if matches!(self.step, Step::Title | Step::Hunters) {
             self.draw_title_top(&mut c, gpu);
             self.c = c;
             return;
@@ -1385,7 +1530,7 @@ impl Menu {
             (Step::Area, _) => ("Pick a place and the time of day".into(), DIM),
             (Step::Animals, _) => ("Pick the animals to hunt".into(), DIM),
             (Step::Gear, _) => ("Pick weapons and gear".into(), DIM),
-            (Step::Title | Step::Settings, _) => (String::new(), DIM),
+            (Step::Title | Step::Settings | Step::Hunters, _) => (String::new(), DIM),
         };
         c.text(gpu, 8.0, 226.0, 1.0, col, &msg);
         self.c = c;

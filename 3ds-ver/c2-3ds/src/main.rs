@@ -333,6 +333,10 @@ fn read_pad(hid: &Hid, held: KeyPad, down: KeyPad, touch: &mut Touch) -> (Pad, O
         confirm: down.contains(KeyPad::A),
         cancel: down.contains(KeyPad::B),
         restart: down.contains(KeyPad::Y) || down.contains(KeyPad::X),
+        l_down: down.contains(KeyPad::L),
+        r_down: down.contains(KeyPad::R),
+        x_down: down.contains(KeyPad::X),
+        y_down: down.contains(KeyPad::Y),
         select_weapon: None,
         select_call: None,
         resupply: false,
@@ -354,6 +358,8 @@ fn camera(pos: Vec3, alpha: f32, beta: f32) -> (Mat4, Vec3) {
 /// Input and test-script state shared by the menu and the hunts.
 struct Io<'a> {
     apt: &'a Apt,
+    /// For the system keyboard (a new hunter's name).
+    gfx: &'a Gfx,
     hid: &'a mut Hid,
     script: Option<Script>,
     /// Frames since start (the test script counts these).
@@ -429,6 +435,16 @@ fn menu(
         }
         if m.quit || io.quit() {
             return Ok(None);
+        }
+        // A new hunter: the name on the system keyboard.
+        if std::mem::take(&mut m.want_name) {
+            use ctru::applets::swkbd::{Button, ButtonConfig, Kind, SoftwareKeyboard};
+            let mut kb = SoftwareKeyboard::new(Kind::Normal, ButtonConfig::LeftRight);
+            kb.set_hint_text(Some("Hunter's name"));
+            kb.set_max_text_len(20);
+            if let Ok((name, Button::Right)) = kb.launch(io.apt, io.gfx) {
+                m.new_hunter(name.trim());
+            }
         }
         gpu.begin([0, 0, 0]);
         m.draw(gpu);
@@ -543,6 +559,9 @@ fn hunt(
             fps = fps * 0.9 + (1.0 / dt) * 0.1;
         }
         let t_upd = ticks();
+        if let Some(m) = game.trophy_buttons(&mut pad) {
+            message = Some((m, frame + 120));
+        }
         game.update(&pad, dt.min(0.1));
         if let Some(s) = sound.as_mut() {
             s.update(&game.events, &game.hunt, dt.min(0.1));
@@ -572,6 +591,7 @@ fn hunt(
         }
         match game.hunt.outcome() {
             Some(Outcome::Exited) => {
+                let _ = game.record_kills(vfs);
                 return Ok(Some(match save::store(&game.hunt.room) {
                     Ok(()) => format!("Saved. Score {}", game.hunt.room.score),
                     Err(e) => format!("save failed: {e}"),
@@ -648,7 +668,7 @@ fn hunt(
     Ok(Some(String::new()))
 }
 
-fn run(pack: &Path, apt: &Apt, hid: &mut Hid) -> Result<()> {
+fn run(pack: &Path, apt: &Apt, hid: &mut Hid, gfx: &Gfx) -> Result<()> {
     let mut vfs = Vfs::new();
     vfs.push(
         "pack",
@@ -667,6 +687,7 @@ fn run(pack: &Path, apt: &Apt, hid: &mut Hid) -> Result<()> {
     let mut gpu = Gpu::new().context("citro3d init failed")?;
     let mut io = Io {
         apt,
+        gfx,
         hid,
         script: Script::load(&format!("{}/autotest.txt", dir())),
         frame: 0,
@@ -735,7 +756,7 @@ fn main() {
     };
     save::use_pack(&pack);
     println!("pack: {}", pack.display());
-    if let Err(e) = run(&pack, &apt, &mut hid) {
+    if let Err(e) = run(&pack, &apt, &mut hid, &gfx) {
         console.select();
         println!("\nerror: {e:#}");
         wait_for_start(&apt, &mut hid, &gfx);

@@ -24,6 +24,8 @@ pub struct Settings {
     pub random_ambients: bool,
     /// The crouch button (the Old 3DS has no ZL).
     pub crouch_key: CrouchKey,
+    /// The hunter last played (save slot).
+    pub hunter: i32,
 }
 
 /// How the hunter crouches.
@@ -88,6 +90,7 @@ impl Default for Settings {
             stealth: false,
             random_ambients: false,
             crouch_key: CrouchKey::default_for_console(),
+            hunter: 0,
         }
     }
 }
@@ -115,6 +118,7 @@ impl Settings {
                 ("friendly", v) => s.friendly = v != "0",
                 ("stealth_crouch", v) => s.stealth = v != "0",
                 ("random_ambients", v) => s.random_ambients = v != "0",
+                ("hunter", v) => s.hunter = v.parse().unwrap_or(0),
                 ("crouch_button", v) => {
                     s.crouch_key = match v {
                         "zl" => CrouchKey::Zl,
@@ -133,7 +137,7 @@ impl Settings {
             path(),
             format!(
                 "run_speed = {}\nambient = {}\nblood = {}\ndeath_animation = {}\n\
-                 friendly = {}\nstealth_crouch = {}\nrandom_ambients = {}\ncrouch_button = {}\n",
+                 friendly = {}\nstealth_crouch = {}\nrandom_ambients = {}\ncrouch_button = {}\nhunter = {}\n",
                 self.run_pct,
                 i32::from(self.ambient),
                 i32::from(self.blood),
@@ -141,7 +145,8 @@ impl Settings {
                 i32::from(self.friendly),
                 i32::from(self.stealth),
                 i32::from(self.random_ambients),
-                self.crouch_key.key()
+                self.crouch_key.key(),
+                self.hunter
             ),
         )
     }

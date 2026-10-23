@@ -514,7 +514,14 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
         (`HuntOptions::notice_k`)
   - [x] stealth crouch: ZL toggles; crouched, gyro aim, half as visible, shots carry half as far
   - [ ] owner's hardware test (gyro direction and feel, the friendly distance)
-- [ ] M12 Profiles, statistics, trophy room (planned)
+- [ ] M12 Profiles, statistics, trophy room — **in progress** (untested on hardware)
+  - [x] hunter's record beside the save (`trophy0N.rec`: every kill, hunt or survival, best wave); statistics:
+        longest shot, best kill, kills per mode, best wave (PC statistics panel, 3DS title)
+  - [x] trophies keep their area and a lock (in the save's reserved ints); trophy room: info (PC plaque, 3DS
+        bottom screen in place of the map), move to the next free stand (PC `[` `]`, 3DS L/R), remove (R / X) and
+        lock (L / Y), both asked; an option removes every unlocked trophy (PC options, 3DS settings)
+  - [x] 3DS: several hunters per pack (HUNTER on the title; a new one named on the system keyboard), dates
+        from the console's clock
 - [ ] M13 Survival mode (planned)
 - [ ] M14 Carnivores: Ice Age (planned)
 - [ ] M15 Mobile assets — **in progress**
