@@ -74,6 +74,19 @@ impl EffectsView {
                 c1: [r2, 0.0, 0.0, a2],
             });
         }
+        // Snow: soft dots, fading while they lie.
+        if let Some(s) = &fx.snow {
+            let [r, g, b, _] = s.kind.rgba.map(|c| f32::from(c) / 255.0);
+            for f in &s.flakes {
+                let a = s.alpha(f);
+                discs.push(Disc {
+                    center: f.pos,
+                    radius: 8.0 * s.kind.rad * RADIUS_K,
+                    c0: [r, g, b, a],
+                    c1: [r / 2.0, g / 2.0, b / 2.0, a / 7.0],
+                });
+            }
+        }
         self.discs.draw(gpu, pass, globals, &discs);
 
         let Some((car, prepared, renderer)) = &mut self.ring else {

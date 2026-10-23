@@ -206,6 +206,8 @@ pub struct World {
     binoculars: Option<Posed>,
     ring: Option<Extra>,
     flat_buf: Option<LinearBuf<FlatVertex>>,
+    /// Snowflakes (their own buffer: the discs' is in use the same frame).
+    snow_buf: Option<LinearBuf<FlatVertex>>,
     placements: Vec<Vec<(Placement, f32)>>,
     species: Vec<Option<Posed>>,
     weapons: Vec<Option<Posed>>,
@@ -343,6 +345,7 @@ impl World {
                 }),
             ring: Extra::load(vfs, "HUNTDAT/WCIRCLE2.CAR", "C2RS/RING.TX"),
             flat_buf: None,
+            snow_buf: None,
             placements,
             species: posed(cars, &|i| {
                 format!("C2RS/M/{}.TX", keys.get(i).map_or("", String::as_str))
@@ -722,6 +725,36 @@ impl World {
                 gpu.draw_flat(b, 0, b.len());
                 gpu.blend(Blend::Cutout);
                 gpu.depth(true, false);
+            }
+        }
+        // Snow: small diamonds, hidden by what is in front.
+        if let Some(s) = fx.snow.as_ref().filter(|s| !s.flakes.is_empty()) {
+            let [r, g, b, _] = s.kind.rgba;
+            let size = 8.0 * s.kind.rad * DISC_K;
+            let mut v = Vec::with_capacity(s.flakes.len() * 6);
+            for f in &s.flakes {
+                let cv = view.transform_point3(Vec3::from(f.pos));
+                if cv.z > -16.0 {
+                    continue;
+                }
+                let a = (s.alpha(f) * 255.0) as u8;
+                let p = |dx: f32, dy: f32| FlatVertex {
+                    pos: [cv.x + dx, cv.y + dy, cv.z],
+                    rgba: [r, g, b, a],
+                };
+                v.extend([p(-size, 0.0), p(0.0, -size), p(size, 0.0)]);
+                v.extend([p(-size, 0.0), p(size, 0.0), p(0.0, size)]);
+            }
+            if self.snow_buf.as_ref().is_none_or(|b| b.cap() < v.len()) {
+                self.snow_buf = LinearBuf::new(v.len().next_power_of_two());
+            }
+            if let (Some(b), false) = (self.snow_buf.as_mut(), v.is_empty()) {
+                b.write(&v);
+                gpu.set_model_view(&Mat4::IDENTITY);
+                gpu.blend(Blend::Alpha);
+                gpu.depth(true, false);
+                gpu.draw_flat(b, 0, b.len());
+                gpu.blend(Blend::Cutout);
             }
         }
         // Rings: GlassL = 255 - (2000 - FTime) / 38, faint and fading.

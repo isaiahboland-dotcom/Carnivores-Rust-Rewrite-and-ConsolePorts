@@ -169,6 +169,9 @@ pub struct Setup {
     pub mobile_survival: Option<c2_formats::mobile_arcade::Survive>,
 }
 
+/// The most snowflakes on the 3DS (an area asks for up to 2000).
+const SNOW_MAX: usize = 300;
+
 /// The most animals in a survival wave on the 3DS.
 pub const SURVIVAL_MAX: usize = 6;
 
@@ -402,6 +405,11 @@ fn new_hunt(
     };
     let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
     hunt.ship_anim_ms = ship_ms;
+    // The area's snow (Ice Age), thinner than on PC.
+    hunt.effects.snow = tables
+        .and_then(|t| t.snow)
+        .filter(|_| !setup.trophy())
+        .map(|s| c2_core::effects::Snowfall::new(s, SNOW_MAX));
     let mobile = setup
         .mobile_survival
         .as_ref()

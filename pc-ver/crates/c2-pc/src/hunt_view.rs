@@ -381,6 +381,11 @@ impl HuntView {
             setup.pc.render_cells(opts.view_r)
         };
         let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
+        // The area's snow (Ice Age).
+        hunt.effects.snow = mee
+            .and_then(|t| t.snow)
+            .filter(|_| !trophy)
+            .map(|s| c2_core::effects::Snowfall::new(s, 2000));
         if let Some(kind) = setup.survival {
             let mobile = setup
                 .mobile_survival

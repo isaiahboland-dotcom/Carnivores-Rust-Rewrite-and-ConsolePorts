@@ -5,6 +5,7 @@
 pub mod balance;
 pub mod detect;
 pub mod hunter;
+pub mod ice_age;
 pub mod loose;
 pub mod manifest;
 pub mod mobile;

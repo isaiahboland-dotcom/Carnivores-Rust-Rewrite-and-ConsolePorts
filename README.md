@@ -536,7 +536,12 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
         pick shown; classic = straight in on Mount Ravan with the shotgun; main menu / title buttons
   - [ ] owner's hardware test (wave size and pace on Old 3DS)
   - [ ] Ice Age's Arcade (its own map; with M14)
-- [ ] M14 Carnivores: Ice Age (planned)
+- [ ] M14 Carnivores: Ice Age — **in progress**
+  - [x] Ice Age as a base game on PC and 3DS: its `_RES.TXT` rewritten in the dialect (`c2_mods::ice_age`;
+        its own models, maps, menus, the Modder's Edition's Ice Age AIs); every animal hunts on every area
+        (`c2-cook --check`); snow; its own saves
+  - [ ] the combined game: Carnivores 2 with Ice Age's areas and animals beside the C2 ones
+  - [ ] owner's test (PC and hardware)
 - [ ] M15 Mobile assets — **in progress**
   - [x] mobile formats (`c2_formats::mobile`: `.cat`, `.3dn`, `.ani`, ETC1 `.pkm`, `.crt`, IMA ADPCM) rebuilt as `.CAR`
   - [x] `c2-pc mobile APK --base GAME --overlay ME --out DIR`: each new animal as a loose add-on (entry from a

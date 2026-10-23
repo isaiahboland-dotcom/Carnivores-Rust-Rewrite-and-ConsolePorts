@@ -199,7 +199,9 @@ pub fn find_ci(dir: &Path, name: &str) -> Option<PathBuf> {
 /// `HUNTDAT`.
 pub fn describe_game(dir: &Path) -> Option<&'static str> {
     let huntdat = find_ci(dir, "HUNTDAT")?;
-    Some(if find_ci(&huntdat, "_MENU.TXT").is_some() {
+    Some(if c2_mods::ice_age::is_ice_age_dir(dir) {
+        "Carnivores: Ice Age"
+    } else if find_ci(&huntdat, "_MENU.TXT").is_some() {
         "Modder's Edition style game"
     } else {
         "Carnivores 2"

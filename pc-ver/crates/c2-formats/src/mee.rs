@@ -265,6 +265,30 @@ pub struct Tables {
     /// Trophy room spots, in the order the engine numbers them (the
     /// `trophytable`'s, then each character's).
     pub trophies: Vec<TrophySpot>,
+    /// The hunt's area's snow (its `areatable` entry's `snow{}`).
+    pub snow: Option<Snow>,
+}
+
+/// `TSnowType` (`ScriptParser: ReadSnowType`): falling speed, sideways
+/// speed (times the wind), how many flakes, colour, size.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Snow {
+    pub v_spd: i32,
+    pub h_spd: i32,
+    pub dens: i32,
+    pub rgba: [u8; 4],
+    pub rad: f32,
+}
+
+fn snow(b: &Block) -> Snow {
+    let byte = |k: &str| int(b, k).unwrap_or(255).clamp(0, 255) as u8;
+    Snow {
+        v_spd: int(b, "vSpd").unwrap_or(192),
+        h_spd: int(b, "hSpd").unwrap_or(4),
+        dens: int(b, "dens").unwrap_or(0).max(0),
+        rgba: [byte("red"), byte("gre"), byte("blu"), byte("alp")],
+        rad: b.get(&["rad"]).map_or(1.0, c_atof),
+    }
 }
 
 /// A trophy room spot (`tropinfo`; `ScriptParser.cpp: ReadTrophyTypeInfo`,
@@ -442,6 +466,13 @@ impl Tables {
                     let g = spawn_group(&resolve(&s.block, h));
                     t.spawn_groups.push(g);
                 }
+            } else if name.contains("areatable") {
+                // Blocks in area order (area 1 first).
+                let area = h.area.filter(|&a| a > 0).map(|a| a as usize - 1);
+                t.snow = area
+                    .and_then(|a| sec.blocks.get(a))
+                    .and_then(|b| b.subs_named("snow").next().map(snow))
+                    .filter(|s| s.dens > 0);
             } else if name.contains("packtable") {
                 t.pack_groups.clear();
                 for s in sec.subs.iter().filter(|s| s.name.contains("packgroup")) {

@@ -15,6 +15,12 @@ pub fn bases(base: Option<&str>, overlays: &[&str]) -> Result<Vec<PathBuf>> {
         .collect())
 }
 
+/// Whether `game` is Carnivores: Ice Age (played through a combined game
+/// folder: its rules rewritten in the dialect, `c2_mods::ice_age`).
+pub fn is_ice_age(game: &Path) -> bool {
+    c2_mods::ice_age::is_ice_age_dir(game)
+}
+
 /// The base + `mods`, combined in memory.
 pub fn combine(bases: &[PathBuf], mods: &[PathBuf]) -> Result<c2_mods::Pack> {
     let v = vanilla(bases)?;

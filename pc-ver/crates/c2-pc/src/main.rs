@@ -383,15 +383,29 @@ fn main() -> Result<()> {
             let bases = mods_cli::bases(o.positional.first().map(String::as_str), &overlays)?;
             // --balance FILE: the player's prices and scores over the game.
             let balance = o.value("balance").map(std::path::Path::new);
+            // Ice Age's hunters are its own.
+            if mods_cli::is_ice_age(&path) {
+                let _ = save::PROFILE.set("ice-age");
+            }
             let path = if let Some(r) = recipe {
                 let mods_dir = PathBuf::from(o.value("mods").context("--recipe needs --mods DIR")?);
                 let out = mods_cli::recipe_pack_dir(&r);
                 mods_cli::build_recipe(&r, &bases, &mods_dir, balance, &out)?;
                 out
-            } else if mods.is_empty() && overlays.is_empty() && balance.is_none() {
+            } else if mods.is_empty()
+                && overlays.is_empty()
+                && balance.is_none()
+                && !mods_cli::is_ice_age(&path)
+            {
                 path
             } else {
-                let out = mods_cli::pack_dir(&bases[1..], &mods);
+                // Ice Age alone: its rules are rewritten (named after it).
+                let named = if mods_cli::is_ice_age(&path) {
+                    &bases[..]
+                } else {
+                    &bases[1..]
+                };
+                let out = mods_cli::pack_dir(named, &mods);
                 mods_cli::build_pack(&bases, &mods, balance, &out)?;
                 out
             };

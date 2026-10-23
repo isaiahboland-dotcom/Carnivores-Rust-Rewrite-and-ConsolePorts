@@ -729,6 +729,19 @@ impl Hunt {
             }
         }
         self.effects.step(area, dt, self.takt);
+        if let Some(s) = &mut self.effects.snow {
+            let wind = (self.wind.nv(), self.wind.speed);
+            let at = (self.player.x, self.player.z);
+            s.step(
+                area,
+                &mut self.rng,
+                at,
+                wind,
+                self.player.alpha,
+                self.real_time,
+                dt,
+            );
+        }
         self.prof.mark(4);
 
         // AnimateProcesses: wind drifts every other frame.

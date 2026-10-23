@@ -28,8 +28,20 @@ pub fn data_dir() -> PathBuf {
     base.unwrap_or_else(|| PathBuf::from(".")).join("c2rs")
 }
 
+/// Another game's own hunters (`ice-age`: Carnivores: Ice Age keeps its
+/// saves apart from Carnivores 2's), set once at start.
+pub static PROFILE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+
+/// Where this game's saves are: the data dir, or its profile's folder in it.
+pub fn saves_dir() -> PathBuf {
+    match PROFILE.get() {
+        Some(p) => data_dir().join(p),
+        None => data_dir(),
+    }
+}
+
 pub fn slot_path(reg: i32) -> PathBuf {
-    data_dir().join(format!("trophy0{reg}.sav"))
+    saves_dir().join(format!("trophy0{reg}.sav"))
 }
 
 pub use c2_core::profile::new_player;
@@ -65,7 +77,7 @@ fn find_saves(dir: &Path) -> Vec<(i32, PathBuf)> {
 
 /// First run: copy the game's saves into our data dir.
 fn import(game_dir: &Path) {
-    if !find_saves(&data_dir()).is_empty() {
+    if !find_saves(&saves_dir()).is_empty() {
         return;
     }
     for (reg, p) in find_saves(game_dir) {
@@ -82,7 +94,7 @@ fn import(game_dir: &Path) {
 /// Every registered hunter, by slot.
 pub fn players(game_dir: &Path) -> Vec<Save> {
     import(game_dir);
-    find_saves(&data_dir())
+    find_saves(&saves_dir())
         .into_iter()
         .filter_map(|(reg, p)| {
             let mut s = read(&p)?;

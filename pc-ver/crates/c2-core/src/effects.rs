@@ -52,6 +52,120 @@ pub struct Effects {
     pub bursts: Vec<Burst>,
     pub blood: Vec<BloodDrop>,
     pub rings: Vec<Ring>,
+    /// Falling snow (Ice Age's areas; the dialect's `areatable` `snow{}`).
+    pub snow: Option<Snowfall>,
+}
+
+/// A snowflake (`TSnowElement`): falling, or lying (`ftime` > 0, ms).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Flake {
+    pub pos: [f32; 3],
+    hl: f32,
+    pub ftime: f32,
+}
+
+/// The snow round the hunter (`Game.cpp: AnimateElements`, `RespawnSnow`
+/// in the Modder's Edition).
+#[derive(Debug, Clone)]
+pub struct Snowfall {
+    pub kind: c2_formats::mee::Snow,
+    pub flakes: Vec<Flake>,
+    /// At most this many (the 3DS: fewer than the area asks).
+    cap: usize,
+}
+
+impl Snowfall {
+    pub fn new(kind: c2_formats::mee::Snow, cap: usize) -> Self {
+        Self {
+            kind,
+            flakes: Vec::new(),
+            cap,
+        }
+    }
+
+    /// A flake's alpha (0..1): fading while it lies.
+    pub fn alpha(&self, f: &Flake) -> f32 {
+        let a = f32::from(self.kind.rgba[3]) / 255.0;
+        if f.ftime > 0.0 {
+            a * ((2000.0 - f.ftime) / 2000.0).max(0.0)
+        } else {
+            a
+        }
+    }
+
+    fn respawn(
+        f: &mut Flake,
+        area: &Area,
+        rng: &mut MsRand,
+        at: (f32, f32),
+        nv: [f32; 3],
+        high: bool,
+    ) {
+        f.pos[0] = at.0 + nv[0] + rng.si_rand(12 * 256) as f32;
+        f.pos[2] = at.1 + nv[2] + rng.si_rand(12 * 256) as f32;
+        f.hl = area.land_up_h(f.pos[0], f.pos[2]);
+        f.ftime = 0.0;
+        f.pos[1] = if high {
+            f.hl + 256.0 + rng.r_rand(12 * 256) as f32
+        } else {
+            f.hl + (8 + rng.r_rand(5)) as f32 * 256.0
+        };
+    }
+
+    /// One step: `at` the hunter, `wind` its heading and speed, `look` the
+    /// camera's heading (the flakes sway across it).
+    #[allow(clippy::too_many_arguments)]
+    pub fn step(
+        &mut self,
+        area: &Area,
+        rng: &mut MsRand,
+        at: (f32, f32),
+        wind: ([f32; 3], f32),
+        look: f32,
+        real_time: i32,
+        dt: i32,
+    ) {
+        let k = self.kind;
+        let dtf = dt as f32;
+        let n = (4.0 + wind.1) * k.h_spd as f32 * dtf / 1000.0;
+        let nv = [wind.0[0] * n, 0.0, wind.0[2] * n];
+        let want = (k.dens.max(0) as usize).min(self.cap);
+        while self.flakes.len() < want {
+            let mut f = Flake::default();
+            Self::respawn(&mut f, area, rng, at, nv, true);
+            self.flakes.push(f);
+        }
+        self.flakes.truncate(want);
+        let (sa, ca) = look.sin_cos();
+        let slow = (k.v_spd / 192).max(1) as f32;
+        for (s, f) in self.flakes.iter_mut().enumerate() {
+            if (f.pos[0] - at.0).abs() > 14.0 * 256.0 || (f.pos[2] - at.1).abs() > 14.0 * 256.0 {
+                f.pos[0] = at.0 + rng.si_rand(12 * 256) as f32;
+                f.pos[2] = at.1 + rng.si_rand(12 * 256) as f32;
+                f.pos[1] -= f.hl;
+                f.hl = area.land_up_h(f.pos[0], f.pos[2]);
+                f.pos[1] += f.hl;
+            }
+            if f.ftime == 0.0 {
+                let v =
+                    (((real_time + s as i32 * 23).rem_euclid(800)) - 400) as f32 * dtf / 16000.0;
+                f.pos[0] += ca * v + nv[0];
+                f.pos[2] += sa * v + nv[2];
+                f.hl = area.land_up_h(f.pos[0], f.pos[2]);
+                f.pos[1] -= dtf * k.v_spd as f32 / 1000.0;
+                if f.pos[1] < f.hl + 8.0 {
+                    f.pos[1] = f.hl + 8.0;
+                    f.ftime = 1.0;
+                }
+            } else {
+                f.ftime += dtf;
+                f.pos[1] -= dtf * (k.v_spd / 64) as f32 / 1000.0;
+                if f.ftime > 2000.0 / slow {
+                    Self::respawn(f, area, rng, at, nv, false);
+                }
+            }
+        }
+    }
 }
 
 /// Per-byte saturating add (`ColorSum`) on `0x00RRGGBB`.

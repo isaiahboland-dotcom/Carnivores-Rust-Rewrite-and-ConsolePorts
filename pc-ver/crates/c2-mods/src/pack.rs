@@ -191,6 +191,10 @@ pub fn vanilla(bases: &[PathBuf]) -> Result<Vfs, ModError> {
         };
         v.push(name, Box::new(Subset { dir, keep }));
     }
+    // Carnivores: Ice Age plays as a dialect game (its rules rewritten).
+    if let Some(l) = crate::ice_age::layer(&v)? {
+        v.push(crate::ice_age::LAYER, Box::new(l));
+    }
     Ok(v)
 }
 

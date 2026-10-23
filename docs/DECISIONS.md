@@ -2,6 +2,38 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-23 — M14: Carnivores: Ice Age as a base game
+- **How**: Ice Age's engine is C2's with its own animals' AIs (its `_RES.TXT`
+  `ai` 10–19 are Brontotherium … Yeti, 1 the pig, 2 the archaeopteryx). We
+  have no Ice Age source; the Modder's Edition re-implemented those AIs
+  (its AI numbers 20–27, ported here in M9), and ships `_RES ICE AGE.TXT`
+  to run Ice Age in its engine. So an Ice Age folder plays as a dialect
+  game: `c2_mods::ice_age` rewrites its `_RES.TXT` (a layer over the
+  player's files, in `c2_mods::vanilla`, so PC, cook and launcher alike):
+  per Ice Age AI the dialect AI, animation indices into Ice Age's own
+  models, speeds, idles, deaths, kills (Ice Age's `HUNTER1.CAR` has the kill
+  animations), spawn groups, and snow in every area. The per-AI values are
+  written out as ours after the Modder's Edition's file (credited there);
+  the animals' own numbers (health, mass, scores, senses), the weapons and
+  the prices stay the player's file's.
+- **Differences from that file**: Ice Age's own models (its Diatryma has no
+  swim animation, the ME's `diatr_s.car` adds one; its weapons are Ice
+  Age's, not the ME's re-made ones); no trophy-room spots (Ice Age's room
+  places trophies as the original); no halved score for non-targets (as
+  every dialect game here, owner's rule); the Yeti is not hidden (`hide`).
+  Diatryma runs as the dialect's spinosaur and the Yeti as its bear, as in
+  the ME (Ice Age's own AIs for them are unknown).
+- **Snow** (the ME's `areatable snow{}`, `AnimateElements` / `RespawnSnow`):
+  up to `dens` flakes in a 12-cell box round the hunter, falling at `vSpd`,
+  drifting with the wind and a sway, lying ~2 s while fading; PC draws them
+  as the ME does (soft dots), the 3DS at most 300 as small depth-tested
+  diamonds.
+- **Saves**: Ice Age's hunters are its own (PC: `ice-age/` in the data dir;
+  the 3DS keeps a save per pack already).
+- PC: `c2-pc play ICE_AGE_DIR` builds a combined game folder (named after
+  it) even without add-ons; the launcher names the base "Carnivores: Ice
+  Age".
+
 ## 2026-10-23 — M13: survival as the owner wants it
 - **Ours**: the only screen is the gun pick (PC: the setup screen with only
   the weapons list, the kind switch in the bottom bar; 3DS: the gear screen,
