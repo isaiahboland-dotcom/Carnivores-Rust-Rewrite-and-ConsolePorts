@@ -99,6 +99,92 @@ pub struct Survival {
     pub rest_ms: i32,
     /// Ways to the hunter, for wave animals far off.
     flow: Option<Flow>,
+    /// The ground wave animals keep to (a survival with a spawn box).
+    fence: Option<Fence>,
+}
+
+/// Height steps (the map's, 64 units each) a fenced wave animal may stand
+/// above the lowest way between its spawn box and the hunter.
+const FENCE_MARGIN: u8 = 4;
+/// Cells around the hunter and the spawn box the fence covers.
+const FENCE_PAD: i32 = 40;
+
+/// The ground between a survival's spawn box and the hunter: the cells
+/// reachable from him without climbing more than [`FENCE_MARGIN`] above the
+/// highest point of the lowest way to the box (a ravine's floor, not its
+/// walls), so the waves come straight on (the owner's ask). Outside its
+/// window, nothing.
+#[derive(Debug, Clone)]
+struct Fence {
+    x0: i32,
+    z0: i32,
+    w: i32,
+    ok: Vec<bool>,
+}
+
+impl Fence {
+    fn new(area: &Area, hunter: (i32, i32), spawn: [f32; 4]) -> Self {
+        let cell = |v: f32| (v / 256.0) as i32;
+        let (sx0, sx1) = (cell(spawn[0] - spawn[2]), cell(spawn[0] + spawn[2]));
+        let (sz0, sz1) = (cell(spawn[1] - spawn[3]), cell(spawn[1] + spawn[3]));
+        let x0 = (hunter.0.min(sx0) - FENCE_PAD).max(4);
+        let z0 = (hunter.1.min(sz0) - FENCE_PAD).max(4);
+        let x1 = (hunter.0.max(sx1) + FENCE_PAD).min(1019);
+        let z1 = (hunter.1.max(sz1) + FENCE_PAD).min(1019);
+        let (w, h) = (x1 - x0 + 1, z1 - z0 + 1);
+        let at = |x: i32, z: i32| ((z - z0) * w + (x - x0)) as usize;
+        let height = |x: i32, z: i32| area.map.height[crate::area::idx(x as usize, z as usize)];
+        // The lowest-ceiling way from the hunter to every cell (minimax).
+        let mut top = vec![u8::MAX; (w * h) as usize];
+        let mut heap = std::collections::BinaryHeap::new();
+        let start = (hunter.0.clamp(x0, x1), hunter.1.clamp(z0, z1));
+        top[at(start.0, start.1)] = height(start.0, start.1);
+        heap.push(std::cmp::Reverse((
+            top[at(start.0, start.1)],
+            start.0,
+            start.1,
+        )));
+        while let Some(std::cmp::Reverse((t, x, z))) = heap.pop() {
+            if t > top[at(x, z)] {
+                continue;
+            }
+            for (dx, dz) in AROUND {
+                let (nx, nz) = (x + dx, z + dz);
+                if nx < x0 || nz < z0 || nx > x1 || nz > z1 {
+                    continue;
+                }
+                let nt = t.max(height(nx, nz));
+                if nt < top[at(nx, nz)] {
+                    top[at(nx, nz)] = nt;
+                    heap.push(std::cmp::Reverse((nt, nx, nz)));
+                }
+            }
+        }
+        let centre = (cell(spawn[0]).clamp(x0, x1), cell(spawn[1]).clamp(z0, z1));
+        let limit = top[at(centre.0, centre.1)].saturating_add(FENCE_MARGIN);
+        Self {
+            x0,
+            z0,
+            w,
+            ok: top.iter().map(|&t| t <= limit).collect(),
+        }
+    }
+
+    /// Whether cell (`x`, `z`) is in.
+    fn allows(&self, x: i32, z: i32) -> bool {
+        let (i, j) = (x - self.x0, z - self.z0);
+        (0..self.w).contains(&i)
+            && j >= 0
+            && self
+                .ok
+                .get((j * self.w + i) as usize)
+                .copied()
+                .unwrap_or(false)
+    }
+
+    fn allows_pos(&self, x: f32, z: f32) -> bool {
+        self.allows((x / 256.0) as i32, (z / 256.0) as i32)
+    }
 }
 
 /// Cells of the window a [`Flow`] covers (a side).
@@ -135,7 +221,7 @@ struct Flow {
 }
 
 impl Flow {
-    fn new(area: &Area, (hx, hz): (i32, i32)) -> Self {
+    fn new(area: &Area, (hx, hz): (i32, i32), fence: Option<&Fence>) -> Self {
         let (x0, z0) = (hx - FLOW_W / 2, hz - FLOW_W / 2);
         let n = (FLOW_W * FLOW_W) as usize;
         let inside = |x: i32, z: i32| (4..1020).contains(&x) && (4..1020).contains(&z);
@@ -149,7 +235,7 @@ impl Flow {
                 let wet = area.map.flags[crate::area::idx(x as usize, z as usize)]
                     & crate::area::cell_flags::WATER
                     != 0;
-                if !wet {
+                if !wet && fence.is_none_or(|f| f.allows(x, z)) {
                     h[at(x, z)] =
                         area.land_height(x as f32 * 256.0 + 128.0, z as f32 * 256.0 + 128.0);
                 }
@@ -439,6 +525,7 @@ impl Survival {
             wave: 0,
             rest_ms,
             flow: None,
+            fence: None,
         }
     }
 
@@ -467,14 +554,23 @@ impl Hunt {
         }) {
             self.remove_character(i);
         }
+        let mut fence = None;
         if let Some(m) = opts.mobile.as_ref().filter(|m| !m.stand_ins) {
             let cell = |v: f32| (v / 256.0).clamp(1.0, 1022.0) as u16;
-            self.player = crate::player::Player::new(area, (cell(m.hunter[0]), cell(m.hunter[1])));
+            let at = (cell(m.hunter[0]), cell(m.hunter[1]));
+            self.player = crate::player::Player::new(area, at);
             if let Some(a) = m.hunter_alpha {
                 self.player.alpha = a;
             }
+            fence = Some(Fence::new(
+                area,
+                (i32::from(at.0), i32::from(at.1)),
+                m.spawn,
+            ));
         }
-        self.survival = Some(Survival::new(opts));
+        let mut s = Survival::new(opts);
+        s.fence = fence;
+        self.survival = Some(s);
     }
 
     /// The wave under way (0: none yet, or not a survival).
@@ -503,7 +599,24 @@ impl Hunt {
             .is_none_or(|f| (f.from.0 - cell.0).abs().max((f.from.1 - cell.1).abs()) >= 3);
         let waves = self.herd.chars.iter().any(|c| c.wave > 0 && c.health > 0);
         if stale && waves {
-            s.flow = Some(Flow::new(area, cell));
+            s.flow = Some(Flow::new(area, cell, s.fence.as_ref()));
+        }
+        // Fenced: a wave animal that stepped off the ground goes back.
+        if let Some(f) = s.fence.as_ref() {
+            for c in self
+                .herd
+                .chars
+                .iter_mut()
+                .filter(|c| c.wave > 0 && c.health > 0)
+            {
+                if f.allows_pos(c.pos[0], c.pos[2]) {
+                    c.fenced_at = Some((c.pos[0], c.pos[2]));
+                } else if let Some((x, z)) = c.fenced_at {
+                    c.pos = [x, area.land_height(x, z), z];
+                    // On its way, not back at the wall.
+                    (c.tgx, c.tgz) = c.lure.unwrap_or((hx, hz));
+                }
+            }
         }
         let flow = s.flow.take();
         for c in self.herd.chars.iter_mut().filter(|c| c.wave > 0) {
@@ -624,7 +737,11 @@ impl Hunt {
         match self.survival.as_ref().and_then(|s| s.flow.clone()) {
             Some(f) if f.from == cell => f,
             _ => {
-                let f = Flow::new(area, cell);
+                let f = Flow::new(
+                    area,
+                    cell,
+                    self.survival.as_ref().and_then(|s| s.fence.as_ref()),
+                );
                 if let Some(s) = self.survival.as_mut() {
                     s.flow = Some(f.clone());
                 }
@@ -643,6 +760,10 @@ impl Hunt {
         }
         if let Some(f) = flow {
             let (cx, cz) = ((x / 256.0) as i32, (z / 256.0) as i32);
+            let fence = self.survival.as_ref().and_then(|s| s.fence.as_ref());
+            if fence.is_some_and(|fe| !fe.allows(cx, cz)) {
+                return false;
+            }
             if f.covers(cx, cz) && f.get(cx, cz) == u16::MAX {
                 return false;
             }

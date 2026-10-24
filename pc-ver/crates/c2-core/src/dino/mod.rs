@@ -304,6 +304,9 @@ pub struct Character {
     /// Survival: where its AI is told the hunter is while it is far off (a
     /// point on a walkable way to him; ours).
     pub lure: Option<(f32, f32)>,
+    /// Survival with a fence: its last place on the fenced ground, where it
+    /// is put back when it strays onto a wall.
+    pub fenced_at: Option<(f32, f32)>,
     pub kill_type: usize,
     pub death_type: usize,
     /// The idle group being played (`currentIdleGroup`).

@@ -15,6 +15,14 @@ Newest first. Each entry: what, why, and what it affects.
   animals walked, spawned and aimed out to cells 4..1018, out of his reach
   behind that invisible wall. They now keep to the same box
   (`collide::WALK_CELLS`), a deviation from the original.
+- **Survival fence** (classic and modded, the ones with a spawn box): wave
+  animals keep to the ground between the box and the hunter, the cells
+  reachable from him without climbing more than 4 height steps above the
+  highest point of the lowest way to the box (minimax over the map's
+  heights, 40 cells round both). On Mount Ravan that is the ravine floor:
+  they can't run up its walls, the way on is straight at the hunter. One
+  stepping off is put back and pointed on; the way-finding and spawn spots
+  keep to it. "Ours" (spawning round the hunter) has none.
 - **PC map heading**: Options > Game "Map: where you look" (off by default):
   the 3DS map's tick on the PC map.
 

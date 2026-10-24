@@ -2874,6 +2874,54 @@ mod tests {
     }
 
     #[test]
+    fn box_survival_waves_keep_to_the_ravine_floor() {
+        let (mut area, mut hunt, car) = setup(false);
+        // High ground everywhere, a ravine floor (cells x 380..400) running
+        // from the spawn box (z ~ 400) down to the hunter (z ~ 500).
+        for z in 0..1024 {
+            for x in 0..1024 {
+                let floor = (380..400).contains(&x) && (360..540).contains(&z);
+                area.map.height[z * 1024 + x] = if floor { 10 } else { 60 };
+            }
+        }
+        let mut i = info(ai::CHASM);
+        i.name = "Chasmosaurus".into();
+        hunt.herd.species.push(Species::new(i, &car));
+        let sv = c2_formats::mobile_arcade::Survive {
+            area: 5,
+            hunter: [390.0 * 256.0, 500.0 * 256.0],
+            spawn: [390.0 * 256.0, 400.0 * 256.0, 1000.0, 1000.0],
+            first_ms: 500,
+            rest_ms: 2000,
+            waves: vec![vec!["Chasmosaurus".into(); 3]],
+            after: vec![],
+            stand_ins: false,
+        };
+        hunt.start_survival(&area, SurvivalOptions::mobile(&hunt, &sv, 8).unwrap());
+        let cars = [None, Some(&car), Some(&car)];
+        let mut out = Vec::new();
+        for _ in 0..60 {
+            hunt.tick(&area, &cars, &HuntInput::default(), 10, &mut out);
+        }
+        let i = hunt
+            .herd
+            .chars
+            .iter()
+            .position(|c| c.wave == 1)
+            .expect("a wave");
+        let on_floor = |c: &Character| (380.0 * 256.0..400.0 * 256.0).contains(&c.pos[0]);
+        assert!(on_floor(&hunt.herd.chars[i]));
+        // Pushed up the wall: back on the floor next step.
+        hunt.herd.chars[i].pos[0] = 420.0 * 256.0;
+        hunt.tick(&area, &cars, &HuntInput::default(), 10, &mut out);
+        assert!(
+            on_floor(&hunt.herd.chars[i]),
+            "{}",
+            hunt.herd.chars[i].pos[0] / 256.0
+        );
+    }
+
+    #[test]
     fn survival_waves_start_by_the_hunter_not_up_a_mountain() {
         let (mut area, mut hunt, car) = setup(false);
         // The box's west half a plateau far above the hunter.
