@@ -2,6 +2,39 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-23 — The owner's 3DS hardware test: fixes; one pack for a combined game
+- **Gyro aim** (stealth crouch): 1:1 with the console was too twitchy. Now a
+  2.5 °/s deadzone (hand tremor) and a setting, *Gyro aim* 25/40/60/100 %
+  (default 40 %).
+- **A dialect ambient's `callNo`** is 0 when not given, as the engine reads
+  it, so every ambient counted as the first menu animal (green on the radar
+  whenever that one was hunted). `Hunt::call_bit` is `None` for a dialect
+  animal outside the huntable AIs (10-29); `radar = TRUE` still marks one.
+- **Dialect scopes**: `optic` is the zoom (`atof`, `CameraW *= Optic`), not
+  on/off with the original's 3x; `cross` (default off) draws the cross-hairs,
+  also without a scope; `unzoom` drops zoom and cross while drawing, hiding,
+  reloading. Original data keeps 3x and its cross.
+- **Survival spawn spots**: a box made for the mobile maps takes in the PC
+  maps' mountain sides. Spots with a walkable way to the hunter (the waves'
+  flow field, where it reaches) within 1536 units of his height are tried
+  first; then the old rules.
+- **Every 3DS survival goes through the hunt options** (run speed, ambients),
+  as the owner asked; classic and modded used to start from the title.
+- **A whole combined game as one 3DS pack** (the owner's "all of them"):
+  an ambient whose tables spawn it only on other maps (a combined game ties
+  each game's ambients to its own maps) isn't loaded, and the cooker's per-map
+  figures count only that map's (from about 46 to 23 MiB heap a map); menu
+  picks, targets and carried weapons are `Bits` (the menu stopped at 64
+  animals, targets at slot 117, weapons at 32); roamers take slots after the
+  menu's own; the grids page (< > on the bar, D-Pad) and pictures load for the
+  page shown (21 MiB of them in all).
+- **PC roaming add-ons are pickable**: a dialect game's roamers are listed
+  after its menu animals and hunt by those slots (`c2_core::mee::roamers`,
+  `pick_roamers`), as on the 3DS.
+- **Combining**: map files in a folder under `AREAS/` (a maker's spare copies)
+  are not the game's maps; one standalone's backup replaced its real map.
+- Menu: the settings file and save are written only when changed.
+
 ## 2026-10-23 — Fixes from the first 3DS baseline run
 - **Doubled slashes in paths** (`ANIMALS/X//Y/m.car`, written so by one
   standalone): Windows reads them as one, so the VFS key drops empty and
