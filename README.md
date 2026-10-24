@@ -19,6 +19,8 @@ The original C++ source (made available on Assembla in 2013) is used **as a refe
 - Automatic mod merging via a layered virtual filesystem + manifests + conflict resolver.
 - Targets **add-on mods**: small, data-only mods that layer on vanilla and merge cleanly.
 - Plays game folders made for the community **Modder's Edition Engine** (MEE), whose `_RES.TXT` dialect (spawn / pack / trophy tables, `overwrite` sections, new AI families, extended weapons) many full-game mods use. Reimplemented from its public source and manual, read as reference only (like the original source).
+- Whole games made from Carnivores 2 (standalone mods) can be added beside it too (`docs/MODDING.md`); most
+  should work as they come.
 - **Recipes**: shareable modpack definitions that reference mods by hash, so users fetch the mod files themselves and nothing third-party is redistributed.
 - A PC-side **cooker** that converts a merged pack into 3DS-ready data.
 - One shared core crate; platform crates stay thin.
