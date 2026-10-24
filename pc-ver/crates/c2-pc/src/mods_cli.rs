@@ -363,6 +363,9 @@ pub struct RecipeArgs<'a> {
     pub out: Option<&'a str>,
     pub id: Option<&'a str>,
     pub name: Option<&'a str>,
+    /// `recipe new --base-id`: the base profile it expects (default
+    /// `c2-vanilla`; `ice-age` for Ice Age).
+    pub base_id: Option<&'a str>,
     /// `recipe new --standalone DIR`: standalone games to pin.
     pub standalones: Vec<PathBuf>,
 }
@@ -399,8 +402,12 @@ pub fn run_recipe(args: &[String], a: &RecipeArgs<'_>) -> Result<()> {
                 .iter()
                 .map(|m| load_mod(&v, Path::new(m)).with_context(|| format!("reading mod {m}")))
                 .collect::<Result<Vec<_>>>()?;
-            let mut r =
-                c2_mods::recipe::new_recipe(id, a.name.unwrap_or(id), "c2-vanilla", &sources)?;
+            let mut r = c2_mods::recipe::new_recipe(
+                id,
+                a.name.unwrap_or(id),
+                a.base_id.unwrap_or("c2-vanilla"),
+                &sources,
+            )?;
             // Overlays and standalones, pinned whole (credits and URLs to
             // fill in).
             for o in bases.iter().skip(1) {

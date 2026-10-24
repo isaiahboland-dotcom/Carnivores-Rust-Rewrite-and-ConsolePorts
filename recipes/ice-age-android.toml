@@ -1,0 +1,55 @@
+# Ice Age + Android: Carnivores: Ice Age with the mobile Ice Age's animals (from your APK),
+# and the mobile Dinosaur Hunter's classic survival (from that APK).
+#
+# Credits, download pages and file hashes only; no game or mod files.
+# Download each mod from its page, unpack each into its own folder under
+# one DOWNLOADS folder, and point --mods at it. See docs/MODDING.md.
+# Fill in the TODO credits and links before sharing this file.
+#
+#   c2-pc recipe verify THIS.toml --base ICE_AGE --mods DOWNLOADS
+#   c2-pc play ICE_AGE --recipe THIS.toml --mods DOWNLOADS
+#
+# 3DS pack (Old 3DS: --target o3ds), then copy it to sdmc:/3ds/<install>/:
+#   c2-cook --game ICE_AGE --mod DOWNLOADS/ice-age --mobile-survival DOWNLOADS/dinosaur-hunter/mobile-survival.txt --target o3ds --out <install>.c2pk
+#
+# The mobile games' animals are made from your own APK (never shared):
+#   c2-pc mobile DINOSAUR_HUNTER.apk --base C2 --overlay "$ME" --out DOWNLOADS/dinosaur-hunter
+#   c2-pc mobile ICE_AGE.apk        --base C2 --overlay "$ME" --out DOWNLOADS/ice-age
+# (for the Ice Age base game: --base ICE_AGE and no overlay). The Dinosaur
+# Hunter import also writes mobile-survival.txt: the classic survival.
+#
+
+[recipe]
+id = "ice-age-android"
+name = "Ice Age + Android"
+version = "0.1"
+base = "ice-age"
+
+[[mods]]
+id = "ice-age"
+credit = "TODO: your own APK import (see above)"
+url = "none: made from your own APK"
+loose = true
+
+[mods.files]
+"Andrewsarchus/ANDREWSARCHUS.car" = "sha256:2bff9a5338e38ab3ba41ab8430501deba1c4d9de841a2e3c16ce51c070f457df"
+"Andrewsarchus/Andrewsarchus _RES.txt" = "sha256:f15483e16a6f18e2b5b7d06687668a819cc82d5f9cb249487f46ee8a23644f30"
+"Andrewsarchus/DINO9.TGA" = "sha256:cb392eececa9cba398670555ad84e4642c00ee0a768d4cc21b5eb85c47d15fba"
+"Doedicurus/DINO1.TGA" = "sha256:8bdebd548656aa10681ab17d38d96881a84ed0c60d6099e461d411a2eac558af"
+"Doedicurus/DOEDICURUS.car" = "sha256:ec9c91057378ef177affabfec464f28a1153a0da7a61d80686439922957022b8"
+"Doedicurus/Doedicurus _RES.txt" = "sha256:ce8b076a5e44d3b15dfff8f0eaeec3bdb1e349ee62d0466bbe69e67543fa4119"
+"Hyaenodon/DINO3.TGA" = "sha256:e5e630710435a57201de09490cdf7b4eb6987288f6e760fabd2dc4cbebb55ae3"
+"Hyaenodon/HYAENODON.car" = "sha256:c7e219e7b913a6160e7b5d51aa1969ce46685d86213e69a758a5d4414ae2b0f4"
+"Hyaenodon/Hyaenodon _RES.txt" = "sha256:26c39ef7518a2b49a4e7840b216368e0fe2db4fa0e587947d78a202c9ff36de7"
+"Indricothere/DINO1.TGA" = "sha256:7110b4aaade245333570f0b697f55da5baa60f40a945478024a4fef32bae28fc"
+"Indricothere/INDRICOTHERE.car" = "sha256:4482acd920de754b11a29df0b561b7a60ca28e25fc5ae03597dfbf1871bdaf8d"
+"Indricothere/Indricothere _RES.txt" = "sha256:2128e3f4f87a66f369480e65fc8176b3c529ae382b21ed1a7672b0c42d1eb966"
+"Revolver/Revolver _RES.txt" = "sha256:3cce048853fab6260a9e487216fc5644747fb5b81a474c2943243ea43666a390"
+"Revolver/WEAPON1.TGA" = "sha256:b83c45b62a6a22ba85ef6965e1d398e750690e9e6871c0f87eee3d91b6abe20b"
+"Revolver/WEAPONS/REVOLVER.CAR" = "sha256:b58114e9eb0fb4ac8669a2d3793d21761bf3556028443eca13f2ef536655faf2"
+"Titanis/DINO5.TGA" = "sha256:d562a1ffb63281cd744c397ece4afac22aa11e66f42eb5a00e8e44f3dc4f056e"
+"Titanis/TITANIS.car" = "sha256:894e7412ddc03053e4c84c8f72e869d60bcb2e3073a4eac5732d7e33b5a64994"
+"Titanis/Titanis _RES.txt" = "sha256:30a2c0b035503045b49400e42c191382ea2667a74ba2bb1f0927f812baa2f404"
+
+[load_order]
+order = ["ice-age"]

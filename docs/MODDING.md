@@ -213,6 +213,15 @@ combined game to a folder instead of playing it.
 `base = "c2-vanilla"` is checked against `recipes/bases/c2-vanilla.toml`
 (hashes of every vanilla `HUNTDAT` file, from `recipe base`). A different
 game release only produces a warning.
+A recipe for Carnivores: Ice Age as the base game says `base = "ice-age"`
+(`recipe new ... --base-id ice-age`; `recipes/bases/ice-age.toml`, made with
+`recipe base --base ICE_AGE --id ice-age`).
+
+Ready-made recipes for the 3DS installs: `recipes/ice-age-android.toml`,
+`c2-android.toml` and `c2-everything.toml` (their headers say how to verify,
+play and cook each one for the 3DS). The mobile games' animals in them come
+from your own APK (`c2-pc mobile`), so their hashes match only the same APK
+release.
 
 ## Checking a mod's files
 `c2-parity scan <dir>` parses every `.CAR`, `.3DF`, `.MAP`, `.RSC` and

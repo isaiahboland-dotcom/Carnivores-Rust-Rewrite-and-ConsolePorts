@@ -1,0 +1,92 @@
+# Carnivores 2 + Android: Carnivores 2 on the Modder's Edition with the mobile Dinosaur Hunter's
+# animals and classic survival (from your APK).
+#
+# Credits, download pages and file hashes only; no game or mod files.
+# Download each mod from its page, unpack each into its own folder under
+# one DOWNLOADS folder, and point --mods at it. See docs/MODDING.md.
+# Fill in the TODO credits and links before sharing this file.
+#
+#   ME="PATH/Carnivores Modders Edition 1.1.1 Standalone/Carnivores 2"
+#   c2-pc recipe verify THIS.toml --base C2 --overlay "$ME" --mods DOWNLOADS
+#   c2-pc play C2 --overlay "$ME" --recipe THIS.toml --mods DOWNLOADS
+#
+# 3DS pack (Old 3DS: --target o3ds), then copy it to sdmc:/3ds/<install>/:
+#   c2-cook --game C2 --overlay "$ME" --mod DOWNLOADS/dinosaur-hunter --mobile-survival DOWNLOADS/dinosaur-hunter/mobile-survival.txt --target o3ds --out <install>.c2pk
+#
+# The mobile games' animals are made from your own APK (never shared):
+#   c2-pc mobile DINOSAUR_HUNTER.apk --base C2 --overlay "$ME" --out DOWNLOADS/dinosaur-hunter
+#   c2-pc mobile ICE_AGE.apk        --base C2 --overlay "$ME" --out DOWNLOADS/ice-age
+# (for the Ice Age base game: --base ICE_AGE and no overlay). The Dinosaur
+# Hunter import also writes mobile-survival.txt: the classic survival.
+#
+
+[recipe]
+id = "c2-android"
+name = "Carnivores 2 + Android"
+version = "0.1"
+base = "c2-vanilla"
+
+[[mods]]
+id = "dinosaur-hunter"
+credit = "TODO: your own APK import (see above)"
+url = "none: made from your own APK"
+loose = true
+
+[mods.files]
+"Amargasaurus/AMARGASAURUS.car" = "sha256:538508445b979df0683d901974738830b3dea39e33287d4f09d0efa246908880"
+"Amargasaurus/Amargasaurus _RES.txt" = "sha256:bfd6395a8213bd507faf07a26cfcc05655ddf26c17dac5839981a9c18a24bb3d"
+"Amargasaurus/DINO3.TGA" = "sha256:086120cf695dfdae24e3bf6fc32f29d943130689e37636c9ac9dd4680cef0749"
+"Carnotaurus/CALL8_A.WAV" = "sha256:aa8c10cdd5409d89247696dbd2b2b998d7866ed08b0306bdee34bde83d4a8501"
+"Carnotaurus/CALL8_B.WAV" = "sha256:746988ccc4fc4ba54c95f36d74d5492b193ab234ad1bb6235a17cd07acfb73a7"
+"Carnotaurus/CALL8_C.WAV" = "sha256:b7fcb8ce82cf18cee8978bfe94d181b8184280b1560e517a24da1a1ce8c2c42f"
+"Carnotaurus/CARNOTAURUS.car" = "sha256:517085c51865e49402ba72c753b25202c8a282d27bd7a1b1220d0d5819ac7868"
+"Carnotaurus/Carnotaurus _RES.txt" = "sha256:79fa0ff2ab3f4a1603218f6898ff6a953954d758dfb9a18801bbef7eaec689ca"
+"Carnotaurus/DINO8.TGA" = "sha256:f16176a115c21caefb8037c0d6613e6e44ce2515ded70a5dbe5eb1339317e9a1"
+"Coelophysis/CALL6_A.WAV" = "sha256:4cd7a066376266097214ffd182423ca64eaf97a09f1771e839f8c53669e385aa"
+"Coelophysis/CALL6_B.WAV" = "sha256:4cd7a066376266097214ffd182423ca64eaf97a09f1771e839f8c53669e385aa"
+"Coelophysis/CALL6_C.WAV" = "sha256:4cd7a066376266097214ffd182423ca64eaf97a09f1771e839f8c53669e385aa"
+"Coelophysis/COELOPHYSIS.car" = "sha256:3b03ae0b699cb7d98e564d1cc510ba275fcdd3aa4a9cf442087908fa75de98c0"
+"Coelophysis/Coelophysis _RES.txt" = "sha256:eedd4d1b9085f3d370c579287bc9359e490abafb085b39ed60d8b022f2a18750"
+"Coelophysis/DINO6.TGA" = "sha256:25616b6d185d0045a96054cd2e23d47a2fd92acdea2259de4b4287367bb2e4b2"
+"Dilophosaurus/CALL4_A.WAV" = "sha256:4cd7a066376266097214ffd182423ca64eaf97a09f1771e839f8c53669e385aa"
+"Dilophosaurus/CALL4_B.WAV" = "sha256:4cd7a066376266097214ffd182423ca64eaf97a09f1771e839f8c53669e385aa"
+"Dilophosaurus/CALL4_C.WAV" = "sha256:4cd7a066376266097214ffd182423ca64eaf97a09f1771e839f8c53669e385aa"
+"Dilophosaurus/DILOPHOSAURUS.car" = "sha256:3f6183e9f649324aa9ed11475548b84fe78f34bb041fbe882b0cba4a8abda85b"
+"Dilophosaurus/DINO4.TGA" = "sha256:c3c2804ac141ddc5b525e5d10fecea23560231824c3027c9894a139d08c5bc6d"
+"Dilophosaurus/Dilophosaurus _RES.txt" = "sha256:960635ff70651923fcae814c482af913bd3a41d506934437fce0de0dd0743e55"
+"Gigantoraptor/CALL4_A.WAV" = "sha256:4cd7a066376266097214ffd182423ca64eaf97a09f1771e839f8c53669e385aa"
+"Gigantoraptor/CALL4_B.WAV" = "sha256:4cd7a066376266097214ffd182423ca64eaf97a09f1771e839f8c53669e385aa"
+"Gigantoraptor/CALL4_C.WAV" = "sha256:4cd7a066376266097214ffd182423ca64eaf97a09f1771e839f8c53669e385aa"
+"Gigantoraptor/DINO4.TGA" = "sha256:770eb991c3b3f562a57dd93bb9dee17e36f8b55ea4a877877976bca77dfeabf2"
+"Gigantoraptor/GIGANTORAPTOR.car" = "sha256:21f18d36c1773d331712ef3752362b8bf3376ef9ac855f6c184800485615ed4e"
+"Gigantoraptor/Gigantoraptor _RES.txt" = "sha256:b8591ee6c2735d12fbba2b368c1a8d5e57c1197f2ef6c15bde34f1cb27df2292"
+"Iguanodon/DINO1.TGA" = "sha256:4baf7c553304c4d26029f4db6f8c90240b58d66c030bf7d2cfc7361432e86775"
+"Iguanodon/IGUANODON.car" = "sha256:f3d5b8aac4cecf2f80d045aa46804f819130958cc7194456e5c33e1b81d931dd"
+"Iguanodon/Iguanodon _RES.txt" = "sha256:1acd0259c86f5c34ccd3918b6f8d689516351d2db015309968949590e43934f1"
+"Oviraptor/CALL1_A.WAV" = "sha256:e52e1258f34659dd2d7139d2e5fd5f232183bc3517537a933a3e86a781dab5bf"
+"Oviraptor/CALL1_B.WAV" = "sha256:479df512b96edd59c2fce1f4b79ffca48aa6865662a87ab796ed7eeff7067262"
+"Oviraptor/CALL1_C.WAV" = "sha256:17446eb096d992b374fe4125d9b5600009980e776a61d9f092f0b3f3c87ad5cc"
+"Oviraptor/DINO1.TGA" = "sha256:40a0d03e0b1a29f5582603cb407c34140ef81b190593e311067776f32ea41463"
+"Oviraptor/OVIRAPTOR.car" = "sha256:65500639195bece31d3428137d1644b6b2700dd64086853bb4ef62f72d4f6130"
+"Oviraptor/Oviraptor _RES.txt" = "sha256:aeaa4a1d12631e34501e0cc06c58419b198c46115d66d121a0e21e19cb484326"
+"Pachycephalosaurus/DINO5.TGA" = "sha256:8656c25337a36f4a87adea54608adea9b1c6c4026aa423576f717fafcbb811b9"
+"Pachycephalosaurus/PACH.car" = "sha256:32e55e5542276f7b1515a75fa1c61308f0f75a6cb04cfc505f4bb0075cc1d822"
+"Pachycephalosaurus/Pachycephalosaurus _RES.txt" = "sha256:e7199b752bde77bc957e64fcf11450c27e3dd4d78b12dde283a306743a403fc6"
+"Revolver/Revolver _RES.txt" = "sha256:0ccf8cfa0adade5b45c30ddb86fd5d2a6a982134d3b26952b22b67611ff55645"
+"Revolver/WEAPON1.TGA" = "sha256:4732833042ca86d98900da923f8565d16c36c2919e65fcf2ae3cd33d395e5132"
+"Revolver/WEAPONS/REVOLVER.CAR" = "sha256:43a2aedb4ea17dbb0ca742113f4b0945a553f7dc55f1e5879bb976bf1d1fe69f"
+"Troodon/CALL6_A.WAV" = "sha256:83db5c1f06cc4b28ff5e92cf924abd30d91545d2de6974098f2044792fdce7c7"
+"Troodon/CALL6_B.WAV" = "sha256:9166606a1ef0d658b4e02af50ce7ba7d34e60382efa5584c7d8ad1eda526f143"
+"Troodon/CALL6_C.WAV" = "sha256:5f61216ca731bde9be24eb4ab6d2affd7a0c56f1cf9e9be223bd291cbd49f653"
+"Troodon/DINO6.TGA" = "sha256:22e934a9face6a4f67996f4c32f0b95afe5c49b06087ffe097ef4d29e95af2c8"
+"Troodon/TROODON.car" = "sha256:244360cd4be5e1587be3fc065064dc55293b652fd216d2aaa168c3e677ef1d25"
+"Troodon/Troodon _RES.txt" = "sha256:f1f6cacfa9a93241f9388bd19afe841c525394a3422c9c8433c4a308d19726f5"
+"Utahraptor/CALL6_A.WAV" = "sha256:d4b676e05cb8621e549be03b1fa752466d8c9a899cb764671d957b14d711ed6d"
+"Utahraptor/CALL6_B.WAV" = "sha256:fe47824aa36f7e32ed23b0874ff32e0e193f65e0058742db598327dc6cbf7c8b"
+"Utahraptor/CALL6_C.WAV" = "sha256:4bb0143118acbe77f904090803dc022f1cb0fada1385d3ae6e24ec6d387ecabf"
+"Utahraptor/DINO6.TGA" = "sha256:9db0e9647d91627c00d3bae8239fe6bc8bc2029cd9425ef198629d87e2231ecd"
+"Utahraptor/UTAHRAPTOR.car" = "sha256:341a1b5392a2f2a81f851f842689c4fd3720a18a6fb8a66db5cac268408eb35b"
+"Utahraptor/Utahraptor _RES.txt" = "sha256:a57072d1398b7eaeed010bcb0b4e1959a60395b85bb4c2df7a89f1875d13fbc3"
+
+[load_order]
+order = ["dinosaur-hunter"]

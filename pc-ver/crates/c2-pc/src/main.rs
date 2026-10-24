@@ -43,8 +43,8 @@ const USAGE: &str = "usage:
   c2-pc mod build  <MOD_DIR>... --base <GAME_DIR> --out <DIR>
   c2-pc recipe verify <RECIPE.toml> --base <GAME_DIR> --mods <DIR>
   c2-pc recipe build  <RECIPE.toml> --base <GAME_DIR> --mods <DIR> --out <DIR>
-  c2-pc recipe new    <MOD_DIR>... --base <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... --id ID [--name NAME] [--out RECIPE.toml]
-  c2-pc recipe base   --base <GAME_DIR> [--out recipes/bases/c2-vanilla.toml]
+  c2-pc recipe new    <MOD_DIR>... --base <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... --id ID [--name NAME] [--base-id ID] [--out RECIPE.toml]
+  c2-pc recipe base   --base <GAME_DIR> [--id c2-vanilla|ice-age] [--out recipes/bases/c2-vanilla.toml]
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
   c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--models] [--shot out.png]
   c2-pc hunt  <AREA.MAP|TROPHY.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all]
@@ -88,6 +88,7 @@ const VALUE_FLAGS: &[&str] = &[
     "name",
     "overlay",
     "standalone",
+    "base-id",
     "ambients",
     "balance",
     "menu-art",
@@ -284,6 +285,7 @@ fn main() -> Result<()> {
             out: o.value("out"),
             id: o.value("id"),
             name: o.value("name"),
+            base_id: o.value("base-id"),
             standalones: o
                 .values("standalone")
                 .into_iter()
