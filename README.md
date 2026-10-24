@@ -419,6 +419,8 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] PC: roaming add-ons (the 3DS's blue dots) should be pickable in the PC hunt menu too (dialect
         games: listed after the menu's animals, hunted by those slots)
   - [ ] Old 3DS speed: sim 6-14 ms a frame (animals the most), world 8-14, 2d 5; 30-40 fps
+  - [x] combined game: a picked animal from one game on another game's map didn't come or show on the radar
+        when its game marks menu animals by `overwrite charN` (PC and 3DS)
   - [ ] the one-pack combined game (every standalone, add-on, import): froze on an Old 3DS at load (owner,
         2026-10-23; no error). The menu resolved the rules once per map (86; seconds each there); now the
         cooker lists roamers' maps, the rules are parsed once, a loading screen shows; to re-test

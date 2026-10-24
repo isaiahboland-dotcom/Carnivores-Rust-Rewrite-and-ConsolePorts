@@ -2,6 +2,22 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-24 — Menu animals marked by `overwrite charN`
+One game marks its menu animals not with `callNo` (it writes `callNo = -5 1`,
+which the engine reads as -5: answers no call) but by an `overwrite charN`
+block that gives the picked animal its radar mark and target spawns; its
+models are set per map (`overwrite areaN { file }`, `blank.car` elsewhere).
+Combined, those blocks are tied to the game's own maps, so the animal picked
+on another game's map didn't come and the radar showed nothing (PC and 3DS).
+- `c2_formats::mee::menu_slot`: `callNo` when 0 or more, else (huntable
+  AIs only) the slot of its `overwrite charN`. The 3DS's roles, the cooker's
+  figures, the roaming add-on lists and the picked-anywhere rule use it.
+- `c2_core::mee::read_picked_anywhere`: a picked animal joining another map's
+  targets gets `radar = TRUE` too, and a placeholder model (`blank.car`)
+  becomes the first of its maps' models.
+- The 3DS roaming add-on list in the pack (`roam.N`) is the cooker's, so
+  the menu opens without resolving every map.
+
 ## 2026-10-23 — The owner's 3DS hardware test: fixes; one pack for a combined game
 - **Gyro aim** (stealth crouch): 1:1 with the console was too twitchy. Now a
   2.5 °/s deadzone (hand tremor) and a setting, *Gyro aim* 25/40/60/100 %
