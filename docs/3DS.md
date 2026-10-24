@@ -120,6 +120,15 @@ saving.
 - A drag anywhere looks around instead (for the Old 3DS, which has no
   C-Stick).
 
+## `.cia` builds from the command line
+The 3DS builder can make a `.cia` without its window (the packs are
+`c2-cook`'s):
+```
+c2-3ds-builder --cia NAME --tools DIR --out SD_DIR [--target o3ds|n3ds] [--art-from GAME_DIR] [--icon PNG] [--banner PNG] [--sound WAV]
+```
+`DIR` holds `c2-3ds.elf`, `makerom` and `bannertool`; the result is
+`SD_DIR/cia/NAME.cia`. Installed, it reads its packs from `sdmc:/3ds/NAME/`.
+
 ## Testing in an emulator
 Azahar runs the `.3dsx` directly (`azahar c2-3ds.3dsx`); put the pack in its
 SD folder (`~/.local/share/azahar-emu/sdmc/3ds/c2rs/`). Azahar gives a

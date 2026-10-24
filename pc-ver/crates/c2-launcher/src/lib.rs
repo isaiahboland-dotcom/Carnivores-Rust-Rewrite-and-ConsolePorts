@@ -74,6 +74,64 @@ pub fn find_tool(name: &str, tools: Option<&std::path::Path>) -> Option<PathBuf>
         .find(|p| p.is_file())
 }
 
+/// `c2-3ds-builder --cia NAME --tools DIR --out DIR [--target o3ds|n3ds]
+/// [--art-from GAME] [--icon PNG] [--banner PNG] [--sound WAV]`: the
+/// `.cia` build without the window (the packs are `c2-cook`'s). Writes
+/// `OUT/cia/NAME.cia`; `TOOLS` holds `c2-3ds.elf`, `makerom`, `bannertool`.
+pub fn cia_cli(args: &[String]) -> Result<std::path::PathBuf, String> {
+    use std::path::PathBuf;
+    let get = |k: &str| {
+        args.iter()
+            .position(|a| a == k)
+            .and_then(|i| args.get(i + 1))
+            .map(PathBuf::from)
+    };
+    let name = config::install_name(&get("--cia").ok_or("--cia NAME")?.to_string_lossy());
+    let tools = get("--tools").ok_or("--tools DIR")?;
+    let out = get("--out").ok_or("--out DIR")?;
+    let target = match get("--target").as_deref().and_then(|p| p.to_str()) {
+        Some("n3ds") => config::Target::New,
+        _ => config::Target::Old,
+    };
+    let tool = |n: &str| {
+        let p = tools.join(n);
+        p.exists()
+            .then_some(p)
+            .ok_or_else(|| format!("no {n} in {}", tools.display()))
+    };
+    let (icon, banner, sound, art) = (
+        get("--icon"),
+        get("--banner"),
+        get("--sound"),
+        get("--art-from"),
+    );
+    let steps = cia::steps(&cia::Cia {
+        name: &name,
+        target,
+        elf: tool("c2-3ds.elf")?,
+        makerom: tool("makerom")?,
+        bannertool: tool("bannertool")?,
+        icon: icon.as_deref(),
+        banner: banner.as_deref(),
+        sound: sound.as_deref(),
+        art_from: art.as_deref(),
+        work: config::data_dir().join("cia").join(&name),
+        out: out.join("cia").join(format!("{name}.cia")),
+    });
+    let job = jobs::Job::start(format!("cia {name}"), steps);
+    while job.result().is_none() {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    for l in job.lines() {
+        eprintln!("{l}");
+    }
+    if job.result() == Some(true) {
+        Ok(out.join("cia").join(format!("{name}.cia")))
+    } else {
+        Err(format!("building {name}.cia failed"))
+    }
+}
+
 pub fn run(mode: Mode) -> eframe::Result {
     let title = match mode {
         Mode::Full => "Carnivores 2 (Rust) - Launcher",
