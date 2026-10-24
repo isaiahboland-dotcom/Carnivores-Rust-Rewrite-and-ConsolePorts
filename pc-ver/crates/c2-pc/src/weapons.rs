@@ -28,6 +28,10 @@ pub struct WeaponAssets {
     pub aim_point: Option<[f32; 3]>,
 }
 
+/// The most bullet icons drawn in a row; more rounds show as one and a
+/// count.
+const MAX_ICONS: i32 = 40;
+
 /// `(info, [draw, fire, hide, reload] ms, assets)` for every `_RES.TXT` weapon.
 pub fn load_weapons(
     gpu: &Gpu,
@@ -234,14 +238,23 @@ impl WeaponAssets {
             return out;
         };
         let mut y = 5.0 * scale;
+        // An icon per round, as the original; past [`MAX_ICONS`] (a mod's
+        // "unlimited" 9999999 asked for millions) one icon and the count.
         let row = |n: i32, y: f32, out: &mut Vec<Sprite>| {
-            for b in 0..n.max(0) {
+            let n = n.max(0);
+            let icons = if n > MAX_ICONS { 1 } else { n };
+            for b in 0..icons {
                 out.push(Sprite::new(
                     *img,
                     (6.0 + (b as u32 * im.w) as f32) * scale,
                     y,
                     scale,
                 ));
+            }
+            if n > MAX_ICONS {
+                let x = (10.0 + im.w as f32) * scale;
+                let px = 8.0 * scale.max(1.0).round();
+                out.extend(hud.label(x, y, px, [1.0; 4], &format!("x{n}")));
             }
         };
         if w.ammo_mag.get(w.current).copied().unwrap_or(0) > 0 {
