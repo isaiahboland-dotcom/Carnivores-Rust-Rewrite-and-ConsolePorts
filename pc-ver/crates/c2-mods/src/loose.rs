@@ -152,7 +152,7 @@ fn gather(dir: &Path, dialect: bool, notes: &mut Vec<String>, out: &mut Vec<Path
 }
 
 /// `DINO7.TGA` -> `("dino", 7)`.
-fn numbered(name: &str) -> Option<(String, usize)> {
+pub(crate) fn numbered(name: &str) -> Option<(String, usize)> {
     let stem = name.split('.').next()?;
     let stem = stem.split('_').next()?;
     let digits = stem.trim_start_matches(|c: char| c.is_ascii_alphabetic());

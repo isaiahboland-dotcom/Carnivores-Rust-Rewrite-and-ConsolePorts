@@ -1122,6 +1122,15 @@ pub fn add_on_sources(
     // An add-on named like one of the games' animals is a different animal:
     // added alongside under its own name, not changing the game's.
     for m in &mut sources {
+        // The menu slot its pictures were drawn for (`DINO7.TGA`), if any.
+        let drawn_for = m.map.iter().find_map(|(p, _)| {
+            let name = p.rsplit('/').next()?;
+            match crate::loose::numbered(&name.to_ascii_lowercase())? {
+                (k, n) if k == "dino" && key(p).contains("/menu/") => Some(n),
+                _ => None,
+            }
+        });
+        let mut slots = Vec::new();
         for c in &mut m.res_changes {
             if let Change::Modify {
                 section,
@@ -1132,8 +1141,20 @@ pub fn add_on_sources(
             {
                 if section.eq_ignore_ascii_case("characters") && *index >= built.base_chars {
                     let mut b = block.clone();
-                    if let Some(n) = b.get(&["name"]).map(unquote) {
-                        set(&mut b, "name", format!("'{n} (add-on)'"));
+                    let named = b.get(&["name"]).map(unquote).unwrap_or_default();
+                    if !named.is_empty() {
+                        set(&mut b, "name", format!("'{named} (add-on)'"));
+                    }
+                    // A slot of its own, with its pictures renumbered to it
+                    // (else they would replace the base animal's they were
+                    // drawn for, and it would have none).
+                    if let (Some(from), Some(id)) = (drawn_for, block_id(&b)) {
+                        slots.push(crate::loose::SlotAdd {
+                            section: "characters".into(),
+                            id,
+                            from,
+                            alongside: named.clone(),
+                        });
                     }
                     *c = Change::Add {
                         section: section.clone(),
@@ -1142,6 +1163,7 @@ pub fn add_on_sources(
                 }
             }
         }
+        m.slots.extend(slots);
     }
     let added: HashSet<String> = sources
         .iter()

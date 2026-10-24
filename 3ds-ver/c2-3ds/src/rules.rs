@@ -120,7 +120,15 @@ impl Rules {
                 .and_then(|c| c.block.get(&["ai"]))
                 .map(c_atoi)
         };
-        let roamers = (0..neutral.roles.len()).filter(|&i| neutral.roles[i] == Role::Roamer);
+        let offered = |i: usize| {
+            neutral
+                .tables
+                .as_ref()
+                .and_then(|t| t.characters.get(i))
+                .is_none_or(|c| c2_core::mee::offered(&c.block))
+        };
+        let roamers =
+            (0..neutral.roles.len()).filter(|&i| neutral.roles[i] == Role::Roamer && offered(i));
         let first = neutral
             .roles
             .iter()

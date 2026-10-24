@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use c2_formats::car::{self, Animation, Car};
 use c2_formats::model::{Mesh, Vertex};
 use c2_formats::res_txt::ResTxt;
-use c2_mods::standalone::{build, Ambients, Options};
+use c2_mods::standalone::{add_ons, build, Ambients, Options};
 
 fn write(root: &Path, files: &[(&str, &[u8])]) {
     for (p, d) in files {
@@ -227,7 +227,40 @@ fn standalones_are_renumbered_tied_to_their_maps_and_original_ones_converted() {
     assert_eq!(menu.huntables.len(), 4);
     assert_eq!(menu.weapons.len(), 3);
     assert_eq!(menu.areas.len(), 3);
-    for d in [base, games, out] {
+
+    // An add-on named like a standalone's animal, its picture drawn for
+    // slot 1: an animal of its own in a slot of its own (5), its picture
+    // renumbered, the base's slot 1 picture left alone.
+    let addon = tmp("utah-addon");
+    write(
+        &addon,
+        &[
+            (
+                "Utah _RES.txt",
+                b"{\n name = 'Utahraptor'\n file = 'utah2.car'\n ai = 15\n runAnim = 0\n}\n",
+            ),
+            ("utah2.car", &model(&["run"])),
+            ("DINO1.TGA", b"utah pic"),
+        ],
+    );
+    let pack = add_ons(
+        &out,
+        std::slice::from_ref(&addon),
+        &built,
+        &Options {
+            ambients: Ambients::Tied,
+        },
+    )
+    .expect("add-ons");
+    assert_eq!(
+        pack.vfs.read("HUNTDAT/MENU/PICS/DINO5.TGA").ok(),
+        Some(b"utah pic".to_vec())
+    );
+    assert_ne!(
+        pack.vfs.read("HUNTDAT/MENU/PICS/DINO1.TGA").ok(),
+        Some(b"utah pic".to_vec())
+    );
+    for d in [base, games, out, addon] {
         let _ = std::fs::remove_dir_all(d);
     }
 }

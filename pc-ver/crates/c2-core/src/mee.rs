@@ -213,6 +213,15 @@ fn map_model(b: &Block) -> Option<String> {
     })
 }
 
+/// Whether a roaming entry is one to offer for picking: named (one game
+/// keeps hidden creatures as `?`) and with a model (not its `blank.car`
+/// placeholder). The others still roam where their tables put them.
+pub fn offered(b: &Block) -> bool {
+    let name = b.get(&["name"]).unwrap_or_default();
+    let file = b.get(&["file"]).unwrap_or_default().to_ascii_lowercase();
+    name.chars().any(char::is_alphabetic) && !file.trim().trim_matches('\'').ends_with("blank.car")
+}
+
 /// The roaming add-ons of a dialect game (a huntable AI, 10-29, with no
 /// menu slot, [`c2_formats::mee::menu_slot`]: they only roam): their
 /// character indices, each with the menu slot it is picked by, from
@@ -233,7 +242,7 @@ pub fn roamers(res: &ResTxt, first_slot: usize) -> Vec<(usize, usize)> {
         .filter(|(i, c)| {
             let ai = c.block.get(&["ai"]).map(c_atoi);
             let slot = c2_formats::mee::menu_slot(raw.get(*i), &c.block);
-            slot.is_none() && ai.is_some_and(|a| (10..30).contains(&a))
+            slot.is_none() && ai.is_some_and(|a| (10..30).contains(&a)) && offered(&c.block)
         })
         .map(|(i, _)| i)
         .zip(first_slot..c2_formats::bits::Bits::LEN - 10)
