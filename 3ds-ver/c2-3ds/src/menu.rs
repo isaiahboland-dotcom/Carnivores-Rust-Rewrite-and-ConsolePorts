@@ -266,6 +266,9 @@ pub struct Menu {
     modded: Option<(c2_formats::mee::SurvivalCommon, Vec<String>)>,
     /// Choosing which survival (more than one offered).
     survival_pick: bool,
+    /// A classic or modded survival picked: its hunt options (run speed,
+    /// ambients) are on screen, Next starts it.
+    survival_next: Option<SurvivalKind>,
 }
 
 pub(crate) fn title(vfs: &Vfs, file: &str, fallback: String) -> String {
@@ -465,6 +468,7 @@ impl Menu {
             mobile_survival,
             modded,
             survival_pick: false,
+            survival_next: None,
             weapons,
             equip,
             area: 0,
@@ -785,16 +789,27 @@ impl Menu {
 
     /// Starts survival `kind` (a hunt setup, or our gun pick).
     fn start_survival(&mut self, kind: SurvivalKind) -> Option<Setup> {
-        let r = match kind {
-            SurvivalKind::Mobile => self.classic_setup(),
-            SurvivalKind::Mee => self.modded_setup(),
+        match kind {
+            // Their own area and guns: the hunt options, then in.
+            SurvivalKind::Mobile | SurvivalKind::Mee => {
+                self.survival_next = Some(kind);
+                self.step = Step::Options;
+            }
             _ => {
-                // Ours: only the guns are picked.
+                // Ours: the guns, the hunt options.
                 self.survival = Some(SurvivalKind::Normal);
                 self.observer = false;
                 self.step = Step::Gear;
-                return None;
             }
+        }
+        None
+    }
+
+    /// A classic or modded survival, after its hunt options.
+    fn begin_survival(&mut self, kind: SurvivalKind) -> Option<Setup> {
+        let r = match kind {
+            SurvivalKind::Mobile => self.classic_setup(),
+            _ => self.modded_setup(),
         };
         match r {
             Ok(s) => Some(s),
@@ -1272,6 +1287,7 @@ impl Menu {
             Step::Animals => Step::Area,
             Step::Gear if self.survival.is_some() => Step::Title,
             Step::Gear => Step::Animals,
+            Step::Options if self.survival_next.take().is_some() => Step::Title,
             Step::Options => Step::Gear,
         };
     }
@@ -1282,6 +1298,7 @@ impl Menu {
             self.quit = true;
         } else {
             self.back();
+            self.survival_next = None;
             self.step = Step::Title;
         }
     }
@@ -1293,27 +1310,42 @@ impl Menu {
             Step::Settings | Step::Hunters => self.back(),
             Step::Area if !self.trophy() => self.step = Step::Animals,
             Step::Animals => self.step = Step::Gear,
-            // Our survival: the guns, then in.
-            Step::Gear if self.survival.is_some() => {
+            Step::Gear => self.step = Step::Options,
+            Step::Options if self.survival_next.is_some() => {
+                self.store_settings();
+                let kind = self.survival_next.take()?;
+                let s = self.begin_survival(kind);
+                if s.is_none() {
+                    // Not startable: the message shows on the title.
+                    self.step = Step::Title;
+                }
+                return s;
+            }
+            // Our survival: the guns, the options, then in.
+            Step::Options if self.survival.is_some() => {
+                self.store_settings();
                 self.roll_survival();
                 match self.can_hunt() {
                     Ok(()) => return Some(self.setup()),
                     Err(e) => self.message = Some(e.into()),
                 }
             }
-            Step::Gear => self.step = Step::Options,
             _ => match self.can_hunt() {
                 Ok(()) => {
                     self.store_equipment();
-                    if let Err(e) = self.settings.store() {
-                        self.message = Some(format!("settings not saved: {e}"));
-                    }
+                    self.store_settings();
                     return Some(self.setup());
                 }
                 Err(e) => self.message = Some(e.into()),
             },
         }
         None
+    }
+
+    fn store_settings(&mut self) {
+        if let Err(e) = self.settings.store() {
+            self.message = Some(format!("settings not saved: {e}"));
+        }
     }
 
     /// Hunter `n` plays (its save and record), from now on and next time.
@@ -1925,11 +1957,16 @@ impl Menu {
         );
 
         // The area and the time of day (a survival's are random).
-        let survival = self.survival.is_some() && !self.trophy();
+        let survival = (self.survival.is_some() || self.survival_next.is_some()) && !self.trophy();
         if survival {
             c.rect([8.0, 22.0, 192.0, 112.0], PANEL);
             c.flush(gpu);
-            c.text(gpu, 8.0, 140.0, 1.0, WHITE, "Random area and time");
+            let t = match self.survival_next {
+                Some(SurvivalKind::Mobile) => "Classic survival: its own area",
+                Some(_) => "Modded survival: its own area",
+                None => "Random area and time",
+            };
+            c.text(gpu, 8.0, 140.0, 1.0, WHITE, t);
         } else if let Some((_, a)) = self.areas.get(self.area) {
             if let Some(t) = &a.pic {
                 c.image(

@@ -410,7 +410,8 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] one dialect game with the radar: its ambients show green and the hunted animals' dots don't show
   - [x] survival: waves spawn on mountain edges (stuck, or far above the hunter) in classic and modded
         (spots with a walkable way to the hunter, near his height, first)
-  - [ ] survival: run speed and ambient animals should be settable (ambients off helps the frame rate)
+  - [x] survival: run speed and ambient animals should be settable (ambients off helps the frame rate):
+        every survival goes through the hunt options screen
   - [ ] PC: roaming add-ons (the 3DS's blue dots) should be pickable in the PC hunt menu too
   - [ ] Old 3DS speed: sim 6-14 ms a frame (animals the most), world 8-14, 2d 5; 30-40 fps
 - To investigate (2026-10-23): one of the owner's dialect game folders fails `c2-cook --check` with three
