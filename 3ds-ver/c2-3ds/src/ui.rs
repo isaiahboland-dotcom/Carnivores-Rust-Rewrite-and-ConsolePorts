@@ -93,12 +93,16 @@ impl Ui {
                 .collect();
             let weapons = crate::rules::Rules::load(vfs)
                 .map(|r| {
-                    r.hunt("TROPHY", c2_core::area::TimeOfDay::Day, 0)
-                        .res
-                        .weapons
-                        .iter()
-                        .map(|w| w.name.clone().unwrap_or_default())
-                        .collect()
+                    r.hunt(
+                        "TROPHY",
+                        c2_core::area::TimeOfDay::Day,
+                        c2_formats::bits::Bits::NONE,
+                    )
+                    .res
+                    .weapons
+                    .iter()
+                    .map(|w| w.name.clone().unwrap_or_default())
+                    .collect()
                 })
                 .unwrap_or_default();
             (areas, weapons)

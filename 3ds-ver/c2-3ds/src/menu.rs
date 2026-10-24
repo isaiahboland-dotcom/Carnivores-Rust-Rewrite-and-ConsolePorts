@@ -18,6 +18,7 @@
 use c2_core::area::TimeOfDay;
 use c2_core::dino::DinoInfo;
 use c2_core::game::SurvivalKind;
+use c2_formats::bits::Bits;
 use c2_formats::sav::Save;
 use c2_vfs::Vfs;
 
@@ -159,7 +160,36 @@ enum Step {
 struct Item {
     name: String,
     price: i32,
+    /// Its menu picture: loaded while its grid page is shown
+    /// ([`Menu::sync_pics`]; a combined game's would fill the console's
+    /// video memory), from `pic_path`.
     pic: Option<Texture>,
+    pic_path: String,
+    /// Loading it was tried (the pack may have none).
+    pic_tried: bool,
+}
+
+impl Item {
+    fn new(name: String, price: i32, pic_path: String) -> Self {
+        Self {
+            name,
+            price,
+            pic: None,
+            pic_path,
+            pic_tried: false,
+        }
+    }
+
+    /// Its picture loaded (`on`) or let go.
+    fn want_pic(&mut self, vfs: &Vfs, on: bool) {
+        if on && !self.pic_tried {
+            self.pic = load(vfs, &self.pic_path);
+            self.pic_tried = true;
+        } else if !on && self.pic_tried {
+            self.pic = None;
+            self.pic_tried = false;
+        }
+    }
 }
 
 /// An animal in the menu.
@@ -182,7 +212,7 @@ struct Memory {
 }
 
 /// Area, time, animals, weapons, ambient on.
-type MemKey = (usize, usize, u64, u64, bool);
+type MemKey = (usize, usize, Bits, Bits, bool);
 
 /// One cell of a hexagon grid: centre and radius.
 type Cell = (f32, f32, f32);
@@ -205,6 +235,45 @@ fn grid(n: usize, cols: usize, r: f32, top: f32) -> Vec<Cell> {
         .collect()
 }
 
+/// Where `paged` puts the items not on the page shown (radius 0: not
+/// drawn, never hit).
+const OFF_PAGE: Cell = (-1000.0, -1000.0, 0.0);
+
+/// A grid of hexagons in pages: the cells by item, how many pages, the
+/// page shown.
+struct Paged {
+    cells: Vec<Cell>,
+    pages: usize,
+    page: usize,
+}
+
+/// [`grid`] in pages of as many rows as fit above `bottom`: page `page`'s
+/// items laid out (the picked item's page when `page` is `None`), the
+/// others [`OFF_PAGE`].
+fn paged(n: usize, cols: usize, r: f32, bottom: f32, page: Option<usize>, picked: usize) -> Paged {
+    let top = 2.0;
+    let h = (r + GAP / 2.0) * 3f32.sqrt();
+    let rows = (((bottom - top) / h - 0.5).floor() as usize).max(1);
+    let per = rows * cols.min(n).max(1);
+    let pages = n.div_ceil(per).max(1);
+    let page = page.unwrap_or(picked / per).min(pages - 1);
+    let on = grid(n.min(per), cols, r, top);
+    let cells = (0..n)
+        .map(|i| {
+            if i / per == page {
+                on[i % per]
+            } else {
+                OFF_PAGE
+            }
+        })
+        .collect();
+    Paged { cells, pages, page }
+}
+
+/// The bottom bar's page buttons (a grid of more than fits).
+const PAGE_PREV: [f32; 4] = [82.0, BAR_Y, 24.0, 24.0];
+const PAGE_NEXT: [f32; 4] = [214.0, BAR_Y, 24.0, 24.0];
+
 pub struct Menu {
     c: Canvas,
     /// The title screen's art.
@@ -219,6 +288,9 @@ pub struct Menu {
     info: PackInfo,
     pub save: Save,
     step: Step,
+    /// The grid page shown, and on which step (another step starts on
+    /// its first page; the area grid on the picked area's).
+    page: (Step, usize),
     /// Areas (`AREA1`..), then the trophy room if packed.
     areas: Vec<(String, Item)>,
     /// The animals offered (at most 64).
@@ -234,9 +306,9 @@ pub struct Menu {
     area: usize,
     time: usize,
     /// Bits by position in `dinos`, `weapons`, `equip`.
-    picked_dinos: u64,
-    picked_weapons: u64,
-    picked_equip: u64,
+    picked_dinos: Bits,
+    picked_weapons: Bits,
+    picked_equip: Bits,
     observer: bool,
     /// The last item tapped, for its name and price under the grid.
     focus: Option<String>,
@@ -254,10 +326,10 @@ pub struct Menu {
     /// Animals (bits by position in `dinos`) the survival brings besides
     /// the picks: hardcore's 1-3 mods' animals, custom's T-Rex, the mobile
     /// one's animals.
-    extra_dinos: u64,
+    extra_dinos: Bits,
     /// The animals among `extra_dinos` that are hardcore's or custom's (not
     /// in the waves).
-    special_dinos: u64,
+    special_dinos: Bits,
     /// The mobile game's Survive mode (`C2RS/SURVIVE.TXT`; classic
     /// survival), and whether ours is offered too (the launcher's choice).
     mobile_survival: Option<c2_formats::mobile_arcade::Survive>,
@@ -300,11 +372,11 @@ impl Menu {
                 continue;
             }
             let n = i + 1;
-            let item = Item {
-                name: title(vfs, &format!("AREA{n}.TXT"), format!("Area {n}")),
-                price: menu.areas.get(i).map_or(0, |a| a.price),
-                pic: load(vfs, &format!("C2RS/MENU/AREA{n}.TX")),
-            };
+            let item = Item::new(
+                title(vfs, &format!("AREA{n}.TXT"), format!("Area {n}")),
+                menu.areas.get(i).map_or(0, |a| a.price),
+                format!("C2RS/MENU/AREA{n}.TX"),
+            );
             areas.push((name.clone(), item));
         }
         // The menu's animals by slot (`DINOn.TGA`), then the ones that only
@@ -314,16 +386,16 @@ impl Menu {
             .iter()
             .enumerate()
             .map(|(k, d)| {
-                let item = Item {
-                    name: d.name.clone(),
-                    price: d.price,
-                    pic: load(vfs, &format!("C2RS/MENU/DINO{}.TX", k + 1)),
-                };
+                let item = Item::new(
+                    d.name.clone(),
+                    d.price,
+                    format!("C2RS/MENU/DINO{}.TX", k + 1),
+                );
                 (Pick::Slot(k), item)
             })
             .collect();
         let first = info.areas.first().cloned().unwrap_or_default();
-        let neutral = rules.hunt(&first, TimeOfDay::Day, u128::MAX);
+        let neutral = rules.hunt(&first, TimeOfDay::Day, Bits::ALL);
         for r in Rules::roams(&neutral) {
             let name = neutral
                 .res
@@ -339,15 +411,11 @@ impl Menu {
                     .donor
                     .and_then(|k| menu.huntables.get(k))
                     .map_or(0, |d| d.price);
-                let item = Item {
-                    name,
-                    price,
-                    pic: load(vfs, &format!("C2RS/MENU/R/{key}.TX")),
-                };
+                let item = Item::new(name, price, format!("C2RS/MENU/R/{key}.TX"));
                 dinos.push((Pick::Roamer(r), item));
             }
         }
-        dinos.truncate(64);
+        dinos.truncate(Bits::LEN);
         // Cheapest first, left to right and top to bottom (equal prices
         // keep their order: the game's, then add-ons).
         dinos.sort_by_key(|d| d.1.price);
@@ -398,7 +466,7 @@ impl Menu {
         let mut roams = std::collections::HashMap::new();
         if dinos.iter().any(|d| matches!(d.0, Pick::Roamer(_))) {
             for (a, (name, _)) in areas.iter().enumerate() {
-                let hr = rules.hunt(name, TimeOfDay::Day, u128::MAX);
+                let hr = rules.hunt(name, TimeOfDay::Day, Bits::ALL);
                 let Some(t) = &hr.tables else { continue };
                 for d in &dinos {
                     if let Pick::Roamer(r) = d.0 {
@@ -416,20 +484,24 @@ impl Menu {
             .weapons
             .iter()
             .enumerate()
-            .map(|(i, w)| Item {
-                name: w.name.clone(),
-                price: w.price,
-                pic: load(vfs, &format!("C2RS/MENU/WEAPON{}.TX", i + 1)),
+            .map(|(i, w)| {
+                Item::new(
+                    w.name.clone(),
+                    w.price,
+                    format!("C2RS/MENU/WEAPON{}.TX", i + 1),
+                )
             })
             .collect();
         let prices = menu.accessory_prices.clone();
         let equip = EQUIPMENT
             .iter()
             .enumerate()
-            .map(|(i, n)| Item {
-                name: n.to_string(),
-                price: price(&prices, i),
-                pic: load(vfs, &format!("C2RS/MENU/EQUIP{}.TX", i + 1)),
+            .map(|(i, n)| {
+                Item::new(
+                    n.to_string(),
+                    price(&prices, i),
+                    format!("C2RS/MENU/EQUIP{}.TX", i + 1),
+                )
             })
             .collect();
         // Accessories are kept in the save (`CamoMode`, `RadarMode`,
@@ -439,7 +511,8 @@ impl Menu {
             .iter()
             .enumerate()
             .filter(|(_, &on)| on != 0)
-            .fold(0, |m, (i, _)| m | 1 << i);
+            .map(|(i, _)| i)
+            .collect();
         let trophy_room = info.areas.iter().any(|a| a.eq_ignore_ascii_case("TROPHY"));
         let mut m = Self {
             c: Canvas::new(load(vfs, "C2RS/FONT.TX")),
@@ -451,6 +524,7 @@ impl Menu {
             info,
             save,
             step: Step::Title,
+            page: (Step::Title, 0),
             areas,
             dinos,
             roams,
@@ -462,8 +536,8 @@ impl Menu {
             record: crate::save::load_record(),
             survival: None,
             kinds,
-            extra_dinos: 0,
-            special_dinos: 0,
+            extra_dinos: Bits::NONE,
+            special_dinos: Bits::NONE,
             ours,
             mobile_survival,
             modded,
@@ -473,15 +547,15 @@ impl Menu {
             equip,
             area: 0,
             time: 1,
-            picked_dinos: 0,
-            picked_weapons: 0,
+            picked_dinos: Bits::NONE,
+            picked_weapons: Bits::NONE,
             picked_equip,
             observer: false,
             focus: None,
             message: None,
         };
         if m.remaining() < 0 {
-            m.picked_equip = 0;
+            m.picked_equip = Bits::NONE;
         }
         Ok(m)
     }
@@ -492,11 +566,11 @@ impl Menu {
             .is_some_and(|a| a.0.eq_ignore_ascii_case("TROPHY"))
     }
 
-    fn sum(items: &[Item], mask: u64) -> i32 {
+    fn sum(items: &[Item], mask: Bits) -> i32 {
         items
             .iter()
             .enumerate()
-            .filter(|(i, _)| *i < 32 && mask & (1 << i) != 0)
+            .filter(|(i, _)| mask.has(*i))
             .map(|(_, it)| it.price)
             .sum()
     }
@@ -511,7 +585,7 @@ impl Menu {
             .dinos
             .iter()
             .enumerate()
-            .filter(|(i, _)| self.picked_dinos & (1 << i) != 0)
+            .filter(|(i, _)| self.picked_dinos.has(*i))
             .map(|(_, d)| d.1.price)
             .sum();
         self.save.score
@@ -524,19 +598,18 @@ impl Menu {
 
     /// The hunt targets (bit 10 + slot, roamers' slots too) and roaming
     /// add-ons picked.
-    fn picks(&self) -> (u128, Vec<Roam>) {
-        let mut targets = 0u128;
+    fn picks(&self) -> (Bits, Vec<Roam>) {
+        let mut targets = Bits::NONE;
         let mut roamers = Vec::new();
         let mask = self.dino_mask();
         for (k, d) in self.dinos.iter().enumerate() {
-            if mask & (1 << k) == 0 {
+            if !mask.has(k) {
                 continue;
             }
             match d.0 {
-                Pick::Slot(s) if s < 118 => targets |= 1 << (s + 10),
-                Pick::Slot(_) => {}
+                Pick::Slot(s) => targets.set(s + 10),
                 Pick::Roamer(r) => {
-                    targets |= 1 << (r.slot + 10);
+                    targets.set(r.slot + 10);
                     roamers.push(r);
                 }
             }
@@ -596,13 +669,13 @@ impl Menu {
         if self.trophy() {
             return Ok(());
         }
-        if !self.observer && self.picked_weapons == 0 {
+        if !self.observer && self.picked_weapons.is_empty() {
             return Err("Pick a weapon");
         }
-        if !self.observer && self.picked_dinos == 0 && self.survival.is_none() {
+        if !self.observer && self.picked_dinos.is_empty() && self.survival.is_none() {
             return Err("Pick an animal and a weapon");
         }
-        if self.survival.is_some() && self.extra_dinos == 0 {
+        if self.survival.is_some() && self.extra_dinos.is_empty() {
             return Err("No dangerous animal fits");
         }
         if self.remaining() < 0 {
@@ -628,10 +701,10 @@ impl Menu {
         Setup {
             area: "TROPHY".into(),
             time: TimeOfDay::Day,
-            targets: 0,
+            targets: Bits::NONE,
             roamers: Vec::new(),
             silent_calls: Vec::new(),
-            weapons: 0,
+            weapons: Bits::NONE,
             double_ammo: false,
             observer: false,
             resupplies: 0,
@@ -646,7 +719,7 @@ impl Menu {
             crouch_key: self.settings.crouch_key,
             gyro_k: 0.0,
             survival: None,
-            survival_extra: 0,
+            survival_extra: Bits::NONE,
             mobile_survival: None,
         }
     }
@@ -659,13 +732,13 @@ impl Menu {
                 .get(self.area)
                 .map_or("AREA1".into(), |a| a.0.clone()),
             time: TIMES[self.time].0,
-            targets: if self.observer { 0 } else { targets },
+            targets: if self.observer { Bits::NONE } else { targets },
             roamers: if self.observer { Vec::new() } else { roamers },
             silent_calls: Vec::new(),
             weapons: if self.observer {
-                0
+                Bits::NONE
             } else {
-                self.picked_weapons as u32
+                self.picked_weapons
             },
             double_ammo: false,
             observer: self.observer,
@@ -691,7 +764,7 @@ impl Menu {
     }
 
     /// The animals loaded: a survival's own, else the picks.
-    fn dino_mask(&self) -> u64 {
+    fn dino_mask(&self) -> Bits {
         if self.survival.is_some() {
             self.extra_dinos
         } else {
@@ -700,17 +773,15 @@ impl Menu {
     }
 
     /// Hardcore's and custom's animals' target bits (bit 10 + slot).
-    fn extra_targets(&self) -> u128 {
-        let mut bits = 0u128;
+    fn extra_targets(&self) -> Bits {
+        let mut bits = Bits::NONE;
         for (k, d) in self.dinos.iter().enumerate() {
-            if self.special_dinos & (1 << k) != 0 {
+            if self.special_dinos.has(k) {
                 let slot = match d.0 {
                     Pick::Slot(s) => s,
                     Pick::Roamer(r) => r.slot,
                 };
-                if slot < 118 {
-                    bits |= 1 << (slot + 10);
-                }
+                bits.set(slot + 10);
             }
         }
         bits
@@ -732,7 +803,7 @@ impl Menu {
         };
         self.area = next() as usize % self.areas.len().max(1);
         self.time = next() as usize % 3;
-        (self.extra_dinos, self.special_dinos) = (0, 0);
+        (self.extra_dinos, self.special_dinos) = (Bits::NONE, Bits::NONE);
         let n = self.dinos.len();
         let order = crate::hunt::pick(&(0..n).collect::<Vec<_>>(), n, next());
         let fits = |m: &Self| {
@@ -746,17 +817,17 @@ impl Menu {
                     if got == most {
                         break;
                     }
-                    if m.extra_dinos & (1 << i) != 0 || !ok(&m.kinds[i]) {
+                    if m.extra_dinos.has(i) || !ok(&m.kinds[i]) {
                         continue;
                     }
-                    m.extra_dinos |= 1 << i;
+                    m.extra_dinos.set(i);
                     if fits(m) {
                         got += 1;
                         if special {
-                            m.special_dinos |= 1 << i;
+                            m.special_dinos.set(i);
                         }
                     } else {
-                        m.extra_dinos &= !(1 << i);
+                        m.extra_dinos.clear(i);
                     }
                 }
             };
@@ -850,13 +921,13 @@ impl Menu {
                         .iter()
                         .any(|n| n.eq_ignore_ascii_case(&self.dinos[i].1.name))
                 })
-                .fold(0, |a, i| a | 1 << i);
-            if self.extra_dinos == 0 {
+                .collect();
+            if self.extra_dinos.is_empty() {
                 return Err("None of the survival's animals is in this pack");
             }
-            self.special_dinos = 0;
-            self.picked_weapons = 1 << c.weapon.min(self.weapons.len().saturating_sub(1)).min(63);
-            self.picked_equip = 0;
+            self.special_dinos = Bits::NONE;
+            self.picked_weapons = Bits::bit(c.weapon.min(self.weapons.len().saturating_sub(1)));
+            self.picked_equip = Bits::NONE;
             self.extra_ammo = 0;
             self.can_hunt()?;
             Ok(self.setup())
@@ -921,8 +992,8 @@ impl Menu {
         let wanted: Vec<String> = m.animals().iter().map(|n| norm(n)).collect();
         self.extra_dinos = (0..self.dinos.len())
             .filter(|&i| wanted.contains(&norm(&self.dinos[i].1.name)))
-            .fold(0, |a, i| a | 1 << i);
-        self.special_dinos = 0;
+            .collect();
+        self.special_dinos = Bits::NONE;
         let names: Vec<String> = self
             .weapons
             .iter()
@@ -933,8 +1004,8 @@ impl Menu {
             .position(|n| n.trim() == "shotgun")
             .or_else(|| names.iter().position(|n| n.contains("shotgun")))
             .unwrap_or(0);
-        self.picked_weapons = 1 << shotgun;
-        self.picked_equip = 0;
+        self.picked_weapons = Bits::bit(shotgun);
+        self.picked_equip = Bits::NONE;
         self.extra_ammo = 0;
         self.can_hunt()?;
         Ok(self.setup())
@@ -942,11 +1013,15 @@ impl Menu {
 
     /// Keeps the accessory choice in the save, as the original does.
     fn store_equipment(&mut self) {
-        let e = if self.observer { 0 } else { self.picked_equip };
+        let e = if self.observer {
+            Bits::NONE
+        } else {
+            self.picked_equip
+        };
         let o = &mut self.save.options;
-        o.camo = i32::from(e & 1 != 0);
-        o.radar = i32::from(e & 2 != 0);
-        o.scent = i32::from(e & 4 != 0);
+        o.camo = i32::from(e.has(0));
+        o.radar = i32::from(e.has(1));
+        o.scent = i32::from(e.has(2));
         if let Err(e) = crate::save::store(&self.save) {
             self.message = Some(format!("save failed: {e}"));
         }
@@ -956,7 +1031,7 @@ impl Menu {
         self.dinos
             .iter()
             .enumerate()
-            .any(|(i, d)| matches!(d.0, Pick::Roamer(_)) && self.picked_dinos & (1 << i) != 0)
+            .any(|(i, d)| matches!(d.0, Pick::Roamer(_)) && self.picked_dinos.has(i))
     }
 
     /// "Native to Area 2, Area 3" (picked, it comes on any map).
@@ -1001,11 +1076,11 @@ impl Menu {
             (_, false) => &mut self.picked_weapons,
             (_, true) => &mut self.picked_equip,
         };
-        *mask ^= 1 << i;
-        let on = *mask & (1 << i) != 0;
+        mask.toggle(i);
+        let on = mask.has(i);
         let counted = which == Step::Animals || !gear;
-        if on && counted && mask.count_ones() > MAX_PICKS {
-            *mask ^= 1 << i;
+        if on && counted && mask.count() > MAX_PICKS as usize {
+            mask.toggle(i);
             let what = if which == Step::Animals {
                 "animals"
             } else {
@@ -1020,14 +1095,82 @@ impl Menu {
                 (_, false) => &mut self.picked_weapons,
                 (_, true) => &mut self.picked_equip,
             };
-            *mask ^= 1 << i;
+            mask.toggle(i);
             self.message = Some("Not enough points".into());
         }
         format!("{name}  {price} pts")
     }
 
     fn area_cells(&self) -> Vec<Cell> {
-        grid(self.areas.len(), 3, 34.0, 2.0)
+        self.grid_of(Step::Area).cells
+    }
+
+    /// The grid on `step`, on its page.
+    fn grid_of(&self, step: Step) -> Paged {
+        let page = match self.page {
+            (s, p) if s == step => Some(p),
+            _ => None,
+        };
+        let picked = if step == Step::Area { self.area } else { 0 };
+        let lay =
+            |n: usize, cols: usize, r: f32, bottom: f32| paged(n, cols, r, bottom, page, picked);
+        match step {
+            Step::Area => match self.areas.len() {
+                n @ 0..=6 => lay(n, 3, 34.0, 162.0),
+                n => lay(n, 5, 24.0, 162.0),
+            },
+            Step::Animals => match self.dinos.len() {
+                n @ 0..=15 => lay(n, 5, 32.0, 210.0),
+                n @ 16..=24 => lay(n, 7, 24.0, 210.0),
+                n @ 25..=40 => lay(n, 8, 19.0, 210.0),
+                n => lay(n, 10, 15.0, 198.0),
+            },
+            Step::Gear => match self.weapons.len() + self.equip.len() + 1 {
+                n @ 0..=12 => lay(n, 6, 30.0, 162.0),
+                n => lay(n, 8, 20.0, 162.0),
+            },
+            _ => paged(0, 1, 1.0, 1.0, None, 0),
+        }
+    }
+
+    /// The menu pictures this screen shows loaded, the others let go: the
+    /// grid page's, and the picked area's (the top screen's).
+    pub fn sync_pics(&mut self, vfs: &Vfs) {
+        let shown = |m: &Self, step: Step| {
+            if m.step == step {
+                m.grid_of(step).cells
+            } else {
+                Vec::new()
+            }
+        };
+        let areas = shown(self, Step::Area);
+        let dinos = shown(self, Step::Animals);
+        let gear = shown(self, Step::Gear);
+        let on = |cells: &[Cell], i: usize| cells.get(i).is_some_and(|c| c.2 > 0.0);
+        let picked = self.area;
+        for (i, a) in self.areas.iter_mut().enumerate() {
+            a.1.want_pic(vfs, i == picked || on(&areas, i));
+        }
+        for (i, d) in self.dinos.iter_mut().enumerate() {
+            d.1.want_pic(vfs, on(&dinos, i));
+        }
+        let nw = self.weapons.len();
+        for (i, w) in self.weapons.iter_mut().enumerate() {
+            w.want_pic(vfs, on(&gear, i));
+        }
+        for (i, e) in self.equip.iter_mut().enumerate() {
+            e.want_pic(vfs, on(&gear, nw + i));
+        }
+    }
+
+    /// Another page of this step's grid (`d` -1 or +1), if it has pages.
+    pub fn flip_page(&mut self, d: i32) {
+        let g = self.grid_of(self.step);
+        if g.pages < 2 {
+            return;
+        }
+        let p = (g.page as i32 + d).rem_euclid(g.pages as i32) as usize;
+        self.page = (self.step, p);
     }
 
     fn time_cells() -> [Cell; 3] {
@@ -1038,20 +1181,15 @@ impl Menu {
         ]
     }
 
-    /// Smaller hexagons when there are many animals (add-ons).
+    /// Smaller hexagons when there are many animals (add-ons), in pages
+    /// past 70.
     fn dino_cells(&self) -> Vec<Cell> {
-        let n = self.dinos.len();
-        match n {
-            0..=15 => grid(n, 5, 32.0, 2.0),
-            16..=24 => grid(n, 7, 24.0, 2.0),
-            25..=40 => grid(n, 8, 19.0, 2.0),
-            _ => grid(n, 10, 15.0, 2.0),
-        }
+        self.grid_of(Step::Animals).cells
     }
 
+    /// Weapons, accessories, extra ammo.
     fn gear_cells(&self) -> Vec<Cell> {
-        // Weapons, accessories, extra ammo.
-        grid(self.weapons.len() + self.equip.len() + 1, 6, 30.0, 2.0)
+        self.grid_of(Step::Gear).cells
     }
 
     const TRANQ: [f32; 4] = [56.0, 178.0, 96.0, 24.0];
@@ -1066,6 +1204,16 @@ impl Menu {
         }
         if inside(NEXT, x, y) {
             return self.next();
+        }
+        if self.grid_of(self.step).pages > 1 {
+            if inside(PAGE_PREV, x, y) {
+                self.flip_page(-1);
+                return None;
+            }
+            if inside(PAGE_NEXT, x, y) {
+                self.flip_page(1);
+                return None;
+            }
         }
         let hit = |cells: &[Cell]| {
             cells
@@ -1087,7 +1235,7 @@ impl Menu {
             Step::Title => {
                 if inside(PLAY, x, y) {
                     self.survival = None;
-                    self.extra_dinos = 0;
+                    self.extra_dinos = Bits::NONE;
                     self.step = Step::Area;
                 } else if inside(SURVIVAL, x, y) && !self.survival_modes().is_empty() {
                     let modes = self.survival_modes();
@@ -1358,7 +1506,8 @@ impl Menu {
             .iter()
             .enumerate()
             .filter(|(_, &on)| on != 0)
-            .fold(0, |m, (i, _)| m | 1 << i);
+            .map(|(i, _)| i)
+            .collect();
         self.settings.hunter = n;
         if let Err(e) = self.settings.store() {
             self.message = Some(format!("settings not saved: {e}"));
@@ -1391,6 +1540,9 @@ impl Menu {
 
     fn draw_hex_item(c: &mut Canvas, gpu: &mut Gpu, cell: Cell, it: &Item, on: bool, afford: bool) {
         let (cx, cy, r) = cell;
+        if r <= 0.0 {
+            return;
+        }
         if on {
             c.hex(cx, cy, r + 3.0, GOLD);
         }
@@ -1578,7 +1730,7 @@ impl Menu {
             }
             Step::Animals => {
                 for (i, cell) in self.dino_cells().into_iter().enumerate() {
-                    let on = self.picked_dinos & (1 << i) != 0;
+                    let on = self.picked_dinos.has(i);
                     let (pick, item) = &self.dinos[i];
                     // Roaming add-ons: a blue rim.
                     if matches!(pick, Pick::Roamer(_)) && !on {
@@ -1596,12 +1748,9 @@ impl Menu {
                         continue;
                     }
                     let (it, on) = if i < nw {
-                        (&self.weapons[i], self.picked_weapons & (1 << i) != 0)
+                        (&self.weapons[i], self.picked_weapons.has(i))
                     } else {
-                        (
-                            &self.equip[i - nw],
-                            self.picked_equip & (1 << (i - nw)) != 0,
-                        )
+                        (&self.equip[i - nw], self.picked_equip.has(i - nw))
                     };
                     Self::draw_hex_item(&mut c, gpu, cell, it, on, it.price <= left);
                 }
@@ -1667,7 +1816,18 @@ impl Menu {
             );
         }
         c.text_c(gpu, NEXT[0] + NEXT[2] / 2.0, BAR_Y + 8.0, 1.0, WHITE, next);
-        let pts = format!("{left} pts");
+        let g = self.grid_of(step);
+        let pts = if g.pages > 1 {
+            c.rect(PAGE_PREV, PANEL);
+            c.rect(PAGE_NEXT, PANEL);
+            c.flush(gpu);
+            for (r, t) in [(PAGE_PREV, "<"), (PAGE_NEXT, ">")] {
+                c.text_c(gpu, r[0] + r[2] / 2.0, BAR_Y + 8.0, 1.0, WHITE, t);
+            }
+            format!("{}/{} {left} pts", g.page + 1, g.pages)
+        } else {
+            format!("{left} pts")
+        };
         c.text_c(
             gpu,
             160.0,
@@ -2021,11 +2181,11 @@ impl Menu {
         } else if self.observer {
             list(&mut c, gpu, "Observer: just watch", Vec::new());
         } else {
-            let pick = |items: &[Item], mask: u64| -> Vec<(String, i32, Rgba)> {
+            let pick = |items: &[Item], mask: Bits| -> Vec<(String, i32, Rgba)> {
                 items
                     .iter()
                     .enumerate()
-                    .filter(|(i, _)| mask & (1 << i) != 0)
+                    .filter(|(i, _)| mask.has(*i))
                     .map(|(_, it)| (it.name.clone(), it.price, WHITE))
                     .collect()
             };
@@ -2034,7 +2194,7 @@ impl Menu {
                 .dinos
                 .iter()
                 .enumerate()
-                .filter(|(i, _)| self.picked_dinos & (1 << i) != 0)
+                .filter(|(i, _)| self.picked_dinos.has(*i))
                 .map(|(_, d)| match d.0 {
                     Pick::Roamer(_) => (d.1.name.clone(), d.1.price, BLUE),
                     Pick::Slot(_) => (d.1.name.clone(), d.1.price, WHITE),

@@ -36,6 +36,17 @@ impl Bits {
         }
     }
 
+    pub fn toggle(&mut self, i: usize) {
+        if i < Self::LEN {
+            self.0[i / 64] ^= 1 << (i % 64);
+        }
+    }
+
+    /// How many bits are set.
+    pub fn count(&self) -> usize {
+        self.0.iter().map(|w| w.count_ones() as usize).sum()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.0.iter().all(|&w| w == 0)
     }

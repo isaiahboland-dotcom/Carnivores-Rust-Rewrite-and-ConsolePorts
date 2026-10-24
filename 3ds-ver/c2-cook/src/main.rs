@@ -688,6 +688,8 @@ struct Rules {
     /// Every model a character can use, by `model_key`: (file, loaded
     /// for every hunt). The others load only when picked.
     models: BTreeMap<String, (String, bool)>,
+    /// The dialect's `_RES.TXT` as written (each area's ambients).
+    raw: Option<c2_formats::res_txt::ResTxt>,
     /// Models of roaming add-ons (huntable, no menu slot), by `model_key`:
     /// they get a menu picture drawn from the model.
     roamers: std::collections::BTreeSet<String>,
@@ -702,6 +704,31 @@ struct Rules {
 fn has_slot(b: &c2_formats::res_txt::Block) -> bool {
     b.get(&["callNo"])
         .is_some_and(|v| c2_formats::res_txt::c_atoi(v) >= 0)
+}
+
+/// The models of the hunter and ambient animals a hunt on `area` loads
+/// (`hunt::Role` on the 3DS): a dialect ambient whose tables spawn it only
+/// on other maps (a combined game's) isn't, at any time of day.
+fn ambients_on(raw: &c2_formats::res_txt::ResTxt, area: &str) -> std::collections::BTreeSet<String> {
+    let blocks = raw.section("characters").map_or(&[][..], |s| &s.blocks);
+    let mut out = std::collections::BTreeSet::new();
+    for time in 0..3 {
+        let h = c2_formats::mee::Hunt {
+            area: c2_formats::mee::area_of(area),
+            time,
+            picked: c2_formats::bits::Bits::ALL,
+        };
+        let m = c2_core::mee::read(raw, &h);
+        for (i, c) in m.tables.characters.iter().enumerate() {
+            let info = DinoInfo::from_def(&m.res.characters[i]);
+            let elsewhere =
+                blocks.get(i).is_some_and(c2_formats::mee::has_spawns) && !c.spawns();
+            if (0..10).contains(&info.ai) && !has_slot(&c.block) && !elsewhere {
+                out.insert(c2_formats::cooked::model_key(&info.file));
+            }
+        }
+    }
+    out
 }
 
 /// The `file` of every block under `b`, quotes removed.
@@ -771,13 +798,14 @@ fn rules(vfs: &Vfs) -> Result<Rules> {
     }
     let menu_src = match vfs.read("HUNTDAT/_MENU.TXT") {
         Ok(d) => ResTxt::parse(&String::from_utf8_lossy(&d))?,
-        Err(_) => raw,
+        Err(_) => raw.clone(),
     };
     let menu = c2_formats::menu_txt::MenuData::from_res(&menu_src);
     Ok(Rules {
         dialect,
         res,
         models,
+        raw: dialect.then_some(raw),
         roamers,
         menu,
     })
@@ -1044,7 +1072,6 @@ fn main() -> Result<()> {
     let mut guns: Vec<usize> = (0..winfos.len()).collect();
     guns.sort_by_key(|&i| std::cmp::Reverse(sum(&format!("wpn{i}"))));
     guns.truncate(PICKS);
-    let ambient: usize = always.iter().map(|k| model_cost(k)).sum();
     if std::env::var_os("C2COOK_DEBUG").is_some() {
         for (k, h) in &cooked_models {
             let kinds = c.linear.get(&format!("m:{k}"));
@@ -1090,7 +1117,25 @@ fn main() -> Result<()> {
     let mut worst = false;
     let mut base_heap = BTreeMap::new();
     for name in &areas {
-        let base = load_peak(&c.entries, name, rules.dialect, &always, &[])? / 1024;
+        let here: Vec<String> = match &rules.raw {
+            // The trophy room loads the hunter and what is on display.
+            _ if name.eq_ignore_ascii_case("TROPHY") => rules
+                .res
+                .characters
+                .iter()
+                .map(DinoInfo::from_def)
+                .filter(|d| d.ai == 0)
+                .map(|d| c2_formats::cooked::model_key(&d.file))
+                .filter(|k| always.contains(k))
+                .collect(),
+            Some(raw) => {
+                let on = ambients_on(raw, name);
+                always.iter().filter(|k| on.contains(*k)).cloned().collect()
+            }
+            None => always.clone(),
+        };
+        let ambient: usize = here.iter().map(|k| model_cost(k)).sum();
+        let base = load_peak(&c.entries, name, rules.dialect, &here, &[])? / 1024;
         let lin = sum("hunt") + sum(name) + ambient;
         base_heap.insert(name.clone(), base);
         println!(

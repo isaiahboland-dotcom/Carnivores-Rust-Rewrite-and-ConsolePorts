@@ -4,6 +4,7 @@
 //! animals that never spawn. A pack with classic survival plays a few of
 //! its waves too.
 
+use c2_formats::bits::Bits;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -47,7 +48,7 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
         .collect();
     let rules = Rules::load(&vfs)?;
     let first = areas.first().context("no areas")?;
-    let neutral = rules.hunt(first, TimeOfDay::Day, u128::MAX);
+    let neutral = rules.hunt(first, TimeOfDay::Day, Bits::ALL);
     println!(
         "{}: {} areas, {} menu animals, {} weapons",
         pack.display(),
@@ -56,19 +57,19 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
         rules.menu.weapons.len()
     );
     // Each menu animal, then each roamer, alone on the first area.
-    let mut picks: Vec<(String, u128, Vec<Roam>)> = rules
+    let mut picks: Vec<(String, Bits, Vec<Roam>)> = rules
         .menu
         .huntables
         .iter()
         .enumerate()
-        .map(|(k, d)| (d.name.clone(), 1u128 << (k + 10), Vec::new()))
+        .map(|(k, d)| (d.name.clone(), Bits::bit(k + 10), Vec::new()))
         .collect();
     for r in Rules::roams(&neutral) {
         let name = neutral.res.characters[r.char]
             .name
             .clone()
             .unwrap_or_default();
-        picks.push((format!("{name} (roams)"), 1 << (r.slot + 10), vec![r]));
+        picks.push((format!("{name} (roams)"), Bits::bit(r.slot + 10), vec![r]));
     }
     if let Some(name) = bench {
         picks.retain(|p| {
@@ -84,7 +85,7 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
             let hr = rules.hunt_with(area_name, TimeOfDay::Day, *targets, roamers);
             let keep = |i: usize| match hr.roles.get(i) {
                 Some(Role::Hunter | Role::Ambient) => true,
-                Some(Role::Slot(k)) => *k < 118 && targets & (1 << (k + 10)) != 0,
+                Some(Role::Slot(k)) => targets.has(k + 10),
                 Some(Role::Roamer) => roamers.iter().any(|r| r.char == i),
                 Some(Role::Off) => false,
                 None => false,
@@ -158,13 +159,13 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
                     PlaceOptions {
                         density: 128,
                         opt_agres: 128,
-                        targets: c2_formats::bits::Bits::from(*targets),
+                        targets: *targets,
                         max_ambient: Some(4),
                     },
                 ),
             }
             let opts = HuntOptions {
-                targets: c2_formats::bits::Bits::from(*targets),
+                targets: *targets,
                 view_r: 34,
                 render_r: 34,
                 ..Default::default()
@@ -174,7 +175,7 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
                 &area,
                 player,
                 herd,
-                Weapons::new(vec![], vec![], 0, false),
+                Weapons::new(vec![], vec![], c2_formats::bits::Bits::NONE, false),
                 rng,
                 opts,
                 room,
@@ -272,7 +273,7 @@ fn survival_hunt(
         println!("  MISSING: its area");
         return None;
     };
-    let hr = rules.hunt(area_name, time, u128::MAX);
+    let hr = rules.hunt(area_name, time, Bits::ALL);
     let keep = |i: usize| !matches!(hr.roles.get(i), Some(Role::Off) | None);
     let (mut species, cars) = c2_core::load::species_with(vfs, &hr.res, &keep);
     if let Some(t) = &hr.tables {
@@ -296,7 +297,7 @@ fn survival_hunt(
         &area,
         player,
         herd,
-        Weapons::new(vec![], vec![], 0, false),
+        Weapons::new(vec![], vec![], c2_formats::bits::Bits::NONE, false),
         rng,
         opts,
         room,

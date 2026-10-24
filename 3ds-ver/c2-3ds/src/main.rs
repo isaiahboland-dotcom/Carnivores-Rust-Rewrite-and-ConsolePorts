@@ -450,6 +450,13 @@ fn menu(
         if down.contains(KeyPad::START) {
             m.start_button();
         }
+        // A grid with pages: the D-Pad turns them.
+        if down.contains(KeyPad::DPAD_LEFT) {
+            m.flip_page(-1);
+        }
+        if down.contains(KeyPad::DPAD_RIGHT) {
+            m.flip_page(1);
+        }
         if m.quit || io.quit() {
             return Ok(None);
         }
@@ -463,6 +470,7 @@ fn menu(
                 m.new_hunter(name.trim());
             }
         }
+        m.sync_pics(vfs);
         gpu.begin([0, 0, 0]);
         m.draw(gpu);
         gpu.end();

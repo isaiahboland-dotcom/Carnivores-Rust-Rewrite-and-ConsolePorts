@@ -16,7 +16,8 @@ pub enum Role {
     /// The hunter: every hunt.
     Hunter,
     /// Small ambient animals and flyers (AI under 10): every hunt, unless
-    /// turned off in the settings.
+    /// turned off in the settings (a dialect one whose tables spawn it on
+    /// other maps only: [`Role::Off`]; a combined game's are its own game's).
     Ambient,
     /// A menu animal: loaded when its slot is picked (call id 10 + slot).
     Slot(usize),
@@ -29,9 +30,12 @@ pub enum Role {
     Off,
 }
 
-/// The first call slot given to roaming add-ons, after any menu's own
-/// (call id 10 + slot; slots stay under 118 for the 128-bit target mask).
+/// The first call slot given to roaming add-ons, unless the menu's own go
+/// further (a combined game's); call id 10 + slot stays under `Bits::LEN`.
 pub const ROAM_SLOT0: usize = 64;
+
+/// Target masks: bit 10 + menu slot.
+pub type Targets = c2_formats::bits::Bits;
 
 /// A roaming add-on as a hunt target: its character (`_RES.TXT` index),
 /// the call slot it is hunted under (`ROAM_SLOT0` on, so it is a target
@@ -95,7 +99,7 @@ impl Rules {
 
     /// The rules for a hunt in `area` (`AREA3`, `TROPHY`) at `time`, with
     /// `targets` (bit 10 + menu slot) picked.
-    pub fn hunt(&self, area: &str, time: TimeOfDay, targets: u128) -> HuntRules {
+    pub fn hunt(&self, area: &str, time: TimeOfDay, targets: Targets) -> HuntRules {
         self.hunt_with(area, time, targets, &[])
     }
 
@@ -112,8 +116,16 @@ impl Rules {
                 .map(c_atoi)
         };
         let roamers = (0..neutral.roles.len()).filter(|&i| neutral.roles[i] == Role::Roamer);
+        let first = neutral
+            .roles
+            .iter()
+            .filter_map(|r| match r {
+                Role::Slot(k) => Some(k + 1),
+                _ => None,
+            })
+            .fold(ROAM_SLOT0, usize::max);
         roamers
-            .zip(ROAM_SLOT0..118)
+            .zip(first..Targets::LEN - 10)
             .map(|(char, slot)| Roam {
                 char,
                 slot,
@@ -133,7 +145,7 @@ impl Rules {
         &self,
         area: &str,
         time: TimeOfDay,
-        targets: u128,
+        targets: Targets,
         roamers: &[Roam],
     ) -> HuntRules {
         let (res, tables) = match (&self.raw, &self.vanilla) {
@@ -145,7 +157,7 @@ impl Rules {
                         TimeOfDay::Day => 1,
                         TimeOfDay::Night => 2,
                     },
-                    picked: c2_formats::bits::Bits::from(targets).down(10),
+                    picked: targets.down(10),
                 };
                 let mut m = c2_core::mee::read(raw, &h);
                 let chars: Vec<usize> = roamers.iter().map(|r| r.char).collect();
@@ -164,6 +176,17 @@ impl Rules {
             (None, None) => (ResData::default(), None),
         };
         let infos: Vec<DinoInfo> = res.characters.iter().map(DinoInfo::from_def).collect();
+        // Dialect ambients with tables that don't spawn them here.
+        let elsewhere = |i: usize| match (&self.raw, &tables) {
+            (Some(raw), Some(t)) => {
+                let raw_char = raw
+                    .section("characters")
+                    .and_then(|s| s.blocks.get(i))
+                    .is_some_and(c2_formats::mee::has_spawns);
+                raw_char && !t.characters.get(i).is_some_and(|c| c.spawns())
+            }
+            _ => false,
+        };
         let roles = infos
             .iter()
             .enumerate()
@@ -180,6 +203,7 @@ impl Rules {
                 match slot {
                     _ if d.ai == 0 => Role::Hunter,
                     Some(n) => Role::Slot(n as usize),
+                    None if (0..10).contains(&d.ai) && elsewhere(i) => Role::Off,
                     None if (0..10).contains(&d.ai) => Role::Ambient,
                     None if (10..30).contains(&d.ai) => Role::Roamer,
                     None => Role::Off,

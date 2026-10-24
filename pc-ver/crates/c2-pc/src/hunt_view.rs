@@ -371,7 +371,11 @@ impl HuntView {
             herd.place(area, (player.x, player.z), &mut rng, opts);
         }
         tracing::info!("placed {} characters", herd.chars.len());
-        let carried = if trophy { 0 } else { setup.weapons };
+        let carried = if trophy {
+            c2_formats::bits::Bits::NONE
+        } else {
+            c2_formats::bits::Bits::from(setup.weapons)
+        };
         let weapons = Weapons::new(infos.to_vec(), anims.to_vec(), carried, setup.double_ammo);
         let opts = HuntOptions {
             targets: setup.targets,

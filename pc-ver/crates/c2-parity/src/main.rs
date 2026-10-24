@@ -664,7 +664,7 @@ fn tick_bench(game: &Path, area_n: u32) -> Result<()> {
         .map(WeaponInfo::from_def)
         .collect();
     let n = infos.len();
-    let weapons = Weapons::new(infos, vec![[300; 4]; n], 1, false);
+    let weapons = Weapons::new(infos, vec![[300; 4]; n], c2_formats::bits::Bits::bit(0), false);
     let room = c2_core::profile::new_player("bench", 0, 0);
     let mut hunt = Hunt::new(&area, player, herd, weapons, rng, opts, room);
     let mut out = Vec::new();

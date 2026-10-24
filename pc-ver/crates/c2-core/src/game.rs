@@ -230,7 +230,7 @@ pub struct Weapons {
     /// Sniper scope view (`OPTICMODE`).
     pub optic_mode: bool,
     /// What `new` was given, for [`resupply`](Self::resupply).
-    present: u128,
+    present: Bits,
     double_ammo: bool,
 }
 
@@ -239,7 +239,7 @@ impl Weapons {
     pub fn new(
         info: Vec<WeaponInfo>,
         anim_ms: Vec<[i32; 4]>,
-        present: u128,
+        present: Bits,
         double_ammo: bool,
     ) -> Self {
         let n = info.len();
@@ -258,8 +258,8 @@ impl Weapons {
             double_ammo,
         };
         let mut first = None;
-        for i in 0..n.min(128) {
-            if present & (1 << i) != 0 {
+        for i in 0..n.min(Bits::LEN) {
+            if present.has(i) {
                 w.shots_left[i] = w.info[i].shots;
                 if double_ammo {
                     w.ammo_mag[i] = 1;
@@ -275,8 +275,8 @@ impl Weapons {
     /// Every carried weapon back to the ammo it started with (not in the
     /// original: the 3DS "extra ammo" gear).
     pub fn resupply(&mut self) {
-        for i in 0..self.info.len().min(128) {
-            if self.present & (1 << i) != 0 {
+        for i in 0..self.info.len().min(Bits::LEN) {
+            if self.present.has(i) {
                 self.shots_left[i] = self.info[i].shots;
                 self.ammo_mag[i] = i32::from(self.double_ammo);
             }
@@ -285,7 +285,7 @@ impl Weapons {
 
     /// Whether weapon `i` was taken on the hunt.
     pub fn carried(&self, i: usize) -> bool {
-        i < 128 && self.present & (1 << i) != 0
+        self.present.has(i)
     }
 
     fn anim(&self, slot: usize) -> i32 {
@@ -2527,7 +2527,7 @@ mod tests {
 
     #[test]
     fn resupply_refills_carried_weapons_only() {
-        let mut w = Weapons::new(vec![rifle(), rifle()], vec![[100; 4]; 2], 0b01, true);
+        let mut w = Weapons::new(vec![rifle(), rifle()], vec![[100; 4]; 2], Bits::bit(0), true);
         w.shots_left = vec![0, 0];
         w.ammo_mag = vec![0, 0];
         w.resupply();
@@ -2538,7 +2538,7 @@ mod tests {
     #[test]
     fn weapons_past_slot_32_get_ammo() {
         let n = 50;
-        let mut w = Weapons::new(vec![rifle(); n], vec![[100; 4]; n], 1 << 40 | 1 << 2, false);
+        let mut w = Weapons::new(vec![rifle(); n], vec![[100; 4]; n], Bits::bit(40) | Bits::bit(2), false);
         assert_eq!(w.shots_left[40], 14);
         assert!(w.carried(40) && w.carried(2) && !w.carried(3));
         w.shots_left[40] = 0;
@@ -2601,7 +2601,7 @@ mod tests {
         };
         c.reset(&herd.species[1], &mut rng, 128);
         herd.chars.push(c);
-        let weapons = Weapons::new(vec![rifle()], vec![[100, 100, 100, 100]], 1, false);
+        let weapons = Weapons::new(vec![rifle()], vec![[100, 100, 100, 100]], Bits::bit(0), false);
         let opts = HuntOptions::default();
         let hunt = Hunt::new(&area, player, herd, weapons, rng, opts, blank_save());
         (area, hunt, car)
@@ -3024,7 +3024,7 @@ mod tests {
         assert!(!info.fall, "land_fall isn't the crossbow flag");
 
         let (area, mut h, car) = setup(false);
-        h.weapons = Weapons::new(vec![info], vec![[100, 100, 100, 100]], 1, false);
+        h.weapons = Weapons::new(vec![info], vec![[100, 100, 100, 100]], Bits::bit(0), false);
         let cars = [Some(&car), Some(&car)];
         let mut ev = Vec::new();
         let toggle = HuntInput {
@@ -3324,7 +3324,7 @@ mod tests {
         // 2.5 cells ahead of it.
         let mut player = Player::new(&area, (69, 68));
         player.z = 66.0 * 256.0 + 128.0 + 640.0;
-        let weapons = Weapons::new(vec![rifle()], vec![[100; 4]], 0, false);
+        let weapons = Weapons::new(vec![rifle()], vec![[100; 4]], Bits::NONE, false);
         let opts = HuntOptions {
             trophy: true,
             ..Default::default()

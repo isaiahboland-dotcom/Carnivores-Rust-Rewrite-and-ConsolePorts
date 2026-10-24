@@ -253,6 +253,25 @@ pub struct Character {
     pub packs: Vec<PackLink>,
 }
 
+impl Character {
+    /// Whether it spawns on this hunt's map (a spawn or pack link).
+    pub fn spawns(&self) -> bool {
+        self.spawn.iter().any(|l| l.ratio > 0.0) || self.packs.iter().any(|l| l.ratio > 0.0)
+    }
+}
+
+/// Whether a raw `characters` entry spawns anywhere by its tables (a spawn
+/// or pack link, maybe under an area or time condition). One that doesn't
+/// is placed some other way (the original's ambient spawning), on any map.
+pub fn has_spawns(b: &Block) -> bool {
+    b.subs.iter().any(|s| {
+        matches!(
+            s.name.trim().to_ascii_lowercase().as_str(),
+            "spawninfo" | "spawngroup" | "packinfo" | "packgroup"
+        ) || has_spawns(&s.block)
+    })
+}
+
 /// The dialect's tables for one hunt (`LoadResourcesScript` in file order).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Tables {

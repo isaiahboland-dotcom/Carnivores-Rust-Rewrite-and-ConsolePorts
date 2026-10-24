@@ -1,6 +1,7 @@
 //! Starting a hunt from a cooked pack and turning 3DS input into the
 //! simulation's controls.
 
+use c2_formats::bits::Bits;
 use std::collections::HashMap;
 
 use anyhow::Result;
@@ -138,7 +139,7 @@ pub struct Setup {
     pub time: TimeOfDay,
     /// Bit 10 + menu slot per target (`TargetDino`; in the original the
     /// slot is the AI - 10, so the bit is the AI).
-    pub targets: u128,
+    pub targets: Bits,
     /// Roaming add-ons picked (no menu slot of their own); their call
     /// slots are among the targets.
     pub roamers: Vec<Roam>,
@@ -146,7 +147,7 @@ pub struct Setup {
     /// button, and ZR doesn't call them. Filled when the hunt loads.
     pub silent_calls: Vec<i32>,
     /// Bit per carried weapon.
-    pub weapons: u32,
+    pub weapons: Bits,
     pub double_ammo: bool,
     pub observer: bool,
     /// Extra ammo gear (3DS only): refills to carry, and what it does to
@@ -174,7 +175,7 @@ pub struct Setup {
     pub survival: Option<SurvivalKind>,
     /// Animals loaded for the survival only (bit 10 + slot, among the
     /// targets): hardcore's extras, custom's T-Rex. Not in the waves.
-    pub survival_extra: u128,
+    pub survival_extra: Bits,
     /// The mobile game's Survive mode, for a mobile survival.
     pub mobile_survival: Option<c2_formats::mobile_arcade::Survive>,
 }
@@ -198,7 +199,7 @@ impl Setup {
             || match role {
                 Role::Hunter => true,
                 Role::Ambient => self.max_ambient > 0,
-                Role::Slot(k) => k < 118 && self.targets & (1 << (k + 10)) != 0,
+                Role::Slot(k) => self.targets.has(k + 10),
                 Role::Roamer => self.roamers.iter().any(|r| r.char == i),
                 Role::Off => false,
             }
@@ -211,7 +212,7 @@ impl Setup {
     }
 
     pub fn carried(&self) -> Vec<usize> {
-        (0..32).filter(|i| self.weapons & (1 << i) != 0).collect()
+        self.weapons.iter().collect()
     }
 }
 
@@ -374,23 +375,23 @@ fn new_hunt(
             PlaceOptions {
                 density: o.dens,
                 opt_agres: o.agres,
-                targets: c2_formats::bits::Bits::from(setup.targets),
+                targets: setup.targets,
                 max_ambient: Some(setup.max_ambient),
             },
         );
     }
     let carried = if trophy || setup.observer {
-        0
+        Bits::NONE
     } else {
         setup.weapons
     };
     let (infos, anims): (Vec<_>, Vec<_>) = weapon_info.iter().cloned().unzip();
-    let weapons = Weapons::new(infos, anims, u128::from(carried), setup.double_ammo);
+    let weapons = Weapons::new(infos, anims, carried, setup.double_ammo);
     let opts = HuntOptions {
         targets: if setup.observer {
-            c2_formats::bits::Bits::NONE
+            Bits::NONE
         } else {
-            c2_formats::bits::Bits::from(setup.targets)
+            setup.targets
         },
         radar: o.radar != 0,
         opt_agres: o.agres,
@@ -411,12 +412,7 @@ fn new_hunt(
         afraid_every: 2,
         notice_k: setup.notice_k,
         stealth: setup.stealth,
-        no_call_bonus: setup
-            .roamers
-            .iter()
-            .filter(|r| r.slot < 118)
-            .map(|r| r.slot + 10)
-            .collect(),
+        no_call_bonus: setup.roamers.iter().map(|r| r.slot + 10).collect(),
     };
     let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
     hunt.ship_anim_ms = ship_ms;
@@ -456,9 +452,8 @@ fn new_hunt(
                 ctype: i,
                 ..Default::default()
             };
-            hunt.call_bit(&c).is_some_and(|b| {
-                setup.survival_extra & 1u128.checked_shl(b as u32).unwrap_or(0) != 0
-            })
+            hunt.call_bit(&c)
+                .is_some_and(|b| usize::try_from(b).is_ok_and(|b| setup.survival_extra.has(b)))
         };
         let extras: Vec<usize> = (0..species.len()).filter(extra).collect();
         o.roster.retain(|i| !extras.contains(i));
@@ -485,8 +480,8 @@ impl Game {
         // file, and is briefly in memory twice (file and parsed).
         // `c2-cook`'s `load_peak` repeats these steps; keep them in step.
         let mut setup = setup;
-        setup.silent_calls = (10..128)
-            .filter(|&ai| setup.targets & (1u128 << ai) != 0)
+        setup.silent_calls = (10..Bits::LEN as i32)
+            .filter(|&ai| setup.targets.has(ai as usize))
             .filter(|ai| vfs.resolve(&format!("C2RS/SND/K{ai}_0.PCM")).is_none())
             .collect();
         progress(&format!("area {}", setup.area));
@@ -561,7 +556,7 @@ impl Game {
         // Start on a call that sounds.
         if !setup.callable(hunt.target_call) {
             if let Some(a) =
-                (10..128).find(|&a| setup.targets & (1u128 << a) != 0 && setup.callable(a))
+                (10..Bits::LEN as i32).find(|&a| setup.targets.has(a as usize) && setup.callable(a))
             {
                 hunt.target_call = a;
             }
