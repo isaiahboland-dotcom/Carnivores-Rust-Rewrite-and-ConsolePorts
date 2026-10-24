@@ -400,6 +400,17 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   kept apart and renumbered, spawns tied to its own maps, add-ons on top), or one is played on its own.
 
 **Known issues (next up)**
+- Owner's 3DS test, 2026-10-23 (packs from the first `.cia` builds):
+  - [x] mobile (APK) animals: menu hexagons show names, not pictures (Ice Age and C2 installs); on Ice Age
+        one 20-point animal has neither name nor picture
+  - [ ] the menu is slow going settings -> title -> hunt (Ice Age install)
+  - [ ] a dialect game's scoped rifle: looking through the scope shows nothing usable
+  - [x] stealth crouch: gyro aim far too sensitive (now 40% by default, a deadzone, Settings > Gyro aim)
+  - [ ] one dialect game with the radar: its ambients show green and the hunted animals' dots don't show
+  - [ ] survival: waves spawn on mountain edges (stuck, or far above the hunter) in classic and modded
+  - [ ] survival: run speed and ambient animals should be settable (ambients off helps the frame rate)
+  - [ ] PC: roaming add-ons (the 3DS's blue dots) should be pickable in the PC hunt menu too
+  - [ ] Old 3DS speed: sim 6-14 ms a frame (animals the most), world 8-14, 2d 5; 30-40 fps
 - To investigate (2026-10-23): one of the owner's dialect game folders fails `c2-cook --check` with three
   animals "not a hunt target" (a repeated entry, roamers without a slot); likely its own data, not checked
   yet (which game: the owner's private notes).

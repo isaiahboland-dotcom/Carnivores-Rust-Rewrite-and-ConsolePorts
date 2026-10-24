@@ -168,6 +168,8 @@ pub struct Setup {
     pub random_ambients: bool,
     /// The crouch button (setting).
     pub crouch_key: crate::settings::CrouchKey,
+    /// Gyro aim: view degrees per console degree (setting).
+    pub gyro_k: f32,
     /// A survival instead of a hunt (README M13).
     pub survival: Option<SurvivalKind>,
     /// Animals loaded for the survival only (bit 10 + slot, among the
@@ -385,7 +387,11 @@ fn new_hunt(
     let (infos, anims): (Vec<_>, Vec<_>) = weapon_info.iter().cloned().unzip();
     let weapons = Weapons::new(infos, anims, u128::from(carried), setup.double_ammo);
     let opts = HuntOptions {
-        targets: if setup.observer { c2_formats::bits::Bits::NONE } else { c2_formats::bits::Bits::from(setup.targets) },
+        targets: if setup.observer {
+            c2_formats::bits::Bits::NONE
+        } else {
+            c2_formats::bits::Bits::from(setup.targets)
+        },
         radar: o.radar != 0,
         opt_agres: o.agres,
         opt_sens: o.sens,
@@ -748,9 +754,14 @@ impl Game {
             let mut r = ctru_sys::angularRate { x: 0, z: 0, y: 0 };
             unsafe { ctru_sys::hidGyroRead(&mut r) };
             // Degrees turned this frame, as look units (0.0025 rad each,
-            // as the core turns them).
-            let units =
-                |raw: i16| f32::from(raw) * k * dt * (std::f32::consts::PI / 180.0) / 0.0025;
+            // as the core turns them), scaled by the setting; a hand's
+            // tremor (under GYRO_DEADZONE degrees/s) ignored.
+            let gain = self.setup.gyro_k;
+            let units = |raw: i16| {
+                let dps = f32::from(raw) * k;
+                let dps = dps.signum() * (dps.abs() - GYRO_DEADZONE).max(0.0);
+                dps * gain * dt * (std::f32::consts::PI / 180.0) / 0.0025
+            };
             look.0 -= units(r.z);
             look.1 -= units(r.y);
         }
@@ -837,6 +848,9 @@ pub(crate) fn pick(from: &[usize], n: usize, seed: u32) -> Vec<usize> {
     }
     out
 }
+
+/// Gyro rates below this (degrees/s) are a hand's tremor, not aim.
+const GYRO_DEADZONE: f32 = 2.5;
 
 /// Turns the gyroscope on for a stealth hunt: its raw-to-degrees/s factor.
 fn gyro_on(stealth: bool) -> Option<f32> {

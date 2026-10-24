@@ -24,6 +24,9 @@ pub struct Settings {
     pub random_ambients: bool,
     /// The crouch button (the Old 3DS has no ZL).
     pub crouch_key: CrouchKey,
+    /// Stealth gyro aim: degrees the view turns per degree the console
+    /// turns, percent (`GYRO_STEPS`).
+    pub gyro_pct: i32,
     /// The hunter last played (save slot).
     pub hunter: i32,
 }
@@ -75,6 +78,18 @@ impl CrouchKey {
     }
 }
 
+/// The gyro aim steps the setting cycles through.
+pub const GYRO_STEPS: [i32; 4] = [25, 40, 60, 100];
+
+/// The next gyro aim step after `pct`.
+pub fn next_gyro(pct: i32) -> i32 {
+    GYRO_STEPS
+        .iter()
+        .copied()
+        .find(|&s| s > pct)
+        .unwrap_or(GYRO_STEPS[0])
+}
+
 /// How far animals notice the hunter with "3DS friendly" on, as a share
 /// of the original's distance.
 pub const FRIENDLY_NOTICE: f32 = 0.6;
@@ -90,6 +105,7 @@ impl Default for Settings {
             stealth: false,
             random_ambients: false,
             crouch_key: CrouchKey::default_for_console(),
+            gyro_pct: 40,
             hunter: 0,
         }
     }
@@ -119,6 +135,11 @@ impl Settings {
                 ("stealth_crouch", v) => s.stealth = v != "0",
                 ("random_ambients", v) => s.random_ambients = v != "0",
                 ("hunter", v) => s.hunter = v.parse().unwrap_or(0),
+                ("gyro_aim", v) => {
+                    if let Ok(n) = v.parse::<i32>() {
+                        s.gyro_pct = n.clamp(GYRO_STEPS[0], 100);
+                    }
+                }
                 ("crouch_button", v) => {
                     s.crouch_key = match v {
                         "zl" => CrouchKey::Zl,
@@ -137,7 +158,8 @@ impl Settings {
             path(),
             format!(
                 "run_speed = {}\nambient = {}\nblood = {}\ndeath_animation = {}\n\
-                 friendly = {}\nstealth_crouch = {}\nrandom_ambients = {}\ncrouch_button = {}\nhunter = {}\n",
+                 friendly = {}\nstealth_crouch = {}\nrandom_ambients = {}\ncrouch_button = {}\ngyro_aim = {}\n\
+                 hunter = {}\n",
                 self.run_pct,
                 i32::from(self.ambient),
                 i32::from(self.blood),
@@ -146,6 +168,7 @@ impl Settings {
                 i32::from(self.stealth),
                 i32::from(self.random_ambients),
                 self.crouch_key.key(),
+                self.gyro_pct,
                 self.hunter
             ),
         )

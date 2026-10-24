@@ -211,8 +211,10 @@ pub fn is_note(p: &Path) -> bool {
             let text = String::from_utf8_lossy(&d).replace('\r', "");
             !blocks_in(&text).iter().any(|(_, b)| entry(b).is_some())
         }),
+        // Pages and pictures for people, and settings files (an APK
+        // import's `mobile-values.toml` beside its add-ons).
         "url" | "htm" | "html" | "pdf" | "png" | "jpg" | "jpeg" | "gif" | "webp" | "doc"
-        | "docx" | "rtf" => true,
+        | "docx" | "rtf" | "toml" | "ini" | "json" | "cfg" => true,
         _ => false,
     }
 }

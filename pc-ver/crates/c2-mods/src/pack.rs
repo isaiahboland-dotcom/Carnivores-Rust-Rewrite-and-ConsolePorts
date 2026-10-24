@@ -1002,6 +1002,8 @@ mod tests {
             b"link: https://example.com\nname: A\n",
         )
         .unwrap();
+        // An APK import's settings file beside its add-ons, too.
+        std::fs::write(all.join("mobile-values.toml"), b"[[animals]]\n").unwrap();
         assert_eq!(expand_addons(&all).len(), 3);
         std::fs::write(all.join("entry.txt"), b"{\n name = 'X'\n ai = 12\n}\n").unwrap();
         assert_eq!(expand_addons(&all), std::slice::from_ref(&all));

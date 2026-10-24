@@ -114,7 +114,9 @@ fn hunter_row(i: usize) -> [f32; 4] {
 /// Settings screen: run speed bar with - / +, then the toggles.
 // The hunt options screen.
 /// Settings: the crouch button (cycles).
-const CROUCH_KEY: [f32; 4] = [60.0, 112.0, 200.0, 28.0];
+const CROUCH_KEY: [f32; 4] = [16.0, 112.0, 140.0, 28.0];
+/// Settings: the stealth gyro aim strength (cycles).
+const GYRO: [f32; 4] = [164.0, 112.0, 140.0, 28.0];
 const O_SPEED_BAR: [f32; 4] = [64.0, 24.0, 192.0, 20.0];
 const O_SPEED_DOWN: [f32; 4] = [20.0, 20.0, 36.0, 28.0];
 const O_SPEED_UP: [f32; 4] = [264.0, 20.0, 36.0, 28.0];
@@ -638,6 +640,7 @@ impl Menu {
             stealth: false,
             random_ambients: false,
             crouch_key: self.settings.crouch_key,
+            gyro_k: 0.0,
             survival: None,
             survival_extra: 0,
             mobile_survival: None,
@@ -676,6 +679,7 @@ impl Menu {
             stealth: self.settings.stealth,
             random_ambients: self.settings.random_ambients && self.rules.dialect(),
             crouch_key: self.settings.crouch_key,
+            gyro_k: self.settings.gyro_pct as f32 / 100.0,
             survival: self.survival.filter(|_| !self.observer),
             mobile_survival: self.mobile_survival.clone(),
             survival_extra: self.extra_targets(),
@@ -1120,6 +1124,9 @@ impl Menu {
                 let s = &mut self.settings;
                 if inside(CROUCH_KEY, x, y) {
                     s.crouch_key = s.crouch_key.next();
+                } else if inside(GYRO, x, y) {
+                    s.gyro_pct = crate::settings::next_gyro(s.gyro_pct);
+                    self.focus = Some("Stealth crouch: turning the 3DS aims".into());
                 } else if inside(BLOOD, x, y) {
                     s.blood = !s.blood;
                 } else if inside(DEATH_ANIM, x, y) {
@@ -1703,14 +1710,23 @@ impl Menu {
             c.rect(r, if on { [60, 110, 60, 255] } else { PANEL });
         }
         c.rect(CROUCH_KEY, PANEL);
+        c.rect(GYRO, PANEL);
         c.flush(gpu);
         c.text_c(
             gpu,
-            160.0,
+            CROUCH_KEY[0] + CROUCH_KEY[2] / 2.0,
             CROUCH_KEY[1] + 10.0,
             1.0,
             WHITE,
             &format!("Crouch: {}", s.crouch_key.name()),
+        );
+        c.text_c(
+            gpu,
+            GYRO[0] + GYRO[2] / 2.0,
+            GYRO[1] + 10.0,
+            1.0,
+            WHITE,
+            &format!("Gyro aim: {}%", s.gyro_pct),
         );
         let o = self.save.options;
         let values = [o.agres, o.dens, o.sens];
