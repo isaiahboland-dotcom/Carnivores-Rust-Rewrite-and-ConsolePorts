@@ -1336,7 +1336,7 @@ impl Scene for HuntView {
             }
         }
         // Scope cross-hairs at the view model's aim point (`DrawOpticCross`).
-        if self.hunt.zoom() > 1.0 && !self.hunt.bin_mode {
+        if self.hunt.scope_cross() {
             if let Some(p) = self.weapons.aim_point {
                 let far = self.view.radius as f32 * c2_core::CELL;
                 let vp = crate::camera::projection(aspect, far * 1.5, self.hunt.zoom()) * view;

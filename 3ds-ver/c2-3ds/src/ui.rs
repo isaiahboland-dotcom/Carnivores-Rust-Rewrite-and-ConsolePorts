@@ -402,7 +402,7 @@ impl Ui {
         let cx = TOP_W as f32 / 2.0;
         // Scope cross-hairs at the view model's aim point (`DrawOpticCross`),
         // projected like the world (camera space, vertical field `fovy`).
-        if let Some((p, fovy)) = scope.filter(|_| hunt.zoom() > 1.0 && !hunt.bin_mode) {
+        if let Some((p, fovy)) = scope.filter(|_| hunt.scope_cross()) {
             let cy = TOP_H as f32 / 2.0;
             let f = 1.0 / (fovy / 2.0).tan();
             if p[2] < 0.0 {

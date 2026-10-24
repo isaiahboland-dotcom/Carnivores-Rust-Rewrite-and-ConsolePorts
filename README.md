@@ -404,9 +404,10 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] mobile (APK) animals: menu hexagons show names, not pictures (Ice Age and C2 installs); on Ice Age
         one 20-point animal has neither name nor picture
   - [ ] the menu is slow going settings -> title -> hunt (Ice Age install)
-  - [ ] a dialect game's scoped rifle: looking through the scope shows nothing usable
+  - [x] a dialect game's scoped rifle: looking through the scope shows nothing usable (dialect `optic` is the
+        zoom, `cross` / `unzoom` read; was always 3x with a cross)
   - [x] stealth crouch: gyro aim far too sensitive (now 40% by default, a deadzone, Settings > Gyro aim)
-  - [ ] one dialect game with the radar: its ambients show green and the hunted animals' dots don't show
+  - [x] one dialect game with the radar: its ambients show green and the hunted animals' dots don't show
   - [ ] survival: waves spawn on mountain edges (stuck, or far above the hunter) in classic and modded
   - [ ] survival: run speed and ambient animals should be settable (ambients off helps the frame rate)
   - [ ] PC: roaming add-ons (the 3DS's blue dots) should be pickable in the PC hunt menu too

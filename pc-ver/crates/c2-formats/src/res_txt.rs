@@ -386,7 +386,9 @@ pub struct WeaponDef {
     pub reload: Option<i32>,
     /// Pellets per shot as written; the original stores `trace - 1`.
     pub trace: Option<i32>,
-    pub optic: Option<i32>,
+    /// The original reads it as a whole number (on or off); the Modder's
+    /// Edition as the scope's zoom (`atof`).
+    pub optic: Option<f32>,
     pub fall: Option<i32>,
     /// Keys the original engine does not read (kept for mods).
     pub extra: Vec<Entry>,
@@ -410,7 +412,7 @@ impl WeaponDef {
             shots: b.get(&["shots"]).map(c_atoi),
             reload: b.get(&["reload"]).map(c_atoi),
             trace: b.get(&["trace"]).map(c_atoi),
-            optic: b.get(&["optic"]).map(c_atoi),
+            optic: b.get(&["optic"]).map(c_atof),
             fall: b.get(&["fall"]).map(c_atoi),
             extra: extra(b, WEAPON_KEYS),
         }

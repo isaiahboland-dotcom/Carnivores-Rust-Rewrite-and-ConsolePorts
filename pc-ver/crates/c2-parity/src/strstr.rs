@@ -101,7 +101,7 @@ fn weapon_line(w: &mut WeaponDef, line: &str, value: &str) {
         w.trace = Some(c_atoi(value))
     }
     if has("optic") {
-        w.optic = Some(c_atoi(value))
+        w.optic = Some(c_atoi(value) as f32)
     }
     if has("fall") {
         w.fall = Some(c_atoi(value))

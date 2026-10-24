@@ -73,6 +73,13 @@ pub struct MeeWeapon {
     /// `radar` (`radR`, `radG`, `radB`, `radTime`): an animal it hits shows
     /// on the map in this colour, for `radTime` ms (0: for good).
     pub radar: Option<([u8; 3], i32)>,
+    /// `optic`: the scope's zoom (the original's is 3).
+    pub zoom: f32,
+    /// `cross`: cross-hairs on the model's last vertex, scoped or (without
+    /// `optic`) always; not given: none.
+    pub cross: bool,
+    /// `unzoom`: no zoom or cross-hairs while drawing, hiding, reloading.
+    pub unzoom: bool,
     /// Model animations for draw, fire, hide, reload (`getAnim`, `shtAnim`,
     /// `putAnim`, `rldAnimFull`); the original order when not given.
     pub anims: [usize; 4],
@@ -93,6 +100,8 @@ impl MeeWeapon {
         "shtanim",
         "putanim",
         "rldanimfull",
+        "cross",
+        "unzoom",
     ];
 
     fn from_def(d: &WeaponDef) -> Option<Self> {
@@ -120,6 +129,9 @@ impl MeeWeapon {
             recoil: num("recoil"),
             shake: get("shake").map(|v| c2_formats::res_txt::c_atof(&v)),
             can_run: flag("canRun"),
+            zoom: d.optic.unwrap_or(0.0),
+            cross: flag("cross"),
+            unzoom: flag("unzoom"),
             full_auto: flag("fullAuto"),
             cannot_mortal: flag("cannotMortal"),
             radar: flag("radar").then(|| {
@@ -151,10 +163,19 @@ impl WeaponInfo {
             shots: d.shots.unwrap_or(0),
             reload: d.reload.unwrap_or(0),
             trace_c: d.trace.unwrap_or(0) - 1,
-            optic: d.optic.unwrap_or(0) != 0,
+            optic: d.optic.unwrap_or(0.0) != 0.0,
             fall: d.fall.unwrap_or(0) != 0,
             mee: MeeWeapon::from_def(d),
         }
+        .read_optic(d)
+    }
+
+    /// The original reads `optic` as a whole number (`optic = 0.5`: none).
+    fn read_optic(mut self, d: &WeaponDef) -> Self {
+        if self.mee.is_none() {
+            self.optic = d.optic.unwrap_or(0.0).trunc() != 0.0;
+        }
+        self
     }
 
     /// The model animation (and sound) for a `weapon_anim` slot.
@@ -2120,13 +2141,49 @@ impl Hunt {
     pub fn zoom(&self) -> f32 {
         if self.bin_mode {
             self.bin_power
-        } else if self.weapons.optic_mode
-            && self.weapons.state != WeaponState::Hidden
-            && self.death.is_none()
-        {
-            3.0
+        } else if self.scoped() {
+            match self
+                .weapons
+                .info
+                .get(self.weapons.current)
+                .and_then(|i| i.mee.as_ref())
+            {
+                Some(m) => m.zoom.max(0.1),
+                None => 3.0,
+            }
         } else {
             1.0
+        }
+    }
+
+    /// Looking through the current weapon's scope (zoomed): optic mode,
+    /// the weapon out, and (an `unzoom` dialect weapon) ready.
+    fn scoped(&self) -> bool {
+        let w = &self.weapons;
+        let unzoomed = w
+            .info
+            .get(w.current)
+            .and_then(|i| i.mee.as_ref())
+            .is_some_and(|m| m.unzoom && w.state != WeaponState::Ready);
+        w.optic_mode && w.state != WeaponState::Hidden && self.death.is_none() && !unzoomed
+    }
+
+    /// Cross-hairs on the view model's aim point (`DrawOpticCross`): the
+    /// original's when scoped; a dialect weapon's only with `cross` (scoped,
+    /// or out without a scope), not while it `unzoom`s.
+    pub fn scope_cross(&self) -> bool {
+        let w = &self.weapons;
+        if self.bin_mode || self.death.is_some() || w.state == WeaponState::Hidden {
+            return false;
+        }
+        match w.info.get(w.current).map(|i| (i, i.mee.as_ref())) {
+            Some((i, Some(m))) => {
+                m.cross
+                    && (!i.optic || w.optic_mode)
+                    && (!m.unzoom || w.state == WeaponState::Ready)
+            }
+            Some((_, None)) => self.scoped(),
+            None => false,
         }
     }
 
@@ -2430,6 +2487,42 @@ mod tests {
             scale_a: 0,
             danger_call: false,
         }
+    }
+
+    #[test]
+    fn dialect_scopes_zoom_by_their_optic_and_cross_only_when_asked() {
+        let def = |optic: f32, keys: &[(&str, &str)]| WeaponDef {
+            optic: Some(optic),
+            extra: keys
+                .iter()
+                .map(|&(k, v)| c2_formats::res_txt::Entry {
+                    key: k.into(),
+                    value: v.into(),
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let (_, mut hunt, _) = setup(false);
+        let mut scoped = |d: &WeaponDef, state: WeaponState| {
+            hunt.weapons.info[0] = WeaponInfo::from_def(d);
+            hunt.weapons.optic_mode = hunt.weapons.info[0].optic;
+            hunt.weapons.state = state;
+            (hunt.zoom(), hunt.scope_cross())
+        };
+        // The original: 3x and the cross, whatever `optic` says.
+        assert_eq!(scoped(&def(1.0, &[]), WeaponState::Ready), (3.0, true));
+        assert_eq!(scoped(&def(0.5, &[]), WeaponState::Ready), (1.0, false));
+        // The dialect: its own zoom, no cross unless asked.
+        let rifle = def(1.1, &[("recoil", "0")]);
+        assert_eq!(scoped(&rifle, WeaponState::Ready), (1.1, false));
+        let sniper = def(3.0, &[("cross", "TRUE"), ("unzoom", "TRUE")]);
+        assert_eq!(scoped(&sniper, WeaponState::Ready), (3.0, true));
+        assert_eq!(scoped(&sniper, WeaponState::Reloading), (1.0, false));
+        // A cross without a scope: drawn at the hip.
+        assert_eq!(
+            scoped(&def(0.0, &[("cross", "TRUE")]), WeaponState::Ready),
+            (1.0, true)
+        );
     }
 
     #[test]
