@@ -12,8 +12,10 @@ impl Character {
     fn set_new_target_place_brahi(&mut self, ctx: &mut Ctx<'_>, r: f32) {
         let mut tr = 0;
         loop {
-            let x = (self.pos[0] + ctx.rng.si_rand(r as i32) as f32).clamp(512.0, 1018.0 * 256.0);
-            let z = (self.pos[2] + ctx.rng.si_rand(r as i32) as f32).clamp(512.0, 1018.0 * 256.0);
+            let x = (self.pos[0] + ctx.rng.si_rand(r as i32) as f32)
+                .clamp(crate::collide::WALK_MIN, crate::collide::WALK_MAX);
+            let z = (self.pos[2] + ctx.rng.si_rand(r as i32) as f32)
+                .clamp(crate::collide::WALK_MIN, crate::collide::WALK_MAX);
             tr += 1;
             if tr < 16 && (x - self.pos[0]).abs() + (z - self.pos[2]).abs() < r / 2.0 {
                 continue;

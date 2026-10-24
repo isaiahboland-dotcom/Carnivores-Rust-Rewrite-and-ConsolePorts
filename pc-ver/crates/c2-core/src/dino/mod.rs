@@ -547,7 +547,7 @@ pub fn check_place_collision_aquatic(area: &Area, v: &mut [f32; 3]) -> bool {
 
 fn place_collision(area: &Area, v: &mut [f32; 3], aquatic: bool) -> bool {
     let (ccx, ccz) = (cell_of(v[0]), cell_of(v[2]));
-    if !(4..=1008).contains(&ccx) || !(4..=1008).contains(&ccz) {
+    if !crate::collide::WALK_CELLS.contains(&ccx) || !crate::collide::WALK_CELLS.contains(&ccz) {
         return true;
     }
     let blocked = if aquatic {
@@ -603,7 +603,7 @@ fn check_place_collision_avoid(
     avoid: &[Region],
 ) -> bool {
     let (ccx, ccz) = (cell_of(v[0]), cell_of(v[2]));
-    if !(4..=1018).contains(&ccx) || !(4..=1018).contains(&ccz) {
+    if !crate::collide::WALK_CELLS.contains(&ccx) || !crate::collide::WALK_CELLS.contains(&ccz) {
         return true;
     }
     if wc && flags_around(area, ccx, ccz) & cell_flags::WATER != 0 {
@@ -662,7 +662,9 @@ pub(crate) fn check_place_collision_brahi(
     avoid: &[Region],
 ) -> bool {
     let (ccx, ccz) = (cell_of(v[0]), cell_of(v[2]));
-    if !(4..=1018).contains(&ccx) || !(4..=1018).contains(&ccz) || in_avoided_cell(avoid, ccx, ccz)
+    if !crate::collide::WALK_CELLS.contains(&ccx)
+        || !crate::collide::WALK_CELLS.contains(&ccz)
+        || in_avoided_cell(avoid, ccx, ccz)
     {
         return true;
     }
@@ -683,7 +685,9 @@ pub(crate) fn check_place_collision_land_brahi(
     water_level: f32,
 ) -> bool {
     let (ccx, ccz) = (cell_of(v[0]), cell_of(v[2]));
-    if !(4..=1018).contains(&ccx) || !(4..=1018).contains(&ccz) || in_avoided_cell(avoid, ccx, ccz)
+    if !crate::collide::WALK_CELLS.contains(&ccx)
+        || !crate::collide::WALK_CELLS.contains(&ccz)
+        || in_avoided_cell(avoid, ccx, ccz)
     {
         return true;
     }
@@ -698,7 +702,7 @@ pub(crate) fn check_place_collision_land_brahi(
 /// `CheckPlaceCollisionBrahiP`: a spot in water no deeper than 550.
 pub(crate) fn check_place_collision_brahi_p(area: &Area, v: &mut [f32; 3]) -> bool {
     let (ccx, ccz) = (cell_of(v[0]), cell_of(v[2]));
-    if !(4..=1008).contains(&ccx) || !(4..=1008).contains(&ccz) {
+    if !crate::collide::WALK_CELLS.contains(&ccx) || !crate::collide::WALK_CELLS.contains(&ccz) {
         return true;
     }
     if area.land_up_h(v[0], v[2]) <= area.land_height(v[0], v[2])
@@ -741,8 +745,8 @@ pub(crate) fn check_place_collision_fish(
     avoid: &[Region],
 ) -> bool {
     let (ccx, ccz) = (cell_of(v[0]), cell_of(v[2]));
-    !(4..=1018).contains(&ccx)
-        || !(4..=1018).contains(&ccz)
+    !crate::collide::WALK_CELLS.contains(&ccx)
+        || !crate::collide::WALK_CELLS.contains(&ccz)
         || in_avoided_cell(avoid, ccx, ccz)
         || !depth_band_around(area, v[0], v[2], lo, hi)
 }
@@ -750,8 +754,8 @@ pub(crate) fn check_place_collision_fish(
 /// `CheckPlaceCollisionFishP`.
 pub(crate) fn check_place_collision_fish_p(area: &Area, v: &[f32; 3], lo: f32, hi: f32) -> bool {
     let (ccx, ccz) = (cell_of(v[0]), cell_of(v[2]));
-    !(4..=1008).contains(&ccx)
-        || !(4..=1008).contains(&ccz)
+    !crate::collide::WALK_CELLS.contains(&ccx)
+        || !crate::collide::WALK_CELLS.contains(&ccz)
         || !depth_band_around(area, v[0], v[2], lo, hi)
 }
 
@@ -762,7 +766,7 @@ pub fn check_place_collision2(area: &Area, v: &mut [f32; 3], wc: bool) -> bool {
 
 fn check_place_collision2_avoid(area: &Area, v: &mut [f32; 3], wc: bool, avoid: &[Region]) -> bool {
     let (ccx, ccz) = (cell_of(v[0]), cell_of(v[2]));
-    if !(4..=1018).contains(&ccx) || !(4..=1018).contains(&ccz) {
+    if !crate::collide::WALK_CELLS.contains(&ccx) || !crate::collide::WALK_CELLS.contains(&ccz) {
         return true;
     }
     if wc && flags_around(area, ccx, ccz) & cell_flags::WATER != 0 {
@@ -1006,9 +1010,11 @@ impl Character {
         let mut tr = 0;
         loop {
             let mut p = [
-                (self.pos[0] + rng.si_rand(r as i32) as f32).clamp(512.0, 1018.0 * 256.0),
+                (self.pos[0] + rng.si_rand(r as i32) as f32)
+                    .clamp(crate::collide::WALK_MIN, crate::collide::WALK_MAX),
                 0.0,
-                (self.pos[2] + rng.si_rand(r as i32) as f32).clamp(512.0, 1018.0 * 256.0),
+                (self.pos[2] + rng.si_rand(r as i32) as f32)
+                    .clamp(crate::collide::WALK_MIN, crate::collide::WALK_MAX),
             ];
             p[1] = area.land_height(p[0], p[2]);
             tr += 1;
@@ -1108,9 +1114,11 @@ impl Character {
         let mut tr = 0;
         loop {
             let mut p = [
-                (self.pos[0] + rng.si_rand(r as i32) as f32).clamp(512.0, 1018.0 * 256.0),
+                (self.pos[0] + rng.si_rand(r as i32) as f32)
+                    .clamp(crate::collide::WALK_MIN, crate::collide::WALK_MAX),
                 0.0,
-                (self.pos[2] + rng.si_rand(r as i32) as f32).clamp(512.0, 1018.0 * 256.0),
+                (self.pos[2] + rng.si_rand(r as i32) as f32)
+                    .clamp(crate::collide::WALK_MIN, crate::collide::WALK_MAX),
             ];
             p[1] = area.land_height(p[0], p[2]);
             tr += 1;
@@ -1152,9 +1160,11 @@ impl Character {
         let mut tr = 0;
         loop {
             let p = [
-                (self.pos[0] + rng.si_rand(r as i32) as f32).clamp(512.0, 1018.0 * 256.0),
+                (self.pos[0] + rng.si_rand(r as i32) as f32)
+                    .clamp(crate::collide::WALK_MIN, crate::collide::WALK_MAX),
                 0.0,
-                (self.pos[2] + rng.si_rand(r as i32) as f32).clamp(512.0, 1018.0 * 256.0),
+                (self.pos[2] + rng.si_rand(r as i32) as f32)
+                    .clamp(crate::collide::WALK_MIN, crate::collide::WALK_MAX),
             ];
             tr += 1;
             if tr < 16 && (p[0] - self.pos[0]).abs() + (p[2] - self.pos[2]).abs() < r / 2.0 {

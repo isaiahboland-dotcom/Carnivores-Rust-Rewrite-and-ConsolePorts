@@ -41,9 +41,11 @@ impl Character {
         let mut tr = 0;
         loop {
             let mut p = [
-                (self.pos[0] + rng.si_rand(r as i32) as f32).clamp(512.0, 1018.0 * 256.0),
+                (self.pos[0] + rng.si_rand(r as i32) as f32)
+                    .clamp(crate::collide::WALK_MIN, crate::collide::WALK_MAX),
                 0.0,
-                (self.pos[2] + rng.si_rand(r as i32) as f32).clamp(512.0, 1018.0 * 256.0),
+                (self.pos[2] + rng.si_rand(r as i32) as f32)
+                    .clamp(crate::collide::WALK_MIN, crate::collide::WALK_MAX),
             ];
             tr += 1;
             if tr < 16 && (p[0] - self.pos[0]).abs() + (p[2] - self.pos[2]).abs() < r / 2.0 {

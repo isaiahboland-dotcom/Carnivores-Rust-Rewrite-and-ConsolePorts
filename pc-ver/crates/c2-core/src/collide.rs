@@ -35,6 +35,14 @@ pub struct ObjectShape {
     pub bounds: Vec<BoundBox>,
 }
 
+/// The cells the hunter can reach (`CheckCollision` keeps him in 36..980).
+/// Animals keep to them too (not in the original, where they walk to the
+/// map's edge, out of the hunter's reach: the owner's ask).
+pub const WALK_CELLS: core::ops::RangeInclusive<i32> = 36..=980;
+/// [`WALK_CELLS`] in map units.
+pub const WALK_MIN: f32 = 36.0 * CELL;
+pub const WALK_MAX: f32 = 980.0 * CELL;
+
 impl ObjectShape {
     pub fn new(o: &Object) -> Self {
         let bounds = if o.info.flags & object_flags::BOUND != 0 {
@@ -248,8 +256,8 @@ impl Area {
     /// `CheckCollision`: clamps to the playable square and pushes (x, z) out
     /// of objects at the height of `player_y`.
     pub fn check_collision(&self, x: &mut f32, z: &mut f32, player_y: f32) {
-        *x = x.clamp(36.0 * CELL, 980.0 * CELL);
-        *z = z.clamp(36.0 * CELL, 980.0 * CELL);
+        *x = x.clamp(WALK_MIN, WALK_MAX);
+        *z = z.clamp(WALK_MIN, WALK_MAX);
         let near: Vec<Near<'_>> = self.objects_near(*x, *z, 4).collect();
         for n in near {
             let s = n.shape;

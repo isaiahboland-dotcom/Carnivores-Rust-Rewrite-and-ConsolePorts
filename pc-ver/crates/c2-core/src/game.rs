@@ -2863,6 +2863,17 @@ mod tests {
     }
 
     #[test]
+    fn animals_keep_to_where_the_hunter_can_go() {
+        let area = Area::flat(10);
+        let at = |cell: f32| {
+            let mut p = [cell * 256.0 + 128.0, 0.0, 500.0 * 256.0];
+            crate::dino::check_place_collision_p(&area, &mut p)
+        };
+        assert!(!at(500.0) && !at(40.0));
+        assert!(at(20.0) && at(990.0), "outside the hunter's 36..980");
+    }
+
+    #[test]
     fn survival_waves_start_by_the_hunter_not_up_a_mountain() {
         let (mut area, mut hunt, car) = setup(false);
         // The box's west half a plateau far above the hunter.
