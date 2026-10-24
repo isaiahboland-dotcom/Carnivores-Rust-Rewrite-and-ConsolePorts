@@ -157,6 +157,51 @@ pub fn spawn_picked_anywhere(res: &ResTxt, h: &Hunt, tables: &mut Tables, extra:
     }
 }
 
+/// The roaming add-ons of a dialect game (a huntable AI, 10-29, with no
+/// `callNo`: they only roam): their character indices, each with the menu
+/// slot it is picked by, from `first_slot` on (after the menu's own).
+pub fn roamers(res: &ResTxt, first_slot: usize) -> Vec<(usize, usize)> {
+    let all = Tables::read(
+        res,
+        &Hunt {
+            area: None,
+            time: 1,
+            picked: c2_formats::bits::Bits::ALL,
+        },
+    );
+    all.characters
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| {
+            let ai = c.block.get(&["ai"]).map(c_atoi);
+            let slot = c.block.get(&["callNo"]).map(c_atoi).filter(|&n| n >= 0);
+            slot.is_none() && ai.is_some_and(|a| (10..30).contains(&a))
+        })
+        .map(|(i, _)| i)
+        .zip(first_slot..c2_formats::bits::Bits::LEN - 10)
+        .collect()
+}
+
+/// Picked roamers (`roamers`, their slot in `h.picked`) take their slot as
+/// `callNo`, so they hunt as menu animals, and come on any map.
+pub fn pick_roamers(res: &ResTxt, h: &Hunt, tables: &mut Tables, roamers: &[(usize, usize)]) {
+    let picked: Vec<(usize, usize)> = roamers
+        .iter()
+        .copied()
+        .filter(|&(_, slot)| h.picked.has(slot))
+        .collect();
+    let chars: Vec<usize> = picked.iter().map(|p| p.0).collect();
+    spawn_picked_anywhere(res, h, tables, &chars);
+    for (i, slot) in picked {
+        if let Some(c) = tables.characters.get_mut(i) {
+            c.block.entries.push(Entry {
+                key: "callNo".into(),
+                value: slot.to_string(),
+            });
+        }
+    }
+}
+
 fn index(b: &Block, key: &str) -> Option<usize> {
     b.get(&[key])
         .map(c_atoi)
@@ -389,6 +434,34 @@ mod tests {
  deathtype {\n  dieAnim = 5\n  sleepAnim = 6\n }\n\
  idlegroup {\n  startChance = 0.5\n  anim = 2\n  anim = 4\n }\n\
  jumpAnim = 8\n}\n}\n.\n";
+
+    #[test]
+    fn roaming_add_ons_get_the_slots_after_the_menu_and_hunt_by_them() {
+        let res = ResTxt::parse(
+            "characters {\n{\n name = 'Hunter'\n ai = 0\n}\n\
+             {\n name = 'Raptor'\n ai = 12\n callNo = 0\n}\n\
+             {\n name = 'Pig'\n ai = 1\n}\n\
+             {\n name = 'Roamer'\n ai = 14\n}\n}\n.\n",
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        let roamers = roamers(&res, 1);
+        assert_eq!(roamers, [(3, 1)]);
+        let h = Hunt {
+            area: Some(1),
+            time: 1,
+            picked: c2_formats::bits::Bits::bit(1),
+        };
+        let mut t = Tables::read(&res, &h);
+        pick_roamers(&res, &h, &mut t, &roamers);
+        assert_eq!(t.characters[3].block.get(&["callNo"]), Some("1"));
+        let unpicked = Hunt {
+            picked: c2_formats::bits::Bits::bit(0),
+            ..h
+        };
+        let mut t = Tables::read(&res, &unpicked);
+        pick_roamers(&res, &unpicked, &mut t, &roamers);
+        assert_eq!(t.characters[3].block.get(&["callNo"]), None);
+    }
 
     #[test]
     fn info_numbers_phases_in_reading_order() {

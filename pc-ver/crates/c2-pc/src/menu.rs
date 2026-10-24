@@ -36,6 +36,31 @@ const CH: f32 = 600.0;
 
 type Rect = (f32, f32, f32, f32);
 
+/// The hunt lists: `_MENU.TXT` if the game has one (Modder's Edition
+/// Engine), else `_RES.TXT`; see `c2_formats::menu_txt`.
+pub fn menu_data(huntdat: &Path) -> Result<MenuData> {
+    let src = find_file(huntdat, "_MENU.TXT")
+        .or_else(|| find_file(huntdat, "_RES.TXT"))
+        .and_then(|p| std::fs::read(p).ok())
+        .map(|d| String::from_utf8_lossy(&d).into_owned())
+        .unwrap_or_default();
+    Ok(MenuData::from_res(&ResTxt::parse(&src)?))
+}
+
+/// A dialect game's `_RES.TXT`.
+pub fn dialect_res(huntdat: &Path) -> Option<ResTxt> {
+    find_file(huntdat, "_RES.TXT")
+        .and_then(|p| std::fs::read(p).ok())
+        .and_then(|d| ResTxt::parse(&String::from_utf8_lossy(&d)).ok())
+        .filter(c2_formats::mee::is_dialect)
+}
+
+/// The roaming add-ons' (character, slot): after the menu's own.
+pub fn roamer_slots(huntdat: &Path, res: &ResTxt) -> Vec<(usize, usize)> {
+    let first = menu_data(huntdat).map_or(0, |m| m.huntables.len());
+    c2_core::mee::roamers(res, first)
+}
+
 /// Each huntable's `basescore`: its `_RES.TXT` entry (matched by name),
 /// with the game's "when picked" changes applied (`overwrite charN`).
 fn hunt_scores(huntdat: &Path, menu: &MenuData) -> Vec<Option<f32>> {
@@ -575,12 +600,29 @@ impl Menu {
         };
         // The hunt lists: `_MENU.TXT` if the game has one (Modder's Edition
         // Engine), else `_RES.TXT`; see `c2_formats::menu_txt`.
-        let menu_src = find_file(&huntdat, "_MENU.TXT")
-            .or_else(|| find_file(&huntdat, "_RES.TXT"))
-            .and_then(|p| std::fs::read(p).ok())
-            .map(|d| String::from_utf8_lossy(&d).into_owned())
-            .unwrap_or_default();
-        let mut menu = MenuData::from_res(&ResTxt::parse(&menu_src)?);
+        let mut menu = menu_data(&huntdat)?;
+        // A dialect game's roaming add-ons (no menu slot of their own) are
+        // picked as its animals are, in the slots after them; priced as the
+        // menu animal with their AI.
+        if let Some(res) = dialect_res(&huntdat) {
+            let first = menu.huntables.len();
+            for (i, _) in c2_core::mee::roamers(&res, first) {
+                let b = res.section("characters").and_then(|s| s.blocks.get(i));
+                let get = |k: &str| b.and_then(|b| b.get(&[k]));
+                let ai = get("ai").map_or(0, c2_formats::res_txt::c_atoi);
+                let price = menu.huntables[..first]
+                    .iter()
+                    .find(|h| h.ai == ai)
+                    .map_or(0, |h| h.price);
+                menu.huntables.push(c2_formats::menu_txt::MenuItem {
+                    name: get("name")
+                        .map_or_else(String::new, |n| n.trim().trim_matches('\'').to_string()),
+                    price,
+                    ai,
+                    pic: None,
+                });
+            }
+        }
 
         // Locations: the `prices` areas whose .MAP exists (slot 6 may be
         // `external.map`), then `.c2map` descriptors; without any `prices`

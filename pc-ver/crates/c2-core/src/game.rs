@@ -2527,7 +2527,12 @@ mod tests {
 
     #[test]
     fn resupply_refills_carried_weapons_only() {
-        let mut w = Weapons::new(vec![rifle(), rifle()], vec![[100; 4]; 2], Bits::bit(0), true);
+        let mut w = Weapons::new(
+            vec![rifle(), rifle()],
+            vec![[100; 4]; 2],
+            Bits::bit(0),
+            true,
+        );
         w.shots_left = vec![0, 0];
         w.ammo_mag = vec![0, 0];
         w.resupply();
@@ -2538,7 +2543,12 @@ mod tests {
     #[test]
     fn weapons_past_slot_32_get_ammo() {
         let n = 50;
-        let mut w = Weapons::new(vec![rifle(); n], vec![[100; 4]; n], Bits::bit(40) | Bits::bit(2), false);
+        let mut w = Weapons::new(
+            vec![rifle(); n],
+            vec![[100; 4]; n],
+            Bits::bit(40) | Bits::bit(2),
+            false,
+        );
         assert_eq!(w.shots_left[40], 14);
         assert!(w.carried(40) && w.carried(2) && !w.carried(3));
         w.shots_left[40] = 0;
@@ -2601,7 +2611,12 @@ mod tests {
         };
         c.reset(&herd.species[1], &mut rng, 128);
         herd.chars.push(c);
-        let weapons = Weapons::new(vec![rifle()], vec![[100, 100, 100, 100]], Bits::bit(0), false);
+        let weapons = Weapons::new(
+            vec![rifle()],
+            vec![[100, 100, 100, 100]],
+            Bits::bit(0),
+            false,
+        );
         let opts = HuntOptions::default();
         let hunt = Hunt::new(&area, player, herd, weapons, rng, opts, blank_save());
         (area, hunt, car)
