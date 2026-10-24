@@ -980,7 +980,7 @@ impl World {
             })
             .collect();
         self.aim_point = cam.last().copied();
-        let (v, _) = corners(&model.prepared, Some(&cam), &[]);
+        let (v, opaque) = corners(&model.prepared, Some(&cam), &[]);
         if self.weapon_buf.as_ref().is_none_or(|b| b.cap() < v.len()) {
             self.weapon_buf = LinearBuf::new(v.len());
         }
@@ -997,7 +997,16 @@ impl World {
         gpu.no_fog();
         gpu.depth(true, true);
         tex.bind();
-        gpu.draw(buf, Lit::Signed, 0, buf.len());
+        gpu.draw(buf, Lit::Signed, 0, opaque);
+        // See-through faces (a scope's glass) blended, as on PC.
+        if v.len() > opaque {
+            gpu.blend(Blend::Alpha);
+            gpu.texenv(Some(128));
+            gpu.depth(true, false);
+            gpu.draw(buf, Lit::Signed, opaque, v.len() - opaque);
+            gpu.blend(Blend::Cutout);
+            gpu.texenv(None);
+        }
         gpu.depth(true, false);
     }
 }
