@@ -29,6 +29,10 @@ pub struct Settings {
     pub gyro_pct: i32,
     /// The hunter last played (save slot).
     pub hunter: i32,
+    /// The map as the mobile game draws it (a yellow frame and view cone);
+    /// teleporting by tapping the map.
+    pub map_mobile: bool,
+    pub teleport: bool,
 }
 
 /// How the hunter crouches.
@@ -107,6 +111,8 @@ impl Default for Settings {
             crouch_key: CrouchKey::default_for_console(),
             gyro_pct: 40,
             hunter: 0,
+            map_mobile: false,
+            teleport: false,
         }
     }
 }
@@ -135,6 +141,8 @@ impl Settings {
                 ("stealth_crouch", v) => s.stealth = v != "0",
                 ("random_ambients", v) => s.random_ambients = v != "0",
                 ("hunter", v) => s.hunter = v.parse().unwrap_or(0),
+                ("map_mobile", v) => s.map_mobile = v != "0",
+                ("teleport", v) => s.teleport = v != "0",
                 ("gyro_aim", v) => {
                     if let Ok(n) = v.parse::<i32>() {
                         s.gyro_pct = n.clamp(GYRO_STEPS[0], 100);
@@ -159,7 +167,7 @@ impl Settings {
             format!(
                 "run_speed = {}\nambient = {}\nblood = {}\ndeath_animation = {}\n\
                  friendly = {}\nstealth_crouch = {}\nrandom_ambients = {}\ncrouch_button = {}\ngyro_aim = {}\n\
-                 hunter = {}\n",
+                 hunter = {}\nmap_mobile = {}\nteleport = {}\n",
                 self.run_pct,
                 i32::from(self.ambient),
                 i32::from(self.blood),
@@ -169,7 +177,9 @@ impl Settings {
                 i32::from(self.random_ambients),
                 self.crouch_key.key(),
                 self.gyro_pct,
-                self.hunter
+                self.hunter,
+                i32::from(self.map_mobile),
+                i32::from(self.teleport)
             ),
         )
     }

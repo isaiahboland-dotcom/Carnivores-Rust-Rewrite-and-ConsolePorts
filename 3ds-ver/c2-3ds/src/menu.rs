@@ -120,8 +120,11 @@ const O_AMBIENT: [f32; 4] = [40.0, 56.0, 240.0, 24.0];
 const O_RANDOM: [f32; 4] = [40.0, 84.0, 240.0, 24.0];
 const O_FRIENDLY: [f32; 4] = [40.0, 112.0, 240.0, 24.0];
 const O_STEALTH: [f32; 4] = [40.0, 140.0, 240.0, 24.0];
-const BLOOD: [f32; 4] = [60.0, 144.0, 200.0, 28.0];
-const DEATH_ANIM: [f32; 4] = [60.0, 176.0, 200.0, 28.0];
+const BLOOD: [f32; 4] = [16.0, 144.0, 140.0, 28.0];
+const DEATH_ANIM: [f32; 4] = [164.0, 144.0, 140.0, 28.0];
+/// Settings: the mobile game's map look; teleporting by the map.
+const MAP_STYLE: [f32; 4] = [16.0, 176.0, 140.0, 28.0];
+const TELEPORT: [f32; 4] = [164.0, 176.0, 140.0, 28.0];
 
 const BAR_Y: f32 = 212.0;
 const BACK: [f32; 4] = [4.0, BAR_Y, 76.0, 24.0];
@@ -738,6 +741,8 @@ impl Menu {
             death_anim: true,
             notice_k: 1.0,
             stealth: false,
+            map_mobile: self.settings.map_mobile,
+            teleport: false,
             random_ambients: false,
             crouch_key: self.settings.crouch_key,
             gyro_k: 0.0,
@@ -777,6 +782,8 @@ impl Menu {
                 1.0
             },
             stealth: self.settings.stealth,
+            map_mobile: self.settings.map_mobile,
+            teleport: self.settings.teleport,
             random_ambients: self.settings.random_ambients && self.rules.dialect(),
             crouch_key: self.settings.crouch_key,
             gyro_k: self.settings.gyro_pct as f32 / 100.0,
@@ -1321,6 +1328,11 @@ impl Menu {
                     s.blood = !s.blood;
                 } else if inside(DEATH_ANIM, x, y) {
                     s.death_anim = !s.death_anim;
+                } else if inside(MAP_STYLE, x, y) {
+                    s.map_mobile = !s.map_mobile;
+                } else if inside(TELEPORT, x, y) {
+                    s.teleport = !s.teleport;
+                    self.focus = Some("Tap the map in a hunt; 5 s, then a minute".into());
                 }
             }
             Step::Area => {
@@ -1928,7 +1940,9 @@ impl Menu {
         c.text_c(gpu, 160.0, CLEAR_TROPHIES[1] + 9.0, 1.0, WHITE, &t);
         let toggles = [
             (BLOOD, s.blood, "Blood"),
-            (DEATH_ANIM, s.death_anim, "Death animation"),
+            (DEATH_ANIM, s.death_anim, "Death anim"),
+            (MAP_STYLE, s.map_mobile, "Mobile map"),
+            (TELEPORT, s.teleport, "Teleport"),
         ];
         for (r, on, _) in toggles {
             c.rect(r, if on { [60, 110, 60, 255] } else { PANEL });
@@ -1977,7 +1991,7 @@ impl Menu {
         }
         for (r, on, name) in toggles {
             let t = format!("{name}: {}", if on { "ON" } else { "OFF" });
-            c.text_c(gpu, 160.0, r[1] + 10.0, 1.0, WHITE, &t);
+            c.text_c(gpu, r[0] + r[2] / 2.0, r[1] + 10.0, 1.0, WHITE, &t);
         }
         c.text_c(
             gpu,

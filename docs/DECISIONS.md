@@ -2,6 +2,18 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-24 — The mobile game's radar and teleporting (options)
+- **Mobile radar** (PC Options > Video, 3DS Settings "Mobile map"): the map
+  gets a yellow frame and a yellow cone for what the hunter sees (the
+  camera's width: 77 degrees on PC, 90 on the 3DS's top screen; out to the
+  view range) in place of the range circle and heading tick.
+- **Teleport** (PC Options > Video, 3DS Settings): pick a spot on the map
+  (PC: with the map open the mouse moves a marker, a click picks; 3DS: tap
+  the map, its zoom moves to a corner button). After 5 s (a countdown on
+  screen) the hunter stands on the nearest dry, reachable cell; then a
+  minute's cooldown. Not in a survival (its waves come one way) or the
+  trophy room. Core: `game/teleport.rs`.
+
 ## 2026-10-24 — Owner's requests: survival, profiles, map edges, PC map heading
 - **Survival**: unlimited ammunition in every kind (was custom and modded
   only); wave animals start at 3 health at most (`WAVE_HEALTH`): the

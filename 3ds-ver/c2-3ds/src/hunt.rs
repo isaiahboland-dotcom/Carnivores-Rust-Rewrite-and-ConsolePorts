@@ -177,6 +177,10 @@ pub struct Setup {
     /// visible and loud), and 4 random ambient species (modded games).
     pub notice_k: f32,
     pub stealth: bool,
+    /// Settings: the map as the mobile game draws it; teleporting by the
+    /// map.
+    pub map_mobile: bool,
+    pub teleport: bool,
     pub random_ambients: bool,
     /// The crouch button (setting).
     pub crouch_key: crate::settings::CrouchKey,
@@ -421,6 +425,7 @@ fn new_hunt(
         afraid_every: 2,
         notice_k: setup.notice_k,
         stealth: setup.stealth,
+        teleport: setup.teleport,
         no_call_bonus: setup.roamers.iter().map(|r| r.slot + 10).collect(),
     };
     let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);

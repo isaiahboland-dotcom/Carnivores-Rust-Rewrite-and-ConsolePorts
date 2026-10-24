@@ -572,7 +572,14 @@ fn hunt(
         if let Some(t) = io.script_tap() {
             tap = Some(t);
         }
-        match tap.and_then(|(x, y)| ui.tap(x, y)) {
+        match tap.and_then(|(x, y)| ui.tap(&game, x, y)) {
+            Some(Tap::MapPoint(x, z)) => {
+                let m = match game.hunt.request_teleport(&game.area, x, z) {
+                    Ok(()) => "Teleporting in 5 seconds".to_string(),
+                    Err(e) => e,
+                };
+                message = Some((m, frame + 120));
+            }
             Some(Tap::Weapon(i)) => pad.select_weapon = Some(i),
             Some(Tap::Call(ai)) if ai == game.hunt.target_call => pad.call = true,
             Some(Tap::Call(ai)) => pad.select_call = Some(ai),

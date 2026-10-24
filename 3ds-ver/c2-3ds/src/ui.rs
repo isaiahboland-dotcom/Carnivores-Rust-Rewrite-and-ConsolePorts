@@ -34,6 +34,25 @@ const PAUSE: [f32; 4] = [194.0, 212.0, 52.0, 24.0];
 const RED: Rgba = [230, 40, 30, 255];
 /// Map pixels shown across the map panel when zoomed in (1 pixel = 4 cells).
 const LOCAL_SPAN: f32 = 64.0;
+/// With teleporting on, the map's zoom button (a tap elsewhere teleports).
+const MAP_ZOOM: [f32; 4] = [MAP[0] + MAP[2] - 22.0, MAP[1] + MAP[3] - 22.0, 20.0, 20.0];
+const YELLOW: Rgba = [250, 215, 40, 255];
+
+/// The map's view: world units per map pixel's origin `(ox, oy)` (map
+/// pixels, 4 cells each) and screen pixels per map pixel; zoomed in, it
+/// follows the hunter.
+fn map_view(game: &Game, local: bool) -> (f32, f32, f32) {
+    let p = &game.hunt.player;
+    let px = |v: f32| v / (4.0 * CELL);
+    let span = if local { LOCAL_SPAN } else { 256.0 };
+    let (ox, oy) = if local {
+        let cl = |v: f32| (px(v) - span / 2.0).clamp(0.0, 256.0 - span);
+        (cl(p.x), cl(p.z))
+    } else {
+        (0.0, 0.0)
+    };
+    (ox, oy, MAP[2] / span)
+}
 
 const GREEN: Rgba = [0, 176, 0, 255];
 const GREY: Rgba = [150, 150, 150, 255];
@@ -42,12 +61,14 @@ const PANEL: Rgba = [24, 32, 24, 255];
 const HILITE: Rgba = [60, 110, 60, 255];
 
 /// What a tap on the bottom screen asks for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Tap {
     Weapon(usize),
     /// Select this call (AI); calls if it was already selected.
     Call(i32),
     MapZoom,
+    /// Teleport to this spot (world x, z), with teleporting on.
+    MapPoint(f32, f32),
     Binoculars,
     Pause,
     /// Use an extra ammo refill.
@@ -62,6 +83,9 @@ pub struct Ui {
     /// Calls of the hunted animals: (call id = 10 + menu slot, icon).
     calls: Vec<(i32, Option<Texture>)>,
     pub map_local: bool,
+    /// Settings: the mobile game's map look; teleporting by the map.
+    map_mobile: bool,
+    teleport: bool,
     /// The trophy room: area names (map n at n - 1) and weapon names, for
     /// the plaque.
     trophy_names: Option<(Vec<String>, Vec<String>)>,
@@ -113,12 +137,14 @@ impl Ui {
             weapons,
             calls,
             map_local: true,
+            map_mobile: game.setup.map_mobile,
+            teleport: game.hunt.can_teleport(),
             trophy_names,
         }
     }
 
     /// What a tap at bottom-screen pixel (x, y) means.
-    pub fn tap(&self, x: f32, y: f32) -> Option<Tap> {
+    pub fn tap(&self, game: &Game, x: f32, y: f32) -> Option<Tap> {
         if x < LEFT_W {
             let i = (y / self.wpn_slot()) as usize;
             return self.weapons.get(i).map(|w| Tap::Weapon(w.0));
@@ -128,6 +154,11 @@ impl Ui {
             return self.calls.get(i).map(|c| Tap::Call(c.0));
         }
         if inside(MAP, x, y) {
+            if self.teleport && !inside(MAP_ZOOM, x, y) {
+                let (ox, oy, k) = map_view(game, self.map_local);
+                let w = |s: f32, o: f32, m: f32| (o + (s - m) / k) * 4.0 * CELL;
+                return Some(Tap::MapPoint(w(x, ox, MAP[0]), w(y, oy, MAP[1])));
+            }
             return Some(Tap::MapZoom);
         }
         if inside(AMMO, x, y) {
@@ -239,7 +270,34 @@ impl Ui {
             }
         }
 
-        draw_map(c, gpu, game, self.map.as_ref(), self.map_local);
+        draw_map(
+            c,
+            gpu,
+            game,
+            self.map.as_ref(),
+            self.map_local,
+            self.map_mobile,
+        );
+        if self.teleport {
+            c.rect(MAP_ZOOM, PANEL);
+            c.flush(gpu);
+            let z = if self.map_local { "-" } else { "+" };
+            c.text_c(gpu, MAP_ZOOM[0] + 10.0, MAP_ZOOM[1] + 6.0, 1.0, WHITE, z);
+            let t = &game.hunt.teleport;
+            let status = match (t.pending, t.cooldown) {
+                (Some((_, ms)), _) => format!("Teleport in {}s", (ms + 999) / 1000),
+                (None, ms) if ms > 0 => format!("Teleport: {}s", (ms + 999) / 1000),
+                _ => "Tap the map: teleport".into(),
+            };
+            c.text(
+                gpu,
+                MAP[0] + 3.0,
+                MAP[1] + MAP[3] - 10.0,
+                1.0,
+                YELLOW,
+                &status,
+            );
+        }
 
         // Status under the map.
         let cx = MAP[0] + MAP[2] / 2.0;
@@ -404,6 +462,11 @@ impl Ui {
         gpu.begin_2d(None);
         let c = &mut self.c;
         let cx = TOP_W as f32 / 2.0;
+        // A teleport under way: its countdown.
+        if let Some((_, ms)) = hunt.teleport.pending {
+            let t = format!("Teleporting in {}", (ms + 999) / 1000);
+            c.text_c(gpu, cx, 40.0, 2.0, YELLOW, &t);
+        }
         // Scope cross-hairs at the view model's aim point (`DrawOpticCross`),
         // projected like the world (camera space, vertical field `fovy`).
         if let Some((p, fovy)) = scope.filter(|_| hunt.scope_cross()) {
@@ -473,19 +536,20 @@ impl Ui {
 
 /// The area map (`DrawHMap`) with the view-range circle, the hunter and the
 /// animals in range. Zoomed in, it follows the hunter.
-fn draw_map(c: &mut Canvas, gpu: &mut Gpu, game: &Game, map: Option<&Texture>, local: bool) {
+fn draw_map(
+    c: &mut Canvas,
+    gpu: &mut Gpu,
+    game: &Game,
+    map: Option<&Texture>,
+    local: bool,
+    mobile: bool,
+) {
     let h = &game.hunt;
     let p = &h.player;
     // World units per map pixel: 4 cells.
     let px = |v: f32| v / (4.0 * CELL);
     let span = if local { LOCAL_SPAN } else { 256.0 };
-    let (ox, oy) = if local {
-        let cl = |v: f32| (px(v) - span / 2.0).clamp(0.0, 256.0 - span);
-        (cl(p.x), cl(p.z))
-    } else {
-        (0.0, 0.0)
-    };
-    let k = MAP[2] / span;
+    let (ox, oy, k) = map_view(game, local);
     let to_screen = |mx: f32, my: f32| (MAP[0] + (mx - ox) * k, MAP[1] + (my - oy) * k);
     if let Some(t) = map {
         let uv = [
@@ -496,15 +560,34 @@ fn draw_map(c: &mut Canvas, gpu: &mut Gpu, game: &Game, map: Option<&Texture>, l
         ];
         c.image(gpu, t, MAP, uv, WHITE);
     }
+    let (hx, hy) = to_screen(px(p.x), px(p.z));
+    let r = px(h.opts.view_r as f32 * CELL) * k;
+    if mobile {
+        // The mobile game's: what the hunter sees as a yellow cone (the top
+        // screen's 90 degrees, out to the view range), kept on the map.
+        let half = std::f32::consts::FRAC_PI_4;
+        let rim = |a: f32| {
+            let (s, co) = (p.alpha + a).sin_cos();
+            [
+                (hx + s * r).clamp(MAP[0], MAP[0] + MAP[2]),
+                (hy - co * r).clamp(MAP[1], MAP[1] + MAP[3]),
+            ]
+        };
+        let fill = [YELLOW[0], YELLOW[1], YELLOW[2], 110];
+        // (The fan closes its rim: the centre as the last point keeps it one
+        // triangle.)
+        c.fan([hx, hy], &[rim(-half), rim(half), [hx, hy]], fill, fill);
+    }
     let mut dot = |x: f32, y: f32, s: f32, col: Rgba| {
         if inside(MAP, x, y) {
             c.rect([x - s / 2.0, y - s / 2.0, s, s], col);
         }
     };
     // View range circle.
-    let (hx, hy) = to_screen(px(p.x), px(p.z));
-    let r = px(h.opts.view_r as f32 * CELL) * k;
     for i in 0..48 {
+        if mobile {
+            break;
+        }
         let a = i as f32 / 48.0 * std::f32::consts::TAU;
         dot(hx + a.cos() * r, hy + a.sin() * r, 1.5, [0, 144, 0, 255]);
     }
@@ -543,12 +626,26 @@ fn draw_map(c: &mut Canvas, gpu: &mut Gpu, game: &Game, map: Option<&Texture>, l
             dot(x, y, 3.0, [190, 190, 120, 255]);
         }
     }
-    // The hunter, with a tick showing where he looks.
-    dot(hx, hy, 4.0, [248, 0, 0, 255]);
-    let (s, co) = p.alpha.sin_cos();
-    for i in 1..4 {
-        let d = i as f32 * 2.5;
-        dot(hx + s * d, hy - co * d, 2.0, [248, 80, 80, 255]);
+    // The hunter, with a tick showing where he looks (the mobile look: a
+    // yellow dot, its cone above, and a yellow frame).
+    if mobile {
+        dot(hx, hy, 4.0, YELLOW);
+        let [x, y, w, hh] = MAP;
+        for r in [
+            [x, y, w, 2.0],
+            [x, y + hh - 2.0, w, 2.0],
+            [x, y, 2.0, hh],
+            [x + w - 2.0, y, 2.0, hh],
+        ] {
+            c.rect(r, YELLOW);
+        }
+    } else {
+        dot(hx, hy, 4.0, [248, 0, 0, 255]);
+        let (s, co) = p.alpha.sin_cos();
+        for i in 1..4 {
+            let d = i as f32 * 2.5;
+            dot(hx + s * d, hy - co * d, 2.0, [248, 80, 80, 255]);
+        }
     }
     c.flush(gpu);
 }
