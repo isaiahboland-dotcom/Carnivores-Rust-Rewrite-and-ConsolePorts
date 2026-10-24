@@ -117,6 +117,10 @@ pub struct HuntView {
     map_img: Option<usize>,
     /// The map's tick for where the hunter looks (PC setting).
     map_heading: bool,
+    /// The map drawn as the mobile game's (PC setting).
+    map_mobile: bool,
+    /// Teleporting: the marker on the open map (world x, z).
+    map_cursor: Option<(f32, f32)>,
     call_imgs: Vec<Option<usize>>,
     /// The trophy plaque (`TROPHY.TGA` in the room, `TROPHY_G.TGA` after a
     /// kill) and the room's "Esc to exit" banner (`TROPHY_E.TGA`).
@@ -307,6 +311,8 @@ impl HuntView {
             exit_img,
             map_img,
             map_heading: setup.pc.map_heading != 0,
+            map_mobile: setup.pc.map_mobile != 0,
+            map_cursor: None,
             call_imgs,
             plaque_img,
             pause_img,
@@ -404,6 +410,7 @@ impl HuntView {
             no_call_bonus: c2_formats::bits::Bits::NONE,
             notice_k: 1.0,
             stealth: false,
+            teleport: setup.pc.teleport != 0,
         };
         let mut opts = opts;
         opts.render_r = if trophy {
@@ -1137,6 +1144,29 @@ impl Scene for HuntView {
             zoom_out: input.held(KeyCode::Minus) || input.held(KeyCode::NumpadSubtract),
             ..self.pending
         };
+        // Teleporting: with the map open the mouse moves its marker (not
+        // the view) and fire picks the spot.
+        if self.hunt.map_mode && self.hunt.can_teleport() {
+            let p = &self.hunt.player;
+            let (mut x, mut z) = self.map_cursor.unwrap_or((p.x, p.z));
+            // A map pixel is 4 cells; a mouse pixel a quarter of that.
+            x += input.mouse_delta.0 * c2_core::CELL;
+            z += input.mouse_delta.1 * c2_core::CELL;
+            let (lo, hi) = (c2_core::collide::WALK_MIN, c2_core::collide::WALK_MAX);
+            let (x, z) = (x.clamp(lo, hi), z.clamp(lo, hi));
+            self.map_cursor = Some((x, z));
+            hin.controls.mouse = (0.0, 0.0);
+            hin.fire = false;
+            if pressed(k.fire) {
+                let msg = match self.hunt.request_teleport(self.view.area(), x, z) {
+                    Ok(()) => "Teleporting...".to_string(),
+                    Err(e) => e,
+                };
+                self.message = Some((msg, 2.0));
+            }
+        } else {
+            self.map_cursor = None;
+        }
 
         self.acc_ms = (self.acc_ms + dt * 1000.0).min(250.0);
         while self.acc_ms >= TICK_MS as f32 {
@@ -1319,6 +1349,14 @@ impl Scene for HuntView {
                 sprites.extend(self.hud.label(x, y, px * 2.0, c, m));
             }
         }
+        // A teleport under way: its countdown, centre top.
+        if let Some((_, ms)) = self.hunt.teleport.pending {
+            let px = 16.0 * scale.max(1.0).round();
+            let t = format!("Teleporting in {}", (ms + 999) / 1000);
+            let w = self.hud.label_width(px, &t);
+            let (x, y) = ((screen.0 as f32 - w) / 2.0, screen.1 as f32 * 0.15);
+            sprites.extend(self.hud.label(x, y, px, [1.0, 0.85, 0.1, 1.0], &t));
+        }
         // Binoculars: what's in the cross-hairs (`Render_LifeInfo`).
         if let Some(li) = self.hunt.life_info(self.view.area()) {
             let green = [0.0, 0.69, 0.0, 1.0];
@@ -1383,7 +1421,40 @@ impl Scene for HuntView {
                         .rect(ox + x * scale, oy + y * scale, 2.0 * scale, 2.0 * scale, c)
                 };
                 let r = self.hunt.opts.view_r as f32 / 4.0;
+                let yellow = [1.0, 0.85, 0.1, 1.0];
+                if self.map_mobile {
+                    // The mobile game's: a yellow frame, and a yellow cone
+                    // for what the hunter sees (77 degrees, as the
+                    // original's camera; out to the view range).
+                    let (fw, fh) = (256.0 * scale, 256.0 * scale);
+                    for (x, y, w, h) in [
+                        (
+                            ox - 2.0 * scale,
+                            oy - 2.0 * scale,
+                            fw + 4.0 * scale,
+                            2.0 * scale,
+                        ),
+                        (ox - 2.0 * scale, oy + fh, fw + 4.0 * scale, 2.0 * scale),
+                        (ox - 2.0 * scale, oy, 2.0 * scale, fh),
+                        (ox + fw, oy, 2.0 * scale, fh),
+                    ] {
+                        sprites.extend(self.hud.rect(x, y, w, h, yellow));
+                    }
+                    let half = 0.8f32.atan();
+                    let tip =
+                        |a: f32| (ccx + (p.alpha + a).sin() * r, ccy - (p.alpha + a).cos() * r);
+                    sprites.extend(cone(
+                        &self.hud,
+                        [(ccx, ccy), tip(-half), tip(half)],
+                        (ox, oy),
+                        scale,
+                        [1.0, 0.85, 0.1, 0.45],
+                    ));
+                }
                 for i in 0..48 {
+                    if self.map_mobile {
+                        break;
+                    }
                     let a = i as f32 / 48.0 * std::f32::consts::TAU;
                     let (px, py) = (ccx + a.cos() * r, ccy + a.sin() * r);
                     sprites.extend(self.hud.rect(
@@ -1402,7 +1473,30 @@ impl Scene for HuntView {
                     ));
                 }
                 sprites.extend(dot(ccx + 1.0, ccy + 1.0, [0.25, 0.0, 0.0, 1.0]));
-                sprites.extend(dot(ccx, ccy, [0.97, 0.0, 0.0, 1.0]));
+                let me = if self.map_mobile {
+                    yellow
+                } else {
+                    [0.97, 0.0, 0.0, 1.0]
+                };
+                sprites.extend(dot(ccx, ccy, me));
+                // Teleporting: the marker, and when it can go.
+                if let Some((x, z)) = self.map_cursor {
+                    let (mx, my) = (x / 1024.0, z / 1024.0);
+                    for (dx, dy) in [(-3.0, 0.0), (3.0, 0.0), (0.0, -3.0), (0.0, 3.0), (0.0, 0.0)] {
+                        sprites.extend(dot(mx + dx, my + dy, [1.0, 1.0, 1.0, 1.0]));
+                    }
+                    let t = &self.hunt.teleport;
+                    let status = match (t.pending, t.cooldown) {
+                        (Some((_, ms)), _) => format!("Teleporting in {}s", (ms + 999) / 1000),
+                        (None, ms) if ms > 0 => format!("Teleport ready in {}s", (ms + 999) / 1000),
+                        _ => "Click to teleport there".into(),
+                    };
+                    let px = 8.0 * scale.max(1.0).round();
+                    sprites.extend(
+                        self.hud
+                            .label(ox, oy + 262.0 * scale, px, [1.0; 4], &status),
+                    );
+                }
                 // Where he looks: a short line of dots, as on the 3DS map.
                 if self.map_heading {
                     let (s, c) = p.alpha.sin_cos();
@@ -1598,4 +1692,40 @@ fn local_clock() -> (i32, i32, i32, i32, i32) {
         (rem / 3600) as i32,
         (rem % 3600 / 60) as i32,
     )
+}
+
+/// A filled triangle `[a, b, c]` in map pixels (from the map's corner
+/// `origin`, `scale` screen pixels each), as one-pixel rows.
+fn cone(
+    hud: &Hud,
+    [a, b, c]: [(f32, f32); 3],
+    origin: (f32, f32),
+    scale: f32,
+    color: [f32; 4],
+) -> Vec<Sprite> {
+    let mut out = Vec::new();
+    let (y0, y1) = (a.1.min(b.1).min(c.1), a.1.max(b.1).max(c.1));
+    let mut y = y0.floor();
+    while y <= y1 {
+        let yc = y + 0.5;
+        let xs: Vec<f32> = [(a, b), (b, c), (c, a)]
+            .iter()
+            .filter(|(p, q)| (p.1 <= yc) != (q.1 <= yc))
+            .map(|(p, q)| p.0 + (yc - p.1) / (q.1 - p.1) * (q.0 - p.0))
+            .collect();
+        if let (Some(&l), Some(&r)) = (
+            xs.iter().min_by(|p, q| p.total_cmp(q)),
+            xs.iter().max_by(|p, q| p.total_cmp(q)),
+        ) {
+            out.extend(hud.rect(
+                origin.0 + l * scale,
+                origin.1 + y * scale,
+                (r - l).max(1.0) * scale,
+                scale,
+                color,
+            ));
+        }
+        y += 1.0;
+    }
+    out
 }

@@ -26,6 +26,12 @@ pub struct PcSettings {
     /// The map shows which way the hunter looks (1 = on; not in the
     /// original, the 3DS map's tick).
     pub map_heading: i32,
+    /// The map as the mobile game draws it: a yellow frame and a yellow
+    /// cone for what the hunter sees (1 = on).
+    pub map_mobile: i32,
+    /// Teleporting by the map (1 = on): open it, move the marker with the
+    /// mouse, click; 5 s, then a minute's cooldown.
+    pub teleport: i32,
 }
 
 impl Default for PcSettings {
@@ -37,6 +43,8 @@ impl Default for PcSettings {
             death_anim: 1,
             far_sprites: 1,
             map_heading: 0,
+            map_mobile: 0,
+            teleport: 0,
         }
     }
 }
@@ -65,6 +73,8 @@ impl PcSettings {
                 "death_animation" => s.death_anim = i32::from(v != 0),
                 "far_sprites" => s.far_sprites = i32::from(v != 0),
                 "map_heading" => s.map_heading = i32::from(v != 0),
+                "map_mobile" => s.map_mobile = i32::from(v != 0),
+                "teleport" => s.teleport = i32::from(v != 0),
                 _ => {}
             }
         }
@@ -74,8 +84,15 @@ impl PcSettings {
     pub fn store(&self) {
         let text = format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nfar_sprites = {}\n\
-             map_heading = {}\n",
-            self.render, self.fog, self.blood, self.death_anim, self.far_sprites, self.map_heading
+             map_heading = {}\nmap_mobile = {}\nteleport = {}\n",
+            self.render,
+            self.fog,
+            self.blood,
+            self.death_anim,
+            self.far_sprites,
+            self.map_heading,
+            self.map_mobile,
+            self.teleport
         );
         if let Some(dir) = path().parent() {
             let _ = std::fs::create_dir_all(dir);
