@@ -301,13 +301,14 @@ enum Opt {
     ClearTrophies,
 }
 
-const GAME_OPTS: [Opt; 7] = [
+const GAME_OPTS: [Opt; 8] = [
     Opt::Slider("Aggressiveness", |s| &mut s.options.agres),
     Opt::Slider("Density", |s| &mut s.options.dens),
     Opt::Slider("Sensitivity", |s| &mut s.options.sens),
     Opt::Toggle("Measurement", ["Metric", "US"], |s| &mut s.options.sys),
     Opt::PcToggle("Blood", |p| &mut p.blood),
     Opt::PcToggle("Death animation", |p| &mut p.death_anim),
+    Opt::PcToggle("Map: where you look", |p| &mut p.map_heading),
     Opt::ClearTrophies,
 ];
 

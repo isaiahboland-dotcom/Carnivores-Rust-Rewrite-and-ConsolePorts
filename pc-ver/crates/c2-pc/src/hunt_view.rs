@@ -115,6 +115,8 @@ pub struct HuntView {
     hud: Hud,
     exit_img: Option<usize>,
     map_img: Option<usize>,
+    /// The map's tick for where the hunter looks (PC setting).
+    map_heading: bool,
     call_imgs: Vec<Option<usize>>,
     /// The trophy plaque (`TROPHY.TGA` in the room, `TROPHY_G.TGA` after a
     /// kill) and the room's "Esc to exit" banner (`TROPHY_E.TGA`).
@@ -304,6 +306,7 @@ impl HuntView {
             hud,
             exit_img,
             map_img,
+            map_heading: setup.pc.map_heading != 0,
             call_imgs,
             plaque_img,
             pause_img,
@@ -1400,6 +1403,21 @@ impl Scene for HuntView {
                 }
                 sprites.extend(dot(ccx + 1.0, ccy + 1.0, [0.25, 0.0, 0.0, 1.0]));
                 sprites.extend(dot(ccx, ccy, [0.97, 0.0, 0.0, 1.0]));
+                // Where he looks: a short line of dots, as on the 3DS map.
+                if self.map_heading {
+                    let (s, c) = p.alpha.sin_cos();
+                    for i in 1..4 {
+                        let d = i as f32 * 1.5;
+                        let (x, y) = (ccx + s * d, ccy - c * d);
+                        sprites.extend(self.hud.rect(
+                            ox + (x + 0.5) * scale,
+                            oy + (y + 0.5) * scale,
+                            scale,
+                            scale,
+                            [0.97, 0.31, 0.31, 1.0],
+                        ));
+                    }
+                }
                 // Radar: the picked animals green, other huntables that
                 // spawned anyway blue.
                 if self.hunt.opts.radar {

@@ -2,6 +2,22 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-24 — Owner's requests: survival, profiles, map edges, PC map heading
+- **Survival**: unlimited ammunition in every kind (was custom and modded
+  only); wave animals start at 3 health at most (`WAVE_HEALTH`): the
+  original's shotgun is 6 pellets of 1, so a solid blast or two glancing
+  ones kill; a rifle still kills at once.
+- **3DS menu**: a survival's top screen says "Survival" and lists no gear;
+  "Hunter" is "Profile". The new-profile keyboard's OK never lit: ctru-rs's
+  `set_max_text_len` also sets fixed-length validation, so a name had to be
+  exactly 20 letters; now any non-blank name up to 20.
+- **Map edges**: the hunter is held to cells 36..980 (`CheckCollision`);
+  animals walked, spawned and aimed out to cells 4..1018, out of his reach
+  behind that invisible wall. They now keep to the same box
+  (`collide::WALK_CELLS`), a deviation from the original.
+- **PC map heading**: Options > Game "Map: where you look" (off by default):
+  the 3DS map's tick on the PC map.
+
 ## 2026-10-24 — Menu animals marked by `overwrite charN`
 One game marks its menu animals not with `callNo` (it writes `callNo = -5 1`,
 which the engine reads as -5: answers no call) but by an `overwrite charN`

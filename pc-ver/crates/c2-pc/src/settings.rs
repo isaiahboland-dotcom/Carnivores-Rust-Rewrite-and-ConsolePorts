@@ -23,6 +23,9 @@ pub struct PcSettings {
     /// Far objects as their sprites (1 = on, as the original); off: as
     /// models all the way.
     pub far_sprites: i32,
+    /// The map shows which way the hunter looks (1 = on; not in the
+    /// original, the 3DS map's tick).
+    pub map_heading: i32,
 }
 
 impl Default for PcSettings {
@@ -33,6 +36,7 @@ impl Default for PcSettings {
             blood: 1,
             death_anim: 1,
             far_sprites: 1,
+            map_heading: 0,
         }
     }
 }
@@ -60,6 +64,7 @@ impl PcSettings {
                 "blood" => s.blood = i32::from(v != 0),
                 "death_animation" => s.death_anim = i32::from(v != 0),
                 "far_sprites" => s.far_sprites = i32::from(v != 0),
+                "map_heading" => s.map_heading = i32::from(v != 0),
                 _ => {}
             }
         }
@@ -68,8 +73,9 @@ impl PcSettings {
 
     pub fn store(&self) {
         let text = format!(
-            "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nfar_sprites = {}\n",
-            self.render, self.fog, self.blood, self.death_anim, self.far_sprites
+            "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nfar_sprites = {}\n\
+             map_heading = {}\n",
+            self.render, self.fog, self.blood, self.death_anim, self.far_sprites, self.map_heading
         );
         if let Some(dir) = path().parent() {
             let _ = std::fs::create_dir_all(dir);
