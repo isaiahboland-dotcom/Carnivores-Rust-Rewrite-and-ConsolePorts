@@ -3,16 +3,21 @@
 //! back off), each wave bigger; between waves a short
 //! rest (health and ammunition back). It ends when the hunter dies. Kills
 //! give no trophy and no score; the frontends record them (and the wave
-//! reached) in the hunter's record.
+//! reached) in the hunter's record. Ammunition never runs out, and wave
+//! animals have [`WAVE_HEALTH`] (the owner's: a direct shotgun blast kills,
+//! or a couple of glancing ones).
 //!
 //! - Hardcore: each wave also brings 1-3 animals from a pool (the frontends
 //!   give the modded ones).
-//! - Custom: unlimited ammunition; the T-Rex may come from wave 15.
+//! - Custom: the T-Rex may come from wave 15.
 //! - Mobile: the mobile game's own Survive mode, as read from the player's
 //!   APK (`c2_formats::mobile_arcade`): its waves, in turn, from a box on
 //!   Mount Ravan; the hunter at its spot.
 
 use super::*;
+
+/// A wave animal's health at most: the original's shotgun is 6 pellets of 1.
+pub const WAVE_HEALTH: i32 = 3;
 
 /// How a survival is set up.
 #[derive(Debug, Clone, Default)]
@@ -21,7 +26,7 @@ pub struct SurvivalOptions {
     pub roster: Vec<usize>,
     /// Hardcore: 1-3 of these join each wave (empty: off).
     pub hardcore: Vec<usize>,
-    /// Custom: the weapons never run out.
+    /// The weapons never run out (every survival, the owner's call).
     pub unlimited: bool,
     /// The T-Rex (its type), from wave 15.
     pub trex: Option<usize>,
@@ -340,7 +345,7 @@ impl SurvivalOptions {
         Self {
             roster,
             hardcore,
-            unlimited: custom,
+            unlimited: true,
             trex: hunting.iter().copied().find(|&i| custom && trex(&sp[i])),
             max_wave,
             mobile: None,
@@ -420,6 +425,7 @@ impl SurvivalOptions {
         Some(Self {
             mobile: Some(MobileWaves::new(s, &hunt.herd.species)?),
             max_wave,
+            unlimited: true,
             ..Default::default()
         })
     }
@@ -660,6 +666,7 @@ impl Hunt {
             ..Default::default()
         };
         c.reset(sp, &mut self.rng, self.opts.opt_agres);
+        c.health = c.health.clamp(1, WAVE_HEALTH);
         c.wave = n;
         c.state = 2;
         c.afraid_time = 60_000;

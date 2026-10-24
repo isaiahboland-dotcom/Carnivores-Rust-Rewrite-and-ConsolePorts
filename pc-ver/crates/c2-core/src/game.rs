@@ -22,7 +22,7 @@ use c2_formats::sav::{Save, TrophyItem};
 mod survival;
 pub use survival::{
     dangerous, dangerous_ai, is_trex, modded, MobileWaves, Survival, SurvivalKind, SurvivalOptions,
-    TREX_WAVE,
+    TREX_WAVE, WAVE_HEALTH,
 };
 
 /// `MAX_HEALTH`.
@@ -2713,6 +2713,10 @@ mod tests {
             .any(|e| matches!(e, GameEvent::Message(m) if m == "Wave 1")));
         for c in hunt.herd.chars.iter().filter(|c| c.wave == 1) {
             assert!(c.aware_hunter && c.state != 0);
+            assert!(
+                (1..=WAVE_HEALTH).contains(&c.health),
+                "a shotgun blast kills"
+            );
             let d = (c.pos[0] - hunt.player.x).hypot(c.pos[2] - hunt.player.z);
             assert!(d >= 20.0 * 256.0, "{d}");
         }

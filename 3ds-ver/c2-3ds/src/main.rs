@@ -460,12 +460,17 @@ fn menu(
         if m.quit || io.quit() {
             return Ok(None);
         }
-        // A new hunter: the name on the system keyboard.
+        // A new profile: the name on the system keyboard.
         if std::mem::take(&mut m.want_name) {
-            use ctru::applets::swkbd::{Button, ButtonConfig, Kind, SoftwareKeyboard};
+            use ctru::applets::swkbd::{
+                Button, ButtonConfig, Filters, Kind, SoftwareKeyboard, ValidInput,
+            };
             let mut kb = SoftwareKeyboard::new(Kind::Normal, ButtonConfig::LeftRight);
-            kb.set_hint_text(Some("Hunter's name"));
+            kb.set_hint_text(Some("Profile name"));
             kb.set_max_text_len(20);
+            // `set_max_text_len` also asks for exactly that many letters
+            // (OK stayed greyed out): any name, up to 20.
+            kb.set_validation(ValidInput::NotEmptyNotBlank, Filters::empty());
             if let Ok((name, Button::Right)) = kb.launch(io.apt, io.gfx) {
                 m.new_hunter(name.trim());
             }

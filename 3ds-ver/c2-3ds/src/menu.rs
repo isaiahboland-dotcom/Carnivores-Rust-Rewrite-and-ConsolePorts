@@ -1286,7 +1286,7 @@ impl Menu {
                     match list.get(i) {
                         Some(&(n, _)) => self.switch_hunter(n),
                         None if crate::save::free_slot().is_some() => self.want_name = true,
-                        None => self.message = Some("Six hunters already".into()),
+                        None => self.message = Some("Six profiles already".into()),
                     }
                 }
             }
@@ -1666,7 +1666,7 @@ impl Menu {
                     (TROPHIES, "TROPHIES", self.trophy_room),
                     (SETTINGS, "SETTINGS", true),
                     (QUIT, "QUIT", true),
-                    (HUNTER, "HUNTER", true),
+                    (HUNTER, "PROFILE", true),
                 ]);
                 for &(r, _, on) in &buttons {
                     c.rect(
@@ -1713,7 +1713,7 @@ impl Menu {
                     .map(|(n, name)| (name.clone(), *n == me))
                     .collect();
                 if crate::save::free_slot().is_some() {
-                    rows.push(("+ New hunter".into(), false));
+                    rows.push(("+ New profile".into(), false));
                 }
                 for (i, (_, on)) in rows.iter().enumerate() {
                     let r = hunter_row(i);
@@ -2154,9 +2154,8 @@ impl Menu {
             c.rect([8.0, 22.0, 192.0, 112.0], PANEL);
             c.flush(gpu);
             let t = match self.survival_next {
-                Some(SurvivalKind::Mobile) => "Classic survival: its own area",
-                Some(_) => "Modded survival: its own area",
-                None => "Random area and time",
+                Some(_) => "Survival",
+                None => "Survival: random area and time",
             };
             c.text(gpu, 8.0, 140.0, 1.0, WHITE, t);
         } else if let Some((_, a)) = self.areas.get(self.area) {
@@ -2253,7 +2252,10 @@ impl Menu {
                 let pen = if f < 1.0 { " -5%" } else { "" };
                 gear.push((format!("Ammo x{n}{pen}"), price, WHITE));
             }
-            list(&mut c, gpu, "Gear", gear);
+            // A survival brings no gear (unlimited ammunition).
+            if !survival {
+                list(&mut c, gpu, "Gear", gear);
+            }
         }
 
         // Will it fit?
