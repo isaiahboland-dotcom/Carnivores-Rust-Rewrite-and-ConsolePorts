@@ -144,8 +144,29 @@ pub fn picked_by(b: &Block) -> Vec<usize> {
     out
 }
 
+/// The `charN` slots of the conditional blocks under `b` that give it
+/// `radar = TRUE` (the "this one is hunted" mark), at any depth.
+fn radar_slots(b: &Block, out: &mut Vec<usize>) {
+    for s in &b.subs {
+        let marks = s
+            .block
+            .get(&["radar"])
+            .is_some_and(|v| v.trim().eq_ignore_ascii_case("true"));
+        if conditional(&s.name).is_some() && marks {
+            out.extend(
+                s.name
+                    .split_whitespace()
+                    .filter_map(|t| t.strip_prefix("char")?.parse::<usize>().ok()),
+            );
+        }
+        radar_slots(&s.block, out);
+    }
+}
+
 /// A huntable character's menu slot: its `callNo` (`resolved`, the entry as
 /// a hunt reads it) when 0 or more, else the slot of its `overwrite charN`
+/// that marks it for the radar (one may also change when other animals are
+/// hunted), else its lowest such slot
 /// (`raw`; huntable AIs, 10-29, only: an ambient's is a change when that
 /// animal is hunted): one game marks its menu animals so, with
 /// `callNo = -5` (they answer no call). `None` for one no slot picks (it
@@ -161,8 +182,13 @@ pub fn menu_slot(raw: Option<&Block>, resolved: &Block) -> Option<usize> {
         .filter(|&n| n >= 0)
         .map(|n| n as usize)
         .or_else(|| {
-            raw.filter(|_| huntable)
-                .and_then(|b| picked_by(b).into_iter().min())
+            let b = raw.filter(|_| huntable)?;
+            let mut marked = Vec::new();
+            radar_slots(b, &mut marked);
+            marked
+                .into_iter()
+                .min()
+                .or_else(|| picked_by(b).into_iter().min())
         })
 }
 

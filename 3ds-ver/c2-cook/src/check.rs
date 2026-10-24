@@ -180,13 +180,11 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
                 opts,
                 room,
             );
+            // The pick hunts something: one of its animals placed is a
+            // target (a game may bring others with it, kept off the radar).
             let picked = |c: &c2_core::dino::Character| wanted.contains(&c.ctype);
-            if hunt
-                .herd
-                .chars
-                .iter()
-                .any(|c| picked(c) && !hunt.is_target(c))
-            {
+            let placed: Vec<_> = hunt.herd.chars.iter().filter(|c| picked(c)).collect();
+            if !placed.is_empty() && !placed.iter().any(|c| hunt.is_target(c)) {
                 missing.push("not a hunt target".into());
             }
             let car_refs: Vec<_> = cars.iter().map(Option::as_ref).collect();

@@ -524,7 +524,9 @@ mod tests {
             picked: c2_formats::bits::Bits::bit(1),
             ..h
         };
-        assert!(read_picked_anywhere(&res, &off, &[]).tables.characters[2].spawn.is_empty());
+        assert!(read_picked_anywhere(&res, &off, &[]).tables.characters[2]
+            .spawn
+            .is_empty());
         assert!(roamers(&res, 2).is_empty(), "a menu animal, not a roamer");
     }
 
