@@ -51,17 +51,12 @@ const EXTRA_AMMO: [(i32, u32, f32); 3] = [(10, 1, 0.95), (50, 2, 0.95), (150, 3,
 /// The pack's dialect game's own survival (its `_RES.TXT`'s `common {}`,
 /// the area's spot, a `survivalIndex` roster), with the roster's names.
 fn modded_survival(
-    vfs: &Vfs,
+    rules: &Rules,
     areas: &[String],
 ) -> Option<(c2_formats::mee::SurvivalCommon, Vec<String>)> {
-    let res = c2_formats::res_txt::ResTxt::parse(&String::from_utf8_lossy(
-        &vfs.read("HUNTDAT/_RES.TXT").ok()?,
-    ))
-    .ok()?;
-    if !c2_formats::mee::is_dialect(&res) {
-        return None;
-    }
-    let c = c2_formats::mee::survival_common(&res)?;
+    // The rules as already parsed (a combined game's are half a MiB).
+    let res = rules.raw()?;
+    let c = c2_formats::mee::survival_common(res)?;
     if !areas
         .iter()
         .any(|a| a.eq_ignore_ascii_case(&format!("AREA{}", c.area)))
@@ -73,7 +68,7 @@ fn modded_survival(
         time: c.time,
         picked: c2_formats::bits::Bits::NONE,
     };
-    let t = c2_formats::mee::Tables::read(&res, &h);
+    let t = c2_formats::mee::Tables::read(res, &h);
     t.survival?;
     let names: Vec<String> = t
         .survival_roster()
@@ -448,7 +443,7 @@ impl Menu {
         // Ours is benched (owner, 2026-10-23): only when the pack asks.
         let ours = offered(&["ours"]);
         let modded = offered(&["modded", "mee", "both"])
-            .then(|| modded_survival(vfs, &info.areas))
+            .then(|| modded_survival(&rules, &info.areas))
             .flatten();
         let dialect = rules.dialect();
         let kinds = dinos
@@ -474,9 +469,23 @@ impl Menu {
                 })
             })
             .collect();
-        // Where each roamer spawns (its tables, per area).
+        // Where each roamer spawns (its tables, per area): the cooker's
+        // list, else worked out here (older packs; a resolve per area).
         let mut roams = std::collections::HashMap::new();
-        if dinos.iter().any(|d| matches!(d.0, Pick::Roamer(_))) {
+        if let Some(by_char) = &info.roam_areas {
+            for d in &dinos {
+                if let Pick::Roamer(r) = d.0 {
+                    let on: Vec<usize> = by_char.get(&r.char).map_or(Vec::new(), |names| {
+                        (0..areas.len())
+                            .filter(|&a| names.iter().any(|n| n.eq_ignore_ascii_case(&areas[a].0)))
+                            .collect()
+                    });
+                    if !on.is_empty() {
+                        roams.insert(r.char, on);
+                    }
+                }
+            }
+        } else if dinos.iter().any(|d| matches!(d.0, Pick::Roamer(_))) {
             for (a, (name, _)) in areas.iter().enumerate() {
                 let hr = rules.hunt(name, TimeOfDay::Day, Bits::ALL);
                 let Some(t) = &hr.tables else { continue };

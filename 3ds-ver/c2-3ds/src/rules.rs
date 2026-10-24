@@ -92,6 +92,11 @@ impl Rules {
         })
     }
 
+    /// The dialect's `_RES.TXT` as parsed (`None` for the original's).
+    pub fn raw(&self) -> Option<&ResTxt> {
+        self.raw.as_ref()
+    }
+
     /// Whether the pack's rules are the Modder's Edition's (modded games).
     pub fn dialect(&self) -> bool {
         self.raw.is_some()

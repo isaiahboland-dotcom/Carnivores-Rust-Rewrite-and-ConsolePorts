@@ -1215,6 +1215,31 @@ fn main() -> Result<()> {
         "survival = {}\n",
         a.survival_modes.as_deref().unwrap_or("classic,modded")
     );
+    // Where each roaming add-on spawns (per area its tables), so the 3DS
+    // menu needn't resolve the rules for every area when it opens (seconds
+    // on an Old 3DS for a combined game's many).
+    if let Some(raw) = &rules.raw {
+        info += "roam_map = 1\n";
+        let mut by_char: BTreeMap<usize, Vec<&str>> = BTreeMap::new();
+        for name in areas.iter().filter(|a| !a.eq_ignore_ascii_case("TROPHY")) {
+            let h = c2_formats::mee::Hunt {
+                area: c2_formats::mee::area_of(name),
+                time: 1,
+                picked: c2_formats::bits::Bits::ALL,
+            };
+            let t = c2_formats::mee::Tables::read(raw, &h);
+            for (i, ch) in t.characters.iter().enumerate() {
+                let ai = ch.block.get(&["ai"]).map(c2_formats::res_txt::c_atoi);
+                let roams = !has_slot(&ch.block) && ai.is_some_and(|a| (10..30).contains(&a));
+                if roams && (!ch.spawn.is_empty() || !ch.packs.is_empty()) {
+                    by_char.entry(i).or_default().push(name);
+                }
+            }
+        }
+        for (i, list) in by_char {
+            info += &format!("roam.{i} = {}\n", list.join(","));
+        }
+    }
     c.entries.push(("C2RS/INFO.TXT".into(), info.into_bytes()));
     let bytes = write_pack(&c.entries);
     if let Some(dir) = out.parent().filter(|d| !d.as_os_str().is_empty()) {

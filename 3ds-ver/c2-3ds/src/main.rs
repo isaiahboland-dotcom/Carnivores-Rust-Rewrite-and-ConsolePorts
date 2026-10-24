@@ -428,6 +428,8 @@ fn menu(
     io: &mut Io,
     note: Option<String>,
 ) -> Result<Option<Setup>> {
+    // A big pack's menu takes a moment to open on an Old 3DS.
+    loading_screen(vfs, gpu, "the menu");
     let mut m = Menu::new(vfs, info.clone())?;
     if let Some(n) = note {
         m.set_message(n);

@@ -65,6 +65,9 @@ pub struct PackInfo {
     /// Which survivals are offered: `ours`, `mobile` or `both` (the mobile
     /// one only with its `C2RS/SURVIVE.TXT`, from the player's APK).
     pub survival: String,
+    /// Where each roaming add-on (character index) spawns, as the cooker
+    /// worked it out (`roam.N = AREA3,AREA7`); `None` in older packs.
+    pub roam_areas: Option<HashMap<usize, Vec<String>>>,
 }
 
 impl PackInfo {
@@ -89,6 +92,14 @@ impl PackInfo {
             heap_kb: num("heap_kb", 34 * 1024) as usize,
             heaps: Self::prefixed(&m, "heap."),
             survival: get("survival"),
+            roam_areas: m.contains_key("roam_map").then(|| {
+                m.iter()
+                    .filter_map(|(k, v)| {
+                        let i = k.strip_prefix("roam.")?.parse().ok()?;
+                        Some((i, v.split(',').map(|a| a.trim().to_string()).collect()))
+                    })
+                    .collect()
+            }),
             snow: get("snow")
                 .split(',')
                 .map(str::trim)

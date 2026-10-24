@@ -13,6 +13,9 @@ pub struct PackBackend {
     path: PathBuf,
     file: Mutex<File>,
     entries: Vec<PackEntry>,
+    /// Entry indices sorted by name, for a binary search (a combined
+    /// game's pack has thousands; a map of names would cost the 3DS RAM).
+    by_name: Vec<u32>,
 }
 
 fn io(path: &Path) -> impl FnOnce(std::io::Error) -> VfsError + '_ {
@@ -39,10 +42,13 @@ impl PackBackend {
         let mut index = vec![0u8; index_len];
         file.read_exact(&mut index).map_err(io(&path))?;
         let entries = parse_pack_index(&index, count).map_err(|e| bad(&path, e))?;
+        let mut by_name: Vec<u32> = (0..entries.len() as u32).collect();
+        by_name.sort_by(|&a, &b| entries[a as usize].name.cmp(&entries[b as usize].name));
         Ok(Self {
             path,
             file: Mutex::new(file),
             entries,
+            by_name,
         })
     }
 
@@ -58,9 +64,10 @@ impl Backend for PackBackend {
 
     fn read(&self, path: &str) -> Result<Vec<u8>, VfsError> {
         let e = self
-            .entries
-            .iter()
-            .find(|e| e.name == path)
+            .by_name
+            .binary_search_by(|&i| self.entries[i as usize].name.as_str().cmp(path))
+            .ok()
+            .map(|j| &self.entries[self.by_name[j] as usize])
             .ok_or_else(|| VfsError::NotFound { path: path.into() })?;
         let mut f = self
             .file
