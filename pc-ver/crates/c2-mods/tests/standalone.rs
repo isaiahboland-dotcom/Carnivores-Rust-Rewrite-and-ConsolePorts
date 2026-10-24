@@ -80,10 +80,11 @@ prices {\n start = 100\n area = 30\n dino = 40\n weapon = 7\n}\n.\n";
 
 /// An original-engine standalone: no spawn tables, an AI the base has and
 /// one it hasn't (a patched engine's extra slot); its prices list two
-/// areas, it ships one map.
+/// areas, it ships one map; its hunter in a section of its own (its first
+/// character a menu animal).
 const B_RES: &str = "weapons {\n{\n name = 'Rifle'\n file = 'rifle.car'\n power = 4\n}\n}\n\
-characters {\n{\n name = 'Hunter'\n file = 'hunter.car'\n ai = 0\n}\n\
-{\n name = 'Utahraptor'\n file = 'utah.car'\n ai = 15\n health = 9\n}\n\
+hunterinfo {\n{\n name = 'Hunter'\n file = 'hunter.car'\n ai = 0\n}\n}\n\
+characters {\n{\n name = 'Utahraptor'\n file = 'utah.car'\n ai = 15\n health = 9\n}\n\
 {\n name = 'Big'\n file = 'big.car'\n ai = 19\n health = 50\n danger = TRUE\n}\n}\n\
 prices {\n start = 100\n area = 50\n area = 55\n dino = 60\n dino = 65\n weapon = 9\n}\n.\n";
 

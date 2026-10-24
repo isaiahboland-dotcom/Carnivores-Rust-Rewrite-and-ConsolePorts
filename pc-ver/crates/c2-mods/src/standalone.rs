@@ -122,6 +122,16 @@ fn section_mut<'a>(res: &'a mut ResTxt, name: &str) -> &'a mut Section {
     &mut res.sections[i]
 }
 
+/// A game's hunter entry: its character with AI 0 (the first, in most), else
+/// the first of a `hunterinfo` section (one game keeps it apart, its first
+/// character a menu animal).
+fn game_hunter(res: &ResTxt) -> Option<&Block> {
+    blocks(res, "characters")
+        .iter()
+        .find(|b| b.get(&["ai"]).map(c_atoi).unwrap_or(0) == 0)
+        .or_else(|| blocks(res, "hunterinfo").first())
+}
+
 fn blocks<'a>(res: &'a ResTxt, name: &str) -> &'a [Block] {
     res.section(name)
         .map(|s| s.blocks.as_slice())
@@ -381,13 +391,14 @@ pub fn to_dialect(
             .position(|h| h.name.eq_ignore_ascii_case(&n))
     };
     let mut chars = Vec::new();
-    for (i, b) in blocks(g, "characters").iter().enumerate() {
+    for b in blocks(g, "characters") {
         let mut b = b.clone();
-        if i == 0 {
+        let ai = ai_of(&b);
+        // The hunter (AI 0) as it is.
+        if ai.unwrap_or(0) == 0 {
             chars.push(b);
             continue;
         }
-        let ai = ai_of(&b);
         let name = b.get(&["name"]).map(unquote).unwrap_or_default();
         let slot = slot_of(&b);
         let fits = |d: &Block| match ai {
@@ -825,8 +836,7 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
         let my_areas: Vec<u32> = (1..=g_areas as u32).map(|n| a0 as u32 + n).collect();
 
         // Hunter: its kill animations into the shared model.
-        let g_hunter = blocks(&g.res, "characters")
-            .first()
+        let g_hunter = game_hunter(&g.res)
             .and_then(|b| b.get(&["file"]))
             .map(unquote)
             .and_then(|f| crate::pack::find_path(&g.root, &f))
@@ -957,7 +967,10 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
         // Names already in the game get the game's name after them.
         let mut renames: HashMap<String, String> = HashMap::new();
         let mut added = 0;
-        for b in blocks(&g.res, "characters").iter().skip(1) {
+        for b in blocks(&g.res, "characters")
+            .iter()
+            .filter(|b| b.get(&["ai"]).map(c_atoi).unwrap_or(0) != 0)
+        {
             let mut b = b.clone();
             if let Some(n) = b.get(&["name"]).map(unquote) {
                 let mut u = n.clone();
