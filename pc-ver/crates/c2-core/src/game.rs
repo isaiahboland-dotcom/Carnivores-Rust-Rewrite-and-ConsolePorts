@@ -2888,7 +2888,10 @@ mod tests {
         let cars = [None, Some(&car)];
         let mut out = Vec::new();
         let to = (600.0 * 256.0, 610.0 * 256.0);
-        assert!(hunt.request_teleport(&area, to.0, to.1).is_err(), "off by default");
+        assert!(
+            hunt.request_teleport(&area, to.0, to.1).is_err(),
+            "off by default"
+        );
         hunt.opts.teleport = true;
         hunt.request_teleport(&area, to.0, to.1).expect("starts");
         let run = |hunt: &mut Hunt, ms: i32, out: &mut Vec<GameEvent>| {
@@ -2900,9 +2903,13 @@ mod tests {
         assert!((hunt.player.x - to.0).abs() > 1000.0, "not yet");
         run(&mut hunt, 200, &mut out);
         assert!((hunt.player.x - to.0).abs() < 256.0 && (hunt.player.z - to.1).abs() < 256.0);
-        assert!(hunt.request_teleport(&area, 500.0 * 256.0, 500.0 * 256.0).is_err());
+        assert!(hunt
+            .request_teleport(&area, 500.0 * 256.0, 500.0 * 256.0)
+            .is_err());
         run(&mut hunt, TELEPORT_COOLDOWN_MS, &mut out);
-        assert!(hunt.request_teleport(&area, 500.0 * 256.0, 500.0 * 256.0).is_ok());
+        assert!(hunt
+            .request_teleport(&area, 500.0 * 256.0, 500.0 * 256.0)
+            .is_ok());
         // Not in a survival.
         hunt.start_survival(
             &area,

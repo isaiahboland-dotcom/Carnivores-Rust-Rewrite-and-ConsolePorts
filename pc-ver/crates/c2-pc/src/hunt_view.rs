@@ -1206,6 +1206,10 @@ impl Scene for HuntView {
                 self.kill = None;
             }
         }
+        // The original's trophy plaque says it already: one notice a kill.
+        if self.hunt.trophy_body.is_some() && !self.hunt.opts.trophy {
+            self.kill = None;
+        }
 
         match self.hunt.outcome() {
             Some(Outcome::Exited) if !self.done => {

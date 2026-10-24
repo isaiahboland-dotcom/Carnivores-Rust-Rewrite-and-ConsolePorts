@@ -2,6 +2,11 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-24 — PC: one kill notice
+After a trophy kill the PC showed the original's plaque (`TROPHY_G.TGA`)
+and the kill box added in M10 (after the 3DS's). The box now shows only
+when there is no plaque (tranquilized, or no trophy for that animal).
+
 ## 2026-10-24 — The mobile game's radar and teleporting (options)
 - **Mobile radar** (PC Options > Video, 3DS Settings "Mobile map"): the map
   gets a yellow frame, its view range circle in yellow, and inside it a
