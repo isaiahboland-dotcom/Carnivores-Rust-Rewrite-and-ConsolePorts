@@ -228,3 +228,40 @@ fn standalones_are_renumbered_tied_to_their_maps_and_original_ones_converted() {
         let _ = std::fs::remove_dir_all(d);
     }
 }
+
+/// A dialect game without spawn tables, played on its own, gets the
+/// default ones (else none of its animals would come).
+#[test]
+fn spawnless_dialect_games_get_default_spawns() {
+    let game = tmp("spawnless");
+    let res = "characters {\n{\n name = 'Hunter'\n file = 'hunter.car'\n ai = 0\n}\n\
+{\n name = 'Moth'\n file = 'moth.car'\n ai = 3\n runAnim = 0\n}\n\
+{\n name = 'Raptor'\n file = 'velo.car'\n ai = 15\n runAnim = 0\n killdist = 300\n\
+ deathtype {\n  dieAnim = 2\n }\n}\n}\n\
+prices {\n start = 100\n area = 10\n dino = 20\n}\n.\n";
+    write(&game, &[("HUNTDAT/_RES.TXT", res.as_bytes())]);
+    let v = c2_mods::vanilla(std::slice::from_ref(&game)).expect("vanilla");
+    let out = ResTxt::parse(&String::from_utf8_lossy(
+        &v.read("HUNTDAT/_RES.TXT").expect("res"),
+    ))
+    .expect("parse");
+    assert!(out.section("spawntable").is_some());
+    let chars = &out.section("characters").expect("characters").blocks;
+    let groups = |b: &c2_formats::res_txt::Block| -> Vec<String> {
+        b.subs
+            .iter()
+            .flat_map(|s| {
+                std::iter::once(s)
+                    .chain(s.block.subs.iter())
+                    .filter(|x| x.name == "spawninfo")
+                    .filter_map(|x| x.block.get(&["spawngroup"]).map(str::to_string))
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    };
+    assert_eq!(groups(&chars[1]), ["0"], "ambient");
+    assert_eq!(groups(&chars[2]), ["1", "2"], "random roster, and picked");
+    assert_eq!(chars[2].get(&["callNo"]), Some("0"));
+    assert!(chars[2].subs.iter().any(|s| s.name == "overwrite char0"));
+    let _ = std::fs::remove_dir_all(game);
+}

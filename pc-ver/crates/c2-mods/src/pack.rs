@@ -308,6 +308,11 @@ pub fn vanilla(bases: &[PathBuf]) -> Result<Vfs, ModError> {
     if let Some(l) = crate::ice_age::layer(&v)? {
         v.push(crate::ice_age::LAYER, Box::new(l));
     }
+    // A dialect game without spawn tables (an engine placing by its own
+    // rules): the Modder's Edition's default ones, so its animals come.
+    if let Some(l) = crate::standalone::spawn_layer(&v)? {
+        v.push(crate::standalone::SPAWN_LAYER, Box::new(l));
+    }
     Ok(v)
 }
 

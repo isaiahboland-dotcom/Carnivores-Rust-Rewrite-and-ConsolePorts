@@ -33,9 +33,13 @@ pub enum VfsError {
 
 /// Normalised lookup key: `/` separators, lower case, no leading `./` or `/`.
 pub fn key(path: &str) -> String {
+    // Empty and `.` parts dropped: Windows (the games' home) reads
+    // `ANIMALS//X.car` as `ANIMALS/X.car`, and some games write it so.
     path.replace('\\', "/")
-        .trim_start_matches("./")
-        .trim_start_matches('/')
+        .split('/')
+        .filter(|p| !p.is_empty() && *p != ".")
+        .collect::<Vec<_>>()
+        .join("/")
         .to_ascii_lowercase()
 }
 
@@ -227,6 +231,12 @@ impl Vfs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keys_ignore_doubled_and_dot_parts() {
+        assert_eq!(key("ANIMALS//A/./x.CAR"), "animals/a/x.car");
+        assert_eq!(key("./HUNTDAT\\Menu\\m.tga"), "huntdat/menu/m.tga");
+    }
 
     fn mem(files: &[(&str, &str)]) -> Box<dyn Backend> {
         let mut m = MemBackend::new();

@@ -453,6 +453,95 @@ pub fn to_dialect(
     (out, notes)
 }
 
+/// The layer [`spawn_layer`] makes.
+pub const SPAWN_LAYER: &str = "default spawn tables";
+
+/// The Modder's Edition's three default spawn groups (its `_RES.TXT`'s
+/// `spawntable`): ambients, a random roster, the picked animals.
+const DEFAULT_SPAWNTABLE: &str = "spawntable {\n spawngroup {\n  spawnmax = 6\n  spawnmin = 0\n  spawnrate = 1\n  densityMulti = 2\n  moveForward = TRUE\n }\n spawngroup {\n  spawnmax = 4\n  spawnmin = 0\n  spawnrate = 1\n  randomise = TRUE\n }\n spawngroup {\n  spawnmax = 13\n  spawnmin = 12\n  spawnrate = 0.5\n  densityMulti = 4\n }\n}\n.\n";
+
+/// For a game read in the dialect (it has its animation keys) but without
+/// spawn tables, nothing would be placed: its `_RES.TXT` with the
+/// Modder's Edition's default spawn groups, each ambient (AI below 10) in
+/// the ambients' group and each huntable in the random roster, and in the
+/// picked group when picked (`overwrite charN`, its menu slot as `callNo`).
+pub fn spawn_layer(vfs: &Vfs) -> Result<Option<MemBackend>> {
+    let Ok(data) = vfs.read("HUNTDAT/_RES.TXT") else {
+        return Ok(None);
+    };
+    let mut res = ResTxt::parse(&String::from_utf8_lossy(&data))?;
+    let has_table = res
+        .sections
+        .iter()
+        .any(|s| s.name.to_ascii_lowercase().contains("spawntable"));
+    if !c2_formats::mee::is_dialect(&res) || has_table {
+        return Ok(None);
+    }
+    let menu = match vfs.read("HUNTDAT/_MENU.TXT") {
+        Ok(d) => MenuData::from_res(&ResTxt::parse(&String::from_utf8_lossy(&d))?),
+        Err(_) => MenuData::from_res(&res),
+    };
+    let spawn = |group: usize| Sub {
+        name: "spawninfo".into(),
+        at: 0,
+        block: Block {
+            entries: vec![
+                Entry {
+                    key: "spawngroup".into(),
+                    value: group.to_string(),
+                },
+                Entry {
+                    key: "spawnratio".into(),
+                    value: "1".into(),
+                },
+            ],
+            subs: Vec::new(),
+        },
+    };
+    if let Some(sec) = res
+        .sections
+        .iter_mut()
+        .find(|s| s.name.eq_ignore_ascii_case("characters"))
+    {
+        for b in sec.blocks.iter_mut().skip(1) {
+            if crate::loose::has_spawns(b) {
+                continue;
+            }
+            let ai = b.get(&["ai"]).map(c_atoi).unwrap_or(0);
+            let at = b.entries.len();
+            if ai < 10 {
+                b.subs.push(Sub { at, ..spawn(0) });
+                continue;
+            }
+            let name = b.get(&["name"]).map(unquote).unwrap_or_default();
+            let slot = menu
+                .huntables
+                .iter()
+                .position(|h| h.name.eq_ignore_ascii_case(&name));
+            b.subs.push(Sub { at, ..spawn(1) });
+            if let Some(n) = slot {
+                if b.get(&["callNo"]).is_none() {
+                    set(b, "callNo", n.to_string());
+                }
+                let n = b.get(&["callNo"]).map(c_atoi).unwrap_or(n as i32);
+                b.subs.push(Sub {
+                    name: format!("overwrite char{n}"),
+                    at: b.entries.len(),
+                    block: Block {
+                        entries: Vec::new(),
+                        subs: vec![spawn(2)],
+                    },
+                });
+            }
+        }
+    }
+    let table = ResTxt::parse(DEFAULT_SPAWNTABLE)?;
+    res.sections.extend(table.sections);
+    let mut m = MemBackend::new();
+    m.insert("HUNTDAT/_RES.TXT", res.write().into_bytes());
+    Ok(Some(m))
+}
+
 /// A donor's slot condition (`overwrite char5 { ... spawninfo{} }`) as one
 /// for slot `n`: only its spawn part (its other keys are the donor's own).
 fn slot_condition(s: &mut Sub, donor_slot: Option<i32>, n: usize) {

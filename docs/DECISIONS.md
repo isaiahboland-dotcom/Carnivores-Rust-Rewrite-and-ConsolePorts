@@ -2,6 +2,19 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-23 — Fixes from the first 3DS baseline run
+- **Doubled slashes in paths** (`ANIMALS/X//Y/m.car`, written so by one
+  standalone): Windows reads them as one, so the VFS key drops empty and
+  `.` parts (`c2_vfs::key`). Those models were left out of 3DS packs (the
+  pack check reported them on every hunt).
+- **A dialect game without spawn tables, played alone** (one standalone
+  uses the dialect's animation keys but its own engine's placement): no
+  animal came. `c2_mods::vanilla` adds a layer (`standalone::spawn_layer`)
+  with the Modder's Edition's three default spawn groups (ambients, random
+  roster, picked), each ambient in the first, each huntable in the second
+  and, picked, the third (`overwrite charN`, its menu slot as `callNo`).
+  Entries with their own spawn blocks are left as they are.
+
 ## 2026-10-23 — `.cia` art from the game's own menu picture
 - Owner's request: when no icon or banner is picked, they are made from a
   game's main menu picture (`MENU/MENUM.TGA`) on the player's machine, at
