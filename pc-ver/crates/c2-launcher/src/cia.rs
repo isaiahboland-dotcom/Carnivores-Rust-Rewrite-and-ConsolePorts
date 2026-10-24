@@ -5,7 +5,9 @@
 //! reads to find its `sdmc:/3ds/<name>/` folder.
 //!
 //! The home-menu icon, banner and banner sound are the user's own files;
-//! until they are set, plain placeholders are made here (no artwork).
+//! until they are set, the icon and banner are made from a game's own main
+//! menu picture on the player's machine ([`game_art`]), else plain
+//! placeholders (no artwork in this project).
 
 use std::path::{Path, PathBuf};
 
@@ -32,6 +34,9 @@ pub struct Cia<'a> {
     pub icon: Option<&'a Path>,
     pub banner: Option<&'a Path>,
     pub sound: Option<&'a Path>,
+    /// A game folder to take the icon and banner from when they aren't
+    /// set ([`game_art`]); placeholders without one.
+    pub art_from: Option<&'a Path>,
     /// Where the build's files go.
     pub work: PathBuf,
     pub out: PathBuf,
@@ -115,6 +120,82 @@ fn png(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
     out
 }
 
+/// A game's TGA (any case, under its game folder) as RGBA8.
+fn tga(root: &Path, rel: &str) -> Option<(usize, usize, Vec<u8>)> {
+    let p = c2_mods::pack::find_path(root, rel)?;
+    let t = c2_formats::tga::parse(&std::fs::read(p).ok()?).ok()?;
+    let px = t
+        .pixels
+        .iter()
+        .flat_map(|&v| {
+            let c = |s: u16| (((v >> s) & 31) as u32 * 255 / 31) as u8;
+            [c(10), c(5), c(0), 255]
+        })
+        .collect();
+    Some((t.width, t.height, px))
+}
+
+/// The `(x, y, w, h)` part of an RGBA8 image (`width` wide) scaled to
+/// `(tw, th)`, each pixel the mean of the ones it covers.
+fn scaled(
+    px: &[u8],
+    width: usize,
+    (x, y, w, h): (usize, usize, usize, usize),
+    (tw, th): (u32, u32),
+) -> Vec<u8> {
+    let (tw, th) = (tw as usize, th as usize);
+    let mut out = Vec::with_capacity(tw * th * 4);
+    for ty in 0..th {
+        let (y0, y1) = (
+            y + ty * h / th,
+            (y + (ty + 1) * h / th).max(y + ty * h / th + 1),
+        );
+        for tx in 0..tw {
+            let (x0, x1) = (
+                x + tx * w / tw,
+                (x + (tx + 1) * w / tw).max(x + tx * w / tw + 1),
+            );
+            let mut sum = [0u32; 4];
+            let mut n = 0;
+            for sy in y0..y1 {
+                for sx in x0..x1 {
+                    if let Some(p) = px.get((sy * width + sx) * 4..(sy * width + sx) * 4 + 4) {
+                        for (a, &b) in sum.iter_mut().zip(p) {
+                            *a += u32::from(b);
+                        }
+                        n += 1;
+                    }
+                }
+            }
+            out.extend(sum.map(|v| (v / n.max(1)) as u8));
+        }
+    }
+    out
+}
+
+/// Home-menu art from a game's own main menu picture (`MENU/MENUM.TGA`),
+/// made on the player's machine (nothing of it is kept in this project):
+/// the banner from its top band at 2:1 (the logo and the menu's dinosaur;
+/// below the name / account bar), the icon a square round the menu's
+/// dinosaur (on the right, as the menus have it). `(icon, banner)` as
+/// PNGs; `None` if the game has no such picture.
+pub fn game_art(game: &Path) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
+    let Some((w, h, px)) =
+        c2_mods::pack::find_game_root(game).and_then(|root| tga(&root, "HUNTDAT/MENU/MENUM.TGA"))
+    else {
+        return (None, None);
+    };
+    let top = h * 4 / 100;
+    let bh = (w / 2).min(h - top);
+    let banner = png(BANNER.0, BANNER.1, &scaled(&px, w, (0, top, w, bh), BANNER));
+    let side = (h / 2).min(w);
+    let (cx, cy) = (w * 7 / 10, h * 45 / 100);
+    let x = cx.saturating_sub(side / 2).min(w - side);
+    let y = cy.saturating_sub(side / 2).min(h - side);
+    let icon = png(ICON.0, ICON.1, &scaled(&px, w, (x, y, side, side), ICON));
+    (Some(icon), Some(banner))
+}
+
 /// A plain placeholder: the menus' olive with a gold edge.
 fn placeholder((w, h): (u32, u32)) -> Vec<u8> {
     let mut px = Vec::with_capacity((w * h * 4) as usize);
@@ -176,8 +257,17 @@ pub fn steps(c: &Cia<'_>) -> Vec<Step> {
             w.join(made)
         }
     };
-    let icon = file(c.icon, "icon.png", placeholder(ICON));
-    let banner = file(c.banner, "banner.png", placeholder(BANNER));
+    let (art_icon, art_banner) = c.art_from.map(game_art).unwrap_or_default();
+    let icon = file(
+        c.icon,
+        "icon.png",
+        art_icon.unwrap_or_else(|| placeholder(ICON)),
+    );
+    let banner = file(
+        c.banner,
+        "banner.png",
+        art_banner.unwrap_or_else(|| placeholder(BANNER)),
+    );
     let sound = file(c.sound, "banner.wav", silence());
     let bt = c.bannertool.clone();
     steps.push(Step::Run {

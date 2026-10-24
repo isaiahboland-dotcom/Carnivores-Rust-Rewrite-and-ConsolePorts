@@ -112,7 +112,8 @@ source tree, its top folder works too; the files are ignored by git). On Linux a
 executable (`chmod +x makerom bannertool`). The `.cia` is built from `c2-3ds.elf`, which comes with
 `c2-3ds.3dsx`. Each install name gets its own title ID and keeps using `sdmc:/3ds/<name>/` for its packs
 and saves. The home-menu icon (48x48 PNG), banner (256x128 PNG) and banner sound (WAV/OGG, up to 3 s)
-are your own files, picked in the 3DS tab; until you pick them, plain placeholders are used.
+are your own files, picked in the 3DS tab; until you pick them, the icon and banner are made from a game's
+own main menu picture (the base game's or a standalone's, chosen there), else plain placeholders.
 
 Hunt mode directly (debugging): `cargo run --release -p c2-pc -- hunt ../source/c2-original/HUNTDAT/AREAS/AREA1.MAP` —
 click to capture the mouse, `WASD` move, mouse look, `LMB` fire, `E` show/hide weapon, `1`-`6` choose weapon, `Q` weapon-pick screen (lists every carried weapon),

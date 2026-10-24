@@ -159,6 +159,21 @@ pub struct ThreeDs {
     pub banner_sound: Option<PathBuf>,
     /// The title screen: Ice Age's art instead of Carnivores 2's.
     pub ice_age_title: bool,
+    /// Icon and banner not set: taken from this game's menu pictures
+    /// (`ArtFrom`).
+    pub art_from: ArtFrom,
+}
+
+/// Where a `.cia`'s icon and banner come from when not picked.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum ArtFrom {
+    /// The base game's menu pictures.
+    #[default]
+    Base,
+    /// A standalone game's (its folder).
+    Game(PathBuf),
+    /// Plain placeholders.
+    Plain,
 }
 
 impl Default for ThreeDs {
@@ -175,6 +190,7 @@ impl Default for ThreeDs {
             banner: None,
             banner_sound: None,
             ice_age_title: false,
+            art_from: ArtFrom::Base,
         }
     }
 }

@@ -574,6 +574,11 @@ impl Launcher {
                 icon: t.icon.as_deref(),
                 banner: t.banner.as_deref(),
                 sound: t.banner_sound.as_deref(),
+                art_from: match &t.art_from {
+                    crate::config::ArtFrom::Base => Some(base.as_path()),
+                    crate::config::ArtFrom::Game(g) => Some(g.as_path()),
+                    crate::config::ArtFrom::Plain => None,
+                },
                 work: crate::config::data_dir().join("cia").join(&name),
                 out: out.join("cia").join(format!("{name}.cia")),
             }));
@@ -1052,7 +1057,7 @@ impl Launcher {
                                 }
                             }
                         }
-                        None => help(ui, "plain placeholder"),
+                        None => help(ui, "from the game below"),
                     }
                     if ui.button("Browse...").clicked() {
                         if let Some(p) =
@@ -1068,6 +1073,41 @@ impl Launcher {
                     }
                 });
             }
+            // Not picked: from a game's own menu pictures.
+            use crate::config::ArtFrom;
+            let label = |a: &ArtFrom| match a {
+                ArtFrom::Base => "the base game".to_string(),
+                ArtFrom::Plain => "plain placeholders".to_string(),
+                ArtFrom::Game(g) => g.file_name().map_or_else(
+                    || g.display().to_string(),
+                    |n| n.to_string_lossy().into_owned(),
+                ),
+            };
+            let mut choices = vec![ArtFrom::Base];
+            choices.extend(
+                self.cfg
+                    .standalones
+                    .iter()
+                    .map(|s| ArtFrom::Game(s.path.clone())),
+            );
+            choices.push(ArtFrom::Plain);
+            let t = &mut self.cfg.three_ds;
+            ui.horizontal(|ui| {
+                ui.label("Icon and banner not picked: from");
+                egui::ComboBox::from_id_salt("art_from")
+                    .selected_text(label(&t.art_from))
+                    .show_ui(ui, |ui| {
+                        for c in choices {
+                            let l = label(&c);
+                            changed |= ui.selectable_value(&mut t.art_from, c, l).changed();
+                        }
+                    });
+            });
+            help(
+                ui,
+                "Made from that game's main menu picture on this computer: the banner its top \
+                 (logo and dinosaur), the icon its dinosaur.",
+            );
         });
         changed
     }

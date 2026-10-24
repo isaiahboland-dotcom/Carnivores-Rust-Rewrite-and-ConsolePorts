@@ -2,6 +2,18 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-23 — `.cia` art from the game's own menu picture
+- Owner's request: when no icon or banner is picked, they are made from a
+  game's main menu picture (`MENU/MENUM.TGA`) on the player's machine, at
+  build time; nothing is kept in the project. The banner (256x128) is its
+  top band at 2:1 below the name / account bar (the logo and the menu's
+  dinosaur); the icon (48x48) a square round the dinosaur (centre at 70%
+  across, 45% down; every menu checked has it there). Box-filtered down.
+- Which game: the 3DS tab's "from" choice: the base game (default), any
+  standalone in the list, or plain placeholders. A picked file still wins.
+- Tried and dropped: the last animal's menu picture as the icon (one game's
+  is a camouflage pattern) and the middle band as the banner (cut the logo).
+
 ## 2026-10-23 — M16: standalones in the launcher
 - **PC**: the Add-ons tab lists standalone games (a folder each, as
   extracted; on / off); Play passes the enabled ones as `--standalone`, so
