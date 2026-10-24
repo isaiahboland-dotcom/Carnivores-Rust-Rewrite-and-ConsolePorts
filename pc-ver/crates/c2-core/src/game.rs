@@ -20,10 +20,12 @@ use crate::trace::{trace_look, trace_shot, Hit};
 use c2_formats::sav::{Save, TrophyItem};
 
 mod survival;
+mod teleport;
 pub use survival::{
     dangerous, dangerous_ai, is_trex, modded, MobileWaves, Survival, SurvivalKind, SurvivalOptions,
     TREX_WAVE, WAVE_HEALTH,
 };
+pub use teleport::{Teleport, COOLDOWN_MS as TELEPORT_COOLDOWN_MS, DELAY_MS as TELEPORT_DELAY_MS};
 
 /// `MAX_HEALTH`.
 pub const MAX_HEALTH: i32 = 128_000;
@@ -441,6 +443,8 @@ pub struct HuntOptions {
     /// Stealth crouch (a 3DS setting): crouched, the hunter is half as easy
     /// to see and his shots carry half as far.
     pub stealth: bool,
+    /// Teleporting by the map (the mobile game's, a setting).
+    pub teleport: bool,
 }
 
 impl Default for HuntOptions {
@@ -465,6 +469,7 @@ impl Default for HuntOptions {
             no_call_bonus: Bits::NONE,
             notice_k: 1.0,
             stealth: false,
+            teleport: false,
         }
     }
 }
@@ -593,6 +598,8 @@ pub struct Hunt {
     /// much longer after a kill (`TrophyTime`, ms; 0 = while in range).
     pub trophy_body: Option<usize>,
     pub trophy_time: i32,
+    /// A teleport under way or cooling down ([`Hunt::request_teleport`]).
+    pub teleport: Teleport,
 }
 
 /// What the binoculars show about the animal in the cross-hairs.
@@ -680,6 +687,7 @@ impl Hunt {
             answer: None,
             trophy_body: None,
             trophy_time: 0,
+            teleport: Teleport::default(),
             player,
             herd,
             weapons,
@@ -924,6 +932,7 @@ impl Hunt {
         }
         self.exit_step(dt);
         self.survival_step(area, dt, out);
+        self.teleport_step(area, dt, out);
         if (self.opts.observer || self.opts.trophy) && self.health > 0 {
             self.health = MAX_HEALTH;
         }
@@ -2871,6 +2880,39 @@ mod tests {
         };
         assert!(!at(500.0) && !at(40.0));
         assert!(at(20.0) && at(990.0), "outside the hunter's 36..980");
+    }
+
+    #[test]
+    fn teleport_takes_five_seconds_then_cools_down_a_minute() {
+        let (area, mut hunt, car) = setup(false);
+        let cars = [None, Some(&car)];
+        let mut out = Vec::new();
+        let to = (600.0 * 256.0, 610.0 * 256.0);
+        assert!(hunt.request_teleport(&area, to.0, to.1).is_err(), "off by default");
+        hunt.opts.teleport = true;
+        hunt.request_teleport(&area, to.0, to.1).expect("starts");
+        let run = |hunt: &mut Hunt, ms: i32, out: &mut Vec<GameEvent>| {
+            for _ in 0..ms / 10 {
+                hunt.tick(&area, &cars, &HuntInput::default(), 10, out);
+            }
+        };
+        run(&mut hunt, 4_900, &mut out);
+        assert!((hunt.player.x - to.0).abs() > 1000.0, "not yet");
+        run(&mut hunt, 200, &mut out);
+        assert!((hunt.player.x - to.0).abs() < 256.0 && (hunt.player.z - to.1).abs() < 256.0);
+        assert!(hunt.request_teleport(&area, 500.0 * 256.0, 500.0 * 256.0).is_err());
+        run(&mut hunt, TELEPORT_COOLDOWN_MS, &mut out);
+        assert!(hunt.request_teleport(&area, 500.0 * 256.0, 500.0 * 256.0).is_ok());
+        // Not in a survival.
+        hunt.start_survival(
+            &area,
+            SurvivalOptions {
+                roster: vec![1],
+                ..Default::default()
+            },
+        );
+        hunt.cancel_teleport();
+        assert!(!hunt.can_teleport());
     }
 
     #[test]
