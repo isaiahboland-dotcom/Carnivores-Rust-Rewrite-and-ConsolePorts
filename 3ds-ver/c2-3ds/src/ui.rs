@@ -37,6 +37,8 @@ const LOCAL_SPAN: f32 = 64.0;
 /// With teleporting on, the map's zoom button (a tap elsewhere teleports).
 const MAP_ZOOM: [f32; 4] = [MAP[0] + MAP[2] - 22.0, MAP[1] + MAP[3] - 22.0, 20.0, 20.0];
 const YELLOW: Rgba = [250, 215, 40, 255];
+/// With a teleport spot picked: go there.
+const CONFIRM: [f32; 4] = [MAP[0] + 3.0, MAP[1] + 3.0, 72.0, 20.0];
 
 /// The map's view: world units per map pixel's origin `(ox, oy)` (map
 /// pixels, 4 cells each) and screen pixels per map pixel; zoomed in, it
@@ -67,8 +69,10 @@ pub enum Tap {
     /// Select this call (AI); calls if it was already selected.
     Call(i32),
     MapZoom,
-    /// Teleport to this spot (world x, z), with teleporting on.
+    /// Put the teleport circle on this spot (world x, z), teleporting on.
     MapPoint(f32, f32),
+    /// Teleport to the circle.
+    TeleportConfirm,
     Binoculars,
     Pause,
     /// Use an extra ammo refill.
@@ -86,6 +90,8 @@ pub struct Ui {
     /// Settings: the mobile game's map look; teleporting by the map.
     map_mobile: bool,
     teleport: bool,
+    /// The teleport spot picked (world x, z), waiting for Confirm.
+    pub teleport_pick: Option<(f32, f32)>,
     /// The trophy room: area names (map n at n - 1) and weapon names, for
     /// the plaque.
     trophy_names: Option<(Vec<String>, Vec<String>)>,
@@ -139,6 +145,7 @@ impl Ui {
             map_local: true,
             map_mobile: game.setup.map_mobile,
             teleport: game.hunt.can_teleport(),
+            teleport_pick: None,
             trophy_names,
         }
     }
@@ -154,6 +161,9 @@ impl Ui {
             return self.calls.get(i).map(|c| Tap::Call(c.0));
         }
         if inside(MAP, x, y) {
+            if self.teleport_pick.is_some() && inside(CONFIRM, x, y) {
+                return Some(Tap::TeleportConfirm);
+            }
             if self.teleport && !inside(MAP_ZOOM, x, y) {
                 let (ox, oy, k) = map_view(game, self.map_local);
                 let w = |s: f32, o: f32, m: f32| (o + (s - m) / k) * 4.0 * CELL;
@@ -283,10 +293,34 @@ impl Ui {
             c.flush(gpu);
             let z = if self.map_local { "-" } else { "+" };
             c.text_c(gpu, MAP_ZOOM[0] + 10.0, MAP_ZOOM[1] + 6.0, 1.0, WHITE, z);
+            // The spot picked: a circle, and Confirm.
+            if let Some((wx, wz)) = self.teleport_pick {
+                let (ox, oy, k) = map_view(game, self.map_local);
+                let s = |w: f32, o: f32, m: f32| m + (w / (4.0 * CELL) - o) * k;
+                let (sx, sy) = (s(wx, ox, MAP[0]), s(wz, oy, MAP[1]));
+                for i in 0..24 {
+                    let a = i as f32 / 24.0 * std::f32::consts::TAU;
+                    let (x, y) = (sx + a.cos() * 6.0, sy + a.sin() * 6.0);
+                    if inside(MAP, x, y) {
+                        c.rect([x - 1.0, y - 1.0, 2.0, 2.0], YELLOW);
+                    }
+                }
+                c.rect(CONFIRM, HILITE);
+                c.flush(gpu);
+                c.text_c(
+                    gpu,
+                    CONFIRM[0] + CONFIRM[2] / 2.0,
+                    CONFIRM[1] + 6.0,
+                    1.0,
+                    WHITE,
+                    "Confirm",
+                );
+            }
             let t = &game.hunt.teleport;
-            let status = match (t.pending, t.cooldown) {
-                (Some((_, ms)), _) => format!("Teleport in {}s", (ms + 999) / 1000),
-                (None, ms) if ms > 0 => format!("Teleport: {}s", (ms + 999) / 1000),
+            let status = match (t.pending, t.cooldown, self.teleport_pick) {
+                (Some((_, ms)), _, _) => format!("Teleport in {}s", (ms + 999) / 1000),
+                (None, ms, _) if ms > 0 => format!("Teleport: {}s", (ms + 999) / 1000),
+                (None, _, Some(_)) => "Confirm, or tap elsewhere".into(),
                 _ => "Tap the map: teleport".into(),
             };
             c.text(
@@ -563,8 +597,8 @@ fn draw_map(
     let (hx, hy) = to_screen(px(p.x), px(p.z));
     let r = px(h.opts.view_r as f32 * CELL) * k;
     if mobile {
-        // The mobile game's: what the hunter sees as a yellow cone (the top
-        // screen's 90 degrees, out to the view range), kept on the map.
+        // The mobile game's: what the hunter sees as a yellow slice of the
+        // view range circle (the top screen's 90 degrees), kept on the map.
         let half = std::f32::consts::FRAC_PI_4;
         let rim = |a: f32| {
             let (s, co) = (p.alpha + a).sin_cos();
@@ -574,9 +608,13 @@ fn draw_map(
             ]
         };
         let fill = [YELLOW[0], YELLOW[1], YELLOW[2], 110];
-        // (The fan closes its rim: the centre as the last point keeps it one
-        // triangle.)
-        c.fan([hx, hy], &[rim(-half), rim(half), [hx, hy]], fill, fill);
+        // Its rounded edge along the circle; the fan closes its rim, so the
+        // centre as the last point adds nothing.
+        let mut edge: Vec<[f32; 2]> = (0..=12)
+            .map(|i| rim(-half + 2.0 * half * i as f32 / 12.0))
+            .collect();
+        edge.push([hx, hy]);
+        c.fan([hx, hy], &edge, fill, fill);
     }
     let mut dot = |x: f32, y: f32, s: f32, col: Rgba| {
         if inside(MAP, x, y) {
@@ -584,12 +622,15 @@ fn draw_map(
         }
     };
     // View range circle.
-    for i in 0..48 {
-        if mobile {
-            break;
-        }
-        let a = i as f32 / 48.0 * std::f32::consts::TAU;
-        dot(hx + a.cos() * r, hy + a.sin() * r, 1.5, [0, 144, 0, 255]);
+    // Yellow and a line in the mobile look, the original's green dots else.
+    let (n, ring) = if mobile {
+        (96, YELLOW)
+    } else {
+        (48, [0, 144, 0, 255])
+    };
+    for i in 0..n {
+        let a = i as f32 / n as f32 * std::f32::consts::TAU;
+        dot(hx + a.cos() * r, hy + a.sin() * r, 1.5, ring);
     }
     // Animals within view range: the hunted ones green (roaming add-ons,
     // which have no call, blue with a gold rim), other huntable ones

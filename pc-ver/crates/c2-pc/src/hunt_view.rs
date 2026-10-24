@@ -119,8 +119,10 @@ pub struct HuntView {
     map_heading: bool,
     /// The map drawn as the mobile game's (PC setting).
     map_mobile: bool,
-    /// Teleporting: the marker on the open map (world x, z).
+    /// Teleporting: the marker on the open map (world x, z), and the spot
+    /// picked (a circle) waiting for Enter.
     map_cursor: Option<(f32, f32)>,
+    teleport_pick: Option<(f32, f32)>,
     call_imgs: Vec<Option<usize>>,
     /// The trophy plaque (`TROPHY.TGA` in the room, `TROPHY_G.TGA` after a
     /// kill) and the room's "Esc to exit" banner (`TROPHY_E.TGA`).
@@ -313,6 +315,7 @@ impl HuntView {
             map_heading: setup.pc.map_heading != 0,
             map_mobile: setup.pc.map_mobile != 0,
             map_cursor: None,
+            teleport_pick: None,
             call_imgs,
             plaque_img,
             pause_img,
@@ -1145,7 +1148,7 @@ impl Scene for HuntView {
             ..self.pending
         };
         // Teleporting: with the map open the mouse moves its marker (not
-        // the view) and fire picks the spot.
+        // the view), fire puts the circle on a spot, Enter goes there.
         if self.hunt.map_mode && self.hunt.can_teleport() {
             let p = &self.hunt.player;
             let (mut x, mut z) = self.map_cursor.unwrap_or((p.x, p.z));
@@ -1158,14 +1161,22 @@ impl Scene for HuntView {
             hin.controls.mouse = (0.0, 0.0);
             hin.fire = false;
             if pressed(k.fire) {
-                let msg = match self.hunt.request_teleport(self.view.area(), x, z) {
+                self.teleport_pick = Some((x, z));
+            }
+            if let (Some((px, pz)), true) = (
+                self.teleport_pick,
+                input.pressed(KeyCode::Enter) && !self.hunt.show_exit(),
+            ) {
+                let msg = match self.hunt.request_teleport(self.view.area(), px, pz) {
                     Ok(()) => "Teleporting...".to_string(),
                     Err(e) => e,
                 };
                 self.message = Some((msg, 2.0));
+                self.teleport_pick = None;
             }
         } else {
             self.map_cursor = None;
+            self.teleport_pick = None;
         }
 
         self.acc_ms = (self.acc_ms + dt * 1000.0).min(250.0);
@@ -1440,36 +1451,40 @@ impl Scene for HuntView {
                     ] {
                         sprites.extend(self.hud.rect(x, y, w, h, yellow));
                     }
-                    let half = 0.8f32.atan();
-                    let tip =
-                        |a: f32| (ccx + (p.alpha + a).sin() * r, ccy - (p.alpha + a).cos() * r);
-                    sprites.extend(cone(
+                    sprites.extend(sector(
                         &self.hud,
-                        [(ccx, ccy), tip(-half), tip(half)],
+                        (ccx, ccy),
+                        r,
+                        (p.alpha, 0.8f32.atan()),
                         (ox, oy),
                         scale,
                         [1.0, 0.85, 0.1, 0.45],
                     ));
                 }
-                for i in 0..48 {
-                    if self.map_mobile {
-                        break;
-                    }
-                    let a = i as f32 / 48.0 * std::f32::consts::TAU;
+                // The view range circle (yellow in the mobile look).
+                let (ring, shade) = if self.map_mobile {
+                    (yellow, [0.3, 0.25, 0.0, 1.0])
+                } else {
+                    ([0.0, 0.56, 0.0, 1.0], [0.0, 0.12, 0.0, 1.0])
+                };
+                // A line in the mobile look, the original's dots otherwise.
+                let n = if self.map_mobile { 128 } else { 48 };
+                for i in 0..n {
+                    let a = i as f32 / n as f32 * std::f32::consts::TAU;
                     let (px, py) = (ccx + a.cos() * r, ccy + a.sin() * r);
                     sprites.extend(self.hud.rect(
                         ox + (px + 1.0) * scale,
                         oy + (py + 1.0) * scale,
                         scale,
                         scale,
-                        [0.0, 0.12, 0.0, 1.0],
+                        shade,
                     ));
                     sprites.extend(self.hud.rect(
                         ox + px * scale,
                         oy + py * scale,
                         scale,
                         scale,
-                        [0.0, 0.56, 0.0, 1.0],
+                        ring,
                     ));
                 }
                 sprites.extend(dot(ccx + 1.0, ccy + 1.0, [0.25, 0.0, 0.0, 1.0]));
@@ -1485,11 +1500,26 @@ impl Scene for HuntView {
                     for (dx, dy) in [(-3.0, 0.0), (3.0, 0.0), (0.0, -3.0), (0.0, 3.0), (0.0, 0.0)] {
                         sprites.extend(dot(mx + dx, my + dy, [1.0, 1.0, 1.0, 1.0]));
                     }
+                    // The spot picked: a circle.
+                    if let Some((x, z)) = self.teleport_pick {
+                        let (cx, cy) = (x / 1024.0, z / 1024.0);
+                        for i in 0..24 {
+                            let a = i as f32 / 24.0 * std::f32::consts::TAU;
+                            sprites.extend(dot(
+                                cx + a.cos() * 4.0,
+                                cy + a.sin() * 4.0,
+                                [1.0, 0.85, 0.1, 1.0],
+                            ));
+                        }
+                    }
                     let t = &self.hunt.teleport;
-                    let status = match (t.pending, t.cooldown) {
-                        (Some((_, ms)), _) => format!("Teleporting in {}s", (ms + 999) / 1000),
-                        (None, ms) if ms > 0 => format!("Teleport ready in {}s", (ms + 999) / 1000),
-                        _ => "Click to teleport there".into(),
+                    let status = match (t.pending, t.cooldown, self.teleport_pick) {
+                        (Some((_, ms)), _, _) => format!("Teleporting in {}s", (ms + 999) / 1000),
+                        (None, ms, _) if ms > 0 => {
+                            format!("Teleport ready in {}s", (ms + 999) / 1000)
+                        }
+                        (None, _, Some(_)) => "Enter: teleport to the circle".into(),
+                        _ => "Click a spot to teleport to".into(),
                     };
                     let px = 8.0 * scale.max(1.0).round();
                     sprites.extend(
@@ -1694,38 +1724,51 @@ fn local_clock() -> (i32, i32, i32, i32, i32) {
     )
 }
 
-/// A filled triangle `[a, b, c]` in map pixels (from the map's corner
-/// `origin`, `scale` screen pixels each), as one-pixel rows.
-fn cone(
+/// A filled pie slice in map pixels (from the map's corner `origin`,
+/// `scale` screen pixels each): centre `c`, radius `r`, facing `alpha`
+/// (the hunter's heading), `half` either side; as one-pixel runs.
+fn sector(
     hud: &Hud,
-    [a, b, c]: [(f32, f32); 3],
+    c: (f32, f32),
+    r: f32,
+    (alpha, half): (f32, f32),
     origin: (f32, f32),
     scale: f32,
     color: [f32; 4],
 ) -> Vec<Sprite> {
+    use std::f32::consts::{PI, TAU};
     let mut out = Vec::new();
-    let (y0, y1) = (a.1.min(b.1).min(c.1), a.1.max(b.1).max(c.1));
-    let mut y = y0.floor();
-    while y <= y1 {
-        let yc = y + 0.5;
-        let xs: Vec<f32> = [(a, b), (b, c), (c, a)]
-            .iter()
-            .filter(|(p, q)| (p.1 <= yc) != (q.1 <= yc))
-            .map(|(p, q)| p.0 + (yc - p.1) / (q.1 - p.1) * (q.0 - p.0))
-            .collect();
-        if let (Some(&l), Some(&r)) = (
-            xs.iter().min_by(|p, q| p.total_cmp(q)),
-            xs.iter().max_by(|p, q| p.total_cmp(q)),
-        ) {
-            out.extend(hud.rect(
-                origin.0 + l * scale,
-                origin.1 + y * scale,
-                (r - l).max(1.0) * scale,
-                scale,
-                color,
-            ));
+    let inside = |x: f32, y: f32| {
+        let (dx, dy) = (x - c.0, y - c.1);
+        if dx * dx + dy * dy > r * r {
+            return false;
         }
-        y += 1.0;
+        // Heading `alpha`: forward is (sin, -cos) on the map.
+        let a = (dx.atan2(-dy) - alpha + PI).rem_euclid(TAU) - PI;
+        a.abs() <= half
+    };
+    let n = r.ceil() as i32 + 1;
+    for j in -n..=n {
+        let y = (c.1 + j as f32).floor();
+        let mut run: Option<f32> = None;
+        for i in -n..=n + 1 {
+            let x = (c.0 + i as f32).floor();
+            let on = i <= n && inside(x + 0.5, y + 0.5);
+            match (on, run) {
+                (true, None) => run = Some(x),
+                (false, Some(x0)) => {
+                    out.extend(hud.rect(
+                        origin.0 + x0 * scale,
+                        origin.1 + y * scale,
+                        (x - x0) * scale,
+                        scale,
+                        color,
+                    ));
+                    run = None;
+                }
+                _ => {}
+            }
+        }
     }
     out
 }
