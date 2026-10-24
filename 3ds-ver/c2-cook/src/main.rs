@@ -709,7 +709,10 @@ fn has_slot(b: &c2_formats::res_txt::Block) -> bool {
 /// The models of the hunter and ambient animals a hunt on `area` loads
 /// (`hunt::Role` on the 3DS): a dialect ambient whose tables spawn it only
 /// on other maps (a combined game's) isn't, at any time of day.
-fn ambients_on(raw: &c2_formats::res_txt::ResTxt, area: &str) -> std::collections::BTreeSet<String> {
+fn ambients_on(
+    raw: &c2_formats::res_txt::ResTxt,
+    area: &str,
+) -> std::collections::BTreeSet<String> {
     let blocks = raw.section("characters").map_or(&[][..], |s| &s.blocks);
     let mut out = std::collections::BTreeSet::new();
     for time in 0..3 {
@@ -721,8 +724,7 @@ fn ambients_on(raw: &c2_formats::res_txt::ResTxt, area: &str) -> std::collection
         let m = c2_core::mee::read(raw, &h);
         for (i, c) in m.tables.characters.iter().enumerate() {
             let info = DinoInfo::from_def(&m.res.characters[i]);
-            let elsewhere =
-                blocks.get(i).is_some_and(c2_formats::mee::has_spawns) && !c.spawns();
+            let elsewhere = blocks.get(i).is_some_and(c2_formats::mee::has_spawns) && !c.spawns();
             if (0..10).contains(&info.ai) && !has_slot(&c.block) && !elsewhere {
                 out.insert(c2_formats::cooked::model_key(&info.file));
             }
@@ -758,11 +760,13 @@ fn rules(vfs: &Vfs) -> Result<Rules> {
             picked: c2_formats::bits::Bits::ALL,
         };
         let m = c2_core::mee::read(&raw, &h);
+        let raw_chars = raw.section("characters").map_or(&[][..], |s| &s.blocks);
         let slots: Vec<bool> = m
             .tables
             .characters
             .iter()
-            .map(|c| has_slot(&c.block))
+            .enumerate()
+            .map(|(i, c)| c2_formats::mee::menu_slot(raw_chars.get(i), &c.block).is_some())
             .collect();
         (m.res, slots)
     } else {
@@ -1228,9 +1232,11 @@ fn main() -> Result<()> {
                 picked: c2_formats::bits::Bits::ALL,
             };
             let t = c2_formats::mee::Tables::read(raw, &h);
+            let raw_chars = raw.section("characters").map_or(&[][..], |s| &s.blocks);
             for (i, ch) in t.characters.iter().enumerate() {
                 let ai = ch.block.get(&["ai"]).map(c2_formats::res_txt::c_atoi);
-                let roams = !has_slot(&ch.block) && ai.is_some_and(|a| (10..30).contains(&a));
+                let slot = c2_formats::mee::menu_slot(raw_chars.get(i), &ch.block);
+                let roams = slot.is_none() && ai.is_some_and(|a| (10..30).contains(&a));
                 if roams && (!ch.spawn.is_empty() || !ch.packs.is_empty()) {
                     by_char.entry(i).or_default().push(name);
                 }

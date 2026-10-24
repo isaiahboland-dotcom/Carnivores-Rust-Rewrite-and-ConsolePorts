@@ -164,9 +164,8 @@ impl Rules {
                     },
                     picked: targets.down(10),
                 };
-                let mut m = c2_core::mee::read(raw, &h);
                 let chars: Vec<usize> = roamers.iter().map(|r| r.char).collect();
-                c2_core::mee::spawn_picked_anywhere(raw, &h, &mut m.tables, &chars);
+                let mut m = c2_core::mee::read_picked_anywhere(raw, &h, &chars);
                 for r in roamers {
                     if let Some(c) = m.tables.characters.get_mut(r.char) {
                         c.block.entries.push(c2_formats::res_txt::Entry {
@@ -196,13 +195,13 @@ impl Rules {
             .iter()
             .enumerate()
             .map(|(i, d)| {
+                let raw_char = |i: usize| self.raw.as_ref()?.section("characters")?.blocks.get(i);
                 let slot = match &tables {
                     Some(t) => t
                         .characters
                         .get(i)
-                        .and_then(|c| c.block.get(&["callNo"]))
-                        .map(c_atoi)
-                        .filter(|&n| n >= 0),
+                        .and_then(|c| c2_formats::mee::menu_slot(raw_char(i), &c.block))
+                        .map(|n| n as i32),
                     None => (d.ai >= 10).then_some(d.ai - 10),
                 };
                 match slot {

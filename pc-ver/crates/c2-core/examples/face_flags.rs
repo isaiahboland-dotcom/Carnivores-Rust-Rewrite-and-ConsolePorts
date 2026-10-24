@@ -1,5 +1,5 @@
 //! Face flag counts of `.CAR` files: `cargo run --example face_flags -- X.CAR...`.
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     for p in std::env::args().skip(1) {
         let Ok(d) = std::fs::read(&p) else { continue };
         let Ok(car) = c2_formats::car::parse(&d) else {
@@ -12,4 +12,5 @@ fn main() {
         }
         println!("{p}: {} faces, flags {counts:x?}", car.mesh.faces.len());
     }
+    Ok(())
 }

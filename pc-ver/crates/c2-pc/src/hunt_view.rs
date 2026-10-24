@@ -202,10 +202,11 @@ impl HuntView {
         let (res, mee) = match res_txt {
             Some(r) => {
                 let h = mee_hunt(&setup);
-                let mut m = c2_core::mee::read(&r, &h);
                 // Picked roaming add-ons hunt by their menu slots.
                 let roamers = crate::menu::roamer_slots(&huntdat, &r);
-                c2_core::mee::pick_roamers(&r, &h, &mut m.tables, &roamers);
+                let chars = c2_core::mee::picked_roamers(&h, &roamers);
+                let mut m = c2_core::mee::read_picked_anywhere(&r, &h, &chars);
+                c2_core::mee::pick_roamers(&h, &mut m.tables, &roamers);
                 (m.res, Some(m.tables))
             }
             None => (load_res(&huntdat)?, None),

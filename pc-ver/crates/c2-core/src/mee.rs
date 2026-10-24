@@ -113,7 +113,8 @@ pub fn read(res: &ResTxt, h: &Hunt) -> MeeHunt {
 /// joins it; its own spawns stay. Ambient animals (AI under 10) keep to
 /// their tables.
 pub fn spawn_picked_anywhere(res: &ResTxt, h: &Hunt, tables: &mut Tables, extra: &[usize]) {
-    let slot = |b: &Block| b.get(&["callNo"]).map(c_atoi).filter(|&n| n >= 0);
+    let raw = res.section("characters").map_or(&[][..], |s| &s.blocks);
+    let slot = |i: usize, b: &Block| c2_formats::mee::menu_slot(raw.get(i), b);
     let all = Tables::read(
         res,
         &Hunt {
@@ -122,7 +123,12 @@ pub fn spawn_picked_anywhere(res: &ResTxt, h: &Hunt, tables: &mut Tables, extra:
         },
     );
     let mut uses = vec![0usize; all.spawn_groups.len()];
-    for c in all.characters.iter().filter(|c| slot(&c.block).is_some()) {
+    for (_, c) in all
+        .characters
+        .iter()
+        .enumerate()
+        .filter(|(i, c)| slot(*i, &c.block).is_some())
+    {
         for l in &c.spawn {
             if let Some(n) = uses.get_mut(l.group) {
                 *n += 1;
@@ -141,8 +147,9 @@ pub fn spawn_picked_anywhere(res: &ResTxt, h: &Hunt, tables: &mut Tables, extra:
         .map(|p| p.spawn.iter().any(|l| l.group == target))
         .collect();
     for (i, c) in tables.characters.iter_mut().enumerate() {
-        let picked = slot(&c.block).is_some_and(|k| h.picked.has(k as usize)) || extra.contains(&i);
         let ambient = c.block.get(&["ai"]).map(c_atoi).is_some_and(|a| a < 10);
+        let by_slot = slot(i, &c.block).is_some_and(|k| h.picked.has(k));
+        let picked = by_slot || extra.contains(&i);
         // Already among the targets (alone or in a pack)?
         let in_target = c.spawn.iter().any(|l| l.group == target)
             || c.packs
@@ -153,14 +160,65 @@ pub fn spawn_picked_anywhere(res: &ResTxt, h: &Hunt, tables: &mut Tables, extra:
                 group: target,
                 ratio: 1.0,
             });
+            // Its "when picked" block may be tied to its own game's maps
+            // (a combined game's): still a target on the radar here.
+            if by_slot && c.block.get(&["radar"]).is_none() {
+                c.block.entries.push(Entry {
+                    key: "radar".into(),
+                    value: "TRUE".into(),
+                });
+            }
         }
     }
 }
 
+/// [`read`] then [`spawn_picked_anywhere`]; a picked animal whose model is
+/// only given per map (a placeholder, `blank.car`, elsewhere) takes the
+/// first of its maps' models where it has none.
+pub fn read_picked_anywhere(res: &ResTxt, h: &Hunt, extra: &[usize]) -> MeeHunt {
+    let mut m = read(res, h);
+    spawn_picked_anywhere(res, h, &mut m.tables, extra);
+    let raw = res.section("characters").map_or(&[][..], |s| &s.blocks);
+    for (i, c) in m.tables.characters.iter().enumerate() {
+        let picked = c2_formats::mee::menu_slot(raw.get(i), &c.block)
+            .is_some_and(|k| h.picked.has(k))
+            || extra.contains(&i);
+        let Some(def) = m.res.characters.get_mut(i) else {
+            continue;
+        };
+        let blank = def
+            .file
+            .as_deref()
+            .is_some_and(|f| f.to_ascii_lowercase().ends_with("blank.car"));
+        if picked && blank {
+            if let Some(f) = raw.get(i).and_then(map_model) {
+                def.file = Some(f);
+            }
+        }
+    }
+    m
+}
+
+/// The first model a raw entry's area blocks give it (not a placeholder).
+fn map_model(b: &Block) -> Option<String> {
+    b.subs.iter().find_map(|s| {
+        let own = s
+            .name
+            .contains("area")
+            .then(|| s.block.get(&["file"]))
+            .flatten()
+            .map(|f| f.trim().trim_matches('\'').to_string())
+            .filter(|f| !f.to_ascii_lowercase().ends_with("blank.car"));
+        own.or_else(|| map_model(&s.block))
+    })
+}
+
 /// The roaming add-ons of a dialect game (a huntable AI, 10-29, with no
-/// `callNo`: they only roam): their character indices, each with the menu
-/// slot it is picked by, from `first_slot` on (after the menu's own).
+/// menu slot, [`c2_formats::mee::menu_slot`]: they only roam): their
+/// character indices, each with the menu slot it is picked by, from
+/// `first_slot` on (after the menu's own).
 pub fn roamers(res: &ResTxt, first_slot: usize) -> Vec<(usize, usize)> {
+    let raw = res.section("characters").map_or(&[][..], |s| &s.blocks);
     let all = Tables::read(
         res,
         &Hunt {
@@ -172,9 +230,9 @@ pub fn roamers(res: &ResTxt, first_slot: usize) -> Vec<(usize, usize)> {
     all.characters
         .iter()
         .enumerate()
-        .filter(|(_, c)| {
+        .filter(|(i, c)| {
             let ai = c.block.get(&["ai"]).map(c_atoi);
-            let slot = c.block.get(&["callNo"]).map(c_atoi).filter(|&n| n >= 0);
+            let slot = c2_formats::mee::menu_slot(raw.get(*i), &c.block);
             slot.is_none() && ai.is_some_and(|a| (10..30).contains(&a))
         })
         .map(|(i, _)| i)
@@ -182,17 +240,20 @@ pub fn roamers(res: &ResTxt, first_slot: usize) -> Vec<(usize, usize)> {
         .collect()
 }
 
-/// Picked roamers (`roamers`, their slot in `h.picked`) take their slot as
-/// `callNo`, so they hunt as menu animals, and come on any map.
-pub fn pick_roamers(res: &ResTxt, h: &Hunt, tables: &mut Tables, roamers: &[(usize, usize)]) {
-    let picked: Vec<(usize, usize)> = roamers
+/// The picked roamers' characters (`roamers`: (character, slot); their slot
+/// in `h.picked`), for [`read_picked_anywhere`]'s `extra`.
+pub fn picked_roamers(h: &Hunt, roamers: &[(usize, usize)]) -> Vec<usize> {
+    roamers
         .iter()
-        .copied()
-        .filter(|&(_, slot)| h.picked.has(slot))
-        .collect();
-    let chars: Vec<usize> = picked.iter().map(|p| p.0).collect();
-    spawn_picked_anywhere(res, h, tables, &chars);
-    for (i, slot) in picked {
+        .filter(|&&(_, slot)| h.picked.has(slot))
+        .map(|&(i, _)| i)
+        .collect()
+}
+
+/// Picked roamers take their slot as `callNo`, so they hunt as menu
+/// animals (after [`read_picked_anywhere`] brought them to this map).
+pub fn pick_roamers(h: &Hunt, tables: &mut Tables, roamers: &[(usize, usize)]) {
+    for &(i, slot) in roamers.iter().filter(|&&(_, slot)| h.picked.has(slot)) {
         if let Some(c) = tables.characters.get_mut(i) {
             c.block.entries.push(Entry {
                 key: "callNo".into(),
@@ -436,6 +497,38 @@ mod tests {
  jumpAnim = 8\n}\n}\n.\n";
 
     #[test]
+    fn an_animal_picked_by_its_overwrite_comes_on_another_games_map() {
+        // As one game writes its menu animals (no call, its "when picked"
+        // block and its model tied to its own map), here on map 2.
+        let res = ResTxt::parse(
+            "spawntable {\n spawngroup {\n  spawnmax = 4\n }\n}\n\
+             characters {\n{\n name = 'Hunter'\n ai = 0\n}\n\
+             {\n name = 'Local'\n ai = 12\n callNo = 1\n spawninfo {\n  spawngroup = 0\n  spawnratio = 1\n }\n}\n\
+             {\n name = 'Visitor'\n file = 'blank.car'\n ai = 14\n callNo = -5 1\n\
+             overwrite char0 area1 {\n  radar = TRUE\n  spawninfo {\n   spawngroup = 0\n   spawnratio = 1\n  }\n }\n\
+             overwrite area1 {\n  file = 'own/visitor.car'\n }\n}\n}\n.\n",
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        let h = Hunt {
+            area: Some(2),
+            time: 1,
+            picked: c2_formats::bits::Bits::bit(0),
+        };
+        let m = read_picked_anywhere(&res, &h, &[]);
+        let v = &m.tables.characters[2];
+        assert_eq!(v.spawn.len(), 1, "joins this map's targets");
+        assert_eq!(v.block.get(&["radar"]), Some("TRUE"));
+        assert_eq!(m.res.characters[2].file.as_deref(), Some("own/visitor.car"));
+        // Not picked: stays away, as its game has it.
+        let off = Hunt {
+            picked: c2_formats::bits::Bits::bit(1),
+            ..h
+        };
+        assert!(read_picked_anywhere(&res, &off, &[]).tables.characters[2].spawn.is_empty());
+        assert!(roamers(&res, 2).is_empty(), "a menu animal, not a roamer");
+    }
+
+    #[test]
     fn roaming_add_ons_get_the_slots_after_the_menu_and_hunt_by_them() {
         let res = ResTxt::parse(
             "characters {\n{\n name = 'Hunter'\n ai = 0\n}\n\
@@ -452,14 +545,14 @@ mod tests {
             picked: c2_formats::bits::Bits::bit(1),
         };
         let mut t = Tables::read(&res, &h);
-        pick_roamers(&res, &h, &mut t, &roamers);
+        pick_roamers(&h, &mut t, &roamers);
         assert_eq!(t.characters[3].block.get(&["callNo"]), Some("1"));
         let unpicked = Hunt {
             picked: c2_formats::bits::Bits::bit(0),
             ..h
         };
         let mut t = Tables::read(&res, &unpicked);
-        pick_roamers(&res, &unpicked, &mut t, &roamers);
+        pick_roamers(&unpicked, &mut t, &roamers);
         assert_eq!(t.characters[3].block.get(&["callNo"]), None);
     }
 

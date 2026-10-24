@@ -119,6 +119,53 @@ fn mentions_char(header: &str, i: u32) -> bool {
     })
 }
 
+/// The menu slots whose picking changes a raw `characters` entry: the N of
+/// its `overwrite charN` / `addition charN` blocks, at any depth.
+pub fn picked_by(b: &Block) -> Vec<usize> {
+    let mut out = Vec::new();
+    for s in &b.subs {
+        if conditional(&s.name).is_some() {
+            for n in s
+                .name
+                .split_whitespace()
+                .filter_map(|t| t.strip_prefix("char")?.parse::<usize>().ok())
+            {
+                if !out.contains(&n) {
+                    out.push(n);
+                }
+            }
+        }
+        for n in picked_by(&s.block) {
+            if !out.contains(&n) {
+                out.push(n);
+            }
+        }
+    }
+    out
+}
+
+/// A huntable character's menu slot: its `callNo` (`resolved`, the entry as
+/// a hunt reads it) when 0 or more, else the slot of its `overwrite charN`
+/// (`raw`; huntable AIs, 10-29, only: an ambient's is a change when that
+/// animal is hunted): one game marks its menu animals so, with
+/// `callNo = -5` (they answer no call). `None` for one no slot picks (it
+/// roams).
+pub fn menu_slot(raw: Option<&Block>, resolved: &Block) -> Option<usize> {
+    let huntable = resolved
+        .get(&["ai"])
+        .map(c_atoi)
+        .is_some_and(|a| (10..30).contains(&a));
+    resolved
+        .get(&["callNo"])
+        .map(c_atoi)
+        .filter(|&n| n >= 0)
+        .map(|n| n as usize)
+        .or_else(|| {
+            raw.filter(|_| huntable)
+                .and_then(|b| picked_by(b).into_iter().min())
+        })
+}
+
 /// `b` with every applicable conditional block merged in and the others
 /// dropped, recursively.
 pub fn resolve(b: &Block, h: &Hunt) -> Block {
