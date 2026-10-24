@@ -2844,6 +2844,42 @@ mod tests {
     }
 
     #[test]
+    fn survival_waves_start_by_the_hunter_not_up_a_mountain() {
+        let (mut area, mut hunt, car) = setup(false);
+        // The box's west half a plateau far above the hunter.
+        for z in 0..1024 {
+            for x in 0..388 {
+                area.map.height[z * 1024 + x] = 250;
+            }
+        }
+        let mut i = info(ai::CHASM);
+        i.name = "Chasmosaurus".into();
+        hunt.herd.species.push(Species::new(i, &car));
+        let sv = c2_formats::mobile_arcade::Survive {
+            area: 5,
+            hunter: [100_000.0, 100_000.0],
+            spawn: [100_000.0, 106_000.0, 2000.0, 500.0],
+            first_ms: 500,
+            rest_ms: 2000,
+            waves: vec![vec!["Chasmosaurus".into(); 6]],
+            after: vec![],
+            stand_ins: false,
+        };
+        hunt.start_survival(&area, SurvivalOptions::mobile(&hunt, &sv, 8).unwrap());
+        let cars = [None, Some(&car), Some(&car)];
+        let mut out = Vec::new();
+        for _ in 0..60 {
+            hunt.tick(&area, &cars, &HuntInput::default(), 10, &mut out);
+        }
+        let wave: Vec<&Character> = hunt.herd.chars.iter().filter(|c| c.wave == 1).collect();
+        assert_eq!(wave.len(), 6);
+        assert!(
+            wave.iter().all(|c| c.pos[0] >= 388.0 * 256.0),
+            "none on the plateau"
+        );
+    }
+
+    #[test]
     fn survival_picks_waves_mods_and_the_t_rex() {
         let (_, mut hunt, car) = setup(false);
         for (name, a) in [

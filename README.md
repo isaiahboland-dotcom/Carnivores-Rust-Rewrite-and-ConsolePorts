@@ -408,7 +408,8 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
         zoom, `cross` / `unzoom` read; was always 3x with a cross)
   - [x] stealth crouch: gyro aim far too sensitive (now 40% by default, a deadzone, Settings > Gyro aim)
   - [x] one dialect game with the radar: its ambients show green and the hunted animals' dots don't show
-  - [ ] survival: waves spawn on mountain edges (stuck, or far above the hunter) in classic and modded
+  - [x] survival: waves spawn on mountain edges (stuck, or far above the hunter) in classic and modded
+        (spots with a walkable way to the hunter, near his height, first)
   - [ ] survival: run speed and ambient animals should be settable (ambients off helps the frame rate)
   - [ ] PC: roaming add-ons (the 3DS's blue dots) should be pickable in the PC hunt menu too
   - [ ] Old 3DS speed: sim 6-14 ms a frame (animals the most), world 8-14, 2d 5; 30-40 fps

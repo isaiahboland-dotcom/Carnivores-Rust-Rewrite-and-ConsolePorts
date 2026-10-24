@@ -98,6 +98,9 @@ pub struct Survival {
 
 /// Cells of the window a [`Flow`] covers (a side).
 const FLOW_W: i32 = 192;
+/// How far above or below the hunter a wave animal may start (map units:
+/// a few cells of steep slope), when a spot like that is found.
+const SPAWN_RISE: f32 = 1536.0;
 /// Closer than this (cells), wave animals go straight for the hunter.
 const LURE_NEAR: u16 = 12;
 /// How far along the way a lure is (cells).
@@ -177,6 +180,12 @@ impl Flow {
             from: (hx, hz),
             dist,
         }
+    }
+
+    /// Whether cell (`x`, `z`) is in the window (else [`Flow::get`] knows
+    /// nothing of it).
+    fn covers(&self, x: i32, z: i32) -> bool {
+        (0..FLOW_W).contains(&(x - self.x0)) && (0..FLOW_W).contains(&(z - self.z0))
     }
 
     fn get(&self, x: i32, z: i32) -> u16 {
@@ -580,20 +589,63 @@ impl Hunt {
 
     /// One animal of wave `n` at a free spot on land in the box `[x, z, half
     /// x, half z]`, coming for the hunter (`ArcadeGameGenerateWave`: 32
-    /// tries, else the last).
+    /// tries, else the last). A box made for the mobile maps can take in
+    /// the PC maps' mountain sides: spots with a way down to the hunter, near
+    /// his height, first.
     fn spawn_in_box(&mut self, area: &Area, ctype: usize, n: u32, b: [f32; 4]) {
+        let flow = self.wave_flow(area);
         let mut at = (b[0], b[1]);
-        for _ in 0..32 {
-            let r = |rng: &mut MsRand, h: f32| (rng.r_rand(20000) as f32 / 10000.0 - 1.0) * h;
-            let (x, z) = (b[0] + r(&mut self.rng, b[2]), b[1] + r(&mut self.rng, b[3]));
-            at = (x, z);
-            let mut p = [x, area.land_height(x, z), z];
-            let dry = area.land_up_h(x, z) - area.land_height(x, z) <= 32.0;
-            if dry && !crate::dino::check_place_collision_p(area, &mut p) {
-                break;
+        for strict in [true, false] {
+            for _ in 0..32 {
+                let r = |rng: &mut MsRand, h: f32| (rng.r_rand(20000) as f32 / 10000.0 - 1.0) * h;
+                let (x, z) = (b[0] + r(&mut self.rng, b[2]), b[1] + r(&mut self.rng, b[3]));
+                at = (x, z);
+                if self.spawn_spot(area, (x, z), strict.then_some(&flow)) {
+                    self.add_wave_animal(area, ctype, n, at);
+                    return;
+                }
             }
         }
         self.add_wave_animal(area, ctype, n, at);
+    }
+
+    /// The flow field for where the hunter stands (kept for the wave).
+    fn wave_flow(&mut self, area: &Area) -> Flow {
+        let cell = (
+            (self.player.x / 256.0) as i32,
+            (self.player.z / 256.0) as i32,
+        );
+        match self.survival.as_ref().and_then(|s| s.flow.clone()) {
+            Some(f) if f.from == cell => f,
+            _ => {
+                let f = Flow::new(area, cell);
+                if let Some(s) = self.survival.as_mut() {
+                    s.flow = Some(f.clone());
+                }
+                f
+            }
+        }
+    }
+
+    /// Whether a wave animal may start at (`x`, `z`): dry and free; with
+    /// `flow`, also with a walkable way to the hunter (where the field
+    /// reaches) and not more than [`SPAWN_RISE`] above or below him.
+    fn spawn_spot(&self, area: &Area, (x, z): (f32, f32), flow: Option<&Flow>) -> bool {
+        let y = area.land_height(x, z);
+        if area.land_up_h(x, z) - y > 32.0 {
+            return false;
+        }
+        if let Some(f) = flow {
+            let (cx, cz) = ((x / 256.0) as i32, (z / 256.0) as i32);
+            if f.covers(cx, cz) && f.get(cx, cz) == u16::MAX {
+                return false;
+            }
+            if (y - area.land_height(self.player.x, self.player.z)).abs() > SPAWN_RISE {
+                return false;
+            }
+        }
+        let mut p = [x, y, z];
+        !crate::dino::check_place_collision_p(area, &mut p)
     }
 
     fn add_wave_animal(&mut self, area: &Area, ctype: usize, n: u32, (x, z): (f32, f32)) {
@@ -622,22 +674,20 @@ impl Hunt {
         let (hx, hz) = (self.player.x, self.player.z);
         let r0 = (self.opts.view_r as f32 * 0.7).clamp(20.0, 40.0) * 256.0;
         let size = 1024.0 * 256.0;
-        for _ in 0..40 {
-            let a = self.rng.r_rand(6283) as f32 / 1000.0;
-            let r = r0 + self.rng.r_rand(2048) as f32;
-            let (x, z) = (hx + a.cos() * r, hz + a.sin() * r);
-            if !(4096.0..size - 4096.0).contains(&x) || !(4096.0..size - 4096.0).contains(&z) {
-                continue;
+        let flow = self.wave_flow(area);
+        for strict in [true, false] {
+            for _ in 0..40 {
+                let a = self.rng.r_rand(6283) as f32 / 1000.0;
+                let r = r0 + self.rng.r_rand(2048) as f32;
+                let (x, z) = (hx + a.cos() * r, hz + a.sin() * r);
+                if !(4096.0..size - 4096.0).contains(&x) || !(4096.0..size - 4096.0).contains(&z) {
+                    continue;
+                }
+                if self.spawn_spot(area, (x, z), strict.then_some(&flow)) {
+                    self.add_wave_animal(area, ctype, n, (x, z));
+                    return;
+                }
             }
-            if area.land_up_h(x, z) - area.land_height(x, z) > 32.0 {
-                continue;
-            }
-            let mut p = [x, area.land_height(x, z), z];
-            if crate::dino::check_place_collision_p(area, &mut p) {
-                continue;
-            }
-            self.add_wave_animal(area, ctype, n, (x, z));
-            return;
         }
     }
 }
