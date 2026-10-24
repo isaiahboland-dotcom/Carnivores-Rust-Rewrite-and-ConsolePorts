@@ -266,4 +266,22 @@ prices {\n start = 100\n area = 10\n dino = 20\n}\n.\n";
     assert_eq!(chars[2].get(&["callNo"]), Some("0"));
     assert!(chars[2].subs.iter().any(|s| s.name == "overwrite char0"));
     let _ = std::fs::remove_dir_all(game);
+
+    // The hunter in a section of its own: the first character is a menu
+    // animal, and is one.
+    let game = tmp("spawnless-hunterinfo");
+    let res = "hunterinfo {\n{\n name = 'Hunter'\n file = 'hunter.car'\n ai = 0\n}\n}\n\
+characters {\n{\n name = 'Para'\n file = 'para.car'\n ai = 10\n runAnim = 0\n\
+ deathtype {\n  dieAnim = 2\n }\n}\n}\n\
+prices {\n start = 100\n area = 10\n dino = 20\n}\n.\n";
+    write(&game, &[("HUNTDAT/_RES.TXT", res.as_bytes())]);
+    let v = c2_mods::vanilla(std::slice::from_ref(&game)).expect("vanilla");
+    let out = ResTxt::parse(&String::from_utf8_lossy(
+        &v.read("HUNTDAT/_RES.TXT").expect("res"),
+    ))
+    .expect("parse");
+    let chars = &out.section("characters").expect("characters").blocks;
+    assert_eq!(chars[0].get(&["callNo"]), Some("0"));
+    assert!(chars[0].subs.iter().any(|s| s.name == "overwrite char0"));
+    let _ = std::fs::remove_dir_all(game);
 }

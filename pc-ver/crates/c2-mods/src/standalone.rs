@@ -503,11 +503,14 @@ pub fn spawn_layer(vfs: &Vfs) -> Result<Option<MemBackend>> {
         .iter_mut()
         .find(|s| s.name.eq_ignore_ascii_case("characters"))
     {
-        for b in sec.blocks.iter_mut().skip(1) {
-            if crate::loose::has_spawns(b) {
+        for b in sec.blocks.iter_mut() {
+            let ai = b.get(&["ai"]).map(c_atoi).unwrap_or(0);
+            // The hunter (AI 0): first in most games; one keeps it in a
+            // `hunterinfo` section of its own, its first character a
+            // menu animal.
+            if ai == 0 || crate::loose::has_spawns(b) {
                 continue;
             }
-            let ai = b.get(&["ai"]).map(c_atoi).unwrap_or(0);
             let at = b.entries.len();
             if ai < 10 {
                 b.subs.push(Sub { at, ..spawn(0) });
