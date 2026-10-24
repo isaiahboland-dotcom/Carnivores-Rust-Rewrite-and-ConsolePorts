@@ -301,6 +301,9 @@ pub struct Menu {
     /// The last memory figure and the picks it was for.
     mem: std::cell::Cell<Option<(MemKey, Memory)>>,
     settings: Settings,
+    /// What the SD card holds (settings, the save's game options): written
+    /// only when changed (a write is slow).
+    on_disk: (Settings, c2_formats::sav::Options),
     weapons: Vec<Item>,
     equip: Vec<Item>,
     area: usize,
@@ -513,6 +516,7 @@ impl Menu {
             .filter(|(_, &on)| on != 0)
             .map(|(i, _)| i)
             .collect();
+        let on_disk = (settings, save.options);
         let trophy_room = info.areas.iter().any(|a| a.eq_ignore_ascii_case("TROPHY"));
         let mut m = Self {
             c: Canvas::new(load(vfs, "C2RS/FONT.TX")),
@@ -531,6 +535,7 @@ impl Menu {
             rules,
             mem: std::cell::Cell::new(None),
             settings,
+            on_disk,
             want_name: false,
             clear_armed: false,
             record: crate::save::load_record(),
@@ -1022,8 +1027,12 @@ impl Menu {
         o.camo = i32::from(e.has(0));
         o.radar = i32::from(e.has(1));
         o.scent = i32::from(e.has(2));
-        if let Err(e) = crate::save::store(&self.save) {
-            self.message = Some(format!("save failed: {e}"));
+        if self.save.options == self.on_disk.1 {
+            return;
+        }
+        match crate::save::store(&self.save) {
+            Ok(()) => self.on_disk.1 = self.save.options,
+            Err(e) => self.message = Some(format!("save failed: {e}")),
         }
     }
 
@@ -1420,14 +1429,13 @@ impl Menu {
     /// B / the Back button.
     pub fn back(&mut self) {
         if matches!(self.step, Step::Settings | Step::Options) {
-            if let Err(e) = self.settings.store() {
-                self.message = Some(format!("settings not saved: {e}"));
-            }
+            self.store_settings();
         }
         // The game options live in the save, as on PC.
-        if self.step == Step::Settings {
-            if let Err(e) = crate::save::store(&self.save) {
-                self.message = Some(format!("save failed: {e}"));
+        if self.step == Step::Settings && self.save.options != self.on_disk.1 {
+            match crate::save::store(&self.save) {
+                Ok(()) => self.on_disk.1 = self.save.options,
+                Err(e) => self.message = Some(format!("save failed: {e}")),
             }
         }
         self.step = match self.step {
@@ -1491,8 +1499,12 @@ impl Menu {
     }
 
     fn store_settings(&mut self) {
-        if let Err(e) = self.settings.store() {
-            self.message = Some(format!("settings not saved: {e}"));
+        if self.settings == self.on_disk.0 {
+            return;
+        }
+        match self.settings.store() {
+            Ok(()) => self.on_disk.0 = self.settings,
+            Err(e) => self.message = Some(format!("settings not saved: {e}")),
         }
     }
 
@@ -1501,6 +1513,7 @@ impl Menu {
         crate::save::use_hunter(n);
         self.save = crate::save::load(self.rules.menu.start);
         self.record = crate::save::load_record();
+        self.on_disk.1 = self.save.options;
         let o = self.save.options;
         self.picked_equip = [o.camo, o.radar, o.scent]
             .iter()
@@ -1509,9 +1522,7 @@ impl Menu {
             .map(|(i, _)| i)
             .collect();
         self.settings.hunter = n;
-        if let Err(e) = self.settings.store() {
-            self.message = Some(format!("settings not saved: {e}"));
-        }
+        self.store_settings();
         self.step = Step::Title;
     }
 
