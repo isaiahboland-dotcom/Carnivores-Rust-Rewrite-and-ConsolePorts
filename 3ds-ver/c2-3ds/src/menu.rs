@@ -235,6 +235,15 @@ fn grid(n: usize, cols: usize, r: f32, top: f32) -> Vec<Cell> {
         .collect()
 }
 
+/// A hunter with fewer points than any hunt costs could never hunt
+/// (points are needed, not spent): lifted to a new hunter's.
+fn unstick(mut save: Save, menu: &c2_formats::menu_txt::MenuData) -> Save {
+    if save.score < menu.cheapest_hunt() {
+        save.score = menu.start_points();
+    }
+    save
+}
+
 /// Where `paged` puts the items not on the page shown (radius 0: not
 /// drawn, never hit).
 const OFF_PAGE: Cell = (-1000.0, -1000.0, 0.0);
@@ -366,7 +375,7 @@ impl Menu {
         let menu = &rules.menu;
         let settings = Settings::load();
         crate::save::use_hunter(settings.hunter);
-        let save = crate::save::load(menu.start);
+        let save = unstick(crate::save::load(menu.start_points()), &menu);
         let price = |v: &Vec<i32>, i: usize| v.get(i).copied().unwrap_or(0);
         let mut areas = Vec::new();
         for (i, name) in info.areas.iter().enumerate() {
@@ -1511,7 +1520,10 @@ impl Menu {
     /// Hunter `n` plays (its save and record), from now on and next time.
     fn switch_hunter(&mut self, n: i32) {
         crate::save::use_hunter(n);
-        self.save = crate::save::load(self.rules.menu.start);
+        self.save = unstick(
+            crate::save::load(self.rules.menu.start_points()),
+            &self.rules.menu,
+        );
         self.record = crate::save::load_record();
         self.on_disk.1 = self.save.options;
         let o = self.save.options;
@@ -1532,7 +1544,7 @@ impl Menu {
             return;
         };
         let name = if name.is_empty() { "Hunter" } else { name };
-        match crate::save::create(n, name, self.rules.menu.start) {
+        match crate::save::create(n, name, self.rules.menu.start_points()) {
             Ok(_) => self.switch_hunter(n),
             Err(e) => self.message = Some(format!("save failed: {e}")),
         }

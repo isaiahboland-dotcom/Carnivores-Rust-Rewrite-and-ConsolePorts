@@ -144,6 +144,27 @@ impl MenuData {
         out
     }
 
+    /// Points for the cheapest hunt: the cheapest area, animal and weapon
+    /// (points are needed, not spent, so a hunter with fewer can't hunt).
+    pub fn cheapest_hunt(&self) -> i32 {
+        let min = |v: &mut dyn Iterator<Item = i32>| v.min().unwrap_or(0).max(0);
+        min(&mut self.areas.iter().map(|a| a.price))
+            + min(&mut self.huntables.iter().map(|h| h.price))
+            + min(&mut self.weapons.iter().map(|w| w.price))
+    }
+
+    /// A new hunter's points: `start`, unless that can't pay for the
+    /// cheapest hunt (one standalone has 5 for a hunt of 11); then the
+    /// original's 100, or the cheapest hunt if that is more.
+    pub fn start_points(&self) -> i32 {
+        let need = self.cheapest_hunt();
+        if self.start >= need {
+            self.start
+        } else {
+            need.max(100)
+        }
+    }
+
     /// Adds a `.c2map` area unless one with the same file stem is listed
     /// (the script's entry wins).
     pub fn add_c2map(&mut self, area: MenuArea) {

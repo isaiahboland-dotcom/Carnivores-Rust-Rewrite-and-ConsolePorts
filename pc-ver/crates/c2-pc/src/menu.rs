@@ -874,7 +874,13 @@ impl Menu {
             &read_text(txt.as_deref(), "OBSERVE.NFO"),
         );
 
-        let players = save::players(&game_dir);
+        let mut players = save::players(&game_dir);
+        // A hunter with fewer points than any hunt costs could never hunt.
+        for p in &mut players {
+            if p.score < menu.cheapest_hunt() {
+                p.score = menu.start_points();
+            }
+        }
         let signed_in = player.and_then(|r| players.iter().position(|p| p.reg_number == r));
         let mobile = MOBILE_MENU
             .get()
@@ -889,7 +895,7 @@ impl Menu {
             hud,
             game_dir,
             huntdat,
-            start_score: menu.start,
+            start_score: menu.start_points(),
             main,
             stats_board,
             quit_board,

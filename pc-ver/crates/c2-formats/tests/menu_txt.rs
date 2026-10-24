@@ -42,3 +42,17 @@ fn c2map_descriptors_add_areas_once() {
     assert_eq!(m.areas.len(), 3);
     assert!(parse_c2map("info {\n name = 'x'\n}\n").is_none());
 }
+
+#[test]
+fn a_start_too_small_for_any_hunt_is_the_originals_100() {
+    let m = |start: i32| {
+        let src = format!(
+            "weapons {{\n{{\n name = 'Gun'\n}}\n}}\ncharacters {{\n{{\n name = 'Rex'\n ai = 18\n}}\n}}\n\
+             prices {{\n start = {start}\n area = 2\n dino = 2\n weapon = 7\n}}\n.\n"
+        );
+        MenuData::from_res(&ResTxt::parse(&src).unwrap())
+    };
+    assert_eq!(m(5).cheapest_hunt(), 11);
+    assert_eq!(m(5).start_points(), 100);
+    assert_eq!(m(40).start_points(), 40);
+}
