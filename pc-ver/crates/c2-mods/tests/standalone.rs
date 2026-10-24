@@ -129,6 +129,8 @@ fn standalones_are_renumbered_tied_to_their_maps_and_original_ones_converted() {
             ("HUNTDAT/WEAPONS/rifle.car", b"rifle"),
             ("HUNTDAT/AREAS/AREA1.MAP", b"b map"),
             ("HUNTDAT/AREAS/AREA1.RSC", b"b rsc"),
+            // A spare copy in a folder: not the map.
+            ("HUNTDAT/AREAS/New Folder/area1.map", b"b old map"),
         ],
     );
     let out = tmp("out");

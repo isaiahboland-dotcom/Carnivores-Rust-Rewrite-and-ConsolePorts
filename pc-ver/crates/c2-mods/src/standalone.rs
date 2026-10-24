@@ -882,10 +882,12 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
                 continue;
             }
             let fname = rel.rsplit('/').next().unwrap_or(&rel).to_string();
-            let dest = if k.starts_with("huntdat/areas/") {
+            let dest = if let Some(sub) = k.strip_prefix("huntdat/areas/") {
+                // The engine reads `AREAS/` itself; a folder in it is the
+                // maker's spare copies (another version of a map).
                 let ext = fname.rsplit('.').next().unwrap_or("").to_ascii_uppercase();
                 renumber(&fname, "area", &|n| area_map(n as u32).map(|g| g as usize))
-                    .filter(|_| ext == "MAP" || ext == "RSC")
+                    .filter(|_| (ext == "MAP" || ext == "RSC") && !sub.contains('/'))
                     .map(|_| {
                         let n: String = fname[4..]
                             .chars()
