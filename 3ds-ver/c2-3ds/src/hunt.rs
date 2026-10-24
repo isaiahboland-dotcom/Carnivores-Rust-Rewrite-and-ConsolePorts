@@ -285,11 +285,9 @@ pub struct Pad {
     pub cancel: bool,
     /// Y / X at the leave prompt (or once dead): a new hunt, same setup.
     pub restart: bool,
-    /// Pressed this frame: L, R, X, Y (the trophy room's controls).
+    /// Pressed this frame: L, R (the trophy room's controls).
     pub l_down: bool,
     pub r_down: bool,
-    pub x_down: bool,
-    pub y_down: bool,
     /// From the bottom screen: a weapon (index), a call (AI).
     pub select_weapon: Option<usize>,
     pub select_call: Option<i32>,
@@ -639,9 +637,10 @@ impl Game {
 
     /// Runs the simulation for `dt` seconds of real time.
     /// The trophy room's buttons: L / R move the trophy shown to the next
-    /// free stand that way, X removes it, Y locks or unlocks it (both
-    /// asked: A yes, B no). They don't do their hunt jobs here. A message
-    /// to show, if any.
+    /// free stand that way, D-Pad Down removes it, D-Pad Right locks or
+    /// unlocks it (both asked: A yes, B no); X / Y look, as in a hunt (the
+    /// owner's ask). They don't do their hunt jobs here. A message to show,
+    /// if any.
     pub fn trophy_buttons(&mut self, pad: &mut Pad) -> Option<String> {
         if !self.hunt.opts.trophy {
             return None;
@@ -667,20 +666,20 @@ impl Game {
                     msg = Some("No free stand that way".into());
                 }
             }
-            if pad.x_down {
+            if pad.next_weapon {
                 if locked {
-                    msg = Some("Locked: Y to unlock".into());
+                    msg = Some("Locked: D-Pad Right to unlock".into());
                 } else {
                     self.ask = Some(TrophyAsk::Remove);
                 }
             }
-            if pad.y_down {
+            if pad.toggle_weapon {
                 self.ask = Some(TrophyAsk::Lock);
             }
         }
         // Not their hunt jobs.
         (pad.fire, pad.jump, pad.restart) = (false, false, false);
-        (pad.look_up, pad.turn_left) = (false, false);
+        (pad.next_weapon, pad.toggle_weapon) = (false, false);
         // A / B answered the question (else they answer the leave prompt).
         if asked {
             (pad.confirm, pad.cancel) = (false, false);

@@ -373,7 +373,8 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   best survival wave.
 - Trophy room: each trophy's weight, weapon, range, area and score (PC: box bottom right; 3DS: bottom screen,
   in place of the map, with binoculars and the other hunt controls removed); L / R move a trophy to the free
-  stand on that side, X removes it (confirmed), Y locks it (confirmed; locked ones can't be removed); a
+  stand on that side, D-Pad Down removes it (confirmed), D-Pad Right locks it (confirmed; locked ones can't be
+  removed); X / Y look, as in a hunt; a
   setting removes every unlocked trophy.
 
 **M13 — Survival mode (PC and 3DS)**

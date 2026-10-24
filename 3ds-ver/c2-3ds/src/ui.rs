@@ -376,7 +376,7 @@ impl Ui {
                 ("Unlock this trophy?  A yes, B no", GOLD)
             }
             Some(crate::hunt::TrophyAsk::Lock) => ("Lock it (no removing)?  A / B", GOLD),
-            None if body.is_some() => ("L / R move   X remove   Y lock", WHITE),
+            None if body.is_some() => ("L/R move  Down remove  Right lock", WHITE),
             None => ("", WHITE),
         };
         c.text_c(gpu, 160.0, 176.0, 1.0, col, prompt);

@@ -352,8 +352,6 @@ fn read_pad(hid: &Hid, held: KeyPad, down: KeyPad, touch: &mut Touch) -> (Pad, O
         restart: down.contains(KeyPad::Y) || down.contains(KeyPad::X),
         l_down: down.contains(KeyPad::L),
         r_down: down.contains(KeyPad::R),
-        x_down: down.contains(KeyPad::X),
-        y_down: down.contains(KeyPad::Y),
         select_weapon: None,
         select_call: None,
         resupply: false,
