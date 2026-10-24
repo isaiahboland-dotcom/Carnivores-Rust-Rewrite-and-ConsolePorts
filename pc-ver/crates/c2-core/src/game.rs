@@ -2145,13 +2145,16 @@ impl Hunt {
     }
 
     /// The target bit (call id) `c` is picked by: `10 + callNo` in Modder's
-    /// Edition data, its AI in the original's.
+    /// Edition data, its AI in the original's. `None` for a dialect ambient,
+    /// flyer or fish: its `callNo` is 0 when not given, which would make it
+    /// the first menu animal (green on the radar when that one is hunted).
     pub fn call_bit(&self, c: &crate::dino::Character) -> Option<i32> {
         let sp = self.herd.species.get(c.ctype)?;
-        Some(match &sp.mee {
-            Some(m) => 10 + m.call_no,
-            None => c.ai,
-        })
+        match &sp.mee {
+            Some(m) if (10..=29).contains(&m.ai) => Some(10 + m.call_no),
+            Some(_) => None,
+            None => Some(c.ai),
+        }
     }
 
     /// A huntable animal (a menu animal, picked or not), not an ambient,
@@ -2840,6 +2843,22 @@ mod tests {
         hunt.target_call = 15;
         hunt.tick(&area, &cars, &call, 10, &mut out);
         assert_ne!(hunt.herd.chars[0].state, 0);
+    }
+
+    #[test]
+    fn dialect_ambients_without_a_call_are_not_the_first_menu_animal() {
+        let (_, mut hunt, _) = setup(false);
+        hunt.opts.targets = Bits::bit(10);
+        let c = hunt.herd.chars[0].clone();
+        // `callNo` left out: 0, as the engine reads it.
+        hunt.herd.species[1].mee = Some(Box::new(crate::dino::mee::MeeInfo::new(ai::STEGO)));
+        assert!(hunt.is_target(&c));
+        hunt.herd.species[1].mee = Some(Box::new(crate::dino::mee::MeeInfo::new(2)));
+        assert_eq!(hunt.call_bit(&c), None);
+        assert!(!hunt.is_target(&c));
+        // Unless its data puts it on the radar.
+        hunt.herd.species[1].tuning.radar = Some(true);
+        assert!(hunt.is_target(&c));
     }
 
     /// Ticks without stepping the herd (keeps the target still).
