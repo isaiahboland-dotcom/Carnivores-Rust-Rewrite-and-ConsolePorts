@@ -598,8 +598,19 @@ impl Menus {
                 }
             }
         }
-        let Some(from) = self.focus_rect().map(center) else {
+        let Some(here) = self.focus_rect() else {
             return;
+        };
+        let from = center(here);
+        // In line with the focus (sharing its rows, or its columns), else
+        // within 45 degrees of the push; nothing further off (BACK's left
+        // isn't DAWN).
+        let in_line = |r: Rect| {
+            if dx != 0 {
+                r.1 < here.1 + here.3 && here.1 < r.1 + r.3
+            } else {
+                r.0 < here.0 + here.2 && here.0 < r.0 + r.2
+            }
         };
         let (dx, dy) = (dx as f32, dy as f32);
         let best = self
@@ -611,9 +622,16 @@ impl Menus {
                 let (ox, oy) = (cx - from.0, cy - from.1);
                 let along = ox * dx + oy * dy;
                 let across = (ox * dy - oy * dx).abs();
-                (along > 1.0).then_some((f, along + 2.0 * across))
+                let tier = if in_line(r) {
+                    0
+                } else if across <= along {
+                    1
+                } else {
+                    return None;
+                };
+                (along > 1.0).then_some((f, (tier, along + 2.0 * across)))
             })
-            .min_by(|a, b| a.1.total_cmp(&b.1));
+            .min_by(|a, b| a.1 .0.cmp(&b.1 .0).then(a.1 .1.total_cmp(&b.1 .1)));
         if let Some((f, _)) = best {
             self.set_focus(f);
         }

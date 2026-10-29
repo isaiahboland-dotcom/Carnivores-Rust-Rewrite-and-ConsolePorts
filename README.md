@@ -665,7 +665,11 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
         + / − come back to it; right stick click recentres (standing height, menu in front)
   - [x] animals: HUNT runs the PC's hunt simulation as an observer (animals roam, ignore you), drawn with the
         PC's `model.wgsl`, every huntable species placed
-  - [ ] the hunt proper (weapon, shooting, calls, HUD); the hunt setup, options and credits on the panel;
+  - [x] the hunt setup on the panel, the PC's screen with the game's pictures and texts (CPU-drawn, the PC's
+        8x8 font): area, animals, dawn / day / night, observer mode, BACK and HUNT; D-pad / stick moves a gold
+        box, A / + takes, B goes back; weapons, equipment, fog and tranquilizer dimmed; hunts are free (no
+        account in VR yet). Without observer mode the animals hunt you; dying returns to the camp in 12 s
+  - [ ] the hunt proper (weapon, shooting, calls, HUD); the account; options and credits on the panel;
         trophies in the trophy room
 - [ ] M18 a PSVR2 version of the game
 

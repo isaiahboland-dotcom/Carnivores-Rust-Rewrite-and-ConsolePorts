@@ -163,6 +163,13 @@ and test save compatibility between modes before sharing saves.
   (every huntable species placed; they roam and ignore you), drawn with
   `model.wgsl`, each drawn between its last two ticks. Checked in Monado's
   qwerty window (23 animals placed, one walking past the camp, 60 fps).
-- Next: the weapon and shooting, calls, the HUD; the hunt setup screen on
-  the panel; trophies in the trophy room.
+- Hunt setup, 2026-10-29: HUNT opens the PC's setup screen on the panel
+  (now a CPU-drawn canvas with the PC's 8x8 font): area, animals, time of
+  day, observer mode; weapons, equipment, fog and tranquilizer dimmed;
+  free hunts. The hunt starts at a landing spot with the picked animals
+  (an observer's: the random mix); dying returns to the camp after 12 s.
+  Checked off the headset (the canvas drawn from the game data to
+  pictures, the D-pad stepped through every item); not yet in the headset.
+- Next: try the setup in the PS VR2 (text sharpness, D-pad); the weapon
+  and shooting, calls, the HUD; the account; trophies in the trophy room.
 

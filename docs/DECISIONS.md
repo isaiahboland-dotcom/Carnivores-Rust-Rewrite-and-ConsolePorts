@@ -2,6 +2,35 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-29 — PC VR: the hunt setup on the panel; the panel drawn on the CPU
+
+HUNT on the VR main menu now opens the PC's hunt setup screen
+(`MENU2.TGA`, its lit version, `M2_MAP.RAW`) with the game's own area and
+animal names, prices, pictures (`PICS`) and texts (`TXT`: areas, animals,
+`DAY1-3.NFO`, `OBSERVE.NFO`), laid out as `c2-pc menu.rs` lays them out.
+Offered: the area, the animals (several), dawn / day / night, observer
+mode, BACK and HUNT. Weapons and equipment (marked "Not in VR yet"), fog
+and the tranquilizer are dimmed, not hidden, so the screen stays the
+PC's. Hunts cost nothing: VR has no account yet. A hunt starts at one of
+the area's landing spots; an observer's hunt places the original's random
+mix (as `c2-pc launch_hunt`), otherwise the picked animals are the targets
+and can kill you, which returns you to the camp menu after the original's
+12 seconds.
+
+This needs text, so the panel's picture is now drawn on the CPU (`canvas.rs`)
+at twice the menu's 800 x 600, with the PC's proportional 8x8 font
+(`font8x8`, as `c2-pc hud.rs`), and uploaded only when it changes; the
+shader just shows it with the pointer dot. That replaces the main menu's
+one-shader drawing (entry below); a canvas is simpler than a text pipeline
+and costs nothing while the menu is still.
+
+The pad moves a gold focus box: up and down a list go row by row (it
+scrolls); otherwise the nearest thing in line with the focus that way
+(sharing its rows, or its columns), else the nearest within 45 degrees;
+nothing further off, so BACK's left is nothing rather than DAWN. A or +
+takes, B goes back. Checked off the headset by drawing the canvas from the
+real game data to pictures and stepping the focus through every item.
+
 ## 2026-10-29 — PC VR: animals, in an observer's hunt
 
 HUNT in the headset now runs `c2_core::game::Hunt`, the PC's own
