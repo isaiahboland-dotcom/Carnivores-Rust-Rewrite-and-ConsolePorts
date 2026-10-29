@@ -41,9 +41,9 @@ the 3DS's PICA200 GPU and the Wii U's PowerPC CPU.
 |---|---|---|
 | **PC** (Linux; Windows untested) | Playable, feature-rich | The full original game, plus add-ons, Modder's Edition games, standalone games, Carnivores: Ice Age, animals from the mobile games, survival mode and a balance editor. Bugs mostly show up when a lot of mods and add-ons are used at once. |
 | **Nintendo 3DS** (homebrew) | Nearly complete | Full hunts, touch menus, bottom-screen map, sound, saves, trophy room, add-on and standalone packs, `.cia` installs. Tested on real 3DS and 2DS hardware. Like PC, bugs mostly come from packing in too many add-ons or mods. |
-| **Wii U** (homebrew) | Demo / proof of concept | Stock Carnivores 2 only: menu, all five maps, the nine animals, six weapons, calls, radar, GamePad map. Tested in the Cemu emulator, not yet on hardware. |
+| **Wii U** (homebrew) | Demo / proof of concept | Stock Carnivores 2 only: menu, all five maps, the nine animals, six weapons, calls, radar, GamePad map. Tested in the Cemu emulator at 60 fps, ~5fps on real hardware. |
 | **PC VR** (OpenXR) | Early first draft | Menus and the hunt setup on a panel, walking the areas, animals that hunt you. No weapons yet. Tested with a PS VR2 on Linux through Monado. |
-| **PS5 / PS VR2** | Not started | Research notes only (`psvr2-ver/gameplan.md`). |
+| **PS5 / PS VR2** | Not started | Research notes only (`psvr2-ver/ gameplan.md`). |
 
 ---
 
