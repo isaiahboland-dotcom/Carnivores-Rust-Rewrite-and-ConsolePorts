@@ -23,13 +23,30 @@ pub struct Eye {
     pub tan: [f32; 4],
 }
 
-/// The controllers' sticks (Index, Touch, WMR; Vive trackpads).
+/// Where a controller points, in the tracking space.
+#[derive(Clone, Copy, Debug)]
+pub struct Ray {
+    pub pos: Vec3,
+    /// Unit length.
+    pub dir: Vec3,
+}
+
+/// The controllers (sticks: Index, Touch, WMR; Vive trackpads) and the
+/// gamepad.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Input {
     /// Left stick: walk (x right, y forward), -1..1.
     pub walk: Vec2,
     /// Right stick pushed past half way this frame: -1 left, 1 right.
     pub snap_turn: i32,
+    /// Each hand's pointing ray (left, right), where tracked.
+    pub aim: [Option<Ray>; 2],
+    /// A controller's trigger went down this frame (left, right).
+    pub select: [bool; 2],
+    /// The left controller's menu button or the pad's - / Select went down:
+    /// quits, unless the scene `handles_back`.
+    pub back: bool,
+    pub pad: c2_pad::Frame,
 }
 
 pub struct Frame {
@@ -62,10 +79,25 @@ pub trait Scene {
     fn record(&mut self, gpu: &Gpu, f: &Frame) -> Result<()>;
     /// Frees everything; the GPU is idle.
     fn destroy(&mut self, gpu: &Gpu);
+    /// `Input::back` is the scene's (back to the menu) rather than quitting.
+    fn handles_back(&self) -> bool {
+        false
+    }
+    /// After each frame: carry on, quit, or swap to another scene.
+    fn next(&mut self) -> Next {
+        Next::Stay
+    }
 }
 
 /// Makes the scene once the device and the swapchain's format are known.
 pub type MakeScene = Box<dyn FnOnce(&Gpu, vk::Format) -> Result<Box<dyn Scene>>>;
+
+pub enum Next {
+    Stay,
+    Quit,
+    /// This scene goes and that one comes (another area, the menu).
+    Load(MakeScene),
+}
 
 /// A colour (and depth) render pass, the colour left as the compositor
 /// wants it.

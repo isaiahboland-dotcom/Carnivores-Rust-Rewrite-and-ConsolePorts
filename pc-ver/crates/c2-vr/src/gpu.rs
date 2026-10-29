@@ -182,10 +182,21 @@ impl Gpu {
         texels: &[u8],
         layers: u32,
     ) -> Result<(Image, vk::ImageView)> {
-        let format = vk::Format::R8G8B8A8_UNORM;
+        self.texture((size, size), vk::Format::R8G8B8A8_UNORM, texels, layers)
+    }
+
+    /// `layers` textures of `size` in `format` (`texels`, layer after
+    /// layer, as tightly packed as the format) as one sampled array.
+    pub fn texture(
+        &self,
+        size: (u32, u32),
+        format: vk::Format,
+        texels: &[u8],
+        layers: u32,
+    ) -> Result<(Image, vk::ImageView)> {
         let extent = vk::Extent3D {
-            width: size,
-            height: size,
+            width: size.0,
+            height: size.1,
             depth: 1,
         };
         let image = self.image(

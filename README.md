@@ -660,7 +660,10 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] the sky (scrolling clouds) and sun with the PC's `sky.wgsl`
   - [x] gamepads (`c2-pad`): left stick walks, right stick snap-turns, − quits (the PS VR2 has no controllers
         under Monado); far trees as whole models (sprites look flat in stereo)
-  - [ ] a menu panel; then the hunt (animals, weapon, HUD)
+  - [x] the main menu on a panel in AREA1's military camp, in front of where you face: controller ray or
+        D-pad picks (lit, gold box), trigger / A takes; HUNT walks the area, TROPHY the trophy room, QUIT;
+        + / − come back to it
+  - [ ] the hunt (animals, weapon, HUD); the hunt setup, options and credits on the panel
 - [ ] M18 a PSVR2 version of the game
 
 _Last updated: 2026-10-22 — the add-on pack plays on hardware and the Old 3DS slowdown after a kill is gone. Roaming add-ons on the 3DS are proper hunt targets (no call, +10%, a menu picture); dialect games no longer halve non-target scores. M10: the launchers' balance editor. Next: `.cia` builds._

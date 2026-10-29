@@ -7,8 +7,11 @@
 //! controller poses are read every frame in the stage space (floor at 0)
 //! or, where the runtime has none (Monado's PS VR2 driver), the local space,
 //! its floor put `EYE_HEIGHT_M` below the head's first pose; likewise a
-//! stage floor that puts the head implausibly low. Quitting: the runtime's own quit (SteamVR dashboard), the left
-//! controller's menu button, or the time limit.
+//! stage floor that puts the head implausibly low. Quitting: the runtime's
+//! own quit (SteamVR dashboard), the scene's (`Scene::next`), the left
+//! controller's menu button or the pad's - (unless the scene takes them,
+//! `Scene::handles_back`), or the time limit. A scene can hand over to
+//! another, which is built on the same swapchain.
 
 #![allow(unsafe_code)] // Vulkan and OpenXR handles cross the FFI boundary here.
 
@@ -20,7 +23,7 @@ use glam::{Quat, Vec2, Vec3};
 use openxr as xr;
 
 use crate::gpu::Gpu;
-use crate::scene::{Eye, Frame, Input, MakeScene, Scene};
+use crate::scene::{Eye, Frame, Input, MakeScene, Next, Ray, Scene};
 
 const VIEW_TYPE: xr::ViewConfigurationType = xr::ViewConfigurationType::PRIMARY_STEREO;
 const VIEWS: usize = 2;
@@ -59,9 +62,12 @@ struct Actions {
     set: xr::ActionSet,
     left: xr::Action<xr::Posef>,
     right: xr::Action<xr::Posef>,
+    left_aim: xr::Action<xr::Posef>,
+    right_aim: xr::Action<xr::Posef>,
     quit: xr::Action<bool>,
     walk: xr::Action<xr::Vector2f>,
     turn: xr::Action<xr::Vector2f>,
+    select: [xr::Action<bool>; 2],
 }
 
 impl Actions {
@@ -77,6 +83,18 @@ impl Actions {
             right: set
                 .create_action("right_hand", "Right hand", &[])
                 .map_err(xr_err("creating actions"))?,
+            left_aim: set
+                .create_action("left_aim", "Left hand pointing", &[])
+                .map_err(xr_err("creating actions"))?,
+            right_aim: set
+                .create_action("right_aim", "Right hand pointing", &[])
+                .map_err(xr_err("creating actions"))?,
+            select: [
+                set.create_action("left_select", "Select (left)", &[])
+                    .map_err(xr_err("creating actions"))?,
+                set.create_action("right_select", "Select (right)", &[])
+                    .map_err(xr_err("creating actions"))?,
+            ],
             quit: set
                 .create_action("quit", "Quit", &[])
                 .map_err(xr_err("creating actions"))?,
@@ -92,44 +110,57 @@ impl Actions {
         Ok(a)
     }
 
-    /// A pose per hand, the quit button and the sticks, for each controller
-    /// kind OpenXR names (the runtime takes the ones it has).
+    /// The poses per hand, the quit button, the sticks and the triggers, for
+    /// each controller kind OpenXR names (the runtime takes the ones it has).
     fn suggest(&self, instance: &xr::Instance) {
-        // (profile, quit button, stick or trackpad)
-        let profiles: [(&str, Option<&str>, Option<&str>); 5] = [
+        // (profile, quit button, stick or trackpad, trigger)
+        let profiles: [(&str, Option<&str>, Option<&str>, &str); 5] = [
             (
                 "/interaction_profiles/khr/simple_controller",
                 Some("/user/hand/left/input/menu/click"),
                 None,
+                "select/click",
             ),
             (
                 "/interaction_profiles/valve/index_controller",
                 Some("/user/hand/left/input/b/click"),
                 Some("thumbstick"),
+                "trigger/click",
             ),
             (
                 "/interaction_profiles/oculus/touch_controller",
                 Some("/user/hand/left/input/menu/click"),
                 Some("thumbstick"),
+                "trigger/value",
             ),
             (
                 "/interaction_profiles/htc/vive_controller",
                 Some("/user/hand/left/input/menu/click"),
                 Some("trackpad"),
+                "trigger/click",
             ),
             (
                 "/interaction_profiles/microsoft/motion_controller",
                 None,
                 Some("thumbstick"),
+                "trigger/value",
             ),
         ];
-        for (profile, quit, stick) in profiles {
+        for (profile, quit, stick, trigger) in profiles {
             let path = |p: &str| instance.string_to_path(p);
             let r = (|| -> std::result::Result<(), xr::sys::Result> {
                 let mut b = vec![
                     xr::Binding::new(&self.left, path("/user/hand/left/input/grip/pose")?),
                     xr::Binding::new(&self.right, path("/user/hand/right/input/grip/pose")?),
+                    xr::Binding::new(&self.left_aim, path("/user/hand/left/input/aim/pose")?),
+                    xr::Binding::new(&self.right_aim, path("/user/hand/right/input/aim/pose")?),
                 ];
+                for (act, hand) in self.select.iter().zip(["left", "right"]) {
+                    b.push(xr::Binding::new(
+                        act,
+                        path(&format!("/user/hand/{hand}/input/{trigger}"))?,
+                    ));
+                }
                 if let Some(q) = quit {
                     b.push(xr::Binding::new(&self.quit, path(q)?));
                 }
@@ -335,6 +366,11 @@ fn session(
     let [Ok(left_space), Ok(right_space)] = hand_spaces else {
         bail!("creating hand spaces failed");
     };
+    let aim_spaces = [&actions.left_aim, &actions.right_aim]
+        .map(|a| a.create_space(&session, xr::Path::NULL, xr::Posef::IDENTITY));
+    let [Ok(left_aim), Ok(right_aim)] = aim_spaces else {
+        bail!("creating hand spaces failed");
+    };
     let stage_ok = session
         .enumerate_reference_spaces()
         .map(|s| s.contains(&xr::ReferenceSpaceType::STAGE))
@@ -381,20 +417,13 @@ fn session(
     let mut scene = make(gpu, format)?;
     let mut targets = Targets::default();
     let looped = (|| -> Result<Measured> {
-        let extra = scene.eye_targets(gpu, extent)?;
-        for raw in swapchain
+        let images: Vec<vk::Image> = swapchain
             .enumerate_images()
             .map_err(xr_err("reading swapchain images"))?
-        {
-            targets.add(
-                gpu,
-                scene.as_ref(),
-                vk::Image::from_raw(raw),
-                format,
-                extent,
-                &extra,
-            )?;
-        }
+            .into_iter()
+            .map(vk::Image::from_raw)
+            .collect();
+        targets.build(gpu, scene.as_mut(), &images, format, extent)?;
         frame_loop(FrameLoop {
             instance,
             session: &session,
@@ -403,13 +432,16 @@ fn session(
             swapchain: &mut swapchain,
             actions: &actions,
             hands: [&left_space, &right_space],
+            aims: [&left_aim, &right_aim],
             space: &space,
             blend,
             floor,
             extent,
+            format,
+            images: &images,
             gpu,
-            scene: scene.as_mut(),
-            targets: &targets,
+            scene: &mut scene,
+            targets: &mut targets,
             limit,
         })
     })();
@@ -419,6 +451,8 @@ fn session(
         space,
         left_space,
         right_space,
+        left_aim,
+        right_aim,
         actions,
         frame_stream,
         frame_wait,
@@ -441,6 +475,22 @@ struct Targets {
 }
 
 impl Targets {
+    /// The scene's framebuffers on every swapchain image.
+    fn build(
+        &mut self,
+        gpu: &Gpu,
+        scene: &mut dyn Scene,
+        images: &[vk::Image],
+        format: vk::Format,
+        extent: vk::Extent2D,
+    ) -> Result<()> {
+        let extra = scene.eye_targets(gpu, extent)?;
+        for &image in images {
+            self.add(gpu, &*scene, image, format, extent, &extra)?;
+        }
+        Ok(())
+    }
+
     fn add(
         &mut self,
         gpu: &Gpu,
@@ -508,15 +558,44 @@ struct FrameLoop<'a> {
     swapchain: &'a mut xr::Swapchain<xr::Vulkan>,
     actions: &'a Actions,
     hands: [&'a xr::Space; 2],
+    aims: [&'a xr::Space; 2],
     space: &'a xr::Space,
     blend: xr::EnvironmentBlendMode,
     /// The tracking space's floor; `None`: set from the first head pose.
     floor: Option<f32>,
     extent: vk::Extent2D,
+    format: vk::Format,
+    images: &'a [vk::Image],
     gpu: &'a Gpu,
-    scene: &'a mut dyn Scene,
-    targets: &'a Targets,
+    /// Swapped for the next one when it asks (`Scene::next`).
+    scene: &'a mut Box<dyn Scene>,
+    targets: &'a mut Targets,
     limit: Option<Duration>,
+}
+
+/// In the scene's place while the next one is made: nothing to free.
+struct Gone;
+
+impl Scene for Gone {
+    fn render_pass(&self) -> vk::RenderPass {
+        vk::RenderPass::null()
+    }
+    fn eye_targets(&mut self, _: &Gpu, _: vk::Extent2D) -> Result<[Vec<vk::ImageView>; 2]> {
+        bail!("no scene")
+    }
+    fn record(&mut self, _: &Gpu, _: &Frame) -> Result<()> {
+        bail!("no scene")
+    }
+    fn destroy(&mut self, _: &Gpu) {}
+}
+
+/// A pose's -z (where it points) as a ray.
+fn ray(p: &xr::Posef) -> Ray {
+    let (o, q) = (p.position, p.orientation);
+    Ray {
+        pos: Vec3::new(o.x, o.y, o.z),
+        dir: Quat::from_xyzw(q.x, q.y, q.z, q.w) * Vec3::NEG_Z,
+    }
 }
 
 fn frame_loop(l: FrameLoop<'_>) -> Result<Measured> {
@@ -617,13 +696,13 @@ fn frame_loop(l: FrameLoop<'_>) -> Result<Measured> {
             l.session
                 .sync_actions(&[(&a.set).into()])
                 .map_err(xr_err("reading controllers"))?;
-            let pressed = a
-                .quit
-                .state(l.session, xr::Path::NULL)
-                .is_ok_and(|s| s.current_state && s.changed_since_last_sync);
+            let went_down = |act: &xr::Action<bool>| {
+                act.state(l.session, xr::Path::NULL)
+                    .is_ok_and(|s| s.current_state && s.changed_since_last_sync)
+            };
             let pad = pads.poll();
-            let pressed = pressed || pad.pressed(c2_pad::Action::Exit);
-            if !exiting && (pressed || timed_out) {
+            let back = went_down(&a.quit) || pad.pressed(c2_pad::Action::Exit);
+            if !exiting && ((back && !l.scene.handles_back()) || timed_out) {
                 exiting = true;
                 let _ = l.session.request_exit();
             }
@@ -648,12 +727,26 @@ fn frame_loop(l: FrameLoop<'_>) -> Result<Measured> {
                 }
                 0
             };
+            let mut aim = [None; 2];
+            for (i, s) in l.aims.iter().enumerate() {
+                if let Ok(loc) = s.locate(l.space, state.predicted_display_time) {
+                    let valid = xr::SpaceLocationFlags::POSITION_VALID
+                        | xr::SpaceLocationFlags::ORIENTATION_VALID;
+                    if loc.location_flags.contains(valid) {
+                        aim[i] = Some(ray(&loc.pose));
+                    }
+                }
+            }
             let input = Input {
                 walk: match stick(&a.walk) {
                     w if w != Vec2::ZERO => w,
                     _ => Vec2::from(pad.walk),
                 },
                 snap_turn,
+                aim,
+                select: [went_down(&a.select[0]), went_down(&a.select[1])],
+                back,
+                pad,
             };
             let mut hands = [None; 2];
             for (i, h) in l.hands.iter().enumerate() {
@@ -772,6 +865,28 @@ fn frame_loop(l: FrameLoop<'_>) -> Result<Measured> {
             frames += 1;
             slot = (slot + 1) % DEPTH;
             worst_cpu = worst_cpu.max(cpu.elapsed().as_secs_f32() * 1000.0);
+            match l.scene.next() {
+                Next::Stay => {}
+                Next::Quit => {
+                    if !exiting {
+                        exiting = true;
+                        let _ = l.session.request_exit();
+                    }
+                }
+                Next::Load(make) => {
+                    // SAFETY: our frames finish before their scene goes.
+                    unsafe {
+                        dev.wait_for_fences(&fences, true, u64::MAX)?;
+                    }
+                    l.targets.destroy(gpu);
+                    std::mem::replace(l.scene, Box::new(Gone)).destroy(gpu);
+                    *l.scene = make(gpu, l.format)?;
+                    l.targets
+                        .build(gpu, l.scene.as_mut(), l.images, l.format, l.extent)?;
+                    // The load's time isn't a frame's.
+                    last = Instant::now();
+                }
+            }
         }
         Ok(())
     })();

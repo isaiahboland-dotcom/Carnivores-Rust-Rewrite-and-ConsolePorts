@@ -2,6 +2,37 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-29 — PC VR: the main menu on a panel in the camp
+
+The owner's design: you start in a corner of the first area, the abandoned
+military camp, with the PC main menu standing where you face at launch;
+point with a controller or use the D-pad, a yellow box on the pick, A to
+take it. The camp is AREA1's man-made cluster around cell (645, 292): the
+satellite dish (objects 22-24), the bunker and huts (25-31). The head is put
+at (645.5, 302.7), looking north to them.
+
+The panel draws the game's own screen (`MENUM.TGA`, `MENUM_ON.TGA`,
+`MAIN_MAP.RAW`) in one shader, not by re-running `c2-pc`'s wgpu menu: the
+pictures are an sRGB texture array (so no colour conversion), the hit map an
+integer texture, and the pick (lit, gold box), the dimmed items and the
+pointer are push constants. Only what works in VR is offered (Hunt, Trophy,
+Quit); the rest are dimmed rather than hidden, so the screen is the PC's.
+The name and account plaques are empty (no text drawing in VR yet).
+
+It stands in the tracking space, not the world, and walking and turning are
+off while it shows, so it can't be walked away from. It's drawn last with
+no depth test, so camp objects never cut it. Controllers point with their
+aim pose and select with the trigger; the gamepad's D-pad up / down (crouch
+/ next call in the hunt) and the left stick step through the items, A or +
+takes one.
+
+Scenes can now hand over to another (`Scene::next`: stay, quit, load): the
+frame loop waits for its frames, frees the old scene's targets and the
+scene, and builds the new one on the same swapchain. HUNT stays in the camp
+scene (the panel goes, the sticks walk); TROPHY loads `TROPHY.MAP` (start
+cell (76, 70) as on PC), and leaving it loads the menu again. `-` quits only
+in the menu (`Scene::handles_back`); elsewhere it and `+` go back to it.
+
 ## 2026-10-29 — PC gamepad: menu pointer, button hints, the teleport map
 - Menus: a drawn pointer (`c2-pc pad_cursor.rs`; Wayland lets no program
   move the system one) fed to the menus as the mouse, so every screen

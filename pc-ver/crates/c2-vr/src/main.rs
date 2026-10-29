@@ -5,8 +5,8 @@
 //! - `c2-vr area PATH/AREA1.MAP [--seconds N]`: that area's terrain.
 //! - `c2-vr play GAME [--overlay DIR].. [--mod DIR].. [--standalone DIR]..`
 //!   (what the launcher's "Play in VR" passes, the same as `c2-pc play`):
-//!   checks the runtime and the game, then shows the game's first area, as
-//!   the hunt isn't in VR yet. Other `c2-pc play` options are accepted and
+//!   checks the runtime and the game, then the main menu in the first
+//!   area's camp (`game`). Other `c2-pc play` options are accepted and
 //!   ignored.
 
 use std::path::{Path, PathBuf};
@@ -104,29 +104,14 @@ fn play(args: &[String]) -> Result<()> {
         standalones.len()
     );
     check_runtime()?;
-    let map = ["HUNTDAT", "AREAS", "AREA1.MAP"]
-        .iter()
-        .try_fold(base.clone(), |d, part| find_ci(&d, part))
-        .ok_or_else(|| anyhow!("{}: no HUNTDAT/AREAS/AREA1.MAP", base.display()))?;
     if !c2_vr::PLAYABLE {
         println!(
-            "The hunt isn't in VR yet (first draft): showing the first area's ground and water \
-             to walk around (add-ons are not loaded yet)."
+            "The hunt isn't in VR yet (first draft): the main menu, then the first area to \
+             walk around, or the trophy room (add-ons are not loaded yet)."
         );
     }
-    area(&map, None)
-}
-
-/// `name` in `dir`, any case.
-fn find_ci(dir: &Path, name: &str) -> Option<PathBuf> {
-    std::fs::read_dir(dir)
-        .ok()?
-        .flatten()
-        .map(|e| e.path())
-        .find(|p| {
-            p.file_name()
-                .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(name))
-        })
+    let game = c2_vr::game::Game::new(&base, &overlays)?;
+    run(c2_vr::game::menu(game)?, seconds(args)?)
 }
 
 fn area(map: &Path, seconds: Option<f32>) -> Result<()> {

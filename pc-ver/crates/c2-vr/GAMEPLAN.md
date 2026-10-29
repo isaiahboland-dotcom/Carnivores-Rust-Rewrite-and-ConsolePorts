@@ -144,6 +144,16 @@ and test save compatibility between modes before sharing saves.
   right stick snap-turns 30 degrees, - / Select quits; checked on the PS
   VR2 with a PowerA Nano. Far trees are whole models now (the owner: the
   sprites "move oddly" in stereo; "way better").
-- Next: a menu panel and the hunt (animals, weapon, HUD).
+- Main menu, 2026-10-29: `c2-vr play` opens on the PC's main screen
+  (`MENUM.TGA`, its lit version and hit map) on a 2 x 1.5 m panel 2.5 m in
+  front of wherever you face, standing in AREA1's abandoned military camp
+  (south of the bunker, the satellite dish behind). A controller's ray (a
+  gold dot where it meets the panel) or the D-pad / left stick picks; the
+  pick is lit in a gold box; trigger, A or + takes it. HUNT walks the area
+  from the camp (no animals yet), TROPHY loads the trophy room (empty),
+  QUIT quits; Options, Credits and Statistics are dimmed. Away from the
+  menu, + or - returns to it. Scenes swap in the session (`Scene::next`).
+  Checked in Monado's qwerty window (menu, trophy room, back again) and
+  119.6 fps on the PS VR2; not yet tried with the pad in the headset.
+- Next: the hunt (animals, weapon, HUD), the hunt setup screen on the panel.
 
-No headset test has been performed yet.

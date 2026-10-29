@@ -189,7 +189,13 @@ pub struct TerrainScene {
     start: Instant,
     objects: Objects,
     sky: Sky,
+    /// The sticks walk and turn (not while a menu shows).
+    pub walking: bool,
 }
+
+/// Drawn over the scene in each eye's pass (a menu): the eye (0, 1) and
+/// its world-to-clip matrix.
+pub type Overlay<'a> = &'a mut dyn FnMut(&Gpu, vk::CommandBuffer, usize, Mat4);
 
 impl TerrainScene {
     /// `sun`: the sun (or moon) model (`sky::load_sun`), if found.
@@ -435,27 +441,40 @@ impl TerrainScene {
                 yaw: 0.0,
                 grounded: false,
                 start: Instant::now(),
+                walking: true,
             })
         }
     }
 
     /// A point in the tracking space, in the world.
-    fn world(&self, p: Vec3, floor: f32) -> Vec3 {
+    pub fn world(&self, p: Vec3, floor: f32) -> Vec3 {
         self.origin + Quat::from_rotation_y(self.yaw) * ((p - Vec3::Y * floor) * UNITS_PER_M)
     }
 
-    /// Snap turns about the head, the sticks' walking, the ground under
-    /// the head.
-    fn move_player(&mut self, f: &Frame) {
+    /// Puts the head over the world point (`x`, `z`) on the ground, looking
+    /// the way `heading` (world, y up; 0 looks to -z) says.
+    pub fn place_head(&mut self, f: &Frame, x: f32, z: f32, heading: f32) {
         let head = f.head();
-        if f.input.snap_turn != 0 {
+        let look = f.eyes[0].rot * Vec3::NEG_Z;
+        // The tracking space's heading turned onto `heading`.
+        self.yaw = heading - f32::atan2(-look.x, -look.z);
+        let h = self.world(head, f.floor) - self.origin;
+        self.origin = Vec3::new(x - h.x, self.area.land_height(x, z), z - h.z);
+        self.grounded = false;
+    }
+
+    /// Snap turns about the head, the sticks' walking (when `walking`), the
+    /// ground under the head.
+    pub fn move_player(&mut self, f: &Frame) {
+        let head = f.head();
+        if self.walking && f.input.snap_turn != 0 {
             let before = self.world(head, f.floor);
             self.yaw -= SNAP * f.input.snap_turn as f32;
             let after = self.world(head, f.floor);
             self.origin.x += before.x - after.x;
             self.origin.z += before.z - after.z;
         }
-        if f.input.walk.length_squared() > 0.01 {
+        if self.walking && f.input.walk.length_squared() > 0.01 {
             let look = Quat::from_rotation_y(self.yaw) * f.eyes[0].rot * Vec3::NEG_Z;
             let fwd = Vec3::new(look.x, 0.0, look.z).normalize_or_zero();
             let right = Vec3::new(-fwd.z, 0.0, fwd.x);
@@ -552,6 +571,18 @@ impl Scene for TerrainScene {
 
     fn record(&mut self, gpu: &Gpu, f: &Frame) -> Result<()> {
         self.move_player(f);
+        self.draw(gpu, f, None);
+        Ok(())
+    }
+
+    fn destroy(&mut self, gpu: &Gpu) {
+        self.destroy_all(gpu);
+    }
+}
+
+impl TerrainScene {
+    /// Both eyes, `overlay` drawn last in each.
+    pub fn draw(&mut self, gpu: &Gpu, f: &Frame, mut overlay: Option<Overlay<'_>>) {
         let far = RADIUS as f32 * CELL;
         let head = self.world(f.head(), f.floor);
         let center = ((head.x / CELL) as i32, (head.z / CELL) as i32);
@@ -606,13 +637,15 @@ impl Scene for TerrainScene {
                 dev.cmd_bind_descriptor_sets(f.cmd, gfx, self.layout, 0, &sets, &[]);
                 dev.cmd_bind_pipeline(f.cmd, gfx, self.water);
                 dev.cmd_draw(f.cmd, width * width * 6, 1, 0, 0);
+                if let Some(o) = overlay.as_mut() {
+                    o(gpu, f.cmd, i, Mat4::from_cols_array(&g.view_proj));
+                }
                 dev.cmd_end_render_pass(f.cmd);
             }
         }
-        Ok(())
     }
 
-    fn destroy(&mut self, gpu: &Gpu) {
+    fn destroy_all(&mut self, gpu: &Gpu) {
         self.objects.destroy(gpu);
         self.sky.destroy(gpu);
         // SAFETY: the GPU is idle; each handle is destroyed once.
