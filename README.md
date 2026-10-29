@@ -1,7 +1,6 @@
-# c2rs — Carnivores 2, rebuilt in Rust for PC, 3DS and beyond
+# Carnivores Classic, rebuilt in Rust for PC, 3DS and beyond
 
-A fan-made, ground-up Rust rewrite of **Carnivores 2** (Action Forms, 1999), with a mod system that
-can combine community mods automatically, and ports to the **Nintendo 3DS**, the **Wii U** and **PC VR**.
+A fan-made, ground-up Rust rewrite of **Carnivores 2** (Action Forms, 1999), with a mod system that can combine community mods automatically, and ports to the **Nintendo 3DS**, the **Wii U**(work in progress) and **PC VR** (work in progress).
 
 You need your own copy of Carnivores 2: this project contains **no game files and no mod files**, only
 code, documentation and recipes (lists of credits, download links and file hashes).
@@ -10,10 +9,7 @@ code, documentation and recipes (lists of credits, download links and file hashe
 
 ## Why this exists
 
-This is a passion project. Carnivores 2 has been one of my favourite games for a long time. The quiet
-tension of stalking something huge through the fog with a rifle and a hunting call has never really been
-matched. This project is my way of showing how much I admire the game, and the community that has kept it
-alive for over twenty-five years.
+This is a passion project. Carnivores Classic has been one of my favourite games for a long time. It's a game I grew up with and the overall tense feeling of hunting while potentially being hunted always stuck with me. This project is my way of showing how much I admire the game, and the community that has kept it alive for over twenty-five years!
 
 The goal is to make the game **more accessible while staying faithful to it**. The original game's
 behaviour is the reference: where this rewrite differs, that's a bug or a documented choice
@@ -34,7 +30,7 @@ several mods running together can mean a lot of manual file shuffling. This proj
 
 I know it isn't feasible to get the game running on every console or device ever made, but that won't
 stop me from trying. This is also an ongoing exploration of what AI can do when adapting code for very
-different systems: much of the work is done together with Claude Code, from reading the original C++ to
+different systems: much of the work is done together with Claude and ChatGPT, from reading the original C++ to
 the 3DS's PICA200 GPU and the Wii U's PowerPC CPU.
 
 ---
@@ -265,7 +261,7 @@ Each file's header says how to verify, play and cook it for the 3DS. To make you
 |---|---|
 | `pc-ver/` | Cargo workspace (stable Rust): the shared crates (`c2-formats`, `c2-vfs`, `c2-mods`, `c2-core`), the PC game (`c2-pc`), the launchers, PC VR (`c2-vr`), gamepads, and the parity tools |
 | `3ds-ver/` | the 3DS app (`c2-3ds`) and the pack cooker (`c2-cook`); nightly, reuses `pc-ver/crates` |
-| `wiiu-ver/` | the Wii U port: a series of probes and the playable demo (`perf-probe`) |
+| `wiiu-ver/` | the Wii U port: a series of probes for testing and the playable demo (`perf-probe`) |
 | `psvr2-ver/` | PS VR2 research notes |
 | `recipes/` | mod recipes: credits, links and hashes only |
 | `docs/` | [MODDING](docs/MODDING.md), [3DS](docs/3DS.md), [WIIU](docs/WIIU.md), [FORMATS](docs/FORMATS.md) (file formats), [DECISIONS](docs/DECISIONS.md) (every design choice and deviation), [DEVELOPMENT](docs/DEVELOPMENT.md) (spec and conventions) |
@@ -292,4 +288,4 @@ Each file's header says how to verify, play and cook it for the 3DS. To make you
   and link to their pages; please download from them and support their work.
 - The homebrew toolchains this builds on: **devkitPro** (devkitARM, devkitPPC, libctru, citro3d, WUT),
   the **rust3ds** project, **rust-wiiu**, and **Monado** for open-source VR on Linux.
-- Built with the help of **Claude Code** (Anthropic).
+- Built with the help of **Claude** and **ChatGPT**
