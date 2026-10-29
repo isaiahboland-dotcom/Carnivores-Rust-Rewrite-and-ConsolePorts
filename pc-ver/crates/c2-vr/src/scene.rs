@@ -46,6 +46,9 @@ pub struct Input {
     /// The left controller's menu button or the pad's - / Select went down:
     /// quits, unless the scene `handles_back`.
     pub back: bool,
+    /// The pad's right stick click: the floor was just set from the head
+    /// (the scene may put its menu in front again).
+    pub recenter: bool,
     pub pad: c2_pad::Frame,
 }
 

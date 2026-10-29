@@ -2,6 +2,17 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-29 — PC VR: trusting the floor less; a recenter button
+
+On the first menu run Monado's PS VR2 put the standing owner's head 0.86 m
+above its floor, which passed the old 0.6 m check, so the world was too
+high ("like how it was before"). A floor under 1.2 m below the head is now
+taken as wrong (the head as standing eye height); the game is played at
+standing height anyway. The pad's right stick click recentres any time
+(standing height from the head, and the menu in front again): `c2_pad`
+gains a VR-only `Recenter` action. The panel was raised twice at the
+owner's word: its middle is 0.25 m above the eyes (it was 0.15 m below).
+
 ## 2026-10-29 — PC VR: the main menu on a panel in the camp
 
 The owner's design: you start in a corner of the first area, the abandoned

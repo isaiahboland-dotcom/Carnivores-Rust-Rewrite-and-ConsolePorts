@@ -155,5 +155,9 @@ and test save compatibility between modes before sharing saves.
   menu, + or - returns to it. Scenes swap in the session (`Scene::next`).
   Checked in Monado's qwerty window (menu, trophy room, back again) and
   119.6 fps on the PS VR2; not yet tried with the pad in the headset.
+- Height, 2026-10-29: Monado's PS VR2 floor once put a standing head 0.86
+  m up, so a floor under 1.2 m below the head is distrusted now; the pad's
+  right stick click recentres. The panel's middle is 0.25 m above the eyes
+  (the owner: "solid").
 - Next: the hunt (animals, weapon, HUD), the hunt setup screen on the panel.
 

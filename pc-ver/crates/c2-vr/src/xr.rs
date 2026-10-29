@@ -29,8 +29,9 @@ const VIEW_TYPE: xr::ViewConfigurationType = xr::ViewConfigurationType::PRIMARY_
 const VIEWS: usize = 2;
 /// Frames in flight (per-frame buffers in the scenes).
 pub const DEPTH: usize = 2;
-/// A stage floor less than this below the head is taken as wrong.
-const MIN_HEAD_M: f32 = 0.6;
+/// A stage floor less than this below the head is taken as wrong (Monado's
+/// PS VR2 floor has put a standing head 0.86 m up, and below 0).
+const MIN_HEAD_M: f32 = 1.2;
 
 /// What a run measured, printed at the end.
 pub struct Report {
@@ -635,7 +636,7 @@ fn frame_loop(l: FrameLoop<'_>) -> Result<Measured> {
     // VR2 under Monado); its - / Select quits.
     let mut pads = c2_pad::Pads::new();
     for name in pads.names() {
-        println!("Gamepad: {name} (left stick walks, right stick turns, - / Select quits)");
+        println!("Gamepad: {name} (left stick walks, right stick turns, its click recentres, - / Select quits)");
     }
     let mut floor = l.floor;
     let mut head_reported = false;
@@ -702,6 +703,7 @@ fn frame_loop(l: FrameLoop<'_>) -> Result<Measured> {
             };
             let pad = pads.poll();
             let back = went_down(&a.quit) || pad.pressed(c2_pad::Action::Exit);
+            let recenter = pad.pressed(c2_pad::Action::Recenter);
             if !exiting && ((back && !l.scene.handles_back()) || timed_out) {
                 exiting = true;
                 let _ = l.session.request_exit();
@@ -746,6 +748,7 @@ fn frame_loop(l: FrameLoop<'_>) -> Result<Measured> {
                 aim,
                 select: [went_down(&a.select[0]), went_down(&a.select[1])],
                 back,
+                recenter,
                 pad,
             };
             let mut hands = [None; 2];
@@ -777,9 +780,15 @@ fn frame_loop(l: FrameLoop<'_>) -> Result<Measured> {
                 head_reported = true;
                 println!("Head starts {head_y:.2} m up in the tracking space.");
                 if floor.is_some_and(|f| head_y - f < MIN_HEAD_M) {
-                    println!("  That's below a seated head: the floor is set from it instead.");
+                    println!(
+                        "  Too low to trust that floor: the head is taken as standing eye height."
+                    );
                     floor = None;
                 }
+            }
+            if recenter {
+                println!("Recentred: the head is standing eye height now.");
+                floor = None;
             }
             let floor = *floor.get_or_insert(head_y - crate::scene::EYE_HEIGHT_M);
 

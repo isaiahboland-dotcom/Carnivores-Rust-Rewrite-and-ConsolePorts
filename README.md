@@ -662,7 +662,7 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
         under Monado); far trees as whole models (sprites look flat in stereo)
   - [x] the main menu on a panel in AREA1's military camp, in front of where you face: controller ray or
         D-pad picks (lit, gold box), trigger / A takes; HUNT walks the area, TROPHY the trophy room, QUIT;
-        + / − come back to it
+        + / − come back to it; right stick click recentres (standing height, menu in front)
   - [ ] the hunt (animals, weapon, HUD); the hunt setup, options and credits on the panel
 - [ ] M18 a PSVR2 version of the game
 

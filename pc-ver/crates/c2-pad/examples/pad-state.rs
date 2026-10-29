@@ -23,6 +23,7 @@ fn main() {
         Action::NextCall,
         Action::Pause,
         Action::Exit,
+        Action::Recenter,
     ];
     let end = std::time::Instant::now() + std::time::Duration::from_secs(secs);
     let mut last = String::new();

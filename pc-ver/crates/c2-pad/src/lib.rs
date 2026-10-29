@@ -20,6 +20,7 @@
 //! | D-pad down | next call |
 //! | + / Start | pause |
 //! | − / Select | exit prompt (VR: quit) |
+//! | right stick click | VR: recenter (standing height here, the menu in front) |
 
 use gilrs::{Axis, Button, EventType, Gilrs, GilrsBuilder};
 
@@ -50,9 +51,11 @@ pub enum Action {
     NextCall,
     Pause,
     Exit,
+    /// VR only.
+    Recenter,
 }
 
-const ACTIONS: usize = 12;
+const ACTIONS: usize = 13;
 
 /// The layout: which button does what.
 fn action(b: Button) -> Option<Action> {
@@ -69,6 +72,7 @@ fn action(b: Button) -> Option<Action> {
         Button::DPadDown => Action::NextCall,
         Button::Start => Action::Pause,
         Button::Select => Action::Exit,
+        Button::RightThumb => Action::Recenter,
         _ => return None,
     })
 }
@@ -229,6 +233,7 @@ mod tests {
             Button::DPadDown,
             Button::Start,
             Button::Select,
+            Button::RightThumb,
         ];
         let mut seen = [false; ACTIONS];
         for b in buttons {

@@ -12,7 +12,8 @@
 //! - QUIT.
 //!
 //! Options, credits and statistics are dimmed. Away from the menu, + or -
-//! comes back to it; - in the menu quits.
+//! comes back to it; - in the menu quits. The right stick click recentres
+//! (`xr`: standing height from the head; here the menu in front again).
 
 use std::path::{Path, PathBuf};
 
@@ -251,6 +252,9 @@ impl Scene for GameScene {
     }
 
     fn record(&mut self, gpu: &Gpu, f: &Frame) -> Result<()> {
+        if self.in_menu && f.input.recenter {
+            self.placed = None;
+        }
         if self.placed.is_none() {
             let (x, z, heading) = self.start;
             self.terrain.place_head(f, x * CELL, z * CELL, heading);

@@ -25,8 +25,9 @@ const HH: usize = 300;
 const WIDTH_M: f32 = 2.0;
 const HEIGHT_M: f32 = 1.5;
 const DIST_M: f32 = 2.5;
-/// Its middle this far below the eyes.
-const DROP_M: f32 = 0.15;
+/// Its middle this far above the eyes (the owner raised it twice from 0.15 m
+/// below).
+const RISE_M: f32 = 0.25;
 /// `Push` in the shader.
 const PUSH: u32 = 112;
 
@@ -130,7 +131,7 @@ impl Placement {
             .try_normalize()
             .unwrap_or(Vec3::NEG_Z);
         Self {
-            center: head + fwd * DIST_M - Vec3::Y * DROP_M,
+            center: head + fwd * DIST_M + Vec3::Y * RISE_M,
             right: Vec3::new(-fwd.z, 0.0, fwd.x),
             up: Vec3::Y,
         }
