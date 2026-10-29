@@ -12,7 +12,8 @@ use winit::window::{Window, WindowId};
 
 use crate::gpu::{Frame, Gpu, Target};
 use crate::input::Input;
-use crate::scene::{render, Scene};
+use crate::pad_cursor::PadCursor;
+use crate::scene::{render, render_with, Scene};
 
 pub use crate::scene::MakeScene;
 
@@ -25,6 +26,7 @@ struct Running {
     input: Input,
     last: Instant,
     pads: c2_pad::Pads,
+    pad_cursor: PadCursor,
 }
 
 /// Captures (or releases) the cursor; returns whether it is now captured.
@@ -78,6 +80,7 @@ impl App {
         let frame = Frame::new(&gpu, (size.width, size.height));
         let scene = make(&gpu)?;
         window.set_title(&scene.title());
+        let pad_cursor = PadCursor::new(&gpu);
         let mut input = Input::default();
         if scene.grab_cursor() {
             input.grabbed = grab(&window, true);
@@ -90,6 +93,7 @@ impl App {
             scene,
             input,
             last: Instant::now(),
+            pad_cursor,
             pads: {
                 let pads = c2_pad::Pads::new();
                 for name in pads.names() {
@@ -153,6 +157,8 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 r.input.cursor = Some((position.x as f32, position.y as f32));
+                r.pad_cursor
+                    .mouse_moved(position.x as f32, position.y as f32);
             }
             WindowEvent::MouseInput {
                 button: MouseButton::Right,
@@ -198,8 +204,10 @@ impl ApplicationHandler for App {
                 let dt = (now - r.last).as_secs_f32().min(0.25);
                 r.last = now;
                 r.input.pad = r.pads.poll();
+                r.pad_cursor.apply(&mut r.input, r.frame.size, dt);
                 r.scene.update(&r.gpu, dt, &r.input);
                 r.input.end_frame();
+                r.pad_cursor.after_frame(&mut r.input);
                 let Target::Window { surface, config } = &r.target else {
                     return;
                 };
@@ -213,7 +221,14 @@ impl ApplicationHandler for App {
                     _ => return,
                 };
                 let view = tex.texture.create_view(&Default::default());
-                render(&r.gpu, r.scene.as_mut(), &view, &r.frame);
+                let pointer = &mut r.pad_cursor;
+                render_with(
+                    &r.gpu,
+                    r.scene.as_mut(),
+                    &view,
+                    &r.frame,
+                    &mut |gpu, pass, size| pointer.draw(gpu, pass, size),
+                );
                 if r.scene.wants_exit() {
                     el.exit();
                 }

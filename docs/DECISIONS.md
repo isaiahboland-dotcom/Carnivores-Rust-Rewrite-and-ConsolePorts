@@ -2,6 +2,20 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-29 — PC gamepad: menu pointer, button hints, the teleport map
+- Menus: a drawn pointer (`c2-pc pad_cursor.rs`; Wayland lets no program
+  move the system one) fed to the menus as the mouse, so every screen
+  takes it unchanged; A clicks (held: held), B is Escape, + is Enter; the
+  mouse hides it. "A Select  B Back" shows bottom right meanwhile.
+- Hints follow the device used last (pad or keys/mouse). The exit prompt
+  (A leave / Y restart / B resume; keys Y / R / N), pause and the teleport
+  map always show theirs; Options > Controls "Button hints" (off by
+  default, the original's look) adds map, binoculars, switch gun, jump,
+  crouch, from the player's bindings for the keys.
+- Teleport map: D-pad 64 cells/s (the owner found 40 slightly slow), right
+  stick up to 160 (curved), ZR marks, A goes; meanwhile the D-pad and A
+  don't crouch, change call or jump.
+
 ## 2026-10-29 — Gamepads: a `c2-pad` crate (gilrs) for PC and VR
 The owner asked for native gamepad support on PC and in VR. `gilrs` is the
 README's named choice; a small shared crate (`c2-pad`, a layout change)

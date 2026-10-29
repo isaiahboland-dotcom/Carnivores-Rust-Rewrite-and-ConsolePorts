@@ -100,7 +100,10 @@ Area viewer: `WASD` + `Q`/`E` to fly, drag to look, wheel = speed, `Shift` = fas
 from your install), then Hunt / Options / Trophy / Statistics / Credits as in the original. The keys in the
 hunt follow the player's bindings (Options > Controls). A gamepad works in the hunt (layout in `c2-pad`'s docs:
 left stick move, right stick look, ZL draw, ZR fire, L binoculars, R map, A jump, B run, X call, Y next weapon,
-D-pad up crouch / down change call, + pause, − exit); the menus still need the mouse.
+D-pad up crouch / down change call, + pause, − exit; on the exit prompt A leave, Y restart, B resume; on the
+teleport map the D-pad / right stick move the marker, ZR marks, A goes). In the menus the left stick moves a drawn
+pointer, A clicks, B is back, + is Enter. Options > Controls "Button hints" shows the hunt's main buttons (pad or
+keys, whichever was used last); the exit, pause and map prompts always show theirs.
 Add-on mods: append `--mod path/to/mod` (repeatable); see `docs/MODDING.md`.
 
 **Launchers** (no command line needed after building): `cargo run --release -p c2-launcher` (PC; asks once whether

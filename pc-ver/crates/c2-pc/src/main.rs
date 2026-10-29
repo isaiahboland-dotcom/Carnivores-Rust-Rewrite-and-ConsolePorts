@@ -14,6 +14,7 @@ mod keys;
 mod menu;
 mod model_view;
 mod mods_cli;
+mod pad_cursor;
 mod png;
 mod render;
 mod save;

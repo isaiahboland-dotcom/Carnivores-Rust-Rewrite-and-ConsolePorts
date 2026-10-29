@@ -321,11 +321,12 @@ const VIDEO_OPTS: [Opt; 6] = [
     Opt::PcToggle("Teleport (map)", |p| &mut p.teleport),
 ];
 
-const MOUSE_OPTS: [Opt; 2] = [
+const MOUSE_OPTS: [Opt; 3] = [
     Opt::Slider("Mouse sensitivity", |s| &mut s.options.mouse_sens),
     Opt::Toggle("Reverse mouse", ["Off", "On"], |s| {
         &mut s.options.reverse_mouse
     }),
+    Opt::PcToggle("Button hints", |p| &mut p.hints),
 ];
 
 /// Bindable actions, in `KeyMap` order.

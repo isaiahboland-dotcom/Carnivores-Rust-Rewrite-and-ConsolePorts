@@ -33,10 +33,19 @@ use crate::weapons::{load_weapons, WeaponAssets};
 use c2_core::ship::ship_sound;
 use c2_core::sound::SoundCmd;
 
+/// A key's name as the bindings show it.
+fn keys_name(k: KeyCode) -> String {
+    keys::vk_of(k).map_or_else(|| format!("{k:?}"), keys::name)
+}
+
 /// Gamepad: a stick past this walks (as a key would).
 const PAD_STEP: f32 = 0.33;
 /// Gamepad: the right stick full over, in mouse pixels a second.
 const PAD_LOOK: f32 = 900.0;
+/// Gamepad, the teleport map's marker: cells a second held on the D-pad,
+/// and the right stick full over.
+const PAD_MAP_STEP: f32 = 64.0;
+const PAD_MAP_FAST: f32 = 160.0;
 
 /// Simulation step. The original runs on variable `TimeDt`; a fixed step keeps
 /// the simulation deterministic (needed for logic parity later).
@@ -142,6 +151,9 @@ pub struct HuntView {
     run: bool,
     /// Crouching from the gamepad (D-pad up toggles it).
     pad_crouch: bool,
+    /// The pad was used more lately than the keys and mouse (which hints
+    /// to show).
+    pad_last: bool,
     /// Key presses seen this frame, applied on the next tick.
     pending: HuntInput,
     events: Vec<GameEvent>,
@@ -332,6 +344,7 @@ impl HuntView {
             acc_ms: 0.0,
             run: false,
             pad_crouch: false,
+            pad_last: false,
             pending: HuntInput::default(),
             events: Vec::new(),
             message: None,
@@ -619,6 +632,47 @@ impl HuntView {
     fn carried(&self) -> Vec<usize> {
         let w = &self.hunt.weapons;
         (0..w.info.len()).filter(|&i| w.carried(i)).collect()
+    }
+
+    /// A strip of `(button, action)` hints: centred at `y`, or (not
+    /// `centre`) at the right edge; buttons gold, actions pale.
+    fn hint_bar(
+        &self,
+        out: &mut Vec<Sprite>,
+        screen: (u32, u32),
+        scale: f32,
+        y: f32,
+        centre: bool,
+        hints: &[(&str, &str)],
+    ) {
+        let px = 8.0 * scale;
+        let gap = 14.0 * scale;
+        let space = self.hud.label_width(px, " ");
+        let width: f32 = hints
+            .iter()
+            .map(|(b, a)| self.hud.label_width(px, b) + space + self.hud.label_width(px, a))
+            .sum::<f32>()
+            + gap * hints.len().saturating_sub(1) as f32;
+        let pad = 8.0 * scale;
+        let x0 = if centre {
+            (screen.0 as f32 - width) / 2.0
+        } else {
+            screen.0 as f32 - width - pad - 8.0 * scale
+        };
+        out.extend(self.hud.rect(
+            x0 - pad,
+            y - 6.0 * scale,
+            width + 2.0 * pad,
+            20.0 * scale,
+            [0.0, 0.0, 0.0, 0.6],
+        ));
+        let mut x = x0;
+        for (b, a) in hints {
+            out.extend(self.hud.label(x, y, px, [0.94, 0.78, 0.27, 1.0], b));
+            x += self.hud.label_width(px, b) + space;
+            out.extend(self.hud.label(x, y, px, [0.85, 0.85, 0.8, 1.0], a));
+            x += self.hud.label_width(px, a) + gap;
+        }
     }
 
     /// The pick screen's key: Q, or G when Q is bound to something.
@@ -1090,8 +1144,16 @@ impl Scene for HuntView {
         }
         use c2_pad::Action as Pad;
         let pad = &input.pad;
+        if pad.active() {
+            self.pad_last = true;
+        } else if input.last_pressed.is_some() || input.clicked || input.mouse_delta != (0.0, 0.0) {
+            self.pad_last = false;
+        }
         // With the exit prompt up, the pad's A is yes and B no.
         let prompt = self.hunt.show_exit();
+        // The map open to teleport: the pad's D-pad and right stick move its
+        // marker, ZR marks, A goes (not crouch, next call, jump).
+        let map_pick = self.hunt.map_mode && self.hunt.can_teleport();
         if pressed(k.run) || (!prompt && pad.pressed(Pad::Run)) {
             self.run = !self.run;
         }
@@ -1107,7 +1169,7 @@ impl Scene for HuntView {
         if prompt && pad.pressed(Pad::Run) {
             self.hunt.exit_prompt = false;
         }
-        if pad.pressed(Pad::Crouch) {
+        if pad.pressed(Pad::Crouch) && !map_pick {
             self.pad_crouch = !self.pad_crouch;
         }
         if pad.pressed(Pad::Pause) {
@@ -1145,14 +1207,16 @@ impl Scene for HuntView {
         }
         if self.hunt.opts.trophy {
             self.trophy_keys(input);
-        } else if input.pressed(KeyCode::KeyR) && self.hunt.show_exit() {
+        } else if (input.pressed(KeyCode::KeyR) || pad.pressed(Pad::NextWeapon))
+            && self.hunt.show_exit()
+        {
             self.restart();
         }
         if pressed(k.show) || pad.pressed(Pad::Draw) {
             self.pending.toggle_weapon = true;
         }
-        // Y: the next carried weapon.
-        if pad.pressed(Pad::NextWeapon) {
+        // Y: the next carried weapon (on the exit prompt: restart).
+        if pad.pressed(Pad::NextWeapon) && !prompt {
             let carried = self.carried();
             let cur = self.hunt.weapons.target;
             let at = carried.iter().position(|&w| w == cur);
@@ -1181,7 +1245,7 @@ impl Scene for HuntView {
         if pressed(k.call) || pad.pressed(Pad::Call) {
             self.pending.call = true;
         }
-        if pressed(k.change_call) || pad.pressed(Pad::NextCall) {
+        if pressed(k.change_call) || (pad.pressed(Pad::NextCall) && !map_pick) {
             self.pending.change_call = true;
         }
         let mut hin = HuntInput {
@@ -1199,18 +1263,25 @@ impl Scene for HuntView {
             // A map pixel is 4 cells; a mouse pixel a quarter of that.
             x += input.mouse_delta.0 * c2_core::CELL;
             z += input.mouse_delta.1 * c2_core::CELL;
+            // The pad: the D-pad steadily, the right stick faster (cells a
+            // second), up the map being -z.
+            let [lx, ly] = pad.look;
+            let [dx, dy] = pad.dpad.map(f32::from);
+            let cells = |stick: f32, d: f32| stick * stick.abs() * PAD_MAP_FAST + d * PAD_MAP_STEP;
+            x += cells(lx, dx) * c2_core::CELL * dt;
+            z -= cells(ly, dy) * c2_core::CELL * dt;
             let (lo, hi) = (c2_core::collide::WALK_MIN, c2_core::collide::WALK_MAX);
             let (x, z) = (x.clamp(lo, hi), z.clamp(lo, hi));
             self.map_cursor = Some((x, z));
             hin.controls.mouse = (0.0, 0.0);
+            hin.controls.jump = keys::held(input, k.jump);
+            hin.controls.crouch = keys::held(input, k.crouch);
             hin.fire = false;
-            if pressed(k.fire) {
+            if pressed(k.fire) || pad.pressed(Pad::Fire) {
                 self.teleport_pick = Some((x, z));
             }
-            if let (Some((px, pz)), true) = (
-                self.teleport_pick,
-                input.pressed(KeyCode::Enter) && !self.hunt.show_exit(),
-            ) {
+            let go = input.pressed(KeyCode::Enter) || pad.pressed(Pad::Jump);
+            if let (Some((px, pz)), true) = (self.teleport_pick, go && !self.hunt.show_exit()) {
                 let msg = match self.hunt.request_teleport(self.view.area(), px, pz) {
                     Ok(()) => "Teleporting...".to_string(),
                     Err(e) => e,
@@ -1710,6 +1781,7 @@ impl Scene for HuntView {
             }
         }
         if self.hunt.show_exit() {
+            let mut below = screen.1 as f32 / 2.0;
             if let Some((id, w, h)) = self
                 .exit_img
                 .and_then(|i| self.hud.image(i).map(|im| (i, im.w, im.h)))
@@ -1717,7 +1789,66 @@ impl Scene for HuntView {
                 let x = (screen.0 as f32 - w as f32 * scale) / 2.0;
                 let y = (screen.1 as f32 - h as f32 * scale) / 2.0;
                 sprites.push(Sprite::new(id, x, y, scale));
+                below = y + h as f32 * scale;
             }
+            let hint: &[(&str, &str)] = if self.pad_last {
+                &[("A", "Leave"), ("Y", "Restart"), ("B", "Resume")]
+            } else {
+                &[("Y", "Leave"), ("R", "Restart"), ("N", "Resume")]
+            };
+            self.hint_bar(&mut sprites, screen, scale, below + 8.0 * scale, true, hint);
+        } else if self.hunt.paused {
+            let below = self
+                .pause_img
+                .and_then(|i| self.hud.image(i))
+                .map_or(screen.1 as f32 / 2.0, |im| {
+                    (screen.1 as f32 + im.h as f32 * scale) / 2.0
+                });
+            let hint: &[(&str, &str)] = if self.pad_last {
+                &[("+", "Resume"), ("-", "Exit menu")]
+            } else {
+                &[("P", "Resume"), ("Esc", "Exit menu")]
+            };
+            self.hint_bar(&mut sprites, screen, scale, below + 8.0 * scale, true, hint);
+        } else if self.hunt.map_mode && self.hunt.can_teleport() {
+            let hint: &[(&str, &str)] = if self.pad_last {
+                &[
+                    ("D-pad / R-stick", "Move"),
+                    ("ZR", "Mark"),
+                    ("A", "Go"),
+                    ("R", "Close"),
+                ]
+            } else {
+                &[
+                    ("Mouse", "Move"),
+                    ("Click", "Mark"),
+                    ("Enter", "Go"),
+                    ("Tab", "Close"),
+                ]
+            };
+            let y = screen.1 as f32 - 28.0 * scale;
+            self.hint_bar(&mut sprites, screen, scale, y, true, hint);
+        } else if self.setup.pc.hints != 0 && self.hunt.death.is_none() {
+            let k = &self.hunt.room.options.keys;
+            let pick = format!("1-6 / {}", keys_name(self.pick_key()));
+            let keyboard = [
+                ("Tab".to_string(), "Map"),
+                (keys::name(k.binoculars), "Binoculars"),
+                (pick, "Switch gun"),
+                (keys::name(k.jump), "Jump"),
+                (keys::name(k.crouch), "Crouch"),
+            ];
+            let pad = [
+                ("R".to_string(), "Map"),
+                ("L".to_string(), "Binoculars"),
+                ("Y".to_string(), "Switch gun"),
+                ("A".to_string(), "Jump"),
+                ("D-pad up".to_string(), "Crouch"),
+            ];
+            let rows = if self.pad_last { pad } else { keyboard };
+            let rows: Vec<(&str, &str)> = rows.iter().map(|(b, a)| (b.as_str(), *a)).collect();
+            let y = screen.1 as f32 - 28.0 * scale;
+            self.hint_bar(&mut sprites, screen, scale, y, false, &rows);
         }
         self.hud.draw(gpu, pass, screen, &sprites);
     }

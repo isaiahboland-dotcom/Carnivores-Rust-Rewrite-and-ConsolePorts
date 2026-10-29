@@ -93,6 +93,9 @@ pub struct Frame {
     pub walk: [f32; 2],
     /// Right stick: x right, y up, -1..1.
     pub look: [f32; 2],
+    /// The D-pad held: x right, y up, -1 / 0 / 1 (also read as its actions:
+    /// up crouch, down next call; the PC map moves its marker with it).
+    pub dpad: [i8; 2],
     held: [bool; ACTIONS],
     pressed: [bool; ACTIONS],
 }
@@ -109,7 +112,10 @@ impl Frame {
 
     /// Anything pushed or pressed (to tell a pad is in use).
     pub fn active(&self) -> bool {
-        self.held.iter().any(|&h| h) || self.walk != [0.0; 2] || self.look != [0.0; 2]
+        self.held.iter().any(|&h| h)
+            || self.walk != [0.0; 2]
+            || self.look != [0.0; 2]
+            || self.dpad != [0; 2]
     }
 }
 
@@ -117,6 +123,8 @@ impl Frame {
 pub struct Pads {
     gilrs: Option<Gilrs>,
     held: [bool; ACTIONS],
+    /// D-pad left, right, down, up held.
+    dpad: [bool; 4],
 }
 
 impl Default for Pads {
@@ -133,6 +141,7 @@ impl Pads {
         Self {
             gilrs,
             held: [false; ACTIONS],
+            dpad: [false; 4],
         }
     }
 
@@ -156,6 +165,16 @@ impl Pads {
                 EventType::ButtonReleased(b, _) => (b, false),
                 _ => continue,
             };
+            let d = match b {
+                Button::DPadLeft => Some(0),
+                Button::DPadRight => Some(1),
+                Button::DPadDown => Some(2),
+                Button::DPadUp => Some(3),
+                _ => None,
+            };
+            if let Some(d) = d {
+                self.dpad[d] = down;
+            }
             if let Some(a) = action(b) {
                 if down && !self.held[a as usize] {
                     f.pressed[a as usize] = true;
@@ -164,6 +183,11 @@ impl Pads {
             }
         }
         f.held = self.held;
+        let axis = |neg: bool, pos: bool| i8::from(pos) - i8::from(neg);
+        f.dpad = [
+            axis(self.dpad[0], self.dpad[1]),
+            axis(self.dpad[2], self.dpad[3]),
+        ];
         for (_, pad) in g.gamepads() {
             let walk = dead([pad.value(Axis::LeftStickX), pad.value(Axis::LeftStickY)]);
             let look = dead([pad.value(Axis::RightStickX), pad.value(Axis::RightStickY)]);

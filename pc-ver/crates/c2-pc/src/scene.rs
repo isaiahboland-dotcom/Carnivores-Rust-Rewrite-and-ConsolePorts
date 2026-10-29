@@ -35,6 +35,20 @@ pub fn render(
     view: &wgpu::TextureView,
     frame: &crate::gpu::Frame,
 ) {
+    render_with(gpu, scene, view, frame, &mut |_, _, _| {});
+}
+
+/// Drawn over a scene in its pass (`render_with`).
+pub type Overlay<'a> = dyn FnMut(&Gpu, &mut wgpu::RenderPass<'_>, (u32, u32)) + 'a;
+
+/// [`render`], then `overlay` on top in the same pass (the gamepad pointer).
+pub fn render_with(
+    gpu: &Gpu,
+    scene: &mut dyn Scene,
+    view: &wgpu::TextureView,
+    frame: &crate::gpu::Frame,
+    overlay: &mut Overlay<'_>,
+) {
     let mut enc = gpu.device.create_command_encoder(&Default::default());
     {
         let [r, g, b] = scene.clear_color();
@@ -60,6 +74,7 @@ pub fn render(
             ..Default::default()
         });
         scene.draw(gpu, &mut pass, frame.size);
+        overlay(gpu, &mut pass, frame.size);
     }
     gpu.queue.submit([enc.finish()]);
 }

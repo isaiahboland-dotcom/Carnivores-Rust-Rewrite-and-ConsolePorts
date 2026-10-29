@@ -32,6 +32,10 @@ pub struct PcSettings {
     /// Teleporting by the map (1 = on): open it, move the marker with the
     /// mouse, click; 5 s, then a minute's cooldown.
     pub teleport: i32,
+    /// Button hints in the hunt (1 = on): map, binoculars, switch gun,
+    /// jump, crouch, for the pad or the keys, whichever was used last. The
+    /// exit and pause prompts show theirs either way.
+    pub hints: i32,
 }
 
 impl Default for PcSettings {
@@ -45,6 +49,7 @@ impl Default for PcSettings {
             map_heading: 0,
             map_mobile: 0,
             teleport: 0,
+            hints: 0,
         }
     }
 }
@@ -75,6 +80,7 @@ impl PcSettings {
                 "map_heading" => s.map_heading = i32::from(v != 0),
                 "map_mobile" => s.map_mobile = i32::from(v != 0),
                 "teleport" => s.teleport = i32::from(v != 0),
+                "button_hints" => s.hints = i32::from(v != 0),
                 _ => {}
             }
         }
@@ -84,7 +90,7 @@ impl PcSettings {
     pub fn store(&self) {
         let text = format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nfar_sprites = {}\n\
-             map_heading = {}\nmap_mobile = {}\nteleport = {}\n",
+             map_heading = {}\nmap_mobile = {}\nteleport = {}\nbutton_hints = {}\n",
             self.render,
             self.fog,
             self.blood,
@@ -92,7 +98,8 @@ impl PcSettings {
             self.far_sprites,
             self.map_heading,
             self.map_mobile,
-            self.teleport
+            self.teleport,
+            self.hints
         );
         if let Some(dir) = path().parent() {
             let _ = std::fs::create_dir_all(dir);
