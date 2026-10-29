@@ -140,7 +140,10 @@ and test save compatibility between modes before sharing saves.
   plane, drawn first with no depth test, and the sun (`SUN2.3DF`; the moon
   at night) placed in each eye's view space, so it sits at infinity for
   both eyes. Matches `c2-pc area` in Monado's window.
-- Next: a gamepad (DualSense) for moving on headsets without controllers;
-  then a menu panel and the hunt (animals, weapon, HUD).
+- Gamepads (`c2-pad`), 2026-10-29: left stick walks (3 m/s, "solid"),
+  right stick snap-turns 30 degrees, - / Select quits; checked on the PS
+  VR2 with a PowerA Nano. Far trees are whole models now (the owner: the
+  sprites "move oddly" in stereo; "way better").
+- Next: a menu panel and the hunt (animals, weapon, HUD).
 
 No headset test has been performed yet.

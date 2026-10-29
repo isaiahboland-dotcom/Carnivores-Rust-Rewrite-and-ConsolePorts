@@ -24,6 +24,8 @@ pub struct Input {
     pub typed: String,
     /// The last key that went down this frame (key binding).
     pub last_pressed: Option<KeyCode>,
+    /// The gamepads this frame (`c2_pad`; the hunt reads them).
+    pub pad: c2_pad::Frame,
 }
 
 impl Input {

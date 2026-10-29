@@ -24,6 +24,7 @@ struct Running {
     scene: Box<dyn Scene>,
     input: Input,
     last: Instant,
+    pads: c2_pad::Pads,
 }
 
 /// Captures (or releases) the cursor; returns whether it is now captured.
@@ -89,6 +90,13 @@ impl App {
             scene,
             input,
             last: Instant::now(),
+            pads: {
+                let pads = c2_pad::Pads::new();
+                for name in pads.names() {
+                    tracing::info!("gamepad: {name}");
+                }
+                pads
+            },
         });
         Ok(())
     }
@@ -189,6 +197,7 @@ impl ApplicationHandler for App {
                 let now = Instant::now();
                 let dt = (now - r.last).as_secs_f32().min(0.25);
                 r.last = now;
+                r.input.pad = r.pads.poll();
                 r.scene.update(&r.gpu, dt, &r.input);
                 r.input.end_frame();
                 let Target::Window { surface, config } = &r.target else {

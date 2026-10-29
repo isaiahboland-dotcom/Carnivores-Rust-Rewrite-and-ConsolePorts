@@ -33,6 +33,11 @@ use crate::weapons::{load_weapons, WeaponAssets};
 use c2_core::ship::ship_sound;
 use c2_core::sound::SoundCmd;
 
+/// Gamepad: a stick past this walks (as a key would).
+const PAD_STEP: f32 = 0.33;
+/// Gamepad: the right stick full over, in mouse pixels a second.
+const PAD_LOOK: f32 = 900.0;
+
 /// Simulation step. The original runs on variable `TimeDt`; a fixed step keeps
 /// the simulation deterministic (needed for logic parity later).
 const TICK_MS: u32 = 10;
@@ -135,6 +140,8 @@ pub struct HuntView {
     acc_ms: f32,
     /// `RunMode` (toggled with the run key).
     run: bool,
+    /// Crouching from the gamepad (D-pad up toggles it).
+    pad_crouch: bool,
     /// Key presses seen this frame, applied on the next tick.
     pending: HuntInput,
     events: Vec<GameEvent>,
@@ -324,6 +331,7 @@ impl HuntView {
             prev_cam,
             acc_ms: 0.0,
             run: false,
+            pad_crouch: false,
             pending: HuntInput::default(),
             events: Vec::new(),
             message: None,
@@ -410,6 +418,8 @@ impl HuntView {
             blood: setup.pc.blood != 0,
             death_anim: setup.pc.death_anim != 0,
             afraid_every: 1,
+            // The Wii U's staggered far AI is off on PC (every animal every tick).
+            distant_ai: false,
             no_call_bonus: c2_formats::bits::Bits::NONE,
             notice_k: 1.0,
             stealth: false,
@@ -460,29 +470,37 @@ impl HuntView {
         hunt
     }
 
-    /// Controls from the player's key bindings (`ProcessControls`).
-    fn controls(&self, input: &Input) -> Controls {
+    /// Controls from the player's key bindings (`ProcessControls`), and a
+    /// gamepad's (`c2_pad`): the left stick walks (past a third of the way,
+    /// as the keys do: the hunter's speed is the run toggle's), the right
+    /// stick looks as the mouse does, curved for fine aim; `dt` seconds.
+    fn controls(&self, input: &Input, dt: f32) -> Controls {
         let o = &self.hunt.room.options;
         let k = &o.keys;
         let held = |vk| keys::held(input, vk);
         // The strafe key turns the turn keys into side-steps.
         let strafe = held(k.strafe);
-        let mouse = if o.reverse_mouse != 0 {
+        let mut mouse = if o.reverse_mouse != 0 {
             (input.mouse_delta.0, -input.mouse_delta.1)
         } else {
             input.mouse_delta
         };
+        let pad = &input.pad;
+        let [wx, wy] = pad.walk;
+        let [lx, ly] = pad.look;
+        mouse.0 += lx * lx.abs() * PAD_LOOK * dt;
+        mouse.1 -= ly * ly.abs() * PAD_LOOK * dt;
         Controls {
-            forward: held(k.forward),
-            backward: held(k.backward),
-            strafe_left: held(k.strafe_left) || (strafe && held(k.left)),
-            strafe_right: held(k.strafe_right) || (strafe && held(k.right)),
+            forward: held(k.forward) || wy > PAD_STEP,
+            backward: held(k.backward) || wy < -PAD_STEP,
+            strafe_left: held(k.strafe_left) || (strafe && held(k.left)) || wx < -PAD_STEP,
+            strafe_right: held(k.strafe_right) || (strafe && held(k.right)) || wx > PAD_STEP,
             turn_left: !strafe && held(k.left),
             turn_right: !strafe && held(k.right),
             look_up: held(k.up),
             look_down: held(k.down),
-            crouch: held(k.crouch),
-            jump: held(k.jump),
+            crouch: held(k.crouch) || self.pad_crouch,
+            jump: held(k.jump) || pad.held(c2_pad::Action::Jump),
             run: self.run,
             mouse,
             mouse_sens: o.mouse_sens as f32,
@@ -1070,14 +1088,30 @@ impl Scene for HuntView {
             self.acc_ms = 0.0;
             return;
         }
-        if pressed(k.run) {
+        use c2_pad::Action as Pad;
+        let pad = &input.pad;
+        // With the exit prompt up, the pad's A is yes and B no.
+        let prompt = self.hunt.show_exit();
+        if pressed(k.run) || (!prompt && pad.pressed(Pad::Run)) {
             self.run = !self.run;
         }
-        if input.pressed(KeyCode::Escape) {
+        if input.pressed(KeyCode::Escape) || pad.pressed(Pad::Exit) {
             self.hunt.press_escape();
         }
-        if input.pressed(KeyCode::KeyY) || input.pressed(KeyCode::Enter) {
+        if input.pressed(KeyCode::KeyY)
+            || input.pressed(KeyCode::Enter)
+            || (prompt && pad.pressed(Pad::Jump))
+        {
             self.hunt.confirm_exit();
+        }
+        if prompt && pad.pressed(Pad::Run) {
+            self.hunt.exit_prompt = false;
+        }
+        if pad.pressed(Pad::Crouch) {
+            self.pad_crouch = !self.pad_crouch;
+        }
+        if pad.pressed(Pad::Pause) {
+            self.hunt.toggle_pause();
         }
         // Pause; P too (laptops lack the key) unless P is bound to something.
         let p_bound = {
@@ -1114,8 +1148,18 @@ impl Scene for HuntView {
         } else if input.pressed(KeyCode::KeyR) && self.hunt.show_exit() {
             self.restart();
         }
-        if pressed(k.show) {
+        if pressed(k.show) || pad.pressed(Pad::Draw) {
             self.pending.toggle_weapon = true;
+        }
+        // Y: the next carried weapon.
+        if pad.pressed(Pad::NextWeapon) {
+            let carried = self.carried();
+            let cur = self.hunt.weapons.target;
+            let at = carried.iter().position(|&w| w == cur);
+            let next = at.map_or(0, |i| (i + 1) % carried.len().max(1));
+            if let Some(&w) = carried.get(next) {
+                self.pending.select_weapon = Some(w);
+            }
         }
         const DIGITS: [KeyCode; 6] = [
             KeyCode::Digit1,
@@ -1128,21 +1172,21 @@ impl Scene for HuntView {
         if let Some(w) = DIGITS.iter().position(|&k| input.pressed(k)) {
             self.pending.select_weapon = Some(w);
         }
-        if pressed(k.binoculars) {
+        if pressed(k.binoculars) || pad.pressed(Pad::Binoculars) {
             self.pending.toggle_binoculars = true;
         }
-        if input.pressed(KeyCode::Tab) {
+        if input.pressed(KeyCode::Tab) || pad.pressed(Pad::Map) {
             self.pending.toggle_map = true;
         }
-        if pressed(k.call) {
+        if pressed(k.call) || pad.pressed(Pad::Call) {
             self.pending.call = true;
         }
-        if pressed(k.change_call) {
+        if pressed(k.change_call) || pad.pressed(Pad::NextCall) {
             self.pending.change_call = true;
         }
         let mut hin = HuntInput {
-            controls: self.controls(input),
-            fire: keys::held(input, k.fire),
+            controls: self.controls(input, dt),
+            fire: keys::held(input, k.fire) || pad.held(Pad::Fire),
             zoom_in: input.held(KeyCode::Equal) || input.held(KeyCode::NumpadAdd),
             zoom_out: input.held(KeyCode::Minus) || input.held(KeyCode::NumpadSubtract),
             ..self.pending

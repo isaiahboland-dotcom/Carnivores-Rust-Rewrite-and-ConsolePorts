@@ -1,0 +1,13 @@
+[package]
+name = "c2-pad"
+description = "Gamepads (gilrs) as the game's actions, for the PC and VR frontends"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+gilrs.workspace = true

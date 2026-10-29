@@ -2,6 +2,30 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-29 — Gamepads: a `c2-pad` crate (gilrs) for PC and VR
+The owner asked for native gamepad support on PC and in VR. `gilrs` is the
+README's named choice; a small shared crate (`c2-pad`, a layout change)
+reads every pad as the game's actions so `c2-pc` and `c2-vr` agree.
+- Layout: the Wii U plan's, so the console-style frontends match. Face
+  buttons by position, Nintendo style (A right = jump, B bottom = run, X
+  top = call, Y left = next weapon).
+- PC hunt: the left stick walks past a third of the way (the hunt's
+  movement is key-like; speed is the run toggle), the right stick adds to
+  the mouse look (900 px/s full over, squared for fine aim, scaled by the
+  mouse sensitivity), D-pad up toggles crouch; with the exit prompt up, A
+  is yes and B no. Menus and the weapon pick screen still need the mouse:
+  they point and click, and Wayland lets no program move the pointer (a
+  drawn pad cursor would be next).
+- VR: the left stick walks, the right stick snap-turns, − quits.
+- Pads `gilrs`'s database lacks get their raw codes guessed; `c2-pad`
+  carries SDL-format lines for such pads (the owner's PowerA Nano: the
+  database's PowerA Core line under the Nano's id, checked against its
+  evdev events) and gilrs reads `SDL_GAMECONTROLLERCONFIG` for more.
+  `cargo run -p c2-pad --example pad-events` / `pad-state` show what a pad
+  sends and what the game reads.
+- `c2-pc` sets `HuntOptions::distant_ai` off (the Wii U's staggered far AI;
+  the field came with the Wii U work and left the PC build broken).
+
 ## 2026-10-29 — PC VR terrain: the PC's WGSL through naga; scale; gamma
 - `c2-vr`'s area scene compiles `c2-pc/src/shaders/common.wgsl` +
   `terrain.wgsl` (read with `include_str!` across the crates) to SPIR-V with

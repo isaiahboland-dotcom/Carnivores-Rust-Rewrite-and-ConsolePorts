@@ -64,6 +64,7 @@ The original C++ source (made available on Assembla in 2013) is used **as a refe
 │       ├── c2-platform/       # traits: Renderer, Audio, Input, Fs, Clock
 │       ├── c2-pc/             # PC backend + binary
 │       ├── c2-vr/             # PC VR (OpenXR) frontend, M17; plan in its GAMEPLAN.md
+│       ├── c2-pad/            # gamepads (gilrs) as the game's actions, for c2-pc and c2-vr
 │       └── c2-parity/         # parity harness vs the original game/data
 ├── 3ds-ver/                   # 3DS port (separate nightly workspace, from M6):
 │                              #   c2-3ds backend + c2-cook, reusing pc-ver/crates/*
@@ -97,7 +98,9 @@ Model viewer: drag to orbit, wheel to zoom, `[` `]` previous/next file, `N`/`P` 
 Area viewer: `WASD` + `Q`/`E` to fly, drag to look, wheel = speed, `Shift` = fast, `+`/`-` view distance.
 **Play:** `cargo run --release -p c2-pc -- play ../source/c2-original` — register a hunter (or pick one copied
 from your install), then Hunt / Options / Trophy / Statistics / Credits as in the original. The keys in the
-hunt follow the player's bindings (Options > Controls).
+hunt follow the player's bindings (Options > Controls). A gamepad works in the hunt (layout in `c2-pad`'s docs:
+left stick move, right stick look, ZL draw, ZR fire, L binoculars, R map, A jump, B run, X call, Y next weapon,
+D-pad up crouch / down change call, + pause, − exit); the menus still need the mouse.
 Add-on mods: append `--mod path/to/mod` (repeatable); see `docs/MODDING.md`.
 
 **Launchers** (no command line needed after building): `cargo run --release -p c2-launcher` (PC; asks once whether
@@ -652,7 +655,9 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] the area's objects (trees, plants, rocks) with the PC's `model.wgsl`, far sprites; 120 fps on the PS VR2
   - [x] head height from the first pose where the runtime's floor is missing or wrong (Monado's PS VR2)
   - [x] the sky (scrolling clouds) and sun with the PC's `sky.wgsl`
-  - [ ] a gamepad for headsets without controllers; then the hunt
+  - [x] gamepads (`c2-pad`): left stick walks, right stick snap-turns, − quits (the PS VR2 has no controllers
+        under Monado); far trees as whole models (sprites look flat in stereo)
+  - [ ] a menu panel; then the hunt (animals, weapon, HUD)
 - [ ] M18 a PSVR2 version of the game
 
 _Last updated: 2026-10-22 — the add-on pack plays on hardware and the Old 3DS slowdown after a kill is gone. Roaming add-ons on the 3DS are proper hunt targets (no call, +10%, a menu picture); dialect games no longer halve non-target scores. M10: the launchers' balance editor. Next: `.cia` builds._

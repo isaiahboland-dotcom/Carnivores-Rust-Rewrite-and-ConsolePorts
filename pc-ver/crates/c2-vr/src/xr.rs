@@ -552,6 +552,12 @@ fn frame_loop(l: FrameLoop<'_>) -> Result<Measured> {
     let mut slot = 0usize;
     let mut hands_seen = [false; 2];
     let mut turn_held = false;
+    // A gamepad walks and turns too (headsets without controllers: the PS
+    // VR2 under Monado); its - / Select quits.
+    let mut pads = c2_pad::Pads::new();
+    for name in pads.names() {
+        println!("Gamepad: {name} (left stick walks, right stick turns, - / Select quits)");
+    }
     let mut floor = l.floor;
     let mut head_reported = false;
     let mut last = Instant::now();
@@ -615,6 +621,8 @@ fn frame_loop(l: FrameLoop<'_>) -> Result<Measured> {
                 .quit
                 .state(l.session, xr::Path::NULL)
                 .is_ok_and(|s| s.current_state && s.changed_since_last_sync);
+            let pad = pads.poll();
+            let pressed = pressed || pad.pressed(c2_pad::Action::Exit);
             if !exiting && (pressed || timed_out) {
                 exiting = true;
                 let _ = l.session.request_exit();
@@ -627,7 +635,10 @@ fn frame_loop(l: FrameLoop<'_>) -> Result<Measured> {
                         Vec2::new(s.current_state.x, s.current_state.y)
                     })
             };
-            let turn = stick(&a.turn).x;
+            let turn = match stick(&a.turn).x {
+                t if t != 0.0 => t,
+                _ => pad.look[0],
+            };
             let snap_turn = if turn.abs() > 0.6 && !turn_held {
                 turn_held = true;
                 turn.signum() as i32
@@ -638,7 +649,10 @@ fn frame_loop(l: FrameLoop<'_>) -> Result<Measured> {
                 0
             };
             let input = Input {
-                walk: stick(&a.walk),
+                walk: match stick(&a.walk) {
+                    w if w != Vec2::ZERO => w,
+                    _ => Vec2::from(pad.walk),
+                },
                 snap_turn,
             };
             let mut hands = [None; 2];
