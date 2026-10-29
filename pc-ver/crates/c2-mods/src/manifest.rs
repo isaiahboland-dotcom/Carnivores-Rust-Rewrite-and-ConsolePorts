@@ -1,4 +1,4 @@
-//! `mod.toml` (README §5).
+//! `mod.toml` (docs/DEVELOPMENT.md §5).
 
 use serde::{Deserialize, Serialize};
 

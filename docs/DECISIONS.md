@@ -2,6 +2,22 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-29 — The README for GitHub; the roadmap kept locally
+
+Before publishing (owner's request), `README.md` became the public page:
+why the project exists, each platform's state, and how to install the PC,
+3DS and Wii U versions from the command line or the launcher. The design
+spec that was README §1-§6 and §8 moved, with its numbering, to
+`docs/DEVELOPMENT.md`, so "§N" references elsewhere point there (older
+entries below that say "README §N" mean the same sections). The roadmap,
+milestone status and known issues (README §7 and Status) moved to
+`TODO.md`, which is gitignored: it's the owner's working list.
+`DEVELOPMENT.md` §7 keeps a table of milestone names, since code comments
+cite them ("M13").
+
+Also: CI installs the ALSA and udev headers (kira and gilrs need them on
+Linux), and `c2-parity` gained the `teleport` hunt option it was missing.
+
 ## 2026-10-29 — PC VR: the hunt setup on the panel; the panel drawn on the CPU
 
 HUNT on the VR main menu now opens the PC's hunt setup screen

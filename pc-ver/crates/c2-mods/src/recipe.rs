@@ -1,4 +1,4 @@
-//! Recipes (README §6): a mod combination described by credits, URLs and
+//! Recipes (docs/DEVELOPMENT.md §6): a mod combination described by credits, URLs and
 //! file hashes, never by the mods' content. A user downloads the listed mods,
 //! `verify` checks their copies against the hashes, `prepare` turns the recipe
 //! into a build (load order, resolutions, patches).

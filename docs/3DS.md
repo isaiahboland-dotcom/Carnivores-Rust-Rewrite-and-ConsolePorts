@@ -1,7 +1,8 @@
 # 3DS port
 
-> Status: M7 in progress. The whole game in one pack, a touch menu, hunts
-> with sound, saves. See README §9 for status.
+> Status: nearly complete. The whole game in one pack, a touch menu, hunts
+> with sound, saves, add-on and standalone packs. Bugs mostly show up with
+> many add-ons in one pack; the Old 3DS performance pass is still to come.
 
 ## What you need
 - devkitPro with devkitARM, libctru and citro3d (`$DEVKITPRO=/opt/devkitpro`;
@@ -32,7 +33,7 @@ cargo 3ds build --release -p c2-3ds
    press Y in the Homebrew Launcher, then `3dslink target/.../c2-3ds.3dsx`.
 
 The pack is made from your own game files and stays on your SD card; never
-share it (README §2).
+share it (docs/DEVELOPMENT.md §2).
 
 ## The menu
 The title screen shows the original's main menu art with your hunter's

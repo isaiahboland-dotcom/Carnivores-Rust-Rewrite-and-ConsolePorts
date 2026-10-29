@@ -1,4 +1,4 @@
-# --- Local reference material: never commit (see README §2) ---
+# --- Local reference material: never commit (see docs/DEVELOPMENT.md §2) ---
 /source/
 
 # --- Game / mod data, anywhere in the tree ---
@@ -43,3 +43,6 @@ bannertool (*)
 *.cia
 *.bnr
 *.cxi
+
+# --- Local roadmap / status (owner's working list) ---
+/TODO.md

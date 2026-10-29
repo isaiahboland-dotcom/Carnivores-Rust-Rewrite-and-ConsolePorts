@@ -1,4 +1,4 @@
-//! Gamepads as the game's actions, shared by `c2-pc` and `c2-vr` (README §4
+//! Gamepads as the game's actions, shared by `c2-pc` and `c2-vr` (docs/DEVELOPMENT.md §4
 //! names `gilrs`). The layout is the Wii U plan's (`wiiu-ver/gameplan.md`),
 //! so every console-style frontend plays alike. Face buttons go by position,
 //! Nintendo style (the Wii U's and a Switch pad's labels; an Xbox pad's

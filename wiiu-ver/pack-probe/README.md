@@ -2,7 +2,7 @@
 
 Run `build/c2-wiiu-pack-probe.rpx` in Cemu. It reads the synthetic
 `fixtures/fixture.c2pk`, installed at
-`/home/trash/.local/share/Cemu/sdcard/wiiu/apps/carnivores-probe/fixture.c2pk`
+`~/.local/share/Cemu/sdcard/wiiu/apps/carnivores-probe/fixture.c2pk`
 on this machine. On other setups copy it to
 `wiiu/apps/carnivores-probe/fixture.c2pk` on the emulated SD. Do not create a
 `no-such-pack.c2pk` file in that directory: the probe expects it to be absent.

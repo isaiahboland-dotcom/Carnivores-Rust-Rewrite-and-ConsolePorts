@@ -32,7 +32,7 @@ zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2
 eframe = "0.37.0"
 rfd = "0.17.2"
 png = "0.18.1"
-# Gamepads for the PC and VR frontends (README §4: `gilrs`).
+# Gamepads for the PC and VR frontends (docs/DEVELOPMENT.md §4: `gilrs`).
 gilrs = "0.11.2"
 c2-pad = { path = "crates/c2-pad" }
 # PC VR (c2-vr only): the OpenXR loader opened at run time, Vulkan as wgpu uses it.

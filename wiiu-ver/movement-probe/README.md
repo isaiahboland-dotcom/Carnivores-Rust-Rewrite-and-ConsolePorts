@@ -8,7 +8,7 @@ weapons, dinosaurs, menus, sounds or map display.
 
 This machine's game files have been copied from `source/c2-original/HUNTDAT/AREAS`
 into Cemu's SD folder at
-`/home/trash/.local/share/Cemu/sdcard/wiiu/apps/carnivores-probe/`. For another
+`~/.local/share/Cemu/sdcard/wiiu/apps/carnivores-probe/`. For another
 installation, supply your own base game files named `AREA1.MAP` and `AREA1.RSC`
 in `wiiu/apps/carnivores-probe/` on the emulated SD. Do not redistribute them.
 The checkpoint coordinates are based on this particular original-data copy;

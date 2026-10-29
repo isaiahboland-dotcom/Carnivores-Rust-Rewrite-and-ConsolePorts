@@ -3,7 +3,7 @@
 Run `build/c2-wiiu-vfs-probe.rpx` in Cemu. It uses the same
 `wiiu/apps/carnivores-probe/fixture.tga` on the emulated SD card as the
 [SD probe](../sd-probe/README.md). On this machine the fixture was installed
-in `/home/trash/.local/share/Cemu/sdcard` for the previous test. The adjacent
+in `~/.local/share/Cemu/sdcard` for the previous test. The adjacent
 `missing.tga` file must not exist; the probe expects an open failure for it.
 
 Expected PASS lines: SD mount, Rust VFS SD read, shared parser, SD missing-file

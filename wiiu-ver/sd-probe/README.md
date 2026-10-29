@@ -6,7 +6,7 @@ Copy the supplied `sd-card/wiiu/apps/carnivores-probe/fixture.tga` to
 storage directory. Cemu's SD location depends on installation; see the [Cemu
 1.17.4 release notes](https://wiki.cemu.info/wiki/Release_1.17.4) for the
 standard `sdcard` folder mapping. On this machine the Cemu SD directory is
-`/home/trash/.local/share/Cemu/sdcard`. The fixture was copied there for testing.
+`~/.local/share/Cemu/sdcard`. The fixture was copied there for testing.
 
 Expected results: SD mount, open fixture, read 26 bytes, Rust TGA parse, and
 seek and read all show PASS. On an early error, later checks are skipped. The
