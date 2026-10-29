@@ -28,8 +28,8 @@ base = "c2-vanilla"
 
 [[mods]]
 id = "achillobator"
-credit = "TODO: credit"
-url = "TODO: download link"
+credit = "RiverSticks (ModDB uploader; the add-on credits \"I / Me / Myself\")"
+url = "https://www.moddb.com/mods/mee-expanded-add-on-collection/addons/achillobator1"
 loose = true
 
 [mods.files]
@@ -112,25 +112,6 @@ loose = true
 "Manospondylus_Addon/Manos_RES.txt" = "sha256:5962613f49706d724f6157635832fb126d52d580a71d6da23b04afd6f32baa28"
 
 [[mods]]
-id = "skinpack"
-credit = "TODO: credit"
-url = "TODO: download link"
-loose = true
-
-[mods.files]
-"Tyrannosaurs/Anzu.car" = "sha256:4b1aa82be2568c33ac8bcdb32f09efd8c31192b3e41f6d461487c4518f9512d3"
-"Tyrannosaurs/BigAl.car" = "sha256:5f29ab6c59c25be507fbf121131778c13cb97b261bdeb2b42a61db0775ed2550"
-"Tyrannosaurs/CALLS/CALL4_ALT.wav" = "sha256:3e37932c2af197a11b294de2426ef4812d639db4d6670826b892b320f2091020"
-"Tyrannosaurs/Cerato.car" = "sha256:7bb2336ab9579d67096f0293d8d989c5d0aa1ed638cc7367e9ddb6adc56ac7e2"
-"Tyrannosaurs/Edmonto.car" = "sha256:0e9563e2102fc66620162700d6f39c41b1a38a8748d3ce3fbf27fcbd7314be87"
-"Tyrannosaurs/FemaleRex.car" = "sha256:f2494c9f31e95eaa8d222713bd8d990ce0e135ccad8017561591ae27250edc22"
-"Tyrannosaurs/MaleRex.car" = "sha256:f9d8b36cb74ea04b02f28e706c9538a3c5d637193a6a8e235c04824c441f9b64"
-"Tyrannosaurs/Ornitho.car" = "sha256:ce8218c4cd8972a379f1fd0fcda33871c96bdee0662066f58594dcbe88ec6a21"
-"Tyrannosaurs/Pachy.car" = "sha256:3c2082f22b05c9187b6f32dcd29d3f3e06c8aa79c997af24e30b18dd93db1416"
-"Tyrannosaurs/Therizino.car" = "sha256:8928cab4d50cf0da600db4cce756d6065a483602c7642649f657ee5de4fbba26"
-"Tyrannosaurs/Yeti.car" = "sha256:40f3cf32bafb8049c73bc2bfb6a4c9085f3ced3e215e52de6b595ffb9205b88d"
-
-[[mods]]
 id = "suchomimus-addon-2"
 credit = "ScrungusGrungus, Will_Nobody"
 url = "https://www.moddb.com/games/carnivores-2/addons/suchomimus-addon"
@@ -174,8 +155,8 @@ loose = true
 
 [[mods]]
 id = "dilophosaurus"
-credit = "TODO: credit"
-url = "TODO: download link"
+credit = "JenDOS_Rus"
+url = "https://www.moddb.com/games/carnivores-2/addons/dilophosaurus-for-c2"
 loose = true
 
 [mods.files]
@@ -208,7 +189,7 @@ loose = true
 
 [[mods]]
 id = "dinosaur-hunter"
-credit = "TODO: your own APK import (see above)"
+credit = "Imported from your own copy of the mobile game (see above)"
 url = "none: made from your own APK"
 loose = true
 
@@ -270,7 +251,7 @@ loose = true
 
 [[mods]]
 id = "ice-age"
-credit = "TODO: your own APK import (see above)"
+credit = "Imported from your own copy of the mobile game (see above)"
 url = "none: made from your own APK"
 loose = true
 
@@ -303,7 +284,6 @@ order = [
     "indoraptor-addon",
     "majungasaurus-add-on",
     "manospondylus-addon-1",
-    "skinpack",
     "suchomimus-addon-2",
     "unzip-me-1",
     "carcharadontosaurus-2-0-4",
