@@ -121,6 +121,11 @@ fn sibling(path: &Path, ext: &str) -> Result<PathBuf> {
 
 /// The area at `map_path` (its `.RSC` beside it), in daylight.
 pub fn load(map_path: &Path) -> Result<Area> {
+    load_at(map_path, TimeOfDay::Day)
+}
+
+/// The area at `map_path` at `time`.
+pub fn load_at(map_path: &Path, time: TimeOfDay) -> Result<Area> {
     let rsc_path = sibling(map_path, "rsc")?;
     let m = c2_formats::map::parse(
         &std::fs::read(map_path).with_context(|| format!("reading {}", map_path.display()))?,
@@ -128,7 +133,7 @@ pub fn load(map_path: &Path) -> Result<Area> {
     let r = c2_formats::rsc::parse(
         &std::fs::read(&rsc_path).with_context(|| format!("reading {}", rsc_path.display()))?,
     )?;
-    Ok(Area::new(m, r, TimeOfDay::Day))
+    Ok(Area::new(m, r, time))
 }
 
 /// `common.wgsl` + `terrain.wgsl` + `terrain_vr.wgsl` as SPIR-V, one module

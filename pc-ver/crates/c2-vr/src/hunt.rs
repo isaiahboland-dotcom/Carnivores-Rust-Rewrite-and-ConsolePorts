@@ -1,8 +1,7 @@
 //! The hunt's simulation in the headset: `c2_core::game::Hunt`, the same
 //! as the PC's, ticked every 10 ms (`c2-pc hunt_view.rs: TICK_MS`) with the
-//! hunter where the head is. For now an observer's hunt (README M17): the
-//! animals live, roam and feed but ignore the hunter; no weapons or calls.
-//! Every huntable species is placed (there's no hunt setup in VR yet).
+//! hunter where the head is. The menu's setup picks the area, time of day,
+//! animals and observer mode; there are no weapons or calls in VR yet.
 
 use std::path::{Path, PathBuf};
 
@@ -110,17 +109,22 @@ pub struct HuntWorld {
 }
 
 impl HuntWorld {
-    /// A new observer's hunt with the hunter at world (`x`, `z`).
-    pub fn new(area: &Area, roster: &Roster, x: f32, z: f32, seed: u32) -> Self {
+    /// A new hunt with the hunter at world (`x`, `z`): `targets` a bit per
+    /// AI (none: the original's random mix); an observer's animals ignore
+    /// the hunter.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        area: &Area,
+        roster: &Roster,
+        x: f32,
+        z: f32,
+        seed: u32,
+        targets: Bits,
+        observer: bool,
+    ) -> Self {
         let cell = ((x / CELL) as u16, (z / CELL) as u16);
         let mut player = Player::new(area, cell);
         (player.x, player.z) = (x, z);
-        let mut targets = Bits::NONE;
-        for s in &roster.species {
-            if s.info.ai >= 10 {
-                targets.set(s.info.ai as usize);
-            }
-        }
         let mut rng = MsRand::new(seed);
         let mut herd = Herd {
             species: roster.species.clone(),
@@ -141,12 +145,17 @@ impl HuntWorld {
             },
         );
         println!(
-            "Placed {} animals (observer: they ignore you).",
-            herd.chars.len()
+            "Placed {} animals{}.",
+            herd.chars.len(),
+            if observer {
+                " (observer: they ignore you)"
+            } else {
+                ""
+            }
         );
         let opts = HuntOptions {
             targets,
-            observer: true,
+            observer,
             ..Default::default()
         };
         let weapons = Weapons::new(Vec::new(), Vec::new(), Bits::NONE, false);

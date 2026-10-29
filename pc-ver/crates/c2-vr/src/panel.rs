@@ -1,14 +1,13 @@
-//! A menu screen on a panel standing in the world (`shaders/panel.wgsl`):
-//! one of the game's 800x600 menu pictures, its lit version and its hit map
-//! (`c2-pc menu.rs: Board`), so the regions light as on PC. It stands in the
-//! tracking space where it was put (`place`); a controller's ray picks a
-//! region (`pick`).
+//! The menu standing in the world (`shaders/panel.wgsl`): a quad showing
+//! the menu's canvas (`canvas`, drawn on the CPU and uploaded when it
+//! changes). It stands in the tracking space where it was put (`place`);
+//! a controller's ray picks a point on it (`pick`).
 
 #![allow(unsafe_code)] // Raw Vulkan.
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, Result};
 use ash::vk;
 use glam::{Mat4, Vec3};
 
@@ -16,11 +15,7 @@ use crate::gpu::{Gpu, Image};
 use crate::scene::{self, Ray};
 
 const SHADER: &str = include_str!("../shaders/panel.wgsl");
-/// The menu canvas (`c2-pc menu.rs: CW, CH`) and its hit map's size.
-const CW: usize = 800;
-const CH: usize = 600;
-const HW: usize = 400;
-const HH: usize = 300;
+use crate::canvas::{Canvas, H as CH, PH, PW, W as CW};
 /// The panel's size and distance, metres: 4:3, about 45 degrees across.
 const WIDTH_M: f32 = 2.0;
 const HEIGHT_M: f32 = 1.5;
@@ -29,17 +24,7 @@ const DIST_M: f32 = 2.5;
 /// below).
 const RISE_M: f32 = 0.25;
 /// `Push` in the shader.
-const PUSH: u32 = 112;
-
-/// A screen's pictures as read from the game (`MENUM.TGA`, `MENUM_ON.TGA`,
-/// `MAIN_MAP.RAW`).
-pub struct Art {
-    /// RGBA, 800x600 each.
-    base: Vec<u8>,
-    on: Vec<u8>,
-    /// Region ids, 400x300.
-    hit: Vec<u8>,
-}
+const PUSH: u32 = 80;
 
 /// `name` in `dir`, any case.
 pub fn find_ci(dir: &Path, name: &str) -> Option<PathBuf> {
@@ -51,68 +36,6 @@ pub fn find_ci(dir: &Path, name: &str) -> Option<PathBuf> {
             p.file_name()
                 .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(name))
         })
-}
-
-fn read_tga(path: &Path) -> Result<Vec<u8>> {
-    let t = c2_formats::tga::parse(
-        &std::fs::read(path).with_context(|| format!("reading {}", path.display()))?,
-    )
-    .with_context(|| format!("{}", path.display()))?;
-    if (t.width as usize, t.height as usize) != (CW, CH) {
-        bail!(
-            "{}: {}x{}, not the menu's {CW}x{CH}",
-            path.display(),
-            t.width,
-            t.height
-        );
-    }
-    Ok(c2_core::color::image_to_rgba8(&t.pixels, false))
-}
-
-impl Art {
-    /// The screen `base` (`on`, `map`) from the first of `menus` (the
-    /// `HUNTDAT/MENU` folders, overlays first) that has it.
-    pub fn load(menus: &[PathBuf], base: &str, on: &str, map: &str) -> Result<Self> {
-        let dir = menus
-            .iter()
-            .find(|d| find_ci(d, base).is_some())
-            .ok_or_else(|| anyhow!("no {base} in the game's HUNTDAT/MENU"))?;
-        let file = |n: &str| find_ci(dir, n).ok_or_else(|| anyhow!("no {n} beside {base}"));
-        let hit = std::fs::read(file(map)?)?;
-        if hit.len() != HW * HH {
-            bail!("{map}: {} bytes, not {HW}x{HH}", hit.len());
-        }
-        Ok(Self {
-            base: read_tga(&file(base)?)?,
-            on: read_tga(&file(on)?)?,
-            hit,
-        })
-    }
-
-    /// The region at canvas point `c` (0: none).
-    pub fn region(&self, c: (f32, f32)) -> u8 {
-        let (x, y) = (c.0 as usize / 2, c.1 as usize / 2);
-        if c.0 < 0.0 || c.1 < 0.0 || x >= HW || y >= HH {
-            return 0;
-        }
-        self.hit[y * HW + x]
-    }
-
-    /// Each region's bounding box, canvas pixels: x0, y0, x1, y1.
-    fn boxes(&self) -> Vec<Option<[f32; 4]>> {
-        let mut bb = vec![None::<[usize; 4]>; 256];
-        for (i, &r) in self.hit.iter().enumerate() {
-            if r == 0 {
-                continue;
-            }
-            let (x, y) = (i % HW, i / HW);
-            let b = bb[r as usize].get_or_insert([x, y, x, y]);
-            *b = [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)];
-        }
-        bb.into_iter()
-            .map(|b| b.map(|[x0, y0, x1, y1]| [x0, y0, x1 + 1, y1 + 1].map(|v| (v * 2) as f32)))
-            .collect()
-    }
 }
 
 /// Where the panel stands, in the tracking space.
@@ -172,21 +95,10 @@ impl Placement {
     }
 }
 
-/// What the panel shows this frame.
-pub struct Look {
-    /// The selected region (0: none).
-    pub selected: u8,
-    /// A bit per region offered (the rest are dimmed).
-    pub offered: u32,
-    /// The pointer, canvas pixels.
-    pub pointer: Option<(f32, f32)>,
-}
-
 pub struct Panel {
-    pub art: Art,
-    boxes: Vec<Option<[f32; 4]>>,
-    pics: (Image, vk::ImageView),
-    hit: (Image, vk::ImageView),
+    pic: (Image, vk::ImageView),
+    /// Per frame in flight: the canvas on its way to `pic`.
+    staging: Vec<crate::gpu::Buffer>,
     sampler: vk::Sampler,
     set_layout: vk::DescriptorSetLayout,
     pool: vk::DescriptorPool,
@@ -201,14 +113,17 @@ fn compile(entry: &str, stage: naga::ShaderStage) -> Result<Vec<u32>> {
 
 impl Panel {
     /// `render_pass`: the scene's, which the panel is drawn in.
-    pub fn new(gpu: &Gpu, art: Art, render_pass: vk::RenderPass) -> Result<Self> {
-        let pics = gpu.texture(
-            (CW as u32, CH as u32),
+    pub fn new(gpu: &Gpu, render_pass: vk::RenderPass) -> Result<Self> {
+        let pic = gpu.texture(
+            (PW as u32, PH as u32),
             vk::Format::R8G8B8A8_SRGB,
-            &[&art.base[..], &art.on[..]].concat(),
-            2,
+            &Canvas::default().px,
+            1,
         )?;
-        let hit = gpu.texture((HW as u32, HH as u32), vk::Format::R8_UINT, &art.hit, 1)?;
+        let mut staging = Vec::new();
+        for _ in 0..crate::xr::DEPTH {
+            staging.push(gpu.buffer((PW * PH * 4) as u64, vk::BufferUsageFlags::TRANSFER_SRC)?);
+        }
         let sampler = gpu.linear_sampler(false)?;
         let stages = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
         let binding = |b: u32, kind: vk::DescriptorType| {
@@ -224,11 +139,8 @@ impl Panel {
         unsafe {
             let dev = &gpu.device;
             let set_layout = dev.create_descriptor_set_layout(
-                &vk::DescriptorSetLayoutCreateInfo::default().bindings(&[
-                    binding(0, D::SAMPLED_IMAGE),
-                    binding(1, D::SAMPLED_IMAGE),
-                    binding(2, D::SAMPLER),
-                ]),
+                &vk::DescriptorSetLayoutCreateInfo::default()
+                    .bindings(&[binding(0, D::SAMPLED_IMAGE), binding(1, D::SAMPLER)]),
                 None,
             )?;
             let layout = dev.create_pipeline_layout(
@@ -247,7 +159,7 @@ impl Panel {
                     .pool_sizes(&[
                         vk::DescriptorPoolSize {
                             ty: D::SAMPLED_IMAGE,
-                            descriptor_count: 2,
+                            descriptor_count: 1,
                         },
                         vk::DescriptorPoolSize {
                             ty: D::SAMPLER,
@@ -264,14 +176,11 @@ impl Panel {
                 )?
                 .first()
                 .ok_or_else(|| anyhow!("no descriptor set"))?;
-            let image = |view| {
-                [vk::DescriptorImageInfo {
-                    sampler: vk::Sampler::null(),
-                    image_view: view,
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                }]
-            };
-            let (a, b) = (image(pics.1), image(hit.1));
+            let image = [vk::DescriptorImageInfo {
+                sampler: vk::Sampler::null(),
+                image_view: pic.1,
+                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            }];
             let samp = [vk::DescriptorImageInfo {
                 sampler,
                 ..Default::default()
@@ -284,9 +193,8 @@ impl Panel {
             };
             dev.update_descriptor_sets(
                 &[
-                    w(0, D::SAMPLED_IMAGE).image_info(&a),
-                    w(1, D::SAMPLED_IMAGE).image_info(&b),
-                    w(2, D::SAMPLER).image_info(&samp),
+                    w(0, D::SAMPLED_IMAGE).image_info(&image),
+                    w(1, D::SAMPLER).image_info(&samp),
                 ],
                 &[],
             );
@@ -309,10 +217,8 @@ impl Panel {
             dev.destroy_shader_module(vs, None);
             dev.destroy_shader_module(fs, None);
             Ok(Self {
-                boxes: art.boxes(),
-                art,
-                pics,
-                hit,
+                pic,
+                staging,
                 sampler,
                 set_layout,
                 pool,
@@ -323,26 +229,96 @@ impl Panel {
         }
     }
 
-    /// Records the panel; `mvp` takes the unit quad to clip space.
-    pub fn draw(&self, gpu: &Gpu, cmd: vk::CommandBuffer, mvp: Mat4, look: &Look) {
-        let sel_box = self
-            .boxes
-            .get(look.selected as usize)
-            .copied()
-            .flatten()
-            .filter(|_| look.selected != 0)
-            .unwrap_or([0.0; 4]);
-        let pointer = look.pointer.map_or([0.0; 4], |(x, y)| [x, y, 1.0, 0.0]);
-        let mut push: Vec<u8> = mvp
+    /// Records `canvas` into the panel's picture, before the render pass
+    /// (`slot`: this frame's, whose last use is over).
+    pub fn upload(&self, gpu: &Gpu, cmd: vk::CommandBuffer, slot: usize, canvas: &Canvas) {
+        let Some(staging) = self.staging.get(slot) else {
+            return;
+        };
+        staging.write(0, &canvas.px);
+        let range = vk::ImageSubresourceRange {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer: 0,
+            layer_count: 1,
+        };
+        let barrier = |from, to, src, dst| {
+            vk::ImageMemoryBarrier::default()
+                .old_layout(from)
+                .new_layout(to)
+                .src_access_mask(src)
+                .dst_access_mask(dst)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(self.pic.0.image)
+                .subresource_range(range)
+        };
+        // SAFETY: `cmd` is recording outside a render pass; the barriers
+        // order the copy after earlier frames' reads and before this one's.
+        unsafe {
+            let dev = &gpu.device;
+            dev.cmd_pipeline_barrier(
+                cmd,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[barrier(
+                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    vk::AccessFlags::SHADER_READ,
+                    vk::AccessFlags::TRANSFER_WRITE,
+                )],
+            );
+            dev.cmd_copy_buffer_to_image(
+                cmd,
+                staging.buffer,
+                self.pic.0.image,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                &[vk::BufferImageCopy {
+                    image_subresource: vk::ImageSubresourceLayers {
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        mip_level: 0,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    },
+                    image_extent: vk::Extent3D {
+                        width: PW as u32,
+                        height: PH as u32,
+                        depth: 1,
+                    },
+                    ..Default::default()
+                }],
+            );
+            dev.cmd_pipeline_barrier(
+                cmd,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[barrier(
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+                    vk::AccessFlags::TRANSFER_WRITE,
+                    vk::AccessFlags::SHADER_READ,
+                )],
+            );
+        }
+    }
+
+    /// Records the panel; `mvp` takes the unit quad to clip space;
+    /// `pointer` in canvas units.
+    pub fn draw(&self, gpu: &Gpu, cmd: vk::CommandBuffer, mvp: Mat4, pointer: Option<(f32, f32)>) {
+        let pointer = pointer.map_or([0.0; 4], |(x, y)| [x, y, 1.0, 0.0]);
+        let push: Vec<u8> = mvp
             .to_cols_array()
             .iter()
-            .chain(&sel_box)
             .chain(&pointer)
             .flat_map(|f| f.to_ne_bytes())
             .collect();
-        for u in [u32::from(look.selected), look.offered, 0, 0] {
-            push.extend(u.to_ne_bytes());
-        }
         // SAFETY: `cmd` is recording inside the render pass the pipeline
         // was made for.
         unsafe {
@@ -370,10 +346,11 @@ impl Panel {
             dev.destroy_descriptor_pool(self.pool, None);
             dev.destroy_descriptor_set_layout(self.set_layout, None);
             dev.destroy_sampler(self.sampler, None);
-            for (image, view) in [&self.pics, &self.hit] {
-                dev.destroy_image_view(*view, None);
-                gpu.destroy_image(image);
+            for b in &self.staging {
+                gpu.destroy_buffer(b);
             }
+            dev.destroy_image_view(self.pic.1, None);
+            gpu.destroy_image(&self.pic.0);
         }
     }
 }
@@ -402,9 +379,10 @@ mod tests {
     #[test]
     fn a_ray_down_the_middle_hits_the_middle() {
         let p = Placement::facing(Vec3::new(0.0, 1.7, 0.0), Vec3::NEG_Z);
+        let eye = Vec3::new(0.0, 1.7, 0.0);
         let ray = |x: f32, y: f32| Ray {
-            pos: Vec3::new(0.0, 1.7, 0.0),
-            dir: (p.center + Vec3::new(x, y, 0.0) - Vec3::new(0.0, 1.7, 0.0)).normalize(),
+            pos: eye,
+            dir: (p.center + Vec3::new(x, y, 0.0) - eye).normalize(),
         };
         let (x, y) = p.pick(&ray(0.0, 0.0)).unwrap_or_default();
         assert!((x - 400.0).abs() < 0.5 && (y - 300.0).abs() < 0.5);
@@ -413,29 +391,9 @@ mod tests {
         assert!((x - 600.0).abs() < 0.5 && (y - 150.0).abs() < 0.5);
         // Pointing away misses.
         let back = Ray {
-            pos: Vec3::new(0.0, 1.7, 0.0),
+            pos: eye,
             dir: Vec3::Z,
         };
         assert!(p.pick(&back).is_none());
-    }
-
-    #[test]
-    fn boxes_bound_each_region() {
-        let mut hit = vec![0u8; HW * HH];
-        for y in 10..20 {
-            for x in 30..50 {
-                hit[y * HW + x] = 3;
-            }
-        }
-        let art = Art {
-            base: Vec::new(),
-            on: Vec::new(),
-            hit,
-        };
-        let b = art.boxes();
-        assert_eq!(b[3], Some([60.0, 20.0, 100.0, 40.0]));
-        assert_eq!(b[1], None);
-        assert_eq!(art.region((61.0, 21.0)), 3);
-        assert_eq!(art.region((10.0, 10.0)), 0);
     }
 }

@@ -16,6 +16,7 @@ c2-core.workspace = true
 c2-formats.workspace = true
 glam.workspace = true
 naga.workspace = true
+font8x8.workspace = true
 c2-pad.workspace = true
 openxr.workspace = true
 ash.workspace = true

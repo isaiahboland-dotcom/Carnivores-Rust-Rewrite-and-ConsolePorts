@@ -7,9 +7,11 @@
 //! no game data. Animals, weapons and the hunt aren't in VR yet.
 
 pub mod animals;
+pub mod canvas;
 pub mod game;
 pub mod gpu;
 pub mod hunt;
+pub mod menus;
 pub mod objects;
 pub mod panel;
 pub mod runtime;
