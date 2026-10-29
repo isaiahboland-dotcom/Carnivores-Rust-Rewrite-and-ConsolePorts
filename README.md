@@ -230,15 +230,35 @@ the plan: [docs/WIIU.md](docs/WIIU.md) and [wiiu-ver/gameplan.md](wiiu-ver/gamep
 A recipe (`recipes/*.toml`) describes a modded game **without containing any of it**. Each mod is listed
 with its authors' credit, its download page and the SHA-256 of every file used, plus the load order,
 conflict choices and any small patches of our own. Anyone can rebuild the exact same game from their own
-downloads:
+downloads. Recipes are used from the command line for now; the launcher's Add-ons tab takes the same
+downloads directly.
 
-```sh
-cd pc-ver
-cargo run --release -p c2-pc -- recipe verify ../recipes/c2-mee-addons.toml --base GAME --overlay "PATH/Carnivores 2" --mods DOWNLOADS
-cargo run --release -p c2-pc -- play GAME --overlay "PATH/Carnivores 2" --recipe ../recipes/c2-mee-addons.toml --mods DOWNLOADS
-```
+**Using a recipe:**
 
-`verify` lists anything missing or different, with the link to get it. The recipes here:
+1. **Pick a recipe** from the table below and open it. Each `[[mods]]` entry has the mod's `credit` and its
+   download page (`url`).
+2. **Download every mod** listed, from its page. **Unpack each one into its own folder**, all inside one
+   downloads folder (`DOWNLOADS` below). The folder names don't matter: mods are recognised by their files.
+3. **Get the base game and anything else the recipe's header asks for:**
+   - your Carnivores 2 folder (`GAME`), or Carnivores: Ice Age for `ice-age-android.toml`;
+   - for recipes on the Modder's Edition Engine, its 1.1.1 release, unpacked. Use the folder
+     `Carnivores Modders Edition 1.1.1 Standalone/Carnivores 2` as the `--overlay`;
+   - for the `*-android` recipes and `c2-everything.toml`, import the mobile games' animals from your own
+     APK first, into `DOWNLOADS`. The exact `c2-pc mobile ...` command is in the recipe's header.
+4. **Check** that everything is there and matches:
+   ```sh
+   cd pc-ver
+   cargo run --release -p c2-pc -- recipe verify ../recipes/c2-mee-addons.toml --base GAME --overlay "PATH/Carnivores 2" --mods DOWNLOADS
+   ```
+   It lists anything missing or different, with the link to get it.
+5. **Play it**, or build it into a folder, or cook it for the 3DS:
+   ```sh
+   cargo run --release -p c2-pc -- play GAME --overlay "PATH/Carnivores 2" --recipe ../recipes/c2-mee-addons.toml --mods DOWNLOADS
+   cargo run --release -p c2-pc -- recipe build ../recipes/c2-mee-addons.toml --base GAME --overlay "PATH/Carnivores 2" --mods DOWNLOADS --out DIR
+   ```
+   The 3DS command for each recipe is in its header.
+
+The recipes here:
 
 | Recipe | What |
 |---|---|
@@ -249,7 +269,7 @@ cargo run --release -p c2-pc -- play GAME --overlay "PATH/Carnivores 2" --recipe
 | `example.toml` | the format, not a real pack |
 | `bases/*.toml` | hashes of the retail Carnivores 2 and Ice Age, to check a base game |
 
-Each file's header says how to verify, play and cook it for the 3DS. To make your own:
+To make your own from mods you have (it pins every file they use):
 `c2-pc recipe new MOD_DIR... --base GAME --id my-pack --out my-pack.toml`. See
 [docs/MODDING.md](docs/MODDING.md#recipes).
 
