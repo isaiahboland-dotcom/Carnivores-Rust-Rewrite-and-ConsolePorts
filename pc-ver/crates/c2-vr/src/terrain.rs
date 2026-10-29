@@ -21,6 +21,7 @@ use c2_core::area::{Area, TimeOfDay};
 use c2_core::{CELL, H_SCALE};
 use glam::{Mat4, Quat, Vec3};
 
+use crate::animals::{Animals, Posed};
 use crate::gpu::{Buffer, Gpu, Image};
 use crate::objects::Objects;
 use crate::scene::{self, Eye, Frame, Scene};
@@ -191,6 +192,8 @@ pub struct TerrainScene {
     sky: Sky,
     /// The sticks walk and turn (not while a menu shows).
     pub walking: bool,
+    /// The hunt's characters (`add_animals`), drawn after the objects.
+    animals: Option<Animals>,
 }
 
 /// Drawn over the scene in each eye's pass (a menu): the eye (0, 1) and
@@ -442,8 +445,42 @@ impl TerrainScene {
                 grounded: false,
                 start: Instant::now(),
                 walking: true,
+                animals: None,
             })
         }
+    }
+
+    pub fn area(&self) -> &Area {
+        &self.area
+    }
+
+    /// Cells drawn around the player, in world units.
+    pub fn view_range(&self) -> f32 {
+        RADIUS as f32 * CELL
+    }
+
+    /// Where the head is in the world, and its heading (0 looks to -z).
+    pub fn head(&self, f: &Frame) -> (Vec3, f32) {
+        let look = Quat::from_rotation_y(self.yaw) * f.eyes[0].rot * Vec3::NEG_Z;
+        (self.world(f.head(), f.floor), f32::atan2(-look.x, -look.z))
+    }
+
+    /// Characters to draw (`models`: a texture layer each, as `Posed`
+    /// names them).
+    pub fn add_animals(
+        &mut self,
+        gpu: &Gpu,
+        models: &[Option<&c2_core::model::PreparedModel>],
+    ) -> Result<()> {
+        if self.animals.is_none() {
+            self.animals = Some(Animals::new(
+                gpu,
+                models,
+                self.render_pass,
+                self.set_layouts[0],
+            )?);
+        }
+        Ok(())
     }
 
     /// A point in the tracking space, in the world.
@@ -571,8 +608,7 @@ impl Scene for TerrainScene {
 
     fn record(&mut self, gpu: &Gpu, f: &Frame) -> Result<()> {
         self.move_player(f);
-        self.draw(gpu, f, None);
-        Ok(())
+        self.draw(gpu, f, &[], None)
     }
 
     fn destroy(&mut self, gpu: &Gpu) {
@@ -581,8 +617,15 @@ impl Scene for TerrainScene {
 }
 
 impl TerrainScene {
-    /// Both eyes, `overlay` drawn last in each.
-    pub fn draw(&mut self, gpu: &Gpu, f: &Frame, mut overlay: Option<Overlay<'_>>) {
+    /// Both eyes with `posed` (characters, if `add_animals` was called),
+    /// `overlay` drawn last in each.
+    pub fn draw(
+        &mut self,
+        gpu: &Gpu,
+        f: &Frame,
+        posed: &[Posed],
+        mut overlay: Option<Overlay<'_>>,
+    ) -> Result<()> {
         let far = RADIUS as f32 * CELL;
         let head = self.world(f.head(), f.floor);
         let center = ((head.x / CELL) as i32, (head.z / CELL) as i32);
@@ -600,6 +643,9 @@ impl TerrainScene {
         let look = Quat::from_rotation_y(self.yaw) * f.eyes[0].rot * Vec3::NEG_Z;
         let yaw = f32::atan2(-look.x, -look.z);
         self.objects.prepare(f.slot, head, RADIUS, yaw);
+        if let Some(a) = self.animals.as_mut() {
+            a.prepare(gpu, f.slot, posed)?;
+        }
         let clear = [
             vk::ClearValue {
                 color: vk::ClearColorValue {
@@ -634,6 +680,9 @@ impl TerrainScene {
                 dev.cmd_bind_pipeline(f.cmd, gfx, self.ground);
                 dev.cmd_draw(f.cmd, width * width * 6, 1, 0, 0);
                 self.objects.draw(gpu, f.cmd, f.slot, sets[0]);
+                if let Some(a) = &self.animals {
+                    a.draw(gpu, f.cmd, f.slot, sets[0]);
+                }
                 dev.cmd_bind_descriptor_sets(f.cmd, gfx, self.layout, 0, &sets, &[]);
                 dev.cmd_bind_pipeline(f.cmd, gfx, self.water);
                 dev.cmd_draw(f.cmd, width * width * 6, 1, 0, 0);
@@ -643,9 +692,13 @@ impl TerrainScene {
                 dev.cmd_end_render_pass(f.cmd);
             }
         }
+        Ok(())
     }
 
     fn destroy_all(&mut self, gpu: &Gpu) {
+        if let Some(a) = self.animals.as_mut() {
+            a.destroy(gpu);
+        }
         self.objects.destroy(gpu);
         self.sky.destroy(gpu);
         // SAFETY: the GPU is idle; each handle is destroyed once.

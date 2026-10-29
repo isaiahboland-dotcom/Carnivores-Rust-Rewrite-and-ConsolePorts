@@ -6,8 +6,9 @@
 //! the D-pad (and the left stick) picks an item, shown lit in a gold box;
 //! the trigger or A (+) takes it. In VR so far:
 //!
-//! - HUNT: the menu goes and the sticks walk the area from the camp (the
-//!   hunt itself isn't in VR yet).
+//! - HUNT: the menu goes and the sticks walk the area from the camp, among
+//!   the animals of an observer's hunt (`hunt`: they ignore you; no
+//!   weapons yet).
 //! - TROPHY: the trophy room (empty: trophies aren't drawn yet).
 //! - QUIT.
 //!
@@ -23,6 +24,7 @@ use c2_core::CELL;
 use glam::Vec3;
 
 use crate::gpu::Gpu;
+use crate::hunt::{HuntWorld, Roster};
 use crate::panel::{self, Art, Look, Panel, Placement};
 use crate::scene::{Frame, MakeScene, Next, Scene};
 use crate::terrain::{self, TerrainScene};
@@ -93,10 +95,18 @@ pub fn menu(game: Game) -> Result<MakeScene> {
     let area = terrain::load(&map)?;
     let sun = crate::sky::load_sun(&map, area.time);
     let art = Art::load(&game.menus(), "MENUM.TGA", "MENUM_ON.TGA", "MAIN_MAP.RAW")?;
+    let roster = Roster::load(&game.huntdat)
+        .map_err(|e| println!("No animals: {e:#}"))
+        .ok();
     Ok(Box::new(move |gpu, format| {
-        let terrain = TerrainScene::new(gpu, format, area, sun)?;
+        let mut terrain = TerrainScene::new(gpu, format, area, sun)?;
         let panel = Panel::new(gpu, art, terrain.render_pass())?;
-        Ok(Box::new(GameScene::new(terrain, Some(panel), game, CAMP)) as _)
+        if let Some(r) = &roster {
+            terrain.add_animals(gpu, &r.models())?;
+        }
+        let mut scene = GameScene::new(terrain, Some(panel), game, CAMP);
+        scene.roster = roster;
+        Ok(Box::new(scene) as _)
     }))
 }
 
@@ -128,6 +138,11 @@ pub struct GameScene {
     /// The left stick is pushed (it steps once per push).
     stick_held: bool,
     next: Option<Next>,
+    /// The game's characters, and the hunt among them (after HUNT).
+    roster: Option<Roster>,
+    world: Option<HuntWorld>,
+    /// HUNT was taken: the hunt starts where the head is this frame.
+    start_hunt: bool,
 }
 
 impl GameScene {
@@ -150,6 +165,9 @@ impl GameScene {
             pointer: None,
             stick_held: false,
             next: None,
+            roster: None,
+            world: None,
+            start_hunt: false,
         }
     }
 
@@ -159,6 +177,7 @@ impl GameScene {
             self.in_menu = true;
             self.terrain.walking = false;
             self.placed = None;
+            self.world = None;
         } else {
             self.next = Some(match menu(self.game.clone()) {
                 Ok(m) => Next::Load(m),
@@ -176,6 +195,7 @@ impl GameScene {
                 self.in_menu = false;
                 self.terrain.walking = true;
                 self.pointer = None;
+                self.start_hunt = true;
             }
             TROPHY => {
                 self.next = Some(match trophy_room(self.game.clone()) {
@@ -269,6 +289,22 @@ impl Scene for GameScene {
             self.back_to_menu();
         }
         self.terrain.move_player(f);
+        let (head, heading) = self.terrain.head(f);
+        if std::mem::take(&mut self.start_hunt) {
+            if let Some(r) = &self.roster {
+                let seed = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(1, |d| d.subsec_nanos() | 1);
+                self.world = Some(HuntWorld::new(self.terrain.area(), r, head.x, head.z, seed));
+            }
+        }
+        let posed = match (&mut self.world, &self.roster) {
+            (Some(w), Some(r)) => {
+                w.step(self.terrain.area(), r, head, heading, f.dt);
+                w.posed(r, head, self.terrain.view_range())
+            }
+            _ => Vec::new(),
+        };
         let menu = self.panel.as_ref().filter(|_| self.in_menu);
         match menu {
             Some(panel) => {
@@ -284,11 +320,10 @@ impl Scene for GameScene {
                 let mut overlay = |gpu: &Gpu, cmd, _eye, view_proj: glam::Mat4| {
                     panel.draw(gpu, cmd, view_proj * model, &look);
                 };
-                self.terrain.draw(gpu, f, Some(&mut overlay));
+                self.terrain.draw(gpu, f, &posed, Some(&mut overlay))
             }
-            None => self.terrain.draw(gpu, f, None),
+            None => self.terrain.draw(gpu, f, &posed, None),
         }
-        Ok(())
     }
 
     fn destroy(&mut self, gpu: &Gpu) {

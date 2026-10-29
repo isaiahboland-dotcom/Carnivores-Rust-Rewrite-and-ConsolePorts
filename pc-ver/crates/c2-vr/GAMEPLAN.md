@@ -159,5 +159,10 @@ and test save compatibility between modes before sharing saves.
   m up, so a floor under 1.2 m below the head is distrusted now; the pad's
   right stick click recentres. The panel's middle is 0.25 m above the eyes
   (the owner: "solid").
-- Next: the hunt (animals, weapon, HUD), the hunt setup screen on the panel.
+- Animals, 2026-10-29: HUNT runs the PC's `Hunt` as an observer's hunt
+  (every huntable species placed; they roam and ignore you), drawn with
+  `model.wgsl`, each drawn between its last two ticks. Checked in Monado's
+  qwerty window (23 animals placed, one walking past the camp, 60 fps).
+- Next: the weapon and shooting, calls, the HUD; the hunt setup screen on
+  the panel; trophies in the trophy room.
 

@@ -34,8 +34,8 @@ const CHUNK: usize = 32;
 const CHUNKS: usize = c2_formats::map::MAP_SIZE / CHUNK;
 /// `ModelVertex` (pos, uv, vlight) and `Instance` (offset, turns, light,
 /// layer) in `c2-pc render.rs`.
-const VERTEX_BYTES: u32 = 36;
-const INSTANCE_BYTES: u32 = 24;
+pub(crate) const VERTEX_BYTES: u32 = 36;
+pub(crate) const INSTANCE_BYTES: u32 = 24;
 
 /// One model's faces in the shared vertex buffer.
 #[derive(Clone, Copy, Default)]
@@ -98,6 +98,207 @@ fn push_model(out: &mut Vec<u8>, m: &PreparedModel, vlights: &[[f32; 4]]) -> (u3
         opaque.len() as u32 * 3,
         (opaque.len() + blended.len()) as u32 * 3,
     )
+}
+
+/// The model shader's set 1 (texture array, sampler, ground light) with
+/// one set written, and the pipeline layout over `globals_layout`.
+pub(crate) fn model_set(
+    gpu: &Gpu,
+    globals_layout: vk::DescriptorSetLayout,
+    textures_view: vk::ImageView,
+    sampler: vk::Sampler,
+    ground: &Buffer,
+) -> Result<(
+    vk::DescriptorSetLayout,
+    vk::PipelineLayout,
+    vk::DescriptorPool,
+    vk::DescriptorSet,
+)> {
+    let all = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
+    let binding = |b: u32, kind| {
+        vk::DescriptorSetLayoutBinding::default()
+            .binding(b)
+            .descriptor_type(kind)
+            .descriptor_count(1)
+            .stage_flags(all)
+    };
+    use vk::DescriptorType as D;
+    // SAFETY: plain object creation and descriptor writes on our device;
+    // every handle written is live.
+    unsafe {
+        let dev = &gpu.device;
+        let set_layout = dev.create_descriptor_set_layout(
+            &vk::DescriptorSetLayoutCreateInfo::default().bindings(&[
+                binding(0, D::SAMPLED_IMAGE),
+                binding(1, D::SAMPLER),
+                binding(2, D::STORAGE_BUFFER),
+            ]),
+            None,
+        )?;
+        let layout = dev.create_pipeline_layout(
+            &vk::PipelineLayoutCreateInfo::default().set_layouts(&[globals_layout, set_layout]),
+            None,
+        )?;
+        let pool = dev.create_descriptor_pool(
+            &vk::DescriptorPoolCreateInfo::default()
+                .max_sets(1)
+                .pool_sizes(&[
+                    vk::DescriptorPoolSize {
+                        ty: D::SAMPLED_IMAGE,
+                        descriptor_count: 1,
+                    },
+                    vk::DescriptorPoolSize {
+                        ty: D::SAMPLER,
+                        descriptor_count: 1,
+                    },
+                    vk::DescriptorPoolSize {
+                        ty: D::STORAGE_BUFFER,
+                        descriptor_count: 1,
+                    },
+                ]),
+            None,
+        )?;
+        let set = *dev
+            .allocate_descriptor_sets(
+                &vk::DescriptorSetAllocateInfo::default()
+                    .descriptor_pool(pool)
+                    .set_layouts(&[set_layout]),
+            )?
+            .first()
+            .ok_or_else(|| anyhow!("no descriptor set"))?;
+        let image = [vk::DescriptorImageInfo {
+            sampler: vk::Sampler::null(),
+            image_view: textures_view,
+            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        }];
+        let samp = [vk::DescriptorImageInfo {
+            sampler,
+            ..Default::default()
+        }];
+        let buf = [vk::DescriptorBufferInfo {
+            buffer: ground.buffer,
+            offset: 0,
+            range: vk::WHOLE_SIZE,
+        }];
+        let w = |b, kind| {
+            vk::WriteDescriptorSet::default()
+                .dst_set(set)
+                .dst_binding(b)
+                .descriptor_type(kind)
+        };
+        dev.update_descriptor_sets(
+            &[
+                w(0, D::SAMPLED_IMAGE).image_info(&image),
+                w(1, D::SAMPLER).image_info(&samp),
+                w(2, D::STORAGE_BUFFER).buffer_info(&buf),
+            ],
+            &[],
+        );
+        Ok((set_layout, layout, pool, set))
+    }
+}
+
+/// `model.wgsl`'s opaque and see-through pipelines (vertices and instances
+/// as `VERTEX_BYTES`, `INSTANCE_BYTES`).
+pub(crate) fn model_pipelines(
+    gpu: &Gpu,
+    layout: vk::PipelineLayout,
+    render_pass: vk::RenderPass,
+) -> Result<(vk::Pipeline, vk::Pipeline)> {
+    let src = format!("{COMMON}\n{MODEL}\n{MODEL_VR}");
+    let vs = gpu.shader(&scene::wgsl(&src, "vs", naga::ShaderStage::Vertex)?)?;
+    let fs_opaque = gpu.shader(&scene::wgsl(
+        &src,
+        "fs_opaque_vr",
+        naga::ShaderStage::Fragment,
+    )?)?;
+    let fs_blend = gpu.shader(&scene::wgsl(
+        &src,
+        "fs_blend_vr",
+        naga::ShaderStage::Fragment,
+    )?)?;
+    let bindings = [
+        vk::VertexInputBindingDescription {
+            binding: 0,
+            stride: VERTEX_BYTES,
+            input_rate: vk::VertexInputRate::VERTEX,
+        },
+        vk::VertexInputBindingDescription {
+            binding: 1,
+            stride: INSTANCE_BYTES,
+            input_rate: vk::VertexInputRate::INSTANCE,
+        },
+    ];
+    let attr = |location, binding, format, offset| vk::VertexInputAttributeDescription {
+        location,
+        binding,
+        format,
+        offset,
+    };
+    use vk::Format as F;
+    let attributes = [
+        attr(0, 0, F::R32G32B32_SFLOAT, 0),
+        attr(1, 0, F::R32G32_SFLOAT, 12),
+        attr(2, 0, F::R32G32B32A32_SFLOAT, 20),
+        attr(3, 1, F::R32G32B32_SFLOAT, 0),
+        attr(4, 1, F::R32_SFLOAT, 12),
+        attr(5, 1, F::R32_SFLOAT, 16),
+        attr(6, 1, F::R32_UINT, 20),
+    ];
+    let desc = |frag, depth_write, blend| scene::PipelineDesc {
+        vert: (vs, c"vs"),
+        frag,
+        layout,
+        render_pass,
+        depth: Some(depth_write),
+        blend,
+        bindings: &bindings,
+        attributes: &attributes,
+    };
+    let opaque = scene::pipeline(
+        gpu,
+        &desc((fs_opaque, c"fs_opaque_vr"), true, scene::Blend::Opaque),
+    );
+    let blend = scene::pipeline(
+        gpu,
+        &desc((fs_blend, c"fs_blend_vr"), false, scene::Blend::Alpha),
+    );
+    // SAFETY: the modules are ours and no longer needed.
+    unsafe {
+        for m in [vs, fs_opaque, fs_blend] {
+            gpu.device.destroy_shader_module(m, None);
+        }
+    }
+    match (opaque, blend) {
+        (Ok(o), Ok(b)) => Ok((o, b)),
+        (o, b) => {
+            // SAFETY: whichever was made isn't used.
+            unsafe {
+                for p in [o.as_ref().ok(), b.as_ref().ok()].into_iter().flatten() {
+                    gpu.device.destroy_pipeline(*p, None);
+                }
+            }
+            Err(o
+                .err()
+                .or(b.err())
+                .unwrap_or_else(|| anyhow!("no pipeline")))
+        }
+    }
+}
+
+/// `push_model`'s layout for posed vertices: `order` and `uvs` per drawn
+/// vertex (opaque faces first), and how many are opaque.
+pub(crate) fn face_order(m: &PreparedModel) -> (Vec<u32>, Vec<[f32; 2]>, u32) {
+    let (opaque, blended): (Vec<&PreparedFace>, Vec<&PreparedFace>) =
+        m.faces.iter().partition(|f| !f.is_transparent());
+    let (mut order, mut uvs) = (Vec::new(), Vec::new());
+    for f in opaque.iter().chain(&blended) {
+        for k in 0..3 {
+            order.push(f.v[k]);
+            uvs.push(f.uv[k]);
+        }
+    }
+    (order, uvs, opaque.len() as u32 * 3)
 }
 
 impl Objects {
@@ -189,170 +390,30 @@ impl Objects {
             )?);
         }
 
-        let all = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
-        let binding = |b: u32, kind| {
-            vk::DescriptorSetLayoutBinding::default()
-                .binding(b)
-                .descriptor_type(kind)
-                .descriptor_count(1)
-                .stage_flags(all)
-        };
-        use vk::DescriptorType as D;
-        // SAFETY: plain object creation and descriptor writes on our device;
-        // every handle written is live.
-        unsafe {
-            let dev = &gpu.device;
-            let set_layout = dev.create_descriptor_set_layout(
-                &vk::DescriptorSetLayoutCreateInfo::default().bindings(&[
-                    binding(0, D::SAMPLED_IMAGE),
-                    binding(1, D::SAMPLER),
-                    binding(2, D::STORAGE_BUFFER),
-                ]),
-                None,
-            )?;
-            let layout = dev.create_pipeline_layout(
-                &vk::PipelineLayoutCreateInfo::default().set_layouts(&[globals_layout, set_layout]),
-                None,
-            )?;
-            let pool = dev.create_descriptor_pool(
-                &vk::DescriptorPoolCreateInfo::default()
-                    .max_sets(1)
-                    .pool_sizes(&[
-                        vk::DescriptorPoolSize {
-                            ty: D::SAMPLED_IMAGE,
-                            descriptor_count: 1,
-                        },
-                        vk::DescriptorPoolSize {
-                            ty: D::SAMPLER,
-                            descriptor_count: 1,
-                        },
-                        vk::DescriptorPoolSize {
-                            ty: D::STORAGE_BUFFER,
-                            descriptor_count: 1,
-                        },
-                    ]),
-                None,
-            )?;
-            let set = *dev
-                .allocate_descriptor_sets(
-                    &vk::DescriptorSetAllocateInfo::default()
-                        .descriptor_pool(pool)
-                        .set_layouts(&[set_layout]),
-                )?
-                .first()
-                .ok_or_else(|| anyhow!("no descriptor set"))?;
-            let image = [vk::DescriptorImageInfo {
-                sampler: vk::Sampler::null(),
-                image_view: textures_view,
-                image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            }];
-            let samp = [vk::DescriptorImageInfo {
-                sampler,
-                ..Default::default()
-            }];
-            let buf = [vk::DescriptorBufferInfo {
-                buffer: ground.buffer,
-                offset: 0,
-                range: vk::WHOLE_SIZE,
-            }];
-            let w = |b, kind| {
-                vk::WriteDescriptorSet::default()
-                    .dst_set(set)
-                    .dst_binding(b)
-                    .descriptor_type(kind)
-            };
-            dev.update_descriptor_sets(
-                &[
-                    w(0, D::SAMPLED_IMAGE).image_info(&image),
-                    w(1, D::SAMPLER).image_info(&samp),
-                    w(2, D::STORAGE_BUFFER).buffer_info(&buf),
-                ],
-                &[],
-            );
-
-            let src = format!("{COMMON}\n{MODEL}\n{MODEL_VR}");
-            let vs = gpu.shader(&scene::wgsl(&src, "vs", naga::ShaderStage::Vertex)?)?;
-            let fs_opaque = gpu.shader(&scene::wgsl(
-                &src,
-                "fs_opaque_vr",
-                naga::ShaderStage::Fragment,
-            )?)?;
-            let fs_blend = gpu.shader(&scene::wgsl(
-                &src,
-                "fs_blend_vr",
-                naga::ShaderStage::Fragment,
-            )?)?;
-            let bindings = [
-                vk::VertexInputBindingDescription {
-                    binding: 0,
-                    stride: VERTEX_BYTES,
-                    input_rate: vk::VertexInputRate::VERTEX,
-                },
-                vk::VertexInputBindingDescription {
-                    binding: 1,
-                    stride: INSTANCE_BYTES,
-                    input_rate: vk::VertexInputRate::INSTANCE,
-                },
-            ];
-            let attr = |location, binding, format, offset| vk::VertexInputAttributeDescription {
-                location,
-                binding,
-                format,
-                offset,
-            };
-            use vk::Format as F;
-            let attributes = [
-                attr(0, 0, F::R32G32B32_SFLOAT, 0),
-                attr(1, 0, F::R32G32_SFLOAT, 12),
-                attr(2, 0, F::R32G32B32A32_SFLOAT, 20),
-                attr(3, 1, F::R32G32B32_SFLOAT, 0),
-                attr(4, 1, F::R32_SFLOAT, 12),
-                attr(5, 1, F::R32_SFLOAT, 16),
-                attr(6, 1, F::R32_UINT, 20),
-            ];
-            let desc = |frag, depth_write, blend| scene::PipelineDesc {
-                vert: (vs, c"vs"),
-                frag,
-                layout,
-                render_pass,
-                depth: Some(depth_write),
-                blend,
-                bindings: &bindings,
-                attributes: &attributes,
-            };
-            let opaque = scene::pipeline(
-                gpu,
-                &desc((fs_opaque, c"fs_opaque_vr"), true, scene::Blend::Opaque),
-            );
-            let blend = scene::pipeline(
-                gpu,
-                &desc((fs_blend, c"fs_blend_vr"), false, scene::Blend::Alpha),
-            );
-            for m in [vs, fs_opaque, fs_blend] {
-                dev.destroy_shader_module(m, None);
-            }
-            let n = ranges.len();
-            Ok(Self {
-                set_layout,
-                layout,
-                opaque: opaque?,
-                blend: blend?,
-                pool,
-                set,
-                vertices,
-                ground,
-                textures,
-                textures_view,
-                sampler,
-                instances,
-                capacity,
-                ranges,
-                has_sprite,
-                batches: vec![Batch::default(); n],
-                chunks,
-                far_sprites: false,
-            })
-        }
+        let (set_layout, layout, pool, set) =
+            model_set(gpu, globals_layout, textures_view, sampler, &ground)?;
+        let (opaque, blend) = model_pipelines(gpu, layout, render_pass)?;
+        let n = ranges.len();
+        Ok(Self {
+            set_layout,
+            layout,
+            opaque,
+            blend,
+            pool,
+            set,
+            vertices,
+            ground,
+            textures,
+            textures_view,
+            sampler,
+            instances,
+            capacity,
+            ranges,
+            has_sprite,
+            batches: vec![Batch::default(); n],
+            chunks,
+            far_sprites: false,
+        })
     }
 
     /// This frame's instances around `head` (world), within `radius`

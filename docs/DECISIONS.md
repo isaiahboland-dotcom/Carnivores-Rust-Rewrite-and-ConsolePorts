@@ -2,6 +2,27 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-29 — PC VR: animals, in an observer's hunt
+
+HUNT in the headset now runs `c2_core::game::Hunt`, the PC's own
+simulation, ticked every 10 ms as `c2-pc hunt_view.rs` does, with the
+hunter put where the head is each tick (and `alpha` from the head's
+heading; no controls, the sticks move the head). As a first step it is an
+observer's hunt (`-observ`): animals are placed, roam and feed, but ignore
+the hunter, and there are no weapons or calls, so the AI and drawing can be
+judged before shooting comes in. With no hunt setup screen in VR yet,
+every huntable species is a target (placed as the original places
+targets), at the default density.
+
+Characters are drawn by the PC's `model.wgsl` (`animals.rs`, sharing the
+objects' pipelines and set): each frame every character in view range is
+posed (`dino::pose`, as `c2-pc dinos.rs`), its faces expanded into one
+per-frame vertex buffer, one instance each, a texture layer per `.CAR`.
+Ticks and 120 Hz frames don't line up, so each character is drawn between
+its place before and after the last tick (the PC does this for its camera
+only); poses aren't blended. The trophy room is still empty (trophies need
+the player's save), and the ship isn't drawn.
+
 ## 2026-10-29 — PC VR: trusting the floor less; a recenter button
 
 On the first menu run Monado's PS VR2 put the standing owner's head 0.86 m

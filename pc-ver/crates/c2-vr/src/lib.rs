@@ -6,8 +6,10 @@
 //! or the trophy room. The test scene (`test_scene`) checks a headset with
 //! no game data. Animals, weapons and the hunt aren't in VR yet.
 
+pub mod animals;
 pub mod game;
 pub mod gpu;
+pub mod hunt;
 pub mod objects;
 pub mod panel;
 pub mod runtime;
