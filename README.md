@@ -241,7 +241,7 @@ downloads directly.
    downloads folder (`DOWNLOADS` below). The folder names don't matter: mods are recognised by their files.
 3. **Get the base game and anything else the recipe's header asks for:**
    - your Carnivores 2 folder (`GAME`), or Carnivores: Ice Age for `ice-age-android.toml`;
-   - for recipes on the Modder's Edition Engine, its 1.1.1 release, unpacked. Use the folder
+   - for recipes on the Modder's Edition Engine, its [1.1.1 release](https://www.moddb.com/mods/carnivores-modders-edition/downloads/carnivores-modders-edition-111), unpacked. Use the folder
      `Carnivores Modders Edition 1.1.1 Standalone/Carnivores 2` as the `--overlay`;
    - for the `*-android` recipes and `c2-everything.toml`, import the mobile games' animals from your own
      APK first, into `DOWNLOADS`. The exact `c2-pc mobile ...` command is in the recipe's header.

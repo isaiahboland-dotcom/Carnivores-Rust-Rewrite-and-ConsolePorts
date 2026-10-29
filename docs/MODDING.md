@@ -52,7 +52,8 @@ was decided:
   no entry at all (a skin pack) only adds its new files.
 
 ## Modder's Edition add-ons
-Add-ons written for the Modder's Edition Engine need its data under them.
+Add-ons written for the Modder's Edition Engine need its data under them
+(download the 1.1.1 release: <https://www.moddb.com/mods/carnivores-modders-edition/downloads/carnivores-modders-edition-111>).
 Its release ships only the files it changes, to be copied over the
 original game; give that folder as an `--overlay` and it is layered over
 the game the same way (its `_RES.TXT` replaces the original's):

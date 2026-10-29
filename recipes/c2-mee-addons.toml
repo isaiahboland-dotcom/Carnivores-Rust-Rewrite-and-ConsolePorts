@@ -3,6 +3,7 @@
 # download each add-on from its page (unpack it into its own folder under one
 # downloads folder) and get the Modder's Edition yourself. See docs/MODDING.md.
 #
+# Modder's Edition 1.1.1: https://www.moddb.com/mods/carnivores-modders-edition/downloads/carnivores-modders-edition-111
 #   ME="PATH/Carnivores Modders Edition 1.1.1 Standalone/Carnivores 2"
 #   c2-pc recipe verify ../recipes/c2-mee-addons.toml --base ../source/c2-original --overlay "$ME" --mods DOWNLOADS
 #   c2-pc play ../source/c2-original --overlay "$ME" --recipe ../recipes/c2-mee-addons.toml --mods DOWNLOADS
