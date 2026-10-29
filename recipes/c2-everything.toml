@@ -4,7 +4,6 @@
 # Credits, download pages and file hashes only; no game or mod files.
 # Download each mod from its page, unpack each into its own folder under
 # one DOWNLOADS folder, and point --mods at it. See docs/MODDING.md.
-# Fill in the TODO credits and links before sharing this file.
 #
 #   ME="PATH/Carnivores Modders Edition 1.1.1 Standalone/Carnivores 2"
 #   c2-pc recipe verify THIS.toml --base C2 --overlay "$ME" --mods DOWNLOADS
@@ -124,8 +123,8 @@ loose = true
 
 [[mods]]
 id = "unzip-me-1"
-credit = "Jim Vance (model), Phororaque Jr. (texture and sounds); MP5 SD add-on"
-url = "TODO: download link"
+credit = "PhororaqueJr (texture, sounds; uploader), Jim Vance (model); HK MP5 SD add-on"
+url = "https://www.moddb.com/games/carnivores-2/addons/hk-mp-5-sd-addon"
 loose = true
 
 [mods.files]
