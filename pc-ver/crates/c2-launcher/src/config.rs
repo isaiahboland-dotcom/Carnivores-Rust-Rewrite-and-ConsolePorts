@@ -195,6 +195,14 @@ impl Default for ThreeDs {
     }
 }
 
+/// The Wii U build (`crate::wiiu`): only where the SD card is, for now.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct WiiU {
+    /// The SD card (or any folder to copy from by hand).
+    pub out: Option<PathBuf>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(default)]
 pub struct Config {
@@ -211,6 +219,10 @@ pub struct Config {
     /// Full launcher: the 3DS section shown (asked on first launch).
     pub show_3ds: Option<bool>,
     pub three_ds: ThreeDs,
+    /// Full launcher: the Wii U section shown (off until turned on in
+    /// Settings).
+    pub show_wiiu: bool,
+    pub wiiu: WiiU,
     /// Where `c2-pc`, `c2-cook` and `c2-3ds.3dsx` are, if not beside the
     /// launcher.
     pub tools: Option<PathBuf>,

@@ -32,6 +32,11 @@ zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2
 eframe = "0.37.0"
 rfd = "0.17.2"
 png = "0.18.1"
+# PC VR (c2-vr only): the OpenXR loader opened at run time, Vulkan as wgpu uses it.
+openxr = "0.22.0"
+ash = "0.38.0"
+# PC VR: the PC's WGSL terrain shader to SPIR-V (the version wgpu uses).
+naga = { version = "30.0.1", features = ["wgsl-in", "spv-out"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

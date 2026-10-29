@@ -1,7 +1,8 @@
 //! The launchers (README M10): set up the game from its folders, manage
-//! add-ons, play on PC, and build 3DS installs. Two builds of one app:
-//! `c2-launcher` (PC, with the 3DS section if the user wants it) and
-//! `c2-3ds-builder` (3DS only). The work is done by `c2-pc` and `c2-cook`,
+//! add-ons, play on PC, and build 3DS and Wii U installs. Three builds of
+//! one app: `c2-launcher` (PC, with the 3DS and Wii U sections if the user
+//! wants them), `c2-3ds-builder` (3DS only) and `c2-wiiu-builder` (Wii U
+//! only). The work is done by `c2-pc` and `c2-cook`,
 //! run as programs; this only gathers the choices (the balance editor reads
 //! the game's prices and scores itself, with `c2-mods`).
 
@@ -11,6 +12,7 @@ mod cia;
 mod config;
 mod jobs;
 mod options;
+mod wiiu;
 
 use std::path::PathBuf;
 
@@ -21,6 +23,8 @@ pub enum Mode {
     Full,
     /// Build 3DS installs only.
     ThreeDs,
+    /// Build Wii U installs only.
+    WiiU,
 }
 
 /// The game menus' colours (`c2-pc` `menu.rs`, `c2-3ds` `menu.rs`): dark
@@ -44,7 +48,8 @@ pub mod theme {
 }
 
 /// A tool the launcher runs (`c2-pc`, `c2-cook`, `c2-3ds.3dsx`, and for
-/// `.cia` builds `c2-3ds.elf`, `makerom`, `bannertool`): in the tools
+/// `.cia` builds `c2-3ds.elf`, `makerom`, `bannertool`; the Wii U app
+/// `c2-wiiu-perf-probe.rpx`): in the tools
 /// folder if set, beside the launcher, or (working from the source tree) in
 /// the other workspace's build folder or the tree's top folder.
 pub fn find_tool(name: &str, tools: Option<&std::path::Path>) -> Option<PathBuf> {
@@ -66,6 +71,7 @@ pub fn find_tool(name: &str, tools: Option<&std::path::Path>) -> Option<PathBuf>
         if let Some(root) = d.ancestors().nth(3) {
             dirs.push(root.join("3ds-ver/target/release"));
             dirs.push(root.join("3ds-ver/target/armv6k-nintendo-3ds/release"));
+            dirs.push(root.join("wiiu-ver/perf-probe/build"));
             dirs.push(root.to_path_buf());
         }
     }
@@ -136,6 +142,7 @@ pub fn run(mode: Mode) -> eframe::Result {
     let title = match mode {
         Mode::Full => "Carnivores 2 (Rust) - Launcher",
         Mode::ThreeDs => "Carnivores 2 (Rust) - 3DS Builder",
+        Mode::WiiU => "Carnivores 2 (Rust) - Wii U Builder",
     };
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()

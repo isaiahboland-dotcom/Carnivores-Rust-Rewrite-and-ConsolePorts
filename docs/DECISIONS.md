@@ -2,6 +2,80 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-29 — PC VR terrain: the PC's WGSL through naga; scale; gamma
+- `c2-vr`'s area scene compiles `c2-pc/src/shaders/common.wgsl` +
+  `terrain.wgsl` (read with `include_str!` across the crates) to SPIR-V with
+  `naga` 30 (the version wgpu already uses; `wgsl-in`, `spv-out`), at start,
+  so the terrain is drawn by one shader on PC and in VR. Descriptor sets
+  follow the WGSL groups. Its own fragment entry (`shaders/terrain_vr.wgsl`)
+  is `fs` plus an sRGB decode: the PC renders in gamma space into a
+  non-sRGB surface, the headset's images are sRGB.
+- Scale: `UNITS_PER_M` = `HEAD_STAND` (220) / 1.7 m, so a standing player
+  sees from the hunter's eye height; the tracking floor sits on the ground
+  under the head (eased).
+- Each scene implements `c2_vr::scene::Scene` (render pass, per-eye targets,
+  recording); `xr` keeps the session and frame loop.
+
+## 2026-10-29 — PC VR: OpenXR with raw Vulkan (`openxr`, `ash`), unsafe in one module
+The owner approved the `openxr` crate. `c2-vr` draws with Vulkan through
+`ash` 0.38 (already in the lock through wgpu), not wgpu: OpenXR's
+`XR_KHR_vulkan_enable2` has the runtime create the Vulkan instance and
+device, which wgpu 30 can't adopt without its `hal` layer; for a first
+scene raw Vulkan is less code and less risk. Revisit when the game's
+renderer comes to VR (share `c2-pc`'s wgpu renderer via `wgpu-hal`
+interop, or port it).
+- `openxr` with its default `loaded` feature: the loader is opened at run
+  time, so `c2-vr` starts without one installed and says so.
+- `unsafe_code` is denied workspace-wide; `c2_vr::xr` allows it (FFI handles
+  between OpenXR and Vulkan). Nothing else in the crate uses it.
+- Each eye is drawn into its own swapchain layer (two render passes) rather
+  than multiview, so no multiview feature is needed; the test scene is one
+  fragment shader tracing each pixel's ray (no vertex buffers, no depth),
+  its eye pose and tangents in push constants (96 bytes).
+- Shaders are GLSL in `crates/c2-vr/shaders/`, compiled with `glslc` and the
+  `.spv` committed (our own code), so building needs no shader compiler.
+  Recompile both after editing: `glslc fullscreen.vert -o fullscreen.vert.spv`,
+  `glslc -O test_scene.frag -o test_scene.frag.spv`.
+- Tracking space: stage (floor at 0) where the runtime has it, else local
+  with the floor 1.6 m below the start. Controllers: grip poses and a quit
+  button suggested for the simple, Index (B), Touch, Vive and WMR profiles.
+
+## 2026-10-29 — PC VR first draft: `c2-vr` in pc-ver, PLAY IN VR in the launcher
+The owner chose to keep PC VR inside `pc-ver/` (`crates/c2-vr`, its plan
+moved from `pcvr-ver/gameplan.md` to `crates/c2-vr/GAMEPLAN.md`) rather than
+a workspace of its own. It is a separate binary from `c2-pc` so the flat
+game never links OpenXR or needs a headset. The launcher's Play tab has
+PLAY IN VR beside PLAY; it runs `c2-vr play` with exactly `c2-pc play`'s
+arguments (unknown options ignored), so the game and mod workflow stay the
+same in either mode.
+- No new dependencies yet (README §8 asks first): the active runtime is
+  found as the OpenXR loader finds it (`XR_RUNTIME_JSON`, XDG config dirs,
+  `/etc`; the registry on Windows via `reg`), reading the manifest's name and
+  library. The loader stays the final word once `openxr` is added.
+- Until the renderer exists `c2-vr play` stops after its checks with a
+  plain message, and the launcher runs it as a waited-for step (not
+  launched) so its findings land in the log.
+
+## 2026-10-29 — Launcher: a Wii U builder (base game only, the rest placeholders)
+`c2-launcher --bin c2-wiiu-builder` (and a "Wii U" tab in the full launcher,
+off until Settings > "Show the Wii U section") sets up a Wii U install the
+way the 3DS builder does: same game folder, overlays, add-ons and standalones
+tabs. It lives in `c2-launcher` beside the 3DS builder rather than under
+`wiiu-ver/`, since it is the same app (one `Mode` more); the Wii U app itself
+stays in `wiiu-ver/`.
+- What it builds today is what the Wii U app reads: the original game's
+  files as they are (no cooked pack, no balance), flattened into the fixed SD
+  folder `wiiu/apps/carnivores-probe/` (`main.c`), with the RPX as
+  `carnivores-probe.rpx`. The file list (`c2_launcher::wiiu::assets`, 102
+  files) mirrors `wiiu-ver/perf-probe/stage_assets.py`; change both together.
+  Files are found in any case. A base that isn't plain Carnivores 2 (Ice Age,
+  a Modder's Edition style game) is refused for now.
+- Add-ons, overlays, standalones, Ice Age, APK imports, balance and a `.wuhb`
+  show as greyed "not on the Wii U yet" lines; the lists the user sets up are
+  kept, so the build can use them once the port reads them. The install name
+  is fixed until the app reads its folder from where it was started.
+- The Wii U builder has no Balance tab (nothing would apply it).
+
 ## 2026-10-24 — PC: one kill notice
 After a trophy kill the PC showed the original's plaque (`TROPHY_G.TGA`)
 and the kill box added in M10 (after the 3DS's). The box now shows only

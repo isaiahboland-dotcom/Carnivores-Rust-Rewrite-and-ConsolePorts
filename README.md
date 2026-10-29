@@ -63,6 +63,7 @@ The original C++ source (made available on Assembla in 2013) is used **as a refe
 │       ├── c2-core/           # game logic: world, AI, weapons, hunting, scoring, saves
 │       ├── c2-platform/       # traits: Renderer, Audio, Input, Fs, Clock
 │       ├── c2-pc/             # PC backend + binary
+│       ├── c2-vr/             # PC VR (OpenXR) frontend, M17; plan in its GAMEPLAN.md
 │       └── c2-parity/         # parity harness vs the original game/data
 ├── 3ds-ver/                   # 3DS port (separate nightly workspace, from M6):
 │                              #   c2-3ds backend + c2-cook, reusing pc-ver/crates/*
@@ -100,7 +101,10 @@ hunt follow the player's bindings (Options > Controls).
 Add-on mods: append `--mod path/to/mod` (repeatable); see `docs/MODDING.md`.
 
 **Launchers** (no command line needed after building): `cargo run --release -p c2-launcher` (PC; asks once whether
-to show the 3DS section) or `-p c2-launcher --bin c2-3ds-builder` (3DS only). They run `c2-pc` and `c2-cook`, found
+to show the 3DS section) or `-p c2-launcher --bin c2-3ds-builder` (3DS only). `-p c2-launcher --bin c2-wiiu-builder` is the Wii U
+one (also a tab in the PC launcher, Settings > Show the Wii U section): for now it copies the base game's files and
+`c2-wiiu-perf-probe.rpx` to `wiiu/apps/carnivores-probe/` on the SD card; add-ons, Ice Age and the rest are listed
+as coming. They run `c2-pc` and `c2-cook`, found
 beside the launcher, in a tools folder set in Settings, or in this source tree's build folders.
 
 ### `.cia` builds (optional)
@@ -543,6 +547,9 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
         name; the user's icon/banner art); works on hardware (owner, 2026-10-22). In Azahar the installed
         title found no pack: an emulator matter, not looked into further
   - [ ] Ice Age and standalone games in the base slot (with M14 / M16)
+  - [x] Wii U builder (`c2-wiiu-builder`, a tab in the full launcher): base game files and the app onto the SD
+        card; add-ons, overlays, standalones, Ice Age, APK, balance and `.wuhb` as placeholders until the port
+        reads them
 - [ ] M11 Hunt options and 3DS comfort — **in progress** (untested on hardware)
   - [x] 3DS hunt options screen before each hunt: animal run speed, ambient animals, random ambients (4 kinds a
         hunt, modded games), 3DS friendly, stealth crouch (settings keep blood and the death camera)
@@ -632,6 +639,21 @@ Two GUIs (PC and 3DS builder; they may share one app), so nobody needs the comma
   - [x] survival menus (owner, 2026-10-23): one SURVIVAL button; with more than one mode a chooser (Classic
         (Android) / Modded); our own survival benched (not offered; `--survival-modes ours` for tests); the
         launcher's Classic / Modded checkboxes
+- [ ] M17 a PCVR version of the game — **first draft** (`pc-ver/crates/c2-vr`, plan in its `GAMEPLAN.md`)
+  - [x] launcher Play tab: PLAY IN VR beside PLAY, running `c2-vr play` with the same game, overlays and add-ons
+  - [x] `c2-vr check` / `play`: finds the active OpenXR runtime the way the loader does and checks the game
+  - [x] `c2-vr scene` (and `play`, for now): OpenXR + Vulkan session, a swapchain layer per eye, head and
+        controller tracking, a traced test scene (floor grid, a ring of boxes, controller balls); no game data
+  - [x] checked in Monado's simulated headset (60 fps, both eyes and controllers right)
+  - [x] PS VR2 on Linux through Monado's `psvr2` driver: 2800 x 2856 per eye at 120 fps (owner looked around;
+        head tracking only, no Sense controllers there)
+  - [x] `c2-vr area MAP` / `play`: an area's ground and water with the PC's `terrain.wgsl`, walk (sticks) and
+        snap turn; 120 fps on the PS VR2
+  - [x] the area's objects (trees, plants, rocks) with the PC's `model.wgsl`, far sprites; 120 fps on the PS VR2
+  - [x] head height from the first pose where the runtime's floor is missing or wrong (Monado's PS VR2)
+  - [x] the sky (scrolling clouds) and sun with the PC's `sky.wgsl`
+  - [ ] a gamepad for headsets without controllers; then the hunt
+- [ ] M18 a PSVR2 version of the game
 
 _Last updated: 2026-10-22 — the add-on pack plays on hardware and the Old 3DS slowdown after a kill is gone. Roaming add-ons on the 3DS are proper hunt targets (no call, +10%, a menu picture); dialect games no longer halve non-target scores. M10: the launchers' balance editor. Next: `.cia` builds._
 

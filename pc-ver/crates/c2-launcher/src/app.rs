@@ -1,5 +1,5 @@
 //! The launcher window: a tab per job (game folders, add-ons, balance,
-//! play, 3DS, settings), the job log at the bottom.
+//! play, 3DS, Wii U, settings), the job log at the bottom.
 
 use std::path::PathBuf;
 
@@ -17,6 +17,7 @@ enum Tab {
     Balance,
     Play,
     ThreeDs,
+    WiiU,
     Settings,
 }
 
@@ -210,7 +211,11 @@ impl Launcher {
     }
 
     fn shows_3ds(&self) -> bool {
-        self.mode == Mode::ThreeDs || self.cfg.show_3ds == Some(true)
+        self.mode == Mode::ThreeDs || (self.mode == Mode::Full && self.cfg.show_3ds == Some(true))
+    }
+
+    fn shows_wiiu(&self) -> bool {
+        self.mode == Mode::WiiU || (self.mode == Mode::Full && self.cfg.show_wiiu)
     }
 
     fn save(&mut self) {
@@ -459,6 +464,25 @@ impl Launcher {
         self.job = Some(Job::start("Starting the game", steps));
     }
 
+    /// The same game in a VR headset (`c2-vr`, README M17): it checks the
+    /// OpenXR runtime and the game, its findings in the log. A first draft:
+    /// it shows a test scene in the headset, not the game yet; run and
+    /// waited for rather than launched, so its report lands in the log.
+    fn play_vr(&mut self) {
+        let Some(vr) = find_tool("c2-vr", self.cfg.tools.as_deref()) else {
+            self.note = Some((
+                "c2-vr not found: set the tools folder in Settings.".into(),
+                RED,
+            ));
+            return;
+        };
+        let steps = vec![Step::Run {
+            program: vr,
+            args: self.play_args(),
+        }];
+        self.job = Some(Job::start("Starting the game in VR", steps));
+    }
+
     fn build_3ds(&mut self) {
         let tools = self.cfg.tools.clone();
         let (Some(cook), Some(app)) = (
@@ -589,6 +613,38 @@ impl Launcher {
         ));
     }
 
+    /// The base game's files and the Wii U app onto the SD card
+    /// (`crate::wiiu`).
+    fn build_wiiu(&mut self) {
+        let Some(app) = find_tool(crate::wiiu::APP, self.cfg.tools.as_deref()) else {
+            self.note = Some((
+                format!(
+                    "{} not found: set the tools folder in Settings.",
+                    crate::wiiu::APP
+                ),
+                RED,
+            ));
+            return;
+        };
+        let (Some(base), Some(out)) = (self.cfg.base.clone(), self.cfg.wiiu.out.clone()) else {
+            return;
+        };
+        match crate::wiiu::steps(&base, &app, &out) {
+            Ok(steps) => {
+                self.job = Some(Job::start("Building the Wii U install", steps));
+            }
+            Err(missing) => {
+                self.note = Some((
+                    format!(
+                        "The game folder lacks what the Wii U needs: {}",
+                        missing.join(", ")
+                    ),
+                    RED,
+                ));
+            }
+        }
+    }
+
     // ------------------------------------------------------------ tabs
 
     fn game_tab(&mut self, ui: &mut egui::Ui) {
@@ -669,6 +725,12 @@ impl Launcher {
             "Drop add-on folders or archives (.zip, .rar, .7z) on this window. They load top to \
              bottom: where two change the same thing, the lower one wins.",
         );
+        if self.mode == Mode::WiiU {
+            help(
+                ui,
+                "The Wii U version doesn't load add-ons yet: the list is kept for when it does.",
+            );
+        }
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             if ui
@@ -886,9 +948,23 @@ impl Launcher {
             }
         });
         ui.add_space(12.0);
-        if big_button(ui, "PLAY", ready && !self.busy()) {
-            self.play();
-        }
+        let busy = self.busy();
+        ui.horizontal(|ui| {
+            if big_button(ui, "PLAY", ready && !busy) {
+                self.play();
+            }
+            ui.add_space(12.0);
+            if big_button(ui, "PLAY IN VR", ready && !busy) {
+                self.play_vr();
+            }
+        });
+        help(
+            ui,
+            "PLAY IN VR: the same game in a headset, through OpenXR (start SteamVR, Monado or \
+             WiVRn first). A first draft: for now it checks your headset runtime and the game, \
+             then shows a test scene in the headset (floor grid, boxes, your controllers); \
+             the left menu button quits. Its report is in the log below.",
+        );
     }
 
     fn three_ds_tab(&mut self, ui: &mut egui::Ui) {
@@ -970,6 +1046,150 @@ impl Launcher {
             && (t.vanilla_pack || t.addons_pack || t.standalone_packs);
         if big_button(ui, "BUILD", ready && !self.busy()) {
             self.build_3ds();
+        }
+    }
+
+    fn wiiu_tab(&mut self, ui: &mut egui::Ui) {
+        heading(ui, "Build for Wii U");
+        help(
+            ui,
+            &format!(
+                "Puts the app and your game's files on the SD card, in wiiu/apps/{}/; start it \
+                 from the Homebrew Launcher. The Wii U version plays the original Carnivores 2 \
+                 for now: the rest below comes as the port gets it.",
+                crate::wiiu::SD_FOLDER
+            ),
+        );
+        ui.add_space(6.0);
+        let mut changed = false;
+        let kind = self.cfg.base.as_deref().and_then(describe_game);
+        let soon = |ui: &mut egui::Ui, text: &str| {
+            ui.horizontal(|ui| {
+                ui.add_enabled(false, egui::Checkbox::new(&mut false, text));
+                ui.label(RichText::new("not on the Wii U yet").color(DIM));
+            });
+        };
+        panel(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("SD card (or a folder):");
+                let shown = self
+                    .cfg
+                    .wiiu
+                    .out
+                    .as_ref()
+                    .map_or("not set".to_string(), |p| p.display().to_string());
+                ui.label(RichText::new(shown).color(SAND));
+                if ui.button("Browse...").clicked() {
+                    if let Some(p) = rfd::FileDialog::new().pick_folder() {
+                        self.cfg.wiiu.out = Some(p);
+                        changed = true;
+                    }
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label("Install name:");
+                ui.add_enabled(
+                    false,
+                    egui::TextEdit::singleline(&mut crate::wiiu::SD_FOLDER.to_string())
+                        .desired_width(200.0),
+                );
+                help(ui, "fixed for now (the app reads this folder)");
+            });
+        });
+        ui.add_space(8.0);
+        panel(ui, |ui| {
+            ui.label(RichText::new("What goes on").color(GOLD));
+            ui.horizontal(|ui| {
+                ui.add_enabled(
+                    false,
+                    egui::Checkbox::new(&mut true, "Base game (Carnivores 2)"),
+                );
+                match kind {
+                    Some("Carnivores 2") => help(
+                        ui,
+                        "its five areas, nine animals and six weapons; 102 files, copied as they are",
+                    ),
+                    Some(k) => {
+                        ui.label(
+                            RichText::new(format!(
+                                "{k}: the Wii U plays the original Carnivores 2 only for now"
+                            ))
+                            .color(RED),
+                        );
+                    }
+                    None => {
+                        ui.label(
+                            RichText::new("set the game folder first (The game tab)").color(RED),
+                        );
+                    }
+                }
+            });
+            let on = self.cfg.enabled_addons().len();
+            soon(
+                ui,
+                &format!(
+                    "Add-ons pack ({on} add-on{} on, Add-ons tab)",
+                    if on == 1 { "" } else { "s" }
+                ),
+            );
+            soon(
+                ui,
+                &format!(
+                    "Modder's Edition and other base overlays ({})",
+                    self.cfg.overlays.len()
+                ),
+            );
+            soon(
+                ui,
+                &format!(
+                    "A pack per standalone game ({} on)",
+                    self.cfg.enabled_standalones().len()
+                ),
+            );
+            soon(
+                ui,
+                "Carnivores: Ice Age (as the base game, or beside Carnivores 2)",
+            );
+            soon(ui, "Animals and weapons from the mobile game (APK)");
+            soon(ui, "Balance changes (Balance tab)");
+            help(
+                ui,
+                "Add-ons, overlays and standalones you set up here are kept: the Wii U build \
+                 will use the same list once it can.",
+            );
+        });
+        ui.add_space(8.0);
+        panel(ui, |ui| {
+            ui.label(RichText::new("The app").color(GOLD));
+            match find_tool(crate::wiiu::APP, self.cfg.tools.as_deref()) {
+                Some(p) => {
+                    ui.label(
+                        RichText::new(format!("{}: {}", crate::wiiu::APP, p.display())).color(TEXT),
+                    );
+                }
+                None => {
+                    ui.label(
+                        RichText::new(format!(
+                            "{}: not found (build wiiu-ver/perf-probe, or set the tools folder \
+                             in Settings)",
+                            crate::wiiu::APP
+                        ))
+                        .color(RED),
+                    );
+                }
+            }
+            soon(
+                ui,
+                "Also make a .wuhb (shows on the Wii U menu, with your icon)",
+            );
+        });
+        if changed {
+            self.save();
+        }
+        ui.add_space(12.0);
+        let ready = kind == Some("Carnivores 2") && self.cfg.wiiu.out.is_some();
+        if big_button(ui, "BUILD", ready && !self.busy()) {
+            self.build_wiiu();
         }
     }
 
@@ -1164,7 +1384,7 @@ impl Launcher {
             ui.label(RichText::new("Tools folder").color(GOLD));
             help(
                 ui,
-                "Where c2-pc, c2-cook and c2-3ds.3dsx (and for .cia builds c2-3ds.elf, makerom \
+                "Where c2-pc, c2-vr, c2-cook and c2-3ds.3dsx (and for .cia builds c2-3ds.elf, makerom \
                  and bannertool) are, if not beside the launcher.",
             );
             ui.horizontal(|ui| {
@@ -1189,11 +1409,13 @@ impl Launcher {
             });
             for tool in [
                 "c2-pc",
+                "c2-vr",
                 "c2-cook",
                 "c2-3ds.3dsx",
                 "c2-3ds.elf",
                 "makerom",
                 "bannertool",
+                crate::wiiu::APP,
             ] {
                 let found = find_tool(tool, self.cfg.tools.as_deref());
                 let (text, col) = match &found {
@@ -1209,6 +1431,12 @@ impl Launcher {
                 let mut on = self.cfg.show_3ds == Some(true);
                 if ui.checkbox(&mut on, "Show the 3DS section").changed() {
                     self.cfg.show_3ds = Some(on);
+                    self.save();
+                }
+                if ui
+                    .checkbox(&mut self.cfg.show_wiiu, "Show the Wii U section")
+                    .changed()
+                {
                     self.save();
                 }
             });
@@ -1308,16 +1536,19 @@ impl eframe::App for Launcher {
                             .strong(),
                     );
                     ui.add_space(16.0);
-                    let mut tabs = vec![
-                        (Tab::Game, "The game"),
-                        (Tab::AddOns, "Add-ons"),
-                        (Tab::Balance, "Balance"),
-                    ];
+                    let mut tabs = vec![(Tab::Game, "The game"), (Tab::AddOns, "Add-ons")];
+                    // The Wii U reads the game's files as they are: no balance yet.
+                    if self.mode != Mode::WiiU {
+                        tabs.push((Tab::Balance, "Balance"));
+                    }
                     if self.mode == Mode::Full {
                         tabs.push((Tab::Play, "Play"));
                     }
                     if self.shows_3ds() {
                         tabs.push((Tab::ThreeDs, "3DS"));
+                    }
+                    if self.shows_wiiu() {
+                        tabs.push((Tab::WiiU, "Wii U"));
                     }
                     tabs.push((Tab::Settings, "Settings"));
                     for (t, name) in tabs {
@@ -1352,6 +1583,7 @@ impl eframe::App for Launcher {
                 Tab::Balance => self.balance_tab(ui),
                 Tab::Play => self.play_tab(ui),
                 Tab::ThreeDs => self.three_ds_tab(ui),
+                Tab::WiiU => self.wiiu_tab(ui),
                 Tab::Settings => self.settings_tab(ui),
             });
         });
@@ -1359,7 +1591,9 @@ impl eframe::App for Launcher {
             self.first_launch(&ctx);
         }
         // A tab that went away (3DS hidden) falls back.
-        if self.tab == Tab::ThreeDs && !self.shows_3ds() {
+        if (self.tab == Tab::ThreeDs && !self.shows_3ds())
+            || (self.tab == Tab::WiiU && !self.shows_wiiu())
+        {
             self.tab = Tab::Game;
         }
     }
