@@ -1,6 +1,8 @@
 //! An area (`.MAP` + `.RSC`) prepared the way the hardware renderers see it
 //! after `Resources.cpp: LoadResources` + `CreateTMap` (D3D/3dfx path).
 
+use alloc::{vec, vec::Vec};
+
 use c2_formats::map::{Map, MAP_SIZE};
 use c2_formats::rsc::{object_flags, Rsc};
 

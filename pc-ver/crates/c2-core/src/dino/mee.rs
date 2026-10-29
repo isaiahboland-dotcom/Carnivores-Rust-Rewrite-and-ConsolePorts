@@ -8,6 +8,19 @@
 //! (`AddAnim`). A key that is never given leaves its phase at 0, the first
 //! animation listed, as in the original.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 /// The dialect's AI numbers beyond the original's (`Hunt.h`).
 pub mod mee_ai {
     pub const PIG: i32 = 6;

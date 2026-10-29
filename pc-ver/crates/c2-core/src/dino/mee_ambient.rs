@@ -4,6 +4,19 @@
 //! calming down beyond 16 cells. `dash` animals speed up when the hunter is
 //! very close.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use super::huntable::{calm_phase, end_phase, water_flag, World};
 use super::mee::MeeInfo;
 use super::{

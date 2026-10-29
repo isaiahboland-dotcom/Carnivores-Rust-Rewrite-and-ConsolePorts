@@ -3,6 +3,20 @@
 //! there; then he can't for [`COOLDOWN_MS`]. Not in a survival or the
 //! trophy room.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    collections::{BinaryHeap, VecDeque},
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use super::*;
 use crate::CELL;
 

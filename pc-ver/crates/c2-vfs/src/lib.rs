@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
 //! Layered virtual filesystem.
 //!
 //! Layers stack `base game → mod 1 → … → user overrides`; a later layer's
@@ -8,7 +10,16 @@
 //! Paths are relative, `/`-separated (`HUNTDAT/AREAS/AREA1.MAP`); `\` is
 //! accepted and normalised.
 
+extern crate alloc;
+
+mod range_pack;
+pub use range_pack::{PackSource, RangePackBackend};
+#[cfg(all(test, not(feature = "std")))]
+extern crate std;
+
+#[cfg(feature = "std")]
 mod cooked;
+#[cfg(feature = "std")]
 pub use cooked::PackBackend;
 
 #[cfg(feature = "zip")]
@@ -16,19 +27,25 @@ mod zip;
 #[cfg(feature = "zip")]
 pub use zip::ZipBackend;
 
-use std::collections::BTreeMap;
+use alloc::{boxed::Box, collections::BTreeMap, string::String, vec, vec::Vec};
+#[cfg(feature = "std")]
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, thiserror::Error)]
 pub enum VfsError {
     #[error("{path}: not found")]
     NotFound { path: String },
+    #[cfg(feature = "std")]
     #[error("{path}: {source}")]
     Io {
         path: String,
         #[source]
         source: std::io::Error,
     },
+    #[error("{path}: invalid pack: {reason}")]
+    InvalidPack { path: String, reason: String },
+    #[error("{path}: platform I/O error {code}")]
+    PlatformIo { path: String, code: i32 },
 }
 
 /// Normalised lookup key: `/` separators, lower case, no leading `./` or `/`.
@@ -49,17 +66,20 @@ pub trait Backend: Send + Sync {
     fn files(&self) -> Vec<String>;
     fn read(&self, path: &str) -> Result<Vec<u8>, VfsError>;
     /// The file on disk, if the backend has one (lets callers link instead of copy).
+    #[cfg(feature = "std")]
     fn disk_path(&self, _path: &str) -> Option<PathBuf> {
         None
     }
 }
 
 /// A directory on disk, indexed once.
+#[cfg(feature = "std")]
 pub struct DirBackend {
     root: PathBuf,
     files: Vec<String>,
 }
 
+#[cfg(feature = "std")]
 impl DirBackend {
     /// Indexes `root` recursively. Unreadable entries are skipped.
     pub fn new(root: impl Into<PathBuf>) -> Result<Self, VfsError> {
@@ -96,6 +116,7 @@ impl DirBackend {
     }
 }
 
+#[cfg(feature = "std")]
 impl Backend for DirBackend {
     fn files(&self) -> Vec<String> {
         self.files.clone()
@@ -217,6 +238,7 @@ impl Vfs {
     }
 
     /// The winning file on disk, if its layer is a directory.
+    #[cfg(feature = "std")]
     pub fn disk_path(&self, path: &str) -> Option<PathBuf> {
         let r = self.resolve(path)?;
         self.layers[r.layer].backend.disk_path(&r.path)
@@ -272,6 +294,7 @@ mod tests {
         assert!(v.read("nope").is_err());
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn dir_backend_indexes_recursively() {
         let dir = std::env::temp_dir().join(format!("c2-vfs-test-{}", std::process::id()));

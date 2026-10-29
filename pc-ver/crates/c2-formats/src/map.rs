@@ -3,6 +3,7 @@
 
 use crate::error::FormatError;
 use crate::reader::{Reader, WriteLe};
+use alloc::vec::Vec;
 
 pub const MAP_SIZE: usize = 1024;
 pub const CELLS: usize = MAP_SIZE * MAP_SIZE;

@@ -4,6 +4,19 @@
 //! else its roar), then chases. Shares the kill, idle and pack rules with
 //! [`super::huntable`].
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use super::huntable::{calm_phase, end_phase, try_kill, wander, water_flag, World};
 use super::mee::MeeInfo;
 use super::{

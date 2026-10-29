@@ -19,6 +19,7 @@
 //! Which areas exist is for the caller to check (it knows the files).
 
 use crate::res_txt::{c_atof, c_atoi, Block, ResTxt};
+use alloc::{format, string::String, string::ToString, vec::Vec};
 
 /// A weapon or huntable as the menu lists it.
 #[derive(Debug, Clone, PartialEq)]

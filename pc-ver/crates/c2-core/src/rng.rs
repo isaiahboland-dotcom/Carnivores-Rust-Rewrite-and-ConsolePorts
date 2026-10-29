@@ -49,6 +49,14 @@ mod tests {
     }
 
     #[test]
+    fn signed_and_unsigned_checkpoints() {
+        let mut r = MsRand::new(7);
+        assert_eq!([r.r_rand(5), r.r_rand(5), r.r_rand(5)], [1, 4, 5]);
+        let mut r = MsRand::new(7);
+        assert_eq!([r.si_rand(3), r.si_rand(3), r.si_rand(3)], [-3, 0, 0]);
+    }
+
+    #[test]
     fn ranges() {
         let mut r = MsRand::new(7);
         for _ in 0..1000 {

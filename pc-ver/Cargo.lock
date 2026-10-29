@@ -671,6 +671,7 @@ dependencies = [
  "c2-formats",
  "c2-mods",
  "c2-pad",
+ "font8x8",
  "glam",
  "naga",
  "openxr",

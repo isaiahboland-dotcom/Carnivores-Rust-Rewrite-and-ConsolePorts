@@ -9,6 +9,7 @@
 
 use crate::error::{FormatError, FormatErrorKind};
 use crate::reader::{Reader, WriteLe};
+use alloc::{format, string::String, vec, vec::Vec};
 
 /// Decoded image: `width * height` pixels, top row first, `ARRRRRGGGGGBBBBB`.
 /// The top bit is kept as stored for 16-bit files (the engine ignores it),
@@ -63,7 +64,7 @@ pub fn parse(data: &[u8]) -> Result<Picture, FormatError> {
             let n = usize::from(head & 0x7f) + 1;
             if head & 0x80 != 0 {
                 let p = decode(r.bytes(px_bytes, "tga.rle.pixel")?);
-                pixels.extend(std::iter::repeat_n(p, n));
+                pixels.extend(core::iter::repeat_n(p, n));
             } else {
                 for _ in 0..n {
                     pixels.push(decode(r.bytes(px_bytes, "tga.rle.raw")?));

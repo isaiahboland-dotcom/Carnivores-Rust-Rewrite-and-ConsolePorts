@@ -1,6 +1,20 @@
 //! Ray tests: `mathematics.cpp: TraceShot`, `TraceLook`, `TraceCheckPlane`,
 //! `TraceModel`, `TraceCharacter`.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    collections::{BinaryHeap, VecDeque},
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use c2_formats::car::Car;
 use c2_formats::map::MAP_SIZE;
 use c2_formats::model::face_flags;
@@ -154,7 +168,7 @@ fn trace_model(ray: &mut Ray, area: &Area, x: usize, z: usize, ob: usize) -> boo
     if ray.dist_to([base[0], base[1] + 700.0, base[2]]) > 1400.0 {
         return false;
     }
-    let malp = f32::from((area.map.flags[i] >> 2) & 7) * 2.0 * std::f32::consts::PI / 8.0;
+    let malp = f32::from((area.map.flags[i] >> 2) & 7) * 2.0 * core::f32::consts::PI / 8.0;
     let (sa, ca) = malp.sin_cos();
     let m = &o.model.mesh;
     let verts: Vec<V3> = m
@@ -229,7 +243,7 @@ pub fn trace_shot(
         let Some(verts) = pose::pose(c, car, anims) else {
             continue;
         };
-        let al = -c.alpha + std::f32::consts::FRAC_PI_2;
+        let al = -c.alpha + core::f32::consts::FRAC_PI_2;
         let (sa, ca) = al.sin_cos();
         let world: Vec<V3> = verts
             .iter()

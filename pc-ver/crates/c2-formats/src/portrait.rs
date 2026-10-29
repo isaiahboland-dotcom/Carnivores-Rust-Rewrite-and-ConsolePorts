@@ -4,6 +4,7 @@
 //! drawn in software on a transparent background.
 
 use crate::model::{Mesh, TEXTURE_WIDTH};
+use alloc::{vec, vec::Vec};
 
 const MODEL_TEXTURE_SIZE: usize = TEXTURE_WIDTH;
 
@@ -60,7 +61,7 @@ impl PreparedModel {
 pub fn render(mesh: &Mesh, w: usize, h: usize, fill: f32) -> Option<Vec<u8>> {
     let m = &PreparedModel::from_mesh(mesh);
     // Side view (screen x along the body, y up), turned 30 degrees.
-    let (s, c) = 0.52f32.sin_cos();
+    let (s, c) = sin_cos(0.52);
     let view: Vec<[f32; 3]> = m
         .positions
         .iter()
@@ -111,10 +112,10 @@ pub fn render(mesh: &Mesh, w: usize, h: usize, fill: f32) -> Option<Vec<u8>> {
         if area.abs() < 1e-6 {
             continue;
         }
-        let x0 = a[0].min(b[0]).min(cc[0]).floor().max(0.0) as usize;
-        let x1 = (a[0].max(b[0]).max(cc[0]).ceil() as usize).min(w);
-        let y0 = a[1].min(b[1]).min(cc[1]).floor().max(0.0) as usize;
-        let y1 = (a[1].max(b[1]).max(cc[1]).ceil() as usize).min(h);
+        let x0 = floor(a[0].min(b[0]).min(cc[0])).max(0.0) as usize;
+        let x1 = (ceil(a[0].max(b[0]).max(cc[0])) as usize).min(w);
+        let y0 = floor(a[1].min(b[1]).min(cc[1])).max(0.0) as usize;
+        let y1 = (ceil(a[1].max(b[1]).max(cc[1])) as usize).min(h);
         for y in y0..y1 {
             for x in x0..x1 {
                 let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
@@ -171,8 +172,52 @@ fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
 }
 
 fn normalize(v: [f32; 3]) -> [f32; 3] {
-    let l = dot(v, v).sqrt().max(1e-6);
+    let l = sqrt(dot(v, v)).max(1e-6);
     [v[0] / l, v[1] / l, v[2] / l]
+}
+
+fn sin_cos(value: f32) -> (f32, f32) {
+    #[cfg(feature = "std")]
+    {
+        value.sin_cos()
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        libm::sincosf(value)
+    }
+}
+
+fn floor(value: f32) -> f32 {
+    #[cfg(feature = "std")]
+    {
+        value.floor()
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        libm::floorf(value)
+    }
+}
+
+fn ceil(value: f32) -> f32 {
+    #[cfg(feature = "std")]
+    {
+        value.ceil()
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        libm::ceilf(value)
+    }
+}
+
+fn sqrt(value: f32) -> f32 {
+    #[cfg(feature = "std")]
+    {
+        value.sqrt()
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        libm::sqrtf(value)
+    }
 }
 
 #[cfg(test)]

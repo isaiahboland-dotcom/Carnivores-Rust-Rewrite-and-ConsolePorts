@@ -8,6 +8,7 @@
 
 use crate::error::{FormatError, FormatErrorKind};
 use crate::reader::Reader;
+use alloc::vec::Vec;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Wav {

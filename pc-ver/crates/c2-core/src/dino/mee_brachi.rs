@@ -6,6 +6,19 @@
 //! checks when moving (the original's `MoveCharacter` call is commented
 //! out).
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use super::huntable::{calm_phase, kill_now, wander, World};
 use super::mee::{mee_ai, MeeInfo};
 use super::{

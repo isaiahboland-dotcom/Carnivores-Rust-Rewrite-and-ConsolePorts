@@ -426,6 +426,7 @@ fn new_hunt(
         notice_k: setup.notice_k,
         stealth: setup.stealth,
         teleport: setup.teleport,
+        distant_ai: false,
         no_call_bonus: setup.roamers.iter().map(|r| r.slot + 10).collect(),
     };
     let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);

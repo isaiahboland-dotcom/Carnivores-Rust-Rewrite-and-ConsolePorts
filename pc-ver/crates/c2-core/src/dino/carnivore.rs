@@ -2,6 +2,19 @@
 //! `AnimateSpin`, `AnimateCera`. Same body, different constants; Spino and
 //! Cerato also idle, Cerato never jumps or slides.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use super::{
     ai, angle_difference, corrected_alpha, delta_func, find_vector_alpha, hunt, sgn, wrap_angle,
     Character, Ctx, DinoEvent, Species, CS_ON_WATER, PI,

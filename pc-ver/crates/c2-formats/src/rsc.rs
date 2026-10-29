@@ -4,6 +4,7 @@
 use crate::error::FormatError;
 use crate::model::StaticModel;
 use crate::reader::{Reader, WriteLe};
+use alloc::vec::Vec;
 
 /// Terrain textures are 128x128, 16-bit (`LoadTexture`).
 pub const TERRAIN_TEX_SIZE: usize = 128;

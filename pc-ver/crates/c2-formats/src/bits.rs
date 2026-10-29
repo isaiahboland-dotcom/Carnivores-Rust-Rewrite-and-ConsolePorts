@@ -2,6 +2,8 @@
 //! The original packs these into a 32-bit word (AI numbers 10..); combined
 //! games list far more animals than a `u128` holds once slot + 10 is taken.
 
+#[cfg(test)]
+use alloc::vec::Vec;
 use core::ops::{BitAnd, BitOr, BitOrAssign};
 
 /// Bits `0..Bits::LEN`.

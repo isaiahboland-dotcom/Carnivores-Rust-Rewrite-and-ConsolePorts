@@ -18,7 +18,10 @@
 //! Positions are the mobile game's: its map is the PC map transposed (PC
 //! `x` = mobile `-z`, PC `z` = mobile `x`).
 
-use std::collections::BTreeMap;
+use alloc::collections::BTreeMap;
+#[cfg(test)]
+use alloc::vec;
+use alloc::{format, string::String, string::ToString, vec::Vec};
 
 use crate::error::FormatError;
 use crate::mobile_values::{at_va, bad, sections, symbols};
@@ -389,8 +392,8 @@ impl Arcade {
             area,
             hunter: [-self.hunter[1], self.hunter[0]],
             spawn: [-cz, cx, hz, hx],
-            first_ms: (self.first_s * 1000.0).round() as i32,
-            rest_ms: (self.rest_s * 1000.0).round() as i32,
+            first_ms: round(self.first_s * 1000.0) as i32,
+            rest_ms: round(self.rest_s * 1000.0) as i32,
             waves: self.waves.iter().map(named).collect(),
             after: named(&self.after),
             stand_ins: false,
@@ -543,6 +546,17 @@ pub fn arcade(lib: &[u8]) -> Result<Arcade, FormatError> {
         rest_s,
         names,
     })
+}
+
+fn round(value: f32) -> f32 {
+    #[cfg(feature = "std")]
+    {
+        value.round()
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        libm::roundf(value)
+    }
 }
 
 #[cfg(test)]

@@ -10,11 +10,12 @@ rust-version.workspace = true
 workspace = true
 
 [features]
-default = []
+default = ["std"]
+std = ["thiserror/std", "c2-formats/std"]
 # Zip archives as layers (mods often ship zipped). Off for the 3DS.
-zip = ["dep:zip"]
+zip = ["std", "dep:zip"]
 
 [dependencies]
-thiserror.workspace = true
+thiserror = { version = "2", default-features = false }
 zip = { workspace = true, optional = true }
-c2-formats.workspace = true
+c2-formats = { path = "../c2-formats", default-features = false }

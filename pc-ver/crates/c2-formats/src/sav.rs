@@ -3,6 +3,7 @@
 
 use crate::error::FormatError;
 use crate::reader::{c_str, Reader, WriteLe};
+use alloc::{string::String, vec::Vec};
 
 /// `TTrophyItem`, 64 bytes: one stuffed animal in the trophy room.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]

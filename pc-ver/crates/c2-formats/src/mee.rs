@@ -23,6 +23,9 @@
 //! [`resolve`] applies all of this and returns blocks without conditions.
 
 use crate::res_txt::{c_atof, c_atoi, Block, Entry, ResTxt, Sub};
+#[cfg(test)]
+use alloc::vec;
+use alloc::{format, string::String, vec::Vec};
 
 /// What a hunt is: the conditions blocks are tested against.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -423,7 +426,7 @@ impl Tables {
     /// waves' cheapest first. A later entry with an index takes it over, as
     /// the engine's `SurvivalIndex[n] = TotalC`.
     pub fn survival_roster(&self) -> Vec<usize> {
-        let mut by: std::collections::BTreeMap<i32, usize> = Default::default();
+        let mut by: alloc::collections::BTreeMap<i32, usize> = Default::default();
         for (i, c) in self.characters.iter().enumerate() {
             if let Some(n) = int(&c.block, "survivalIndex").filter(|&n| n > 0) {
                 by.insert(n, i);

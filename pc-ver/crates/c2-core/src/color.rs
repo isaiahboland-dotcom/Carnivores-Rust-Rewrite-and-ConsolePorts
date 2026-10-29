@@ -1,5 +1,7 @@
 //! 16-bit `xRRRRRGGGGGBBBBB` texels to RGBA8.
 
+use alloc::vec::Vec;
+
 /// Expands 5-bit channels to 8 bits (`c << 3 | c >> 2`).
 pub fn rgb555_to_rgba8(px: u16, alpha: u8) -> [u8; 4] {
     let e = |c: u16| {
@@ -23,4 +25,17 @@ pub fn image_to_rgba8(pixels: &[u16], zero_is_transparent: bool) -> Vec<u8> {
             rgb555_to_rgba8(p, a)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn converts_colors_and_transparent_black() {
+        assert_eq!(rgb555_to_rgba8(0x7c1f, 128), [255, 0, 255, 128]);
+        assert_eq!(
+            image_to_rgba8(&[0, 0x03e0, 0x801f], true),
+            [0, 0, 0, 0, 0, 255, 0, 255, 0, 0, 255, 255]
+        );
+    }
 }

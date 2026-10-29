@@ -19,6 +19,7 @@ use crate::car::{Animation, Car, Sound, ANIFX_SLOTS};
 use crate::error::{FormatError, FormatErrorKind};
 use crate::model::{Face, Mesh, Vertex, TEXTURE_WIDTH};
 use crate::reader::Reader;
+use alloc::{format, string::String, string::ToString, vec, vec::Vec};
 
 /// A character descriptor (`.cat`).
 #[derive(Debug, Clone, Default, PartialEq)]

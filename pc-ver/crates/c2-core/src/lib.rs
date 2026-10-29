@@ -1,24 +1,44 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
 //! Platform-independent game logic.
 //!
-//! So far: the load-time preparation shared by every renderer
-//! ([`color`], [`model`], [`area`]). Gameplay arrives in M3.
+//! The default `std` feature enables the full game. Without it, only the
+//! portable player, area, collision, random-number, color and model code
+//! are available. `portable-dino` and `portable-hunt` additionally expose
+//! the shared simulation on allocation-capable no_std targets.
+
+extern crate alloc;
+
+#[cfg(not(feature = "std"))]
+mod portable_math;
 
 pub mod area;
 pub mod collide;
 pub mod color;
+#[cfg(any(feature = "std", feature = "portable-dino"))]
 pub mod dino;
+#[cfg(any(feature = "std", feature = "portable-hunt"))]
 pub mod effects;
+#[cfg(any(feature = "std", feature = "portable-hunt"))]
 pub mod game;
+#[cfg(feature = "std")]
 pub mod load;
+#[cfg(feature = "std")]
 pub mod mee;
 pub mod model;
 pub mod player;
+#[cfg(any(feature = "std", feature = "portable-hunt"))]
 pub mod prof;
+#[cfg(feature = "std")]
 pub mod profile;
+#[cfg(feature = "std")]
 pub mod record;
 pub mod rng;
+#[cfg(any(feature = "std", feature = "portable-hunt"))]
 pub mod ship;
+#[cfg(any(feature = "std", feature = "portable-hunt"))]
 pub mod sound;
+#[cfg(any(feature = "std", feature = "portable-hunt"))]
 pub mod trace;
 
 /// Height-map units to world units (`Hunt.h: ctHScale`).

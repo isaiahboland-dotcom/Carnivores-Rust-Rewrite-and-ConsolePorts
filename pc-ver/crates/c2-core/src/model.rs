@@ -4,6 +4,8 @@
 //! `LoadCharacterInfo` (`x*2, y*2, z*-2`, UV `/256`) and the morphing from
 //! `Characters.cpp: CreateMorphedModel` / `CreateMorphedObject`.
 
+use alloc::{vec, vec::Vec};
+
 use c2_formats::car::Animation;
 use c2_formats::model::{face_flags, Mesh, TEXTURE_WIDTH};
 use c2_formats::rsc::ObjectAnimation;
@@ -142,7 +144,7 @@ impl PreparedModel {
     pub fn radius(&self) -> f32 {
         self.positions
             .iter()
-            .map(|p| (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt())
+            .map(|p| sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]))
             .fold(0.0, f32::max)
     }
 }
@@ -153,7 +155,7 @@ impl PreparedModel {
 /// original calls it before the load-time scaling.
 pub fn vertex_lights(mesh: &Mesh, sun_pos: [f32; 3]) -> Vec<[f32; 4]> {
     let norm = |v: [f32; 3]| {
-        let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        let l = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
         if l > 0.0 {
             [v[0] / l, v[1] / l, v[2] / l]
         } else {
@@ -199,8 +201,8 @@ pub fn vertex_lights(mesh: &Mesh, sun_pos: [f32; 3]) -> Vec<[f32; 4]> {
             if used[v] {
                 let nv = norm(sums[v]);
                 for (vt, o) in out.iter_mut().enumerate() {
-                    let a = vt as f32 * std::f32::consts::FRAC_PI_2;
-                    let (ca, sa) = (a.cos(), a.sin());
+                    let a = vt as f32 * core::f32::consts::FRAC_PI_2;
+                    let (sa, ca) = sin_cos(a);
                     let rv = [nv[0] * sa + nv[2] * ca, nv[1], nv[2] * sa - nv[0] * ca];
                     *o = (rv[0] * slight[0] + rv[1] * slight[1] + rv[2] * slight[2]) * 64.0;
                 }
@@ -273,6 +275,28 @@ fn pose(
     )
 }
 
+fn sqrt(value: f32) -> f32 {
+    #[cfg(feature = "std")]
+    {
+        value.sqrt()
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        libm::sqrtf(value)
+    }
+}
+
+fn sin_cos(value: f32) -> (f32, f32) {
+    #[cfg(feature = "std")]
+    {
+        (value.sin(), value.cos())
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        libm::sincosf(value)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,6 +351,46 @@ mod tests {
     }
 
     #[test]
+    fn lighting_and_radius_checkpoints() {
+        let vertex = |x, y| Vertex {
+            x,
+            y,
+            z: 0.0,
+            owner: 0,
+            hide: 0,
+        };
+        let mesh = Mesh {
+            vertices: vec![
+                vertex(0.0, 0.0),
+                vertex(1.0, 0.0),
+                vertex(0.0, 1.0),
+                vertex(1.0, 1.0),
+            ],
+            faces: vec![Face {
+                v: [0, 1, 2],
+                tu: [0; 3],
+                tv: [0; 3],
+                flags: 0,
+                dmask: 0,
+                distant: 0,
+                next: 0,
+                group: 0,
+                reserved: [0; 12],
+            }],
+            texture: vec![],
+        };
+        assert!(
+            (PreparedModel::from_mesh(&mesh).radius() - core::f32::consts::SQRT_2 * 2.0).abs()
+                < 1e-5
+        );
+        let lights = vertex_lights(&mesh, [0.0, 0.0, -1.0]);
+        for (actual, expected) in lights[0].iter().zip([0.0, 64.0, 0.0, -64.0]) {
+            assert!((*actual - expected).abs() < 1e-4);
+        }
+        assert_eq!(lights[3], [0.0; 4]);
+    }
+
+    #[test]
     fn pose_interpolates_between_frames() {
         // 2 frames, 1 vertex: (0,0,0) then (8,16,24).
         let a = Animation {
@@ -337,6 +401,8 @@ mod tests {
         };
         assert_eq!(car_anim_duration_ms(&a), 1000);
         assert_eq!(pose_car(&a, 1, 0), Some(vec![[0.0, 0.0, -0.0]]));
+        assert_eq!(pose_car(&a, 1, 250), Some(vec![[0.25, 0.5, -0.75]]));
+        assert_eq!(pose_car(&a, 1, 1000), Some(vec![[0.0, 0.0, -0.0]]));
         // Halfway through the clip = halfway between frame 0 and 1.
         assert_eq!(pose_car(&a, 1, 500), Some(vec![[0.5, 1.0, -1.5]]));
         assert_eq!(pose_car(&a, 2, 0), None, "vertex count mismatch");

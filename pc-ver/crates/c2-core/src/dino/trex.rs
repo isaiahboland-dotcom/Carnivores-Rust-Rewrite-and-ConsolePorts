@@ -4,6 +4,19 @@
 //! 3 = smelled, via `CheckAfraid`/`MakeNoise`) it turns, stops to look or
 //! sniff, roars, then charges. Its kill is a scripted grab (`HUNT_KILL`).
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use super::{
     angle_difference, corrected_alpha, delta_func, find_vector_alpha, hunt, sgn, wrap_angle,
     Character, Ctx, DinoEvent, Species, CS_ON_WATER, PI,

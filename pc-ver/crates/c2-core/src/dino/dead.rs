@@ -2,6 +2,19 @@
 //! flyers (`flyer::animate_dead`); the T-Rex has no sleep phase (so no
 //! tranquilizer) and probes the ground farther out.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use super::{delta_func, Character, Ctx, Species};
 
 /// `slp = None`: the species can't be tranquilized.

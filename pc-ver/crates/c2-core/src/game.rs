@@ -5,6 +5,20 @@
 //! machine in `DrawPostObjects`, `MakeShot`, `MakeNoise`, `CheckAfraid`,
 //! `AnimateProcesses` (wind), `AddDeadBody`, `ProcessDemoMovement`.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    collections::{BinaryHeap, VecDeque},
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use c2_formats::bits::Bits;
 use c2_formats::car::Car;
 use c2_formats::res_txt::WeaponDef;
@@ -433,6 +447,8 @@ pub struct HuntOptions {
     /// second, as the original did once a frame at 25 fps). Its look
     /// traces are the costliest part of a tick on an Old 3DS.
     pub afraid_every: u32,
+    /// Stagger calm stock targets beyond view range; platform opt-in.
+    pub distant_ai: bool,
     /// Bit `10 + slot` per call slot whose kills score +10% (not in the
     /// original; the 3DS's roaming add-ons, hunted with no call).
     pub no_call_bonus: Bits,
@@ -466,6 +482,7 @@ impl Default for HuntOptions {
             blood: true,
             death_anim: true,
             afraid_every: 1,
+            distant_ai: false,
             no_call_bonus: Bits::NONE,
             notice_k: 1.0,
             stealth: false,
@@ -781,7 +798,11 @@ impl Hunt {
             self.apply_recoil(dt);
             self.prof.mark(0);
             self.player_effects(area, &pev);
+            #[cfg(feature = "hunt-diagnostics")]
+            self.prof.mark(0);
             out.extend(pev.into_iter().map(GameEvent::Player));
+            #[cfg(feature = "hunt-diagnostics")]
+            self.prof.mark(0);
             if self.player.underwater && self.health > 0 {
                 // Drowning.
                 self.health -= dt * 12;
@@ -790,9 +811,17 @@ impl Hunt {
                 }
             }
             self.weapon_input(area, cars, input, out);
+            #[cfg(feature = "hunt-diagnostics")]
+            self.prof.mark(0);
             self.ambience(area, dt, out);
+            #[cfg(feature = "hunt-diagnostics")]
+            self.prof.mark(0);
             self.binoculars(input, dt);
+            #[cfg(feature = "hunt-diagnostics")]
+            self.prof.mark(0);
             self.calls(input, dt, out);
+            #[cfg(feature = "hunt-diagnostics")]
+            self.prof.mark(0);
             if input.toggle_map
                 && !self.opts.trophy
                 && self.health > 0
@@ -810,8 +839,14 @@ impl Hunt {
             }
         }
         self.weapon_step(dt, out);
+        #[cfg(feature = "hunt-diagnostics")]
+        self.prof.mark(0);
         self.animate_bullets(area, cars, dt, out);
+        #[cfg(feature = "hunt-diagnostics")]
+        self.prof.mark(0);
         self.track_step(dt);
+        #[cfg(feature = "hunt-diagnostics")]
+        self.prof.mark(0);
         self.prof.mark(1);
 
         let mut dev = Vec::new();
@@ -830,7 +865,7 @@ impl Hunt {
             events: &mut dev,
         };
         if !self.opts.trophy {
-            self.herd.step(&mut ctx);
+            self.herd.step_scheduled(&mut ctx, self.opts.distant_ai);
         }
         self.prof.mark(2);
         for e in dev {
@@ -1469,7 +1504,7 @@ impl Hunt {
         }
         let k = dt as f32 / 17.0;
         let reach = 256.0 * self.opts.render_r.max(self.opts.view_r) as f32;
-        let bullets = std::mem::take(&mut self.bullets);
+        let bullets = core::mem::take(&mut self.bullets);
         let mut kept = Vec::with_capacity(bullets.len());
         for mut b in bullets {
             let Some(info) = self.weapons.info.get(b.weapon).cloned() else {
@@ -1734,12 +1769,19 @@ impl Hunt {
         self.bin_mode = false;
         self.weapons.optic_mode = false;
         let (cam, alpha, beta) = self.camera();
+        // Small platform rosters need not keep the hunter in slot zero.
+        let hunter_type = self
+            .herd
+            .species
+            .iter()
+            .position(|s| s.info.ai == ai::HUNTER)
+            .unwrap_or(0);
         let mut body = Character {
-            ctype: 0,
+            ctype: hunter_type,
             alpha,
             ..Default::default()
         };
-        if let Some(sp) = self.herd.species.first() {
+        if let Some(sp) = self.herd.species.get(hunter_type) {
             body.reset(sp, &mut self.rng, self.opts.opt_agres);
         }
         body.health = 0;
@@ -2123,6 +2165,22 @@ impl Hunt {
 
     /// `ToggleBinocular` and the +/- power keys.
     fn binoculars(&mut self, input: &HuntInput, dt: i32) {
+        #[cfg(feature = "hunt-diagnostics")]
+        self.prof.mark(0);
+        #[cfg(feature = "hunt-diagnostics")]
+        if let Some(log) = self.prof.diagnostic_state {
+            log(
+                input.toggle_binoculars as u32,
+                (self.weapons.state == WeaponState::Hidden) as u32,
+                self.player.underwater as u32,
+                self.health,
+                self.bin_mode as u32,
+            );
+        }
+        // With binoculars already off and no toggle, there is nothing to update.
+        if !input.toggle_binoculars && !self.bin_mode {
+            return;
+        }
         if input.toggle_binoculars
             && self.weapons.state == WeaponState::Hidden
             && !self.player.underwater
@@ -2130,9 +2188,13 @@ impl Hunt {
         {
             self.bin_mode = !self.bin_mode;
         }
+        #[cfg(feature = "hunt-diagnostics")]
+        self.prof.mark(0);
         if self.player.underwater {
             self.bin_mode = false;
         }
+        #[cfg(feature = "hunt-diagnostics")]
+        self.prof.mark(0);
         if self.bin_mode {
             let k = self.bin_power * dt as f32 / 4000.0;
             if input.zoom_in {
@@ -2143,6 +2205,8 @@ impl Hunt {
             }
             self.bin_power = self.bin_power.clamp(1.5, 3.0);
         }
+        #[cfg(feature = "hunt-diagnostics")]
+        self.prof.mark(0);
     }
 
     /// Field-of-view magnification: binoculars, or the sniper scope while a
@@ -2766,7 +2830,7 @@ mod tests {
         assert!(o.unlimited);
         assert_eq!(m.hunter, [345.0 * 256.0 + 128.0, 245.0 * 256.0 + 128.0]);
         assert!((m.spawn[0] - (327.0 * 256.0 + 128.0)).abs() < 1.0);
-        assert!((m.hunter_alpha.unwrap_or(0.0) - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+        assert!((m.hunter_alpha.unwrap_or(0.0) - core::f32::consts::FRAC_PI_2).abs() < 1e-5);
         assert!(SurvivalOptions::mee(&[], &spot, 6).is_none());
     }
 
@@ -3295,6 +3359,11 @@ mod tests {
             trophy: true
         }));
         assert_eq!(h.successes, 1);
+        assert!(h
+            .effects
+            .bursts
+            .iter()
+            .any(|b| b.kind == crate::effects::Part::Blood && !b.parts.is_empty()));
     }
 
     #[test]
@@ -3329,6 +3398,11 @@ mod tests {
         assert_eq!(c.health, 1, "5 - power 4");
         assert_eq!(c.state, 2, "alarmed");
         assert!(c.afraid_time > 0 && c.blood_ttime > 0);
+        assert!(h
+            .effects
+            .bursts
+            .iter()
+            .any(|b| b.kind == crate::effects::Part::Blood && !b.parts.is_empty()));
     }
 
     #[test]

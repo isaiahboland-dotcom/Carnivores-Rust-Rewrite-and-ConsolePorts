@@ -5,6 +5,19 @@
 //! own) takes off, flies high, glides back down and lands. Shot, it falls
 //! like the other flyers (`super::mee_flyer::animate_dead`).
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use c2_formats::mee::SpawnGroup;
 
 use super::huntable::{idle_groups, World};

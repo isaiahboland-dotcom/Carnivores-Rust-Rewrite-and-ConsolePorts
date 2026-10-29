@@ -3,6 +3,19 @@
 //! Each AI is ported from its `Animate*` function. Shared helpers live here;
 //! the per-family logic is in the submodules. Fields mirror `TCharacter`.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 mod brachi;
 mod carnivore;
 mod dead;
@@ -38,7 +51,7 @@ pub use small::SmallParams;
 /// `PMORPHTIME`: ms over which a previous animation blends out.
 pub const PMORPH_TIME: i32 = 256;
 /// `Hunt.h: pi` (3.1415926535f, i.e. f32 pi).
-pub const PI: f32 = std::f32::consts::PI;
+pub const PI: f32 = core::f32::consts::PI;
 
 /// `AI_*` from `Hunt.h`.
 pub mod ai {
@@ -249,6 +262,8 @@ pub fn anim(anims: &[usize], phase: usize) -> usize {
 /// `TCharacter`.
 #[derive(Debug, Clone, Default)]
 pub struct Character {
+    /// Unprocessed simulation time for optional distant-AI scheduling.
+    pub pending_ai_ms: i32,
     pub ctype: usize,
     pub ai: i32,
     pub state_f: i32,
@@ -788,6 +803,7 @@ fn check_place_collision2_avoid(area: &Area, v: &mut [f32; 3], wc: bool, avoid: 
 impl Character {
     /// `ResetCharacter`.
     pub fn reset(&mut self, species: &Species, rng: &mut MsRand, opt_agres: i32) {
+        self.pending_ai_ms = 0;
         self.ai = species.info.ai;
         self.state = 0;
         self.state_f = 0;
@@ -1369,12 +1385,20 @@ pub struct Herd {
 impl Herd {
     /// `AnimateCharacters`.
     pub fn step(&mut self, ctx: &mut Ctx<'_>) {
+        self.step_scheduled(ctx, false);
+    }
+
+    /// Optional four-way staggering of calm, distant stock hunt targets.
+    /// Near/alerted/wounded/dead animals and dialect packs remain full-rate.
+    pub fn step_scheduled(&mut self, ctx: &mut Ctx<'_>, distant: bool) {
         let hunter = ctx.hunter;
+        let base_dt = ctx.dt;
         for p in &mut self.packs {
-            p.alert_prev = std::mem::take(&mut p.alert);
-            p.attack_prev = std::mem::take(&mut p.attack);
+            p.alert_prev = core::mem::take(&mut p.alert);
+            p.attack_prev = core::mem::take(&mut p.attack);
         }
         for i in 0..self.chars.len() {
+            ctx.dt = base_dt;
             // A pack whose leader died follows the next living member.
             if let Some(p) = self.chars[i].pack.and_then(|p| self.packs.get_mut(p)) {
                 if self.chars[i].health != 0
@@ -1409,6 +1433,26 @@ impl Herd {
             let Some(sp) = self.species.get(c.ctype) else {
                 continue;
             };
+            let dx = c.pos[0] - hunter.x;
+            let dz = c.pos[2] - hunter.z;
+            let range = ((ctx.view_r + 16) * 256) as f32;
+            let defer = distant
+                && base_dt > 0
+                && base_dt <= 16
+                && hunter.alive
+                && sp.mee.is_none()
+                && c.ai >= 10
+                && c.health > 0
+                && c.state == 0
+                && c.afraid_time == 0
+                && c.blood_ttime == 0
+                && c.lure.is_none()
+                && dx * dx + dz * dz > range * range;
+            c.pending_ai_ms += base_dt;
+            if defer && !((ctx.real_time / 16) as usize + i).is_multiple_of(4) {
+                continue;
+            }
+            ctx.dt = core::mem::take(&mut c.pending_ai_ms);
             c.tgtime += ctx.dt;
             let group = c.spawn_group.and_then(|g| self.groups.get(g));
             // The dialect's Ichthyornis: a minute on the ground ends in a
@@ -1515,6 +1559,7 @@ impl Herd {
             }
         }
         ctx.hunter = hunter;
+        ctx.dt = base_dt;
     }
 }
 

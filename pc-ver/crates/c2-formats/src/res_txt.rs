@@ -15,6 +15,7 @@
 //! `docs/DECISIONS.md`.
 
 use crate::error::FormatError;
+use alloc::{format, string::String, string::ToString, vec::Vec};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {

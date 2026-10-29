@@ -5,6 +5,19 @@
 //! and the species' [`MeeInfo`]. Ported from the upstream release the mods
 //! were made for; see docs/DECISIONS.md.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use c2_formats::mee::SpawnGroup;
 
 use super::mee::{ai_info, mee_ai, IdleGroup, MeeInfo};
@@ -1001,7 +1014,7 @@ mod tests {
             ..Default::default()
         };
         let i = add(&mut herd, 0, &area, h.x + 9000.0, h.z);
-        let mut phases = std::collections::BTreeSet::new();
+        let mut phases = alloc::collections::BTreeSet::new();
         for _ in 0..300 {
             run(&mut herd, &area, h, 100);
             phases.insert(herd.chars[i].phase);

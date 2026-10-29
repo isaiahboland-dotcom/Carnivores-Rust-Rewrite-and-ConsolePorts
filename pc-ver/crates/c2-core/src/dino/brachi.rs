@@ -1,6 +1,19 @@
 //! `AnimateBrahi`: Brachiosaurus wading in shallow water. Never alarmed,
 //! never killed (the dispatcher calls it regardless of health).
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use super::{delta_func, find_vector_alpha, sgn, wrap_angle, Character, Ctx, Species, PI};
 
 // BRA_*: WALK 0, IDLE1 1, IDLE2 2, IDLE3 3

@@ -1,7 +1,21 @@
 //! The pickup ship (`Game.cpp: AddShipTask, InitShip, AnimateShip`): after a
 //! trophy kill it flies in, lowers its gear, winches the body up and leaves.
 
-use std::collections::VecDeque;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    collections::BinaryHeap,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
+use alloc::collections::VecDeque;
 
 use crate::area::Area;
 use crate::dino::{delta_func, find_vector_alpha, Herd, PI};

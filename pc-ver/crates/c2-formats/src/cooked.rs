@@ -15,6 +15,7 @@
 
 use crate::error::{FormatError, FormatErrorKind};
 use crate::reader::Reader;
+use alloc::{format, string::String, string::ToString, vec, vec::Vec};
 
 pub const PACK_MAGIC: &[u8; 4] = b"C2PK";
 pub const PACK_VERSION: u32 = 1;

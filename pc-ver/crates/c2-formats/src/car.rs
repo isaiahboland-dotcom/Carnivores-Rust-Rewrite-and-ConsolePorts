@@ -4,6 +4,7 @@
 use crate::error::FormatError;
 use crate::model::{Face, Mesh, Vertex};
 use crate::reader::{c_str, Reader, WriteLe};
+use alloc::{string::String, vec::Vec};
 
 /// Number of `Anifx` slots (`TCharacterInfo::Anifx[64]`).
 pub const ANIFX_SLOTS: usize = 64;

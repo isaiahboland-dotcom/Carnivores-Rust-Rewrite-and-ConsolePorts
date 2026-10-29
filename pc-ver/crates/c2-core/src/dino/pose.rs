@@ -2,6 +2,19 @@
 //! the current and previous animation (for `PMORPHTIME` ms after a change),
 //! then applies slope tilt (`beta`, `gamma`), body bend and scale.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use c2_formats::car::Car;
 
 use super::{anim, Character, PMORPH_TIME};
@@ -83,5 +96,5 @@ pub fn pose(c: &Character, car: &Car, anims: &[usize]) -> Option<Vec<[f32; 3]>> 
 
 /// Rotation for the renderer, in quarter turns (`-alpha + pi/2`).
 pub fn quarter_turns(c: &Character) -> f32 {
-    1.0 - c.alpha * 2.0 / std::f32::consts::PI
+    1.0 - c.alpha * 2.0 / core::f32::consts::PI
 }

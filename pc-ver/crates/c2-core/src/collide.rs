@@ -5,6 +5,11 @@
 //!
 //! The original reads the global `PlayerY`; here it is a parameter.
 
+#[cfg(not(feature = "std"))]
+#[cfg_attr(test, allow(unused_imports))]
+use crate::portable_math::FloatMath;
+use alloc::vec::Vec;
+
 use c2_formats::map::MAP_SIZE;
 use c2_formats::rsc::{object_flags, Object};
 
@@ -107,7 +112,7 @@ fn calc_bound_box(o: &Object) -> Vec<BoundBox> {
 
 /// A box rotated by `angle` quarter turns: (centre x, centre z, half x, half z).
 fn rotated(b: &BoundBox, angle: u8) -> (f32, f32, f32, f32) {
-    let a = f32::from(angle) * std::f32::consts::FRAC_PI_2;
+    let a = f32::from(angle) * core::f32::consts::FRAC_PI_2;
     let (ca, sa) = (a.cos(), a.sin());
     let ccx = b.cx * ca + b.cy * sa;
     let ccy = b.cy * ca - b.cx * sa;

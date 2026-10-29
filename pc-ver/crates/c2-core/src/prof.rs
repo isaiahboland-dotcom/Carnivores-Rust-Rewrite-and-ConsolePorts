@@ -8,6 +8,8 @@ pub const SECTIONS: [&str; 7] = [
 
 #[derive(Debug, Clone, Default)]
 pub struct Prof {
+    #[cfg(feature = "hunt-diagnostics")]
+    pub diagnostic_state: Option<fn(u32, u32, u32, i32, u32)>,
     /// Milliseconds since some fixed point; `None` = not timing.
     pub clock: Option<fn() -> f64>,
     last: f64,

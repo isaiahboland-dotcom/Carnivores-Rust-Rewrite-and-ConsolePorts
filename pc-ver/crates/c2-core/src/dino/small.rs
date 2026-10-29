@@ -3,6 +3,19 @@
 //! (Gallimimus, slightly different alarm logic). They re-spawn ahead of the
 //! hunter when left far behind.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use super::{
     ai, corrected_alpha, delta_func, find_vector_alpha, sgn, wrap_angle, Character, Ctx, Species,
     CS_ON_WATER, PI,

@@ -6,6 +6,11 @@
 //! radians with `alpha` = yaw (forward is `(sin a, 0, -cos a)`) and `beta` =
 //! pitch (positive looks down).
 
+#[cfg(not(feature = "std"))]
+#[cfg_attr(test, allow(unused_imports))]
+use crate::portable_math::FloatMath;
+use alloc::vec::Vec;
+
 use crate::area::Area;
 use crate::CELL;
 

@@ -2,6 +2,11 @@
 //! starts (`AddVoice*` call sites in the original) and how loud it is in
 //! each ear (`CalcLRVolumes`). The front ends own the samples and the mixer.
 
+#[cfg(not(feature = "std"))]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+
 use crate::dino::{hunt, DinoEvent};
 use crate::game::{GameEvent, Hunt};
 use crate::player::PlayerEvent;
@@ -142,8 +147,8 @@ pub fn lr_gains(v0: f32, pos: Option<[f32; 3]>, cam: [f32; 3], alpha: f32) -> (f
     }
     let k = k.max(0.0);
     let fi = xx.abs().atan2(zz);
-    let r = 0.7 + 0.3 * fi / (std::f32::consts::PI / 2.0);
-    let l = 0.7 - 0.6 * fi / (std::f32::consts::PI / 2.0);
+    let r = 0.7 + 0.3 * fi / (core::f32::consts::PI / 2.0);
+    let l = 0.7 - 0.6 * fi / (core::f32::consts::PI / 2.0);
     let (near, far) = (v0 * r * k / 65536.0, v0 * l * k / 65536.0);
     if xx > 0.0 {
         (far, near)

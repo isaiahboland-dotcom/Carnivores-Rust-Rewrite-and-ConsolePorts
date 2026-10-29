@@ -14,6 +14,20 @@
 //!   APK (`c2_formats::mobile_arcade`): its waves, in turn, from a box on
 //!   Mount Ravan; the hunter at its spot.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    collections::{BinaryHeap, VecDeque},
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use super::*;
 
 /// A wave animal's health at most: the original's shotgun is 6 pellets of 1.
@@ -136,15 +150,15 @@ impl Fence {
         let height = |x: i32, z: i32| area.map.height[crate::area::idx(x as usize, z as usize)];
         // The lowest-ceiling way from the hunter to every cell (minimax).
         let mut top = vec![u8::MAX; (w * h) as usize];
-        let mut heap = std::collections::BinaryHeap::new();
+        let mut heap = alloc::collections::BinaryHeap::new();
         let start = (hunter.0.clamp(x0, x1), hunter.1.clamp(z0, z1));
         top[at(start.0, start.1)] = height(start.0, start.1);
-        heap.push(std::cmp::Reverse((
+        heap.push(core::cmp::Reverse((
             top[at(start.0, start.1)],
             start.0,
             start.1,
         )));
-        while let Some(std::cmp::Reverse((t, x, z))) = heap.pop() {
+        while let Some(core::cmp::Reverse((t, x, z))) = heap.pop() {
             if t > top[at(x, z)] {
                 continue;
             }
@@ -156,7 +170,7 @@ impl Fence {
                 let nt = t.max(height(nx, nz));
                 if nt < top[at(nx, nz)] {
                     top[at(nx, nz)] = nt;
-                    heap.push(std::cmp::Reverse((nt, nx, nz)));
+                    heap.push(core::cmp::Reverse((nt, nx, nz)));
                 }
             }
         }
@@ -242,7 +256,7 @@ impl Flow {
             }
         }
         let mut dist = vec![u16::MAX; n];
-        let mut queue = std::collections::VecDeque::new();
+        let mut queue = alloc::collections::VecDeque::new();
         if inside(hx, hz) {
             dist[at(hx, hz)] = 0;
             queue.push_back((hx, hz));

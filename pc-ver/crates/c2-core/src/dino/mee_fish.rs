@@ -5,6 +5,19 @@
 //! hunter in the water (a jumper leaps at one on a low bridge), others
 //! swim away. Sounds are heard only underwater, except idles and leaps.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use c2_formats::mee::{Region, SpawnGroup};
 
 use super::huntable::World;

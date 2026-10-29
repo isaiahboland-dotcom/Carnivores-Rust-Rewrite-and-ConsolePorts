@@ -1,4 +1,5 @@
-use std::fmt;
+use alloc::string::String;
+use core::fmt;
 
 /// A parse failure at a specific byte offset.
 #[derive(Debug, thiserror::Error)]

@@ -6,6 +6,19 @@
 //! within 812, or by what it sees, hears and smells (`CheckAfraid`), flies
 //! off weaving with an alarm call, and calms beyond 4096.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use super::huntable::{wander, World};
 use super::mee::{mee_ai, MeeInfo};
 use super::{

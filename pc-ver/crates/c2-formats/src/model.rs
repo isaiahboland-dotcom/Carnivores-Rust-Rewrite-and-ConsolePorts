@@ -4,6 +4,7 @@
 
 use crate::error::FormatError;
 use crate::reader::{c_str, Reader, WriteLe};
+use alloc::{string::String, vec::Vec};
 
 /// Width in pixels of every model texture. Height is `bytes / 512`
 /// (`Resources.cpp: LoadModel`, `TextureHeight = TextureSize >> 9`).

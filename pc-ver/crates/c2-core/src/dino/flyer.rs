@@ -1,6 +1,19 @@
 //! Flying reptiles: `AnimateDimor` (Dimorphodon and Pteranodon) and
 //! `AnimateDimorDead` (falls out of the sky, then lies dead).
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use super::{
     corrected_alpha, delta_func, find_vector_alpha, sgn, wrap_angle, Character, Ctx, Species, PI,
 };

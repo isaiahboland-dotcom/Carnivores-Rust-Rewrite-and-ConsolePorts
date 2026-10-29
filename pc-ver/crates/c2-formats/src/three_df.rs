@@ -4,6 +4,7 @@
 use crate::error::FormatError;
 use crate::model::StaticModel;
 use crate::reader::Reader;
+use alloc::vec::Vec;
 
 pub fn parse(data: &[u8]) -> Result<StaticModel, FormatError> {
     let mut r = Reader::new(data);

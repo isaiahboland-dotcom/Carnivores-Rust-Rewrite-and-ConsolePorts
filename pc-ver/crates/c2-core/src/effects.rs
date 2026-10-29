@@ -1,6 +1,20 @@
 //! Particles, blood trails and water rings (`Game.cpp: AddElements,
 //! AnimateElements, AddBloodTrail, AddWCircle`).
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    collections::{BinaryHeap, VecDeque},
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use crate::area::Area;
 use crate::rng::MsRand;
 
@@ -236,7 +250,7 @@ impl Effects {
                 (0xB000_0000 + color_sum(c, color_sum(c, c)), 0x4000_0000 + c)
             }
         };
-        let al = rng.si_rand(128) as f32 / 128.0 * std::f32::consts::PI / 4.0;
+        let al = rng.si_rand(128) as f32 / 128.0 * core::f32::consts::PI / 4.0;
         let (ss, cc) = al.sin_cos();
         let (sa, ca) = cam_alpha.sin_cos();
         let n = count.clamp(0, 30);

@@ -1,5 +1,18 @@
 //! `PlaceCharacters`: populating an area at the start of a hunt.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use super::{
     ai, check_place_collision_aquatic, check_place_collision_p, in_region, Character, Herd, Pack,
 };
@@ -527,7 +540,7 @@ impl Herd {
     /// room's landing ring (`Area::set_trophy_mode`), facing inwards.
     /// `state` holds the slot.
     pub fn place_trophies(&mut self, area: &Area, room: &Save, rng: &mut MsRand) {
-        use std::f32::consts::PI;
+        use core::f32::consts::PI;
         self.chars.clear();
         if !self.trophy_spots.is_empty() {
             self.place_trophy_spots(area, room, rng);
@@ -565,7 +578,7 @@ impl Herd {
     /// trophies): trophy n at spot n's landing point plus its offsets (more
     /// for a bigger than usual animal), facing and pose.
     fn place_trophy_spots(&mut self, area: &Area, room: &Save, rng: &mut MsRand) {
-        let deg = |d: f32| d * std::f32::consts::PI / 180.0;
+        let deg = |d: f32| d * core::f32::consts::PI / 180.0;
         // Each trophy on its own spot when it is made for that animal; the
         // others (saved before, or by the original's stands) on the first
         // free spot that is. The save keeps its slots.

@@ -7,7 +7,8 @@
 //! `mov`/`movk` (or `fmov`, or `xzr` for 0). This decodes just those
 //! AArch64 instructions, enough to follow it.
 
-use std::collections::BTreeMap;
+use alloc::collections::BTreeMap;
+use alloc::{string::String, string::ToString, vec::Vec};
 
 use crate::error::{FormatError, FormatErrorKind};
 
@@ -139,7 +140,7 @@ pub(crate) fn bitmask(n: u32, immr: u32, imms: u32) -> Option<u64> {
 fn fmov_imm(imm8: u32) -> f64 {
     let sign = if imm8 & 0x80 != 0 { -1.0 } else { 1.0 };
     let exp = (((imm8 >> 4) & 7) ^ 4) as i32 - 3;
-    sign * (1.0 + f64::from(imm8 & 15) / 16.0) * 2f64.powi(exp)
+    sign * (1.0 + f64::from(imm8 & 15) / 16.0) * pow2(exp)
 }
 
 /// Follows the code at `va` (`code`): each store at offset 0x20 records
@@ -232,9 +233,20 @@ pub fn defaults(lib: &[u8]) -> Result<BTreeMap<String, f64>, FormatError> {
     let name = |a: u64| {
         let b = at_va(lib, &secs, a)?;
         let end = b.iter().take(64).position(|&c| c == 0)?;
-        std::str::from_utf8(&b[..end]).ok().map(str::to_string)
+        core::str::from_utf8(&b[..end]).ok().map(str::to_string)
     };
     Ok(scan(code, va, &name))
+}
+
+fn pow2(exp: i32) -> f64 {
+    #[cfg(feature = "std")]
+    {
+        2f64.powi(exp)
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        libm::pow(2.0, f64::from(exp))
+    }
 }
 
 #[cfg(test)]

@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
 //! Parsers and writers for Carnivores 2 data files.
 //!
 //! Every layout here is taken from the original source (`Resources.cpp`,
@@ -8,6 +10,8 @@
 //! Parsers return data *as stored on disk*. Load-time transforms the original
 //! applies (vertex `*2` scaling, `z` flip, texture brightening, face sorting)
 //! belong to the engine, not here.
+
+extern crate alloc;
 
 mod error;
 mod reader;

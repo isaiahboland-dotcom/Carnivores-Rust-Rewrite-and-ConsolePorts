@@ -9,9 +9,31 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+# The full game remains the default; the portable subset is an early console step.
+default = ["std"]
+std = ["dep:thiserror", "dep:tracing", "c2-formats/std", "dep:c2-platform", "dep:c2-vfs"]
+# Enables the shared dinosaur simulation on allocation-capable no_std targets.
+portable-dino = []
+portable-hunt = ["portable-dino"]
+hunt-diagnostics = ["portable-hunt"]
+
 [dependencies]
-thiserror.workspace = true
-tracing.workspace = true
-c2-formats.workspace = true
-c2-platform.workspace = true
-c2-vfs.workspace = true
+thiserror = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+c2-formats = { path = "../c2-formats", default-features = false }
+libm = "0.2"
+c2-platform = { workspace = true, optional = true }
+c2-vfs = { workspace = true, optional = true }
+
+[[example]]
+name = "face_flags"
+required-features = ["std"]
+
+[[example]]
+name = "pick_probe"
+required-features = ["std"]
+
+[[example]]
+name = "res_cost"
+required-features = ["std"]

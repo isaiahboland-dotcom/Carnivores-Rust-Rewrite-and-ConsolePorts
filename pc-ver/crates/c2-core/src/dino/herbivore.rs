@@ -2,6 +2,19 @@
 //! `AnimateTric` (Chasmosaurus: defends itself). The functions are identical
 //! apart from the constants below and Tric's `defensive` branch.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use super::{
     ai, corrected_alpha, delta_func, find_vector_alpha, hunt, sgn, wrap_angle, Character, Ctx,
     DinoEvent, Species, CS_ON_WATER, PI,

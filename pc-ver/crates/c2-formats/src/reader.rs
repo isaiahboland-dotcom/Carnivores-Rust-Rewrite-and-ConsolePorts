@@ -1,6 +1,7 @@
 //! Little-endian cursor over a byte slice, plus the matching writer helpers.
 
 use crate::error::{FormatError, FormatErrorKind};
+use alloc::{string::String, vec::Vec};
 
 pub(crate) struct Reader<'a> {
     data: &'a [u8],
