@@ -1,0 +1,9 @@
+[package]
+name = "c2-wiiu-gx2-probe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+[lib]
+crate-type = ["staticlib"]
+[profile.release]
+panic = "abort"

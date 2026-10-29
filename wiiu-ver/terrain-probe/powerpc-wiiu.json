@@ -1,0 +1,14 @@
+{
+  "arch": "powerpc",
+  "cpu": "750",
+  "data-layout": "E-m:e-p:32:32-Fn32-i64:64-n32",
+  "disable-redzone": true,
+  "executables": true,
+  "linker-flavor": "gnu-cc",
+  "llvm-target": "powerpc-none-eabi",
+  "os": "none",
+  "panic-strategy": "abort",
+  "relocation-model": "static",
+  "target-endian": "big",
+  "target-pointer-width": 32
+}

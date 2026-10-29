@@ -1,0 +1,8 @@
+# Build output of the probes (CMake + devkitPPC, Cargo).
+build/
+target/
+# Third-party tools, fetched separately (see tools/README.md).
+tools/*
+!tools/README.md
+# Screenshots of the game running (game imagery: README §2).
+screenshots/

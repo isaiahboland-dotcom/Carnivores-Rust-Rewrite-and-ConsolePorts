@@ -1,0 +1,202 @@
+# Wii U gameplan
+
+See [the technical assessment](../docs/WIIU.md) for toolchain research,
+portability risks and milestone gates. This document records the intended
+player experience and current progress.
+
+## Experience
+
+- Follow the 3DS version's gameplay and console-friendly menu appearance,
+  adapted to the larger screens. Preserve the shared engine's Carnivores 2,
+  Ice Age and MEE features and user-supplied data workflow.
+- Support TV plus GamePad, TV-only with a compatible controller, and GamePad
+  only. Neither a touch screen nor a TV may be required for gameplay or menus.
+  In dual-screen play, show the hunt on the TV and a zoomed-in map on the
+  GamePad, with touch targets for weapon and specific call selection. The map
+  button opens the full map on the active gameplay display, including in
+  single-screen modes. Provide controller access to all essential functions.
+- Include the existing mobile-style map option: a yellow view-range circle
+  and forward-facing shaded cone, without the red arrow. The temporary probe enables it by default;
+  expose it in settings once the menu exists.
+- Use the left stick to move and the right stick to look; touch aiming is not
+  planned. Default controls (make configurable where practical):
+
+| Control | Action |
+| --- | --- |
+| ZL / left trigger | Toggle weapon drawn or put away / aim |
+| ZR / right trigger | Fire |
+| L / left bumper | Binoculars |
+| R / right bumper | Open map |
+| A | Jump |
+| B | Toggle sprint |
+| X | Use selected dinosaur call |
+| Y | Quick-switch to next weapon |
+| D-pad up | Toggle crouch when available |
+| D-pad down | Change dinosaur call |
+
+When the map is open without GamePad touch, the D-pad controls the teleport
+selection circle instead of its normal actions; provide a controller action to
+confirm or cancel. Decide remaining menu, map and binocular controls during
+implementation and test every screen mode. The GamePad touch controls are
+optional shortcuts, never the only way to select a weapon or call.
+
+## Performance
+
+Start with higher quality than the 3DS profiles and retain original assets
+where practical. Offer or select a moderate render-resolution scale if real
+hardware measurements justify it; keep interface text legible at output
+resolution. Measure CPU, GPU, load times and peak memory for representative
+C2, Ice Age and MEE packs before choosing budgets, texture caps or frame-rate
+targets. Console specifications are useful context, not a guarantee of a
+particular budget or frame rate.
+
+## Work sequence and status
+
+### Runtime approach
+
+Investigate adapting shared code to `no_std` plus `alloc` first: the formats
+crate mostly operates on byte slices and portable collections, so this can be
+tested incrementally while retaining Rust's existing allocation types and
+isolating platform I/O. The shared formats crate now has an optional `no_std` mode that passes its
+host tests and runs a synthetic TGA parser fixture in Cemu; hardware remains
+untested. See [the investigation](runtime-investigation.md) for limitations.
+
+The alternative is a custom Wii U Rust `std` platform backend. It might reduce
+changes to shared code, but would require implementing and maintaining the
+platform services that `std` expects. Keep that option open if the `no_std`
+changes or dependency requirements prove too costly. Neither approach has yet
+been proven to support the whole engine.
+
+1. **Rust RPX boot probe — Cemu screen passed.** The user confirmed the
+   Rust message appears in Cemu. HOME exit and real hardware remain unverified.
+   This only tests a small `no_std` Rust function linked into WUT; it does not
+   establish a working Rust `std` or the complete target ABI.
+2. **Shared code and runtime — in progress.** The shared crates type-check
+   for 32-bit big-endian PowerPC Linux, but that Linux `std` cannot be assumed
+   to work on Wii U. The bundled experimental Wii U target needs updating for
+   current Rust, and a preliminary `std` build failed even after correcting its
+   target JSON. See [runtime investigation](runtime-investigation.md) for the
+   commands, evidence and next experiments. Prove allocation, SD I/O and
+   little-endian fixtures on the Wii U before committing to the runtime.
+   A separate `no_std` [runtime and ABI probe](runtime-probe/README.md) now
+   builds and links to an RPX with a modern custom target. The user reports
+   integer ABI, float ABI and little-endian decode all pass in Cemu. HOME
+   exit, panic behavior and hardware execution remain unverified; it does not
+   supply the `std` required by the shared engine. A separate
+   [allocation and shared parser probe](alloc-probe/README.md) passed all five
+   checks in Cemu. HOME exit and hardware remain unverified. A separate
+   [SD read and seek probe](sd-probe/README.md) passed mount, open, read,
+   Rust parsing, and seek/read in Cemu with a synthetic file. HOME exit and
+   hardware remain unverified. The shared VFS now has an optional `no_std`
+   mode; all six checks in the [Rust-initiated VFS probe](vfs-probe/README.md)
+   passed in Cemu. HOME exit could not be verified in the current Cemu setup,
+   and the fixed test backend is not a general SD implementation. The core
+   audit found substantial remaining portability work; a small shared RNG and
+   color [core probe](core-probe/README.md) passed all five checks in Cemu.
+   Portable model and animation code passed all five checks in the
+   [model probe](model-probe/README.md) in Cemu. A text-only
+   [first-map movement simulation](movement-probe/README.md) now builds
+   against portable player, area and collision code. In Cemu, AREA1 loaded,
+   all scripted checkpoints passed, and the interactive screen reached READY.
+   The revised build responds in Cemu to Pro Controller movement in all four
+   directions, yaw, jump, sprint and crouch. Pitch, GamePad input, hardware
+   and HOME exit remain unverified.
+3. **Cooker and pack reader — started.** A portable range-based pack reader
+   and [SD pack probe](pack-probe/README.md) passed all seven checks in Cemu.
+   Test on hardware, adapt the cooker, and keep 3DS-specific texture data separate.
+4. **Rendering — started.** The Rust-fed [GX2 triangle probe](gx2-probe/README.md)
+   displayed its animated triangle on both TV and GamePad in Cemu. A bounded,
+   untextured [AREA1 terrain probe](terrain-probe/README.md) connects its
+   height grid to the movement simulation; the user reported it worked in Cemu.
+   A separate [depth and timing probe](terrain-depth-probe/README.md) also
+   received a positive Cemu result. A [textured terrain probe](terrain-texture-probe/README.md)
+   received a positive Cemu result. A [static scenery probe](scenery-probe/README.md)
+   received a positive Cemu result. A dual-screen [map probe](map-probe/README.md) received a positive Cemu visual result; input details and hardware remain to be verified. A [water and map probe](water-probe/README.md) adds opaque water surfaces, water coloring on the map, and a directional marker; the user confirmed water and the turning marker in Cemu. A [mobile-style map probe](mobile-map-probe/README.md) received a positive Cemu visual result; the red arrow has since been removed from that mobile view and the revision awaits testing. The [sky probe](sky-probe/README.md) displayed clouds in Cemu, but the user reported a sharp blue horizon. A [fog probe](fog-probe/README.md) uses the area sky color and fades clouds and distant geometry into it; the first Cemu screenshot showed angular patches in the sky. The per-pixel sky fade improved Cemu results, though the user reported a remaining square and trees fading in too late. A revised probe restores the single large sky quad and brings scenery into full visibility sooner; this revision awaits Cemu testing. Next refine sky, water and scenery, then add UI. The
+   probes do not establish hardware performance
+   or validate hardware behavior.
+5. Implement the controls and 3DS-style menu; complete a hunt with audio,
+   saves and lifecycle handling in all three display modes.
+6. Test C2, Ice Age, MEE and representative mods on hardware; profile and
+   package the release without redistributing game data.
+
+- **PC-default view-distance experiment:** The Wii U diagnostic previously drew terrain only 12 cells away (scenery 10); the PC default hunt range is 74 cells. The fog probe now targets 74 cells, updates projection and the mobile map radius, and retains a finite scenery vertex cap. Cemu and hardware performance, dense-area truncation, and visible popping remain to be tested. This per-frame CPU mesh is a diagnostic; use chunking, culling and suitable level of detail before treating the distance as a production target.
+
+- **View-distance performance:** Cemu reported about 21.75 FPS at 74 cells versus 60.10 FPS in the earlier 12-cell sky probe. The comparisons include fog and other changes and do not isolate a single bottleneck. A revised probe conservatively culls off-screen terrain, water and scenery before emitting vertices and iterates scenery rings more efficiently. Test frame rate, camera-edge popping, and pitch extremes; further profiling and cached/chunked geometry remain necessary.
+
+- **Performance instrumentation:** A separate [performance probe](perf-probe/README.md) adds a 30-frame TV overlay for CPU frame, mesh generation, map, draw submission, presentation and explicit GPU synchronization waits, plus vertex counts. These are CPU-clock measurements, not true GPU draw timestamps; Cemu and hardware verification are pending.
+
+- **First timing result:** Cemu showed 61.1 ms/frame, scenery 47.9 ms, terrain 7.0 ms and explicit GPU waits 1.1 ms in one view. The scenery measurement includes culling, mesh generation, fog and buffer operations; it does not isolate their individual costs. The next performance probe caches model bounding radii at load time rather than recomputing each for every visible candidate each frame; compare the same view in Cemu.
+
+- **Scenery follow-up:** The radius-cache build showed 19.87 FPS and 37.5 ms scenery, but had approximately 83,622 scenery vertices versus 98,922 in the earlier image, so the measurements are not directly comparable. A new performance probe transforms each shared model vertex once per instance rather than repeating the transform for each face corner; compare identical views and watch for visual regressions.
+
+- **Scenery transform result:** With 83,622 scenery vertices in both screenshots, the shared-transform revision measured 32.5 ms for scenery and 22.47 FPS versus 37.5 ms and 19.87 FPS before. A subsequent probe computes fog once per shared vertex; a screenshot at the same vertex counts showed 38.0 ms scenery and 19.66 FPS. This suggests a regression, but one 30-frame sample per build does not establish its cause or rule out emulator variability. Repeat both builds at the same view before choosing an implementation; real-hardware performance remains unmeasured.
+
+- **Fog follow-up:** A later screenshot of the same view showed 39.7 ms scenery and 19.01 FPS, with the same vertex counts. The overlay still reports its latest 30-frame average, even after a longer run. The earlier shared-transform build needs repeated measurements under comparable conditions to confirm the difference.
+
+- **Atlas-coordinate cache:** The next performance probe precomputes each static model face's atlas coordinates at load time, avoiding repeated per-corner coordinate arithmetic and clamps during scenery generation. The fog implementation and 74-cell target are unchanged for comparison. Cemu timing and texture appearance need verification. Longer-term candidates include caching world geometry in chunks and moving transforms and fog to the GPU; measure their memory and draw-call costs before choosing a production approach.
+
+- **Atlas cache result and lighting experiment:** Cemu showed 28.4 ms scenery and 24.24 FPS with 83,622 scenery vertices, compared with 39.7 ms and 19.01 FPS in the preceding fog-cache sample. The next probe additionally caches per-cell object lighting at area load for its fixed daytime scene, using about 4 MiB for a 1024-square map. Compare timing and lighting in Cemu; invalidate or recompute this cache if time of day or lighting changes in a future implementation.
+
+- **GPU scenery experiment:** The user observed little difference from the lighting cache (around 24.6 FPS). The next probe sends scenery world positions to the GPU and calculates camera transforms and fog in its vertex shader; CPU placement and face emission still occur every frame. The preceding CPU baseline RPX is retained in the build directory for comparison. Cemu visual correctness, camera movement, timing, GPU waits, and hardware behavior remain unverified. Chunked static geometry remains a separate planned experiment.
+
+- **Chunked CPU scenery cache:** The GPU experiment showed 35.94 FPS and 15.5 ms scenery with 83,622 scenery vertices in Cemu; the user reported a large improvement. The next probe lazily caches visible objects' world-space faces in 8-by-8-cell chunks, evicting least-recently-used chunks with a 32 MiB cached mesh-data budget. Per-object culling, near-first order, and the 74-cell target remain; visible faces are still copied to GPU buffers each frame. Cache bookkeeping and temporary allocations add overhead beyond the mesh-data budget. Compare steady-state and movement performance, appearance, and eviction behavior in Cemu; real hardware remains untested. The previous GPU build is saved as a baseline.
+
+- **Terrain/water GPU fog experiment:** The chunk-cache screenshot showed 40.41 FPS, 12.2 ms scenery and 7.1 ms terrain in the same view. The next build moves terrain and water vertex fog calculations from CPU to GPU and initializes their fixed fog attributes once, while keeping the same distances. Compare performance, fog and water visuals, and GPU wait; Cemu and hardware testing are pending. The chunk-cache build is saved as a baseline.
+
+- **Batched scenery cache copies:** The terrain/water GPU fog build showed 46.02 FPS, 5.2 ms terrain, 11.7 ms scenery, and 0.8 ms water in Cemu. The next build stores cached positions and attributes in separate contiguous arrays, copies whole visible objects into GPU buffers, and initializes the constant scenery fog attribute once. Triangle order, capacity behavior, and view distance are retained. Compare a warm cache, movement, texture/lighting/fog appearance, and vertex counts. The previous GPU-fog RPX is saved as a baseline; hardware remains untested.
+
+- **Shared hunt integration started:** The batched-copy screenshot showed 60.10 FPS, 4.5 ms scenery and 5.2 ms terrain in that Cemu view. `c2-core` now exposes its existing dinosaur AI and hunt simulation through opt-in `portable-dino` and `portable-hunt` no_std features. Host no_std integration tests cover a fleeing herbivore and drawing/firing a weapon. The Wii U probe now drives player movement through a shared `Hunt` with an empty herd and inventory; this needs Cemu movement, frame-rate and stability checks. It does not yet load or show weapons or dinosaurs, play audio, save, or provide the menu. Next connect original data and a single animal and weapon, then controls, UI, sound and saves, and expand to Ice Age and MEE. Retest the 60 FPS baseline in other views and on hardware.
+
+- **Hunt integration freeze:** The user reported Cemu becoming unresponsive with 0 FPS and no movement; the screenshot shows the world rendered but the overlay still at its initial zero values. The cause is not yet established. A diagnostic build emits first-tick section checkpoints to the Cemu log; compare its final checkpoint to locate the stall. The pre-hunt 60 FPS RPX remains available as a known-working baseline.
+
+- **Idle binocular workaround:** The diagnostics reached the binoculars update with toggle off, binoculars off, weapon hidden, hunter alive and not underwater. A behavior-preserving early return when binoculars are already off and no toggle is requested allowed the hunt probe to load; the user reported 60 FPS, and its log shows the first tick completed. This does not establish the underlying cause, and toggling or using binoculars has not been tested in this build. Keep the workaround under review and investigate the active binocular path before enabling the control.
+
+- **First hunt slice:** A new probe loads the original `_RES.TXT`, `PISTOL.CAR`, `PAR2.CAR`, and `MOSH.CAR` from the existing SD probe folder. It seeds one Parasaurolophus and one Moschops near the hunter, runs their shared AI, poses their original animated models, and draws a pistol view model; ZL toggles the pistol and ZR fires. Radar is enabled: living target animals are green, and nearby ambient animals are pale, following the 3DS map rules. The slice uses shared shot tracing and animation timing, but audio, calls, a proper HUD, menus, saves and additional animals are not implemented. A host no_std integration test using the original files verifies parsing, spawn, animation, AI ticking, pistol draw and ammo use. Wii U/Cemu loading, model appearance, input, hit behavior, radar visibility and performance still need testing; hardware remains untested. The existing binocular freeze's root cause is unresolved.
+
+- **First hunt Cemu result:** The user reported killing a Moschops with the pistol, but did not kill the Parasaurolophus while using keyboard controls. This confirms a successful run with a pistol hit and Moschops death; Parasaurolophus hit/death behavior, radar visibility and accuracy, controller handling, audio, and hardware remain to be checked.
+
+- **Radar, AI, and initial audio:** The user confirmed both animals were visible on the radar and that the Parasaurolophus ran from a pistol shot in Cemu. The next build adds X to use its selected call and routes pistol, animal, and call events to an eight-voice AX PCM16 playback experiment on TV and GamePad. It reads the original CALL1_A/B/C WAVs alongside existing hunt assets, converts little-endian samples to native-endian audio buffers and keeps them alive for playback. Audio is currently non-positional and excludes footsteps, ambience, and other categories. A host test verified original call files and a call event; AX playback, call response, output devices, performance, and hardware are untested.
+
+- **Cemu audio check:** The user reported hearing no audio. Cemu's saved settings showed empty TV and GamePad device selections and GamePad volume 0, while the log reported Cubeb available. Select a TV output device in Cemu and retest the existing audio probe before diagnosing AX playback; the code path itself remains unverified.
+
+- **Animal sound follow-up:** The user subsequently heard the pistol and Moschops, but reported footsteps for 15–20 seconds after the Moschops died. Its original running clip is approximately 0.4 seconds; the initial mixer played all animal sounds at full volume regardless of distance, and original hunt logic can spawn a replacement ambient animal after a kill. A revised build applies the shared distance/panning calculation when each sound starts and stops existing voices belonging to an animal on its death, while allowing later death sounds. Portable host tests cover near/far gain and the original hunt; retest the audible behavior in Cemu. Active voice gains are not yet updated as the hunter or animal moves, and voice ownership must handle character removal/index changes before a full hunt implementation.
+
+- **Basic hunt HUD:** The user confirmed Parasaurolophus audio works and the Moschops sound issue is fixed in Cemu. A new probe draws a minimal ammo and health display on each active gameplay screen and a central aiming marker while the pistol is ready. Ammo and health come from shared hunt state; the marker is an approximation since pistol sway and shot dispersion still apply. It is hidden on map screens. Cemu layout, readability, ammo updates, aiming and performance are pending; this is not yet the planned full 3DS-style interface.
+
+- **GamePad hunt panels:** The user confirmed a Parasaurolophus kill and requested ammo on TV only when no GamePad is connected, with weapon and call pictures flanking the GamePad map, plus tap-to-equip and tap-to-call. The revised probe uses the original WEAPON1 and CALL1 images, removes the health meter, shows pistol ammo under the GamePad weapon picture (or on the active gameplay screen when appropriate), and accepts calibrated left/right panel taps. Its one-weapon, one-call setup is a first slice; it is not a multiple-weapon picker. TV-only/GamePad-only behavior, disconnect/reconnect detection, touch calibration, map layout, ammo updates and hardware still need testing. Retain lethal dinosaur attack behavior; other shared health mechanics are not changed.
+
+- **GamePad follow-up:** The user confirmed the GamePad setup worked in Cemu. The next probe makes tapping the selected pistol picture toggle it in and out, and removes the central aiming marker so aiming uses the weapon sights. The new touch toggle and sight-only view still need Cemu verification.
+
+- **Environmental audio slice:** The probe now loads AREA1’s embedded ambient loops and random wildlife sounds into AX. Shared hunt events select the current zone and position random sounds; a dedicated looping voice keeps ambience independent of the eight effect voices. Zone changes switch immediately; crossfading, underwater ambience and player footsteps remain future work. Original-data host testing confirms sound data and initial ambient event, and the Wii U build succeeds. Playback, transitions, effect mixing, performance and hardware need testing. No additional SD assets are needed.
+
+- **First Wii U hunt menu:** A compact, text-based menu follows the 3DS title, area, animal and equipment stages, with one available choice each (AREA1 in daylight, Parasaurolophus and pistol) plus a working radar toggle. The Moschops still roams as an ambient animal. A temporary 9999-point display allows the entire setup; purchases, actual scoring and persistence are not implemented. The same menu is rendered on both screens and supports GamePad touch or D-pad/A on GamePad and Pro Controller; B goes back. Radar off suppresses animal markers. The existing environmental audio is included. This is an initial layout, not the finished 3DS art/hexagon interface; Cemu and real hardware testing are pending.
+
+- **3DS-style Wii U menu presentation:** Replaced the text-only test with a Wii U adaptation of the 3DS title, area, animal, gear and hunt-options flow. It loads the original title and item pictures, draws picture hexagons with selection and D-pad focus rims, shows a hunt summary and permits target, pistol and radar toggling; hunt requires the target and pistol. Both screens show the same interface so GamePad-only and TV-only setups can navigate, with GamePad touch and D-pad/A/B on GamePad or Pro Controller. The balance remains a temporary 9999 points; this is not yet the complete 3DS menu implementation: other maps, animals, weapons, time choices, settings, profiles, trophies, purchasing and saves depend on further port work. Original art must be supplied on SD and is not bundled. The build, original TGA parsing and host navigation checks pass; Cemu and hardware rendering, touch and audio require testing.
+
+- **Title art correction:** The original title image includes five painted PC menu buttons. The Wii U title now covers that entire button column with the dark menu panel and draws its available Play button within it, following the 3DS approach. Additional title options must be added as their features are implemented. Visual confirmation in Cemu remains pending.
+
+- **Batched herbivores, maps and hunter audio:** The menu now precedes hunt loading and selects any of the five original C2 hunting maps plus any combination of Parasaurolophus, Ankylosaurus, Stegosaurus and Chasmosaurus. The initial herd contains one of each selected target and roaming Moschops, Gallimimus and Brachiosaurus. Shared AI, animation, shot tracing and calls use all seven animal models; the pistol remains the only weapon. D-pad Down cycles selected calls and refreshes the GamePad picture. Dry/water footsteps, landings, underwater ambience and hunter death sounds join the existing audio. A staging script copies 58 owner-supplied assets without bundling them. The old terrain atlas failed capacity checks on AREA2 (75 textures), AREA4 (88) and AREA5 (77); it is now 2048 square/256 textures, with matching terrain and water coordinates. The actor atlas expands to eight models. Exact Wii U hunt setup tests pass on all five maps with each target individually and all selected; menu state/raster checks and RPX compilation pass. Cemu verification is still required, especially the menu-to-hunt transition, all map visuals, new animal models/calls, sound mixing and performance. This remains a small test herd, with restart required to select another hunt; full populations, other weapons/predators, return-to-menu, profiles, saves, trophies and hardware validation remain pending.
+
+- **Herbivore/map startup regression:** The user saw only the green clear screen. Cemu’s log reports GLSL compilation errors for both shaders and pipeline creation failure at the first menu frame. The new standalone menu had reused the world shader before any hunt rendering. A revised build uses a dedicated two-attribute textured UI shader with no camera/fog dependency, and logs menu initialization/exit. Shader compilation and RPX build are checked; successful menu rendering and entry into the hunt still require Cemu confirmation. The precise reason Cemu rejected the reused world-shader pipeline is not yet established.
+
+- **Death screen and hunt lifecycle:** The user confirmed the standalone menu shader build works in Cemu. Added a kill screen on TV and GamePad with Restart Hunt and Main Menu, operated by touch or D-pad/A on GamePad or Pro Controller. Restart rebuilds shared hunt state with the same map, targets and radar, restoring player state, animals, ammo and statistics while retaining assets and geometry caches. Main Menu tears down the session and returns to the title with selections retained. Death stops gameplay/ambient audio while allowing the hunter scream to finish; a 400 ms input guard prevents accidental activation. The base C2 horned target is Chasmosaurus; its shared defensive contact attack is lethal. Exact setup host tests verify contact death and restart on all five maps, and menu state/raster sanitizer checks and RPX builds pass. Test `perf-probe/build/c2-wiiu-death-restart.rpx`; no additional SD assets are needed. Cemu must verify death-screen appearance, repeated restarts, audio, controller/touch navigation, and returning to the menu to load another map. This screen replaces the unimplemented animated hunter-body presentation; pause/exit during a living hunt, persistence, full populations and real hardware validation remain future work.
+
+- **Death playback and blood rendering:** The user confirmed the death menu, restart and return-to-menu work, but correctly noted the immediate menu skipped the kill animation and hits had no visible blood. Added the original HUNTER1.CAR as an eighth species/ninth model, and corrected shared body creation to resolve the hunter by AI instead of assuming species zero. This preserves the seven-animal Wii U roster without turning the dead hunter into a Moschops. The renderer now follows the shared death camera for all world layers and plays 12 seconds of body/animal simulation before the menu; both displays show it, hunt inputs are suppressed, and the weapon is hidden. Existing shared blood bursts (including lethal hits) and trails are emitted into the bounded actor buffer as red diamonds and ground marks. These are an initial solid-color rendering pass, not the final blended PC particle appearance. The 2048x512 actor atlas adds 2 MiB; stage HUNTER1.CAR (59 assets total). Original-data tests cover hunter death/pose/camera and restart across all five maps; lethal and nonlethal shot tests verify blood emission. Rust/RPX builds pass. Test `perf-probe/build/c2-wiiu-death-blood.rpx` in Cemu for the complete kill sequence, blood visibility, texture alignment, frame rate, then both death-menu choices. Predator and mod-specific killing animations still require their roster/assets and separate validation.
+
+- **Title Settings page:** The user confirmed the death-animation/blood update works in Cemu. Added Settings beside Play on the title, using the existing dark menu style and GamePad touch or D-pad/A controls. Blood and Kill Animations are independent On/Off toggles, both On by default. Blood Off disables shared blood generation and the Wii U blood rendering pass; Kill Animations Off opens the death menu immediately instead of waiting for the 12-second playback. Choices are retained across hunt restart and title return, including map changes; persistence across RPX launches remains future save/settings work. Menu navigation/touch/raster sanitizer checks and all four option combinations (including restart retention and death-menu timing) pass across five original maps. Test `perf-probe/build/c2-wiiu-settings.rpx`; no new SD assets. Cemu appearance and both toggles' visible effects still need confirmation.
+
+- **Complete stock C2 species roster:** Added Allosaurus, Velociraptor, Spinosaurus, Ceratosaurus and T-Rex to the target selector, alongside the four herbivores. Added ambient Dimorphodon, Pteranodon and Dimetrodon, completing six ambient species and nine targets. The three-by-three picture menu supports all 511 nonempty target combinations; call cycling/pictures and all 27 call WAVs follow stock target order. Expanded audio categories prevent new species from colliding with pistol/call/environment channels. Shared AI, shot tracing, radar, hunter-body mapping, predator death playback and restart all use the expanded roster. Flyers start airborne; dangerous species start farther from the landing. The actor atlas grows from 2048x512 to 2048x1024 (+4 MiB), with blood's reserved texel moved out of model slots. The staging script supplies 92 owner-provided files. Original-data host tests pass for every individual target and the combined roster across five maps, including poses, capacity, calls, lethal Chasmosaurus/predator contact and 12 seconds of playback, restart and setting retention. Menu sanitizer checks pass for every target mask. Test `perf-probe/build/c2-wiiu-stock-dinos.rpx` with refreshed SD assets; Cemu must verify new models, calls, radar, flying animals, attacks, death playback, blood and frame rate. This still uses one of each selected target and six ambient animals, with the pistol only; full population/density, other weapons, saves/trophies and hardware testing remain future work.
+
+- **Randomized expanded hunt population:** The user confirmed the stock roster works and stays at 60 FPS in Cemu. Replaced the small landing-centered test herd with 48 selected targets plus 18 ambient animals (three per ambient species), 66 animals total. Seeded sampling spans the map's walkable interior and uses shared water/slope/object checks, two-kilounit inter-animal spacing, and landing clearance of 40 cells for targets/eight for ambient animals. Selected targets receive balanced counts; positions/headings and the starting target offset vary by seed. New hunts and restarts receive fresh timebase/counter seeds, logged for diagnostics, while retaining settings and selections. Shared ambient relocation behavior is unchanged. Added animated-model bounds over all animation frames, pre-pose distance/frustum culling and near-first whole-model emission, with 8192 vertices reserved for blood. AI continues for the complete herd. This is a Wii U population tuning pass, not the original PC count formula or a density menu. Test `perf-probe/build/c2-wiiu-random-population.rpx` with existing stock assets. Validate radar spread, exploration/encounters, different restart layouts, clipping at screen/fog edges and frame rate; previous 60 FPS is not yet a measurement of this larger population.
+
+  Validation: Rust cross-build and RPX build pass. Original-data host checks pass across all five maps for every single target and the combined roster, including 66-animal placement, spacing/terrain/clearance, balanced selections, fixed-seed repeatability, four alternate seeds, lethal attacks/death playback, restart/settings retention, and culling boundary tests. Cemu performance and visuals remain pending.
+
+
+- **Population performance and complete GamePad call picker:** User measured 47–52 FPS with the randomized 66-animal build. Keep that population and draw distance; try four-way staggered AI for calm stock targets outside view range plus 16 cells, carrying pending elapsed time forward. Nearby, alerted, wounded, dead and ambient animals remain full-rate; MEE species are excluded. Shared scheduling defaults off for other platforms. Separate SIM and ACTORS CPU overlay timings now expose simulation versus animal/weapon buffer work. The GamePad right panel shows selected targets in two columns/three rows, with Previous/Next paging beyond six, current-call highlighting, individual tap-to-select/call, and automatic page following for D-pad call cycling. The pistol toggle remains on the left. Test `perf-probe/build/c2-wiiu-population-calls.rpx`; existing SD assets suffice. Check FPS and SIM/ACTORS readings, all nine pictures across both pages, sparse selections, touch calls, D-pad cycling, and restart. Cemu appearance/performance and hardware testing remain pending.
+
+  Validation: Rust cross-build and Docker RPX link pass. Original-data roster/attack/death/restart tests pass across five maps, plus culling checks and a focused scheduler test for bounded pending time and immediate resumption when alerted or scheduling is disabled. Host menu/picker tests pass under address/undefined-behavior sanitizers across all 511 nonempty selections. No Cemu or hardware run performed for this build.
+
+
+- **Stock C2 weapons:** Expanded the hunt setup to all six original weapons (pistol, shotgun, double shotgun, X-Bow, rifle, sniper rifle). The gear screen uses original weapon pictures and supports any nonempty carried subset; Y cycles the carried selection, ZL draws/holsters, ZR fires, and tapping the GamePad gun picture equips or holsters the current weapon. The ammo display and GamePad picture track the equipped gun. Each weapon loads its original CAR model/animation and shared weapon definition for damage, precision, spread, sound, firing rate, magazine/reload, crossbow drop and sniper optic behavior. Staging now includes all six weapon CARs and menu images. Build `perf-probe/build/c2-wiiu-stock-weapons.rpx`; The Rust cross-build and devkitPPC RPX link pass; all 102 required original assets are staged to Cemu’s SD test folder. Cemu still needs to verify each gun's animation, firing behavior, ammo/reload, sound, crossbow drop/optic, menu selection and weapon switching.
+
+- **PC-side Wii U builder:** `cargo run --release -p c2-launcher --bin c2-wiiu-builder` (or the Wii U tab of the full launcher, turned on in Settings) replaces running `stage_assets.py` by hand: pick the Carnivores 2 folder and the SD card, BUILD copies the same 102 files plus `c2-wiiu-perf-probe.rpx` (found in `perf-probe/build/`, beside the launcher, or the tools folder) into `wiiu/apps/carnivores-probe/`. The game folder, overlays, add-ons and standalone games tabs are shared with the PC and 3DS launchers; add-ons, Modder's Edition overlays, standalones, Ice Age, mobile imports, balance and a `.wuhb` are shown greyed as placeholders. Keep its list (`pc-ver/crates/c2-launcher/src/wiiu.rs`) in step with `stage_assets.py`. When the port reads add-ons or a pack, wire them into `build_wiiu` in `c2-launcher/src/app.rs`.

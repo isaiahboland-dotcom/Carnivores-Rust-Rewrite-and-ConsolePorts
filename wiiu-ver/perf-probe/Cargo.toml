@@ -1,0 +1,13 @@
+[package]
+name = "c2-wiiu-terrain-probe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+[lib]
+crate-type = ["staticlib"]
+[dependencies]
+c2-core = { path = "../../pc-ver/crates/c2-core", default-features = false, features = ["hunt-diagnostics"] }
+c2-formats = { path = "../../pc-ver/crates/c2-formats", default-features = false }
+libm = "0.2"
+[profile.release]
+panic = "abort"

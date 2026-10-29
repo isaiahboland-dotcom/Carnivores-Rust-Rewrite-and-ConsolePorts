@@ -1,0 +1,12 @@
+[package]
+name = "c2-wiiu-pack-probe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+[lib]
+crate-type = ["staticlib"]
+[dependencies]
+c2-formats = { path = "../../pc-ver/crates/c2-formats", default-features = false }
+c2-vfs = { path = "../../pc-ver/crates/c2-vfs", default-features = false }
+[profile.release]
+panic = "abort"

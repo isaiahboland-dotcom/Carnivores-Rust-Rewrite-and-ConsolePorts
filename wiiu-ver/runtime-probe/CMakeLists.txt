@@ -1,0 +1,10 @@
+cmake_minimum_required(VERSION 3.13)
+project(c2_wiiu_runtime_probe C)
+
+set(RUST_ARCHIVE "${CMAKE_CURRENT_SOURCE_DIR}/target/wiiu-runtime.a")
+if(NOT EXISTS "${RUST_ARCHIVE}")
+    message(FATAL_ERROR "Build the Rust archive first; see README.md")
+endif()
+add_executable(c2-wiiu-runtime-probe main.c)
+target_link_libraries(c2-wiiu-runtime-probe PRIVATE "${RUST_ARCHIVE}")
+wut_create_rpx(c2-wiiu-runtime-probe)
