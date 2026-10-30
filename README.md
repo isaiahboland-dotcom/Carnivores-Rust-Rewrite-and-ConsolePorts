@@ -279,9 +279,9 @@ The recipes here:
 | Recipe | What |
 |---|---|
 | `c2-mee-addons.toml` | ten add-on animals on the Modder's Edition Engine 1.1.1 |
-| `c2-everything.toml` | every add-on, plus the mobile Dinosaur Hunter's and Ice Age's animals (from your own APKs) |
-| `c2-android.toml` | Carnivores 2 with the mobile Dinosaur Hunter's animals and classic survival (your APK) |
-| `ice-age-android.toml` | Carnivores: Ice Age with the mobile Ice Age's animals (your APK) |
+| `c2-everything.toml` | every add-on, plus the mobile Dinosaur Hunter's and Ice Age's animals (APKs needed) |
+| `c2-android.toml` | Carnivores 2 with the mobile Dinosaur Hunter's animals and classic survival (APK needed) |
+| `ice-age-android.toml` | Carnivores: Ice Age with the mobile Ice Age's animals (APK needed) |
 | `example.toml` | the format, not a real pack |
 | `bases/*.toml` | hashes of the retail Carnivores 2 and Ice Age, to check a base game |
 
