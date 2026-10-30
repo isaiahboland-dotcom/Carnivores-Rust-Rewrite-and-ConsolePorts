@@ -45,6 +45,10 @@ the 3DS's PICA200 GPU and the Wii U's PowerPC CPU.
 | **PC VR** (OpenXR) | Early first draft | Menus and the hunt setup on a panel, walking the areas, animals that hunt you. No weapons yet. Tested with a PS VR2 on Linux through Monado. |
 | **PS5 / PS VR2** | Not started | Research notes only (`psvr2-ver/gameplan.md`). |
 
+**Planned:** the mobile games' Android APKs as base games. Today an APK only adds its animals (and the
+Dinosaur Hunter's classic survival) to a PC Carnivores 2 or Ice Age install. Later, your own APK will be
+enough on its own to play, with add-ons on top, as the PC games are now.
+
 ---
 
 ## What you need
