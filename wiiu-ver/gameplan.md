@@ -199,4 +199,17 @@ been proven to support the whole engine.
 
 - **Stock C2 weapons:** Expanded the hunt setup to all six original weapons (pistol, shotgun, double shotgun, X-Bow, rifle, sniper rifle). The gear screen uses original weapon pictures and supports any nonempty carried subset; Y cycles the carried selection, ZL draws/holsters, ZR fires, and tapping the GamePad gun picture equips or holsters the current weapon. The ammo display and GamePad picture track the equipped gun. Each weapon loads its original CAR model/animation and shared weapon definition for damage, precision, spread, sound, firing rate, magazine/reload, crossbow drop and sniper optic behavior. Staging now includes all six weapon CARs and menu images. Build `perf-probe/build/c2-wiiu-stock-weapons.rpx`; The Rust cross-build and devkitPPC RPX link pass; all 102 required original assets are staged to Cemu’s SD test folder. Cemu still needs to verify each gun's animation, firing behavior, ammo/reload, sound, crossbow drop/optic, menu selection and weapon switching.
 
-- **PC-side Wii U builder:** `cargo run --release -p c2-launcher --bin c2-wiiu-builder` (or the Wii U tab of the full launcher, turned on in Settings) replaces running `stage_assets.py` by hand: pick the Carnivores 2 folder and the SD card, BUILD copies the same 102 files plus `c2-wiiu-perf-probe.rpx` (found in `perf-probe/build/`, beside the launcher, or the tools folder) into `wiiu/apps/carnivores-probe/`. The game folder, overlays, add-ons and standalone games tabs are shared with the PC and 3DS launchers; add-ons, Modder's Edition overlays, standalones, Ice Age, mobile imports, balance and a `.wuhb` are shown greyed as placeholders. Keep its list (`pc-ver/crates/c2-launcher/src/wiiu.rs`) in step with `stage_assets.py`. When the port reads add-ons or a pack, wire them into `build_wiiu` in `c2-launcher/src/app.rs`.
+- **PC-side Wii U builder:** `cargo run --release -p c2-launcher --bin c2-wiiu-builder` (or the Wii U tab of the full launcher, turned on in Settings) stages the same 102 files. Choose RPX for Homebrew Launcher or WUHB for the Aroma Wii U Menu; WUHB packaging uses devkitPro `wuhbtool` from `wut-tools` and leaves the original game files beside the bundle because the current runtime reads them from the fixed SD folder. Add-ons, Modder's Edition overlays, standalones, Ice Age, mobile imports and balance remain placeholders. Keep the asset list (`pc-ver/crates/c2-launcher/src/wiiu.rs`) in step with `stage_assets.py`. When the port reads add-ons or a pack, wire them into `build_wiiu` in `c2-launcher/src/app.rs`.
+
+- **First playable physical Wii U result (2026-10-29):** The trace-v3 WUHB
+  re-enables TV/GamePad after `WHBLogConsoleFree` shuts the outputs down. The
+  owner confirmed the color check, menu and playable hunt under Aroma. Trace
+  v2 had advanced through over 9,000 frames/flips with black displays; this
+  was a display-output failure rather than a hung menu loop. Hardware gameplay
+  is reported below 30 FPS. Current logs close before gameplay and contain no
+  performance samples. The new [hardware review](../docs/WIIU-HARDWARE-REVIEW.md)
+  preserves logs, identifies candidate CPU/upload/wait costs, and prioritizes
+  persistent profiling before optimization. It also documents the dropped
+  touch weapon-slot payload, missing scope projection integration, disabled
+  view-model depth/occlusion, and low-resolution 512×256 TV menu. Those fixes
+  remain outstanding; the deployed playable baseline is retained.

@@ -1,0 +1,23 @@
+wiiu-ver/perf-probe/hardware-logs/2026-10-29-static-scene.csv
+  whole capture: 613 frames over 28.70s, 21.36 wall FPS (includes gaps/menus)
+  seed=3401612258 TV map toggle=0 GamePad gameplay toggle=0 death=0 tiled=1 static_cache=1 resident=0: 613 frames
+    timed-loop FPS=21.42, average=46.68 ms, p95=81.05, p99=83.01, max=84.33
+    grouped wall span=28.70s (may include gaps), previous-profiler overhead=85.21 ms, ticks/frame=2.92
+    present_ms: 25.387 ms/frame
+    scenery_ms: 6.645 ms/frame
+    sim_ms: 4.917 ms/frame
+    terrain_ms: 4.102 ms/frame
+    map_paint_ms: 2.280 ms/frame
+    animals_ms: 0.984 ms/frame
+    draw_ms: 0.934 ms/frame
+    map_cache_ms: 0.753 ms/frame
+    water_ms: 0.521 ms/frame
+    overlay_ms: 0.073 ms/frame
+    unaccounted_ms: 0.071 ms/frame
+    geometry_wait_ms: 0.006 ms/frame
+    sky_ms: 0.002 ms/frame
+    gun_ms: 0.000 ms/frame
+    map_wait_ms: 0.000 ms/frame
+    static geometry reused: 428/613 frames
+    geometry subsets: lock=0.002 ms, cache=0.493 ms, cache range=1.07 MiB/frame
+    emitted geometry streams: 1.07 MiB/frame

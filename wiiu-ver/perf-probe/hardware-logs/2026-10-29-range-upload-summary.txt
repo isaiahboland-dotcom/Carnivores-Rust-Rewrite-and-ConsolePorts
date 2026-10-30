@@ -1,0 +1,42 @@
+wiiu-ver/perf-probe/hardware-logs/2026-10-29-range-upload.csv
+  whole capture: 484 frames over 50.42s, 9.60 wall FPS (includes gaps/menus)
+  seed=1501663636 TV map toggle=0 GamePad gameplay toggle=0 death=unknown: 347 frames
+    timed-loop FPS=8.25, average=121.28 ms, p95=154.40, p99=161.39, max=166.37
+    grouped wall span=50.42s (may include gaps), previous-profiler overhead=104.25 ms, ticks/frame=7.17
+    map_wait_ms: 35.239 ms/frame
+    scenery_ms: 26.146 ms/frame
+    terrain_ms: 17.712 ms/frame
+    present_ms: 15.994 ms/frame
+    sim_ms: 14.323 ms/frame
+    animals_ms: 4.350 ms/frame
+    water_ms: 3.260 ms/frame
+    map_paint_ms: 2.722 ms/frame
+    map_cache_ms: 0.746 ms/frame
+    draw_ms: 0.355 ms/frame
+    unaccounted_ms: 0.183 ms/frame
+    gun_ms: 0.155 ms/frame
+    overlay_ms: 0.072 ms/frame
+    sky_ms: 0.007 ms/frame
+    geometry_wait_ms: 0.007 ms/frame
+    geometry subsets: lock=0.004 ms, cache=1.893 ms, cache range=4.19 MiB/frame
+    emitted geometry streams: 4.19 MiB/frame
+  seed=1501663636 TV map toggle=1 GamePad gameplay toggle=0 death=unknown: 137 frames
+    timed-loop FPS=16.70, average=59.90 ms, p95=68.78, p99=71.55, max=71.90
+    grouped wall span=25.09s (may include gaps), previous-profiler overhead=19.31 ms, ticks/frame=3.85
+    scenery_ms: 21.335 ms/frame
+    terrain_ms: 17.296 ms/frame
+    sim_ms: 6.542 ms/frame
+    animals_ms: 4.573 ms/frame
+    map_wait_ms: 3.574 ms/frame
+    map_paint_ms: 2.717 ms/frame
+    water_ms: 2.493 ms/frame
+    map_cache_ms: 0.747 ms/frame
+    draw_ms: 0.340 ms/frame
+    unaccounted_ms: 0.104 ms/frame
+    overlay_ms: 0.080 ms/frame
+    gun_ms: 0.056 ms/frame
+    present_ms: 0.017 ms/frame
+    sky_ms: 0.008 ms/frame
+    geometry_wait_ms: 0.005 ms/frame
+    geometry subsets: lock=0.004 ms, cache=1.735 ms, cache range=3.65 MiB/frame
+    emitted geometry streams: 3.65 MiB/frame

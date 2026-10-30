@@ -1,0 +1,112 @@
+2026-10-30-resident-scenery.csv
+  whole capture: 5773 frames over 255.99s, 22.55 wall FPS (includes gaps/menus)
+  seed=2087490667 TV map toggle=0 GamePad gameplay toggle=0 death=0 tiled=1 static_cache=1 resident=1: 5091 frames
+    timed-loop FPS=21.21, average=47.14 ms, p95=102.98, p99=115.30, max=136.98
+    grouped wall span=254.65s (may include gaps), previous-profiler overhead=853.07 ms, ticks/frame=2.95
+    present_ms: 21.480 ms/frame
+    terrain_ms: 7.354 ms/frame
+    sim_ms: 4.446 ms/frame
+    scenery_ms: 3.827 ms/frame
+    animals_ms: 2.945 ms/frame
+    map_paint_ms: 2.389 ms/frame
+    water_ms: 2.202 ms/frame
+    draw_ms: 1.368 ms/frame
+    map_cache_ms: 0.745 ms/frame
+    gun_ms: 0.171 ms/frame
+    unaccounted_ms: 0.128 ms/frame
+    overlay_ms: 0.075 ms/frame
+    geometry_wait_ms: 0.006 ms/frame
+    sky_ms: 0.004 ms/frame
+    map_wait_ms: 0.000 ms/frame
+    resident scenery active: 5091/5091 frames, ranges/view=142.29, uploaded vertices/frame=14995
+    static geometry reused: 2223/5091 frames
+    geometry subsets: lock=0.001 ms, cache=0.785 ms, cache range=1.60 MiB/frame
+    emitted geometry streams: 1.60 MiB/frame
+  seed=2087490667 TV map toggle=1 GamePad gameplay toggle=0 death=0 tiled=1 static_cache=1 resident=1: 595 frames
+    timed-loop FPS=60.38, average=16.56 ms, p95=16.84, p99=16.89, max=16.92
+    grouped wall span=174.44s (may include gaps), previous-profiler overhead=51.60 ms, ticks/frame=1.05
+    draw_ms: 8.289 ms/frame
+    present_ms: 3.544 ms/frame
+    map_paint_ms: 2.068 ms/frame
+    sim_ms: 1.807 ms/frame
+    map_cache_ms: 0.750 ms/frame
+    overlay_ms: 0.074 ms/frame
+    unaccounted_ms: 0.022 ms/frame
+    geometry_wait_ms: 0.005 ms/frame
+    terrain_ms: 0.000 ms/frame
+    scenery_ms: 0.000 ms/frame
+    water_ms: 0.000 ms/frame
+    sky_ms: 0.000 ms/frame
+    animals_ms: 0.000 ms/frame
+    gun_ms: 0.000 ms/frame
+    map_wait_ms: 0.000 ms/frame
+    resident scenery active: 0/595 frames, ranges/view=0.00, uploaded vertices/frame=0
+    static geometry reused: 0/595 frames
+    geometry subsets: lock=0.000 ms, cache=0.000 ms, cache range=0.00 MiB/frame
+    emitted geometry streams: 0.00 MiB/frame
+  seed=2087490667 TV map toggle=0 GamePad gameplay toggle=0 death=0 tiled=1 static_cache=1 resident=0: 46 frames
+    timed-loop FPS=19.40, average=51.54 ms, p95=77.17, p99=86.34, max=86.34
+    grouped wall span=5.64s (may include gaps), previous-profiler overhead=2.81 ms, ticks/frame=3.33
+    present_ms: 22.409 ms/frame
+    scenery_ms: 8.995 ms/frame
+    terrain_ms: 6.177 ms/frame
+    sim_ms: 3.631 ms/frame
+    water_ms: 3.210 ms/frame
+    map_paint_ms: 2.365 ms/frame
+    draw_ms: 1.781 ms/frame
+    animals_ms: 1.556 ms/frame
+    map_cache_ms: 0.737 ms/frame
+    gun_ms: 0.496 ms/frame
+    overlay_ms: 0.101 ms/frame
+    unaccounted_ms: 0.064 ms/frame
+    geometry_wait_ms: 0.005 ms/frame
+    sky_ms: 0.003 ms/frame
+    map_wait_ms: 0.000 ms/frame
+    resident scenery active: 0/46 frames, ranges/view=1.00, uploaded vertices/frame=25733
+    static geometry reused: 25/46 frames
+    geometry subsets: lock=0.001 ms, cache=0.891 ms, cache range=1.82 MiB/frame
+    emitted geometry streams: 1.82 MiB/frame
+  seed=2087490667 TV map toggle=0 GamePad gameplay toggle=1 death=0 tiled=1 static_cache=1 resident=0: 27 frames
+    timed-loop FPS=15.68, average=63.77 ms, p95=82.67, p99=82.82, max=82.82
+    grouped wall span=3.86s (may include gaps), previous-profiler overhead=1.78 ms, ticks/frame=3.78
+    present_ms: 30.835 ms/frame
+    scenery_ms: 12.028 ms/frame
+    terrain_ms: 7.964 ms/frame
+    water_ms: 4.005 ms/frame
+    sim_ms: 3.747 ms/frame
+    draw_ms: 2.533 ms/frame
+    animals_ms: 1.954 ms/frame
+    gun_ms: 0.541 ms/frame
+    overlay_ms: 0.084 ms/frame
+    unaccounted_ms: 0.067 ms/frame
+    geometry_wait_ms: 0.005 ms/frame
+    sky_ms: 0.004 ms/frame
+    map_paint_ms: 0.001 ms/frame
+    map_cache_ms: 0.000 ms/frame
+    map_wait_ms: 0.000 ms/frame
+    resident scenery active: 0/27 frames, ranges/view=1.00, uploaded vertices/frame=35023
+    static geometry reused: 11/27 frames
+    geometry subsets: lock=0.002 ms, cache=1.109 ms, cache range=2.37 MiB/frame
+    emitted geometry streams: 2.37 MiB/frame
+  seed=2087490667 TV map toggle=0 GamePad gameplay toggle=1 death=0 tiled=1 static_cache=1 resident=1: 14 frames
+    timed-loop FPS=13.14, average=76.13 ms, p95=113.61, p99=113.61, max=113.61
+    grouped wall span=2.92s (may include gaps), previous-profiler overhead=14.79 ms, ticks/frame=5.14
+    present_ms: 30.277 ms/frame
+    scenery_ms: 17.069 ms/frame
+    terrain_ms: 13.370 ms/frame
+    water_ms: 6.797 ms/frame
+    sim_ms: 5.611 ms/frame
+    animals_ms: 1.971 ms/frame
+    gun_ms: 0.544 ms/frame
+    draw_ms: 0.364 ms/frame
+    unaccounted_ms: 0.109 ms/frame
+    sky_ms: 0.006 ms/frame
+    geometry_wait_ms: 0.005 ms/frame
+    map_paint_ms: 0.001 ms/frame
+    map_cache_ms: 0.000 ms/frame
+    map_wait_ms: 0.000 ms/frame
+    overlay_ms: 0.000 ms/frame
+    resident scenery active: 14/14 frames, ranges/view=115.86, uploaded vertices/frame=68498
+    static geometry reused: 0/14 frames
+    geometry subsets: lock=0.002 ms, cache=1.774 ms, cache range=4.15 MiB/frame
+    emitted geometry streams: 4.15 MiB/frame

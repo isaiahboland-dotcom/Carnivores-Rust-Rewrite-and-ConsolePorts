@@ -41,7 +41,7 @@ the 3DS's PICA200 GPU and the Wii U's PowerPC CPU.
 |---|---|---|
 | **PC** (Linux; Windows untested) | Playable, feature-rich | The full original game, plus add-ons, Modder's Edition games, standalone games, Carnivores: Ice Age, animals from the mobile games, survival mode and a balance editor. Bugs mostly show up when a lot of mods and add-ons are used at once. |
 | **Nintendo 3DS** (homebrew) | Nearly complete | Full hunts, touch menus, bottom-screen map, sound, saves, trophy room, add-on and standalone packs, `.cia` installs. Tested on real 3DS and 2DS hardware. Like PC, bugs mostly come from packing in too many add-ons or mods. |
-| **Wii U** (homebrew) | Demo / proof of concept | Stock Carnivores 2 only: menu, all five maps, the nine animals, six weapons, calls, radar, GamePad map. Tested in the Cemu emulator, not yet on hardware. |
+| **Wii U** (homebrew) | Demo, being optimized | Stock Carnivores 2 only: menu, all five maps, the nine animals, six weapons, calls, radar, GamePad map. Runs on a real Wii U under Aroma (`.wuhb`), and exits to the HOME menu cleanly. About 30 FPS standing still, 19 FPS while turning, with a brief stutter each time you walk into a new map cell; work continues ([results](wiiu-ver/perf-probe/hardware-logs/2026-10-30-resident-scenery-results.md)). Known issues: weapon selection, the gun being hidden by scenery, the scope and menu resolution. |
 | **PC VR** (OpenXR) | Early first draft | Menus and the hunt setup on a panel, walking the areas, animals that hunt you. No weapons yet. Tested with a PS VR2 on Linux through Monado. |
 | **PS5 / PS VR2** | Not started | Research notes only (`psvr2-ver/gameplan.md`). |
 
@@ -103,9 +103,11 @@ The tabs:
   the packs (one for the original game or the base with its add-ons, and one per standalone game that's
   on) and copies the app into `3ds/<name>/`. It can also make a `.cia` with your own home-menu icon and
   banner (see [.cia builds](#cia-builds-optional)).
-- **Wii U**: choose your SD card. **Build for Wii U** copies the app and the game files it needs to
+- **Wii U**: choose your SD card and output format. Build a `.wuhb` for the Aroma Wii U Menu
+  (`wuhbtool` from devkitPro `wut-tools` is required), or an `.rpx` for the Homebrew Launcher.
+  Both formats copy the original Carnivores 2 files the app needs into
   `wiiu/apps/carnivores-probe/`. Add-ons and other games are listed as "not on the Wii U yet".
-- **Settings**: the tools folder (where `c2-pc`, `c2-cook`, the 3DS and Wii U apps, `makerom` and `bannertool`
+- **Settings**: the tools folder (where `c2-pc`, `c2-cook`, the 3DS and Wii U apps, `wuhbtool`, `makerom` and `bannertool`
   are found), showing the 3DS / Wii U sections, and engine options.
 
 The launcher runs the other programs for you. It finds them beside itself, in the tools folder, or in this
@@ -196,7 +198,7 @@ banner (256x128) and banner sound are your own. Without them, they're made from 
 
 ## Wii U from the command line (demo)
 
-The Wii U version is a proof of concept: stock Carnivores 2 only, and tested in Cemu so far. It's a C
+The Wii U version is a demo: stock Carnivores 2 only, tested in Cemu and on a real Wii U under Aroma. It's a C
 frontend on devkitPro's WUT with the shared Rust code linked in. You need:
 
 - Rust nightly with `rust-src`
@@ -220,7 +222,9 @@ python3 wiiu-ver/perf-probe/stage_assets.py PATH/TO/Carnivores2/HUNTDAT SD/wiiu/
 ```
 
 Run `wiiu-ver/perf-probe/build/c2-wiiu-perf-probe.rpx` in Cemu, or from the Homebrew Launcher, with the
-files above on the SD card. Controls and the current state: [wiiu-ver/perf-probe/README.md](wiiu-ver/perf-probe/README.md);
+files above on the SD card. For the Aroma Wii U Menu, package it as `carnivores-probe.wuhb` with `wuhbtool`
+(the launcher's Wii U tab does this). Hardware frame-time captures and their results are in
+[wiiu-ver/perf-probe/hardware-logs/](wiiu-ver/perf-probe/hardware-logs/). Controls and the current state: [wiiu-ver/perf-probe/README.md](wiiu-ver/perf-probe/README.md);
 the plan: [docs/WIIU.md](docs/WIIU.md) and [wiiu-ver/gameplan.md](wiiu-ver/gameplan.md).
 
 ---

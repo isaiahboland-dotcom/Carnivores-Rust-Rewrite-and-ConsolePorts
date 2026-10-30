@@ -1,19 +1,66 @@
 ## Status: Wii U port
 
+### First playable hardware result, 2026-10-29
+
+The owner confirmed the trace-v3 WUHB displays the blue TV/magenta GamePad
+check, then the menu and a playable hunt on a real Wii U under Aroma. Keep
+the display re-enable calls after the loading console shuts down.
+
+Gameplay was reported below 30 FPS. The SD log contains loading results but
+no gameplay timing samples, so measured bottlenecks have not been ranked yet.
+GamePad taps lose the selected gun slot in the input queue; scope zoom is not
+connected to rendering; gun depth is disabled, matching overlapping internal
+geometry; and the TV menu is drawn from a 512×256 surface. These are open
+issues, not completed stock-weapon support.
+
+See the [hardware review](../../docs/WIIU-HARDWARE-REVIEW.md) for evidence,
+optimization candidates, required profiling, and the prioritized fix list.
+The installed baseline is `build/carnivores-probe.wuhb` (trace v3); this review
+does not replace it with another build.
+
+### Hardware startup diagnostics
+
+The playable build now displays each menu file read/decode before switching
+from the red loading console to GX2. It writes flushed startup checkpoints to
+`SD:/wiiu/apps/carnivores-probe/startup.log`, including graphics initialization,
+shader loading, controller setup, and the first frame presentation. The file is
+replaced when a session starts; after a hang, return the SD card to the PC and
+read its last line before launching again. Failure to open the log is reported
+on the loading console. Game assets and the complete playable hunt are retained.
+
+This diagnoses a reported hardware black screen after the initial two loading
+lines. All 102 SD assets were verified against the original game, and switching
+the same RPX into WUHB did not resolve the report. The trace-v3 handoff fix
+described below subsequently resolved the black screen on hardware.
+
+The first hardware log reached `Menu: first frame presented PASS`. Trace v2
+therefore adds a two-second clear-only display check (blue TV, magenta GamePad)
+before the textured menu, explicit menu color-write/channel-mask state, and
+frame/swap/flip progress in the log. A returned presentation call does not
+prove that either display showed the intended pixels. This build distinguishes
+clear-only scanout problems from textured drawing and subsequent-frame stalls.
+
+Hardware trace v2 recorded more than 9,000 menu frames with advancing swap/flip
+counters, despite both displays staying black even during clear-only frames.
+Trace v3 explicitly calls `OSScreenEnableEx` for TV and GamePad after
+`WHBGfxInit`: the preceding `WHBLogConsoleFree` calls `OSScreenShutdown`, which
+disables both outputs. The owner subsequently confirmed both colors and a
+playable hunt: the handoff change is now confirmed on hardware.
+
 ### Done
 
 - Rust runtime, SD access, shared parsers and VFS probes passed in Cemu.
 - The Wii U hunt renders the selected map, terrain, water, sky, scenery and
   animals; movement, radar, calls, audio, blood, death flow, settings, menu,
   randomized populations and performance overlay are implemented.
-- All six stock Carnivores 2 weapons are selectable and functional in the hunt.
+- All six stock Carnivores 2 weapon assets and shared handling are integrated.
   Y cycles carried weapons; ZL draws or holsters; ZR fires. Cemu gameplay has
-  confirmed the weapons work, but weapon model textures still need visual
-  correction.
+  confirmed basic firing, but hardware exposed selection, depth/occlusion,
+  scope and performance defects; complete weapon correctness is pending.
 - The GamePad now has a two-column, three-row weapon picker beside the map.
   Tap a carried weapon to equip it; tapping the equipped weapon hides it. A
-  gold outline marks the active weapon. The touch picker change still needs a
-  Cemu check.
+  gold outline marks the active weapon. Hardware exposed a dropped slot
+  payload in the touch input queue; taps currently select the first carried gun.
 
 ### Remaining
 
@@ -24,7 +71,8 @@
 - Recheck weapon ammo/reload behavior, sounds, crossbow drop and sniper optic.
 - Continue the broader Cemu pass for randomized population appearance, calls,
   radar, predator behavior, blood, death playback, performance and restarts.
-- Test on Wii U hardware; all current runtime results are from Cemu.
+- Capture gameplay timing samples on Wii U hardware, then prioritize measured
+  optimization work and the fixes in the hardware review.
 
 Latest build: `build/c2-wiiu-stock-weapons.rpx` (will be refreshed with the
 GamePad picker update).
@@ -187,3 +235,286 @@ wiiu-ver/tools/cafeglsl/bin/glslcompiler --uniform-mode register -vs wiiu-ver/pe
 ```
 
 Then rebuild the RPX; CMake embeds both shader files.
+
+### Persistent hardware timing capture (schema 1)
+
+Gameplay now retains the mounted SD card/FS client until session cleanup and
+writes `performance-<timebase>-<session>.csv` beside `startup.log`. Each hunt
+session gets a separate file; restarts keep the file and change the seed column.
+The startup trace still closes before gameplay. The confirmed display handoff
+and temporary diagnostic colors are unchanged.
+
+Capture is bounded to 16 MiB per session. Rows accumulate in a 64 KiB aligned
+buffer, written/flushed when full or after five seconds. Normal HOME exit and
+return to the main menu save pending rows and close the file before releasing
+SD. An abrupt power loss or GPU hang can lose the current batch. A write failure
+disables capture and reports through OSReport; gameplay continues. Move captures
+off SD between tests to avoid accumulating files across sessions.
+
+Each row records seed, frame start time, view modes, simulation tick count,
+CPU timing buckets, and emitted vertex counts including the gun. Metadata records
+compile date/time, selection/settings, baseline population, and actual TV/DRC
+render-buffer sizes. Animal/gun buffer work, map painting/invalidation, and the
+two explicit wait sites are separate. `geometry_stream_bytes` counts emitted
+position/attribute data (32 bytes/vertex), not measured GPU transfers or the
+cache ranges flushed by GX2R. Buffer locks remain inside geometry buckets;
+scenery-cache misses/evictions/occupancy and visible/posed animal counters are
+not yet captured. These are follow-up instrumentation, not zero-valued metrics.
+
+Frame timings exclude CSV formatting/writes; `previous_profiler_ms` reports
+that work on the following row. Logging can still affect the next frame's
+simulation catch-up. The last profiler operation and final close are not in a
+subsequent row. Frame start intervals reveal additional elapsed time, including
+logging, menus and suspension. WAIT/PRESENT remain CPU elapsed time, not GPU
+timers. To summarize a copied capture:
+
+```sh
+python3 wiiu-ver/tools/summarize-performance.py performance-*.csv
+```
+
+The tool groups by seed and view mode, reports timed-loop FPS, mean/p95/p99/max
+frame time, average CPU buckets and geometry bytes. Grouped wall spans can include
+intervening modes/menus; use contiguous intervals for comparisons. Archive the
+built RPX/WUHB and its hash alongside each capture. For hardware comparisons,
+follow the stationary/dense rotation/cold movement/nearby animals/weapon route in
+[the hardware review](../../docs/WIIU-HARDWARE-REVIEW.md), testing both GamePad
+modes with the same selections and output mode. The first physical-console capture is now archived under `hardware-logs`; see
+the range-upload results below.
+
+### Range-upload hardware experiment
+
+The owner reported 180.9 ms/frame, with WAIT 75.3 ms and SCENERY 68.2 ms on the
+preserved playable build. The first experiment keeps all explicit GPU waits and
+geometry generation but replaces whole-buffer GX2R cache maintenance with an
+explicit `GX2Invalidate(CPU_ATTRIBUTE_BUFFER)` for each written vertex prefix.
+The prior frame must complete before any stream is locked or rewritten. GX2R
+allocation/binding remains in use; lock/unlock automatic invalidation is disabled
+only for these dynamic streams. Static buffers and menu/map/UI buffers retain
+their existing maintenance. Zero-vertex streams need no cache operation.
+
+`C2_RANGE_UPLOAD` is a CMake option, default ON; configure OFF for the legacy
+whole-buffer path with the same instrumentation. Schema 2 metadata records the
+option. New `stream_lock_ms` and `stream_cache_ms` columns are subsets of the
+existing geometry buckets; do not add them to frame totals. `stream_cache_bytes`
+is the sum of requested cache range sizes (including dynamic sky fog), not a
+measured bus transfer count. The summary prints these subsets separately.
+
+Host checks for exact, empty and full stream ranges and the legacy path:
+
+```sh
+cc -std=c11 -Wall -Wextra -Werror wiiu-ver/perf-probe/tests/stream_upload_test.c -o /tmp/wiiu-stream-test
+/tmp/wiiu-stream-test
+cc -std=c11 -Wall -Wextra -Werror -DC2_RANGE_UPLOAD=0 wiiu-ver/perf-probe/tests/stream_upload_test.c -o /tmp/wiiu-stream-legacy-test
+/tmp/wiiu-stream-legacy-test
+```
+
+The range-upload WUHB is `build/carnivores-range-upload.wuhb`. Build/host checks
+pass and the first physical-console timing capture is archived below.
+The SD's prior playable WUHB is archived as `build/hardware-playable-baseline.wuhb`.
+
+### Map synchronization and hidden work experiment (schema 3)
+
+The [first range-upload hardware capture](hardware-logs/2026-10-29-range-upload-results.md)
+now provides physical-console evidence. The next candidate uses immutable map
+positions and separate six-vertex UV buffers for TV and DRC. Both UV buffers are
+written after the previous-frame completion wait and before either display
+submits draws. The old post-map `GX2DrawDone` is removed because no display
+rewrites the other's submitted UVs. Final WHB completion and the previous-frame
+resource wait remain. Some WAIT time may move to PRESENT; assess total frame time.
+
+World geometry generation and dynamic stream maintenance are skipped when both
+displays show maps. Simulation continues. Map painting and texture maintenance
+are skipped when both displays render gameplay; cached overlay restoration is
+retained for the next time the map opens. Death playback forces world rendering
+on both displays as before. Schema 3 adds `death_playback`, and the summary groups
+it separately. Older captures report death state as unknown. View flags alone
+must not be treated as proof of the actual rendered views in older captures.
+
+Host layout/policy checks cover both views, death/full-map/gameplay combinations,
+map-edge UV clamping, triangle continuity and independent TV/DRC UVs:
+
+```sh
+cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined wiiu-ver/perf-probe/tests/map_view_test.c -o /tmp/wiiu-map-test
+ASAN_OPTIONS=detect_leaks=0 /tmp/wiiu-map-test
+```
+
+Leak checking is disabled for this allocation-free test because the sandbox's
+ptrace environment prevents LeakSanitizer from running. Address/undefined checks
+remain enabled. Wii U RPX and host checks pass; the new candidate still needs a
+physical-console check of both map modes, mirrored gameplay, death playback,
+and repeated map toggles. Population, visibility range and resolution are unchanged.
+
+### Tiled atlas A/B experiment (schema 4)
+
+The [map-stream hardware capture](hardware-logs/2026-10-29-map-streams-results.md)
+separates live play (112.18 ms/frame) from death playback (130.79 ms/frame).
+The map wait is eliminated; PRESENT is now the largest CPU elapsed bucket.
+It still includes completion/presentation and is not a pure GPU timer.
+
+The next candidate retains linear terrain, scenery and actor atlases and creates
+2D tiled copies with `GX2CopySurface` during loading. Texture dimensions, UVs,
+RGBA8 data, alpha, filtering, fog, geometry and output sizes are unchanged.
+For validation, each tiled atlas is copied back to temporary linear storage and
+all RGBA texels are compared to the original. Allocation/roundtrip failure
+falls back to linear sampling. CPU cache lines are flushed before GPU writes,
+GPU completion precedes readback, and CPU readback cache is invalidated before
+comparison. The temporary readback surface is freed after checking. Keeping
+both layouts adds approximately 40 MiB persistent memory for this A/B test.
+
+D-pad **Left** on GamePad or Pro Controller switches between tiled and linear
+layouts when all three conversions validate. The last overlay row starts with
+**T** (tiled) or **L** (linear); it refreshes with the usual 30-frame averages,
+so allow 30 frames after switching before transcribing overlay values. The
+candidate starts tiled when validation succeeds. The map/UI/sky remain linear.
+
+Schema 4 metadata adds `tiled_available`; each frame adds `tiled_atlases`.
+The host summary groups by layout as well as view toggles, seed and death state.
+For a comparable capture, stand still for 15–20 seconds in each layout, switch
+back and repeat, then rotate/move with both. Keep the same GamePad view mode.
+Record visual corruption immediately; D-pad Left returns to the original atlas
+layout. Compare total frame/PRESENT time, vertex counts and live/death groups.
+Do not compare unrelated locations/seeds or interpret all PRESENT as GPU time.
+
+### HOME lifecycle repair candidate and static-view work (schema 5)
+
+The [tiled-atlas A/B capture](hardware-logs/2026-10-29-tiled-atlas-ab-results.md)
+supports tiled textures as the default (83.94 ms tiled / 114.93 ms linear in
+one session). The owner also reported a forced-shutdown HOME-exit hang. Clean
+exit is not validated; fixing it takes priority over further performance tests.
+
+All frame/load/menu polling now uses an explicit ProcUI loop. It does not return
+a drawable frame during release/background, and does not shut ProcUI down on
+EXITING until session resources have been released. Audio is shut down before
+foreground release and reconstructed, with its ambient loop, on return. Graphics
+foreground buffers remain managed by WHB's release/acquire callbacks. After all
+session teardown, callbacks are cleared and ProcUI is shut down once. The HBL
+HOME-denied callback also requests the same cleanup path. Full HBL/background
+compatibility and successful Aroma exit still need hardware verification.
+
+`lifecycle-<timebase>.log` beside the CSV records flushed lifecycle/cleanup
+checkpoints, without per-frame logging. Preserve it if HOME hangs again. The
+last persistent message announces trace close and SD release; final cleanup and
+ProcUI-shutdown messages go to OSReport because the SD file is already closed.
+The exact cause of the reported hang is not established by existing evidence.
+
+The in-progress static-world reuse feature defaults **off** for this lifecycle
+candidate. D-pad Right toggles it after exit/resume works; the last overlay row
+starts `TB` (tiled, reuse bypassed) or `TC` (tiled, reuse enabled). D-pad Left still
+changes texture layout. Allow 30 frames for the averaged overlay to settle.
+Reuse requires an exact match of eye XYZ, yaw/pitch and player cell XZ. Changing
+any key component rebuilds terrain/scenery/water/sky. Restart invalidates the
+key. Actors, weapon and simulation always update normally. This only saves work
+for unchanged views; continuous movement/rotation still regenerates geometry.
+Any future dynamic terrain, lighting or projection needs a new key/invalidation.
+
+Schema 5 adds `static_cache_enabled` and `static_reused`. The summary groups by
+requested mode and reports actual hits. Vertex columns count submitted geometry;
+`geometry_stream_bytes` counts rebuilt position/attribute streams, excluding reused
+static buffers. Requested cache ranges remain in `stream_cache_bytes`.
+
+Host checks (disable LeakSanitizer for the sandbox; ASan/UBSan remain active):
+
+```sh
+cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined wiiu-ver/perf-probe/tests/lifecycle_test.c -o /tmp/wiiu-lifecycle-test
+ASAN_OPTIONS=detect_leaks=0 /tmp/wiiu-lifecycle-test
+cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined wiiu-ver/perf-probe/tests/static_view_test.c -lm -o /tmp/wiiu-static-view-test
+ASAN_OPTIONS=detect_leaks=0 /tmp/wiiu-static-view-test
+```
+
+Lifecycle checks exercise foreground → release → background → reacquisition →
+exit, audio stop/restore, deferred cleanup, no repeated polling after exit, and
+HBL HOME-denied handling. Reuse checks exercise every key component (including
+one-ULP changes), nonfinite keys, bypass, restart invalidation and empty buffers.
+
+### Combined static-scene optimization candidate (schema 6)
+
+The owner requested more local optimization work without another hardware trip.
+The HOME-exit-v1 candidate has **not been tested on hardware**; no new lifecycle
+log exists yet. Its fixes and tracing are retained, and successful shutdown is
+still pending. The combined candidate enables static-view reuse by default.
+
+Changes apply without reducing population, view distance, output size or detail:
+
+- Unchanged camera/player-window keys reuse terrain/scenery/water/sky GPU streams.
+  Animated actors, weapon and simulation still update. D-pad Right toggles reuse;
+  `TC` means tiled/cache enabled and `TB` means tiled/cache bypassed.
+- Terrain conservative bounds are precomputed for the static map at load time.
+  A 256-entry height-span radius table avoids repeated square roots. Bounds cost
+  8 MiB per loaded map and are retained across hunt restarts on the same map.
+- Rotated terrain atlas UVs are precomputed per texture/quarter-turn/corner.
+  Visible cells project four unique corners once, then emit the original six
+  triangle vertices with the same topology, UVs, lighting and clip projection.
+- Scenery scans cache the occupied cells in the current 149x149 window in the
+  original near-first order. The candidate list rebuilds when the player crosses
+  a map-cell boundary. Per-object culling/cache use remains camera-dependent.
+  This avoids revisiting every empty cell while turning or moving within a cell.
+  The list contains at most 22,201 indices (under 87 KiB on the Wii U).
+
+Schema 6 metadata identifies terrain precomputation and scenery candidate lists;
+frame columns are unchanged from schema 5. The summary supports schemas 1–6.
+No new physical-console FPS result is claimed. Static-view reuse mainly helps
+unchanged views; terrain/candidate precomputation also applies during motion.
+D-pad Left still toggles tiled versus linear atlases for reference comparisons.
+
+Original-data regression coverage compares every emitted float/count against
+hashes captured from the previous renderer at 20 views on each of five maps
+(100 views total, including edges, landing, rotations and pitch extremes).
+It also checks output capacity sentinels and independently verifies scenery
+candidate ordering against rectangular enumeration sorted by ring/row/column.
+Run with your original data so this test actually exercises all maps:
+
+```sh
+C2_ORIGINAL_HUNTDAT="$PWD/source/c2-original/HUNTDAT" cargo test --offline --release --manifest-path pc-ver/Cargo.toml -p c2-core --no-default-features --features portable-hunt --test wiiu_static_scene
+```
+
+These checks, C sanitizer checks, Rust release build and Wii U RPX build pass.
+Expected terrain-stream hashes depend on the original stock maps/resources.
+Generated CAR/RSC/MAP data is not bundled with the tests.
+
+### Resident scenery window candidate (schema 7)
+
+The [static-scene hardware capture](hardware-logs/2026-10-29-static-scene-results.md)
+confirms working system-menu exit and an average 33.48 ms for unchanged views.
+Rebuilt views still average 77.22 ms, including 22.02 ms scenery generation/copy.
+The next candidate targets this rotation-dependent scenery cost.
+
+Scenery geometry for all directions within the current 149x149 window is written
+once into the existing position/attribute GPU streams. Every changed view culls
+object bounds exactly as before, then submits visible contiguous ranges in the
+same near-first order. Invisible gaps are not merged or drawn. Vertex data and
+cutout ordering match the old stream. No shader, population, view-distance or
+resolution change is involved.
+
+The resident window is rebuilt at cell changes, restart and residency toggles.
+It uses the existing 524,288-vertex buffers (16 MiB total). Preflight rejects an
+oversized or overflowing total before writing anything; dense windows use the
+old visible-stream path for that anchor. Initial/cell-crossing costs and extra
+draw calls need measurement. Resident metadata and the bounded range list add
+under 1 MiB. No additional GPU geometry allocation is made. Terrain continues
+using the precomputed CPU path and exact-view cache.
+
+**PLUS** on GamePad/Pro Controller toggles resident scenery. The overlay starts
+`TCR` for tiled/cache/resident, `TCF` for tiled/cache/dense-window fallback, or
+`TCB` with residency bypassed. D-pad Left and Right retain their atlas/cache A/B
+controls. To compare residency, leave atlas and exact-view cache on, rotate in
+place in each PLUS mode, then move across cell boundaries. Stationary views
+already benefit from exact-view reuse in both modes. Do not reduce population
+or distance to compare versions.
+
+Schema 7 adds `resident_enabled`, `resident_active`, `scenery_ranges` (per view),
+and `scenery_uploaded_v`. The summary groups by requested residency and reports
+active frames, range counts and uploaded vertices. Submitted scenery vertices
+still count visible geometry; rebuilt-stream bytes count actual resident uploads
+or legacy writes. Capture ranges that fall back as well as resident windows.
+
+Additional original-map regression (100 scenery views plus the existing 100
+terrain views) compares all emitted position/UV/light floats and vertex counts
+to the old renderer and checks range coalescing and capacity boundaries:
+
+```sh
+C2_ORIGINAL_HUNTDAT="$PWD/source/c2-original/HUNTDAT" cargo test --offline --release --manifest-path pc-ver/Cargo.toml -p c2-core --no-default-features --features portable-hunt --test wiiu_resident_scenery --test wiiu_static_scene
+```
+
+Rust release/RPX builds and these checks pass. Physical-console rendering,
+rotation/cell-crossing costs, fallback behavior and draw-call overhead are not
+yet validated for this candidate. The working static-scene-v1 package is retained.
