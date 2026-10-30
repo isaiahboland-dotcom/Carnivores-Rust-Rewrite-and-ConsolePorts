@@ -49,10 +49,12 @@ Four GPU savings for thick jungle, after the mip levels:
   16-byte stream with the same value in every vertex of a draw; it is now a
   vertex-shader uniform set per draw, and the seven fog buffers are gone.
 
-Capture schema 11 (`tv_world`, `tv_target=` in the header). Untested in Cemu
-and on hardware: the 16-bit channel order is from the R600 format
-(`FMT_1_5_5_5`: red in the low bits) and the CPU writes native 16-bit words,
-so a red/blue swap or wrong-looking ground would point there.
+Capture schema 11 (`tv_world`, `tv_target=` in the header). The first build
+packed red in the low bits and alpha on top (`FMT_1_5_5_5`); on the console
+the colours came out scrambled ("as if inverted", owner, 2026-10-30).
+`GX2_SURFACE_FORMAT_UNORM_R5_G5_B5_A1` is OpenGL's `5_5_5_1` (red in the top
+five bits, alpha the lowest; Cemu maps it so), the low-red order being
+`A1_B5_G5_R5`: the texels are now packed red high, alpha low.
 
 ## 2026-10-30 — Wii U: mip levels for the world's atlases
 
