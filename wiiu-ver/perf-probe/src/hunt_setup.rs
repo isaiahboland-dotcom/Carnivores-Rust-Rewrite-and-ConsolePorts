@@ -58,6 +58,68 @@ pub fn model_for_species(id: usize) -> usize {
     }
 }
 
+/// Everything the hunt menu picks, shared with C (`HuntChoice` in menu.h).
+/// Flags are 0 or 1.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HuntChoice {
+    /// Area 0..5 (`AREAn`, n = area + 1).
+    pub area: u32,
+    /// 0 dawn, 1 day, 2 night.
+    pub time: u32,
+    /// Bit n: huntable slot n (AI 10 + n).
+    pub animals: u32,
+    /// Bit n: `WEAPON_FILES[n]`.
+    pub weapons: u32,
+    pub radar: u32,
+    pub camo: u32,
+    pub scent: u32,
+    pub double_ammo: u32,
+    pub tranq: u32,
+    pub observer: u32,
+    /// Animals' running speed, 50..=100 (%).
+    pub run_pct: u32,
+    pub blood: u32,
+    pub death_anim: u32,
+    /// The small animals that score nothing.
+    pub ambient: u32,
+    /// Descriptions in US units (`DINOn.TXU`) instead of metric (`.TXM`).
+    pub units_us: u32,
+}
+impl Default for HuntChoice {
+    fn default() -> Self {
+        Self {
+            area: 0,
+            time: 1,
+            animals: 1,
+            weapons: 1,
+            radar: 1,
+            camo: 0,
+            scent: 0,
+            double_ammo: 0,
+            tranq: 0,
+            observer: 0,
+            run_pct: 100,
+            blood: 1,
+            death_anim: 1,
+            ambient: 1,
+            units_us: 0,
+        }
+    }
+}
+impl HuntChoice {
+    /// The menu's times in order: dawn, day, night.
+    pub fn time_of_day(&self) -> c2_core::area::TimeOfDay {
+        use c2_core::area::TimeOfDay;
+        match self.time {
+            0 => TimeOfDay::Dusk,
+            2 => TimeOfDay::Night,
+            _ => TimeOfDay::Day,
+        }
+    }
+}
+
+#[allow(dead_code)] // the host tests' shorthand
 pub fn setup(
     area: &Area,
     definitions: &str,
@@ -67,10 +129,22 @@ pub fn setup(
     weapons: u32,
     seed: u32,
 ) -> Result<(Hunt, Vec<Car>), i32> {
+    let choice = HuntChoice { animals: selected, radar: radar as u32, weapons, ..Default::default() };
+    setup_with(area, definitions, assets, &choice, seed)
+}
+
+pub fn setup_with(
+    area: &Area,
+    definitions: &str,
+    assets: &[&[u8]],
+    choice: &HuntChoice,
+    seed: u32,
+) -> Result<(Hunt, Vec<Car>), i32> {
+    let (selected, weapons) = (choice.animals, if choice.observer != 0 { 0 } else { choice.weapons });
     if assets.len() != MODEL_COUNT
         || selected == 0
         || selected & !TARGET_MASK != 0
-        || weapons == 0
+        || (weapons == 0 && choice.observer == 0)
         || weapons & !((1 << WEAPON_COUNT) - 1) != 0
     {
         return Err(-10);
@@ -132,33 +206,36 @@ pub fn setup(
         infos.push(info);
         present = present | Bits::bit(infos.len() - 1);
     }
-    let hunt = new_hunt(area, species, infos, anims, present, selected, radar, seed)?;
+    let hunt = new_hunt(area, species, infos, anims, present, choice, seed)?;
     Ok((hunt, cars))
 }
 
+/// A new hunt like `previous` (same animals, weapons and options).
+#[allow(dead_code)] // the host tests' shorthand
 pub fn restart(area: &Area, previous: &Hunt, seed: u32) -> Result<Hunt, i32> {
-    let selected = TARGET_AI.iter().enumerate().fold(0, |mask, (i, ai)| {
+    let animals = TARGET_AI.iter().enumerate().fold(0, |mask, (i, ai)| {
         mask | if previous.opts.targets.has(*ai as usize) {
             1 << i
         } else {
             0
         }
     });
+    let ambient = previous.herd.chars.iter().any(|c| c.ctype < AMBIENT_COUNT) as u32;
+    let choice = HuntChoice { animals, ambient, ..Default::default() };
+    restart_with(area, previous, &choice, seed)
+}
+
+/// A new hunt with `previous`'s loaded animals and weapons, its options
+/// (camouflage, blood...) and `choice`'s animals, ambient population and
+/// double ammo.
+pub fn restart_with(area: &Area, previous: &Hunt, choice: &HuntChoice, seed: u32) -> Result<Hunt, i32> {
     let weapons = previous.weapons.info.clone();
     let anims = previous.weapons.anim_ms.clone();
     let present = (0..weapons.len()).fold(Bits::NONE, |bits, i| bits | Bits::bit(i));
-    let mut hunt = new_hunt(
-        area,
-        previous.herd.species.clone(),
-        weapons,
-        anims,
-        present,
-        selected,
-        previous.opts.radar,
-        seed,
-    )?;
-    hunt.opts.blood = previous.opts.blood;
-    hunt.opts.death_anim = previous.opts.death_anim;
+    let mut hunt = new_hunt(area, previous.herd.species.clone(), weapons, anims, present, choice, seed)?;
+    let targets = hunt.opts.targets;
+    hunt.opts = previous.opts;
+    hunt.opts.targets = targets;
     Ok(hunt)
 }
 
@@ -168,10 +245,10 @@ fn new_hunt(
     info: Vec<WeaponInfo>,
     anim_ms: Vec<[i32; 4]>,
     present: Bits,
-    selected: u32,
-    radar: bool,
+    choice: &HuntChoice,
     seed: u32,
 ) -> Result<Hunt, i32> {
+    let selected = choice.animals;
     let player = Player::new(area, *area.landings.first().ok_or(-11)?);
     let mut herd = Herd {
         species,
@@ -196,7 +273,8 @@ fn new_hunt(
     let first_target = rng.r_rand(selected_types.len() as i32 - 1) as usize;
     // Bounded rejection sampling across the walkable map, using the shared
     // slope/water/object collision rules. No target ring around the hunter.
-    for slot in 0..POPULATION {
+    let first_slot = if choice.ambient != 0 { 0 } else { AMBIENT_POPULATION };
+    for slot in first_slot..POPULATION {
         let id = if slot < AMBIENT_POPULATION {
             slot % AMBIENT_COUNT
         } else {
@@ -242,7 +320,7 @@ fn new_hunt(
         }
         herd.chars.push(ch);
     }
-    let weapons = Weapons::new(info, anim_ms, present, false);
+    let weapons = Weapons::new(info, anim_ms, present, choice.double_ammo != 0);
     let save = Save {
         player_name_raw: [0; 128],
         reg_number: 0,
@@ -261,7 +339,14 @@ fn new_hunt(
         rng,
         HuntOptions {
             targets,
-            radar,
+            radar: choice.radar != 0,
+            camo: choice.camo != 0,
+            scent: choice.scent != 0,
+            tranq: choice.tranq != 0,
+            observer: choice.observer != 0,
+            dino_run_k: choice.run_pct.clamp(50, 100) as f32 / 100.0,
+            blood: choice.blood != 0,
+            death_anim: choice.death_anim != 0,
             distant_ai: true,
             ..Default::default()
         },
@@ -271,6 +356,7 @@ fn new_hunt(
 }
 
 /// Bit 0 disables blood; bit 1 skips death playback. Zero keeps original behavior.
+#[allow(dead_code)] // the host tests' shorthand
 pub fn configure(hunt: &mut Hunt, disabled: u32) {
     hunt.opts.blood = disabled & 1 == 0;
     hunt.opts.death_anim = disabled & 2 == 0;

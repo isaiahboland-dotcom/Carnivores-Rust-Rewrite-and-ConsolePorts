@@ -11,7 +11,12 @@ def assets():
     files += [f'AREAS/AREA{i}.{ext}' for i in range(1, 6) for ext in ['MAP', 'RSC']]
     files += [f'MENU/PICS/AREA{i}.TGA' for i in range(1, 6)]
     files += [f'MENU/PICS/{prefix}{i}.TGA' for prefix in ['DINO', 'CALL'] for i in range(1, 10)]
-    files += [f'MENU/PICS/WEAPON{i}.TGA' for i in range(1,7)] + ['MENU/PICS/EQUIP2.TGA']
+    files += [f'MENU/PICS/WEAPON{i}.TGA' for i in range(1,7)] + [f'MENU/PICS/EQUIP{i}.TGA' for i in range(1, 5)]
+    # The menu's descriptions (src/menu.rs FILES).
+    files += [f'MENU/TXT/AREA{i}.TXT' for i in range(1, 6)]
+    files += [f'MENU/TXT/DINO{i}.{ext}' for ext in ['TXM', 'TXU'] for i in range(1, 10)]
+    files += [f'MENU/TXT/WEAPON{i}.TXT' for i in range(1, 7)]
+    files += [f'MENU/TXT/{n}.NFO' for n in ['CAMOFLAG', 'RADAR', 'SCENT', 'DOUBLE', 'TRANQ', 'OBSERVE', 'DAY1', 'DAY2', 'DAY3']]
     files += [f'SOUNDFX/CALLS/CALL{i}_{v}.WAV' for i in range(1, 10) for v in 'ABC']
     files += [f'SOUNDFX/STEPS/{prefix}{i}.WAV' for prefix in ['HWALK', 'FOOTW'] for i in range(1, 4)]
     files += ['SOUNDFX/A_UNDERW.WAV'] + [f'SOUNDFX/HUM_DIE{i}.WAV' for i in range(1, 5)]

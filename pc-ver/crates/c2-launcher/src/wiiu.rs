@@ -55,7 +55,24 @@ pub fn assets() -> Vec<String> {
     for i in 1..=6 {
         v.push(format!("MENU/PICS/WEAPON{i}.TGA"));
     }
-    v.push("MENU/PICS/EQUIP2.TGA".into());
+    for i in 1..=4 {
+        v.push(format!("MENU/PICS/EQUIP{i}.TGA"));
+    }
+    // The menu's descriptions (src/menu.rs `FILES`).
+    for i in 1..=5 {
+        v.push(format!("MENU/TXT/AREA{i}.TXT"));
+    }
+    for ext in ["TXM", "TXU"] {
+        for i in 1..=9 {
+            v.push(format!("MENU/TXT/DINO{i}.{ext}"));
+        }
+    }
+    for i in 1..=6 {
+        v.push(format!("MENU/TXT/WEAPON{i}.TXT"));
+    }
+    for n in ["CAMOFLAG", "RADAR", "SCENT", "DOUBLE", "TRANQ", "OBSERVE", "DAY1", "DAY2", "DAY3"] {
+        v.push(format!("MENU/TXT/{n}.NFO"));
+    }
     for i in 1..=9 {
         for c in ['A', 'B', 'C'] {
             v.push(format!("SOUNDFX/CALLS/CALL{i}_{c}.WAV"));
@@ -140,7 +157,7 @@ mod tests {
     #[test]
     fn asset_names_are_unique_once_flattened() {
         let a = assets();
-        assert_eq!(a.len(), 102);
+        assert_eq!(a.len(), 143);
         let mut names: Vec<&str> = a.iter().filter_map(|r| r.rsplit('/').next()).collect();
         names.sort_unstable();
         names.dedup();
