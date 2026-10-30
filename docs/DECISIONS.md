@@ -2,6 +2,24 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-30 — Wii U: the scope zooms; leaving from the menu with HOME
+
+- **Scope.** The original multiplies `CameraW` / `CameraH` by 3 in optic mode
+  (`Hunt2.cpp`), and `RenderNearModel` draws the gun with the same camera,
+  so the world *and* the sniper's scope frame are magnified. The Wii U drew
+  both at 1x: the frame showed as a small square over an unzoomed view. Now
+  `Hunt::zoom()` scales the world in the vertex shader (`uZoom`, fog modes
+  below 0 only, after the fog distance, so fog and the CPU culling are as
+  before; the culling stays wider than the zoomed view, never narrower) and
+  the view model on the CPU, widened from 4:3 to 16:9 as the PC does. The
+  cross-hairs (`DrawOpticCross`, at the gun's last vertex) are two overlay
+  quads, shown by the PC's rule (near the middle of the view).
+- **HOME from the menu.** The owner's hang (2026-10-30 log: foreground
+  release, EXITING, then nothing): after the loop, the menu waited for the
+  GPU with `GX2DrawDone` although WHB's release callback had waited already
+  and the system owned the GPU; that wait never returns. The menu now skips
+  it when exiting, as the hunt's cleanup already did, and logs its cleanup.
+
 ## 2026-10-30 — Wii U: 720p TV world, opaque terrain shader, 16-bit atlases, 32-byte vertices
 
 Four GPU savings for thick jungle, after the mip levels:

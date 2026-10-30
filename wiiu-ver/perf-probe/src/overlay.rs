@@ -2,7 +2,8 @@
 //! (bottom right), the trophy plaque (`TROPHY_G.TGA`, or `TROPHY.TGA` in the
 //! trophy room) with the trophy's record, messages ("Trophy!", survival
 //! waves), a survival's wave and kills, the questions waiting for A / B,
-//! the original's map over the view (`DrawHMap`, R) and the button hints.
+//! the original's map over the view (`DrawHMap`, R), the button hints and
+//! the scope's cross-hairs (`DrawOpticCross`).
 //! Drawn into regions of one small texture, each only when its text
 //! changes; C shows the visible ones as quads over the TV and GamePad view.
 use crate::menu::{Menu, AREAS, PIC_MAP_FRAME, PIC_PLAQUE_HUNT, PIC_PLAQUE_ROOM, WEAPONS};
@@ -17,7 +18,7 @@ pub const TEX_H: usize = 1024;
 const SCALE: f32 = 1.5;
 /// Quads C may be asked to draw (`REGIONS`), 6 vertices of 4 floats each for
 /// positions and as many for texture coordinates.
-pub const MAX_QUADS: usize = 7;
+pub const MAX_QUADS: usize = 9;
 pub const QUAD_FLOATS: usize = 24;
 
 const PLAQUE: usize = 0;
@@ -27,6 +28,8 @@ const PROMPT: usize = 3;
 const STATUS: usize = 4;
 const MAP: usize = 5;
 const HINTS: usize = 6;
+const CROSS_H: usize = 7;
+const CROSS_V: usize = 8;
 /// Each region's place in the texture (logical units at `SCALE`).
 const REGIONS: [Rect; MAX_QUADS] = [
     rect(0.0, 0.0, 280.0, 142.0),
@@ -37,6 +40,9 @@ const REGIONS: [Rect; MAX_QUADS] = [
     // The map frame at one texel per original pixel (276x290).
     rect(0.0, 360.0, 276.0 / SCALE, 290.0 / SCALE),
     rect(0.0, 560.0, 682.0, 44.0),
+    // A solid patch each for the cross-hairs' two bars, stretched.
+    rect(0.0, 610.0, 8.0, 8.0),
+    rect(12.0, 610.0, 8.0, 8.0),
 ];
 /// The map frame's size and where the overview sits in it (`GenerateMapImage`).
 const FRAME: (usize, usize) = (276, 290);
@@ -50,6 +56,8 @@ const LIGHT: Rgba = [230, 230, 230, 255];
 const GREY: Rgba = [191, 191, 191, 255];
 const YELLOW: Rgba = [191, 191, 0, 255];
 const SHADOW: Rgba = [0, 0, 0, 255];
+/// `DrawOpticCross`: 0x000010 at half strength.
+const CROSS: Rgba = [0, 0, 16, 128];
 
 /// The last kill (6 s) and the last message (2 s), from the hunt's events.
 #[derive(Default)]
@@ -110,6 +118,8 @@ pub struct View<'a> {
     pub ask: Option<Ask>,
     pub units_us: bool,
     pub night: bool,
+    /// Where the scope's cross-hairs go (NDC), while looking through one.
+    pub cross: Option<[f32; 2]>,
 }
 
 impl Overlay {
@@ -167,6 +177,14 @@ impl Overlay {
                 })]
             }
             HINTS => alloc::vec![hints(v)?],
+            // The PC's rule: only near the middle of the view.
+            CROSS_H | CROSS_V => {
+                let [x, y] = v.cross?;
+                if x.abs() > 1.0 || y.abs() > 0.5 {
+                    return None;
+                }
+                alloc::vec![String::new()]
+            }
             STATUS => {
                 let s = h.survival.as_ref()?;
                 let wave = if s.wave == 0 { String::from("Get ready") } else { format!("Wave {}", s.wave) };
@@ -186,6 +204,7 @@ impl Overlay {
         let r = REGIONS[region];
         let font = menu.font();
         match region {
+            CROSS_H | CROSS_V => c.fill(r, CROSS),
             MAP => {
                 let base = self.map_base.get_or_insert_with(|| map_base(menu, v.area));
                 let (x0, y0) = ((r.x * SCALE) as usize, (r.y * SCALE) as usize);
@@ -303,6 +322,16 @@ impl Overlay {
                 (r, rect((WIDTH - w) * 0.5, HEIGHT * 0.5 - (FRAME.1 as f32 * 0.5 + 6.0) * 2.0 / SCALE, w, h))
             }
             HINTS => (r, rect((WIDTH - r.w) * 0.5, HEIGHT - r.h - 4.0, r.w, r.h)),
+            CROSS_H | CROSS_V => {
+                // The patch's middle (no blending with its cleared edge);
+                // bars a twelfth of the width each way, one pixel thick.
+                let src = rect(r.x + 2.0, r.y + 2.0, 4.0, 4.0);
+                let [x, y] = v.cross.unwrap_or([0.0, 0.0]);
+                let (sx, sy) = ((x + 1.0) * 0.5 * WIDTH, (1.0 - y) * 0.5 * HEIGHT);
+                let (w, t) = (WIDTH / 12.0, 1.0);
+                let dst = if region == CROSS_H { rect(sx - w, sy, 2.0 * w, t) } else { rect(sx, sy - w, t, 2.0 * w) };
+                (src, dst)
+            }
             KILL | STATUS => {
                 let (bw, bh) = box_size(menu, lines, 20.0);
                 let src = rect(r.x + r.w - bw, r.y, bw, bh);

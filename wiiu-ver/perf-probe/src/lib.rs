@@ -104,6 +104,9 @@ struct Simulation {
     saved_room: c2_formats::sav::Save,
     /// Y at the exit prompt.
     restart: bool,
+    /// The view model's last vertex on screen (NDC), where the scope's
+    /// cross-hairs go (`DrawOpticCross`); set as the gun is posed.
+    aim: core::cell::Cell<Option<[f32; 2]>>,
 }
 
 /// Input bits beyond the movement ones (main.c): the exit prompt (PLUS) and
@@ -156,6 +159,15 @@ pub extern "C" fn c2_hunt_dead(ptr: *mut core::ffi::c_void, shots: *mut u32, kil
     let k = if sim.hunt.survival.is_some() { sim.hunt.kills.len() as u32 } else { sim.hunt.successes };
     unsafe { *shots = sim.hunt.shots_made; *kills = k; }
     hunt_setup::death_menu_ready(&sim.hunt, sim.death_ms) as u32
+}
+
+/// The view's magnification: the scope's (3x, or a dialect weapon's) or
+/// the binoculars'; 1 otherwise. The original scales `CameraW` / `CameraH`,
+/// so the world and the view model both zoom.
+#[no_mangle]
+pub extern "C" fn c2_hunt_zoom(ptr: *mut core::ffi::c_void) -> f32 {
+    let sim = unsafe { &*ptr.cast::<Simulation>() };
+    sim.hunt.zoom()
 }
 
 #[no_mangle]
@@ -317,6 +329,7 @@ pub extern "C" fn c2_move_create(
         ask: None,
         saved_room: hunt_setup::new_save(),
         restart: false,
+        aim: core::cell::Cell::new(None),
     };
     unsafe {
         *result = Box::into_raw(Box::new(sim)).cast();
@@ -732,6 +745,7 @@ pub extern "C" fn c2_actor_vertices(ptr: *mut core::ffi::c_void, positions: *mut
             }
         }
     };
+    if mode != 0 { sim.aim.set(None); }
     if mode != 0 && sim.hunt.health <= 0 { return 0; }
     if mode == 0 {
         let (eye, yaw, pitch) = sim.hunt.camera();
@@ -758,11 +772,22 @@ pub extern "C" fn c2_actor_vertices(ptr: *mut core::ffi::c_void, positions: *mut
             if let Some(posed) = c2_core::model::pose_car(anim, car.mesh.vertices.len(), (ftime.max(0) as u32).min(duration - 1)) {
                 let (da, db) = sim.hunt.weapons.sway(sim.hunt.real_time);
                 let (sa, ca, sb, cb) = (libm::sinf(-da), libm::cosf(-da), libm::sinf(-db), libm::cosf(-db));
-                emit(model, &posed, model_slot, &|v| {
-                    let x = v[0]*ca + v[2]*sa; let vz = v[2]*ca - v[0]*sa;
+                // Through a scope the view model zooms with the world (the
+                // original's `CameraW` x3); its frame, made for 4:3, is
+                // widened to the 16:9 screen as on the PC.
+                let zoom = sim.hunt.zoom();
+                let widen = if sim.hunt.weapons.optic_mode { (16.0 / 9.0) / (4.0 / 3.0) } else { 1.0 };
+                let project = |v: [f32; 3]| {
+                    let vx = v[0] * widen;
+                    let x = vx*ca + v[2]*sa; let vz = v[2]*ca - vx*sa;
                     let y = v[1]*cb - vz*sb; let depth = -(vz*cb + v[1]*sb);
-                    [x*0.75, y*1.333, hunt_setup::gun_clip_z(depth), depth]
-                });
+                    [x*0.75*zoom, y*1.333*zoom, hunt_setup::gun_clip_z(depth), depth]
+                };
+                emit(model, &posed, model_slot, &project);
+                if let Some(&last) = posed.last() {
+                    let p = project(last);
+                    if p[3] > 0.0 { sim.aim.set(Some([p[0] / p[3], p[1] / p[3]])); }
+                }
             }
         }
         }
@@ -1251,6 +1276,7 @@ pub extern "C" fn c2_overlay_draw(ui: *mut core::ffi::c_void, ptr: *mut core::ff
         ask: sim.ask,
         units_us: m.choice.units_us != 0,
         night: sim.choice.time == 2,
+        cross: if sim.hunt.scope_cross() { sim.aim.get() } else { None },
     };
     let (quads, changed) = sim.overlay.draw(m, &view, &mut overlay::canvas(px, pitch as usize), pos, uv);
     quads as u32 | if changed { 256 } else { 0 }

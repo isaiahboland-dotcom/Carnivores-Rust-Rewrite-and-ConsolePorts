@@ -5,6 +5,8 @@ uniform vec4 uEye;
 uniform vec4 uAngles;
 // The fog colour and mode, the same for a whole draw.
 uniform vec4 uFog;
+// x: the scope or binoculars' zoom for world draws (fog mode < 0), else 1.
+uniform vec4 uZoom;
 out vec2 vTex;
 out float vLight;
 out float vCutout;
@@ -29,7 +31,7 @@ void main() {
                         (32768.0 / (32768.0 - 16.0)) * (depth - 16.0), depth);
         vFog.a = clamp((length(vec3(side, up, depth)) - fogStart) / (18944.0 - fogStart), 0.0, 1.0);
     }
-    gl_Position = position;
+    gl_Position = vec4(position.xy * uZoom.x, position.zw);
     vTex = aTexLight.xy;
     vLight = aTexLight.z;
     vCutout = aTexLight.w;

@@ -61,6 +61,7 @@ extern uint32_t c2_hunt_outcome(void *);
 extern void c2_hunt_finish(void *, void *, uint32_t);
 extern void c2_set_clock(void *, int32_t, int32_t, int32_t, int32_t, int32_t);
 extern uint32_t c2_death_active(void *);
+extern float c2_hunt_zoom(void *);
 extern int32_t c2_actor_atlas(void *, uint8_t *, uint32_t);
 extern uint32_t c2_actor_vertices(void *, float *, float *, uint32_t, uint32_t);
 extern int32_t c2_fx_load(void *, uint32_t, const uint8_t *, uint32_t);
@@ -364,7 +365,9 @@ static int32_t load_file(const char *name, uint8_t **data, uint32_t *len) {
  * bytes a vertex. The camera and the fog (colour, and the mode in w) are
  * uniforms, set per draw: -1 sky, -2 world space with object fog, -3
  * CPU-projected terrain, -4 world space with terrain fog, 0 none. */
-typedef struct { WHBGfxShaderGroup group; GX2UniformVar *eye, *angles, *fog; uint32_t sampler; } WorldShader;
+typedef struct { WHBGfxShaderGroup group; GX2UniformVar *eye, *angles, *fog, *zoom; uint32_t sampler; } WorldShader;
+/* The scope's zoom this frame (c2_hunt_zoom), for the world draws only. */
+static float world_zoom = 1.0f;
 static void world_shader_load(WorldShader *w, const unsigned char *gsh) {
     if (!WHBGfxLoadGFDShaderGroup(&w->group, 0, gsh)
         || !WHBGfxInitShaderAttribute(&w->group, "aPosition", 0, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32)
@@ -373,7 +376,8 @@ static void world_shader_load(WorldShader *w, const unsigned char *gsh) {
     w->eye = GX2GetVertexUniformVar(w->group.vertexShader, "uEye");
     w->angles = GX2GetVertexUniformVar(w->group.vertexShader, "uAngles");
     w->fog = GX2GetVertexUniformVar(w->group.vertexShader, "uFog");
-    if (!w->eye || !w->angles || !w->fog) OSFatal("Scenery probe: camera or fog uniforms missing");
+    w->zoom = GX2GetVertexUniformVar(w->group.vertexShader, "uZoom");
+    if (!w->eye || !w->angles || !w->fog || !w->zoom) OSFatal("Scenery probe: camera or fog uniforms missing");
     if (w->group.pixelShader->samplerVarCount != 1) OSFatal("Terrain texture probe: shader sampler missing");
     w->sampler = w->group.pixelShader->samplerVars[0].location;
 }
@@ -381,6 +385,8 @@ static void world_shader_use(const WorldShader *w, const float fog[3], float mod
     GX2SetFetchShader(&w->group.fetchShader); GX2SetVertexShader(w->group.vertexShader); GX2SetPixelShader(w->group.pixelShader);
     const float f[4] = {fog[0], fog[1], fog[2], mode};
     GX2SetVertexUniformReg(w->fog->offset, 4, f);
+    const float z[4] = {mode < 0.0f ? world_zoom : 1.0f, 0.0f, 0.0f, 0.0f};
+    GX2SetVertexUniformReg(w->zoom->offset, 4, z);
 }
 static void world_camera(const WorldShader *w, void *sim) {
     float camera[8]; c2_scenery_camera(sim, camera);
@@ -554,11 +560,15 @@ static int run_menu(void *ui, int death, uint32_t shots, uint32_t kills) {
         }
         if (final_frame) break;
     }
-    /* Each menu frame ends with WHBGfxFinishRender completion. */
-    GX2DrawDone();
+    /* Each menu frame ends with WHBGfxFinishRender completion. After HOME,
+     * WHB's release callback already waited and the system owns the GPU:
+     * waiting again there never returns (owner's 2026-10-30 hang). */
+    if (!lifecycle_exiting) GX2DrawDone();
+    if (lifecycle_exiting) lifecycle_checkpoint("menu: HOME exit; freeing menu resources");
     GX2RDestroyBufferEx(&menu_pos, 0); GX2RDestroyBufferEx(&menu_attr, 0);
     free(tex[0].surface.image); free(tex[1].surface.image);
     WHBGfxFreeShaderGroup(&shader); if (!death) KPADShutdown();
+    if (lifecycle_exiting) lifecycle_checkpoint("menu: resources freed");
     OSReport("C2 menu: exit action %u\n", action);
     if (death) return action == MENU_RESTART ? HUNT_RESTART : HUNT_MAIN_MENU;
     if (action == MENU_EXIT) SYSLaunchMenu();
@@ -1191,6 +1201,7 @@ end_load:
             GX2Texture *actor_tex = !tiled_atlases ? &actor_atlas : mipmaps ? &tiled_actor_atlas : &flat_actor_atlas;
             perf.tiled_atlases = atlas_mode; perf.vsync = vsync; perf.static_cache_enabled = static_cache_enabled;
             int death_active = c2_death_active(sim);
+            world_zoom = c2_hunt_zoom(sim);
             int show_map[2] = {map_view_visible(death_active, 0, gamepad_game, 0),
                               map_view_visible(death_active, 0, gamepad_game, 1)};
             int world_visible = !show_map[0] || !show_map[1];
