@@ -1,6 +1,9 @@
 #![allow(unsafe_code)] // Exercise the Wii U renderer's existing raw FFI stream API.
 extern crate alloc;
 #[allow(dead_code)]
+// The Wii U sources keep their own workspace's style.
+#[rustfmt::skip]
+#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
 #[path = "../../../../wiiu-ver/perf-probe/src/static_scene.rs"]
 mod static_scene;
 use c2_core::area::{Area, TimeOfDay};
@@ -53,7 +56,12 @@ fn original_maps_preserve_terrain_streams_and_scenery_order() {
                 area.map.height[cell.1 as usize * 1024 + cell.0 as usize] as f32 * 64.0 + 200.5,
                 cell.1 as f32 * 256.0 + 67.75,
             ];
-            for (yaw, pitch) in [(0.0, 0.0), (0.7, 0.4), (-2.1, -0.6), (3.14, 1.2)] {
+            for (yaw, pitch) in [
+                (0.0, 0.0),
+                (0.7, 0.4),
+                (-2.1, -0.6),
+                (core::f32::consts::PI, 1.2),
+            ] {
                 // Extra sentinels detect writes beyond the documented capacity.
                 let capacity = positions.len();
                 positions.push(f32::from_bits(0x12345678));
@@ -69,7 +77,7 @@ fn original_maps_preserve_terrain_streams_and_scenery_order() {
                         attrs.as_mut_ptr(),
                     )
                 } as usize;
-                assert!(count <= 148 * 148 * 6 && count % 6 == 0);
+                assert!(count <= 148 * 148 * 6 && count.is_multiple_of(6));
                 assert_eq!(positions[capacity].to_bits(), 0x12345678);
                 assert_eq!(attrs[capacity].to_bits(), 0x12345678);
                 positions.pop();
