@@ -31,3 +31,15 @@ Findings:
 `carnivores-trophies-v1.wuhb`, SHA-256
 `d4f145664e33ad298bcae1fae5bb290dbac9c806b6690d57194163019757b5ab`, on the SD
 with `TROPHY.MAP`, `TROPHY.RSC`, `TROPHY_G.TGA` and `TROPHY.TGA`.
+
+## Next candidate: mip levels (supersedes the two above)
+
+`carnivores-mipmaps-v1.wuhb`, SHA-256
+`ddb70bd0c94709adedbaabef2d044f25ceb7e5b7e3a3f8c4ca43491273f06bca`, built
+from the map-hints commit (so it also carries trophies and map/hints, still
+untested), on the SD as `carnivores-probe.wuhb`. The world's atlases get five
+mip levels (the jungle's GPU wait is the target); the 40 MiB of linear
+atlases are freed. To test: hunt AREA4 at dawn as before, then in thick
+jungle press R3 a few times (overlay `VM` with mips, `VF` without) and
+D-pad Left once each way (vsync off: `N`) so the capture shows the true GPU
+time in each mode.

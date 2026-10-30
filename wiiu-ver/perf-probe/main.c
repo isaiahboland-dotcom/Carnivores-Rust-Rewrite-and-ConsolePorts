@@ -224,7 +224,7 @@ static void perf_update(GX2Texture *tex, const Perf *p) {
     snprintf(line, sizeof(line), "CPU WATER %.1f SKY %.1f MAP %.1f", avg_ms(p->water,p->frames), avg_ms(p->sky,p->frames), avg_ms(p->map,p->frames)); perf_line(tex,2,line);
     snprintf(line, sizeof(line), "CPU DRAW %.1f PRESENT %.1f", avg_ms(p->draw,p->frames), avg_ms(p->present,p->frames)); perf_line(tex,3,line);
     snprintf(line, sizeof(line), "CPU SIM %.1f ACTORS %.1f", avg_ms(p->simulation,p->frames),avg_ms(p->actors,p->frames)); perf_line(tex,4,line);
-    snprintf(line, sizeof(line), "%c%c%c T %u S %u A %u", p->vsync ? 'V' : 'N', p->static_cache_enabled ? 'C' : 'B', p->resident_enabled ? (p->resident_active ? 'R' : 'F') : 'B', p->terrain_v,p->scenery_v,p->actor_v); perf_line(tex,5,line);
+    snprintf(line, sizeof(line), "%c%c%c%c T %u S %u A %u", p->vsync ? 'V' : 'N', p->tiled_atlases == 2 ? 'M' : p->tiled_atlases ? 'F' : 'L', p->static_cache_enabled ? 'C' : 'B', p->resident_enabled ? (p->resident_active ? 'R' : 'F') : 'B', p->terrain_v,p->scenery_v,p->actor_v); perf_line(tex,5,line);
     GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, tex->surface.image, tex->surface.imageSize);
 }
 #include "menu.h"
@@ -739,6 +739,10 @@ end_load:
     atlas.compMap = GX2_COMP_MAP(GX2_SQ_SEL_R, GX2_SQ_SEL_G, GX2_SQ_SEL_B, GX2_SQ_SEL_A);
     GX2InitTextureRegs(&atlas);
     GX2InitSampler(&sampler, GX2_TEX_CLAMP_MODE_CLAMP, GX2_TEX_XY_FILTER_MODE_LINEAR);
+    /* Bilinear within the nearest mip level: the same four texel reads as
+     * before, from a level that fits the texture cache in the distance. */
+    GX2InitSamplerZMFilter(&sampler, GX2_TEX_Z_FILTER_MODE_POINT, GX2_TEX_MIP_FILTER_MODE_POINT);
+    GX2InitSamplerLOD(&sampler, 0.0f, (float)(ATLAS_MIP_LEVELS - 1), 0.0f);
     if (shader.pixelShader->samplerVarCount != 1) OSFatal("Terrain texture probe: shader sampler missing");
     uint32_t sampler_location = shader.pixelShader->samplerVars[0].location;
     GX2Texture object_atlas = {0};
@@ -772,15 +776,26 @@ end_load:
     actor_atlas.compMap = GX2_COMP_MAP(GX2_SQ_SEL_R, GX2_SQ_SEL_G, GX2_SQ_SEL_B, GX2_SQ_SEL_A);
     GX2InitTextureRegs(&actor_atlas);
     GX2Texture tiled_atlas = {0}, tiled_object_atlas = {0}, tiled_actor_atlas = {0};
-    int tiled_available = atlas_tiled_copy(&atlas, &tiled_atlas)
-        && atlas_tiled_copy(&object_atlas, &tiled_object_atlas)
-        && atlas_tiled_copy(&actor_atlas, &tiled_actor_atlas);
+    GX2Texture flat_atlas = {0}, flat_object_atlas = {0}, flat_actor_atlas = {0};
+    int tiled_available = atlas_tiled_copy(&atlas, &tiled_atlas, &flat_atlas)
+        && atlas_tiled_copy(&object_atlas, &tiled_object_atlas, &flat_object_atlas)
+        && atlas_tiled_copy(&actor_atlas, &tiled_actor_atlas, &flat_actor_atlas);
     int tiled_atlases = tiled_available;
+    if (tiled_available) {
+        /* Nothing draws from the linear atlases once the tiled ones pass:
+         * give back their 40 MiB. */
+        free(atlas.surface.image); free(object_atlas.surface.image); free(actor_atlas.surface.image);
+        atlas.surface.image = object_atlas.surface.image = actor_atlas.surface.image = NULL;
+    }
+    /* R3 (right stick click): a diagnostic that draws the world without its
+     * mip levels, for a same-session A/B. Capture column tiled_atlases:
+     * 0 linear, 1 tiled without mips, 2 tiled with mips. */
+    int mipmaps = 1;
     /* D-pad Left: a diagnostic that turns vsync off (tearing) so a capture
      * shows how fast frames really are instead of 30/60 FPS steps. */
     int vsync = 1;
     GX2SetSwapInterval(1);
-    OSReport("C2 tiled atlas A/B available %d; D-pad LEFT switches layouts\n", tiled_available);
+    OSReport("C2 tiled atlases with mips available %d; R3 switches mips off\n", tiled_available);
     GX2RBuffer object_positions = {0}, object_attrs = {0};
     object_positions.flags = GX2R_RESOURCE_BIND_VERTEX_BUFFER | GX2R_RESOURCE_USAGE_CPU_WRITE | GX2R_RESOURCE_USAGE_GPU_READ;
     object_positions.elemSize = 4 * sizeof(float); object_positions.elemCount = 1048576; /* every original window fits (AREA4 peaks at 742,053) */
@@ -999,6 +1014,7 @@ end_load:
                 if (t & VPAD_BUTTON_PLUS) edges |= BTN_PLUS;
                 flags |= hunt_edges(edges, hud.prompt, trophy_room);
                 if (sample.trigger & VPAD_BUTTON_LEFT) { vsync = !vsync; GX2SetSwapInterval(vsync ? 1 : 0); }
+                if (sample.trigger & VPAD_BUTTON_STICK_R) mipmaps = !mipmaps;
                 if (sample.trigger & VPAD_BUTTON_R) tv_map = !tv_map;
                 if (sample.trigger & VPAD_BUTTON_MINUS) gamepad_game = !gamepad_game;
                 VPADTouchData touch = {0};
@@ -1052,6 +1068,7 @@ end_load:
                         if (t & WPAD_PRO_BUTTON_PLUS) edges |= BTN_PLUS;
                         flags |= hunt_edges(edges, hud.prompt, trophy_room);
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_LEFT) { vsync = !vsync; GX2SetSwapInterval(vsync ? 1 : 0); }
+                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_STICK_R) mipmaps = !mipmaps;
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_R) tv_map = !tv_map;
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_MINUS) gamepad_game = !gamepad_game;
                     }
@@ -1153,7 +1170,11 @@ end_load:
                 if (r & 256) GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, overlay_tex.surface.image, overlay_tex.surface.imageSize);
             }
             memset(&stream_upload, 0, sizeof(stream_upload));
-            perf.tiled_atlases = tiled_atlases; perf.vsync = vsync; perf.static_cache_enabled = static_cache_enabled;
+            int atlas_mode = tiled_atlases ? 1 + mipmaps : 0;
+            GX2Texture *terrain_tex = !tiled_atlases ? &atlas : mipmaps ? &tiled_atlas : &flat_atlas;
+            GX2Texture *object_tex = !tiled_atlases ? &object_atlas : mipmaps ? &tiled_object_atlas : &flat_object_atlas;
+            GX2Texture *actor_tex = !tiled_atlases ? &actor_atlas : mipmaps ? &tiled_actor_atlas : &flat_actor_atlas;
+            perf.tiled_atlases = atlas_mode; perf.vsync = vsync; perf.static_cache_enabled = static_cache_enabled;
             int death_active = c2_death_active(sim);
             int show_map[2] = {map_view_visible(death_active, 0, gamepad_game, 0),
                               map_view_visible(death_active, 0, gamepad_game, 1)};
@@ -1381,7 +1402,7 @@ end_load:
                 GX2SetDepthOnlyControl(TRUE, TRUE, GX2_COMPARE_FUNC_LESS);
                 GX2SetCullOnlyControl(GX2_FRONT_FACE_CCW, FALSE, FALSE);
                 GX2SetShaderMode(GX2_SHADER_MODE_UNIFORM_REGISTER);
-                GX2SetPixelTexture(tiled_atlases ? &tiled_atlas : &atlas, sampler_location); GX2SetPixelSampler(&sampler, sampler_location);
+                GX2SetPixelTexture(terrain_tex, sampler_location); GX2SetPixelSampler(&sampler, sampler_location);
                 GX2SetFetchShader(&shader.fetchShader); GX2SetVertexShader(shader.vertexShader); GX2SetPixelShader(shader.pixelShader);
                 GX2RSetAttributeBuffer(&positions, 0, positions.elemSize, 0); GX2RSetAttributeBuffer(&colors, 1, colors.elemSize, 0); GX2RSetAttributeBuffer(&terrain_fog, 2, terrain_fog.elemSize, 0);
                 if (terrain_resident.active) {
@@ -1395,7 +1416,7 @@ end_load:
                     float camera[8]; c2_scenery_camera(sim, camera);
                     GX2SetVertexUniformReg(eye_uniform->offset, 4, camera);
                     GX2SetVertexUniformReg(angles_uniform->offset, 4, camera + 4);
-                    GX2SetPixelTexture(tiled_atlases ? &tiled_object_atlas : &object_atlas, sampler_location);
+                    GX2SetPixelTexture(object_tex, sampler_location);
                     GX2RSetAttributeBuffer(&object_positions, 0, object_positions.elemSize, 0);
                     GX2RSetAttributeBuffer(&object_attrs, 1, object_attrs.elemSize, 0);
                     GX2RSetAttributeBuffer(&object_fog, 2, object_fog.elemSize, 0);
@@ -1408,14 +1429,14 @@ end_load:
                     float camera[8]; c2_scenery_camera(sim, camera);
                     GX2SetVertexUniformReg(eye_uniform->offset, 4, camera);
                     GX2SetVertexUniformReg(angles_uniform->offset, 4, camera + 4);
-                    GX2SetPixelTexture(tiled_atlases ? &tiled_actor_atlas : &actor_atlas, sampler_location);
+                    GX2SetPixelTexture(actor_tex, sampler_location);
                     GX2RSetAttributeBuffer(&actor_positions, 0, actor_positions.elemSize, 0);
                     GX2RSetAttributeBuffer(&actor_attrs, 1, actor_attrs.elemSize, 0);
                     GX2RSetAttributeBuffer(&actor_fog, 2, actor_fog.elemSize, 0);
                     GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, actor_count, 0, 1);
                 }
                 if (water_count) {
-                    GX2SetPixelTexture(tiled_atlases ? &tiled_atlas : &atlas, sampler_location);
+                    GX2SetPixelTexture(terrain_tex, sampler_location);
                     GX2RSetAttributeBuffer(&water_pos, 0, water_pos.elemSize, 0);
                     GX2RSetAttributeBuffer(&water_attr, 1, water_attr.elemSize, 0);
                     GX2RSetAttributeBuffer(&water_fog, 2, water_fog.elemSize, 0);
@@ -1430,7 +1451,7 @@ end_load:
                 if (weapon_count) {
                     GX2SetViewport(0.0f, 0.0f, target_w, target_h, 0.0f, 0.02f);
                     GX2SetDepthOnlyControl(TRUE, TRUE, GX2_COMPARE_FUNC_LESS);
-                    GX2SetPixelTexture(tiled_atlases ? &tiled_actor_atlas : &actor_atlas, sampler_location);
+                    GX2SetPixelTexture(actor_tex, sampler_location);
                     GX2RSetAttributeBuffer(&weapon_positions, 0, weapon_positions.elemSize, 0);
                     GX2RSetAttributeBuffer(&weapon_attrs, 1, weapon_attrs.elemSize, 0);
                     GX2RSetAttributeBuffer(&weapon_fog, 2, weapon_fog.elemSize, 0);
@@ -1473,7 +1494,7 @@ end_load:
             perf.wait += frame_wait + draw_wait; perf.frame += OSGetTime() - frame_start; perf.frames++;
             performance_frame(&perf, &before, frame_start, hunt_seed, tv_map, gamepad_game,
                 sim_ticks, gun_ticks, map_cache_ticks, overlay_ticks, frame_wait, draw_wait, gpu_tv, gpu_drc, vsync,
-                count, object_count, actor_count, weapon_count, water_count, sky_count, death_active, tiled_atlases, static_cache_enabled, static_reused, resident_enabled, resident.active && world_visible,
+                count, object_count, actor_count, weapon_count, water_count, sky_count, death_active, atlas_mode, static_cache_enabled, static_reused, resident_enabled, resident.active && world_visible,
                 world_visible ? (resident.active ? resident.range_count : (object_count ? 1u : 0u)) : 0u, scenery_uploaded);
         }
     }
@@ -1505,6 +1526,7 @@ end_load:
     GX2RDestroyBufferEx(&gun_icon_pos, 0); GX2RDestroyBufferEx(&gun_icon_attr, 0); GX2RDestroyBufferEx(&call_icon_pos, 0); GX2RDestroyBufferEx(&call_icon_attr, 0); free(icons_tex.surface.image);
     GX2RDestroyBufferEx(&map_pos, 0); GX2RDestroyBufferEx(&map_attr[0], 0); GX2RDestroyBufferEx(&map_attr[1], 0); free(map_tex.surface.image);
     free(tiled_atlas.surface.image); free(tiled_object_atlas.surface.image); free(tiled_actor_atlas.surface.image);
+    free(tiled_atlas.surface.mipmaps); free(tiled_object_atlas.surface.mipmaps); free(tiled_actor_atlas.surface.mipmaps);
     free(object_atlas.surface.image); free(atlas.surface.image); WHBGfxFreeShaderGroup(&shader);
     lifecycle_checkpoint("cleanup: geometry/textures freed; graphics shutdown begin");
     WHBGfxShutdown();

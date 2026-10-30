@@ -153,6 +153,11 @@ trophy in front to the previous or next free stand, X removes it, Y locks it,
 and + leaves (saving moves and removals). The install now has 148 files (the
 trophy room's map, the two plaques and the PC map's frame `MAPFRAME.TGA`).
 
+The world's three atlases are tiled with five mip levels (`atlas_mips.h`),
+as the original mipmaps its textures in the distance; the linear copies are
+freed once every level reads back intact. R3 turns the levels off for an A/B
+(overlay line 6 starts `VM`/`VF`; capture `tiled_atlases` 2/1, schema 10).
+
 R shows the PC's map over the TV view (the overlay's map region; the dots
 and the mobile look's cone repaint as they move). The GamePad map has a zoom
 button at its top right ("-" shows the whole area, "+" goes back), and with
@@ -449,6 +454,8 @@ cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined wiiu-ver/perf-pro
 ASAN_OPTIONS=detect_leaks=0 /tmp/wiiu-lifecycle-test
 cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined wiiu-ver/perf-probe/tests/static_view_test.c -lm -o /tmp/wiiu-static-view-test
 ASAN_OPTIONS=detect_leaks=0 /tmp/wiiu-static-view-test
+cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined wiiu-ver/perf-probe/tests/atlas_mips_test.c -o /tmp/wiiu-atlas-mips-test
+/tmp/wiiu-atlas-mips-test
 ```
 
 Lifecycle checks exercise foreground → release → background → reacquisition →
