@@ -3,6 +3,7 @@
 #include <coreinit/screen.h>
 #include <sndcore2/core.h>
 #include <sndcore2/voice.h>
+#include <gx2/clear.h>
 #include <gx2/draw.h>
 #include <gx2/display.h>
 #include <gx2/swap.h>
@@ -40,6 +41,7 @@
 #include <whb/sdcard.h>
 
 extern const unsigned char c2_sample_shader[];
+extern const unsigned char c2_opaque_shader[];
 extern const unsigned char c2_menu_shader[];
 extern int32_t c2_sky_texture(void *, uint8_t *, uint32_t);
 extern uint32_t c2_sky_vertices(void *, float *, float *);
@@ -210,7 +212,7 @@ static void perf_line(GX2Texture *tex, int row, const char *text) {
         }
     }
 }
-typedef struct { uint64_t frame, wait, terrain, scenery, water, sky, map, draw, present, simulation, actors; uint32_t frames, terrain_v, scenery_v, water_v, actor_v, vsync, tiled_atlases, static_cache_enabled, resident_enabled, resident_active; } Perf;
+typedef struct { uint64_t frame, wait, terrain, scenery, water, sky, map, draw, present, simulation, actors; uint32_t frames, terrain_v, scenery_v, water_v, actor_v, vsync, tiled_atlases, static_cache_enabled, resident_enabled, resident_active, tv_scaled; } Perf;
 static double avg_ms(uint64_t ticks, uint32_t frames) { return frames ? (double)OSTicksToMicroseconds(ticks) / (1000.0 * frames) : 0.0; }
 static void perf_update(GX2Texture *tex, const Perf *p) {
     uint8_t *pixels = tex->surface.image;
@@ -224,7 +226,7 @@ static void perf_update(GX2Texture *tex, const Perf *p) {
     snprintf(line, sizeof(line), "CPU WATER %.1f SKY %.1f MAP %.1f", avg_ms(p->water,p->frames), avg_ms(p->sky,p->frames), avg_ms(p->map,p->frames)); perf_line(tex,2,line);
     snprintf(line, sizeof(line), "CPU DRAW %.1f PRESENT %.1f", avg_ms(p->draw,p->frames), avg_ms(p->present,p->frames)); perf_line(tex,3,line);
     snprintf(line, sizeof(line), "CPU SIM %.1f ACTORS %.1f", avg_ms(p->simulation,p->frames),avg_ms(p->actors,p->frames)); perf_line(tex,4,line);
-    snprintf(line, sizeof(line), "%c%c%c%c T %u S %u A %u", p->vsync ? 'V' : 'N', p->tiled_atlases == 2 ? 'M' : p->tiled_atlases ? 'F' : 'L', p->static_cache_enabled ? 'C' : 'B', p->resident_enabled ? (p->resident_active ? 'R' : 'F') : 'B', p->terrain_v,p->scenery_v,p->actor_v); perf_line(tex,5,line);
+    snprintf(line, sizeof(line), "%c%c%c%c%c T %u S %u A %u", p->vsync ? 'V' : 'N', p->tiled_atlases == 2 ? 'M' : p->tiled_atlases ? 'F' : 'L', p->static_cache_enabled ? 'C' : 'B', p->resident_enabled ? (p->resident_active ? 'R' : 'F') : 'B', p->tv_scaled ? 'S' : 'N', p->terrain_v,p->scenery_v,p->actor_v); perf_line(tex,5,line);
     GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, tex->surface.image, tex->surface.imageSize);
 }
 #include "menu.h"
@@ -284,6 +286,7 @@ static void hud_update(GX2Texture *tex, const HudState *hud, uint32_t selection,
 #include "map_view.h"
 #include "atlas_layout.h"
 #include "static_view.h"
+#include "tv_target.h"
 
 static FSClient client;
 #include "performance.h"
@@ -356,17 +359,33 @@ static int32_t load_file(const char *name, uint8_t **data, uint32_t *len) {
     startup_checkpoint(checkpoint);
     return 0;
 }
-static void init_gpu_fog(GX2RBuffer *buffer, const float color[3], float mode) {
-    float *dst = GX2RLockBufferEx(buffer, 0);
-    if (!dst) OSFatal("Fog probe: buffer lock failed");
-    for (uint32_t i = 0; i < buffer->elemCount; ++i) {
-        dst[i * 4] = color[0]; dst[i * 4 + 1] = color[1]; dst[i * 4 + 2] = color[2]; dst[i * 4 + 3] = mode;
-    }
-    GX2RUnlockBufferEx(buffer, 0);
+/* The world's shaders (terrain.vert with terrain.frag, or with
+ * terrain_opaque.frag): two vertex streams, position and texture/light, 32
+ * bytes a vertex. The camera and the fog (colour, and the mode in w) are
+ * uniforms, set per draw: -1 sky, -2 world space with object fog, -3
+ * CPU-projected terrain, -4 world space with terrain fog, 0 none. */
+typedef struct { WHBGfxShaderGroup group; GX2UniformVar *eye, *angles, *fog; uint32_t sampler; } WorldShader;
+static void world_shader_load(WorldShader *w, const unsigned char *gsh) {
+    if (!WHBGfxLoadGFDShaderGroup(&w->group, 0, gsh)
+        || !WHBGfxInitShaderAttribute(&w->group, "aPosition", 0, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32)
+        || !WHBGfxInitShaderAttribute(&w->group, "aTexLight", 1, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32)
+        || !WHBGfxInitFetchShader(&w->group)) OSFatal("Terrain probe: graphics setup failed");
+    w->eye = GX2GetVertexUniformVar(w->group.vertexShader, "uEye");
+    w->angles = GX2GetVertexUniformVar(w->group.vertexShader, "uAngles");
+    w->fog = GX2GetVertexUniformVar(w->group.vertexShader, "uFog");
+    if (!w->eye || !w->angles || !w->fog) OSFatal("Scenery probe: camera or fog uniforms missing");
+    if (w->group.pixelShader->samplerVarCount != 1) OSFatal("Terrain texture probe: shader sampler missing");
+    w->sampler = w->group.pixelShader->samplerVars[0].location;
 }
-static void make_fog_buffer(GX2RBuffer *buffer, const GX2RBuffer *source) {
-    buffer->flags = source->flags; buffer->elemSize = source->elemSize; buffer->elemCount = source->elemCount;
-    if (!GX2RCreateBuffer(buffer)) OSFatal("Fog probe: buffer allocation failed");
+static void world_shader_use(const WorldShader *w, const float fog[3], float mode) {
+    GX2SetFetchShader(&w->group.fetchShader); GX2SetVertexShader(w->group.vertexShader); GX2SetPixelShader(w->group.pixelShader);
+    const float f[4] = {fog[0], fog[1], fog[2], mode};
+    GX2SetVertexUniformReg(w->fog->offset, 4, f);
+}
+static void world_camera(const WorldShader *w, void *sim) {
+    float camera[8]; c2_scenery_camera(sim, camera);
+    GX2SetVertexUniformReg(w->eye->offset, 4, camera);
+    GX2SetVertexUniformReg(w->angles->offset, 4, camera + 4);
 }
 static void init_quad(GX2RBuffer *pos, GX2RBuffer *attr, const GX2RBuffer *template, const float verts[24], const float uvs[24]) {
     memset(pos, 0, sizeof(*pos)); memset(attr, 0, sizeof(*attr));
@@ -714,15 +733,11 @@ end_load:
     ambient_active = 0;
     audio_init(sim);
     lifecycle_sim = sim;
-    WHBGfxShaderGroup shader = {0}; GX2RBuffer positions = {0}, colors = {0};
-    if (!WHBGfxLoadGFDShaderGroup(&shader, 0, c2_sample_shader)
-        || !WHBGfxInitShaderAttribute(&shader, "aPosition", 0, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32)
-        || !WHBGfxInitShaderAttribute(&shader, "aTexLight", 1, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32)
-        || !WHBGfxInitShaderAttribute(&shader, "aFog", 2, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32)
-        || !WHBGfxInitFetchShader(&shader)) OSFatal("Terrain probe: graphics setup failed");
-    GX2UniformVar *eye_uniform = GX2GetVertexUniformVar(shader.vertexShader, "uEye");
-    GX2UniformVar *angles_uniform = GX2GetVertexUniformVar(shader.vertexShader, "uAngles");
-    if (!eye_uniform || !angles_uniform) OSFatal("Scenery probe: camera uniforms missing");
+    /* world: with the cut-out discard (scenery, animals, the gun, sky, map
+     * and HUD); opaque: never discards, so the GPU tests depth before
+     * shading (terrain and water, which have no cut-out texels). */
+    WorldShader world = {0}, opaque = {0}; GX2RBuffer positions = {0}, colors = {0};
+    world_shader_load(&world, c2_sample_shader); world_shader_load(&opaque, c2_opaque_shader);
     GX2Texture atlas = {0}; GX2Sampler sampler = {0};
     atlas.surface.dim = GX2_SURFACE_DIM_TEXTURE_2D;
     atlas.surface.width = 2048; atlas.surface.height = 2048; atlas.surface.depth = 1;
@@ -743,8 +758,6 @@ end_load:
      * before, from a level that fits the texture cache in the distance. */
     GX2InitSamplerZMFilter(&sampler, GX2_TEX_Z_FILTER_MODE_POINT, GX2_TEX_MIP_FILTER_MODE_POINT);
     GX2InitSamplerLOD(&sampler, 0.0f, (float)(ATLAS_MIP_LEVELS - 1), 0.0f);
-    if (shader.pixelShader->samplerVarCount != 1) OSFatal("Terrain texture probe: shader sampler missing");
-    uint32_t sampler_location = shader.pixelShader->samplerVars[0].location;
     GX2Texture object_atlas = {0};
     object_atlas.surface.dim = GX2_SURFACE_DIM_TEXTURE_2D;
     object_atlas.surface.width = 2048; object_atlas.surface.height = 2048; object_atlas.surface.depth = 1;
@@ -801,11 +814,10 @@ end_load:
     object_positions.elemSize = 4 * sizeof(float); object_positions.elemCount = 1048576; /* every original window fits (AREA4 peaks at 742,053) */
     object_attrs.flags = object_positions.flags; object_attrs.elemSize = object_positions.elemSize; object_attrs.elemCount = object_positions.elemCount;
     if (!GX2RCreateBuffer(&object_positions) || !GX2RCreateBuffer(&object_attrs)) OSFatal("Scenery probe: object buffer allocation failed");
-    GX2RBuffer actor_positions = {0}, actor_attrs = {0}, actor_fog = {0}, weapon_positions = {0}, weapon_attrs = {0}, weapon_fog = {0};
+    GX2RBuffer actor_positions = {0}, actor_attrs = {0}, weapon_positions = {0}, weapon_attrs = {0};
     actor_positions.flags = object_positions.flags; actor_positions.elemSize = object_positions.elemSize; actor_positions.elemCount = 65536;
     actor_attrs = actor_positions; weapon_positions = actor_positions; weapon_attrs = actor_positions;
     if (!GX2RCreateBuffer(&actor_positions) || !GX2RCreateBuffer(&actor_attrs) || !GX2RCreateBuffer(&weapon_positions) || !GX2RCreateBuffer(&weapon_attrs)) OSFatal("Hunt probe: actor buffer allocation failed");
-    make_fog_buffer(&actor_fog, &actor_positions); make_fog_buffer(&weapon_fog, &weapon_positions);
     positions.flags = GX2R_RESOURCE_BIND_VERTEX_BUFFER | GX2R_RESOURCE_USAGE_CPU_WRITE | GX2R_RESOURCE_USAGE_GPU_READ;
     positions.elemSize = 4 * sizeof(float); positions.elemCount = 148 * 148 * 6;
     colors.flags = positions.flags; colors.elemSize = positions.elemSize; colors.elemCount = positions.elemCount;
@@ -867,12 +879,6 @@ end_load:
     sky_pos.flags = positions.flags; sky_pos.elemSize = positions.elemSize; sky_pos.elemCount = 8 * 8 * 6;
     sky_attr.flags = positions.flags; sky_attr.elemSize = positions.elemSize; sky_attr.elemCount = 8 * 8 * 6;
     if (!GX2RCreateBuffer(&sky_pos) || !GX2RCreateBuffer(&sky_attr)) OSFatal("Sky probe: buffer allocation failed");
-    GX2RBuffer terrain_fog = {0}, object_fog = {0}, water_fog = {0}, sky_fog = {0}, map_fog = {0};
-    make_fog_buffer(&terrain_fog, &positions); make_fog_buffer(&object_fog, &object_positions);
-    make_fog_buffer(&water_fog, &water_pos); make_fog_buffer(&sky_fog, &sky_pos); make_fog_buffer(&map_fog, &map_pos);
-    float *map_fog_data = GX2RLockBufferEx(&map_fog, 0);
-    if (!map_fog_data) OSFatal("Fog probe: map buffer lock failed");
-    memset(map_fog_data, 0, 6 * 4 * sizeof(float)); GX2RUnlockBufferEx(&map_fog, 0);
     GX2Texture perf_tex = {0};
     perf_tex.surface.dim = GX2_SURFACE_DIM_TEXTURE_2D; perf_tex.surface.width = 512; perf_tex.surface.height = 128; perf_tex.surface.depth = 1;
     perf_tex.surface.mipLevels = 1; perf_tex.surface.format = GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8;
@@ -953,9 +959,16 @@ end_load:
     if (!GX2RCreateBuffer(&overlay_pos) || !GX2RCreateBuffer(&overlay_uv)) OSFatal("Overlay: buffer allocation failed");
     uint32_t overlay_quads = 0;
     float fog_color[3]; c2_fog_color(sim, fog_color);
-    init_gpu_fog(&terrain_fog, fog_color, -3.0f); init_gpu_fog(&water_fog, fog_color, -3.0f);
-    init_gpu_fog(&object_fog, fog_color, -2.0f);
-    init_gpu_fog(&actor_fog, fog_color, -2.0f); init_gpu_fog(&weapon_fog, fog_color, 0.0f);
+    const float no_fog[3] = {0.0f, 0.0f, 0.0f};
+    /* L3 (left stick click): a diagnostic that draws the TV's world at the
+     * TV's own resolution instead of 720p, for a same-session A/B. */
+    TvTarget tv_target; tv_target_init(&tv_target);
+    int tv_scaled = 1;
+    GX2Sampler tv_sampler = {0}; GX2InitSampler(&tv_sampler, GX2_TEX_CLAMP_MODE_CLAMP, GX2_TEX_XY_FILTER_MODE_LINEAR);
+    GX2RBuffer tv_quad_pos = {0}, tv_quad_uv = {0};
+    const float tqv[24] = {-1,1,0,1, 1,1,0,1, 1,-1,0,1, -1,1,0,1, 1,-1,0,1, -1,-1,0,1};
+    const float tqa[24] = {0,0,1,0, 1,0,1,0, 1,1,1,0, 0,0,1,0, 1,1,1,0, 0,1,1,0};
+    init_quad(&tv_quad_pos, &tv_quad_uv, &map_pos, tqv, tqa);
     static uint8_t saved[151 * 151 * 4]; int old_x = -1, old_z = -1;
     static struct { uint32_t offset; uint8_t rgba[4]; } old_blips[256 * 9];
     uint32_t old_blip_count = 0;
@@ -980,7 +993,7 @@ end_load:
     if (sim) { KPADInit(); WPADEnableURCC(TRUE); }
     /* Observer mode carries no weapons. */
     const uint32_t carried_weapons = (menu.observer && menu.mode == MODE_HUNT) || trophy_room ? 0 : menu.weapons;
-    performance_open(&menu, hunt_seed, tiled_available);
+    performance_open(&menu, hunt_seed, tiled_available, tv_target.available);
     while (app_running()) {
         if (sim) {
             struct { uint32_t shots, kills; } death = {0};
@@ -1015,6 +1028,7 @@ end_load:
                 flags |= hunt_edges(edges, hud.prompt, trophy_room);
                 if (sample.trigger & VPAD_BUTTON_LEFT) { vsync = !vsync; GX2SetSwapInterval(vsync ? 1 : 0); }
                 if (sample.trigger & VPAD_BUTTON_STICK_R) mipmaps = !mipmaps;
+                if (sample.trigger & VPAD_BUTTON_STICK_L) tv_scaled = !tv_scaled;
                 if (sample.trigger & VPAD_BUTTON_R) tv_map = !tv_map;
                 if (sample.trigger & VPAD_BUTTON_MINUS) gamepad_game = !gamepad_game;
                 VPADTouchData touch = {0};
@@ -1069,6 +1083,7 @@ end_load:
                         flags |= hunt_edges(edges, hud.prompt, trophy_room);
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_LEFT) { vsync = !vsync; GX2SetSwapInterval(vsync ? 1 : 0); }
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_STICK_R) mipmaps = !mipmaps;
+                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_STICK_L) tv_scaled = !tv_scaled;
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_R) tv_map = !tv_map;
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_MINUS) gamepad_game = !gamepad_game;
                     }
@@ -1199,8 +1214,6 @@ end_load:
                     perf.scenery += OSGetTime() - mark;
                 }
                 if (resident_enabled != terrain_resident.active) {
-                    float mode = resident_enabled ? -4.0f : -3.0f;
-                    init_gpu_fog(&terrain_fog, fog_color, mode); init_gpu_fog(&water_fog, fog_color, mode);
                     terrain_resident.active = resident_enabled; terrain_resident.reset = 1;
                 }
                 if (terrain_resident.active && (terrain_resident.reset || terrain_resident.cell[0] != static_key[5] || terrain_resident.cell[1] != static_key[6])) {
@@ -1271,12 +1284,6 @@ end_load:
                     p = stream_lock(&sky_pos); c = stream_lock(&sky_attr);
                     if (!p || !c) OSFatal("Sky probe: buffer lock failed");
                     sky_count = c2_sky_vertices(sim, p, c);
-                    float *f = stream_lock(&sky_fog); if (!f) OSFatal("Fog probe: buffer lock failed");
-                    for (uint32_t i = 0; i < sky_count; ++i) {
-                        f[i * 4] = fog_color[0]; f[i * 4 + 1] = fog_color[1];
-                        f[i * 4 + 2] = fog_color[2]; f[i * 4 + 3] = -1.0f;
-                    }
-                    stream_unlock(&sky_fog, sky_count);
                     stream_unlock(&sky_pos, sky_count); stream_unlock(&sky_attr, sky_count);
                     perf.sky += OSGetTime() - mark;
                     static_view_save(&static_view, static_key, count, object_count, water_count, sky_count);
@@ -1284,6 +1291,7 @@ end_load:
             }
             mark = OSGetTime();
             perf.resident_enabled = resident_enabled; perf.resident_active = resident.active;
+            perf.tv_scaled = tv_scaled && tv_target.available;
             perf.terrain_v = count; perf.scenery_v = object_count; perf.water_v = water_count; perf.actor_v = actor_count;
             float px, pz, dir_x, dir_z; c2_map_player(sim, &px, &pz, &dir_x, &dir_z);
             if (show_map[0] || show_map[1]) {
@@ -1356,32 +1364,42 @@ end_load:
             draw_start = OSGetTime();
             WHBGfxBeginRender();
             GX2SampleBottomGPUCycle(&gpu_stamp[0]);
+            uint32_t tv_world = 0;
             for (int display = 0; display < 2; ++display) {
                 if (display == 0) WHBGfxBeginRenderTV(); else WHBGfxBeginRenderDRC();
-                if (show_map[display]) WHBGfxClearColor(0.06f, 0.16f, 0.09f, 1.0f);
+                /* The TV's world goes to its 720p target (tv_target.h). */
+                int scaled = display == 0 && !show_map[0] && tv_scaled && tv_target_bind(&tv_target);
+                if (scaled) {
+                    GX2ClearColor(&tv_target.color, fog_color[0], fog_color[1], fog_color[2], 1.0f);
+                    GX2ClearDepthStencilEx(&tv_target.depth, tv_target.depth.depthClear, 0, GX2_CLEAR_FLAGS_DEPTH);
+                    WHBGfxBeginRenderTV(); // the clears leave their own state
+                    GX2SetColorBuffer(&tv_target.color, GX2_RENDER_TARGET_0); GX2SetDepthBuffer(&tv_target.depth);
+                    GX2SetScissor(0, 0, TV_WORLD_WIDTH, TV_WORLD_HEIGHT);
+                } else if (show_map[display]) WHBGfxClearColor(0.06f, 0.16f, 0.09f, 1.0f);
                 else WHBGfxClearColor(fog_color[0], fog_color[1], fog_color[2], 1.0f);
                 /* Set after the clear, which restores the context state. The
                  * world uses depth 0.02..1; the view model gets the front
                  * 0..0.02 with its own depth test (as on the 3DS), so its
                  * inner parts stay hidden and the world never covers it. */
-                GX2ColorBuffer *target = display == 0 ? WHBGfxGetTVColourBuffer() : WHBGfxGetDRCColourBuffer();
+                GX2ColorBuffer *target = scaled ? &tv_target.color : display == 0 ? WHBGfxGetTVColourBuffer() : WHBGfxGetDRCColourBuffer();
                 float target_w = (float)target->surface.width, target_h = (float)target->surface.height;
+                if (display == 0 && !show_map[0]) tv_world = target->surface.height;
                 GX2SetViewport(0.0f, 0.0f, target_w, target_h, 0.02f, 1.0f);
                 if (show_map[display]) {
                     GX2SetDepthOnlyControl(FALSE, FALSE, GX2_COMPARE_FUNC_ALWAYS);
                     GX2SetCullOnlyControl(GX2_FRONT_FACE_CCW, FALSE, FALSE);
                     GX2SetShaderMode(GX2_SHADER_MODE_UNIFORM_REGISTER);
-                    GX2SetPixelTexture(&map_tex, sampler_location); GX2SetPixelSampler(&map_sampler, sampler_location);
-                    GX2SetFetchShader(&shader.fetchShader); GX2SetVertexShader(shader.vertexShader); GX2SetPixelShader(shader.pixelShader);
-                    GX2RSetAttributeBuffer(&map_pos, 0, map_pos.elemSize, 0); GX2RSetAttributeBuffer(&map_attr[display], 1, map_attr[display].elemSize, 0); GX2RSetAttributeBuffer(&map_fog, 2, map_fog.elemSize, 0);
+                    world_shader_use(&world, no_fog, 0.0f);
+                    GX2SetPixelTexture(&map_tex, world.sampler); GX2SetPixelSampler(&map_sampler, world.sampler);
+                    GX2RSetAttributeBuffer(&map_pos, 0, map_pos.elemSize, 0); GX2RSetAttributeBuffer(&map_attr[display], 1, map_attr[display].elemSize, 0);
                     GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
                     if (display == 1) {
-                        GX2SetPixelTexture(&icons_tex, sampler_location);
+                        GX2SetPixelTexture(&icons_tex, world.sampler);
                         GX2RSetAttributeBuffer(&gun_icon_pos, 0, gun_icon_pos.elemSize, 0); GX2RSetAttributeBuffer(&gun_icon_attr, 1, gun_icon_attr.elemSize, 0);
                         GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 36, 0, 1);
                         GX2RSetAttributeBuffer(&call_icon_pos, 0, call_icon_pos.elemSize, 0); GX2RSetAttributeBuffer(&call_icon_attr, 1, call_icon_attr.elemSize, 0);
                         GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
-                        GX2SetPixelTexture(&hud_tex, sampler_location);
+                        GX2SetPixelTexture(&hud_tex, world.sampler);
                         GX2RSetAttributeBuffer(&panel_ammo_pos, 0, panel_ammo_pos.elemSize, 0); GX2RSetAttributeBuffer(&panel_ammo_attr, 1, panel_ammo_attr.elemSize, 0);
                         GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
                         GX2RSetAttributeBuffer(&panel_kills_pos, 0, panel_kills_pos.elemSize, 0); GX2RSetAttributeBuffer(&panel_kills_attr, 1, panel_kills_attr.elemSize, 0);
@@ -1395,55 +1413,49 @@ end_load:
                 GX2SetDepthOnlyControl(FALSE, FALSE, GX2_COMPARE_FUNC_ALWAYS);
                 GX2SetCullOnlyControl(GX2_FRONT_FACE_CCW, FALSE, FALSE);
                 GX2SetShaderMode(GX2_SHADER_MODE_UNIFORM_REGISTER);
-                GX2SetPixelTexture(&sky_tex, sampler_location); GX2SetPixelSampler(&sky_sampler, sampler_location);
-                GX2SetFetchShader(&shader.fetchShader); GX2SetVertexShader(shader.vertexShader); GX2SetPixelShader(shader.pixelShader);
-                GX2RSetAttributeBuffer(&sky_pos, 0, sky_pos.elemSize, 0); GX2RSetAttributeBuffer(&sky_attr, 1, sky_attr.elemSize, 0); GX2RSetAttributeBuffer(&sky_fog, 2, sky_fog.elemSize, 0);
+                world_shader_use(&world, fog_color, -1.0f);
+                GX2SetPixelTexture(&sky_tex, world.sampler); GX2SetPixelSampler(&sky_sampler, world.sampler);
+                GX2RSetAttributeBuffer(&sky_pos, 0, sky_pos.elemSize, 0); GX2RSetAttributeBuffer(&sky_attr, 1, sky_attr.elemSize, 0);
                 GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, sky_count, 0, 1);
                 GX2SetDepthOnlyControl(TRUE, TRUE, GX2_COMPARE_FUNC_LESS);
                 GX2SetCullOnlyControl(GX2_FRONT_FACE_CCW, FALSE, FALSE);
                 GX2SetShaderMode(GX2_SHADER_MODE_UNIFORM_REGISTER);
-                GX2SetPixelTexture(terrain_tex, sampler_location); GX2SetPixelSampler(&sampler, sampler_location);
-                GX2SetFetchShader(&shader.fetchShader); GX2SetVertexShader(shader.vertexShader); GX2SetPixelShader(shader.pixelShader);
-                GX2RSetAttributeBuffer(&positions, 0, positions.elemSize, 0); GX2RSetAttributeBuffer(&colors, 1, colors.elemSize, 0); GX2RSetAttributeBuffer(&terrain_fog, 2, terrain_fog.elemSize, 0);
+                const float terrain_fog = terrain_resident.active ? -4.0f : -3.0f;
+                world_shader_use(&opaque, fog_color, terrain_fog);
+                GX2SetPixelTexture(terrain_tex, opaque.sampler); GX2SetPixelSampler(&sampler, opaque.sampler);
+                GX2RSetAttributeBuffer(&positions, 0, positions.elemSize, 0); GX2RSetAttributeBuffer(&colors, 1, colors.elemSize, 0);
                 if (terrain_resident.active) {
-                    float camera[8]; c2_scenery_camera(sim, camera);
-                    GX2SetVertexUniformReg(eye_uniform->offset, 4, camera);
-                    GX2SetVertexUniformReg(angles_uniform->offset, 4, camera + 4);
+                    world_camera(&opaque, sim);
                     for (uint32_t range = 0; range < terrain_resident.terrain_ranges; ++range)
                         GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, terrain_ranges[range].count, terrain_ranges[range].first, 1);
                 } else GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, count, 0, 1);
+                if (object_count || actor_count) {
+                    world_shader_use(&world, fog_color, -2.0f);
+                    world_camera(&world, sim);
+                    GX2SetPixelSampler(&sampler, world.sampler);
+                }
                 if (object_count) {
-                    float camera[8]; c2_scenery_camera(sim, camera);
-                    GX2SetVertexUniformReg(eye_uniform->offset, 4, camera);
-                    GX2SetVertexUniformReg(angles_uniform->offset, 4, camera + 4);
-                    GX2SetPixelTexture(object_tex, sampler_location);
+                    GX2SetPixelTexture(object_tex, world.sampler);
                     GX2RSetAttributeBuffer(&object_positions, 0, object_positions.elemSize, 0);
                     GX2RSetAttributeBuffer(&object_attrs, 1, object_attrs.elemSize, 0);
-                    GX2RSetAttributeBuffer(&object_fog, 2, object_fog.elemSize, 0);
                     if (resident.active) {
                         for (uint32_t range = 0; range < resident.range_count; ++range)
                             GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, scenery_ranges[range].count, scenery_ranges[range].first, 1);
                     } else GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, object_count, 0, 1);
                 }
                 if (actor_count) {
-                    float camera[8]; c2_scenery_camera(sim, camera);
-                    GX2SetVertexUniformReg(eye_uniform->offset, 4, camera);
-                    GX2SetVertexUniformReg(angles_uniform->offset, 4, camera + 4);
-                    GX2SetPixelTexture(actor_tex, sampler_location);
+                    GX2SetPixelTexture(actor_tex, world.sampler);
                     GX2RSetAttributeBuffer(&actor_positions, 0, actor_positions.elemSize, 0);
                     GX2RSetAttributeBuffer(&actor_attrs, 1, actor_attrs.elemSize, 0);
-                    GX2RSetAttributeBuffer(&actor_fog, 2, actor_fog.elemSize, 0);
                     GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, actor_count, 0, 1);
                 }
                 if (water_count) {
-                    GX2SetPixelTexture(terrain_tex, sampler_location);
+                    world_shader_use(&opaque, fog_color, terrain_fog);
+                    GX2SetPixelTexture(terrain_tex, opaque.sampler); GX2SetPixelSampler(&sampler, opaque.sampler);
                     GX2RSetAttributeBuffer(&water_pos, 0, water_pos.elemSize, 0);
                     GX2RSetAttributeBuffer(&water_attr, 1, water_attr.elemSize, 0);
-                    GX2RSetAttributeBuffer(&water_fog, 2, water_fog.elemSize, 0);
                     if (terrain_resident.active) {
-                        float camera[8]; c2_scenery_camera(sim, camera);
-                        GX2SetVertexUniformReg(eye_uniform->offset, 4, camera);
-                        GX2SetVertexUniformReg(angles_uniform->offset, 4, camera + 4);
+                        world_camera(&opaque, sim);
                         for (uint32_t range = 0; range < terrain_resident.water_ranges; ++range)
                             GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, water_ranges[range].count, water_ranges[range].first, 1);
                     } else GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, water_count, 0, 1);
@@ -1451,24 +1463,38 @@ end_load:
                 if (weapon_count) {
                     GX2SetViewport(0.0f, 0.0f, target_w, target_h, 0.0f, 0.02f);
                     GX2SetDepthOnlyControl(TRUE, TRUE, GX2_COMPARE_FUNC_LESS);
-                    GX2SetPixelTexture(actor_tex, sampler_location);
+                    world_shader_use(&world, fog_color, 0.0f);
+                    GX2SetPixelTexture(actor_tex, world.sampler); GX2SetPixelSampler(&sampler, world.sampler);
                     GX2RSetAttributeBuffer(&weapon_positions, 0, weapon_positions.elemSize, 0);
                     GX2RSetAttributeBuffer(&weapon_attrs, 1, weapon_attrs.elemSize, 0);
-                    GX2RSetAttributeBuffer(&weapon_fog, 2, weapon_fog.elemSize, 0);
                     GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, weapon_count, 0, 1);
                     GX2SetViewport(0.0f, 0.0f, target_w, target_h, 0.02f, 1.0f);
                 }
                 GX2SetDepthOnlyControl(FALSE, FALSE, GX2_COMPARE_FUNC_ALWAYS);
-                GX2SetPixelTexture(&hud_tex, sampler_location); GX2SetPixelSampler(&map_sampler, sampler_location);
-                GX2RSetAttributeBuffer(&map_fog, 2, map_fog.elemSize, 0);
+                if (scaled) {
+                    /* The world is done: scale it up onto the TV's own
+                     * buffer; the rest draws over it at full resolution. */
+                    GX2Invalidate(GX2_INVALIDATE_MODE_COLOR_BUFFER | GX2_INVALIDATE_MODE_TEXTURE,
+                                  tv_target.color.surface.image, tv_target.color.surface.imageSize);
+                    GX2ColorBuffer *tv = WHBGfxGetTVColourBuffer();
+                    GX2SetColorBuffer(tv, GX2_RENDER_TARGET_0); GX2SetDepthBuffer(WHBGfxGetTVDepthBuffer());
+                    target_w = (float)tv->surface.width; target_h = (float)tv->surface.height;
+                    GX2SetViewport(0.0f, 0.0f, target_w, target_h, 0.02f, 1.0f);
+                    GX2SetScissor(0, 0, tv->surface.width, tv->surface.height);
+                    GX2SetFetchShader(&overlay_shader.fetchShader); GX2SetVertexShader(overlay_shader.vertexShader); GX2SetPixelShader(overlay_shader.pixelShader);
+                    GX2SetPixelTexture(&tv_target.texture, overlay_sampler_location); GX2SetPixelSampler(&tv_sampler, overlay_sampler_location);
+                    GX2RSetAttributeBuffer(&tv_quad_pos, 0, tv_quad_pos.elemSize, 0); GX2RSetAttributeBuffer(&tv_quad_uv, 1, tv_quad_uv.elemSize, 0);
+                    GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
+                }
+                world_shader_use(&world, no_fog, 0.0f);
+                GX2SetPixelTexture(&hud_tex, world.sampler); GX2SetPixelSampler(&map_sampler, world.sampler);
                 if (display == 1 || !gamepad_connected) {
                     GX2RSetAttributeBuffer(&hud_pos, 0, hud_pos.elemSize, 0); GX2RSetAttributeBuffer(&hud_attr, 1, hud_attr.elemSize, 0);
                     GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
                 }
                 if (display == 0) {
-                    GX2SetDepthOnlyControl(FALSE, FALSE, GX2_COMPARE_FUNC_ALWAYS);
-                    GX2SetPixelTexture(&perf_tex, sampler_location); GX2SetPixelSampler(&sampler, sampler_location);
-                    GX2RSetAttributeBuffer(&perf_pos, 0, perf_pos.elemSize, 0); GX2RSetAttributeBuffer(&perf_attr, 1, perf_attr.elemSize, 0); GX2RSetAttributeBuffer(&map_fog, 2, map_fog.elemSize, 0);
+                    GX2SetPixelTexture(&perf_tex, world.sampler); GX2SetPixelSampler(&sampler, world.sampler);
+                    GX2RSetAttributeBuffer(&perf_pos, 0, perf_pos.elemSize, 0); GX2RSetAttributeBuffer(&perf_attr, 1, perf_attr.elemSize, 0);
                     GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
                 }
                 if (overlay_quads) {
@@ -1495,7 +1521,7 @@ end_load:
             performance_frame(&perf, &before, frame_start, hunt_seed, tv_map, gamepad_game,
                 sim_ticks, gun_ticks, map_cache_ticks, overlay_ticks, frame_wait, draw_wait, gpu_tv, gpu_drc, vsync,
                 count, object_count, actor_count, weapon_count, water_count, sky_count, death_active, atlas_mode, static_cache_enabled, static_reused, resident_enabled, resident.active && world_visible,
-                world_visible ? (resident.active ? resident.range_count : (object_count ? 1u : 0u)) : 0u, scenery_uploaded);
+                world_visible ? (resident.active ? resident.range_count : (object_count ? 1u : 0u)) : 0u, scenery_uploaded, tv_world);
         }
     }
     /* The last frame may still be drawing; wait unless ProcUI already took
@@ -1511,9 +1537,9 @@ end_load:
     // redundant foreground-only wait after ProcUI has released the display.
     GX2RDestroyBufferEx(&positions, 0); GX2RDestroyBufferEx(&colors, 0);
     GX2RDestroyBufferEx(&object_positions, 0); GX2RDestroyBufferEx(&object_attrs, 0);
-    GX2RDestroyBufferEx(&actor_positions, 0); GX2RDestroyBufferEx(&actor_attrs, 0); GX2RDestroyBufferEx(&actor_fog, 0);
-    GX2RDestroyBufferEx(&weapon_positions, 0); GX2RDestroyBufferEx(&weapon_attrs, 0); GX2RDestroyBufferEx(&weapon_fog, 0); free(actor_atlas.surface.image);
-    GX2RDestroyBufferEx(&terrain_fog, 0); GX2RDestroyBufferEx(&object_fog, 0); GX2RDestroyBufferEx(&water_fog, 0); GX2RDestroyBufferEx(&sky_fog, 0); GX2RDestroyBufferEx(&map_fog, 0);
+    GX2RDestroyBufferEx(&actor_positions, 0); GX2RDestroyBufferEx(&actor_attrs, 0);
+    GX2RDestroyBufferEx(&weapon_positions, 0); GX2RDestroyBufferEx(&weapon_attrs, 0); free(actor_atlas.surface.image);
+    GX2RDestroyBufferEx(&tv_quad_pos, 0); GX2RDestroyBufferEx(&tv_quad_uv, 0);
     GX2RDestroyBufferEx(&sky_pos, 0); GX2RDestroyBufferEx(&sky_attr, 0); free(sky_tex.surface.image);
     GX2RDestroyBufferEx(&water_pos, 0); GX2RDestroyBufferEx(&water_attr, 0);
     GX2RDestroyBufferEx(&perf_pos, 0); GX2RDestroyBufferEx(&perf_attr, 0); free(perf_tex.surface.image);
@@ -1527,7 +1553,8 @@ end_load:
     GX2RDestroyBufferEx(&map_pos, 0); GX2RDestroyBufferEx(&map_attr[0], 0); GX2RDestroyBufferEx(&map_attr[1], 0); free(map_tex.surface.image);
     free(tiled_atlas.surface.image); free(tiled_object_atlas.surface.image); free(tiled_actor_atlas.surface.image);
     free(tiled_atlas.surface.mipmaps); free(tiled_object_atlas.surface.mipmaps); free(tiled_actor_atlas.surface.mipmaps);
-    free(object_atlas.surface.image); free(atlas.surface.image); WHBGfxFreeShaderGroup(&shader);
+    free(object_atlas.surface.image); free(atlas.surface.image);
+    WHBGfxFreeShaderGroup(&world.group); WHBGfxFreeShaderGroup(&opaque.group);
     lifecycle_checkpoint("cleanup: geometry/textures freed; graphics shutdown begin");
     WHBGfxShutdown();
     lifecycle_checkpoint("cleanup: graphics shutdown complete; controllers/simulation free begin");

@@ -158,6 +158,15 @@ as the original mipmaps its textures in the distance; the linear copies are
 freed once every level reads back intact. R3 turns the levels off for an A/B
 (overlay line 6 starts `VM`/`VF`; capture `tiled_atlases` 2/1, schema 10).
 
+The TV's world is drawn at 1280x720 and scaled up to the 1080p TV buffer,
+with the HUD, overlay and performance text drawn on top at full resolution
+(`tv_target.h`; the 720p buffers reuse the memory of the 1080p TV depth
+buffer). L3 draws it at the TV's own resolution for an A/B (overlay line 6,
+5th letter `S`/`N`; capture `tv_world`, schema 11). Terrain and water use
+`terrain_opaque.frag` (no `discard`, so early depth testing), the world
+atlases are R5G5B5A1, and the fog is a per-draw uniform: two 16-byte vertex
+streams instead of three.
+
 R shows the PC's map over the TV view (the overlay's map region; the dots
 and the mobile look's cone repaint as they move). The GamePad map has a zoom
 button at its top right ("-" shows the whole area, "+" goes back), and with
@@ -262,6 +271,14 @@ Build with the same Rust and devkitPro procedure as the [fog probe](../fog-probe
 substituting `perf-probe` for `fog-probe` in the paths. Shader and CMake changes
 must be rebuilt before testing.
 
+The world's shaders: `terrain.vert` with `terrain.frag` (cut-out) and with
+`terrain_opaque.frag` (terrain and water). If editing them, run:
+
+```sh
+wiiu-ver/tools/cafeglsl/bin/glslcompiler -vs wiiu-ver/perf-probe/terrain.vert -ps wiiu-ver/perf-probe/terrain.frag -o wiiu-ver/perf-probe/terrain.gsh
+wiiu-ver/tools/cafeglsl/bin/glslcompiler -vs wiiu-ver/perf-probe/terrain.vert -ps wiiu-ver/perf-probe/terrain_opaque.frag -o wiiu-ver/perf-probe/terrain_opaque.gsh
+```
+
 The startup menu uses its own `menu.vert`/`menu.frag` pair compiled into
 `menu.gsh`, independently of the world’s camera/fog shader. If editing it, run:
 
@@ -291,7 +308,7 @@ CPU timing buckets, and emitted vertex counts including the gun. Metadata record
 compile date/time, selection/settings, baseline population, and actual TV/DRC
 render-buffer sizes. Animal/gun buffer work, map painting/invalidation, and the
 two explicit wait sites are separate. `geometry_stream_bytes` counts emitted
-position/attribute data (32 bytes/vertex), not measured GPU transfers or the
+position/attribute data (32 bytes/vertex, which is now the whole vertex), not measured GPU transfers or the
 cache ranges flushed by GX2R. Buffer locks remain inside geometry buckets;
 scenery-cache misses/evictions/occupancy and visible/posed animal counters are
 not yet captured. These are follow-up instrumentation, not zero-valued metrics.
@@ -456,6 +473,8 @@ cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined wiiu-ver/perf-pro
 ASAN_OPTIONS=detect_leaks=0 /tmp/wiiu-static-view-test
 cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined wiiu-ver/perf-probe/tests/atlas_mips_test.c -o /tmp/wiiu-atlas-mips-test
 /tmp/wiiu-atlas-mips-test
+cc -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined wiiu-ver/perf-probe/tests/tv_layout_test.c -o /tmp/wiiu-tv-layout-test
+/tmp/wiiu-tv-layout-test
 ```
 
 Lifecycle checks exercise foreground → release → background → reacquisition →

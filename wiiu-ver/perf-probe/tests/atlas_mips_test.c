@@ -30,5 +30,20 @@ int main(void) {
     memset(padded, 0xAB, sizeof(padded));
     atlas_mip_halve(src, 4, padded, 3, 2, 2);
     assert(memcmp(padded, dst, 8) == 0 && padded[8] == 0xAB && padded[20] == 0xAB);
+    // 16 bits: every RGB555 value widened as c2_core::color::rgb555_to_rgba8
+    // does comes back exactly, in the R5G5B5A1 bit order.
+    for (uint32_t c = 0; c < 32; ++c) {
+        const uint8_t wide = (uint8_t)(c << 3 | c >> 2);
+        const uint8_t texel[4] = {wide, 0, 0, 255}, texel_g[4] = {0, wide, 0, 0}, texel_b[4] = {0, 0, wide, 127};
+        assert(atlas_rgb5a1(texel) == (c | 0x8000u));
+        assert(atlas_rgb5a1(texel_g) == c << 5);
+        assert(atlas_rgb5a1(texel_b) == c << 10);
+    }
+    // The mip level above: alpha 128 stays opaque, 64 does not.
+    uint16_t level[3 * 2];
+    memset(level, 0xAB, sizeof(level));
+    atlas_to_rgb5a1(dst, 2, level, 3, 2, 2);
+    assert(level[0] == (24u << 5 | 0x8000u) && level[1] == 30u && level[3] == (12u | 12u << 5 | 12u << 10 | 0x8000u));
+    assert(level[2] == 0xABAB && level[5] == 0xABAB);
     return 0;
 }
