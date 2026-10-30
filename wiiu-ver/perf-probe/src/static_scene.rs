@@ -118,7 +118,7 @@ impl TerrainCache {
                     a[corner] = [
                         uvs[corner][0],
                         uvs[corner][1],
-                        f32::from(area.map.light[0][vi]) / 255.0,
+                        f32::from(area.light_map()[vi]) / 255.0,
                         1.0,
                     ];
                 }
@@ -453,7 +453,7 @@ impl ResidentTerrain {
             let (ox, oz) = ((corner % 2) as i32, (corner / 2) as i32);
             let vi = (z + oz) as usize * SIDE + (x + ox) as usize;
             let p = [(x + ox) as f32 * 256.0, f32::from(area.map.height[vi]) * 64.0, (z + oz) as f32 * 256.0, 1.0];
-            let a = [uvs[corner][0], uvs[corner][1], f32::from(area.map.light[0][vi]) / 255.0, 1.0];
+            let a = [uvs[corner][0], uvs[corner][1], f32::from(area.light_map()[vi]) / 255.0, 1.0];
             core::ptr::copy_nonoverlapping(p.as_ptr(), tp.add(n * 4), 4);
             core::ptr::copy_nonoverlapping(a.as_ptr(), ta.add(n * 4), 4);
         }

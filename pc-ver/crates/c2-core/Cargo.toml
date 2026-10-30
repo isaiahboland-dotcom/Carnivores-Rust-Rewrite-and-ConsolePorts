@@ -37,3 +37,9 @@ required-features = ["std"]
 [[example]]
 name = "res_cost"
 required-features = ["std"]
+
+# The Wii U menu's host tests (wiiu_menu.rs) draw it as the console does.
+[dev-dependencies]
+ab_glyph = { version = "0.2", default-features = false, features = ["libm"] }
+font8x8.workspace = true
+png.workspace = true

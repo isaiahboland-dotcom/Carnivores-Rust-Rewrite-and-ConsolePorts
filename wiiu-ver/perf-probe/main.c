@@ -18,6 +18,8 @@
 #include <coreinit/filesystem.h>
 #include <coreinit/thread.h>
 #include <coreinit/time.h>
+#include <coreinit/memory.h>
+#include <sysapp/launch.h>
 #include <malloc.h>
 #include <math.h>
 #include <padscore/kpad.h>
@@ -49,7 +51,7 @@ extern int32_t c2_scenery_resident_prepare(void *, int32_t, float *, float *, ui
 extern uint32_t c2_scenery_resident_ranges(void *, SceneryRange *, uint32_t, uint32_t *);
 extern uint32_t c2_terrain_resident_update(void *, int32_t, float *, float *, float *, float *, SceneryRange *, uint32_t, uint32_t *);
 extern void c2_terrain_resident_ranges(void *, SceneryRange *, SceneryRange *, uint32_t, uint32_t *, uint32_t *, uint32_t *, uint32_t *);
-extern int32_t c2_hunt_setup(void *, const uint8_t **, const uint32_t *, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+extern int32_t c2_hunt_setup(void *, const uint8_t **, const uint32_t *, const void *, uint32_t);
 extern uint32_t c2_death_active(void *);
 extern int32_t c2_actor_atlas(void *, uint8_t *, uint32_t);
 extern uint32_t c2_actor_vertices(void *, float *, float *, uint32_t, uint32_t);
@@ -63,7 +65,6 @@ typedef struct { int32_t ammo; uint32_t weapon_ready; int32_t call; int32_t weap
 extern void c2_hud_state(void *, HudState *);
 extern uint32_t c2_hunt_dead(void *, uint32_t *, uint32_t *);
 extern int32_t c2_restart_hunt(void *, uint32_t);
-extern int32_t c2_menu_picture(const uint8_t *, uint32_t, uint8_t *, uint32_t, uint32_t);
 extern int32_t c2_icon_load(void *, const uint8_t *, uint32_t);
 extern int32_t c2_icon_atlas(void *, uint8_t *, uint32_t, uint32_t, uint32_t);
 extern void c2_scenery_camera(void *, float *);
@@ -71,7 +72,7 @@ extern void c2_static_view_key(void *, float *);
 extern int32_t c2_terrain_atlas(void *, uint8_t *, uint32_t);
 extern uint32_t c2_terrain_vertices(void *, float *, float *);
 typedef struct { int32_t x, y, z, yaw_milli, speed_milli; uint32_t sprint, crouch; } Snapshot;
-extern int32_t c2_move_create(const uint8_t *, size_t, const uint8_t *, size_t, void **);
+extern int32_t c2_move_create(const uint8_t *, size_t, const uint8_t *, size_t, uint32_t, void **);
 extern uint32_t c2_move_checks(void *);
 extern void c2_move_tick(void *, float, float, float, float, uint32_t, Snapshot *);
 extern void c2_move_destroy(void *);
@@ -225,7 +226,8 @@ static void hud_update(GX2Texture *tex, const HudState *hud, uint32_t selection)
     char line[40];
     static const char *names[6] = {"PISTOL","SHOTGUN","DB SHOTGUN","X-BOW","RIFLE","SNIPER"};
     int weapon=0, rank=hud->weapon; for(int i=0;i<6;++i) if(selection&(1u<<i)) { if(rank--==0) { weapon=i; break; } }
-    snprintf(line, sizeof(line), "%s %d", names[weapon], hud->ammo); perf_line(tex, 0, line);
+    if (selection) snprintf(line, sizeof(line), "%s %d", names[weapon], hud->ammo); else snprintf(line, sizeof(line), "OBSERVER");
+    perf_line(tex, 0, line);
     GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, tex->surface.image, tex->surface.imageSize);
 }
 
@@ -336,8 +338,26 @@ static void init_weapon_grid(GX2RBuffer *pos, GX2RBuffer *attr, const GX2RBuffer
     }
     GX2RUnlockBufferEx(pos, 0); GX2RUnlockBufferEx(attr, 0);
 }
-static int run_menu(uint8_t **menu_art, MenuState *selection, DeathMenu *death) {
-    MenuState menu = *selection;
+/* A menu texture at one display's own resolution. */
+static void menu_texture(GX2Texture *t, uint32_t width, uint32_t height) {
+    memset(t, 0, sizeof(*t));
+    t->surface.dim = GX2_SURFACE_DIM_TEXTURE_2D;
+    t->surface.width = width; t->surface.height = height; t->surface.depth = 1;
+    t->surface.mipLevels = 1; t->surface.format = GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8;
+    t->surface.aa = GX2_AA_MODE1X; t->surface.use = GX2_SURFACE_USE_TEXTURE;
+    t->surface.tileMode = GX2_TILE_MODE_LINEAR_ALIGNED;
+    GX2CalcSurfaceSizeAndAlignment(&t->surface);
+    t->surface.image = memalign(t->surface.alignment, t->surface.imageSize);
+    if (!t->surface.image) OSFatal("Menu: texture allocation failed");
+    t->viewNumMips = 1; t->viewNumSlices = 1;
+    t->compMap = GX2_COMP_MAP(GX2_SQ_SEL_R, GX2_SQ_SEL_G, GX2_SQ_SEL_B, GX2_SQ_SEL_A);
+    GX2InitTextureRegs(t);
+}
+/* The title and hunt setup (death = 0, returns 1 to hunt) or the death
+ * screen (returns HUNT_RESTART or HUNT_MAIN_MENU). Drawn by Rust into a
+ * 1920x1080 TV texture and an 854x480 GamePad texture, redrawn on change. */
+static int run_menu(void *ui, int death, uint32_t shots, uint32_t kills) {
+    c2_menu_open(ui, death, shots, kills);
     WHBGfxShaderGroup shader = {0};
     startup_checkpoint("Menu: initializing GX2...");
     if (!death && !WHBGfxInit()) OSFatal("Menu: GX2 initialization failed");
@@ -348,36 +368,16 @@ static int run_menu(uint8_t **menu_art, MenuState *selection, DeathMenu *death) 
         OSScreenEnableEx(SCREEN_TV, TRUE);
         OSScreenEnableEx(SCREEN_DRC, TRUE);
         startup_checkpoint("Display handoff: TV and GamePad re-enabled after console shutdown");
-        /* Separate scanout from shader/texture drawing on physical hardware. */
-        startup_checkpoint("Display check: blue TV / magenta GamePad for 2 seconds...");
-        for (int frame = 0; frame < 120 && app_running(); ++frame) {
-            WHBGfxBeginRender();
-            WHBGfxBeginRenderTV(); WHBGfxClearColor(0.0f, 0.15f, 1.0f, 1.0f); WHBGfxFinishRenderTV();
-            WHBGfxBeginRenderDRC(); WHBGfxClearColor(0.8f, 0.0f, 0.65f, 1.0f); WHBGfxFinishRenderDRC();
-            WHBGfxFinishRender();
-            if (frame == 0) startup_checkpoint("Display check: first clear-only frame returned PASS");
-        }
-        startup_checkpoint("Display check: clear-only loop returned; starting textured menu");
     }
     startup_checkpoint("Menu: GX2 initialized; loading shader...");
     if (!WHBGfxLoadGFDShaderGroup(&shader, 0, c2_menu_shader)
         || !WHBGfxInitShaderAttribute(&shader, "aPosition", 0, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32)
         || !WHBGfxInitShaderAttribute(&shader, "aTexLight", 1, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32)
         || !WHBGfxInitFetchShader(&shader)) OSFatal("Menu: graphics setup failed");
-    startup_checkpoint("Menu: shader setup PASS; allocating texture...");
-    GX2Texture menu_tex = {0};
-    menu_tex.surface.dim = GX2_SURFACE_DIM_TEXTURE_2D;
-    menu_tex.surface.width = 512; menu_tex.surface.height = 256; menu_tex.surface.depth = 1;
-    menu_tex.surface.mipLevels = 1; menu_tex.surface.format = GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8;
-    menu_tex.surface.aa = GX2_AA_MODE1X; menu_tex.surface.use = GX2_SURFACE_USE_TEXTURE;
-    menu_tex.surface.tileMode = GX2_TILE_MODE_LINEAR_ALIGNED;
-    GX2CalcSurfaceSizeAndAlignment(&menu_tex.surface);
-    menu_tex.surface.image = memalign(menu_tex.surface.alignment, menu_tex.surface.imageSize);
-    if (!menu_tex.surface.image) OSFatal("Menu: texture allocation failed");
-    menu_tex.viewNumMips = 1; menu_tex.viewNumSlices = 1;
-    menu_tex.compMap = GX2_COMP_MAP(GX2_SQ_SEL_R, GX2_SQ_SEL_G, GX2_SQ_SEL_B, GX2_SQ_SEL_A);
-    GX2InitTextureRegs(&menu_tex);
-    GX2Sampler map_sampler = {0}; GX2InitSampler(&map_sampler, GX2_TEX_CLAMP_MODE_CLAMP, GX2_TEX_XY_FILTER_MODE_POINT);
+    startup_checkpoint("Menu: shader setup PASS; allocating textures...");
+    GX2Texture tex[2];
+    menu_texture(&tex[0], 1920, 1080); menu_texture(&tex[1], 854, 480);
+    GX2Sampler sampler = {0}; GX2InitSampler(&sampler, GX2_TEX_CLAMP_MODE_CLAMP, GX2_TEX_XY_FILTER_MODE_LINEAR);
     uint32_t sampler_location = shader.pixelShader->samplerVars[0].location;
     GX2RBuffer template = {0}, menu_pos = {0}, menu_attr = {0};
     template.flags = GX2R_RESOURCE_BIND_VERTEX_BUFFER | GX2R_RESOURCE_USAGE_CPU_WRITE | GX2R_RESOURCE_USAGE_GPU_READ;
@@ -385,83 +385,112 @@ static int run_menu(uint8_t **menu_art, MenuState *selection, DeathMenu *death) 
     const float mv[24] = {-1,1,0,1, 1,1,0,1, 1,-1,0,1, -1,1,0,1, 1,-1,0,1, -1,-1,0,1};
     const float ma[24] = {0,0,1,0, 1,0,1,0, 1,1,1,0, 0,0,1,0, 1,1,1,0, 0,1,1,0};
     init_quad(&menu_pos, &menu_attr, &template, mv, ma);
-    startup_checkpoint("Menu: texture and vertex buffers PASS; initializing controllers...");
+    startup_checkpoint("Menu: textures and vertex buffers PASS; initializing controllers...");
     if (!death) { KPADInit(); WPADEnableURCC(TRUE); }
     startup_checkpoint("Menu: controllers initialized; entering frame loop...");
-    OSReport("C2 menu: standalone UI shader ready\n");
-    int menu_touch = 0;
+    int menu_touch = 0, dirty = 1, final_frame = 0;
     OSTime input_ready = OSGetTime() + (death ? OSMillisecondsToTicks(400) : 0);
-    int first_frame = 1;
-    uint32_t menu_frames = 0;
-    while (app_running() && !(death ? death->action : menu.done)) {
-        if (menu_frames == 1) startup_checkpoint("Menu: second frame entered");
-        if (first_frame) startup_checkpoint("Menu: first frame entered; polling controllers...");
-        int prev = 0, next = 0, activate = 0, back = 0;
+    uint32_t menu_frames = 0, action = MENU_NONE;
+    while (app_running()) {
+        if (menu_frames == 0) startup_checkpoint("Menu: first frame entered; polling controllers...");
+        uint32_t buttons = 0;
         VPADStatus v = {0}; VPADReadError verr = VPAD_READ_NO_SAMPLES;
+        int input = OSGetTime() >= input_ready && !final_frame;
         if (VPADRead(VPAD_CHAN_0, &v, 1, &verr) > 0) {
-            prev = !!(v.trigger & (VPAD_BUTTON_UP | VPAD_BUTTON_LEFT)); next = !!(v.trigger & (VPAD_BUTTON_DOWN | VPAD_BUTTON_RIGHT));
-            activate = !!(v.trigger & VPAD_BUTTON_A); back = !!(v.trigger & VPAD_BUTTON_B);
-            VPADTouchData t = {0}; VPADGetTPCalibratedPointEx(VPAD_CHAN_0, VPAD_TP_854X480, &t, &v.tpNormal);
-            int touched = t.touched && t.validity == VPAD_VALID;
-            if (touched && !menu_touch) {
-                int tx = (int)t.x * 512 / 854, ty = (int)t.y * 256 / 480;
-                int hit = death ? death_hit(tx, ty) : menu_hit(&menu, tx, ty);
-                if (hit >= 0) { if (death) death->focus = hit; else menu.focus = hit; activate = 1; }
-            }
+            uint32_t t = v.trigger;
+            if (t & (VPAD_BUTTON_UP | VPAD_STICK_L_EMULATION_UP)) buttons |= MENU_UP;
+            if (t & (VPAD_BUTTON_DOWN | VPAD_STICK_L_EMULATION_DOWN)) buttons |= MENU_DOWN;
+            if (t & (VPAD_BUTTON_LEFT | VPAD_STICK_L_EMULATION_LEFT)) buttons |= MENU_LEFT;
+            if (t & (VPAD_BUTTON_RIGHT | VPAD_STICK_L_EMULATION_RIGHT)) buttons |= MENU_RIGHT;
+            if (t & VPAD_BUTTON_A) buttons |= MENU_A;
+            if (t & VPAD_BUTTON_B) buttons |= MENU_B;
+            if (t & VPAD_BUTTON_PLUS) buttons |= MENU_PLUS;
+            if (t & VPAD_BUTTON_L) buttons |= MENU_L;
+            if (t & VPAD_BUTTON_R) buttons |= MENU_R;
+            VPADTouchData touch = {0}; VPADGetTPCalibratedPointEx(VPAD_CHAN_0, VPAD_TP_854X480, &touch, &v.tpNormal);
+            int touched = touch.touched && touch.validity == VPAD_VALID;
+            if (input && touched && !menu_touch && c2_menu_touch(ui, touch.x, touch.y)) dirty = 1;
             menu_touch = touched;
         }
         for (int channel = 0; channel < 4; ++channel) {
             KPADStatus p = {0}; KPADError err = KPAD_ERROR_NO_SAMPLES;
             if (KPADReadEx((KPADChan)channel, &p, 1, &err) && p.extensionType == WPAD_EXT_PRO_CONTROLLER) {
-                prev |= !!(p.pro.trigger & (WPAD_PRO_BUTTON_UP | WPAD_PRO_BUTTON_LEFT)); next |= !!(p.pro.trigger & (WPAD_PRO_BUTTON_DOWN | WPAD_PRO_BUTTON_RIGHT));
-                activate |= !!(p.pro.trigger & WPAD_PRO_BUTTON_A); back |= !!(p.pro.trigger & WPAD_PRO_BUTTON_B);
+                uint32_t t = p.pro.trigger;
+                if (t & (WPAD_PRO_BUTTON_UP | WPAD_PRO_STICK_L_EMULATION_UP)) buttons |= MENU_UP;
+                if (t & (WPAD_PRO_BUTTON_DOWN | WPAD_PRO_STICK_L_EMULATION_DOWN)) buttons |= MENU_DOWN;
+                if (t & (WPAD_PRO_BUTTON_LEFT | WPAD_PRO_STICK_L_EMULATION_LEFT)) buttons |= MENU_LEFT;
+                if (t & (WPAD_PRO_BUTTON_RIGHT | WPAD_PRO_STICK_L_EMULATION_RIGHT)) buttons |= MENU_RIGHT;
+                if (t & WPAD_PRO_BUTTON_A) buttons |= MENU_A;
+                if (t & WPAD_PRO_BUTTON_B) buttons |= MENU_B;
+                if (t & WPAD_PRO_BUTTON_PLUS) buttons |= MENU_PLUS;
+                if (t & WPAD_PRO_TRIGGER_L) buttons |= MENU_L;
+                if (t & WPAD_PRO_TRIGGER_R) buttons |= MENU_R;
             }
         }
-        if (OSGetTime() < input_ready) prev = next = activate = back = 0;
-        if (death) death_input(death, prev, next, activate); else menu_input(&menu, prev, next, activate, back);
-        if (first_frame) startup_checkpoint("Menu: controller polling PASS; waiting for GPU...");
+        if (input && buttons && c2_menu_input(ui, buttons)) dirty = 1;
+        action = c2_menu_action(ui);
+        /* One more frame shows the loading notice (or the last state)
+         * before leaving the menu. */
+        if (action != MENU_NONE && !final_frame) { final_frame = 1; dirty = 1; }
         GX2DrawDone();
-        if (first_frame) startup_checkpoint("Menu: GPU wait PASS; drawing menu texture...");
-        if (death) death_draw(&menu_tex, death); else menu_draw(&menu_tex, menu_art, &menu);
-        if (!death && menu.done) {
-            menu_box(&menu_tex, 240, 65, 270, 125, 16, 22, 16);
-            menu_text(&menu_tex, 270, 100, "LOADING HUNT...", 2, 240, 200, 70);
-            GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, menu_tex.surface.image, menu_tex.surface.imageSize);
+        if (dirty) {
+            for (int i = 0; i < 2; ++i) {
+                c2_menu_draw(ui, tex[i].surface.image, tex[i].surface.pitch, tex[i].surface.width, tex[i].surface.height);
+                GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, tex[i].surface.image, tex[i].surface.imageSize);
+            }
+            dirty = 0;
         }
-        if (first_frame) startup_checkpoint("Menu: texture drawing PASS; submitting first frame...");
         WHBGfxBeginRender();
         for (int display = 0; display < 2; ++display) {
             if (display == 0) WHBGfxBeginRenderTV(); else WHBGfxBeginRenderDRC();
-            WHBGfxClearColor(0.06f, 0.16f, 0.09f, 1.0f);
+            WHBGfxClearColor(0.06f, 0.09f, 0.06f, 1.0f);
             GX2SetDepthOnlyControl(FALSE, FALSE, GX2_COMPARE_FUNC_ALWAYS);
             /* Set output state explicitly rather than inheriting it from the
              * console/loader context on hardware. Blending is disabled. */
             GX2SetColorControl(GX2_LOGIC_OP_COPY, 0, FALSE, TRUE);
             GX2SetTargetChannelMasks(GX2_CHANNEL_MASK_RGBA, 0, 0, 0, 0, 0, 0, 0);
             GX2SetCullOnlyControl(GX2_FRONT_FACE_CCW, FALSE, FALSE); GX2SetShaderMode(GX2_SHADER_MODE_UNIFORM_REGISTER);
-            GX2SetPixelTexture(&menu_tex, sampler_location); GX2SetPixelSampler(&map_sampler, sampler_location);
+            GX2SetPixelTexture(&tex[display], sampler_location); GX2SetPixelSampler(&sampler, sampler_location);
             GX2SetFetchShader(&shader.fetchShader); GX2SetVertexShader(shader.vertexShader); GX2SetPixelShader(shader.pixelShader);
             GX2RSetAttributeBuffer(&menu_pos, 0, menu_pos.elemSize, 0); GX2RSetAttributeBuffer(&menu_attr, 1, menu_attr.elemSize, 0);
             GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
             if (display == 0) WHBGfxFinishRenderTV(); else WHBGfxFinishRenderDRC();
         }
         WHBGfxFinishRender();
-        if (first_frame) { startup_checkpoint("Menu: first frame presented PASS"); first_frame = 0; }
+        if (menu_frames == 0) startup_checkpoint("Menu: first frame presented PASS");
         ++menu_frames;
-        if (menu_frames == 2 || menu_frames % 120 == 0) {
-            uint32_t swaps, flips; OSTime last_flip, last_vsync;
-            GX2GetSwapStatus(&swaps, &flips, &last_flip, &last_vsync);
-            char checkpoint[128];
-            snprintf(checkpoint, sizeof(checkpoint), "Menu: frame %u returned; swaps %u flips %u; page %d", menu_frames, swaps, flips, menu.page);
+        if (menu_frames % 600 == 0) {
+            char checkpoint[96];
+            snprintf(checkpoint, sizeof(checkpoint), "Menu: frame %u returned", menu_frames);
             startup_checkpoint(checkpoint);
         }
+        if (final_frame) break;
     }
     /* Each menu frame ends with WHBGfxFinishRender completion. */
+    GX2DrawDone();
     GX2RDestroyBufferEx(&menu_pos, 0); GX2RDestroyBufferEx(&menu_attr, 0);
-    free(menu_tex.surface.image); WHBGfxFreeShaderGroup(&shader); if (!death) KPADShutdown();
-    OSReport("C2 menu: exit done %d area %d targets %d\n", menu.done, menu.area + 1, menu.animal);
-    *selection = menu;
-    return death ? death->action : menu.done;
+    free(tex[0].surface.image); free(tex[1].surface.image);
+    WHBGfxFreeShaderGroup(&shader); if (!death) KPADShutdown();
+    OSReport("C2 menu: exit action %u\n", action);
+    if (death) return action == MENU_RESTART ? HUNT_RESTART : HUNT_MAIN_MENU;
+    if (action == MENU_EXIT) SYSLaunchMenu();
+    return action == MENU_HUNT;
+}
+static int32_t save_file(const char *name, const void *data, uint32_t len) {
+    char path[256]; FSCmdBlock cmd; FSFileHandle file;
+    if (snprintf(path, sizeof(path), "%s/wiiu/apps/carnivores-probe/%s", WHBGetSdCardMountPath(), name) >= (int)sizeof(path)) return -1002;
+    uint8_t *buffer = memalign(64, (len + 63u) & ~63u);
+    if (!buffer) return -1003;
+    memcpy(buffer, data, len);
+    FSInitCmdBlock(&cmd);
+    FSStatus s = FSOpenFile(&client, &cmd, path, "w", &file, FS_ERROR_FLAG_ALL);
+    if (s == FS_STATUS_OK) {
+        FSStatus wrote = FSWriteFile(&client, &cmd, buffer, 1, len, file, 0, FS_ERROR_FLAG_ALL);
+        FSStatus closed = FSCloseFile(&client, &cmd, file, FS_ERROR_FLAG_ALL);
+        s = wrote != (FSStatus)len ? -1001 : closed;
+    }
+    free(buffer);
+    return s;
 }
 // Fold the live Wii U timebase and a session counter into the game's PRNG seed.
 static uint32_t next_hunt_seed(void) {
@@ -471,13 +500,13 @@ static uint32_t next_hunt_seed(void) {
     OSReport("C2 population seed %u: 48 targets, 18 ambient animals\n", seed);
     return seed;
 }
-static int run_session(MenuState *selection) {
+static int run_session(void *ui) {
     int session_result = HUNT_EXIT;
     uint32_t hunt_seed = 0;
     int mounted = 0, added = 0, graphics_ready = 0; void *sim = NULL;
     uint8_t *map = NULL, *rsc = NULL; uint32_t map_len = 0, rsc_len = 0;
-    uint8_t *menu_art[22] = {0};
-    MenuState menu = *selection; menu.page = 0; menu.focus = 0; menu.done = 0; menu.warning = 0;
+    static int menu_files_loaded;
+    HuntChoice menu = {0};
     uint8_t *hunt_data[23] = {0}; uint32_t hunt_lengths[23] = {0};
     WHBLogConsoleInit();
     startup_console = 1;
@@ -492,37 +521,44 @@ static int run_session(MenuState *selection) {
     startup_trace_open();
     lifecycle_trace_open();
     int32_t status = 0;
-    const char *art_names[22] = {"MENUM.TGA", "AREA1.TGA", "AREA2.TGA", "AREA3.TGA", "AREA4.TGA", "AREA5.TGA", "DINO1.TGA", "DINO2.TGA", "DINO3.TGA", "DINO4.TGA", "DINO5.TGA", "DINO6.TGA", "DINO7.TGA", "DINO8.TGA", "DINO9.TGA", "WEAPON1.TGA", "WEAPON2.TGA", "WEAPON3.TGA", "WEAPON4.TGA", "WEAPON5.TGA", "WEAPON6.TGA", "EQUIP2.TGA"};
-    for (int i = 0; i < 22; ++i) {
+    /* The menu's original pictures and descriptions, once per app run; a
+     * missing one only leaves a blank picture or text. */
+    for (uint32_t slot = 0; !menu_files_loaded; ++slot) {
         if (!app_running()) goto end_load;
+        char name[32];
+        if (c2_menu_file_name(slot, name, sizeof(name)) < 0) { menu_files_loaded = 1; break; }
         uint8_t *data = NULL; uint32_t len = 0;
-        status = load_file(art_names[i], &data, &len);
-        if (!status) {
-            menu_art[i] = malloc(512*256*4);
-            status = menu_art[i] ? c2_menu_picture(data, len, menu_art[i], 512, 256) : -1000;
-        }
+        status = load_file(name, &data, &len);
+        if (!status) status = c2_menu_set_file(ui, slot, data, len);
         free(data);
-        if (status) { WHBLogPrintf("%s: FAIL %d", art_names[i], status); goto end_load; }
-        char checkpoint[96]; snprintf(checkpoint, sizeof(checkpoint), "%s decode: PASS (%d/22)", art_names[i], i + 1);
-        startup_checkpoint(checkpoint);
+        if (status) { char checkpoint[96]; snprintf(checkpoint, sizeof(checkpoint), "%s: skipped (%d)", name, (int)status); startup_checkpoint(checkpoint); }
+        status = 0;
     }
-    startup_checkpoint("All 22 menu pictures decoded; switching from console to GX2...");
+    {
+        uint8_t *data = NULL; uint32_t len = 0;
+        if (!load_file("settings.txt", &data, &len)) c2_menu_load_settings(ui, data, len);
+        free(data);
+    }
+    startup_checkpoint("Menu files loaded; switching from console to GX2...");
     WHBLogConsoleFree();
     startup_console = 0;
-    int start_hunt = run_menu(menu_art, &menu, NULL);
-    *selection = menu;
+    int start_hunt = run_menu(ui, 0, 0, 0);
+    c2_menu_choice(ui, &menu);
+    {
+        char text[512]; uint32_t len = c2_menu_settings(ui, text, sizeof(text));
+        if (len && save_file("settings.txt", text, len)) startup_checkpoint("settings.txt: save FAIL");
+    }
     graphics_ready = 1;
-    for (int i = 0; i < 22; ++i) { free(menu_art[i]); menu_art[i] = NULL; }
     if (!start_hunt) goto end_load;
     char area_file[24];
     snprintf(area_file, sizeof(area_file), "AREA%d.MAP", menu.area + 1);
-    WHBLogPrintf("Loading %s...", menu_areas[menu.area]); WHBLogConsoleDraw();
+    WHBLogPrintf("Loading %s...", menu_areas[menu.area]);
     status = load_file(area_file, &map, &map_len);
     if (status) { WHBLogPrintf("%s read: FAIL %d", area_file, status); goto end_load; }
     snprintf(area_file, sizeof(area_file), "AREA%d.RSC", menu.area + 1);
     status = load_file(area_file, &rsc, &rsc_len);
     if (status) { WHBLogPrintf("%s read: FAIL %d", area_file, status); goto end_load; }
-    status = c2_move_create(map, map_len, rsc, rsc_len, &sim);
+    status = c2_move_create(map, map_len, rsc, rsc_len, menu.time, &sim);
     free(map); map = NULL; free(rsc); rsc = NULL;
     if (status) { WHBLogPrintf("Map parse: FAIL %d", status); goto end_load; }
     const char *hunt_files[23] = {"_RES.TXT", "MOSH.CAR", "GALL.CAR", "DIMOR2.CAR", "PTERA.CAR", "DIMET.CAR", "BRACHI1.CAR", "PAR2.CAR", "ANKYLO1.CAR", "STEGO.CAR", "ALLO.CAR", "CHASMOSA.CAR", "VELO2.CAR", "SPINO.CAR", "CERATO1.CAR", "TIREX.CAR", "PISTOL.CAR", "SHOTGUN.CAR", "DBSGUN.CAR", "X_BOW.CAR", "RIFLE.CAR", "SNIPER.CAR", "HUNTER1.CAR"};
@@ -531,7 +567,7 @@ static int run_session(MenuState *selection) {
         if (status != 0) { WHBLogPrintf("%s read: FAIL %d", hunt_files[i], status); c2_move_destroy(sim); sim = NULL; goto end_load; }
     }
     hunt_seed = next_hunt_seed();
-    status = c2_hunt_setup(sim, (const uint8_t **)hunt_data, hunt_lengths, menu.animal, menu.radar, (menu.blood_off ? 1u : 0u) | (menu.kill_anim_off ? 2u : 0u), menu.weapon, hunt_seed);
+    status = c2_hunt_setup(sim, (const uint8_t **)hunt_data, hunt_lengths, &menu, hunt_seed);
     if (status != 0) { WHBLogPrintf("Hunt assets: FAIL %d", status); c2_move_destroy(sim); sim = NULL; goto end_load; }
     const int calls[9] = {1,2,3,4,5,6,7,8,9};
     for (int i = 0; i < 27; ++i) {
@@ -578,7 +614,7 @@ end_load:
     }
     WHBLogPrint("Use HOME to exit.");
     WHBLogConsoleDraw();
-    if (!sim) { if (graphics_ready) { WHBGfxShutdown(); if (!lifecycle_exiting) WHBLogConsoleInit(); } for (int i = 0; i < 22; ++i) free(menu_art[i]); while (app_running()) { WHBLogConsoleDraw(); OSSleepTicks(OSMillisecondsToTicks(16)); } WHBLogConsoleFree(); return HUNT_EXIT; }
+    if (!sim) { if (graphics_ready) { WHBGfxShutdown(); if (!lifecycle_exiting) WHBLogConsoleInit(); } while (app_running()) { WHBLogConsoleDraw(); OSSleepTicks(OSMillisecondsToTicks(16)); } WHBLogConsoleFree(); return HUNT_EXIT; }
     WHBLogConsoleFree();
     ambient_active = 0;
     audio_init(sim);
@@ -792,10 +828,12 @@ end_load:
     int reported_gamepad = 0, reported_pro = 0, gamepad_connected = 0, touch_down = 0;
     VPADStatus gamepad = {0}; KPADStatus pro[4] = {0}; int pro_valid[4] = {0};
     if (sim) { KPADInit(); WPADEnableURCC(TRUE); }
+    /* Observer mode carries no weapons. */
+    const uint32_t carried_weapons = menu.observer ? 0 : menu.weapons;
     performance_open(&menu, hunt_seed, tiled_available);
     while (app_running()) {
         if (sim) {
-            DeathMenu death = {0};
+            struct { uint32_t shots, kills; } death = {0};
             OSTime frame_start = OSGetTime(), mark, draw_start;
             uint64_t frame_wait = 0, draw_wait = 0, gun_ticks = 0, map_cache_ticks = 0;
             uint32_t sim_ticks = 0;
@@ -830,15 +868,15 @@ end_load:
                 if (down && !touch_down && (!gamepad_game || full_map)) {
                     if (touch.x < 187) {
                         int slot=(touch.y/160)*2+(touch.x>=94);
-                        int carried=0; for(int i=0;i<6;++i) if(menu.weapon&(1u<<i)) ++carried;
+                        int carried=0; for(int i=0;i<6;++i) if(carried_weapons&(1u<<i)) ++carried;
                         if(slot<carried) flags |= 64 | ((uint32_t)slot<<16);
                     }
                     else {
                         int hit = call_hit(touch.x, touch.y);
                         if (hit == 6 && call_page > 0) --call_page;
-                        else if (hit == 7 && (call_page+1)*6 < call_count(menu.animal)) ++call_page;
+                        else if (hit == 7 && (call_page+1)*6 < call_count(menu.animals)) ++call_page;
                         else if (hit >= 0 && hit < 6) {
-                            int target = call_index(menu.animal, call_page, hit);
+                            int target = call_index(menu.animals, call_page, hit);
                             if (target >= 0) flags |= 32 | ((uint32_t)(target+1) << 8);
                         }
                     }
@@ -908,7 +946,7 @@ end_load:
             perf.simulation += OSGetTime() - mark;
             if (c2_hunt_dead(sim, &death.shots, &death.kills)) {
                 audio_silence(1);
-                int action = run_menu(NULL, &menu, &death);
+                int action = run_menu(ui, 1, death.shots, death.kills);
                 audio_silence(0);
                 if (action == HUNT_RESTART) {
                     hunt_seed = next_hunt_seed();
@@ -925,14 +963,14 @@ end_load:
             }
             mark = OSGetTime(); GX2DrawDone(); frame_wait += OSGetTime() - mark;
             c2_hud_state(sim, &hud);
-            if (hud.call != prev_hud.call) call_page = call_page_for(menu.animal, hud.call);
+            if (hud.call != prev_hud.call) call_page = call_page_for(menu.animals, hud.call);
             if (hud.call != prev_hud.call || hud.weapon != prev_hud.weapon || call_page != prev_call_page) {
                 if (c2_icon_atlas(sim, icons_tex.surface.image, icons_tex.surface.pitch, call_page, hud.weapon)) OSFatal("HUD: call icon update failed");
-                call_labels(&icons_tex, menu.animal, call_page, hud.call);
+                call_labels(&icons_tex, menu.animals, call_page, hud.call);
                 prev_call_page = call_page;
                 GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, icons_tex.surface.image, icons_tex.surface.imageSize);
             }
-            if (hud.call != prev_hud.call || hud.weapon != prev_hud.weapon || hud.ammo != prev_hud.ammo || hud.weapon_ready != prev_hud.weapon_ready) { hud_update(&hud_tex, &hud, menu.weapon); prev_hud = hud; }
+            if (hud.call != prev_hud.call || hud.weapon != prev_hud.weapon || hud.ammo != prev_hud.ammo || hud.weapon_ready != prev_hud.weapon_ready) { hud_update(&hud_tex, &hud, carried_weapons); prev_hud = hud; }
             memset(&stream_upload, 0, sizeof(stream_upload));
             perf.tiled_atlases = tiled_atlases; perf.static_cache_enabled = static_cache_enabled;
             int death_active = c2_death_active(sim);
@@ -1258,9 +1296,12 @@ int main(void) {
     // WHB registers the HBL HOME-denied handler; keep our deferred-shutdown
     // loop informed as well, without polling WHBProcIsRunning again.
     ProcUIRegisterCallback(PROCUI_CALLBACK_HOME_BUTTON_DENIED, lifecycle_home_denied, NULL, 100);
-    MenuState selection = {0}; selection.animal = 1; selection.weapon = 1; selection.radar = 1;
+    /* The console's own font for the menus; the bitmap font if unavailable. */
+    void *font = NULL; uint32_t font_size = 0;
+    if (!OSGetSharedData(OS_SHAREDDATATYPE_FONT_STANDARD, 0, &font, &font_size)) { font = NULL; font_size = 0; }
+    void *ui = c2_menu_new(font, font_size);
     while (app_running()) {
-        if (run_session(&selection) != HUNT_MAIN_MENU) break;
+        if (run_session(ui) != HUNT_MAIN_MENU) break;
     }
     lifecycle_checkpoint("main: resource cleanup complete; ProcUI shutdown begin");
     // Graphics/audio have already been dismantled. Do not leave callbacks that

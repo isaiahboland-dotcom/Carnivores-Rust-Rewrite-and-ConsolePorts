@@ -8,10 +8,9 @@ the display re-enable calls after the loading console shuts down.
 
 Gameplay was reported below 30 FPS. The SD log contains loading results but
 no gameplay timing samples, so measured bottlenecks have not been ranked yet.
-GamePad taps lose the selected gun slot in the input queue; scope zoom is not
-connected to rendering; gun depth is disabled, matching overlapping internal
-geometry; and the TV menu is drawn from a 512×256 surface. These are open
-issues, not completed stock-weapon support.
+Scope zoom is not connected to rendering, and gun depth is disabled, matching
+overlapping internal geometry. (GamePad weapon taps and the 512x256 menu were
+fixed on 2026-10-30.)
 
 See the [hardware review](../../docs/WIIU-HARDWARE-REVIEW.md) for evidence,
 optimization candidates, required profiling, and the prioritized fix list.
@@ -113,35 +112,44 @@ on the SD card. Game data is not bundled. To copy the exact required files:
 python3 wiiu-ver/perf-probe/stage_assets.py /path/to/HUNTDAT /path/to/sdcard/wiiu/apps/carnivores-probe
 ```
 
-The 3DS-style menu now runs before hunt loading. It offers all five daytime
-hunting maps: Delphaeus Hills, Fort Ciskin, Vengar Fjords, Manya Jungle and
-Mount Ravan. Pick any combination of the nine stock targets: Parasaurolophus,
-Ankylosaurus, Stegosaurus, Allosaurus, Chasmosaurus, Velociraptor, Spinosaurus,
-Ceratosaurus and T-Rex. The pistol is required and radar is optional.
-Each hunt now starts with 66 animals: 48 targets split roughly evenly among
-selected species, plus three each of the six ambient species (18 total).
-Positions and headings are randomized across valid map terrain, with shared
-water/slope/object collision checks and spacing between animals. Targets
-start at least 40 cells from the hunter; ambient animals start at least eight
-cells away. Flyers start airborne. The shared ambient AI may relocate distant
-small animals toward the active area during play; hunt targets remain spread
-across the map. This is a Wii U population tuning choice, not exact PC counts.
+### The menus (HD, 2026-10-30)
 
-New hunts and restarts use a fresh timebase seed, logged in Cemu's log for
-diagnostics. Settings and target selections survive restart, while the animal
-layout changes. The target menu keeps its three-by-three picture grid.
+The menus are drawn in Rust (`src/menu.rs`, `src/ui.rs`) at each display's
+own resolution: 1920x1080 for the TV and 854x480 for the GamePad, from a
+1280x720 layout, with the console's system font (`OSGetSharedData`; the 8x8
+bitmap font if there is none) and the original pictures at their full size.
+Each is redrawn on the CPU only when something changes; scaled pictures are
+cached between redraws.
 
-Use GamePad touch or D-pad and A to select; B goes back. White shows
-controller focus, gold marks selections. The 9999 points remain temporary;
-profiles, pricing, saves and trophies are not implemented. The title's dark
-panel covers the PC buttons embedded in the original artwork.
+- Title: Hunt, Settings, Exit (back to the Wii U Menu).
+- Hunt setup, the 3DS design: 1. the five areas as hexagons, and dawn, day or
+  night; 2. the nine animals; 3. the six weapons, camouflage, radar, cover
+  scent, double ammo, tranquilizer and observer mode (no weapons). The
+  focused item's original picture and description (`MENU/TXT`) are shown on
+  the right; the bottom line sums up the picks.
+- Settings: dinosaur run speed (50-100%), ambient animals, blood, death
+  camera, animal descriptions in metric or US units.
+- Controls: D-pad or left stick moves, A picks, B goes back, L/R change the
+  setup page, + starts the hunt; or tap the GamePad.
 
-Open Settings from the title menu to toggle Blood and Kill Animations with
-GamePad touch or D-pad/A. B or Back returns to the title. Both default to On.
-Blood Off disables dinosaur-hit blood and ground trails. Kill Animations Off
-skips death playback and immediately opens Restart Hunt / Main Menu.
-Choices survive hunt restarts and returning to the title during this session;
-they are not yet saved to SD across RPX launches. This update uses the same 92 assets as the stock-roster build; no new SD files are required.
+The picks and settings are saved to `settings.txt` beside the app when the
+menu closes and read at start. Night hunts use the night sky, light map and
+the original's night vision (every world texel becomes (G/8, G, G/8)).
+Points, prices, the hunter profile, trophies and survival are still to come.
+The install now has 143 files (the menu adds EQUIP1-4 and 38 descriptions).
+
+The host test `pc-ver/crates/c2-core/tests/wiiu_menu.rs` drives every page;
+with `C2_MENU_SHOTS=DIR` (and `C2_MENU_FONT=FILE.ttf`, `C2_ORIGINAL_HUNTDAT`)
+it writes them as PNGs at both sizes.
+
+Each hunt starts with 66 animals: 48 targets split roughly evenly among the
+picked species, plus three each of the six ambient species (18, none with
+ambient animals off). Positions and headings are randomized across valid map
+terrain, with shared water/slope/object collision checks and spacing between
+animals. Targets start at least 40 cells from the hunter; ambient animals
+start at least eight cells away. Flyers start airborne. This is a Wii U
+population tuning choice, not exact PC counts. New hunts and restarts use a
+fresh timebase seed; restarts keep every option.
 
 L stick moves, R stick looks, A jumps, B toggles sprint, D-pad up toggles
 crouch, ZL draws/holsters the pistol and ZR fires. D-pad down cycles through

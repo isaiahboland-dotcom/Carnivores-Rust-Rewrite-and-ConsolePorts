@@ -2,6 +2,30 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-30 — Wii U: HD menus drawn in Rust; every hunt option
+
+The owner found the Wii U menu low quality: a 512x256 texture (the 3DS's
+size), a 5x7 font and point sampling. Asked to choose, they kept the 3DS
+design (hexagon grids, time icons, gear) over recreating the original
+800x600 screens as the PC does, and asked for every option the core has.
+
+- The menus moved from C to Rust (`wiiu-ver/perf-probe/src/menu.rs`, drawing
+  in `src/ui.rs`), so the host tests can drive and render them. C passes
+  buttons and touches and shows two textures: 1920x1080 (TV) and 854x480
+  (GamePad), drawn from one 1280x720 layout, redrawn only on change. Scaled
+  pictures are cached; the TV redraw is ~4 ms on the PC (from 22).
+- Text uses the console's system font (`OSGetSharedData`, read at runtime,
+  nothing bundled), rasterized with `ab_glyph`; without it (an emulator
+  without system fonts), the 8x8 `font8x8` font, smoothed.
+- New: dawn/day/night (night: the night sky and light map, and night vision
+  on the world's atlases), camouflage, cover scent, double ammo,
+  tranquilizer, observer mode (no weapons), run speed, ambient animals,
+  metric/US descriptions, and Exit. The original descriptions
+  (`MENU/TXT`) and EQUIP1-4 joined the install (143 files).
+- The picks and settings persist in `settings.txt` beside the app.
+- The two-second blue/magenta display check before the menu is gone (the
+  hardware review called it temporary); the display re-enable calls stay.
+
 ## 2026-10-30 — Wii U: resident terrain and water; scenery updated per crossing
 
 The resident-scenery capture (`wiiu-ver/perf-probe/hardware-logs/2026-10-30-resident-scenery-results.md`)
@@ -245,7 +269,7 @@ stays in `wiiu-ver/`.
   `carnivores-probe.wuhb` for Aroma using devkitPro's `wuhbtool` from
   `wut-tools`. The game files remain beside the executable because the
   current runtime reads them from that SD folder. The file list
-  (`c2_launcher::wiiu::assets`, 102
+  (`c2_launcher::wiiu::assets`, 143
   files) mirrors `wiiu-ver/perf-probe/stage_assets.py`; change both together.
   Files are found in any case. A base that isn't plain Carnivores 2 (Ice Age,
   a Modder's Edition style game) is refused for now.

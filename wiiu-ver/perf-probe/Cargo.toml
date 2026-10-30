@@ -9,5 +9,7 @@ crate-type = ["staticlib"]
 c2-core = { path = "../../pc-ver/crates/c2-core", default-features = false, features = ["hunt-diagnostics"] }
 c2-formats = { path = "../../pc-ver/crates/c2-formats", default-features = false }
 libm = "0.2"
+ab_glyph = { version = "0.2", default-features = false, features = ["libm"] }
+font8x8 = { version = "0.3", default-features = false }
 [profile.release]
 panic = "abort"

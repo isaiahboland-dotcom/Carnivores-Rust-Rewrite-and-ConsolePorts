@@ -2,10 +2,12 @@
 extern crate alloc;
 mod hunt_setup;
 mod static_scene;
+mod ui;
+mod menu;
 use static_scene::{TerrainCache, SceneryCandidates, visible_sphere};
 use alloc::{boxed::Box, vec::Vec};
 use c2_core::{
-    area::{Area, TimeOfDay},
+    area::Area,
     player::{Controls, Player},
     dino::{self, Herd},
     game::{GameEvent, Hunt, HuntInput, HuntOptions, Weapons},
@@ -70,6 +72,7 @@ struct Simulation {
     resident_terrain: static_scene::ResidentTerrain,
     terrain_written: Vec<static_scene::DrawRange>,
     scenery_written: Vec<static_scene::DrawRange>,
+    choice: hunt_setup::HuntChoice,
     models: Vec<PreparedModel>,
     model_uvs: Vec<Vec<[[f32; 2]; 3]>>,
     object_lights: Vec<f32>,
@@ -130,7 +133,7 @@ pub extern "C" fn c2_death_active(ptr: *mut core::ffi::c_void) -> u32 {
 #[no_mangle]
 pub extern "C" fn c2_restart_hunt(ptr: *mut core::ffi::c_void, seed: u32) -> i32 {
     let sim = unsafe { &mut *ptr.cast::<Simulation>() };
-    let hunt = match hunt_setup::restart(&sim.area, &sim.hunt, seed) { Ok(h) => h, Err(e) => return e };
+    let hunt = match hunt_setup::restart_with(&sim.area, &sim.hunt, &sim.choice, seed) { Ok(h) => h, Err(e) => return e };
     sim.hunt = hunt;
     sim.death_ms = 0;
     sim.events.clear(); sim.sprint = false; sim.crouch = false; sim.first_tick_done = false;
@@ -145,6 +148,7 @@ pub extern "C" fn c2_move_create(
     map_len: usize,
     rsc_ptr: *const u8,
     rsc_len: usize,
+    time: u32,
     result: *mut *mut core::ffi::c_void,
 ) -> i32 {
     let map_data = unsafe { core::slice::from_raw_parts(map_ptr, map_len) };
@@ -157,8 +161,9 @@ pub extern "C" fn c2_move_create(
         Ok(v) => v,
         Err(_) => return -2,
     };
-    let area = Area::new(map, rsc, TimeOfDay::Day);
-    // The probe uses a fixed map and time of day; object lighting is static.
+    let time = hunt_setup::HuntChoice { time, ..Default::default() }.time_of_day();
+    let area = Area::new(map, rsc, time);
+    // The map and time of day are fixed for the session; object lighting is static.
     let mut object_lights = alloc::vec![0.0; area.map.objects.len()];
     for placement in area.placements() {
         let index = usize::from(placement.cell.1) * 1024 + usize::from(placement.cell.0);
@@ -189,6 +194,7 @@ pub extern "C" fn c2_move_create(
         resident_terrain: static_scene::ResidentTerrain::default(),
         terrain_written: Vec::new(),
         scenery_written: Vec::new(),
+        choice: hunt_setup::HuntChoice::default(),
         models,
         model_uvs,
         object_lights,
@@ -314,7 +320,7 @@ pub extern "C" fn c2_move_tick(
     let tapped_weapon = ((flags >> 16) & 7) as usize;
     let select_weapon = if flags & 64 != 0 { Some(tapped_weapon) } else { None };
     let toggle_weapon = flags & 8 != 0;
-    sim.hunt.tick(&sim.area, &cars, &HuntInput { controls, toggle_weapon, fire: flags & 16 != 0, call: flags & 32 != 0, select_weapon: if flags & 4096 != 0 { Some((sim.hunt.weapons.current+1) % sim.hunt.weapons.info.len()) } else { select_weapon }, ..Default::default() }, 16, &mut sim.events);
+    sim.hunt.tick(&sim.area, &cars, &HuntInput { controls, toggle_weapon, fire: flags & 16 != 0, call: flags & 32 != 0, select_weapon: if flags & 4096 != 0 && !sim.hunt.weapons.info.is_empty() { Some((sim.hunt.weapons.current+1) % sim.hunt.weapons.info.len()) } else { select_weapon }, ..Default::default() }, 16, &mut sim.events);
     if sim.hunt.health <= 0 { sim.death_ms += 16; }
     let (eye, alpha, _) = sim.hunt.camera();
     for event in &sim.events {
@@ -390,15 +396,16 @@ pub extern "C" fn c2_move_destroy(ptr: *mut core::ffi::c_void) {
 
 // Load original definitions and models from the caller-owned SD buffers.
 #[no_mangle]
-pub extern "C" fn c2_hunt_setup(ptr: *mut core::ffi::c_void, files: *const *const u8, lengths: *const u32, targets: u32, radar: u32, disabled: u32, weapons: u32, seed: u32) -> i32 {
+pub extern "C" fn c2_hunt_setup(ptr: *mut core::ffi::c_void, files: *const *const u8, lengths: *const u32, choice: *const hunt_setup::HuntChoice, seed: u32) -> i32 {
     let sim = unsafe { &mut *ptr.cast::<Simulation>() };
     let read = |i: usize| unsafe { core::slice::from_raw_parts(*files.add(i), *lengths.add(i) as usize) };
     let Ok(text) = core::str::from_utf8(read(0)) else { return -1; };
     let assets: [&[u8]; hunt_setup::MODEL_COUNT] = core::array::from_fn(|i| read(i + 1));
-    let (hunt, cars) = match hunt_setup::setup(&sim.area, text, &assets, targets, radar != 0, weapons, seed) { Ok(v) => v, Err(e) => return e };
+    let choice = unsafe { *choice };
+    let (hunt, cars) = match hunt_setup::setup_with(&sim.area, text, &assets, &choice, seed) { Ok(v) => v, Err(e) => return e };
     sim.hunt = hunt;
+    sim.choice = choice;
     sim.death_ms = 0;
-    hunt_setup::configure(&mut sim.hunt, disabled);
     sim.cars = cars;
     sim.actor_models = sim.cars.iter().map(|c| PreparedModel::from_mesh(&c.mesh)).collect();
     sim.actor_radii = sim.cars.iter().zip(&sim.actor_models).map(|(car, model)| hunt_setup::animation_radius(car).max(model.radius())).collect();
@@ -416,6 +423,7 @@ pub extern "C" fn c2_actor_atlas(ptr: *mut core::ffi::c_void, pixels: *mut u8, p
             unsafe { core::ptr::copy_nonoverlapping(model.texture_rgba.as_ptr().add(y * 1024), pixels.add(((y + i / 8 * 256) * pitch as usize + i % 8 * 256) * 4), 1024); }
         }
     }
+    unsafe { night_vision_rows(sim, pixels, pitch, 2048, sim.actor_models.len().div_ceil(8) * 256); }
     0
 }
 
@@ -429,18 +437,14 @@ pub extern "C" fn c2_call_load(ptr: *mut core::ffi::c_void, slot: u32, data: *co
     0
 }
 
-// Decode a menu picture into a caller-owned RGBA image; no game artwork is bundled.
-#[no_mangle]
-pub extern "C" fn c2_menu_picture(data: *const u8, len: u32, pixels: *mut u8, width: u32, height: u32) -> i32 {
-    if data.is_null() || pixels.is_null() || width == 0 || height == 0 { return -1; }
-    let Ok(pic) = c2_formats::tga::parse(unsafe { core::slice::from_raw_parts(data, len as usize) }) else { return -2; };
-    if pic.width == 0 || pic.height == 0 { return -3; }
-    for y in 0..height as usize { for x in 0..width as usize {
-        let sx = x * pic.width / width as usize; let sy = y * pic.height / height as usize;
-        let rgba = c2_core::color::rgb555_to_rgba8(pic.pixels[sy * pic.width + sx], 255);
-        unsafe { core::ptr::copy_nonoverlapping(rgba.as_ptr(), pixels.add((y * width as usize + x) * 4), 4); }
-    }}
-    0
+// Night hunts are seen through night vision (`BrightenTexture`): every texel
+// of the world becomes (G/8, G, G/8).
+fn night_vision(pixels: &mut [u8]) {
+    for p in pixels.chunks_exact_mut(4) { let g = p[1]; p[0] = g / 8; p[2] = g / 8; }
+}
+unsafe fn night_vision_rows(sim: &Simulation, pixels: *mut u8, pitch: u32, width: usize, rows: usize) {
+    if !sim.area.time.night_vision() { return; }
+    for y in 0..rows { night_vision(core::slice::from_raw_parts_mut(pixels.add(y * pitch as usize * 4), width * 4)); }
 }
 
 #[no_mangle]
@@ -464,7 +468,7 @@ pub extern "C" fn c2_icon_load(ptr: *mut core::ffi::c_void, data: *const u8, len
 #[no_mangle]
 pub extern "C" fn c2_icon_atlas(ptr: *mut core::ffi::c_void, pixels: *mut u8, pitch: u32, page: u32, weapon: u32) -> i32 {
     let sim = unsafe { &*ptr.cast::<Simulation>() };
-    if sim.panel_icons.len() != hunt_setup::TARGET_AI.len() + hunt_setup::WEAPON_COUNT || pitch < 512 || page > 1 || weapon as usize >= sim.hunt.weapons.info.len() { return -1; }
+    if sim.panel_icons.len() != hunt_setup::TARGET_AI.len() + hunt_setup::WEAPON_COUNT || pitch < 512 || page > 1 || (!sim.hunt.weapons.info.is_empty() && weapon as usize >= sim.hunt.weapons.info.len()) { return -1; }
     let out = unsafe { core::slice::from_raw_parts_mut(pixels, pitch as usize * 256 * 4) };
     for rgba in out.chunks_exact_mut(4) { rgba.copy_from_slice(&[16,22,16,255]); }
     let mut draw = |id: usize, x0: usize, y0: usize, width: usize, height: usize, highlight: bool| {
@@ -642,6 +646,7 @@ pub extern "C" fn c2_terrain_atlas(ptr: *mut core::ffi::c_void, pixels: *mut u8,
             }
         }
     }
+    unsafe { night_vision_rows(sim, pixels, pitch, 2048, sim.area.rsc.textures.len().div_ceil(16) * 128); }
     0
 }
 
@@ -656,6 +661,7 @@ pub extern "C" fn c2_scenery_atlas(ptr: *mut core::ffi::c_void, pixels: *mut u8,
             unsafe { core::ptr::copy_nonoverlapping(model.texture_rgba.as_ptr().add(y * 1024), pixels.add(dst), 1024); }
         }
     }
+    unsafe { night_vision_rows(sim, pixels, pitch, 2048, sim.models.len().div_ceil(8) * 256); }
     0
 }
 
@@ -709,20 +715,22 @@ pub extern "C" fn c2_static_view_key(ptr: *mut core::ffi::c_void, out: *mut f32)
     unsafe { core::ptr::copy_nonoverlapping(key.as_ptr(), out, key.len()); }
 }
 
-// Original day sky image, converted to a linear RGBA GX2 texture.
+// The original sky image for the time of day, converted to a linear RGBA GX2 texture.
 #[no_mangle]
 pub extern "C" fn c2_sky_texture(ptr: *mut core::ffi::c_void, pixels: *mut u8, pitch: u32) -> i32 {
     let sim = unsafe { &*ptr.cast::<Simulation>() };
-    let sky = &sim.area.rsc.skies[0];
+    let skies = &sim.area.rsc.skies;
+    let sky = if skies[sim.area.time as usize].len() == 256 * 256 { &skies[sim.area.time as usize] } else { &skies[0] };
     if pitch < 256 || sky.len() != 256 * 256 { return -1; }
     for z in 0..256usize { for x in 0..256usize {
         let rgba = c2_core::color::rgb555_to_rgba8(sky[z * 256 + x], 255);
         unsafe { core::ptr::copy_nonoverlapping(rgba.as_ptr(), pixels.add((z * pitch as usize + x) * 4), 4); }
     }}
+    unsafe { night_vision_rows(sim, pixels, pitch, 256, 256); }
     0
 }
 
-// Daytime horizon/fog color stored in the original area resources.
+// Horizon/fog color for the time of day, from the original area resources.
 #[no_mangle]
 pub extern "C" fn c2_fog_color(ptr: *mut core::ffi::c_void, out: *mut f32) {
     let sim = unsafe { &*ptr.cast::<Simulation>() };
@@ -956,6 +964,68 @@ pub extern "C" fn c2_terrain_vertices(ptr: *mut core::ffi::c_void, positions: *m
     let (eye, yaw, pitch) = sim.hunt.camera();
     let cell = ((sim.hunt.player.x / 256.0) as i32, (sim.hunt.player.z / 256.0) as i32);
     unsafe { sim.terrain_cache.emit(&sim.area, eye, yaw, pitch, cell, positions, colors) }
+}
+
+// ---- The menus (menu.rs), for C. The handle lives for the whole app, so the
+// picks survive between hunts. `font` is the console's system font (shared,
+// never freed) or null for the built-in bitmap font.
+#[no_mangle]
+pub extern "C" fn c2_menu_new(font: *const u8, len: u32) -> *mut core::ffi::c_void {
+    let bytes: Option<&'static [u8]> = if font.is_null() || len == 0 { None } else { Some(unsafe { core::slice::from_raw_parts(font, len as usize) }) };
+    Box::into_raw(Box::new(menu::Menu::new(ui::Font::new(bytes)))).cast()
+}
+fn menu_ref<'a>(ptr: *mut core::ffi::c_void) -> &'a mut menu::Menu { unsafe { &mut *ptr.cast::<menu::Menu>() } }
+/// The name of menu file `slot` as a C string in `out`; -1 past the last.
+#[no_mangle]
+pub extern "C" fn c2_menu_file_name(slot: u32, out: *mut u8, capacity: u32) -> i32 {
+    let Some(name) = menu::FILES.get(slot as usize) else { return -1; };
+    if name.len() + 1 > capacity as usize { return -1; }
+    unsafe { core::ptr::copy_nonoverlapping(name.as_ptr(), out, name.len()); *out.add(name.len()) = 0; }
+    name.len() as i32
+}
+#[no_mangle]
+pub extern "C" fn c2_menu_set_file(ptr: *mut core::ffi::c_void, slot: u32, data: *const u8, len: u32) -> i32 {
+    if data.is_null() { return -1; }
+    if menu_ref(ptr).set_file(slot as usize, unsafe { core::slice::from_raw_parts(data, len as usize) }) { 0 } else { -2 }
+}
+#[no_mangle]
+pub extern "C" fn c2_menu_load_settings(ptr: *mut core::ffi::c_void, data: *const u8, len: u32) {
+    if data.is_null() { return; }
+    menu_ref(ptr).load_settings(&alloc::string::String::from_utf8_lossy(unsafe { core::slice::from_raw_parts(data, len as usize) }));
+}
+/// The settings file's text in `out`; returns its length (0 if it does not fit).
+#[no_mangle]
+pub extern "C" fn c2_menu_settings(ptr: *mut core::ffi::c_void, out: *mut u8, capacity: u32) -> u32 {
+    let text = menu_ref(ptr).settings_text();
+    if text.len() > capacity as usize { return 0; }
+    unsafe { core::ptr::copy_nonoverlapping(text.as_ptr(), out, text.len()); }
+    text.len() as u32
+}
+/// Open the title (death = 0) or the death screen with its shots and kills.
+#[no_mangle]
+pub extern "C" fn c2_menu_open(ptr: *mut core::ffi::c_void, death: u32, shots: u32, kills: u32) {
+    let m = menu_ref(ptr);
+    if death != 0 { m.open_death(shots, kills) } else { m.open_title() }
+}
+/// Button edges (menu.rs `button`); 1 if the menu changed.
+#[no_mangle]
+pub extern "C" fn c2_menu_input(ptr: *mut core::ffi::c_void, buttons: u32) -> u32 { menu_ref(ptr).input(buttons) as u32 }
+/// A GamePad touch in its 854x480 pixels; 1 if it hit something.
+#[no_mangle]
+pub extern "C" fn c2_menu_touch(ptr: *mut core::ffi::c_void, x: f32, y: f32) -> u32 {
+    menu_ref(ptr).touch(x * ui::WIDTH / 854.0, y * ui::HEIGHT / 480.0) as u32
+}
+#[no_mangle]
+pub extern "C" fn c2_menu_action(ptr: *mut core::ffi::c_void) -> u32 { menu_ref(ptr).action as u32 }
+#[no_mangle]
+pub extern "C" fn c2_menu_choice(ptr: *mut core::ffi::c_void, out: *mut hunt_setup::HuntChoice) {
+    unsafe { *out = menu_ref(ptr).choice; }
+}
+/// Draw the menu into an RGBA8 surface (`pitch` in pixels).
+#[no_mangle]
+pub extern "C" fn c2_menu_draw(ptr: *mut core::ffi::c_void, pixels: *mut u8, pitch: u32, width: u32, height: u32) {
+    let px = unsafe { core::slice::from_raw_parts_mut(pixels, pitch as usize * height as usize * 4) };
+    menu_ref(ptr).draw(&mut ui::Canvas::new(px, pitch as usize, width as usize, height as usize));
 }
 
 #[panic_handler]

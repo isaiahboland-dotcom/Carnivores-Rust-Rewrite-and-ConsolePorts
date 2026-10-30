@@ -307,3 +307,55 @@ fn distant_ai_bounds_pending_time_and_resumes_immediately() {
     hunt.tick(&area, &refs, &HuntInput::default(), 16, &mut events);
     assert!(hunt.herd.chars.iter().all(|c| c.pending_ai_ms == 0));
 }
+
+#[test]
+fn menu_options_reach_the_hunt_and_survive_a_restart() {
+    let Ok(root) = std::env::var("C2_ORIGINAL_HUNTDAT") else {
+        return;
+    };
+    let root = std::path::Path::new(&root);
+    let read = |p: &str| std::fs::read(root.join(p)).unwrap();
+    let defs = std::fs::read_to_string(root.join("_RES.TXT")).unwrap();
+    let mut assets: Vec<Vec<u8>> = hunt_setup::SPECIES_FILES.iter().map(|file| read(file)).collect();
+    assets.extend(hunt_setup::WEAPON_FILES.iter().map(|f| read(&format!("WEAPONS/{f}"))));
+    assets.push(read("HUNTER1.CAR"));
+    let bytes: Vec<&[u8]> = assets.iter().map(Vec::as_slice).collect();
+    let choice = hunt_setup::HuntChoice {
+        time: 2,
+        animals: 0b11,
+        weapons: 0b101,
+        camo: 1,
+        scent: 1,
+        double_ammo: 1,
+        tranq: 1,
+        run_pct: 60,
+        blood: 0,
+        death_anim: 0,
+        ambient: 0,
+        ..Default::default()
+    };
+    let area = Area::new(
+        map::parse(&read("AREAS/AREA1.MAP")).unwrap(),
+        rsc::parse(&read("AREAS/AREA1.RSC")).unwrap(),
+        choice.time_of_day(),
+    );
+    assert_eq!(area.time, TimeOfDay::Night);
+    let (hunt, _) = hunt_setup::setup_with(&area, &defs, &bytes, &choice, 1).unwrap();
+    let o = hunt.opts;
+    assert!(o.camo && o.scent && o.tranq && o.radar && !o.observer && !o.blood && !o.death_anim);
+    assert_eq!(o.dino_run_k, 0.6);
+    assert_eq!(hunt.weapons.info.len(), 2);
+    assert_eq!(hunt.weapons.ammo_mag, vec![1, 1]);
+    assert_eq!(hunt.herd.chars.len(), hunt_setup::TARGET_POPULATION);
+    assert!(hunt.herd.chars.iter().all(|c| c.ctype >= hunt_setup::AMBIENT_COUNT));
+    let again = hunt_setup::restart_with(&area, &hunt, &choice, 2).unwrap();
+    assert!(again.opts.camo && again.opts.scent && !again.opts.blood && again.opts.dino_run_k == 0.6);
+    assert_eq!(again.weapons.ammo_mag, vec![1, 1]);
+    assert_eq!(again.herd.chars.len(), hunt_setup::TARGET_POPULATION);
+    // Observer mode needs no weapon and carries none.
+    let observe = hunt_setup::HuntChoice { observer: 1, weapons: 0, ..choice };
+    let (hunt, _) = hunt_setup::setup_with(&area, &defs, &bytes, &observe, 1).unwrap();
+    assert!(hunt.opts.observer && hunt.weapons.info.is_empty());
+    let none = hunt_setup::HuntChoice { weapons: 0, ..choice };
+    assert!(hunt_setup::setup_with(&area, &defs, &bytes, &none, 1).is_err());
+}
