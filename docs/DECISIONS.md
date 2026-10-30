@@ -2,6 +2,18 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-30 — Wii U: the view model gets its own depth slice
+
+The gun was drawn with depth off and clip-space z = 0, so its triangles
+painted over each other in file order: the double-barrel's shells showed
+through the stock while firing (all guns but the crossbow) and the pistol's
+arm showed through the hand. As on the 3DS (`C3D_DepthMap(-0.02, 0.98)`), the
+world is now drawn into depth 0.02..1 and the gun into 0..0.02 (by viewport),
+with its own depth test and writes; its vertices get real depth over
+1..4096 camera units (`hunt_setup::GUN_NEAR`/`GUN_FAR`). A host test checks
+every frame of every weapon animation fits (the farthest vertex is 589 units
+ahead; parts behind the camera are clipped as before).
+
 ## 2026-10-30 — Wii U: HD menus drawn in Rust; every hunt option
 
 The owner found the Wii U menu low quality: a 512x256 texture (the 3DS's

@@ -359,3 +359,37 @@ fn menu_options_reach_the_hunt_and_survive_a_restart() {
     let none = hunt_setup::HuntChoice { weapons: 0, ..choice };
     assert!(hunt_setup::setup_with(&area, &defs, &bytes, &none, 1).is_err());
 }
+
+// The view-model depth range the Wii U maps into its front depth slice
+// (hunt_setup::GUN_NEAR..GUN_FAR) holds every gun vertex in front of the
+// camera, in every frame of every weapon animation and any sway or pitch (the
+// distance from the eye bounds the depth). Parts behind the camera (the
+// stocks and arms reach back) are clipped, as they always were.
+#[test]
+fn gun_vertices_fit_the_view_model_depth_range() {
+    let Ok(root) = std::env::var("C2_ORIGINAL_HUNTDAT") else {
+        return;
+    };
+    let root = std::path::Path::new(&root);
+    let (mut near, mut far) = (f32::MAX, 0.0f32);
+    for f in hunt_setup::WEAPON_FILES {
+        let car = c2_formats::car::parse(&std::fs::read(root.join("WEAPONS").join(f)).unwrap()).unwrap();
+        for anim in &car.animations {
+            let duration = c2_core::model::car_anim_duration_ms(anim).max(1);
+            for t in (0..duration).step_by(10) {
+                let Some(posed) = c2_core::model::pose_car(anim, car.mesh.vertices.len(), t) else { continue };
+                for v in posed {
+                    if -v[2] > 0.0 {
+                        near = near.min(-v[2]);
+                    }
+                    far = far.max((v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt());
+                }
+            }
+        }
+    }
+    eprintln!("gun vertices ahead: nearest {near:.2}, farthest {far:.1}");
+    assert!(far < hunt_setup::GUN_FAR / 2.0);
+    assert_eq!(hunt_setup::gun_clip_z(hunt_setup::GUN_NEAR), 0.0);
+    let z = hunt_setup::gun_clip_z(hunt_setup::GUN_FAR) / hunt_setup::GUN_FAR;
+    assert!((z - 1.0).abs() < 1e-6);
+}

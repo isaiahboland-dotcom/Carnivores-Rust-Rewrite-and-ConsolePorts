@@ -571,7 +571,7 @@ pub extern "C" fn c2_actor_vertices(ptr: *mut core::ffi::c_void, positions: *mut
                 emit(model, &posed, model_slot, &|v| {
                     let x = v[0]*ca + v[2]*sa; let vz = v[2]*ca - v[0]*sa;
                     let y = v[1]*cb - vz*sb; let depth = -(vz*cb + v[1]*sb);
-                    [x*0.75, y*1.333, 0.0, depth]
+                    [x*0.75, y*1.333, hunt_setup::gun_clip_z(depth), depth]
                 });
             }
         }

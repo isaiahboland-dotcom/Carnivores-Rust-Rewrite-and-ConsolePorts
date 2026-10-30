@@ -46,6 +46,16 @@ pub const WEAPON_FILES: [&str; 6] = [
     "SNIPER.CAR",
 ];
 pub const WEAPON_MODEL: usize = SPECIES_FILES.len();
+/// The view model's own depth range (camera units): it is drawn into the
+/// front of the depth buffer, so its parts hide each other but the world never
+/// hides it (main.c, as the 3DS does).
+pub const GUN_NEAR: f32 = 1.0;
+pub const GUN_FAR: f32 = 4096.0;
+/// Clip-space z for a view-model vertex `depth` units ahead (w = depth):
+/// z / w runs 0..1 from GUN_NEAR to GUN_FAR.
+pub fn gun_clip_z(depth: f32) -> f32 {
+    GUN_FAR / (GUN_FAR - GUN_NEAR) * (depth - GUN_NEAR)
+}
 pub const WEAPON_COUNT: usize = WEAPON_FILES.len();
 pub const HUNTER_SPECIES: usize = SPECIES_FILES.len();
 pub const HUNTER_MODEL: usize = WEAPON_MODEL + WEAPON_COUNT;
