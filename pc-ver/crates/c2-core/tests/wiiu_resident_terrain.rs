@@ -1,6 +1,9 @@
 #![allow(unsafe_code)]
 extern crate alloc;
 #[allow(dead_code)]
+// The Wii U sources keep their own workspace's style.
+#[rustfmt::skip]
+#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
 #[path = "../../../../wiiu-ver/perf-probe/src/static_scene.rs"]
 mod static_scene;
 use c2_core::area::{Area, TimeOfDay};
@@ -19,9 +22,20 @@ struct Buffers {
 impl Buffers {
     fn new() -> Self {
         let b = || vec![f32::NAN; VERTICES * 4];
-        Self { tp: b(), ta: b(), wp: b(), wa: b() }
+        Self {
+            tp: b(),
+            ta: b(),
+            wp: b(),
+            wa: b(),
+        }
     }
-    fn update(&mut self, r: &mut ResidentTerrain, area: &Area, cache: &TerrainCache, cell: (i32, i32)) -> (u32, Vec<DrawRange>) {
+    fn update(
+        &mut self,
+        r: &mut ResidentTerrain,
+        area: &Area,
+        cache: &TerrainCache,
+        cell: (i32, i32),
+    ) -> (u32, Vec<DrawRange>) {
         let mut written = Vec::new();
         let cells = unsafe {
             r.update(
@@ -47,7 +61,13 @@ fn project(p: &[f32], eye: [f32; 3], yaw: f32, pitch: f32) -> [u32; 4] {
     let forward = wx * sa - wz * ca;
     let up = wy * cb + forward * sb;
     let depth = forward * cb - wy * sb;
-    [side * 0.75, up * 1.333, (32768.0 / (32768.0 - 16.0)) * (depth - 16.0), depth].map(f32::to_bits)
+    [
+        side * 0.75,
+        up * 1.333,
+        (32768.0 / (32768.0 - 16.0)) * (depth - 16.0),
+        depth,
+    ]
+    .map(f32::to_bits)
 }
 
 type Vertex = ([u32; 4], [u32; 4]);
@@ -62,15 +82,29 @@ fn legacy_water(area: &Area, eye: [f32; 3], yaw: f32, pitch: f32, cell: (i32, i3
             if x < 0 || z < 0 || x >= 1023 || z >= 1023 {
                 continue;
             }
-            let Some((level, tex)) = water_cell(area, x, z) else { continue };
-            if !visible_sphere(x as f32 * 256.0 + 128.0 - eye[0], level - eye[1], z as f32 * 256.0 + 128.0 - eye[2], 182.0, sa, ca, sb, cb) {
+            let Some((level, tex)) = water_cell(area, x, z) else {
+                continue;
+            };
+            if !visible_sphere(
+                x as f32 * 256.0 + 128.0 - eye[0],
+                level - eye[1],
+                z as f32 * 256.0 + 128.0 - eye[2],
+                182.0,
+                sa,
+                ca,
+                sb,
+                cb,
+            ) {
                 continue;
             }
             for (ox, oz) in [(0, 0), (1, 0), (1, 1), (0, 0), (1, 1), (0, 1)] {
                 let p = [(x + ox) as f32 * 256.0, level, (z + oz) as f32 * 256.0];
                 let u = ((tex % 16) as f32 * 128.0 + 0.9465 + ox as f32 * 126.107) / 2048.0;
                 let v = ((tex / 16) as f32 * 128.0 + 0.9465 + oz as f32 * 126.107) / 2048.0;
-                out.push((project(&p, eye, yaw, pitch), [u, v, 1.0, 0.0].map(f32::to_bits)));
+                out.push((
+                    project(&p, eye, yaw, pitch),
+                    [u, v, 1.0, 0.0].map(f32::to_bits),
+                ));
             }
         }
     }
@@ -78,7 +112,14 @@ fn legacy_water(area: &Area, eye: [f32; 3], yaw: f32, pitch: f32, cell: (i32, i3
 }
 
 // Non-degenerate triangles of the drawn ranges, projected, as sorted vertex triples.
-fn drawn(pos: &[f32], attr: &[f32], ranges: &[DrawRange], eye: [f32; 3], yaw: f32, pitch: f32) -> Vec<[Vertex; 3]> {
+fn drawn(
+    pos: &[f32],
+    attr: &[f32],
+    ranges: &[DrawRange],
+    eye: [f32; 3],
+    yaw: f32,
+    pitch: f32,
+) -> Vec<[Vertex; 3]> {
     let mut out = Vec::new();
     for r in ranges {
         for t in (r.first..r.first + r.count).step_by(3) {
@@ -91,7 +132,10 @@ fn drawn(pos: &[f32], attr: &[f32], ranges: &[DrawRange], eye: [f32; 3], yaw: f3
             }
             out.push(core::array::from_fn(|k| {
                 let (p, a) = v(k as u32);
-                (project(p, eye, yaw, pitch), [a[0], a[1], a[2], a[3]].map(f32::to_bits))
+                (
+                    project(p, eye, yaw, pitch),
+                    [a[0], a[1], a[2], a[3]].map(f32::to_bits),
+                )
             }));
         }
     }
@@ -149,7 +193,16 @@ fn resident_terrain_draws_every_visible_cell() {
                 _ => (last.0 - 3, last.1 + 2),
             });
         }
-        path.extend([(0, 0), (1, 0), (1, 1), (1022, 1022), (1021, 1022), (512, 512), (512 + 147, 512), (512 + 300, 512)]);
+        path.extend([
+            (0, 0),
+            (1, 0),
+            (1, 1),
+            (1022, 1022),
+            (1021, 1022),
+            (512, 512),
+            (512 + 147, 512),
+            (512 + 300, 512),
+        ]);
         for (step, &cell) in path.iter().enumerate() {
             let (cells, written) = buffers.update(&mut walked, &area, &cache, cell);
             assert!(cells > 0 && !written.is_empty());
@@ -157,15 +210,38 @@ fn resident_terrain_draws_every_visible_cell() {
             let mut fresh = ResidentTerrain::default();
             let mut full = Buffers::new();
             assert_eq!(full.update(&mut fresh, &area, &cache, cell).0, 148 * 148);
-            assert!(buffers.tp == full.tp && buffers.ta == full.ta && buffers.wp == full.wp && buffers.wa == full.wa,
-                "map {map} step {step} cell {cell:?}: incremental buffers differ from a full write");
+            assert!(
+                buffers.tp == full.tp
+                    && buffers.ta == full.ta
+                    && buffers.wp == full.wp
+                    && buffers.wa == full.wa,
+                "map {map} step {step} cell {cell:?}: incremental buffers differ from a full write"
+            );
             for view in 0..4 {
                 let yaw = view as f32 * 1.7 + step as f32 * 0.31;
                 let pitch = (view as f32 - 1.5) * 0.2;
-                let eye = [cell.0 as f32 * 256.0 + 100.0, f32::from(area.map.height[(cell.1.clamp(0, 1022) as usize) * 1024 + cell.0.clamp(0, 1022) as usize]) * 64.0 + 220.0, cell.1 as f32 * 256.0 + 60.0];
+                let eye = [
+                    cell.0 as f32 * 256.0 + 100.0,
+                    f32::from(
+                        area.map.height[(cell.1.clamp(0, 1022) as usize) * 1024
+                            + cell.0.clamp(0, 1022) as usize],
+                    ) * 64.0
+                        + 220.0,
+                    cell.1 as f32 * 256.0 + 60.0,
+                ];
                 let mut legacy = vec![0.0f32; VERTICES * 4];
                 let mut legacy_attr = vec![0.0f32; VERTICES * 4];
-                let n = unsafe { cache.emit(&area, eye, yaw, pitch, cell, legacy.as_mut_ptr(), legacy_attr.as_mut_ptr()) } as usize;
+                let n = unsafe {
+                    cache.emit(
+                        &area,
+                        eye,
+                        yaw,
+                        pitch,
+                        cell,
+                        legacy.as_mut_ptr(),
+                        legacy_attr.as_mut_ptr(),
+                    )
+                } as usize;
                 let legacy: Vec<Vertex> = (0..n)
                     .map(|i| {
                         let p: [f32; 4] = legacy[i * 4..i * 4 + 4].try_into().unwrap();
@@ -179,11 +255,17 @@ fn resident_terrain_draws_every_visible_cell() {
                 let terrain = drawn(&buffers.tp, &buffers.ta, &tr[..tn], eye, yaw, pitch);
                 legacy_total += legacy.len() / 3;
                 drawn_total += terrain.len();
-                assert!(is_subset(&triangles(&legacy), &terrain), "map {map} cell {cell:?} view {view}: a visible terrain cell is not drawn");
+                assert!(
+                    is_subset(&triangles(&legacy), &terrain),
+                    "map {map} cell {cell:?} view {view}: a visible terrain cell is not drawn"
+                );
                 let water = drawn(&buffers.wp, &buffers.wa, &wr[..wn], eye, yaw, pitch);
                 let legacy_water = legacy_water(&area, eye, yaw, pitch, cell);
                 water_total += legacy_water.len() / 3;
-                assert!(is_subset(&triangles(&legacy_water), &water), "map {map} cell {cell:?} view {view}: a visible water cell is not drawn");
+                assert!(
+                    is_subset(&triangles(&legacy_water), &water),
+                    "map {map} cell {cell:?} view {view}: a visible water cell is not drawn"
+                );
             }
         }
     }

@@ -281,13 +281,10 @@ pub fn locate(r: &Recipe, mods_dir: &Path) -> Vec<Located> {
             d.file_name()
         }
         .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-        match mod_root(&d) {
-            Some(root) => {
-                if let Ok(b) = open_root(&root) {
-                    cands.push((name.clone(), root, b, false));
-                }
+        if let Some(root) = mod_root(&d) {
+            if let Ok(b) = open_root(&root) {
+                cands.push((name.clone(), root, b, false));
             }
-            None => {}
         }
         // Recipe loose-file paths are relative to the extracted download,
         // which can contain a nested HUNTDAT (or only map files, with no

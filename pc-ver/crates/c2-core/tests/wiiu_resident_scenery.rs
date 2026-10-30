@@ -1,6 +1,9 @@
 #![allow(unsafe_code)]
 extern crate alloc;
 #[allow(dead_code)]
+// The Wii U sources keep their own workspace's style.
+#[rustfmt::skip]
+#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
 #[path = "../../../../wiiu-ver/perf-probe/src/static_scene.rs"]
 mod static_scene;
 use c2_core::{
@@ -108,7 +111,12 @@ fn resident_scenery_preserves_original_visible_streams() {
                 area.map.height[cell.1 as usize * 1024 + cell.0 as usize] as f32 * 64.0 + 200.5,
                 cell.1 as f32 * 256.0 + 67.75,
             ];
-            for (yaw, pitch) in [(0.0, 0.0), (0.7, 0.4), (-2.1, -0.6), (3.14, 1.2)] {
+            for (yaw, pitch) in [
+                (0.0, 0.0),
+                (0.7, 0.4),
+                (-2.1, -0.6),
+                (core::f32::consts::PI, 1.2),
+            ] {
                 let mut ranges = vec![DrawRange::default(); objects.len()];
                 let (range_count, visible) =
                     static_scene::resident_ranges(&objects, eye, yaw, pitch, &mut ranges);
@@ -204,14 +212,21 @@ fn resident_scenery_crossings_match_a_full_rebuild() {
             c2_formats::rsc::parse(&read("RSC")).unwrap(),
             TimeOfDay::Day,
         );
-        let models: Vec<_> = area.rsc.objects.iter().map(|o| PreparedModel::from_mesh(&o.model.mesh)).collect();
+        let models: Vec<_> = area
+            .rsc
+            .objects
+            .iter()
+            .map(|o| PreparedModel::from_mesh(&o.model.mesh))
+            .collect();
         let uvs = static_scene::scenery_uvs(&models);
         let radii: Vec<_> = models.iter().map(PreparedModel::radius).collect();
         let mut lights = vec![0.0; 1024 * 1024];
         for placement in area.placements() {
-            lights[placement.cell.1 as usize * 1024 + placement.cell.0 as usize] = area.object_light(&placement);
+            lights[placement.cell.1 as usize * 1024 + placement.cell.0 as usize] =
+                area.object_light(&placement);
         }
-        let mut scratch = vec![[0.0; 4]; models.iter().map(|m| m.positions.len()).max().unwrap_or(0)];
+        let mut scratch =
+            vec![[0.0; 4]; models.iter().map(|m| m.positions.len()).max().unwrap_or(0)];
         let faces = |i: usize| models[area.map.objects[i] as usize].faces.len();
         let landing = area.landings.first().copied().unwrap_or((256, 256));
         let mut path = vec![(landing.0 as i32, landing.1 as i32)];
@@ -223,13 +238,29 @@ fn resident_scenery_crossings_match_a_full_rebuild() {
                 _ => (last.0, last.1 + 2),
             });
         }
-        path.extend([(0, 0), (1, 1), (1023, 1023), (1022, 1023), (512, 512), (512 + 148, 512), (512 + 149, 512)]);
+        path.extend([
+            (0, 0),
+            (1, 1),
+            (1023, 1023),
+            (1022, 1023),
+            (512, 512),
+            (512 + 148, 512),
+            (512 + 149, 512),
+        ]);
         // Room for the largest window on the path plus a few crossings.
         let mut candidates = SceneryCandidates::default();
-        let largest = path.iter().map(|&cell| {
-            candidates.update(&area.map.objects, models.len(), cell);
-            candidates.cells.iter().map(|&i| faces(i) * 3).sum::<usize>()
-        }).max().unwrap();
+        let largest = path
+            .iter()
+            .map(|&cell| {
+                candidates.update(&area.map.objects, models.len(), cell);
+                candidates
+                    .cells
+                    .iter()
+                    .map(|&i| faces(i) * 3)
+                    .sum::<usize>()
+            })
+            .max()
+            .unwrap();
         let capacity = largest as u32 + 6000;
         let mut p = vec![0f32; capacity as usize * 4];
         let mut a = p.clone();
@@ -238,33 +269,86 @@ fn resident_scenery_crossings_match_a_full_rebuild() {
             let (pp, ap) = (p.as_mut_ptr(), a.as_mut_ptr());
             let mut emit = |i: usize, n: u32| {
                 let id = area.map.objects[i] as usize;
-                let center = [(i % 1024) as f32 * 256.0 + 128.0, area.map.object_height[i] as f32 * 64.0, (i / 1024) as f32 * 256.0 + 128.0];
+                let center = [
+                    (i % 1024) as f32 * 256.0 + 128.0,
+                    area.map.object_height[i] as f32 * 64.0,
+                    (i / 1024) as f32 * 256.0 + 128.0,
+                ];
                 let count = unsafe {
-                    static_scene::emit_scenery_model(&models[id], &uvs[id], lights[i], center,
-                        ((area.map.flags[i] >> 2) & 3) as u8, &mut scratch, pp.add(n as usize * 4), ap.add(n as usize * 4))
+                    static_scene::emit_scenery_model(
+                        &models[id],
+                        &uvs[id],
+                        lights[i],
+                        center,
+                        ((area.map.flags[i] >> 2) & 3) as u8,
+                        &mut scratch,
+                        pp.add(n as usize * 4),
+                        ap.add(n as usize * 4),
+                    )
                 };
-                ResidentObject { center, radius: radii[id], range: DrawRange { first: n, count } }
+                ResidentObject {
+                    center,
+                    radius: radii[id],
+                    range: DrawRange { first: n, count },
+                }
             };
-            let before: Vec<_> = resident.objects.iter().map(|o| (o.center.map(f32::to_bits), o.range)).collect();
+            let before: Vec<_> = resident
+                .objects
+                .iter()
+                .map(|o| (o.center.map(f32::to_bits), o.range))
+                .collect();
             let mut written = Vec::new();
-            let rebuilt = resident.update(&mut candidates, &area.map.objects, models.len(), cell, capacity, faces, &mut emit, &mut written).unwrap();
-            if rebuilt { rebuilds += 1 } else { appends += 1 }
-            assert!(written.windows(2).all(|w| w[0].first + w[0].count < w[1].first));
+            let rebuilt = resident
+                .update(
+                    &mut candidates,
+                    &area.map.objects,
+                    models.len(),
+                    cell,
+                    capacity,
+                    faces,
+                    &mut emit,
+                    &mut written,
+                )
+                .unwrap();
+            if rebuilt {
+                rebuilds += 1
+            } else {
+                appends += 1
+            }
+            assert!(written
+                .windows(2)
+                .all(|w| w[0].first + w[0].count < w[1].first));
             assert!(written.iter().all(|r| r.first + r.count <= capacity));
             // Every object kept its place or was written this time.
             for o in &resident.objects {
                 let kept = before.contains(&(o.center.map(f32::to_bits), o.range));
-                let fresh = written.iter().any(|w| w.first <= o.range.first && o.range.first + o.range.count <= w.first + w.count);
-                assert!(kept || fresh, "AREA{map} step {step}: an object moved without being written");
+                let fresh = written.iter().any(|w| {
+                    w.first <= o.range.first && o.range.first + o.range.count <= w.first + w.count
+                });
+                assert!(
+                    kept || fresh,
+                    "AREA{map} step {step}: an object moved without being written"
+                );
             }
             // Objects never overlap.
-            let mut spans: Vec<_> = resident.objects.iter().map(|o| (o.range.first, o.range.count)).collect();
+            let mut spans: Vec<_> = resident
+                .objects
+                .iter()
+                .map(|o| (o.range.first, o.range.count))
+                .collect();
             spans.sort();
             assert!(spans.windows(2).all(|w| w[0].0 + w[0].1 <= w[1].0));
             let data = |o: &ResidentObject| {
                 let r = o.range.first as usize * 4..(o.range.first + o.range.count) as usize * 4;
-                (o.center.map(f32::to_bits), o.radius.to_bits(),
-                 p[r.clone()].iter().chain(&a[r]).map(|f| f.to_bits()).collect::<Vec<_>>())
+                (
+                    o.center.map(f32::to_bits),
+                    o.radius.to_bits(),
+                    p[r.clone()]
+                        .iter()
+                        .chain(&a[r])
+                        .map(|f| f.to_bits())
+                        .collect::<Vec<_>>(),
+                )
             };
             let mut walked: Vec<_> = resident.objects.iter().map(data).collect();
             walked.sort();
@@ -273,22 +357,64 @@ fn resident_scenery_crossings_match_a_full_rebuild() {
             let mut fp = vec![0f32; capacity as usize * 4];
             let mut fa = fp.clone();
             let (fpp, fap) = (fp.as_mut_ptr(), fa.as_mut_ptr());
-            fresh.update(&mut fresh_candidates, &area.map.objects, models.len(), cell, capacity, faces, |i, n| {
-                let id = area.map.objects[i] as usize;
-                let center = [(i % 1024) as f32 * 256.0 + 128.0, area.map.object_height[i] as f32 * 64.0, (i / 1024) as f32 * 256.0 + 128.0];
-                let count = unsafe {
-                    static_scene::emit_scenery_model(&models[id], &uvs[id], lights[i], center,
-                        ((area.map.flags[i] >> 2) & 3) as u8, &mut scratch, fpp.add(n as usize * 4), fap.add(n as usize * 4))
-                };
-                ResidentObject { center, radius: radii[id], range: DrawRange { first: n, count } }
-            }, &mut Vec::new()).unwrap();
-            let mut expected: Vec<_> = fresh.objects.iter().map(|o| {
-                let r = o.range.first as usize * 4..(o.range.first + o.range.count) as usize * 4;
-                (o.center.map(f32::to_bits), o.radius.to_bits(),
-                 fp[r.clone()].iter().chain(&fa[r]).map(|f| f.to_bits()).collect::<Vec<_>>())
-            }).collect();
+            fresh
+                .update(
+                    &mut fresh_candidates,
+                    &area.map.objects,
+                    models.len(),
+                    cell,
+                    capacity,
+                    faces,
+                    |i, n| {
+                        let id = area.map.objects[i] as usize;
+                        let center = [
+                            (i % 1024) as f32 * 256.0 + 128.0,
+                            area.map.object_height[i] as f32 * 64.0,
+                            (i / 1024) as f32 * 256.0 + 128.0,
+                        ];
+                        let count = unsafe {
+                            static_scene::emit_scenery_model(
+                                &models[id],
+                                &uvs[id],
+                                lights[i],
+                                center,
+                                ((area.map.flags[i] >> 2) & 3) as u8,
+                                &mut scratch,
+                                fpp.add(n as usize * 4),
+                                fap.add(n as usize * 4),
+                            )
+                        };
+                        ResidentObject {
+                            center,
+                            radius: radii[id],
+                            range: DrawRange { first: n, count },
+                        }
+                    },
+                    &mut Vec::new(),
+                )
+                .unwrap();
+            let mut expected: Vec<_> = fresh
+                .objects
+                .iter()
+                .map(|o| {
+                    let r =
+                        o.range.first as usize * 4..(o.range.first + o.range.count) as usize * 4;
+                    (
+                        o.center.map(f32::to_bits),
+                        o.radius.to_bits(),
+                        fp[r.clone()]
+                            .iter()
+                            .chain(&fa[r])
+                            .map(|f| f.to_bits())
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect();
             expected.sort();
-            assert!(walked == expected, "AREA{map} step {step} cell {cell:?}: resident objects differ from a rebuild");
+            assert!(
+                walked == expected,
+                "AREA{map} step {step} cell {cell:?}: resident objects differ from a rebuild"
+            );
         }
     }
     eprintln!("scenery crossings: {appends} appended, {rebuilds} rebuilt");
@@ -312,9 +438,18 @@ fn resident_scenery_long_run_rebuilds_once() {
         c2_formats::rsc::parse(&read("RSC")).unwrap(),
         TimeOfDay::Day,
     );
-    let models: Vec<_> = area.rsc.objects.iter().map(|o| PreparedModel::from_mesh(&o.model.mesh)).collect();
+    let models: Vec<_> = area
+        .rsc
+        .objects
+        .iter()
+        .map(|o| PreparedModel::from_mesh(&o.model.mesh))
+        .collect();
     let faces = |i: usize| models[area.map.objects[i] as usize].faces.len();
-    let (mut resident, mut candidates, mut written) = (ResidentScenery::default(), SceneryCandidates::default(), Vec::new());
+    let (mut resident, mut candidates, mut written) = (
+        ResidentScenery::default(),
+        SceneryCandidates::default(),
+        Vec::new(),
+    );
     let mut cell = (300, 300);
     let (mut rebuilds, mut fallbacks, mut was_fallback) = (0, 0, true);
     // Laps of a 400x400-cell square, one cell per crossing.
@@ -326,11 +461,27 @@ fn resident_scenery_long_run_rebuilds_once() {
             _ => (cell.0, cell.1 - 1),
         };
         let emit = |i: usize, n: u32| ResidentObject {
-            center: [(i % 1024) as f32 * 256.0 + 128.0, 0.0, (i / 1024) as f32 * 256.0 + 128.0],
+            center: [
+                (i % 1024) as f32 * 256.0 + 128.0,
+                0.0,
+                (i / 1024) as f32 * 256.0 + 128.0,
+            ],
             radius: 1.0,
-            range: DrawRange { first: n, count: faces(i) as u32 * 3 },
+            range: DrawRange {
+                first: n,
+                count: faces(i) as u32 * 3,
+            },
         };
-        match resident.update(&mut candidates, &area.map.objects, models.len(), cell, 1_048_576, faces, emit, &mut written) {
+        match resident.update(
+            &mut candidates,
+            &area.map.objects,
+            models.len(),
+            cell,
+            1_048_576,
+            faces,
+            emit,
+            &mut written,
+        ) {
             None => {
                 fallbacks += 1;
                 was_fallback = true;
@@ -353,23 +504,54 @@ fn resident_scenery_long_run_rebuilds_once() {
 fn largest_scenery_windows() {
     let root = std::env::var("C2_ORIGINAL_HUNTDAT").unwrap();
     for map in 1..=5 {
-        let read = |ext| std::fs::read(std::path::Path::new(&root).join(format!("AREAS/AREA{map}.{ext}"))).unwrap();
-        let area = Area::new(c2_formats::map::parse(&read("MAP")).unwrap(), c2_formats::rsc::parse(&read("RSC")).unwrap(), TimeOfDay::Day);
-        let models: Vec<_> = area.rsc.objects.iter().map(|o| PreparedModel::from_mesh(&o.model.mesh)).collect();
+        let read = |ext| {
+            std::fs::read(std::path::Path::new(&root).join(format!("AREAS/AREA{map}.{ext}")))
+                .unwrap()
+        };
+        let area = Area::new(
+            c2_formats::map::parse(&read("MAP")).unwrap(),
+            c2_formats::rsc::parse(&read("RSC")).unwrap(),
+            TimeOfDay::Day,
+        );
+        let models: Vec<_> = area
+            .rsc
+            .objects
+            .iter()
+            .map(|o| PreparedModel::from_mesh(&o.model.mesh))
+            .collect();
         let mut sum = vec![0u64; 1025 * 1025];
-        for z in 0..1024 { for x in 0..1024 {
-            let o = area.map.objects[z * 1024 + x] as usize;
-            let v = if o < models.len() { models[o].faces.len() as u64 * 3 } else { 0 };
-            sum[(z + 1) * 1025 + x + 1] = v + sum[z * 1025 + x + 1] + sum[(z + 1) * 1025 + x] - sum[z * 1025 + x];
-        }}
+        for z in 0..1024 {
+            for x in 0..1024 {
+                let o = area.map.objects[z * 1024 + x] as usize;
+                let v = if o < models.len() {
+                    models[o].faces.len() as u64 * 3
+                } else {
+                    0
+                };
+                sum[(z + 1) * 1025 + x + 1] =
+                    v + sum[z * 1025 + x + 1] + sum[(z + 1) * 1025 + x] - sum[z * 1025 + x];
+            }
+        }
         let win = |x: i64, z: i64| {
-            let (x0, z0, x1, z1) = ((x - 74).max(0) as usize, (z - 74).max(0) as usize, (x + 75).min(1024) as usize, (z + 75).min(1024) as usize);
+            let (x0, z0, x1, z1) = (
+                (x - 74).max(0) as usize,
+                (z - 74).max(0) as usize,
+                (x + 75).min(1024) as usize,
+                (z + 75).min(1024) as usize,
+            );
             sum[z1 * 1025 + x1] + sum[z0 * 1025 + x0] - sum[z0 * 1025 + x1] - sum[z1 * 1025 + x0]
         };
         let mut all: Vec<u64> = (0..1024 * 1024).map(|i| win(i % 1024, i / 1024)).collect();
         all.sort_unstable();
         let over = all.iter().filter(|&&v| v > 1_048_576).count();
         let landing = area.landings[0];
-        eprintln!("AREA{map}: max {} p99 {} p50 {} landing {}; cells over the buffer: {:.1}%", all[all.len() - 1], all[all.len() * 99 / 100], all[all.len() / 2], win(landing.0 as i64, landing.1 as i64), over as f64 * 100.0 / all.len() as f64);
+        eprintln!(
+            "AREA{map}: max {} p99 {} p50 {} landing {}; cells over the buffer: {:.1}%",
+            all[all.len() - 1],
+            all[all.len() * 99 / 100],
+            all[all.len() / 2],
+            win(landing.0 as i64, landing.1 as i64),
+            over as f64 * 100.0 / all.len() as f64
+        );
     }
 }

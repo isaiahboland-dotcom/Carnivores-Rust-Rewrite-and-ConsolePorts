@@ -26,8 +26,7 @@ impl TerrainCache {
                     area.map.height[i + SIDE],
                     area.map.height[i + SIDE + 1],
                 ];
-                let low = *h.iter().min().unwrap();
-                let high = *h.iter().max().unwrap();
+                let (low, high) = h.iter().fold((h[0], h[0]), |(lo, hi), &v| (lo.min(v), hi.max(v)));
                 bounds[i] = [
                     (f32::from(low) + f32::from(high)) * 32.0,
                     radii[(high - low) as usize],
@@ -602,8 +601,8 @@ fn coalesce(free: &mut Vec<DrawRange>, tail: &mut u32) {
             _ => merged.push(r),
         }
     }
-    while merged.last().is_some_and(|m| m.first + m.count == *tail) {
-        *tail = merged.pop().unwrap().first;
+    while let Some(m) = merged.pop_if(|m| m.first + m.count == *tail) {
+        *tail = m.first;
     }
     *free = merged;
 }

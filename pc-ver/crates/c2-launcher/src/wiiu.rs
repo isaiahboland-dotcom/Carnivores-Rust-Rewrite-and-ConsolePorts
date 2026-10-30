@@ -45,7 +45,13 @@ pub fn assets() -> Vec<String> {
         v.push(format!("AREAS/AREA{i}.RSC"));
     }
     // The trophy room and the trophy plaques.
-    for f in ["AREAS/TROPHY.MAP", "AREAS/TROPHY.RSC", "MENU/TROPHY_G.TGA", "MENU/TROPHY.TGA", "MENU/MAPFRAME.TGA"] {
+    for f in [
+        "AREAS/TROPHY.MAP",
+        "AREAS/TROPHY.RSC",
+        "MENU/TROPHY_G.TGA",
+        "MENU/TROPHY.TGA",
+        "MENU/MAPFRAME.TGA",
+    ] {
         v.push(f.to_string());
     }
     for i in 1..=5 {
@@ -74,7 +80,9 @@ pub fn assets() -> Vec<String> {
     for i in 1..=6 {
         v.push(format!("MENU/TXT/WEAPON{i}.TXT"));
     }
-    for n in ["CAMOFLAG", "RADAR", "SCENT", "DOUBLE", "TRANQ", "OBSERVE", "DAY1", "DAY2", "DAY3"] {
+    for n in [
+        "CAMOFLAG", "RADAR", "SCENT", "DOUBLE", "TRANQ", "OBSERVE", "DAY1", "DAY2", "DAY3",
+    ] {
         v.push(format!("MENU/TXT/{n}.NFO"));
     }
     for i in 1..=9 {

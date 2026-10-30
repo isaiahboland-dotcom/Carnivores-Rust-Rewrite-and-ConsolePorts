@@ -1,5 +1,8 @@
 #![cfg(feature = "portable-hunt")]
 extern crate alloc;
+// The Wii U sources keep their own workspace's style.
+#[rustfmt::skip]
+#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
 #[path = "../../../../wiiu-ver/perf-probe/src/hunt_setup.rs"]
 mod hunt_setup;
 use c2_core::{
@@ -316,8 +319,15 @@ fn menu_options_reach_the_hunt_and_survive_a_restart() {
     let root = std::path::Path::new(&root);
     let read = |p: &str| std::fs::read(root.join(p)).unwrap();
     let defs = std::fs::read_to_string(root.join("_RES.TXT")).unwrap();
-    let mut assets: Vec<Vec<u8>> = hunt_setup::SPECIES_FILES.iter().map(|file| read(file)).collect();
-    assets.extend(hunt_setup::WEAPON_FILES.iter().map(|f| read(&format!("WEAPONS/{f}"))));
+    let mut assets: Vec<Vec<u8>> = hunt_setup::SPECIES_FILES
+        .iter()
+        .map(|file| read(file))
+        .collect();
+    assets.extend(
+        hunt_setup::WEAPON_FILES
+            .iter()
+            .map(|f| read(&format!("WEAPONS/{f}"))),
+    );
     assets.push(read("HUNTER1.CAR"));
     let bytes: Vec<&[u8]> = assets.iter().map(Vec::as_slice).collect();
     let choice = hunt_setup::HuntChoice {
@@ -340,24 +350,41 @@ fn menu_options_reach_the_hunt_and_survive_a_restart() {
         choice.time_of_day(),
     );
     assert_eq!(area.time, TimeOfDay::Night);
-    let (hunt, _) = hunt_setup::setup_with(&area, &defs, &bytes, &choice, &hunt_setup::new_save(), 1).unwrap();
+    let (hunt, _) =
+        hunt_setup::setup_with(&area, &defs, &bytes, &choice, &hunt_setup::new_save(), 1).unwrap();
     let o = hunt.opts;
     assert!(o.camo && o.scent && o.tranq && o.radar && !o.observer && !o.blood && !o.death_anim);
     assert_eq!(o.dino_run_k, 0.6);
     assert_eq!(hunt.weapons.info.len(), 2);
     assert_eq!(hunt.weapons.ammo_mag, vec![1, 1]);
     assert_eq!(hunt.herd.chars.len(), hunt_setup::TARGET_POPULATION);
-    assert!(hunt.herd.chars.iter().all(|c| c.ctype >= hunt_setup::AMBIENT_COUNT));
+    assert!(hunt
+        .herd
+        .chars
+        .iter()
+        .all(|c| c.ctype >= hunt_setup::AMBIENT_COUNT));
     let again = hunt_setup::restart_with(&area, &hunt, &choice, &hunt.room.clone(), 2).unwrap();
-    assert!(again.opts.camo && again.opts.scent && !again.opts.blood && again.opts.dino_run_k == 0.6);
+    assert!(
+        again.opts.camo && again.opts.scent && !again.opts.blood && again.opts.dino_run_k == 0.6
+    );
     assert_eq!(again.weapons.ammo_mag, vec![1, 1]);
     assert_eq!(again.herd.chars.len(), hunt_setup::TARGET_POPULATION);
     // Observer mode needs no weapon and carries none.
-    let observe = hunt_setup::HuntChoice { observer: 1, weapons: 0, ..choice };
-    let (hunt, _) = hunt_setup::setup_with(&area, &defs, &bytes, &observe, &hunt_setup::new_save(), 1).unwrap();
+    let observe = hunt_setup::HuntChoice {
+        observer: 1,
+        weapons: 0,
+        ..choice
+    };
+    let (hunt, _) =
+        hunt_setup::setup_with(&area, &defs, &bytes, &observe, &hunt_setup::new_save(), 1).unwrap();
     assert!(hunt.opts.observer && hunt.weapons.info.is_empty());
-    let none = hunt_setup::HuntChoice { weapons: 0, ..choice };
-    assert!(hunt_setup::setup_with(&area, &defs, &bytes, &none, &hunt_setup::new_save(), 1).is_err());
+    let none = hunt_setup::HuntChoice {
+        weapons: 0,
+        ..choice
+    };
+    assert!(
+        hunt_setup::setup_with(&area, &defs, &bytes, &none, &hunt_setup::new_save(), 1).is_err()
+    );
 }
 
 // A kill takes a stand in the save with its weapon and area; the save
@@ -371,8 +398,15 @@ fn trophies_trophy_room_and_survival() {
     let root = std::path::Path::new(&root);
     let read = |p: &str| std::fs::read(root.join(p)).unwrap();
     let defs = std::fs::read_to_string(root.join("_RES.TXT")).unwrap();
-    let mut assets: Vec<Vec<u8>> = hunt_setup::SPECIES_FILES.iter().map(|file| read(file)).collect();
-    assets.extend(hunt_setup::WEAPON_FILES.iter().map(|f| read(&format!("WEAPONS/{f}"))));
+    let mut assets: Vec<Vec<u8>> = hunt_setup::SPECIES_FILES
+        .iter()
+        .map(|file| read(file))
+        .collect();
+    assets.extend(
+        hunt_setup::WEAPON_FILES
+            .iter()
+            .map(|f| read(&format!("WEAPONS/{f}"))),
+    );
     assets.push(read("HUNTER1.CAR"));
     let bytes: Vec<&[u8]> = assets.iter().map(Vec::as_slice).collect();
     let load = |name: &str| {
@@ -383,15 +417,30 @@ fn trophies_trophy_room_and_survival() {
         )
     };
     let area = load("AREA1");
-    let cars: Vec<_> = assets.iter().take(hunt_setup::MODEL_COUNT).map(|b| c2_formats::car::parse(b).unwrap()).collect();
+    let cars: Vec<_> = assets
+        .iter()
+        .take(hunt_setup::MODEL_COUNT)
+        .map(|b| c2_formats::car::parse(b).unwrap())
+        .collect();
     let refs: [Option<&c2_formats::car::Car>; hunt_setup::HUNTER_SPECIES + 1] =
         std::array::from_fn(|i| cars.get(hunt_setup::model_for_species(i)));
 
     // A hunt: bag the first target.
-    let choice = hunt_setup::HuntChoice { area: 0, animals: 0b10, weapons: 0b10, ..Default::default() };
-    let (mut hunt, _) = hunt_setup::setup_with(&area, &defs, &bytes, &choice, &hunt_setup::new_save(), 1).unwrap();
+    let choice = hunt_setup::HuntChoice {
+        area: 0,
+        animals: 0b10,
+        weapons: 0b10,
+        ..Default::default()
+    };
+    let (mut hunt, _) =
+        hunt_setup::setup_with(&area, &defs, &bytes, &choice, &hunt_setup::new_save(), 1).unwrap();
     assert_eq!(hunt.area_no, 1);
-    let index = hunt.herd.chars.iter().position(|c| c.ctype >= hunt_setup::AMBIENT_COUNT).unwrap();
+    let index = hunt
+        .herd
+        .chars
+        .iter()
+        .position(|c| c.ctype >= hunt_setup::AMBIENT_COUNT)
+        .unwrap();
     let ctype = hunt.herd.chars[index].ctype;
     let mut events = Vec::new();
     hunt.debug_bag(&area, index, &mut events);
@@ -408,15 +457,26 @@ fn trophies_trophy_room_and_survival() {
     if let Ok(orig) = std::fs::read(root.join("../trophy00.sav")) {
         let s = c2_formats::sav::parse(&orig).unwrap();
         let room = hunt_setup::room_from_save(&s);
-        for (a, b) in s.bodies.iter().zip(room.bodies.iter()).filter(|(a, _)| a.ctype > 0) {
+        for (a, b) in s
+            .bodies
+            .iter()
+            .zip(room.bodies.iter())
+            .filter(|(a, _)| a.ctype > 0)
+        {
             assert_eq!(a.ctype, b.ctype + 1);
         }
     }
 
     // The trophy room shows it, no weapons, nothing alive.
     let room_area = load("TROPHY");
-    let trophy = hunt_setup::HuntChoice { mode: hunt_setup::MODE_TROPHY, animals: 0, weapons: 0, ..Default::default() };
-    let (mut room, _) = hunt_setup::setup_with(&room_area, &defs, &bytes, &trophy, &hunt.room, 1).unwrap();
+    let trophy = hunt_setup::HuntChoice {
+        mode: hunt_setup::MODE_TROPHY,
+        animals: 0,
+        weapons: 0,
+        ..Default::default()
+    };
+    let (mut room, _) =
+        hunt_setup::setup_with(&room_area, &defs, &bytes, &trophy, &hunt.room, 1).unwrap();
     assert!(room.opts.trophy && room.weapons.info.is_empty());
     assert_eq!(room.herd.chars.len(), 1);
     assert_eq!(room.herd.chars[0].ctype, ctype);
@@ -428,8 +488,14 @@ fn trophies_trophy_room_and_survival() {
     assert_eq!(room.outcome(), Some(c2_core::game::Outcome::Exited));
 
     // A survival: the map's hunters go, waves of the picked ones come.
-    let survive = hunt_setup::HuntChoice { mode: hunt_setup::MODE_SURVIVAL, animals: 0b1000, weapons: 0b10, ..Default::default() };
-    let (mut s, _) = hunt_setup::setup_with(&area, &defs, &bytes, &survive, &hunt_setup::new_save(), 3).unwrap();
+    let survive = hunt_setup::HuntChoice {
+        mode: hunt_setup::MODE_SURVIVAL,
+        animals: 0b1000,
+        weapons: 0b10,
+        ..Default::default()
+    };
+    let (mut s, _) =
+        hunt_setup::setup_with(&area, &defs, &bytes, &survive, &hunt_setup::new_save(), 3).unwrap();
     assert!(s.survival.is_some() && !s.opts.tranq && !s.opts.observer);
     let allo = hunt_setup::AMBIENT_COUNT + 3;
     for _ in 0..(5000 / 16) {
@@ -438,7 +504,8 @@ fn trophies_trophy_room_and_survival() {
     }
     assert_eq!(s.wave(), 1);
     assert!(s.herd.chars.iter().any(|c| c.wave > 0 && c.ctype == allo));
-    let restarted = hunt_setup::restart_with(&area, &s, &survive, &hunt_setup::new_save(), 4).unwrap();
+    let restarted =
+        hunt_setup::restart_with(&area, &s, &survive, &hunt_setup::new_save(), 4).unwrap();
     assert!(restarted.survival.is_some() && restarted.wave() == 0);
 }
 
@@ -455,11 +522,14 @@ fn gun_vertices_fit_the_view_model_depth_range() {
     let root = std::path::Path::new(&root);
     let (mut near, mut far) = (f32::MAX, 0.0f32);
     for f in hunt_setup::WEAPON_FILES {
-        let car = c2_formats::car::parse(&std::fs::read(root.join("WEAPONS").join(f)).unwrap()).unwrap();
+        let car =
+            c2_formats::car::parse(&std::fs::read(root.join("WEAPONS").join(f)).unwrap()).unwrap();
         for anim in &car.animations {
             let duration = c2_core::model::car_anim_duration_ms(anim).max(1);
             for t in (0..duration).step_by(10) {
-                let Some(posed) = c2_core::model::pose_car(anim, car.mesh.vertices.len(), t) else { continue };
+                let Some(posed) = c2_core::model::pose_car(anim, car.mesh.vertices.len(), t) else {
+                    continue;
+                };
                 for v in posed {
                     if -v[2] > 0.0 {
                         near = near.min(-v[2]);
@@ -486,13 +556,30 @@ fn crouch_and_sprint_stress() {
     let root = std::path::Path::new(&root);
     let read = |p: &str| std::fs::read(root.join(p)).unwrap();
     let defs = std::fs::read_to_string(root.join("_RES.TXT")).unwrap();
-    let mut assets: Vec<Vec<u8>> = hunt_setup::SPECIES_FILES.iter().map(|file| read(file)).collect();
-    assets.extend(hunt_setup::WEAPON_FILES.iter().map(|f| read(&format!("WEAPONS/{f}"))));
+    let mut assets: Vec<Vec<u8>> = hunt_setup::SPECIES_FILES
+        .iter()
+        .map(|file| read(file))
+        .collect();
+    assets.extend(
+        hunt_setup::WEAPON_FILES
+            .iter()
+            .map(|f| read(&format!("WEAPONS/{f}"))),
+    );
     assets.push(read("HUNTER1.CAR"));
     let bytes: Vec<&[u8]> = assets.iter().map(Vec::as_slice).collect();
     let choice = hunt_setup::HuntChoice {
-        area: 4, time: 0, animals: 23, weapons: 63, radar: 1, camo: 1, scent: 1, double_ammo: 1, tranq: 1,
-        blood: 0, death_anim: 0, ..Default::default()
+        area: 4,
+        time: 0,
+        animals: 23,
+        weapons: 63,
+        radar: 1,
+        camo: 1,
+        scent: 1,
+        double_ammo: 1,
+        tranq: 1,
+        blood: 0,
+        death_anim: 0,
+        ..Default::default()
     };
     let area = Area::new(
         map::parse(&read("AREAS/AREA5.MAP")).unwrap(),
@@ -500,8 +587,12 @@ fn crouch_and_sprint_stress() {
         choice.time_of_day(),
     );
     for seed in [1201724847, 597228150, 1, 2, 3] {
-        let (mut hunt, cars) = hunt_setup::setup_with(&area, &defs, &bytes, &choice, &hunt_setup::new_save(), seed).unwrap();
-        let refs: Vec<_> = (0..=hunt_setup::HUNTER_SPECIES).map(|i| Some(&cars[hunt_setup::model_for_species(i)])).collect();
+        let (mut hunt, cars) =
+            hunt_setup::setup_with(&area, &defs, &bytes, &choice, &hunt_setup::new_save(), seed)
+                .unwrap();
+        let refs: Vec<_> = (0..=hunt_setup::HUNTER_SPECIES)
+            .map(|i| Some(&cars[hunt_setup::model_for_species(i)]))
+            .collect();
         let mut events = Vec::new();
         for t in 0..20_000u32 {
             let phase = t / 500 % 4;
@@ -519,13 +610,16 @@ fn crouch_and_sprint_stress() {
                 controls,
                 fire: t % 97 < 3,
                 toggle_weapon: t % 1500 == 10,
-                select_weapon: (t % 400 == 0).then_some((t / 400) as usize % hunt.weapons.info.len()),
+                select_weapon: (t % 400 == 0)
+                    .then_some((t / 400) as usize % hunt.weapons.info.len()),
                 call: t % 2000 == 5,
                 ..Default::default()
             };
             hunt.tick(&area, &refs, &input, 16, &mut events);
             if hunt.health <= 0 {
-                hunt = hunt_setup::restart_with(&area, &hunt, &choice, &hunt.room.clone(), seed ^ t).unwrap();
+                hunt =
+                    hunt_setup::restart_with(&area, &hunt, &choice, &hunt.room.clone(), seed ^ t)
+                        .unwrap();
             }
         }
     }
@@ -540,12 +634,33 @@ fn time_of_day_data() {
         let m = map::parse(&read(format!("AREAS/AREA{n}.MAP"))).unwrap();
         let r = rsc::parse(&read(format!("AREAS/AREA{n}.RSC"))).unwrap();
         let avg = |l: &[u8]| l.iter().map(|&v| v as u64).sum::<u64>() / l.len() as u64;
-        let sky = |s: &[u16]| if s.is_empty() { [0u64; 3] } else {
-            let mut a = [0u64; 3];
-            for &p in s { let c = c2_core::color::rgb555_to_rgba8(p, 255); for k in 0..3 { a[k] += c[k] as u64; } }
-            a.map(|v| v / s.len() as u64)
+        let sky = |s: &[u16]| {
+            if s.is_empty() {
+                [0u64; 3]
+            } else {
+                let mut a = [0u64; 3];
+                for &p in s {
+                    let c = c2_core::color::rgb555_to_rgba8(p, 255);
+                    for k in 0..3 {
+                        a[k] += c[k] as u64;
+                    }
+                }
+                a.map(|v| v / s.len() as u64)
+            }
         };
-        eprintln!("AREA{n}: fade {:?} trans {:?} light avg {} {} {} skies {:?} {:?} {:?} (len {} {} {})", r.fade_rgb, r.trans_rgb,
-            avg(&m.light[0]), avg(&m.light[1]), avg(&m.light[2]), sky(&r.skies[0]), sky(&r.skies[1]), sky(&r.skies[2]), r.skies[0].len(), r.skies[1].len(), r.skies[2].len());
+        eprintln!(
+            "AREA{n}: fade {:?} trans {:?} light avg {} {} {} skies {:?} {:?} {:?} (len {} {} {})",
+            r.fade_rgb,
+            r.trans_rgb,
+            avg(&m.light[0]),
+            avg(&m.light[1]),
+            avg(&m.light[2]),
+            sky(&r.skies[0]),
+            sky(&r.skies[1]),
+            sky(&r.skies[2]),
+            r.skies[0].len(),
+            r.skies[1].len(),
+            r.skies[2].len()
+        );
     }
 }
