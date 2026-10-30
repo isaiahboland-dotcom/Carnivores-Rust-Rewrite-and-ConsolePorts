@@ -243,7 +243,15 @@ pub fn locate_games(games: &[RecipeMod], mods_dir: &Path) -> Vec<Located> {
                 .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
             if let Some(root) = crate::pack::find_game_root(&d) {
                 if let Ok(b) = open_root(&root) {
-                    cands.push((name, root, b, false));
+                    cands.push((name.clone(), root.clone(), b, false));
+                }
+                // Keep the extracted package as a second lookup view. Recipes
+                // pinned from an unpacked download can include its wrapper
+                // directory in every path, while `open_root` starts at HUNTDAT's
+                // parent and omits that prefix. `root` remains the actual game
+                // directory used later when building the recipe.
+                if let Ok(b) = DirBackend::new(&d) {
+                    cands.push((name, root, Box::new(b), false));
                 }
             }
         }
@@ -276,15 +284,19 @@ pub fn locate(r: &Recipe, mods_dir: &Path) -> Vec<Located> {
         match mod_root(&d) {
             Some(root) => {
                 if let Ok(b) = open_root(&root) {
-                    cands.push((name, root, b, false));
-                }
-            }
-            None if crate::loose::is_loose(&d) => {
-                if let Ok(b) = DirBackend::new(&d) {
-                    cands.push((name, d, Box::new(b), true));
+                    cands.push((name.clone(), root, b, false));
                 }
             }
             None => {}
+        }
+        // Recipe loose-file paths are relative to the extracted download,
+        // which can contain a nested HUNTDAT (or only map files, with no
+        // .car/.txt for `is_loose` to detect). Keep the download folder as
+        // a candidate even when `mod_root` also found a game-data root.
+        if d.is_dir() {
+            if let Ok(b) = DirBackend::new(&d) {
+                cands.push((name, d, Box::new(b), true));
+            }
         }
     }
     locate_among(&r.mods, &cands)
@@ -298,15 +310,27 @@ fn locate_among(
     list.iter()
         .map(|m| {
             let kind = cands.iter().filter(|c| c.3 == m.loose);
-            let named = kind.clone().find(|(n, ..)| {
+            let is_named = |n: &str| {
                 (!m.folder.is_empty() && n.eq_ignore_ascii_case(&m.folder)) || slug(n) == m.id
-            });
-            if let Some((_, root, b, _)) = named {
-                return check(m, root, b.as_ref());
+            };
+            let named: Vec<_> = kind.clone().filter(|(n, ..)| is_named(n)).collect();
+            let named_checks: Vec<_> = named
+                .iter()
+                .map(|(_, root, b, _)| check(m, root, b.as_ref()))
+                .collect();
+            if let Some(found) = named_checks.iter().find(|l| l.complete()) {
+                return found.clone();
+            }
+            if let Some(found) = named_checks
+                .into_iter()
+                .filter(|l| !l.ok.is_empty() || !l.mismatched.is_empty())
+                .max_by_key(|l| l.ok.len())
+            {
+                return found;
             }
             kind.map(|(_, root, b, _)| check(m, root, b.as_ref()))
-                .filter(|l| !l.ok.is_empty())
-                .max_by_key(|l| l.ok.len())
+                .filter(|l| !l.ok.is_empty() || !l.mismatched.is_empty())
+                .max_by_key(|l| (l.ok.len(), l.mismatched.len()))
                 .unwrap_or_else(|| Located {
                     id: m.id.clone(),
                     url: m.url.clone(),
