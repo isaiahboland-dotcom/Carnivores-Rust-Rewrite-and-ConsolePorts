@@ -39,5 +39,14 @@ int main(void) {
     stream_unlock(&b, 16);
     if (C2_RANGE_UPLOAD) assert(flush_bytes == sizeof(memory));
     assert(stream_upload.lock > 0 && stream_upload.cache > 0);
+    StreamRange ranges[2] = {{2, 3}, {10, 4}};
+    uint32_t bytes = stream_upload.bytes, flushes = flush_count;
+    stream_unlock_ranges(&b, ranges, 2);
+    if (C2_RANGE_UPLOAD) {
+        assert(flush_count == flushes + 2 && flush_address == memory + 40 && flush_bytes == 64);
+        assert(stream_upload.bytes == bytes + 112);
+    } else {
+        assert(flush_count == flushes && stream_upload.bytes == bytes + 256);
+    }
     return 0;
 }
