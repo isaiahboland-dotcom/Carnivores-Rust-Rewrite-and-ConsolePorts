@@ -18,12 +18,18 @@ frames). With residency on (PLUS):
   triangle the CPU path drew is still drawn, on all five maps.
 - Fog mode -4 (world space, terrain fog start 11366.4) was added to
   `terrain.vert`; -3 (CPU-projected) remains for the PLUS bypass.
-- A crossing now appends only the scenery objects that entered the window
-  and drops the ones that left. Scenery is no longer strictly in the
-  original near-first order between rebuilds. Blending is off, so only
-  equal-depth ties and draw merging can differ. When the buffer fills, the
-  window is rebuilt in the original order (a hitch every ~200 crossings with
-  the 524,288-vertex buffer).
+- A crossing now writes only the scenery objects that entered the window,
+  into the gaps left by objects that went out of it (exact size first: the
+  models repeat), and drops the ones that left. Scenery is no longer
+  strictly in the original near-first order between rebuilds. Blending is
+  off, so only equal-depth ties can differ; objects are kept sorted by
+  buffer position so visible neighbours still merge into one draw.
+- The scenery buffers grew from 524,288 to 1,048,576 vertices (48 MiB with
+  fog, from 24). The second capture showed a full rebuild every ~13 s in
+  Manya Jungle, and measuring every cell showed a third of AREA4's windows
+  (up to 742,053 vertices) and parts of AREA1, 2 and 5 never fitted, so
+  they used the old per-frame path. Now every window fits; a host test runs
+  6,400 jungle crossings with one rebuild.
 
 ## 2026-10-29 — The README for GitHub; the roadmap kept locally
 

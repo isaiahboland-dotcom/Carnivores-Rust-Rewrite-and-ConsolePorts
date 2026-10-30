@@ -243,9 +243,18 @@ fn resident_scenery_crossings_match_a_full_rebuild() {
                 };
                 ResidentObject { center, radius: radii[id], range: DrawRange { first: n, count } }
             };
-            let (first, count) = resident.update(&mut candidates, &area.map.objects, models.len(), cell, capacity, faces, &mut emit).unwrap();
-            if first == 0 { rebuilds += 1 } else { appends += 1 }
-            assert!(first + count <= capacity);
+            let before: Vec<_> = resident.objects.iter().map(|o| (o.center.map(f32::to_bits), o.range)).collect();
+            let mut written = Vec::new();
+            let rebuilt = resident.update(&mut candidates, &area.map.objects, models.len(), cell, capacity, faces, &mut emit, &mut written).unwrap();
+            if rebuilt { rebuilds += 1 } else { appends += 1 }
+            assert!(written.windows(2).all(|w| w[0].first + w[0].count < w[1].first));
+            assert!(written.iter().all(|r| r.first + r.count <= capacity));
+            // Every object kept its place or was written this time.
+            for o in &resident.objects {
+                let kept = before.contains(&(o.center.map(f32::to_bits), o.range));
+                let fresh = written.iter().any(|w| w.first <= o.range.first && o.range.first + o.range.count <= w.first + w.count);
+                assert!(kept || fresh, "AREA{map} step {step}: an object moved without being written");
+            }
             // Objects never overlap.
             let mut spans: Vec<_> = resident.objects.iter().map(|o| (o.range.first, o.range.count)).collect();
             spans.sort();
@@ -270,7 +279,7 @@ fn resident_scenery_crossings_match_a_full_rebuild() {
                         ((area.map.flags[i] >> 2) & 3) as u8, &mut scratch, fpp.add(n as usize * 4), fap.add(n as usize * 4))
                 };
                 ResidentObject { center, radius: radii[id], range: DrawRange { first: n, count } }
-            }).unwrap();
+            }, &mut Vec::new()).unwrap();
             let mut expected: Vec<_> = fresh.objects.iter().map(|o| {
                 let r = o.range.first as usize * 4..(o.range.first + o.range.count) as usize * 4;
                 (o.center.map(f32::to_bits), o.radius.to_bits(),
@@ -281,5 +290,84 @@ fn resident_scenery_crossings_match_a_full_rebuild() {
         }
     }
     eprintln!("scenery crossings: {appends} appended, {rebuilds} rebuilt");
-    assert!(appends > rebuilds && rebuilds > 5);
+    // Only the first cell of each map, the jumps out of the window, and the
+    // tight buffer's rare overflows rebuild.
+    assert!(appends > rebuilds * 4);
+}
+
+// A long run through the densest area with the console's 1,048,576-vertex
+// buffer: every window fits and freed gaps are reused, so only the first cell
+// rebuilds.
+#[test]
+fn resident_scenery_long_run_rebuilds_once() {
+    let Ok(root) = std::env::var("C2_ORIGINAL_HUNTDAT") else {
+        return;
+    };
+    let root = std::path::Path::new(&root);
+    let read = |ext| std::fs::read(root.join(format!("AREAS/AREA4.{ext}"))).unwrap();
+    let area = Area::new(
+        c2_formats::map::parse(&read("MAP")).unwrap(),
+        c2_formats::rsc::parse(&read("RSC")).unwrap(),
+        TimeOfDay::Day,
+    );
+    let models: Vec<_> = area.rsc.objects.iter().map(|o| PreparedModel::from_mesh(&o.model.mesh)).collect();
+    let faces = |i: usize| models[area.map.objects[i] as usize].faces.len();
+    let (mut resident, mut candidates, mut written) = (ResidentScenery::default(), SceneryCandidates::default(), Vec::new());
+    let mut cell = (300, 300);
+    let (mut rebuilds, mut fallbacks, mut was_fallback) = (0, 0, true);
+    // Laps of a 400x400-cell square, one cell per crossing.
+    for step in 0..6400 {
+        cell = match step / 400 % 4 {
+            0 => (cell.0 + 1, cell.1),
+            1 => (cell.0, cell.1 + 1),
+            2 => (cell.0 - 1, cell.1),
+            _ => (cell.0, cell.1 - 1),
+        };
+        let emit = |i: usize, n: u32| ResidentObject {
+            center: [(i % 1024) as f32 * 256.0 + 128.0, 0.0, (i / 1024) as f32 * 256.0 + 128.0],
+            radius: 1.0,
+            range: DrawRange { first: n, count: faces(i) as u32 * 3 },
+        };
+        match resident.update(&mut candidates, &area.map.objects, models.len(), cell, 1_048_576, faces, emit, &mut written) {
+            None => {
+                fallbacks += 1;
+                was_fallback = true;
+            }
+            Some(rebuilt) => {
+                if rebuilt {
+                    assert!(was_fallback, "step {step} cell {cell:?}: rebuilt");
+                    rebuilds += 1;
+                }
+                was_fallback = false;
+            }
+        }
+    }
+    eprintln!("long run: {rebuilds} rebuilds, {fallbacks} fallback crossings of 6400");
+    assert_eq!((rebuilds, fallbacks), (1, 0));
+}
+
+#[test]
+#[ignore]
+fn largest_scenery_windows() {
+    let root = std::env::var("C2_ORIGINAL_HUNTDAT").unwrap();
+    for map in 1..=5 {
+        let read = |ext| std::fs::read(std::path::Path::new(&root).join(format!("AREAS/AREA{map}.{ext}"))).unwrap();
+        let area = Area::new(c2_formats::map::parse(&read("MAP")).unwrap(), c2_formats::rsc::parse(&read("RSC")).unwrap(), TimeOfDay::Day);
+        let models: Vec<_> = area.rsc.objects.iter().map(|o| PreparedModel::from_mesh(&o.model.mesh)).collect();
+        let mut sum = vec![0u64; 1025 * 1025];
+        for z in 0..1024 { for x in 0..1024 {
+            let o = area.map.objects[z * 1024 + x] as usize;
+            let v = if o < models.len() { models[o].faces.len() as u64 * 3 } else { 0 };
+            sum[(z + 1) * 1025 + x + 1] = v + sum[z * 1025 + x + 1] + sum[(z + 1) * 1025 + x] - sum[z * 1025 + x];
+        }}
+        let win = |x: i64, z: i64| {
+            let (x0, z0, x1, z1) = ((x - 74).max(0) as usize, (z - 74).max(0) as usize, (x + 75).min(1024) as usize, (z + 75).min(1024) as usize);
+            sum[z1 * 1025 + x1] + sum[z0 * 1025 + x0] - sum[z0 * 1025 + x1] - sum[z1 * 1025 + x0]
+        };
+        let mut all: Vec<u64> = (0..1024 * 1024).map(|i| win(i % 1024, i / 1024)).collect();
+        all.sort_unstable();
+        let over = all.iter().filter(|&&v| v > 1_048_576).count();
+        let landing = area.landings[0];
+        eprintln!("AREA{map}: max {} p99 {} p50 {} landing {}; cells over the buffer: {:.1}%", all[all.len() - 1], all[all.len() * 99 / 100], all[all.len() / 2], win(landing.0 as i64, landing.1 as i64), over as f64 * 100.0 / all.len() as f64);
+    }
 }
