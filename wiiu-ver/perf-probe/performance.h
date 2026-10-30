@@ -42,11 +42,11 @@ static void performance_open(const HuntChoice *menu, uint32_t seed, int tiled_av
     if (!performance.open) { OSReport("C2 performance capture could not open SD file\n"); return; }
     GX2ColorBuffer *tv = WHBGfxGetTVColourBuffer(), *drc = WHBGfxGetDRCColourBuffer();
     performance.used = snprintf(performance.data, sizeof(performance.data),
-        "# schema=9 resident_scenery=1 static_view_cache=1 terrain_precompute=1 scenery_candidates=1 tiled_available=%d map_streams=2 hidden_geometry_skip=1 range_upload=%d build=%s %s area=%d animals=%u weapons=%u radar=%u blood_off=%u kill_anim_off=%u time=%u camo=%u scent=%u double_ammo=%u tranq=%u observer=%u run_pct=%u ambient=%u population=%u seed=%u tv=%ux%u drc=%ux%u limit_bytes=%u\n"
+        "# schema=9 resident_scenery=1 static_view_cache=1 terrain_precompute=1 scenery_candidates=1 tiled_available=%d map_streams=2 hidden_geometry_skip=1 range_upload=%d build=%s %s area=%d animals=%u weapons=%u radar=%u blood_off=%u kill_anim_off=%u time=%u camo=%u scent=%u double_ammo=%u tranq=%u observer=%u run_pct=%u ambient=%u population=%u mode=%u survival=%u seed=%u tv=%ux%u drc=%ux%u limit_bytes=%u\n"
         "frame,start_ms,seed,tv_map,drc_game,ticks,frame_ms,terrain_ms,scenery_ms,water_ms,sky_ms,map_paint_ms,map_cache_ms,sim_ms,animals_ms,gun_ms,draw_ms,geometry_wait_ms,map_wait_ms,present_ms,overlay_ms,unaccounted_ms,previous_profiler_ms,terrain_v,scenery_v,animal_v,gun_v,water_v,sky_v,geometry_stream_bytes,stream_lock_ms,stream_cache_ms,stream_cache_bytes,death_playback,tiled_atlases,static_cache_enabled,static_reused,resident_enabled,resident_active,scenery_ranges,scenery_uploaded_v,gpu_tv_ms,gpu_drc_ms,vsync\n",
         tiled_available, C2_RANGE_UPLOAD, __DATE__, __TIME__, menu->area + 1, menu->animals, menu->weapons, menu->radar,
         (unsigned)!menu->blood, (unsigned)!menu->death_anim, menu->time, menu->camo, menu->scent, menu->double_ammo,
-        menu->tranq, menu->observer, menu->run_pct, menu->ambient, menu->ambient ? 66u : 48u, seed, tv->surface.width, tv->surface.height,
+        menu->tranq, menu->observer, menu->run_pct, menu->ambient, menu->ambient ? 66u : 48u, menu->mode, menu->survival, seed, tv->surface.width, tv->surface.height,
         drc->surface.width, drc->surface.height, PERFORMANCE_LIMIT);
     performance_flush();
 }

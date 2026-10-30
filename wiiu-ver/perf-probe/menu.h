@@ -4,8 +4,18 @@
 /* Mirrors hunt_setup::HuntChoice. Flags are 0 or 1. */
 typedef struct {
     uint32_t area, time, animals, weapons, radar, camo, scent, double_ammo, tranq, observer,
-             run_pct, blood, death_anim, ambient, units_us;
+             run_pct, blood, death_anim, ambient, units_us, mode, survival;
 } HuntChoice;
+/* HuntChoice.mode (hunt_setup.rs MODE_*). */
+enum { MODE_HUNT = 0, MODE_SURVIVAL = 1, MODE_TROPHY = 2 };
+/* c2_move_tick input bits beyond movement (lib.rs): + (exit prompt), A / B /
+ * Y while a question shows, D-pad Right (pause), the trophy room's buttons. */
+enum { IN_ESCAPE = 1 << 13, IN_YES = 1 << 14, IN_NO = 1 << 15,
+       IN_TROPHY_PREV = 1 << 20, IN_TROPHY_NEXT = 1 << 21, IN_TROPHY_REMOVE = 1 << 22, IN_TROPHY_LOCK = 1 << 23,
+       IN_RESTART = 1 << 24, IN_PAUSE = 1 << 25 };
+/* The hunter's files (menu.rs PROFILE_*). */
+enum { PROFILE_SAVE = 0, PROFILE_RECORD = 1 };
+static const char *profile_files[2] = {"trophy00.sav", "trophy00.rec"};
 /* Button edges for c2_menu_input (menu.rs `button`). */
 enum { MENU_UP = 1, MENU_DOWN = 2, MENU_LEFT = 4, MENU_RIGHT = 8, MENU_A = 16, MENU_B = 32,
        MENU_PLUS = 64, MENU_L = 128, MENU_R = 256 };
@@ -23,6 +33,10 @@ extern uint32_t c2_menu_action(void *);
 extern void c2_menu_choice(void *, HuntChoice *);
 extern void c2_menu_draw(void *, uint8_t *, uint32_t, uint32_t, uint32_t);
 extern void c2_menu_drawn(void *);
+extern void c2_menu_load_profile(void *, uint32_t, const uint8_t *, uint32_t);
+extern uint32_t c2_menu_profile(void *, uint32_t, uint8_t *, uint32_t);
+/* The hunt overlay: 1024x512 texture, up to 5 quads of 6 vertices. */
+extern uint32_t c2_overlay_draw(void *, void *, uint8_t *, uint32_t, float *, float *);
 
 static const char *menu_areas[] = {"DELPHAEUS HILLS", "FORT CISKIN", "VENGAR FJORDS", "MANYA JUNGLE", "MOUNT RAVAN"};
 

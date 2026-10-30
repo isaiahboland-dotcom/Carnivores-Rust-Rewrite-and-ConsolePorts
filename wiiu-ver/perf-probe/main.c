@@ -54,7 +54,10 @@ extern int32_t c2_scenery_resident_prepare(void *, int32_t, float *, float *, ui
 extern uint32_t c2_scenery_resident_ranges(void *, SceneryRange *, uint32_t, uint32_t *);
 extern uint32_t c2_terrain_resident_update(void *, int32_t, float *, float *, float *, float *, SceneryRange *, uint32_t, uint32_t *);
 extern void c2_terrain_resident_ranges(void *, SceneryRange *, SceneryRange *, uint32_t, uint32_t *, uint32_t *, uint32_t *, uint32_t *);
-extern int32_t c2_hunt_setup(void *, const uint8_t **, const uint32_t *, const void *, uint32_t);
+extern int32_t c2_hunt_setup(void *, const uint8_t **, const uint32_t *, const void *, uint32_t, void *);
+extern uint32_t c2_hunt_outcome(void *);
+extern void c2_hunt_finish(void *, void *, uint32_t);
+extern void c2_set_clock(void *, int32_t, int32_t, int32_t, int32_t, int32_t);
 extern uint32_t c2_death_active(void *);
 extern int32_t c2_actor_atlas(void *, uint8_t *, uint32_t);
 extern uint32_t c2_actor_vertices(void *, float *, float *, uint32_t, uint32_t);
@@ -64,7 +67,7 @@ extern int32_t c2_sound_clip(void *, uint32_t, uint32_t, const uint8_t **, uint3
 typedef struct { float x, z; uint32_t rgba; } RadarBlip;
 extern void c2_set_radar(void *, uint32_t);
 extern uint32_t c2_radar_blips(void *, RadarBlip *, uint32_t);
-typedef struct { int32_t ammo; uint32_t weapon_ready; int32_t call; int32_t weapon; uint32_t kills; } HudState;
+typedef struct { int32_t ammo; uint32_t weapon_ready; int32_t call; int32_t weapon; uint32_t kills; uint32_t prompt; } HudState;
 extern void c2_hud_state(void *, HudState *);
 extern uint32_t c2_hunt_dead(void *, uint32_t *, uint32_t *);
 extern int32_t c2_restart_hunt(void *, uint32_t);
@@ -227,12 +230,36 @@ static void perf_update(GX2Texture *tex, const Perf *p) {
 #include "menu.h"
 #include "call_picker.h"
 
-static void hud_update(GX2Texture *tex, const HudState *hud, uint32_t selection) {
+/* Button edges (either controller) to c2_move_tick bits. A question takes
+ * A, B and Y; the trophy room's ZL / ZR / X / Y move, remove and lock. + is
+ * the exit prompt, D-pad Right the pause. */
+enum { BTN_A = 1, BTN_B = 2, BTN_X = 4, BTN_Y = 8, BTN_UP = 16, BTN_DOWN = 32, BTN_RIGHT = 64,
+       BTN_ZL = 128, BTN_ZR = 256, BTN_PLUS = 512 };
+static uint32_t hunt_edges(uint32_t b, int prompt, int trophy) {
+    uint32_t f = 0;
+    if (prompt) {
+        if (b & BTN_A) f |= IN_YES;
+        if (b & BTN_B) f |= IN_NO;
+        if (b & BTN_Y) f |= IN_RESTART;
+    } else {
+        if (b & BTN_B) f |= 2;
+        if (b & BTN_Y) f |= trophy ? IN_TROPHY_LOCK : 4096;
+    }
+    if (b & BTN_UP) f |= 4;
+    if (b & BTN_DOWN) f |= 128;
+    if (b & BTN_ZL) f |= trophy ? IN_TROPHY_PREV : 8;
+    if ((b & BTN_ZR) && trophy) f |= IN_TROPHY_NEXT;
+    if (b & BTN_X) f |= trophy ? IN_TROPHY_REMOVE : 32;
+    if (b & BTN_PLUS) f |= IN_ESCAPE;
+    if (b & BTN_RIGHT) f |= IN_PAUSE;
+    return f;
+}
+static void hud_update(GX2Texture *tex, const HudState *hud, uint32_t selection, const char *unarmed) {
     memset(tex->surface.image, 0, tex->surface.imageSize);
     char line[40];
     static const char *names[6] = {"PISTOL","SHOTGUN","DB SHOTGUN","X-BOW","RIFLE","SNIPER"};
     int weapon=0, rank=hud->weapon; for(int i=0;i<6;++i) if(selection&(1u<<i)) { if(rank--==0) { weapon=i; break; } }
-    if (selection) snprintf(line, sizeof(line), "%s %d", names[weapon], hud->ammo); else snprintf(line, sizeof(line), "OBSERVER");
+    if (selection) snprintf(line, sizeof(line), "%s %d", names[weapon], hud->ammo); else snprintf(line, sizeof(line), "%s", unarmed);
     perf_line(tex, 0, line);
     snprintf(line, sizeof(line), "KILLS %u", hud->kills); perf_line(tex, 1, line);
     GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, tex->surface.image, tex->surface.imageSize);
@@ -519,6 +546,17 @@ static int32_t save_file(const char *name, const void *data, uint32_t len) {
     free(buffer);
     return s;
 }
+/* The hunter's save and record, as the menu holds them, to the SD card. */
+static void save_profile(void *ui) {
+    static uint8_t buffer[256 * 1024];
+    for (uint32_t which = 0; which < 2; ++which) {
+        uint32_t len = c2_menu_profile(ui, which, buffer, sizeof(buffer));
+        char checkpoint[96];
+        int32_t status = len ? save_file(profile_files[which], buffer, len) : -1004;
+        snprintf(checkpoint, sizeof(checkpoint), "%s: save %s (%d)", profile_files[which], status ? "FAIL" : "PASS", (int)status);
+        lifecycle_checkpoint(checkpoint);
+    }
+}
 // Fold the live Wii U timebase and a session counter into the game's PRNG seed.
 static uint32_t next_hunt_seed(void) {
     static uint32_t serial;
@@ -566,6 +604,13 @@ static int run_session(void *ui) {
         if (!load_file("settings.txt", &data, &len)) c2_menu_load_settings(ui, data, len);
         free(data);
     }
+    static int profile_loaded;
+    for (uint32_t which = 0; which < 2 && !profile_loaded; ++which) {
+        uint8_t *data = NULL; uint32_t len = 0;
+        if (!load_file(profile_files[which], &data, &len)) c2_menu_load_profile(ui, which, data, len);
+        free(data);
+    }
+    profile_loaded = 1;
     startup_checkpoint("Menu files loaded; switching from console to GX2...");
     WHBLogConsoleFree();
     startup_console = 0;
@@ -577,15 +622,18 @@ static int run_session(void *ui) {
     }
     graphics_ready = 1;
     if (!start_hunt) goto end_load;
-    char area_file[24];
-    snprintf(area_file, sizeof(area_file), "AREA%d.MAP", menu.area + 1);
-    WHBLogPrintf("Loading %s...", menu_areas[menu.area]);
+    char area_file[24], area_name[16];
+    /* The trophy room is its own map, by day. */
+    int trophy_room = menu.mode == MODE_TROPHY;
+    if (trophy_room) snprintf(area_name, sizeof(area_name), "TROPHY"); else snprintf(area_name, sizeof(area_name), "AREA%d", menu.area + 1);
+    snprintf(area_file, sizeof(area_file), "%s.MAP", area_name);
+    WHBLogPrintf("Loading %s...", trophy_room ? "the trophy room" : menu_areas[menu.area]);
     status = load_file(area_file, &map, &map_len);
     if (status) { WHBLogPrintf("%s read: FAIL %d", area_file, status); goto end_load; }
-    snprintf(area_file, sizeof(area_file), "AREA%d.RSC", menu.area + 1);
+    snprintf(area_file, sizeof(area_file), "%s.RSC", area_name);
     status = load_file(area_file, &rsc, &rsc_len);
     if (status) { WHBLogPrintf("%s read: FAIL %d", area_file, status); goto end_load; }
-    status = c2_move_create(map, map_len, rsc, rsc_len, menu.time, &sim);
+    status = c2_move_create(map, map_len, rsc, rsc_len, trophy_room ? 1 : menu.time, &sim);
     free(map); map = NULL; free(rsc); rsc = NULL;
     if (status) { WHBLogPrintf("Map parse: FAIL %d", status); goto end_load; }
     const char *hunt_files[23] = {"_RES.TXT", "MOSH.CAR", "GALL.CAR", "DIMOR2.CAR", "PTERA.CAR", "DIMET.CAR", "BRACHI1.CAR", "PAR2.CAR", "ANKYLO1.CAR", "STEGO.CAR", "ALLO.CAR", "CHASMOSA.CAR", "VELO2.CAR", "SPINO.CAR", "CERATO1.CAR", "TIREX.CAR", "PISTOL.CAR", "SHOTGUN.CAR", "DBSGUN.CAR", "X_BOW.CAR", "RIFLE.CAR", "SNIPER.CAR", "HUNTER1.CAR"};
@@ -594,8 +642,13 @@ static int run_session(void *ui) {
         if (status != 0) { WHBLogPrintf("%s read: FAIL %d", hunt_files[i], status); c2_move_destroy(sim); sim = NULL; goto end_load; }
     }
     hunt_seed = next_hunt_seed();
-    status = c2_hunt_setup(sim, (const uint8_t **)hunt_data, hunt_lengths, &menu, hunt_seed);
+    status = c2_hunt_setup(sim, (const uint8_t **)hunt_data, hunt_lengths, &menu, hunt_seed, ui);
     if (status != 0) { WHBLogPrintf("Hunt assets: FAIL %d", status); c2_move_destroy(sim); sim = NULL; goto end_load; }
+    {
+        /* The console's local time, for the trophies' dates. */
+        OSCalendarTime now; OSTicksToCalendarTime(OSGetTime(), &now);
+        c2_set_clock(sim, now.tm_year, now.tm_mon + 1, now.tm_mday, now.tm_hour, now.tm_min);
+    }
     const int calls[9] = {1,2,3,4,5,6,7,8,9};
     for (int i = 0; i < 27; ++i) {
         char name[24]; snprintf(name, sizeof(name), "CALL%d_%c.WAV", calls[i/3], 'A'+i%3);
@@ -622,7 +675,7 @@ static int run_session(void *ui) {
         if (status != 0) { WHBLogPrintf("%s: FAIL %d", fx_names[i], status); c2_move_destroy(sim); sim = NULL; goto end_load; }
     }
     WHBLogPrint("Stock hunt and audio: READY"); WHBLogConsoleDraw();
-    if (menu.area == 0) {
+    if (menu.area == 0 && !trophy_room) {
         uint32_t checks = c2_move_checks(sim);
         WHBLogPrintf("AREA1 movement checkpoints: %s", checks == 7 ? "PASS" : "FAIL");
     }
@@ -847,6 +900,23 @@ end_load:
     init_quad(&panel_kills_pos, &panel_kills_attr, &map_pos, tkv, tka);
     init_weapon_grid(&gun_icon_pos, &gun_icon_attr, &map_pos); init_quad(&call_icon_pos, &call_icon_attr, &map_pos, civ, cia);
     HudState prev_hud = {-1, 2, -1, -1, UINT32_MAX};
+    /* The overlay (kill notice, trophy plaque, messages, questions): Rust
+     * draws a 1024x512 texture and its quads; the menu shader shows them
+     * blended by alpha. */
+    WHBGfxShaderGroup overlay_shader = {0};
+    if (!WHBGfxLoadGFDShaderGroup(&overlay_shader, 0, c2_menu_shader)
+        || !WHBGfxInitShaderAttribute(&overlay_shader, "aPosition", 0, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32)
+        || !WHBGfxInitShaderAttribute(&overlay_shader, "aTexLight", 1, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32)
+        || !WHBGfxInitFetchShader(&overlay_shader)) OSFatal("Overlay: shader setup failed");
+    uint32_t overlay_sampler_location = overlay_shader.pixelShader->samplerVars[0].location;
+    GX2Texture overlay_tex; menu_texture(&overlay_tex, 1024, 512);
+    memset(overlay_tex.surface.image, 0, overlay_tex.surface.imageSize);
+    GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, overlay_tex.surface.image, overlay_tex.surface.imageSize);
+    GX2RBuffer overlay_pos = {0}, overlay_uv = {0};
+    overlay_pos.flags = map_pos.flags; overlay_pos.elemSize = 4 * sizeof(float); overlay_pos.elemCount = 5 * 6;
+    overlay_uv = overlay_pos;
+    if (!GX2RCreateBuffer(&overlay_pos) || !GX2RCreateBuffer(&overlay_uv)) OSFatal("Overlay: buffer allocation failed");
+    uint32_t overlay_quads = 0;
     float fog_color[3]; c2_fog_color(sim, fog_color);
     init_gpu_fog(&terrain_fog, fog_color, -3.0f); init_gpu_fog(&water_fog, fog_color, -3.0f);
     init_gpu_fog(&object_fog, fog_color, -2.0f);
@@ -871,7 +941,7 @@ end_load:
     VPADStatus gamepad = {0}; KPADStatus pro[4] = {0}; int pro_valid[4] = {0};
     if (sim) { KPADInit(); WPADEnableURCC(TRUE); }
     /* Observer mode carries no weapons. */
-    const uint32_t carried_weapons = menu.observer ? 0 : menu.weapons;
+    const uint32_t carried_weapons = (menu.observer && menu.mode == MODE_HUNT) || trophy_room ? 0 : menu.weapons;
     performance_open(&menu, hunt_seed, tiled_available);
     while (app_running()) {
         if (sim) {
@@ -893,17 +963,18 @@ end_load:
                 gamepad_connected = 1;
                 gamepad = sample;
                 if (!reported_gamepad) { reported_gamepad = 1; }
-                if (sample.trigger & VPAD_BUTTON_B) flags |= 2;
-                if (sample.trigger & VPAD_BUTTON_UP) flags |= 4;
-                if (sample.trigger & VPAD_BUTTON_ZL) flags |= 8;
-                if (sample.trigger & VPAD_BUTTON_DOWN) flags |= 128;
-                if (sample.trigger & VPAD_BUTTON_Y) flags |= 4096;
-                if (sample.trigger & VPAD_BUTTON_X) flags |= 32;
-                if (sample.trigger & VPAD_BUTTON_PLUS) {
-                    resident_enabled = !resident_enabled; resident.attempted = 0;
-                    resident.active = 0; static_view.valid = 0; terrain_resident.reset = 1;
-                }
-                if (sample.trigger & VPAD_BUTTON_RIGHT) static_cache_enabled = !static_cache_enabled;
+                uint32_t t = sample.trigger, edges = 0;
+                if (t & VPAD_BUTTON_A) edges |= BTN_A;
+                if (t & VPAD_BUTTON_B) edges |= BTN_B;
+                if (t & VPAD_BUTTON_X) edges |= BTN_X;
+                if (t & VPAD_BUTTON_Y) edges |= BTN_Y;
+                if (t & VPAD_BUTTON_UP) edges |= BTN_UP;
+                if (t & VPAD_BUTTON_DOWN) edges |= BTN_DOWN;
+                if (t & VPAD_BUTTON_RIGHT) edges |= BTN_RIGHT;
+                if (t & VPAD_BUTTON_ZL) edges |= BTN_ZL;
+                if (t & VPAD_BUTTON_ZR) edges |= BTN_ZR;
+                if (t & VPAD_BUTTON_PLUS) edges |= BTN_PLUS;
+                flags |= hunt_edges(edges, hud.prompt, trophy_room);
                 if (sample.trigger & VPAD_BUTTON_LEFT) { vsync = !vsync; GX2SetSwapInterval(vsync ? 1 : 0); }
                 if (sample.trigger & VPAD_BUTTON_R) full_map = !full_map;
                 if (sample.trigger & VPAD_BUTTON_MINUS) gamepad_game = !gamepad_game;
@@ -932,8 +1003,8 @@ end_load:
             }
             float lx = gamepad.leftStick.x, ly = gamepad.leftStick.y;
             float rx = gamepad.rightStick.x, ry = gamepad.rightStick.y;
-            if (gamepad.hold & VPAD_BUTTON_A) flags |= 1;
-            if (gamepad.hold & VPAD_BUTTON_ZR) flags |= 16;
+            if ((gamepad.hold & VPAD_BUTTON_A) && !hud.prompt) flags |= 1;
+            if ((gamepad.hold & VPAD_BUTTON_ZR) && !trophy_room) flags |= 16;
             for (int channel = 0; channel < 4; ++channel) {
                 KPADStatus sample_pro = {0}; KPADError kerr = KPAD_ERROR_NO_SAMPLES;
                 uint32_t count = KPADReadEx((KPADChan)channel, &sample_pro, 1, &kerr);
@@ -942,25 +1013,26 @@ end_load:
                     if (pro_valid[channel]) {
                         pro[channel] = sample_pro;
                         if (!reported_pro) { reported_pro = 1; }
-                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_B) flags |= 2;
-                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_UP) flags |= 4;
-                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_ZL) flags |= 8;
-                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_DOWN) flags |= 128;
-                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_Y) flags |= 4096;
-                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_X) flags |= 32;
-                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_PLUS) {
-                            resident_enabled = !resident_enabled; resident.attempted = 0;
-                            resident.active = 0; static_view.valid = 0; terrain_resident.reset = 1;
-                        }
-                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_RIGHT) static_cache_enabled = !static_cache_enabled;
+                        uint32_t t = sample_pro.pro.trigger, edges = 0;
+                        if (t & WPAD_PRO_BUTTON_A) edges |= BTN_A;
+                        if (t & WPAD_PRO_BUTTON_B) edges |= BTN_B;
+                        if (t & WPAD_PRO_BUTTON_X) edges |= BTN_X;
+                        if (t & WPAD_PRO_BUTTON_Y) edges |= BTN_Y;
+                        if (t & WPAD_PRO_BUTTON_UP) edges |= BTN_UP;
+                        if (t & WPAD_PRO_BUTTON_DOWN) edges |= BTN_DOWN;
+                        if (t & WPAD_PRO_BUTTON_RIGHT) edges |= BTN_RIGHT;
+                        if (t & WPAD_PRO_BUTTON_ZL) edges |= BTN_ZL;
+                        if (t & WPAD_PRO_BUTTON_ZR) edges |= BTN_ZR;
+                        if (t & WPAD_PRO_BUTTON_PLUS) edges |= BTN_PLUS;
+                        flags |= hunt_edges(edges, hud.prompt, trophy_room);
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_LEFT) { vsync = !vsync; GX2SetSwapInterval(vsync ? 1 : 0); }
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_R) full_map = !full_map;
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_MINUS) gamepad_game = !gamepad_game;
                     }
                 } else if (kerr != KPAD_ERROR_NO_SAMPLES) { pro_valid[channel] = 0; }
                 if (!pro_valid[channel]) continue;
-                if (pro[channel].pro.hold & WPAD_PRO_BUTTON_A) flags |= 1;
-                if (pro[channel].pro.hold & WPAD_PRO_BUTTON_ZR) flags |= 16;
+                if ((pro[channel].pro.hold & WPAD_PRO_BUTTON_A) && !hud.prompt) flags |= 1;
+                if ((pro[channel].pro.hold & WPAD_PRO_BUTTON_ZR) && !trophy_room) flags |= 16;
                 if (pro[channel].pro.leftStick.x > 0.25f || pro[channel].pro.leftStick.x < -0.25f) lx = pro[channel].pro.leftStick.x;
                 if (pro[channel].pro.leftStick.y > 0.25f || pro[channel].pro.leftStick.y < -0.25f) ly = pro[channel].pro.leftStick.y;
                 if (pro[channel].pro.rightStick.x > 0.25f || pro[channel].pro.rightStick.x < -0.25f) rx = pro[channel].pro.rightStick.x;
@@ -968,7 +1040,7 @@ end_load:
             }
             // Retain edge-triggered toggles across frames with no simulation step.
             pending_toggles ^= flags & 4270;
-            pending_toggles |= flags & 32;
+            pending_toggles |= flags & (32u | IN_ESCAPE | IN_YES | IN_NO | IN_RESTART | IN_PAUSE | (15u << 20));
             if (flags & 0xf00) pending_toggles = (pending_toggles & ~0xf00u) | (flags & 0xf00);
             /* A tapped weapon carries its slot in bits 16-18; the latest tap wins. */
             if (flags & 64) pending_toggles = (pending_toggles & ~(64u | (7u << 16))) | (flags & (64u | (7u << 16)));
@@ -986,14 +1058,32 @@ end_load:
                 c2_move_tick(sim, lx, ly, rx, ry, (flags & 17) | pending_toggles, &snap);
                 pending_toggles = 0;
                 accumulated -= step_ticks;
-                if (c2_hunt_dead(sim, &death.shots, &death.kills)) break;
+                if (c2_hunt_dead(sim, &death.shots, &death.kills) || c2_hunt_outcome(sim)) break;
             }
             perf.simulation += OSGetTime() - mark;
-            if (c2_hunt_dead(sim, &death.shots, &death.kills)) {
-                audio_silence(1);
+            /* Left (the exit confirmed): the trophies, score and kills are
+             * saved, back to the title. Y at the exit prompt starts over
+             * unsaved; dying keeps only the kills in the record. */
+            uint32_t outcome = c2_hunt_outcome(sim);
+            if (outcome == 1) {
                 GX2DrawDone();
-                int action = run_menu(ui, 1, death.shots, death.kills);
-                audio_silence(0);
+                audio_silence(1);
+                c2_hunt_finish(sim, ui, 1);
+                save_profile(ui);
+                session_result = HUNT_MAIN_MENU;
+                break;
+            }
+            int dead = c2_hunt_dead(sim, &death.shots, &death.kills);
+            if (outcome == 2 || dead) {
+                int action = HUNT_RESTART;
+                c2_hunt_finish(sim, ui, 0);
+                save_profile(ui);
+                if (dead) {
+                    audio_silence(1);
+                    GX2DrawDone();
+                    action = run_menu(ui, 1, death.shots, death.kills);
+                    audio_silence(0);
+                }
                 if (action == HUNT_RESTART) {
                     hunt_seed = next_hunt_seed();
                     if (c2_restart_hunt(sim, hunt_seed)) OSFatal("Hunt restart failed");
@@ -1027,7 +1117,15 @@ end_load:
                 prev_call_page = call_page;
                 GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, icons_tex.surface.image, icons_tex.surface.imageSize);
             }
-            if (hud.call != prev_hud.call || hud.weapon != prev_hud.weapon || hud.ammo != prev_hud.ammo || hud.weapon_ready != prev_hud.weapon_ready || hud.kills != prev_hud.kills) { hud_update(&hud_tex, &hud, carried_weapons); prev_hud = hud; }
+            if (hud.call != prev_hud.call || hud.weapon != prev_hud.weapon || hud.ammo != prev_hud.ammo || hud.weapon_ready != prev_hud.weapon_ready || hud.kills != prev_hud.kills) { hud_update(&hud_tex, &hud, carried_weapons, menu.mode == MODE_TROPHY ? "TROPHY ROOM" : "OBSERVER"); prev_hud = hud; }
+            {
+                float *op = GX2RLockBufferEx(&overlay_pos, 0), *ou = GX2RLockBufferEx(&overlay_uv, 0);
+                if (!op || !ou) OSFatal("Overlay: buffer lock failed");
+                uint32_t r = c2_overlay_draw(ui, sim, overlay_tex.surface.image, overlay_tex.surface.pitch, op, ou);
+                GX2RUnlockBufferEx(&overlay_pos, 0); GX2RUnlockBufferEx(&overlay_uv, 0);
+                overlay_quads = r & 255;
+                if (r & 256) GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, overlay_tex.surface.image, overlay_tex.surface.imageSize);
+            }
             memset(&stream_upload, 0, sizeof(stream_upload));
             perf.tiled_atlases = tiled_atlases; perf.vsync = vsync; perf.static_cache_enabled = static_cache_enabled;
             int death_active = c2_death_active(sim);
@@ -1312,6 +1410,16 @@ end_load:
                     GX2RSetAttributeBuffer(&perf_pos, 0, perf_pos.elemSize, 0); GX2RSetAttributeBuffer(&perf_attr, 1, perf_attr.elemSize, 0); GX2RSetAttributeBuffer(&map_fog, 2, map_fog.elemSize, 0);
                     GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
                 }
+                if (overlay_quads) {
+                    GX2SetColorControl(GX2_LOGIC_OP_COPY, 1, FALSE, TRUE);
+                    GX2SetBlendControl(GX2_RENDER_TARGET_0, GX2_BLEND_MODE_SRC_ALPHA, GX2_BLEND_MODE_INV_SRC_ALPHA, GX2_BLEND_COMBINE_MODE_ADD,
+                                       TRUE, GX2_BLEND_MODE_ZERO, GX2_BLEND_MODE_ONE, GX2_BLEND_COMBINE_MODE_ADD);
+                    GX2SetFetchShader(&overlay_shader.fetchShader); GX2SetVertexShader(overlay_shader.vertexShader); GX2SetPixelShader(overlay_shader.pixelShader);
+                    GX2SetPixelTexture(&overlay_tex, overlay_sampler_location); GX2SetPixelSampler(&sampler, overlay_sampler_location);
+                    GX2RSetAttributeBuffer(&overlay_pos, 0, overlay_pos.elemSize, 0); GX2RSetAttributeBuffer(&overlay_uv, 1, overlay_uv.elemSize, 0);
+                    GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, overlay_quads * 6, 0, 1);
+                    GX2SetColorControl(GX2_LOGIC_OP_COPY, 0, FALSE, TRUE);
+                }
                 if (display == 0) WHBGfxFinishRenderTV(); else WHBGfxFinishRenderDRC();
                 GX2SampleBottomGPUCycle(&gpu_stamp[1 + display]);
             }
@@ -1349,6 +1457,8 @@ end_load:
     GX2RDestroyBufferEx(&water_pos, 0); GX2RDestroyBufferEx(&water_attr, 0);
     GX2RDestroyBufferEx(&perf_pos, 0); GX2RDestroyBufferEx(&perf_attr, 0); free(perf_tex.surface.image);
     GX2RDestroyBufferEx(&hud_pos, 0); GX2RDestroyBufferEx(&hud_attr, 0); free(hud_tex.surface.image);
+    GX2RDestroyBufferEx(&overlay_pos, 0); GX2RDestroyBufferEx(&overlay_uv, 0); free(overlay_tex.surface.image);
+    WHBGfxFreeShaderGroup(&overlay_shader);
     GX2RDestroyBufferEx(&panel_ammo_pos, 0); GX2RDestroyBufferEx(&panel_ammo_attr, 0);
     GX2RDestroyBufferEx(&panel_kills_pos, 0); GX2RDestroyBufferEx(&panel_kills_attr, 0);
     GX2RDestroyBufferEx(&gun_icon_pos, 0); GX2RDestroyBufferEx(&gun_icon_attr, 0); GX2RDestroyBufferEx(&call_icon_pos, 0); GX2RDestroyBufferEx(&call_icon_attr, 0); free(icons_tex.surface.image);

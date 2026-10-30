@@ -178,6 +178,12 @@ impl<'a> Canvas<'a> {
         Canvas { px, pitch, w, h, s: w as f32 / WIDTH, clip: (0, 0, w, h) }
     }
 
+    /// A canvas at `s` pixels per logical unit, whatever its size (the hunt
+    /// overlay: regions of a small texture at the TV's scale).
+    pub fn with_scale(px: &'a mut [u8], pitch: usize, w: usize, h: usize, s: f32) -> Self {
+        Canvas { s, ..Self::new(px, pitch, w, h) }
+    }
+
     // Logical rectangle to a clamped pixel span.
     /// Draw only inside `r` (logical units; a pixel of margin around it),
     /// or everywhere with None. Drawing is the same either way, so a part of
@@ -210,19 +216,39 @@ impl<'a> Canvas<'a> {
         self.blend_alpha((y * self.pitch + x) * 4, c, a);
     }
 
-    // Integer blend of `c` over the pixel at byte `i`, `a` in 0..=255.
+    // Integer blend of `c` over the pixel at byte `i`, `a` in 0..=255. Over
+    // an opaque pixel (every menu pixel) the result stays opaque; over a
+    // transparent one (the hunt overlay) it keeps the coverage as alpha.
     fn blend_alpha(&mut self, i: usize, c: Rgba, a: u32) {
+        let da = self.px[i + 3] as u32;
+        if a == 0 {
+            return;
+        }
         if a >= 255 {
             self.px[i..i + 3].copy_from_slice(&c[..3]);
-        } else if a > 0 {
+            self.px[i + 3] = 255;
+        } else if da == 255 {
             for k in 0..3 {
                 let d = self.px[i + k] as i32;
                 self.px[i + k] = (d + ((c[k] as i32 - d) * a as i32 + 127) / 255) as u8;
             }
         } else {
-            return;
+            // Non-premultiplied "over": out_a = a + da (1 - a).
+            let rest = da * (255 - a) / 255;
+            let out = a + rest;
+            for k in 0..3 {
+                self.px[i + k] = ((c[k] as u32 * a + self.px[i + k] as u32 * rest + out / 2) / out) as u8;
+            }
+            self.px[i + 3] = out as u8;
         }
-        self.px[i + 3] = 255;
+    }
+
+    /// Fully transparent pixels over `r` (the hunt overlay's regions).
+    pub fn clear(&mut self, r: Rect) {
+        let (x0, y0, x1, y1) = self.span(&r);
+        for y in y0..y1 {
+            self.px[(y * self.pitch + x0) * 4..(y * self.pitch + x1) * 4].fill(0);
+        }
     }
 
     pub fn fill(&mut self, r: Rect, c: Rgba) {
@@ -335,7 +361,7 @@ impl<'a> Canvas<'a> {
         let f = |r: Rect| [r.x.to_bits(), r.y.to_bits(), r.w.to_bits(), r.h.to_bits()];
         let mut key = [0u32; 16];
         key[0] = id;
-        key[1] = self.w as u32;
+        key[1] = self.s.to_bits();
         key[2] = bright.to_bits();
         key[3] = cr;
         key[4..8].copy_from_slice(&f(src));

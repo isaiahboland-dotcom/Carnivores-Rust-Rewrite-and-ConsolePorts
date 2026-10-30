@@ -29,9 +29,7 @@ pub mod model;
 pub mod player;
 #[cfg(any(feature = "std", feature = "portable-hunt"))]
 pub mod prof;
-#[cfg(feature = "std")]
 pub mod profile;
-#[cfg(feature = "std")]
 pub mod record;
 pub mod rng;
 #[cfg(any(feature = "std", feature = "portable-hunt"))]

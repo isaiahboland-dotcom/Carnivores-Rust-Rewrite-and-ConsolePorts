@@ -17,12 +17,14 @@ fn resident_scenery_preserves_original_visible_streams() {
     let root = std::path::Path::new(&root);
     // Captured from the previous CPU-cache builder with individual visibility
     // filtering: every visible position/UV/light float, at 100 original-map views.
+    // Day lighting since the time-of-day fix (slot 0 is dawn); the vertex
+    // counts are unchanged.
     let golden = [
-        (895269, 0x67467ff06465670cu64),
-        (868662, 0xdbcb1e9f2b68736f),
-        (418407, 0xb9e3e3ce5d7ab4ee),
-        (978168, 0x98a348d146fc78f9),
-        (906630, 0x7c528a47ae723a48),
+        (895269, 0x439d7d8b1dd93462u64),
+        (868662, 0x82413da8c13d680a),
+        (418407, 0x291335f3f63be9f8),
+        (978168, 0xb46c7f163bacb666),
+        (906630, 0x1b095c5b66c4bb14),
     ];
     for map in 1..=5 {
         let read = |ext| std::fs::read(root.join(format!("AREAS/AREA{map}.{ext}"))).unwrap();

@@ -3,5 +3,6 @@ uniform sampler2D menuTexture;
 in vec2 vTex;
 out vec4 color;
 void main() {
-    color = vec4(texture(menuTexture, vTex).rgb, 1.0);
+    // The menus are opaque; the hunt overlay blends by this alpha.
+    color = texture(menuTexture, vTex);
 }

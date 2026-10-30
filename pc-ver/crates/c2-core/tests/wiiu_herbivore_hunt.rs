@@ -340,7 +340,7 @@ fn menu_options_reach_the_hunt_and_survive_a_restart() {
         choice.time_of_day(),
     );
     assert_eq!(area.time, TimeOfDay::Night);
-    let (hunt, _) = hunt_setup::setup_with(&area, &defs, &bytes, &choice, 1).unwrap();
+    let (hunt, _) = hunt_setup::setup_with(&area, &defs, &bytes, &choice, &hunt_setup::new_save(), 1).unwrap();
     let o = hunt.opts;
     assert!(o.camo && o.scent && o.tranq && o.radar && !o.observer && !o.blood && !o.death_anim);
     assert_eq!(o.dino_run_k, 0.6);
@@ -348,16 +348,98 @@ fn menu_options_reach_the_hunt_and_survive_a_restart() {
     assert_eq!(hunt.weapons.ammo_mag, vec![1, 1]);
     assert_eq!(hunt.herd.chars.len(), hunt_setup::TARGET_POPULATION);
     assert!(hunt.herd.chars.iter().all(|c| c.ctype >= hunt_setup::AMBIENT_COUNT));
-    let again = hunt_setup::restart_with(&area, &hunt, &choice, 2).unwrap();
+    let again = hunt_setup::restart_with(&area, &hunt, &choice, &hunt.room.clone(), 2).unwrap();
     assert!(again.opts.camo && again.opts.scent && !again.opts.blood && again.opts.dino_run_k == 0.6);
     assert_eq!(again.weapons.ammo_mag, vec![1, 1]);
     assert_eq!(again.herd.chars.len(), hunt_setup::TARGET_POPULATION);
     // Observer mode needs no weapon and carries none.
     let observe = hunt_setup::HuntChoice { observer: 1, weapons: 0, ..choice };
-    let (hunt, _) = hunt_setup::setup_with(&area, &defs, &bytes, &observe, 1).unwrap();
+    let (hunt, _) = hunt_setup::setup_with(&area, &defs, &bytes, &observe, &hunt_setup::new_save(), 1).unwrap();
     assert!(hunt.opts.observer && hunt.weapons.info.is_empty());
     let none = hunt_setup::HuntChoice { weapons: 0, ..choice };
-    assert!(hunt_setup::setup_with(&area, &defs, &bytes, &none, 1).is_err());
+    assert!(hunt_setup::setup_with(&area, &defs, &bytes, &none, &hunt_setup::new_save(), 1).is_err());
+}
+
+// A kill takes a stand in the save with its weapon and area; the save
+// converts to the original's character numbers and back; the trophy room
+// stands the trophies up; a survival sends its first wave of hunters.
+#[test]
+fn trophies_trophy_room_and_survival() {
+    let Ok(root) = std::env::var("C2_ORIGINAL_HUNTDAT") else {
+        return;
+    };
+    let root = std::path::Path::new(&root);
+    let read = |p: &str| std::fs::read(root.join(p)).unwrap();
+    let defs = std::fs::read_to_string(root.join("_RES.TXT")).unwrap();
+    let mut assets: Vec<Vec<u8>> = hunt_setup::SPECIES_FILES.iter().map(|file| read(file)).collect();
+    assets.extend(hunt_setup::WEAPON_FILES.iter().map(|f| read(&format!("WEAPONS/{f}"))));
+    assets.push(read("HUNTER1.CAR"));
+    let bytes: Vec<&[u8]> = assets.iter().map(Vec::as_slice).collect();
+    let load = |name: &str| {
+        Area::new(
+            map::parse(&read(&format!("AREAS/{name}.MAP"))).unwrap(),
+            rsc::parse(&read(&format!("AREAS/{name}.RSC"))).unwrap(),
+            TimeOfDay::Day,
+        )
+    };
+    let area = load("AREA1");
+    let cars: Vec<_> = assets.iter().take(hunt_setup::MODEL_COUNT).map(|b| c2_formats::car::parse(b).unwrap()).collect();
+    let refs: [Option<&c2_formats::car::Car>; hunt_setup::HUNTER_SPECIES + 1] =
+        std::array::from_fn(|i| cars.get(hunt_setup::model_for_species(i)));
+
+    // A hunt: bag the first target.
+    let choice = hunt_setup::HuntChoice { area: 0, animals: 0b10, weapons: 0b10, ..Default::default() };
+    let (mut hunt, _) = hunt_setup::setup_with(&area, &defs, &bytes, &choice, &hunt_setup::new_save(), 1).unwrap();
+    assert_eq!(hunt.area_no, 1);
+    let index = hunt.herd.chars.iter().position(|c| c.ctype >= hunt_setup::AMBIENT_COUNT).unwrap();
+    let ctype = hunt.herd.chars[index].ctype;
+    let mut events = Vec::new();
+    hunt.debug_bag(&area, index, &mut events);
+    let slot = hunt.trophy_body.expect("a trophy");
+    assert_eq!(hunt.room.bodies[slot].ctype as usize, ctype);
+    assert_eq!(hunt.room.bodies[slot].area(), 1);
+    assert_eq!(hunt.kills.len(), 1);
+    // The original numbers: the hunter first, so one more.
+    let save = hunt_setup::room_to_save(&hunt.room);
+    assert_eq!(save.bodies[slot].ctype as usize, ctype + 1);
+    let back = c2_formats::sav::parse(&c2_formats::sav::write(&save)).unwrap();
+    assert_eq!(hunt_setup::room_from_save(&back).bodies, hunt.room.bodies);
+    // An original save (Ankylosaurus is 8 there, 7 here).
+    if let Ok(orig) = std::fs::read(root.join("../trophy00.sav")) {
+        let s = c2_formats::sav::parse(&orig).unwrap();
+        let room = hunt_setup::room_from_save(&s);
+        for (a, b) in s.bodies.iter().zip(room.bodies.iter()).filter(|(a, _)| a.ctype > 0) {
+            assert_eq!(a.ctype, b.ctype + 1);
+        }
+    }
+
+    // The trophy room shows it, no weapons, nothing alive.
+    let room_area = load("TROPHY");
+    let trophy = hunt_setup::HuntChoice { mode: hunt_setup::MODE_TROPHY, animals: 0, weapons: 0, ..Default::default() };
+    let (mut room, _) = hunt_setup::setup_with(&room_area, &defs, &bytes, &trophy, &hunt.room, 1).unwrap();
+    assert!(room.opts.trophy && room.weapons.info.is_empty());
+    assert_eq!(room.herd.chars.len(), 1);
+    assert_eq!(room.herd.chars[0].ctype, ctype);
+    for _ in 0..60 {
+        room.tick(&room_area, &refs, &HuntInput::default(), 16, &mut events);
+    }
+    assert!(room.health > 0);
+    room.press_escape();
+    assert_eq!(room.outcome(), Some(c2_core::game::Outcome::Exited));
+
+    // A survival: the map's hunters go, waves of the picked ones come.
+    let survive = hunt_setup::HuntChoice { mode: hunt_setup::MODE_SURVIVAL, animals: 0b1000, weapons: 0b10, ..Default::default() };
+    let (mut s, _) = hunt_setup::setup_with(&area, &defs, &bytes, &survive, &hunt_setup::new_save(), 3).unwrap();
+    assert!(s.survival.is_some() && !s.opts.tranq && !s.opts.observer);
+    let allo = hunt_setup::AMBIENT_COUNT + 3;
+    for _ in 0..(5000 / 16) {
+        events.clear();
+        s.tick(&area, &refs, &HuntInput::default(), 16, &mut events);
+    }
+    assert_eq!(s.wave(), 1);
+    assert!(s.herd.chars.iter().any(|c| c.wave > 0 && c.ctype == allo));
+    let restarted = hunt_setup::restart_with(&area, &s, &survive, &hunt_setup::new_save(), 4).unwrap();
+    assert!(restarted.survival.is_some() && restarted.wave() == 0);
 }
 
 // The view-model depth range the Wii U maps into its front depth slice
@@ -418,7 +500,7 @@ fn crouch_and_sprint_stress() {
         choice.time_of_day(),
     );
     for seed in [1201724847, 597228150, 1, 2, 3] {
-        let (mut hunt, cars) = hunt_setup::setup_with(&area, &defs, &bytes, &choice, seed).unwrap();
+        let (mut hunt, cars) = hunt_setup::setup_with(&area, &defs, &bytes, &choice, &hunt_setup::new_save(), seed).unwrap();
         let refs: Vec<_> = (0..=hunt_setup::HUNTER_SPECIES).map(|i| Some(&cars[hunt_setup::model_for_species(i)])).collect();
         let mut events = Vec::new();
         for t in 0..20_000u32 {
@@ -443,7 +525,7 @@ fn crouch_and_sprint_stress() {
             };
             hunt.tick(&area, &refs, &input, 16, &mut events);
             if hunt.health <= 0 {
-                hunt = hunt_setup::restart_with(&area, &hunt, &choice, seed ^ t).unwrap();
+                hunt = hunt_setup::restart_with(&area, &hunt, &choice, &hunt.room.clone(), seed ^ t).unwrap();
             }
         }
     }

@@ -135,8 +135,22 @@ cached between redraws.
 The picks and settings are saved to `settings.txt` beside the app when the
 menu closes and read at start. Night hunts use the night sky, light map and
 the original's night vision (every world texel becomes (G/8, G, G/8)).
-Points, prices, the hunter profile, trophies and survival are still to come.
-The install now has 143 files (the menu adds EQUIP1-4 and 38 descriptions).
+The title also offers survival (the setup's second page picks the hunters
+that come in waves and normal, hardcore or custom), the trophy room
+(`TROPHY.MAP`) and the hunter record (score, trophies, kills, best wave,
+longest shot, the last kills). Prices are still to come.
+
+In a hunt, + asks to leave (A yes, B no, Y restart unsaved) and D-pad Right
+pauses. Leaving saves the trophies and score to `trophy00.sav` (the
+original's format, with its character numbers, so it moves to and from the PC
+and the 3DS) and every kill to `trophy00.rec`; dying keeps only the kills, as
+on the PC. A kill shows the PC's notice (bottom right) or, for a trophy, its
+plaque (`TROPHY_G.TGA`); survival shows the wave. These are drawn by
+`src/overlay.rs` into a 1024x512 texture and blended over the view with the
+menu shader (which now passes alpha). In the trophy room ZL / ZR move the
+trophy in front to the previous or next free stand, X removes it, Y locks it,
+and + leaves (saving moves and removals). The install now has 147 files (the
+trophy room's map and the two plaques).
 
 The host test `pc-ver/crates/c2-core/tests/wiiu_menu.rs` drives every page;
 with `C2_MENU_SHOTS=DIR` (and `C2_MENU_FONT=FILE.ttf`, `C2_ORIGINAL_HUNTDAT`)
