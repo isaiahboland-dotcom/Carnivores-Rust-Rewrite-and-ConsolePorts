@@ -14,7 +14,7 @@ typedef enum { PROCUI_STATUS_IN_FOREGROUND, PROCUI_STATUS_IN_BACKGROUND,
 #define FS_STATUS_OK 0
 #define OSMillisecondsToTicks(n) (n)
 static int client, audio_initialized = 1;
-static unsigned polls, acknowledged, sleeps, stops, restores, flushes, closed;
+static unsigned polls, acknowledged, sleeps, stops, restores, flushes, closed, gpu_waits;
 static ProcUIStatus sequence[] = {PROCUI_STATUS_IN_FOREGROUND,
     PROCUI_STATUS_RELEASE_FOREGROUND, PROCUI_STATUS_IN_BACKGROUND,
     PROCUI_STATUS_IN_FOREGROUND, PROCUI_STATUS_EXITING};
@@ -22,7 +22,9 @@ static ProcUIStatus ProcUIProcessMessages(int block) {
     assert(block == TRUE && polls < sizeof(sequence)/sizeof(sequence[0]));
     return sequence[polls++];
 }
-static void ProcUIDrawDoneRelease(void) { assert(!audio_initialized); ++acknowledged; }
+/* The hunt's last frame is finished before the GPU is released. */
+static void GX2DrawDone(void) { ++gpu_waits; }
+static void ProcUIDrawDoneRelease(void) { assert(!audio_initialized && gpu_waits == acknowledged + 1); ++acknowledged; }
 static void OSSleepTicks(int ticks) { assert(ticks == 16); ++sleeps; }
 static void performance_flush(void) { ++flushes; }
 static void audio_shutdown(void) { assert(audio_initialized); audio_initialized = 0; ++stops; }
@@ -47,7 +49,7 @@ int main(void) {
     lifecycle_sim = &client;
     assert(app_running() && polls == 1);
     assert(app_running() && polls == 4); // Release/background never returns a drawable frame.
-    assert(acknowledged == 1 && sleeps == 1 && stops == 1 && restores == 1 && flushes == 1);
+    assert(acknowledged == 1 && sleeps == 1 && stops == 1 && restores == 1 && flushes == 1 && gpu_waits == 1);
     assert(!lifecycle_suspended_audio && audio_initialized);
     assert(!app_running() && polls == 5);
     assert(lifecycle_exiting && lifecycle_log_open); // Resources still available for cleanup.

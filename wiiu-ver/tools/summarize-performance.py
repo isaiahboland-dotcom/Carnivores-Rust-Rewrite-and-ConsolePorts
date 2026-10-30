@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarize Wii U schema-1 through 7 captures, grouped by seed and output view modes."""
+"""Summarize Wii U schema-1 through 8 captures, grouped by seed and output view modes."""
 import argparse
 import csv
 import math

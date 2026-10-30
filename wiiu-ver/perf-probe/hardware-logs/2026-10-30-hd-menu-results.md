@@ -29,3 +29,16 @@ Findings and changes:
 - Menu: no hardware square root, so hexagon edges no longer call `sqrtf`
   per pixel; glyphs are rasterized once and cached. Each redraw's time is
   logged to `startup.log` (`Menu: redraw N took TV ... us`).
+
+## Next candidate: CPU/GPU overlap and GPU timing (schema 8)
+
+`carnivores-overlap-v1.wuhb`, SHA-256
+`dbab43d1cf679684bdf255357eaf39ca6c66387cb21a376b1e4c0bef8d6605fd`, on the SD
+(also includes the dawn fix, sprint from crouch, panic logging and the
+faster menu). `WHBGfxFinishRender` waited for the GPU after every frame, so
+CPU (~11 ms) and GPU work ran one after the other. Hunt frames are now
+submitted without that wait; the CPU reads input and runs the simulation
+while the GPU draws, and waits (WAIT) only before writing GPU data. The
+capture adds `gpu_tv_ms` and `gpu_drc_ms` (GPU timestamps of the previous
+frame's passes), to tell GPU time from vsync waiting before deciding on the
+GPU-side work (a 720p TV render target is the main candidate).

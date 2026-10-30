@@ -49,6 +49,9 @@ static int app_running(void) {
                 audio_shutdown();
                 lifecycle_suspended_audio = 1;
             }
+            /* Hunt frames are submitted without waiting; finish the last one
+             * before the GPU and the foreground buffers are released. */
+            if (lifecycle_sim) GX2DrawDone();
             lifecycle_checkpoint("foreground release: acknowledging DrawDoneRelease");
             ProcUIDrawDoneRelease();
             // WHB's graphics release/acquire callbacks manage its foreground
