@@ -1,6 +1,8 @@
 #![no_std]
 extern crate alloc;
 mod hunt_setup;
+mod static_scene;
+use static_scene::{TerrainCache, SceneryCandidates, visible_sphere};
 use alloc::{boxed::Box, vec::Vec};
 use c2_core::{
     area::{Area, TimeOfDay},
@@ -62,6 +64,9 @@ unsafe impl GlobalAlloc for Allocator {
 static ALLOCATOR: Allocator = Allocator;
 struct Simulation {
     area: Area,
+    terrain_cache: TerrainCache,
+    scenery_candidates: SceneryCandidates,
+    resident_objects: Vec<static_scene::ResidentObject>,
     models: Vec<PreparedModel>,
     model_uvs: Vec<Vec<[[f32; 2]; 3]>>,
     object_lights: Vec<f32>,
@@ -168,17 +173,16 @@ pub extern "C" fn c2_move_create(
     let hunt = Hunt::new(&area, player, Herd::default(), weapons, MsRand::new(1), HuntOptions::default(), save);
     let models: Vec<PreparedModel> = area.rsc.objects.iter().map(|o| PreparedModel::from_mesh(&o.model.mesh)).collect();
     // Atlas coordinates depend only on the model and face, never on the camera.
-    let model_uvs = models.iter().enumerate().map(|(id, model)| {
-        model.faces.iter().map(|face| core::array::from_fn(|k| [
-            ((id % 8) as f32 * 256.0 + (face.uv[k][0] * 256.0).clamp(0.0, 255.0) + 0.5) / 2048.0,
-            ((id / 8) as f32 * 256.0 + (face.uv[k][1] * 256.0).clamp(0.0, 255.0) + 0.5) / 2048.0,
-        ])).collect()
-    }).collect();
+    let model_uvs = static_scene::scenery_uvs(&models);
     let model_radii = models.iter().map(PreparedModel::radius).collect();
     let max_vertices = models.iter().map(|model| model.positions.len()).max().unwrap_or(0);
     let transformed = alloc::vec![[0.0; 4]; max_vertices];
+    let terrain_cache = TerrainCache::new(&area);
     let sim = Simulation {
         area,
+        terrain_cache,
+        scenery_candidates: SceneryCandidates::default(),
+        resident_objects: Vec::new(),
         models,
         model_uvs,
         object_lights,
@@ -686,6 +690,19 @@ pub extern "C" fn c2_scenery_camera(ptr: *mut core::ffi::c_void, out: *mut f32) 
     unsafe { core::ptr::copy_nonoverlapping(values.as_ptr(), out, values.len()); }
 }
 
+// Static render dependencies include the player's terrain-window anchor even
+// when the death camera has moved away from the player. No animated state is
+// read by terrain, scenery, water or sky generation in this renderer.
+#[no_mangle]
+pub extern "C" fn c2_static_view_key(ptr: *mut core::ffi::c_void, out: *mut f32) {
+    let sim = unsafe { &*ptr.cast::<Simulation>() };
+    let (eye, yaw, pitch) = sim.hunt.camera();
+    let key = [eye[0], eye[1], eye[2], yaw, pitch,
+        (sim.hunt.player.x / 256.0) as i32 as f32,
+        (sim.hunt.player.z / 256.0) as i32 as f32];
+    unsafe { core::ptr::copy_nonoverlapping(key.as_ptr(), out, key.len()); }
+}
+
 // Original day sky image, converted to a linear RGBA GX2 texture.
 #[no_mangle]
 pub extern "C" fn c2_sky_texture(ptr: *mut core::ffi::c_void, pixels: *mut u8, pitch: u32) -> i32 {
@@ -725,14 +742,6 @@ pub extern "C" fn c2_sky_vertices(ptr: *mut core::ffi::c_void, positions: *mut f
         unsafe { core::ptr::copy_nonoverlapping(pos.as_ptr(), positions.add(i * 4), 4); core::ptr::copy_nonoverlapping(attr.as_ptr(), attribs.add(i * 4), 4); }
     }
     6
-}
-
-// Conservative horizontal-frustum test for a world-space bounding sphere.
-// Camera rotation preserves radius; the side clip plane has normal length 1.25.
-fn visible_sphere(wx: f32, wy: f32, wz: f32, radius: f32, sa: f32, ca: f32, sb: f32, cb: f32) -> bool {
-    let side = wx * ca + wz * sa;
-    let depth = (wx * sa - wz * ca) * cb - wy * sb;
-    depth + radius >= 0.0 && (side * 0.75).abs() <= depth + radius * 1.25
 }
 
 // Build only objects that become visible; keep their world-space faces grouped
@@ -780,16 +789,11 @@ pub extern "C" fn c2_scenery_vertices(ptr: *mut core::ffi::c_void, positions: *m
     let (sb, cb) = (libm::sinf(b), libm::cosf(b));
     let cx = (p.x / 256.0) as i32; let cz = (p.z / 256.0) as i32;
     let mut n = 0usize;
-    // Near cells first so a capacity limit drops the most distant scenery.
-    for ring in 0i32..=74 {
-        for dz in -ring..=ring {
-            let step = if dz.abs() == ring { 1 } else { (ring * 2).max(1) };
-            for dx in (-ring..=ring).step_by(step as usize) {
-            let x = cx + dx; let z = cz + dz;
-            if !(0..1024).contains(&x) || !(0..1024).contains(&z) { continue; }
-            let i = z as usize * 1024 + x as usize;
+    sim.scenery_candidates.update(&sim.area.map.objects, sim.models.len(), (cx, cz));
+    for candidate in 0..sim.scenery_candidates.cells.len() {
+            let i = sim.scenery_candidates.cells[candidate];
+            let (x, z) = ((i % 1024) as i32, (i / 1024) as i32);
             let id = sim.area.map.objects[i] as usize;
-            if sim.models.get(id).is_none() { continue; }
             let ox = x as f32 * 256.0 + 128.0;
             let oy = sim.area.map.object_height[i] as f32 * 64.0;
             let oz = z as f32 * 256.0 + 128.0;
@@ -819,9 +823,47 @@ pub extern "C" fn c2_scenery_vertices(ptr: *mut core::ffi::c_void, positions: *m
             let chunk = sim.chunks[chunk_id].as_mut().unwrap();
             chunk.last_used = sim.cache_clock;
             if !emit_cached(chunk.objects[slot].as_ref().unwrap(), positions, attribs, &mut n, capacity as usize) { return n as u32; }
-        }}
     }
     n as u32
+}
+
+// Populate all nearby scenery directions once per player-cell anchor. Return
+// -1 before writing if it cannot fit; C then keeps the legacy visible-stream
+// path. Existing 16 MiB GPU streams are reused, not additional resident copies.
+#[no_mangle]
+pub extern "C" fn c2_scenery_resident_prepare(ptr: *mut core::ffi::c_void,
+    positions: *mut f32, attrs: *mut f32, capacity: u32) -> i32 {
+    let sim = unsafe { &mut *ptr.cast::<Simulation>() };
+    let cell = ((sim.hunt.player.x / 256.0) as i32, (sim.hunt.player.z / 256.0) as i32);
+    sim.scenery_candidates.update(&sim.area.map.objects, sim.models.len(), cell);
+    sim.resident_objects.clear();
+    let Some(total) = static_scene::resident_vertex_count(sim.scenery_candidates.cells.iter().map(|&i|
+        sim.models[sim.area.map.objects[i] as usize].faces.len()), capacity as usize) else { return -1; };
+    let mut n = 0u32;
+    for &i in &sim.scenery_candidates.cells {
+        let id = sim.area.map.objects[i] as usize;
+        let center = [(i%1024) as f32*256.0+128.0,
+            sim.area.map.object_height[i] as f32*64.0, (i/1024) as f32*256.0+128.0];
+        let count = unsafe { static_scene::emit_scenery_model(&sim.models[id], &sim.model_uvs[id],
+            sim.object_lights[i], center, ((sim.area.map.flags[i] >> 2) & 3) as u8,
+            &mut sim.transformed, positions.add(n as usize*4), attrs.add(n as usize*4)) };
+        sim.resident_objects.push(static_scene::ResidentObject { center,
+            radius: sim.model_radii[id], range: static_scene::DrawRange { first:n, count } });
+        n += count;
+    }
+    debug_assert_eq!(n as usize, total);
+    n as i32
+}
+#[no_mangle]
+pub extern "C" fn c2_scenery_resident_ranges(ptr: *mut core::ffi::c_void,
+    ranges: *mut static_scene::DrawRange, capacity: u32, vertices: *mut u32) -> u32 {
+    let sim = unsafe { &*ptr.cast::<Simulation>() };
+    if (capacity as usize) < sim.resident_objects.len() { unsafe { *vertices = 0; } return u32::MAX; }
+    let out = unsafe { core::slice::from_raw_parts_mut(ranges, capacity as usize) };
+    let (eye,yaw,pitch) = sim.hunt.camera();
+    let (count,total) = static_scene::resident_ranges(&sim.resident_objects,eye,yaw,pitch,out);
+    unsafe { *vertices = total; }
+    count as u32
 }
 
 // Emit water only when all four corners belong to water, matching the
@@ -865,56 +907,9 @@ pub extern "C" fn c2_water_vertices(ptr: *mut core::ffi::c_void, positions: *mut
 #[no_mangle]
 pub extern "C" fn c2_terrain_vertices(ptr: *mut core::ffi::c_void, positions: *mut f32, colors: *mut f32) -> u32 {
     let sim = unsafe { &*ptr.cast::<Simulation>() };
-    let p = &sim.hunt.player;
-    let (eye, a, b) = sim.hunt.camera();
-    let (sa, ca) = (libm::sinf(a), libm::cosf(a));
-    let (sb, cb) = (libm::sinf(b), libm::cosf(b));
-    let cx = (p.x / 256.0) as i32;
-    let cz = (p.z / 256.0) as i32;
-    let mut n = 0usize;
-    for dz in -74i32..74 {
-            for dx in -74i32..74 {
-                let x = cx + dx; let z = cz + dz;
-                if x < 0 || z < 0 || x >= 1023 || z >= 1023 { continue; }
-                let i = z as usize * 1024 + x as usize;
-                let heights = [sim.area.map.height[i], sim.area.map.height[i + 1], sim.area.map.height[i + 1024], sim.area.map.height[i + 1025]];
-                let low = f32::from(*heights.iter().min().unwrap()) * 64.0;
-                let high = f32::from(*heights.iter().max().unwrap()) * 64.0;
-                let half_height = (high - low) * 0.5;
-                let radius = libm::sqrtf(32768.0 + half_height * half_height);
-                if !visible_sphere(x as f32 * 256.0 + 128.0 - eye[0], (low + high) * 0.5 - eye[1], z as f32 * 256.0 + 128.0 - eye[2], radius, sa, ca, sb, cb) { continue; }
-                let normal = [(0,0),(1,0),(1,1),(0,0),(1,1),(0,1)];
-                let reverse = [(0,0),(1,0),(0,1),(0,1),(1,0),(1,1)];
-                let flags = sim.area.map.flags[i];
-                let corners = if flags & 0x10 != 0 { reverse } else { normal };
-                let tex = (sim.area.map.texture1[i] as usize).min(sim.area.rsc.textures.len().saturating_sub(1));
-                for (ox, oz) in corners {
-                    let vi = (z + oz) as usize * 1024 + (x + ox) as usize;
-                    let wx = (x + ox) as f32 * 256.0 - eye[0];
-                    let wy = f32::from(sim.area.map.height[vi]) * 64.0 - eye[1];
-                    let wz = (z + oz) as f32 * 256.0 - eye[2];
-                    let side = wx * ca + wz * sa;
-                    let forward = wx * sa - wz * ca;
-                    let up = wy * cb + forward * sb;
-                    let depth = forward * cb - wy * sb;
-                    // GX2 clip depth is 0..w: near 16, far 32768 world units.
-                    let clip_z = (32768.0 / (32768.0 - 16.0)) * (depth - 16.0);
-                    let pos = [side * 0.75, up * 1.333, clip_z, depth];
-                    let light = f32::from(sim.area.map.light[0][vi]) / 255.0;
-                    let (u, v) = match flags & 3 {
-                        1 => (oz, 1 - ox), 2 => (1 - ox, 1 - oz),
-                        3 => (1 - oz, ox), _ => (ox, oz),
-                    };
-                    // Half-texel inset prevents neighboring atlas tiles bleeding.
-                    let u = ((tex % 16) as f32 * 128.0 + 0.9465 + u as f32 * 126.107) / 2048.0;
-                    let v = ((tex / 16) as f32 * 128.0 + 0.9465 + v as f32 * 126.107) / 2048.0;
-                    let color = [u, v, light, 1.0];
-                    unsafe { core::ptr::copy_nonoverlapping(pos.as_ptr(), positions.add(n*4), 4); core::ptr::copy_nonoverlapping(color.as_ptr(), colors.add(n*4), 4); }
-                    n += 1;
-                }
-            }
-        }
-    n as u32
+    let (eye, yaw, pitch) = sim.hunt.camera();
+    let cell = ((sim.hunt.player.x / 256.0) as i32, (sim.hunt.player.z / 256.0) as i32);
+    unsafe { sim.terrain_cache.emit(&sim.area, eye, yaw, pitch, cell, positions, colors) }
 }
 
 #[panic_handler]
