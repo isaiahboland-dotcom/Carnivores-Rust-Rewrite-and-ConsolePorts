@@ -33,7 +33,7 @@ impl SceneryChunk {
 extern "C" {
     fn c2_move_alloc(size: usize, align: usize) -> *mut u8;
     fn c2_move_free(ptr: *mut u8);
-    fn c2_move_panic() -> !;
+    fn c2_move_panic(message: *const u8) -> !;
     fn c2_hunt_stage(stage: u32);
     fn c2_hunt_values(toggle: u32, hidden: u32, underwater: u32, health: i32, active: u32);
     fn c2_play_sound(kind: u32, slot: u32, owner: i32, left: f32, right: f32);
@@ -279,11 +279,13 @@ pub extern "C" fn c2_move_tick(
     let sim = unsafe { &mut *ptr.cast::<Simulation>() };
     let dead = sim.hunt.health <= 0;
     let (lx, ly, rx, ry, flags) = if dead { (0.0, 0.0, 0.0, 0.0, 0) } else { (lx, ly, rx, ry, flags) };
+    // Sprinting from a crouch stands up first; crouching ends a sprint.
     if flags & 2 != 0 {
-        sim.sprint = !sim.sprint;
+        if sim.crouch { sim.crouch = false; sim.sprint = true; } else { sim.sprint = !sim.sprint; }
     }
     if flags & 4 != 0 {
         sim.crouch = !sim.crouch;
+        if sim.crouch { sim.sprint = false; }
     }
     let controls = Controls {
         forward: ly > 0.25,
@@ -681,7 +683,7 @@ pub extern "C" fn c2_map_texture(ptr: *mut core::ffi::c_void, pixels: *mut u8, p
         }
         let color = sim.area.rsc.textures.get(tex).and_then(|t| t.get(64 * 128 + 64)).copied().unwrap_or(0);
         let mut rgba = c2_core::color::rgb555_to_rgba8(color, 255);
-        let light = u32::from(sim.area.map.light[0][i]);
+        let light = u32::from(sim.area.map.light[1][i]); // the full-day light map
         for c in &mut rgba[..3] { *c = (u32::from(*c) * light / 255) as u8; }
         unsafe { core::ptr::copy_nonoverlapping(rgba.as_ptr(), pixels.add((z * pitch as usize + x) * 4), 4); }
     }}
@@ -912,7 +914,7 @@ pub extern "C" fn c2_terrain_resident_ranges(ptr: *mut core::ffi::c_void,
     terrain: *mut static_scene::DrawRange, water: *mut static_scene::DrawRange, capacity: u32,
     terrain_count: *mut u32, terrain_vertices: *mut u32, water_count: *mut u32, water_vertices: *mut u32) {
     let sim = unsafe { &*ptr.cast::<Simulation>() };
-    if (capacity as usize) < static_scene::BLOCK_COUNT { unsafe { c2_move_panic() } }
+    assert!(capacity as usize >= static_scene::BLOCK_COUNT, "terrain range capacity {capacity}");
     let terrain = unsafe { core::slice::from_raw_parts_mut(terrain, capacity as usize) };
     let water = unsafe { core::slice::from_raw_parts_mut(water, capacity as usize) };
     let (eye, yaw, pitch) = sim.hunt.camera();
@@ -1028,7 +1030,26 @@ pub extern "C" fn c2_menu_draw(ptr: *mut core::ffi::c_void, pixels: *mut u8, pit
     menu_ref(ptr).draw(&mut ui::Canvas::new(px, pitch as usize, width as usize, height as usize));
 }
 
+// The panic's place and message as a C string for the SD log and the error
+// screen (truncated to fit; no allocation).
 #[panic_handler]
-fn panic(_: &PanicInfo<'_>) -> ! {
-    unsafe { c2_move_panic() }
+fn panic(info: &PanicInfo<'_>) -> ! {
+    struct Line { buf: [u8; 256], len: usize }
+    impl core::fmt::Write for Line {
+        fn write_str(&mut self, s: &str) -> core::fmt::Result {
+            for &b in s.as_bytes() {
+                if self.len + 1 < self.buf.len() { self.buf[self.len] = b; self.len += 1; }
+            }
+            Ok(())
+        }
+    }
+    static mut LINE: Line = Line { buf: [0; 256], len: 0 };
+    let line = unsafe { &mut *core::ptr::addr_of_mut!(LINE) };
+    line.len = 0;
+    let _ = match info.location() {
+        Some(at) => core::fmt::write(line, format_args!("Rust panic at {}:{}: {}", at.file(), at.line(), info.message())),
+        None => core::fmt::write(line, format_args!("Rust panic: {}", info.message())),
+    };
+    line.buf[line.len] = 0;
+    unsafe { c2_move_panic(line.buf.as_ptr()) }
 }

@@ -1,0 +1,1 @@
+trace v1 open; ProcUI shutdown deferred until cleanup

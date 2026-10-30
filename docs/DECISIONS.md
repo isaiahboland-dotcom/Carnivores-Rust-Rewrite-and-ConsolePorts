@@ -2,6 +2,21 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-30 — Time of day: slot 0 is dawn, slot 1 is day (all platforms)
+
+`TimeOfDay` numbered `Day = 0, Dusk = 1`, and the menus map Dawn to `Dusk`
+(entry "Menu mapping" below), so Dawn loaded slot 1 and Day slot 0. The
+original says slot 0 is dawn: `Game.cpp` gives `OptDayNight` 0 the low sun
+(`Sun3dPos.y` 2048, shadow 0.7) and 1 the high one (4048, 0.5); the menu's
+`DAY1.NFO` is "Hunting time: Dawn"; in all five areas light map 0 averages
+~150 against ~225 for map 1, and sky 0 is the warm one; the mobile
+`survivalDTM` and our dialect mappings (`hunt_view.rs`, `rules.rs`) already
+number dusk 0, day 1. The owner noticed on the Wii U that Dawn looked like
+the normal game. Now `Dusk = 0, Day = 1` (the name "dusk" kept; the menus say
+Dawn), with `sun_pos` following. Every lookup goes through `time as usize`,
+so PC, 3DS, VR and Wii U all change; the 3DS packs' `SKY0..2.TX` are by slot
+and need no recook. Supersedes "day, dusk, night" in FORMATS.md.
+
 ## 2026-10-30 — Wii U: the view model gets its own depth slice
 
 The gun was drawn with depth off and clip-space z = 0, so its triangles

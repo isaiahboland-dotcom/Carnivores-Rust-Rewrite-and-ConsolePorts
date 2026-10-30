@@ -393,3 +393,77 @@ fn gun_vertices_fit_the_view_model_depth_range() {
     let z = hunt_setup::gun_clip_z(hunt_setup::GUN_FAR) / hunt_setup::GUN_FAR;
     assert!((z - 1.0).abs() < 1e-6);
 }
+
+// The owner's crashed session (AREA5 at dawn, four herbivore targets, every
+// weapon and gear, blood and death camera off), driven hard: crouched and
+// sprinting at once, moving, turning, firing and switching weapons.
+#[test]
+#[ignore]
+fn crouch_and_sprint_stress() {
+    let root = std::env::var("C2_ORIGINAL_HUNTDAT").unwrap();
+    let root = std::path::Path::new(&root);
+    let read = |p: &str| std::fs::read(root.join(p)).unwrap();
+    let defs = std::fs::read_to_string(root.join("_RES.TXT")).unwrap();
+    let mut assets: Vec<Vec<u8>> = hunt_setup::SPECIES_FILES.iter().map(|file| read(file)).collect();
+    assets.extend(hunt_setup::WEAPON_FILES.iter().map(|f| read(&format!("WEAPONS/{f}"))));
+    assets.push(read("HUNTER1.CAR"));
+    let bytes: Vec<&[u8]> = assets.iter().map(Vec::as_slice).collect();
+    let choice = hunt_setup::HuntChoice {
+        area: 4, time: 0, animals: 23, weapons: 63, radar: 1, camo: 1, scent: 1, double_ammo: 1, tranq: 1,
+        blood: 0, death_anim: 0, ..Default::default()
+    };
+    let area = Area::new(
+        map::parse(&read("AREAS/AREA5.MAP")).unwrap(),
+        rsc::parse(&read("AREAS/AREA5.RSC")).unwrap(),
+        choice.time_of_day(),
+    );
+    for seed in [1201724847, 597228150, 1, 2, 3] {
+        let (mut hunt, cars) = hunt_setup::setup_with(&area, &defs, &bytes, &choice, seed).unwrap();
+        let refs: Vec<_> = (0..=hunt_setup::HUNTER_SPECIES).map(|i| Some(&cars[hunt_setup::model_for_species(i)])).collect();
+        let mut events = Vec::new();
+        for t in 0..20_000u32 {
+            let phase = t / 500 % 4;
+            let controls = c2_core::player::Controls {
+                forward: phase != 3,
+                strafe_left: phase == 1,
+                turn_right: t % 300 < 40,
+                look_down: t % 900 < 30,
+                run: phase >= 1,
+                crouch: phase <= 1 || phase == 3,
+                jump: t % 777 == 0,
+                ..Default::default()
+            };
+            let input = HuntInput {
+                controls,
+                fire: t % 97 < 3,
+                toggle_weapon: t % 1500 == 10,
+                select_weapon: (t % 400 == 0).then_some((t / 400) as usize % hunt.weapons.info.len()),
+                call: t % 2000 == 5,
+                ..Default::default()
+            };
+            hunt.tick(&area, &refs, &input, 16, &mut events);
+            if hunt.health <= 0 {
+                hunt = hunt_setup::restart_with(&area, &hunt, &choice, seed ^ t).unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore]
+fn time_of_day_data() {
+    let root = std::env::var("C2_ORIGINAL_HUNTDAT").unwrap();
+    for n in 1..=5 {
+        let read = |p: String| std::fs::read(std::path::Path::new(&root).join(p)).unwrap();
+        let m = map::parse(&read(format!("AREAS/AREA{n}.MAP"))).unwrap();
+        let r = rsc::parse(&read(format!("AREAS/AREA{n}.RSC"))).unwrap();
+        let avg = |l: &[u8]| l.iter().map(|&v| v as u64).sum::<u64>() / l.len() as u64;
+        let sky = |s: &[u16]| if s.is_empty() { [0u64; 3] } else {
+            let mut a = [0u64; 3];
+            for &p in s { let c = c2_core::color::rgb555_to_rgba8(p, 255); for k in 0..3 { a[k] += c[k] as u64; } }
+            a.map(|v| v / s.len() as u64)
+        };
+        eprintln!("AREA{n}: fade {:?} trans {:?} light avg {} {} {} skies {:?} {:?} {:?} (len {} {} {})", r.fade_rgb, r.trans_rgb,
+            avg(&m.light[0]), avg(&m.light[1]), avg(&m.light[2]), sky(&r.skies[0]), sky(&r.skies[1]), sky(&r.skies[2]), r.skies[0].len(), r.skies[1].len(), r.skies[2].len());
+    }
+}

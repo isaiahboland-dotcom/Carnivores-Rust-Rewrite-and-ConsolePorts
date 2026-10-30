@@ -78,7 +78,7 @@ extern void c2_move_tick(void *, float, float, float, float, uint32_t, Snapshot 
 extern void c2_move_destroy(void *);
 void *c2_move_alloc(size_t n, size_t a) { if (a < sizeof(void *)) a = sizeof(void *); return memalign(a, n); }
 void c2_move_free(void *p) { free(p); }
-void c2_move_panic(void) { OSFatal("Carnivores Wii U: movement probe Rust panic"); for (;;) {} }
+void c2_move_panic(const char *message);
 void c2_hunt_stage(uint32_t stage) { OSReport("C2 hunt diagnostic stage %u\n", stage); }
 void c2_hunt_values(uint32_t toggle, uint32_t hidden, uint32_t underwater, int32_t health, uint32_t active) {
     OSReport("C2 binoculars toggle %u hidden %u underwater %u health %d active %u\n", toggle, hidden, underwater, health, active);
@@ -239,6 +239,15 @@ static void hud_update(GX2Texture *tex, const HudState *hud, uint32_t selection)
 static FSClient client;
 #include "performance.h"
 #include "lifecycle.h"
+/* A Rust panic: keep the capture's last rows and the message on the SD card,
+ * then stop with the message on screen. */
+void c2_move_panic(const char *message) {
+    OSReport("C2 %s\n", message);
+    performance_flush();
+    lifecycle_checkpoint(message);
+    OSFatal(message);
+    for (;;) {}
+}
 /* Flush startup checkpoints to SD so a hardware GPU hang leaves evidence.
  * OSScreen is no longer usable after the handoff to GX2. */
 static FSCmdBlock startup_cmd;
@@ -434,9 +443,19 @@ static int run_menu(void *ui, int death, uint32_t shots, uint32_t kills) {
         if (action != MENU_NONE && !final_frame) { final_frame = 1; dirty = 1; }
         GX2DrawDone();
         if (dirty) {
+            uint64_t took[2];
             for (int i = 0; i < 2; ++i) {
+                OSTime start = OSGetTime();
                 c2_menu_draw(ui, tex[i].surface.image, tex[i].surface.pitch, tex[i].surface.width, tex[i].surface.height);
                 GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, tex[i].surface.image, tex[i].surface.imageSize);
+                took[i] = OSTicksToMicroseconds(OSGetTime() - start);
+            }
+            static uint32_t redraws;
+            if (++redraws <= 200) {
+                char checkpoint[96];
+                snprintf(checkpoint, sizeof(checkpoint), "Menu: redraw %u took TV %llu us, GamePad %llu us", redraws,
+                         (unsigned long long)took[0], (unsigned long long)took[1]);
+                startup_checkpoint(checkpoint);
             }
             dirty = 0;
         }

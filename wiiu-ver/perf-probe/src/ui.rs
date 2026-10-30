@@ -2,7 +2,8 @@
 //! scaled to the TV (1920x1080) or the GamePad (854x480). Independent of GX2,
 //! so the host tests can render it.
 use ab_glyph::{Font as _, FontRef, PxScale, ScaleFont as _};
-use alloc::vec::Vec;
+use alloc::{collections::BTreeMap, vec::Vec};
+use core::cell::RefCell;
 
 pub const WIDTH: f32 = 1280.0;
 pub const HEIGHT: f32 = 720.0;
@@ -67,13 +68,32 @@ impl Image {
 /// The console's system font, or the 8x8 bitmap font when none was given
 /// (the emulator may have no system fonts).
 pub enum Font {
-    Ttf(FontRef<'static>),
+    Ttf(FontRef<'static>, RefCell<Glyphs>),
     Bitmap,
 }
 impl Font {
     pub fn new(bytes: Option<&'static [u8]>) -> Font {
-        bytes.and_then(|b| FontRef::try_from_slice(b).ok()).map_or(Font::Bitmap, Font::Ttf)
+        bytes
+            .and_then(|b| FontRef::try_from_slice(b).ok())
+            .map_or(Font::Bitmap, |f| Font::Ttf(f, RefCell::new(Glyphs::default())))
     }
+}
+
+/// Rasterized glyphs, by (glyph, size in quarter pixels, quarter-pixel x
+/// offset): outlines are rasterized once, then copied. Emptied past `LIMIT`.
+#[derive(Default)]
+pub struct Glyphs {
+    map: BTreeMap<(u16, u32, u8), Coverage>,
+}
+impl Glyphs {
+    const LIMIT: usize = 4096;
+}
+/// A glyph's coverage (0..=255) and its offset from the pen on the baseline.
+pub struct Coverage {
+    x: i32,
+    y: i32,
+    w: usize,
+    cov: Vec<u8>,
 }
 
 /// Where a picture is drawn: everywhere in its rectangle, or only inside the
@@ -109,6 +129,35 @@ pub struct TileCache {
 }
 impl TileCache {
     const LIMIT: usize = 48 * 1024 * 1024;
+}
+
+// A hexagon in pixels, for coverage: the distance to its nearest edge across
+// the pixel (it is convex). The slanted edges' normal is (hh, hw/2); its
+// length is computed once (the Wii U CPU has no hardware square root).
+struct HexShape {
+    cx: f32,
+    cy: f32,
+    hw: f32,
+    hh: f32,
+    inv_n: f32,
+}
+impl HexShape {
+    fn new(r: &Rect, s: f32) -> Self {
+        let (cx, cy) = r.center();
+        let (hw, hh) = (r.w * 0.5 * s, r.h * 0.5 * s);
+        let n = libm::sqrtf(hh * hh + hw * hw * 0.25);
+        HexShape { cx: cx * s, cy: cy * s, hw, hh, inv_n: if n > 0.0 { 1.0 / n } else { 0.0 } }
+    }
+    fn cover(&self, x: usize, y: usize) -> f32 {
+        if self.hw <= 0.0 || self.hh <= 0.0 {
+            return 0.0;
+        }
+        let dx = (x as f32 + 0.5 - self.cx).abs();
+        let dy = (y as f32 + 0.5 - self.cy).abs();
+        let flat = self.hh - dy;
+        let slant = (self.hw * self.hh - dx * self.hh - dy * self.hw * 0.5) * self.inv_n;
+        (flat.min(slant) + 0.5).clamp(0.0, 1.0)
+    }
 }
 
 pub struct Canvas<'a> {
@@ -206,6 +255,7 @@ impl<'a> Canvas<'a> {
     pub fn hex(&mut self, r: Rect, fill: Option<Rgba>, t: f32, outline: Rgba) {
         let (x0, y0, x1, y1) = self.span(&r.inset(-1.0));
         let inner = r.inset(t);
+        let (outer_hex, inner_hex) = (HexShape::new(&r, self.s), HexShape::new(&inner, self.s));
         let (icx, icy) = inner.center();
         let (ihw, ihh) = (inner.w * 0.5 * self.s, inner.h * 0.5 * self.s);
         let n = libm::sqrtf(ihh * ihh + ihw * ihw * 0.25);
@@ -224,11 +274,11 @@ impl<'a> Canvas<'a> {
                 if x >= skip0 && x < skip1 {
                     continue;
                 }
-                let cov = self.hex_cover(&r, x, y);
+                let cov = outer_hex.cover(x, y);
                 if cov <= 0.0 {
                     continue;
                 }
-                let inside = self.hex_cover(&inner, x, y);
+                let inside = inner_hex.cover(x, y);
                 if t > 0.0 && inside < 1.0 {
                     self.blend(x, y, outline, cov * (1.0 - inside));
                 }
@@ -237,23 +287,6 @@ impl<'a> Canvas<'a> {
                 }
             }
         }
-    }
-
-    // Coverage of pixel (x, y) by the hexagon in `r`: the distance to its
-    // nearest edge, in pixels, across the pixel (the hexagon is convex).
-    fn hex_cover(&self, r: &Rect, x: usize, y: usize) -> f32 {
-        let (cx, cy) = r.center();
-        let (hw, hh) = (r.w * 0.5 * self.s, r.h * 0.5 * self.s);
-        if hw <= 0.0 || hh <= 0.0 {
-            return 0.0;
-        }
-        let dx = (x as f32 + 0.5 - cx * self.s).abs();
-        let dy = (y as f32 + 0.5 - cy * self.s).abs();
-        // Top/bottom edges, then the slanted ones (normal (hh, hw/2)).
-        let flat = hh - dy;
-        let n = libm::sqrtf(hh * hh + hw * hw * 0.25);
-        let slant = (hw * hh - dx * hh - dy * hw * 0.5) / n;
-        (flat.min(slant) + 0.5).clamp(0.0, 1.0)
     }
 
     /// A filled circle, antialiased.
@@ -309,12 +342,13 @@ impl<'a> Canvas<'a> {
         let ox = dst.x * self.s;
         let oy = dst.y * self.s;
         let mut px = Vec::with_capacity((x1 - x0) * (y1 - y0));
+        let shape = match clip {
+            Clip::None => None,
+            Clip::Hex(h) => Some(HexShape::new(&h, self.s)),
+        };
         for y in y0..y1 {
             for x in x0..x1 {
-                let cov = match clip {
-                    Clip::None => 1.0,
-                    Clip::Hex(h) => self.hex_cover(&h, x, y),
-                };
+                let cov = shape.as_ref().map_or(1.0, |h| h.cover(x, y));
                 if cov <= 0.0 {
                     px.push([0; 4]);
                     continue;
@@ -348,27 +382,54 @@ impl<'a> Canvas<'a> {
     /// Returns the advance width in logical units.
     pub fn text(&mut self, font: &Font, x: f32, y: f32, size: f32, c: Rgba, s: &str) -> f32 {
         match font {
-            Font::Ttf(f) => {
-                let scaled = f.as_scaled(PxScale::from(size * self.s));
-                let base = y * self.s + scaled.ascent() + (size * self.s - scaled.height()) * 0.5;
+            Font::Ttf(f, glyphs) => {
+                let px_size = libm::roundf(size * self.s * 4.0) / 4.0;
+                let scaled = f.as_scaled(PxScale::from(px_size));
+                let base = libm::roundf(y * self.s + scaled.ascent() + (size * self.s - scaled.height()) * 0.5) as i32;
                 let mut pen = x * self.s;
                 let mut last = None;
+                let mut glyphs = glyphs.borrow_mut();
+                if glyphs.map.len() > Glyphs::LIMIT {
+                    glyphs.map.clear();
+                }
                 for ch in s.chars() {
                     let id = scaled.glyph_id(ch);
                     if let Some(prev) = last {
                         pen += scaled.kern(prev, id);
                     }
-                    let glyph = id.with_scale_and_position(scaled.scale, ab_glyph::point(pen, base));
+                    let whole = libm::floorf(pen);
+                    let quarter = ((pen - whole) * 4.0) as u8 & 3;
+                    let key = (id.0, (px_size * 4.0) as u32, quarter);
+                    let g = glyphs.map.entry(key).or_insert_with(|| {
+                        let glyph = id.with_scale_and_position(scaled.scale, ab_glyph::point(quarter as f32 / 4.0, 0.0));
+                        let Some(outline) = f.outline_glyph(glyph) else {
+                            return Coverage { x: 0, y: 0, w: 0, cov: Vec::new() };
+                        };
+                        let b = outline.px_bounds();
+                        let w = b.width() as usize;
+                        let mut cov = alloc::vec![0u8; w * b.height() as usize];
+                        outline.draw(|gx, gy, v| {
+                            if let Some(c) = cov.get_mut(gy as usize * w + gx as usize) {
+                                *c = (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+                            }
+                        });
+                        Coverage { x: b.min.x as i32, y: b.min.y as i32, w, cov }
+                    });
                     pen += scaled.h_advance(id);
                     last = Some(id);
-                    let Some(outline) = f.outline_glyph(glyph) else { continue };
-                    let b = outline.px_bounds();
-                    outline.draw(|gx, gy, cov| {
-                        let (px, py) = (b.min.x as i32 + gx as i32, b.min.y as i32 + gy as i32);
-                        if px >= 0 && py >= 0 && (px as usize) < self.w && (py as usize) < self.h {
-                            self.blend(px as usize, py as usize, c, cov);
+                    let (ox, oy) = (whole as i32 + g.x, base + g.y);
+                    for (row, line) in g.cov.chunks(g.w.max(1)).enumerate() {
+                        let py = oy + row as i32;
+                        if py < 0 || py as usize >= self.h {
+                            continue;
                         }
-                    });
+                        for (col, &v) in line.iter().enumerate() {
+                            let px = ox + col as i32;
+                            if v > 0 && px >= 0 && (px as usize) < self.w {
+                                self.blend_alpha((py as usize * self.pitch + px as usize) * 4, c, (v as u32 * c[3] as u32 + 127) / 255);
+                            }
+                        }
+                    }
                 }
                 pen / self.s - x
             }
@@ -431,7 +492,7 @@ impl<'a> Canvas<'a> {
 
 pub fn measure(font: &Font, size: f32, s: &str) -> f32 {
     match font {
-        Font::Ttf(f) => {
+        Font::Ttf(f, _) => {
             let scaled = f.as_scaled(PxScale::from(size));
             let mut w = 0.0;
             let mut last = None;
