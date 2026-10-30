@@ -57,7 +57,12 @@ and best wave go in the record.
   (Moschops, Gallimimus, the flyers, Dimetrodon, Brachiosaurus). On: at
   most 4 small ones placed near you (the original places 5 + density/80;
   more than a handful in view caused lag on Old 3DS). Off: none, and
-  they aren't loaded at all (less memory). Play walks through three touch steps (A = Next, B = Back, START =
+  they aren't loaded at all (less memory).
+- **3DS friendly** on/off (off by default): every animal, including modded
+  and mobile ones, notices the hunter at 60% of the original distance, for
+  the handheld's slower aiming and turning.
+
+**Play** walks through three touch steps (A = Next, B = Back, START =
 back to the title); the top screen sums up the picks, the points left and
 whether the hunt fits in memory.
 1. **Area**: a hexagon grid of the areas; the time of day as sunset (dawn),
