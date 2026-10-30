@@ -99,6 +99,13 @@ pub struct HuntChoice {
     pub mode: u32,
     /// A survival's kind: 0 normal, 1 hardcore, 2 custom (`SurvivalKind::ALL`).
     pub survival: u32,
+    /// The maps in the mobile game's look (a yellow frame, ring and view
+    /// cone) instead of the original's.
+    pub map_mobile: u32,
+    /// Tapping the GamePad map teleports there (the mobile game's).
+    pub teleport: u32,
+    /// The controls along the bottom of the TV in a hunt.
+    pub hints: u32,
 }
 pub const MODE_HUNT: u32 = 0;
 pub const MODE_SURVIVAL: u32 = 1;
@@ -127,6 +134,9 @@ impl Default for HuntChoice {
             units_us: 0,
             mode: MODE_HUNT,
             survival: 0,
+            map_mobile: 1,
+            teleport: 0,
+            hints: 0,
         }
     }
 }
@@ -399,6 +409,7 @@ fn new_hunt(
             dino_run_k: choice.run_pct.clamp(50, 100) as f32 / 100.0,
             blood: choice.blood != 0,
             death_anim: choice.death_anim != 0,
+            teleport: choice.teleport != 0,
             distant_ai: true,
             ..Default::default()
         },

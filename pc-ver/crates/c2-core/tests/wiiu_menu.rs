@@ -28,7 +28,7 @@ fn menu_with_files() -> Menu {
     if let Ok(root) = std::env::var("C2_ORIGINAL_HUNTDAT") {
         let root = std::path::Path::new(&root).join("MENU");
         for (slot, name) in FILES.iter().enumerate() {
-            let dir = if name.ends_with(".TGA") && *name != "MENUM.TGA" && !name.starts_with("TROPHY") { "PICS" } else if name.ends_with(".TGA") { "" } else { "TXT" };
+            let dir = if name.ends_with(".TGA") && *name != "MENUM.TGA" && !name.starts_with("TROPHY") && *name != "MAPFRAME.TGA" { "PICS" } else if name.ends_with(".TGA") { "" } else { "TXT" };
             let bytes = std::fs::read(root.join(dir).join(name)).unwrap();
             assert!(m.set_file(slot, &bytes), "{name}");
         }
@@ -175,7 +175,7 @@ fn touches_pick_hexagons_and_settings_survive_a_save() {
     let (cx, cy) = area.center();
     assert!(m.touch(cx, cy));
     assert_eq!(m.choice.area, 4);
-    m.choice = hunt_setup::HuntChoice { time: 2, animals: 0x1ff, weapons: 0b110, camo: 1, run_pct: 70, units_us: 1, ambient: 0, ..m.choice };
+    m.choice = hunt_setup::HuntChoice { time: 2, animals: 0x1ff, weapons: 0b110, camo: 1, run_pct: 70, units_us: 1, ambient: 0, map_mobile: 0, teleport: 1, hints: 1, ..m.choice };
     let text = m.settings_text();
     let mut n = Menu::new(ui::Font::Bitmap);
     n.load_settings(&text);
@@ -286,28 +286,43 @@ fn hunt_overlay_shows_the_kill() {
         c2_core::area::TimeOfDay::Day,
     );
     let m = menu_with_files();
-    for (tranq, name) in [(0, "12-overlay-trophy"), (1, "13-overlay-notice")] {
-        let choice = hunt_setup::HuntChoice { animals: 0b1000, weapons: 0b10000, tranq, ..Default::default() };
+    // (tranq, shot, R map, mobile look, hints, quads).
+    let cases = [
+        (0, "12-overlay-trophy", false, false, false, 3),
+        (1, "13-overlay-notice", false, false, false, 3),
+        (0, "14-overlay-map", true, false, true, 1),
+        (0, "15-overlay-map-mobile", true, true, true, 1),
+        (0, "16-overlay-hints", false, false, true, 1),
+    ];
+    for (tranq, name, map, map_mobile, hints, want) in cases {
+        let kill = name.ends_with("trophy") || name.ends_with("notice");
+        let choice = hunt_setup::HuntChoice { animals: 0b1000, weapons: 0b10000, tranq, radar: 1, ..Default::default() };
         let (mut hunt, _) = hunt_setup::setup_with(&area, &defs, &bytes, &choice, &hunt_setup::new_save(), 1).unwrap();
         let i = hunt.herd.chars.iter().position(|c| c.ctype >= hunt_setup::AMBIENT_COUNT).unwrap();
         let mut events = Vec::new();
-        hunt.debug_bag(&area, i, &mut events);
+        if kill {
+            hunt.debug_bag(&area, i, &mut events);
+        }
         if let Some(slot) = hunt.trophy_body {
             hunt.room.bodies[slot].weapon = 4;
             hunt.room.bodies[slot].date = (2026 << 20) + (10 << 10) + 30;
         }
         let mut notice = overlay::Notice::default();
-        notice.kill(hunt.herd.species[hunt.herd.chars[i].ctype].info.name.clone(), 41, 63.5, tranq != 0);
-        notice.message("Trophy!".into(), 2000);
-        hunt.exit_prompt = true;
-        let view = overlay::View { hunt: &hunt, notice: &notice, ask: None, units_us: false, night: false };
+        if kill {
+            notice.kill(hunt.herd.species[hunt.herd.chars[i].ctype].info.name.clone(), 41, 63.5, tranq != 0);
+            notice.message("Trophy!".into(), 2000);
+            hunt.exit_prompt = true;
+        }
+        hunt.player.alpha = 0.7;
+        let view = overlay::View { hunt: &hunt, area: &area, map, map_mobile, hints, notice: &notice, ask: None, units_us: false, night: false };
         let (w, h) = (overlay::TEX_W, overlay::TEX_H);
         let mut tex = vec![0u8; w * h * 4];
         let mut o = overlay::Overlay::default();
-        let (mut pos, mut uv) = (vec![0f32; 5 * 24], vec![0f32; 5 * 24]);
+        let n = overlay::MAX_QUADS * overlay::QUAD_FLOATS;
+        let (mut pos, mut uv) = (vec![0f32; n], vec![0f32; n]);
         let (quads, changed) = o.draw(&m, &view, &mut overlay::canvas(&mut tex, w), &mut pos, &mut uv);
         assert!(changed);
-        assert_eq!(quads, 3, "plaque or notice, message, prompt");
+        assert_eq!(quads, want, "{name}: plaque or notice, message, prompt; or the map; or the hints");
         let (again, changed) = o.draw(&m, &view, &mut overlay::canvas(&mut tex, w), &mut pos, &mut uv);
         assert!(again == quads && !changed);
         // Composite the quads over grey at the TV's size.

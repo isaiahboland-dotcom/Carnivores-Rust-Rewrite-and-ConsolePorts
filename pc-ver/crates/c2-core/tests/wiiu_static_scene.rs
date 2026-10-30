@@ -12,15 +12,16 @@ fn original_maps_preserve_terrain_streams_and_scenery_order() {
         return;
     };
     let root = std::path::Path::new(&root);
-    // Captured from the previous uncached, six-projections-per-cell renderer.
+    // Captured from the previous uncached, six-projections-per-cell renderer
+    // (lights re-captured after the time-of-day slots moved; counts unchanged).
     // Hashes cover vertex counts and every emitted position/UV/light float in
     // 20 views per map: four rotations/pitches at four edges/center and landing.
     let golden = [
-        (397710, 0x4043ff0130b8d36eu64),
-        (363612, 0x177f5e47c20e33c8),
-        (372678, 0xf5429adaaff487ad),
-        (372300, 0x733eead97cc90654),
-        (356904, 0xa31fbbfd80609d89),
+        (397710, 0xe6aee20222dc46cfu64),
+        (363612, 0x3cbafa001d496cf3),
+        (372678, 0x5d63531666b04378),
+        (372300, 0x05352b84d3d6c649),
+        (356904, 0xb33ffd981a799156),
     ];
     for map in 1..=5 {
         let read = |ext| std::fs::read(root.join(format!("AREAS/AREA{map}.{ext}"))).unwrap();

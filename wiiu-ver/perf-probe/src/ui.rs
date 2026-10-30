@@ -243,6 +243,30 @@ impl<'a> Canvas<'a> {
         }
     }
 
+    /// Pixels (not logical units) copied in, rows of `w`: the overlay's map.
+    pub fn blit_px(&mut self, x0: usize, y0: usize, w: usize, src: &[Rgba]) {
+        for (row, line) in src.chunks(w.max(1)).enumerate() {
+            let y = y0 + row;
+            if y >= self.h {
+                break;
+            }
+            let n = w.min(self.w.saturating_sub(x0));
+            for (k, p) in line.iter().take(n).enumerate() {
+                let i = (y * self.pitch + x0 + k) * 4;
+                self.px[i..i + 4].copy_from_slice(p);
+            }
+        }
+    }
+
+    /// A pixel rectangle blended with `c` (the map's dots).
+    pub fn fill_px(&mut self, x: i32, y: i32, w: i32, h: i32, c: Rgba) {
+        for py in y.max(0)..(y + h).min(self.h as i32) {
+            for px in x.max(0)..(x + w).min(self.w as i32) {
+                self.blend_alpha((py as usize * self.pitch + px as usize) * 4, c, c[3] as u32);
+            }
+        }
+    }
+
     /// Fully transparent pixels over `r` (the hunt overlay's regions).
     pub fn clear(&mut self, r: Rect) {
         let (x0, y0, x1, y1) = self.span(&r);

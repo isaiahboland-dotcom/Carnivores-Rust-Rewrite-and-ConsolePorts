@@ -4,7 +4,7 @@
 /* Mirrors hunt_setup::HuntChoice. Flags are 0 or 1. */
 typedef struct {
     uint32_t area, time, animals, weapons, radar, camo, scent, double_ammo, tranq, observer,
-             run_pct, blood, death_anim, ambient, units_us, mode, survival;
+             run_pct, blood, death_anim, ambient, units_us, mode, survival, map_mobile, teleport, hints;
 } HuntChoice;
 /* HuntChoice.mode (hunt_setup.rs MODE_*). */
 enum { MODE_HUNT = 0, MODE_SURVIVAL = 1, MODE_TROPHY = 2 };
@@ -35,8 +35,12 @@ extern void c2_menu_draw(void *, uint8_t *, uint32_t, uint32_t, uint32_t);
 extern void c2_menu_drawn(void *);
 extern void c2_menu_load_profile(void *, uint32_t, const uint8_t *, uint32_t);
 extern uint32_t c2_menu_profile(void *, uint32_t, uint8_t *, uint32_t);
-/* The hunt overlay: 1024x512 texture, up to 5 quads of 6 vertices. */
-extern uint32_t c2_overlay_draw(void *, void *, uint8_t *, uint32_t, float *, float *);
+/* The hunt overlay: 1024x1024 texture, up to 7 quads of 6 vertices; flags
+ * bit 0 shows the map (R). */
+enum { OVERLAY_QUADS = 7, OVERLAY_MAP = 1 };
+extern uint32_t c2_overlay_draw(void *, void *, uint8_t *, uint32_t, float *, float *, uint32_t);
+/* A tap on the GamePad map: teleport there (world units), if it's on. */
+extern uint32_t c2_teleport(void *, float, float);
 
 static const char *menu_areas[] = {"DELPHAEUS HILLS", "FORT CISKIN", "VENGAR FJORDS", "MANYA JUNGLE", "MOUNT RAVAN"};
 

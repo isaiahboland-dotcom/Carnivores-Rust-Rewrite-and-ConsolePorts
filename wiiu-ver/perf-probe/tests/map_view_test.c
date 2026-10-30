@@ -1,9 +1,9 @@
 #include <assert.h>
 #include <math.h>
 #include "../map_view.h"
-static void check_uv(float x, float z, int display) {
-    float uv[24]; map_view_uv(x, z, display, uv);
-    float span = display ? .25f : 1.0f;
+static void check_uv(float x, float z, float cells) {
+    float uv[24]; map_view_uv(x, z, cells, uv);
+    float span = cells / 1024.0f;
     assert(fabsf(uv[4] - uv[0] - span) < .00001f);
     assert(fabsf(uv[9] - uv[1] - span) < .00001f);
     for (int i = 0; i < 6; ++i) {
@@ -29,12 +29,20 @@ int main(void) {
     }
     for (int x = -256; x <= 1280; x += 17)
     for (int z = -256; z <= 1280; z += 19)
-    for (int display = 0; display < 2; ++display) check_uv(x, z, display);
+    for (int zoom = 0; zoom < 2; ++zoom) check_uv(x, z, zoom ? 1024.0f : 256.0f);
     float tv[24], drc[24];
-    map_view_uv(512, 512, 0, tv); map_view_uv(512, 512, 1, drc);
+    map_view_uv(512, 512, 1024, tv); map_view_uv(512, 512, 256, drc);
     assert(tv[0] == 0 && tv[1] == 0 && tv[4] == 1 && tv[9] == 1);
     assert(drc[0] == .375f && drc[1] == .375f && drc[4] == .625f && drc[9] == .625f);
-    map_view_uv(1024, 1024, 1, drc);
+    // A touch maps back to the cells under it: the centre is the player.
+    float cx, cz;
+    assert(map_view_touch(drc, 427, 240, &cx, &cz) && cx == 512 && cz == 512);
+    assert(map_view_touch(drc, 187, 0, &cx, &cz) && cx == 384 && cz == 384);
+    assert(!map_view_touch(drc, 186, 240, &cx, &cz) && !map_view_touch(drc, 667, 240, &cx, &cz));
+    // Zoomed out: the whole map, wherever the player is.
+    map_view_uv(900, 100, 1024, drc);
+    assert(map_view_touch(drc, 427, 240, &cx, &cz) && cx == 512 && cz == 512);
+    map_view_uv(1024, 1024, 256, drc);
     assert(drc[0] == .75f && drc[1] == .75f);
     assert(tv[0] == 0 && tv[4] == 1); // Updating DRC leaves TV attributes intact.
     return 0;
