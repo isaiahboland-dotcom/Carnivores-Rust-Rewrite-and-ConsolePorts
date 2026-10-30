@@ -2,6 +2,27 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-30 — Wii U: mip levels for the world's atlases
+
+The Wii U is GPU-bound in thick jungle (43-50 ms frames, ~29 ms of it waiting
+for the GPU, at 1920x1080). Its three world atlases (terrain, scenery,
+animals and guns) were 2048-wide RGBA8 with one level, so distant trees and
+ground read scattered texels from main memory for every pixel. They now carry
+five levels (to 128 wide), built on the CPU at load and checked by reading
+every level back (on a mismatch, the linear atlas is drawn as before). The
+sampler reads bilinear from the nearest level, the same four reads per pixel.
+
+This follows the original: `MIPMAP = TRUE` by default (`Game.cpp`), and the
+D3D renderer swaps to half-size textures beyond 10 cells for the ground and
+12 for models (`renderd3d.cpp`). The GPU picks the level per pixel instead
+of per triangle at a fixed distance. Cut-out texels (leaves) average their
+colour over opaque texels only and keep the 0.5 alpha cut, so the distance
+shows no black fringes; very distant foliage may thin a little.
+
+The linear atlases (40 MiB) are freed once the tiled ones pass. R3 turns the
+levels off in a hunt for a same-session comparison (overlay M / F; capture
+`tiled_atlases` 2 / 1, schema 10).
+
 ## 2026-10-30 — Wii U: warmer dawn, the PC's map on R, map settings, button hints (Wii U and 3DS)
 
 Dawn on the Wii U is tinted warmer than the original's slot-0 light map: the
