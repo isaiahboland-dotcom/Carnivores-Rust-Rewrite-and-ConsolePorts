@@ -572,34 +572,75 @@ fn block_bounds(area: &Area, cache: &TerrainCache, low: (i32, i32), block: usize
     TerrainBlock { center, radius, water }
 }
 
-// Resident scenery across cell crossings. A crossing appends only the objects
-// that entered the 149x149 window after the used part of the buffer and drops
-// the objects that left (their vertices become unused gaps). When the buffer
-// cannot take the new objects, the window is rebuilt from the start in the
-// original near-first order, compacting it. Order only affects which equal-depth
-// surface wins and draw merging; blending is off.
+// Resident scenery across cell crossings. A crossing drops the objects that
+// left the 149x149 window, keeping their vertex ranges as free gaps, and writes
+// the objects that entered into gaps of their size (models repeat, so most fit
+// exactly), else the first larger gap, else after the used part. Only when none
+// of that fits is the window rebuilt from the start, in the original near-first
+// order. Objects are kept sorted by buffer position so visible neighbours merge
+// into one draw. Order only affects equal-depth ties; blending is off.
 #[derive(Default)]
 pub struct ResidentScenery {
     anchor: Option<(i32, i32)>,
     tail: u32,
     pub objects: Vec<ResidentObject>,
-    entering: Vec<usize>,
+    free: Vec<DrawRange>,
+    entering: Vec<(usize, u32)>,
 }
 
 fn in_window(cell: (i32, i32), x: i32, z: i32) -> bool {
     (x - cell.0).abs() <= 74 && (z - cell.1).abs() <= 74
 }
 
+// Sort and merge free ranges; a gap at the end of the used part shortens it.
+fn coalesce(free: &mut Vec<DrawRange>, tail: &mut u32) {
+    free.sort_unstable_by_key(|r| r.first);
+    let mut merged: Vec<DrawRange> = Vec::with_capacity(free.len());
+    for r in free.drain(..) {
+        match merged.last_mut() {
+            Some(m) if m.first + m.count == r.first => m.count += r.count,
+            _ => merged.push(r),
+        }
+    }
+    while merged.last().is_some_and(|m| m.first + m.count == *tail) {
+        *tail = merged.pop().unwrap().first;
+    }
+    *free = merged;
+}
+
+// Take `count` vertices: an exact gap, else the first larger one, else the tail.
+fn allocate(free: &mut Vec<DrawRange>, tail: &mut u32, count: u32, capacity: u32) -> Option<u32> {
+    let exact = free.iter().position(|r| r.count == count);
+    if let Some(i) = exact.or_else(|| free.iter().position(|r| r.count > count)) {
+        let first = free[i].first;
+        if free[i].count == count {
+            free.remove(i);
+        } else {
+            free[i].first += count;
+            free[i].count -= count;
+        }
+        return Some(first);
+    }
+    if *tail as u64 + count as u64 > capacity as u64 {
+        return None;
+    }
+    *tail += count;
+    Some(*tail - count)
+}
+
 impl ResidentScenery {
     pub fn invalidate(&mut self) {
         self.anchor = None;
         self.objects.clear();
+        self.free.clear();
+        self.tail = 0;
     }
 
-    // Returns the written vertex range (first, count), or None if the window
-    // cannot fit even when rebuilt (no objects are resident then). `faces`
-    // gives a cell's object face count; `emit` writes a cell's object at a
-    // vertex offset and describes it.
+    /// Bring the window to `cell`, writing vertex ranges into `written`
+    /// (merged, ascending). Returns whether it was rebuilt from the start, or
+    /// None if the window cannot fit even then (no objects are resident).
+    /// `faces` gives a cell's object face count; `emit` writes a cell's
+    /// object at a vertex offset and describes it.
     pub fn update(
         &mut self,
         candidates: &mut SceneryCandidates,
@@ -609,33 +650,53 @@ impl ResidentScenery {
         capacity: u32,
         faces: impl Fn(usize) -> usize,
         mut emit: impl FnMut(usize, u32) -> ResidentObject,
-    ) -> Option<(u32, u32)> {
+        written: &mut Vec<DrawRange>,
+    ) -> Option<bool> {
+        written.clear();
         if self.anchor == Some(cell) {
-            return Some((self.tail, 0));
+            return Some(false);
         }
         if let Some(old) = self.anchor.filter(|old| in_window(*old, cell.0, cell.1)) {
+            let mut free = self.free.clone();
+            let mut tail = self.tail;
+            for o in &self.objects {
+                if !in_window(cell, (o.center[0] / 256.0) as i32, (o.center[2] / 256.0) as i32) {
+                    free.push(o.range);
+                }
+            }
+            coalesce(&mut free, &mut tail);
             self.entering.clear();
-            for z in (cell.1 - 74).max(0)..=(cell.1 + 74).min(SIDE as i32 - 1) {
+            let mut fits = true;
+            'cells: for z in (cell.1 - 74).max(0)..=(cell.1 + 74).min(SIDE as i32 - 1) {
                 for x in (cell.0 - 74).max(0)..=(cell.0 + 74).min(SIDE as i32 - 1) {
                     let i = z as usize * SIDE + x as usize;
-                    if !in_window(old, x, z) && (objects[i] as usize) < model_count {
-                        self.entering.push(i);
+                    if in_window(old, x, z) || (objects[i] as usize) >= model_count {
+                        continue;
+                    }
+                    match allocate(&mut free, &mut tail, faces(i) as u32 * 3, capacity) {
+                        Some(first) => self.entering.push((i, first)),
+                        None => {
+                            fits = false;
+                            break 'cells;
+                        }
                     }
                 }
             }
-            let needed = self.entering.iter().map(|&i| faces(i) * 3).sum::<usize>();
-            if self.tail as usize + needed <= capacity as usize {
+            if fits {
                 self.objects.retain(|o| {
                     in_window(cell, (o.center[0] / 256.0) as i32, (o.center[2] / 256.0) as i32)
                 });
-                let first = self.tail;
-                for &i in &self.entering {
-                    let object = emit(i, self.tail);
-                    self.tail += object.range.count;
+                for &(i, first) in &self.entering {
+                    let object = emit(i, first);
+                    written.push(object.range);
                     self.objects.push(object);
                 }
+                self.objects.sort_unstable_by_key(|o| o.range.first);
+                self.free = free;
+                self.tail = tail;
+                coalesce(written, &mut 0);
                 self.anchor = Some(cell);
-                return Some((first, self.tail - first));
+                return Some(false);
             }
         }
         candidates.update(objects, model_count, cell);
@@ -649,6 +710,7 @@ impl ResidentScenery {
         }
         self.tail = n;
         self.anchor = Some(cell);
-        Some((0, n))
+        written.push(DrawRange { first: 0, count: n });
+        Some(true)
     }
 }

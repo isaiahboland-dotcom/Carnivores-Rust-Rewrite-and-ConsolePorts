@@ -1,0 +1,90 @@
+hardware-logs/2026-10-30-resident-terrain.csv
+  whole capture: 2520 frames over 119.99s, 21.00 wall FPS (includes gaps/menus)
+  seed=2046267735 TV map toggle=0 GamePad gameplay toggle=0 death=0 tiled=1 static_cache=1 resident=1: 1948 frames
+    timed-loop FPS=23.03, average=43.43 ms, p95=52.04, p99=55.93, max=203.78
+    grouped wall span=84.89s (may include gaps), previous-profiler overhead=277.16 ms, ticks/frame=2.72
+    present_ms: 30.254 ms/frame
+    animals_ms: 4.064 ms/frame
+    sim_ms: 3.360 ms/frame
+    map_paint_ms: 2.145 ms/frame
+    draw_ms: 2.012 ms/frame
+    map_cache_ms: 0.745 ms/frame
+    scenery_ms: 0.349 ms/frame
+    terrain_ms: 0.228 ms/frame
+    gun_ms: 0.111 ms/frame
+    overlay_ms: 0.074 ms/frame
+    unaccounted_ms: 0.072 ms/frame
+    geometry_wait_ms: 0.006 ms/frame
+    sky_ms: 0.004 ms/frame
+    water_ms: 0.000 ms/frame
+    map_wait_ms: 0.000 ms/frame
+    resident scenery active: 1948/1948 frames, ranges/view=95.36, uploaded vertices/frame=1027
+    static geometry reused: 44/1948 frames
+    geometry subsets: lock=0.001 ms, cache=0.246 ms, cache range=0.45 MiB/frame
+    emitted geometry streams: 1.82 MiB/frame
+  seed=2046267735 TV map toggle=0 GamePad gameplay toggle=0 death=0 tiled=1 static_cache=1 resident=0: 3 frames
+    timed-loop FPS=8.04, average=124.32 ms, p95=156.14, p99=156.14, max=156.14
+    grouped wall span=0.37s (may include gaps), previous-profiler overhead=0.20 ms, ticks/frame=5.67
+    scenery_ms: 50.295 ms/frame
+    present_ms: 32.104 ms/frame
+    terrain_ms: 13.507 ms/frame
+    unaccounted_ms: 10.254 ms/frame
+    animals_ms: 7.002 ms/frame
+    sim_ms: 5.330 ms/frame
+    map_paint_ms: 2.763 ms/frame
+    map_cache_ms: 0.801 ms/frame
+    gun_ms: 0.796 ms/frame
+    overlay_ms: 0.778 ms/frame
+    water_ms: 0.348 ms/frame
+    draw_ms: 0.323 ms/frame
+    sky_ms: 0.007 ms/frame
+    geometry_wait_ms: 0.006 ms/frame
+    map_wait_ms: 0.000 ms/frame
+    resident scenery active: 0/3 frames, ranges/view=1.00, uploaded vertices/frame=127341
+    static geometry reused: 0/3 frames
+    geometry subsets: lock=0.003 ms, cache=2.077 ms, cache range=5.75 MiB/frame
+    emitted geometry streams: 5.75 MiB/frame
+  seed=2046267735 TV map toggle=0 GamePad gameplay toggle=1 death=0 tiled=1 static_cache=1 resident=0: 17 frames
+    timed-loop FPS=8.45, average=118.30 ms, p95=120.92, p99=120.92, max=120.92
+    grouped wall span=2.03s (may include gaps), previous-profiler overhead=17.19 ms, ticks/frame=7.35
+    present_ms: 45.001 ms/frame
+    scenery_ms: 42.398 ms/frame
+    terrain_ms: 13.534 ms/frame
+    sim_ms: 7.988 ms/frame
+    animals_ms: 7.652 ms/frame
+    gun_ms: 0.890 ms/frame
+    water_ms: 0.357 ms/frame
+    draw_ms: 0.354 ms/frame
+    unaccounted_ms: 0.105 ms/frame
+    sky_ms: 0.006 ms/frame
+    geometry_wait_ms: 0.006 ms/frame
+    map_paint_ms: 0.002 ms/frame
+    map_cache_ms: 0.000 ms/frame
+    map_wait_ms: 0.000 ms/frame
+    overlay_ms: 0.000 ms/frame
+    resident scenery active: 0/17 frames, ranges/view=1.00, uploaded vertices/frame=125088
+    static geometry reused: 0/17 frames
+    geometry subsets: lock=0.003 ms, cache=2.134 ms, cache range=5.74 MiB/frame
+    emitted geometry streams: 5.74 MiB/frame
+  seed=2046267735 TV map toggle=0 GamePad gameplay toggle=1 death=0 tiled=1 static_cache=1 resident=1: 552 frames
+    timed-loop FPS=16.93, average=59.08 ms, p95=61.93, p99=63.67, max=267.84
+    grouped wall span=32.70s (may include gaps), previous-profiler overhead=88.01 ms, ticks/frame=3.69
+    present_ms: 45.783 ms/frame
+    animals_ms: 7.478 ms/frame
+    sim_ms: 4.347 ms/frame
+    draw_ms: 0.785 ms/frame
+    scenery_ms: 0.254 ms/frame
+    terrain_ms: 0.232 ms/frame
+    unaccounted_ms: 0.102 ms/frame
+    overlay_ms: 0.074 ms/frame
+    gun_ms: 0.009 ms/frame
+    geometry_wait_ms: 0.007 ms/frame
+    sky_ms: 0.002 ms/frame
+    map_paint_ms: 0.000 ms/frame
+    water_ms: 0.000 ms/frame
+    map_cache_ms: 0.000 ms/frame
+    map_wait_ms: 0.000 ms/frame
+    resident scenery active: 552/552 frames, ranges/view=126.18, uploaded vertices/frame=870
+    static geometry reused: 349/552 frames
+    geometry subsets: lock=0.000 ms, cache=0.427 ms, cache range=0.75 MiB/frame
+    emitted geometry streams: 1.24 MiB/frame

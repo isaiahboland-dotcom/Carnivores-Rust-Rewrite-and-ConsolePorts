@@ -69,6 +69,7 @@ struct Simulation {
     resident_scenery: static_scene::ResidentScenery,
     resident_terrain: static_scene::ResidentTerrain,
     terrain_written: Vec<static_scene::DrawRange>,
+    scenery_written: Vec<static_scene::DrawRange>,
     models: Vec<PreparedModel>,
     model_uvs: Vec<Vec<[[f32; 2]; 3]>>,
     object_lights: Vec<f32>,
@@ -187,6 +188,7 @@ pub extern "C" fn c2_move_create(
         resident_scenery: static_scene::ResidentScenery::default(),
         resident_terrain: static_scene::ResidentTerrain::default(),
         terrain_written: Vec::new(),
+        scenery_written: Vec::new(),
         models,
         model_uvs,
         object_lights,
@@ -833,17 +835,20 @@ pub extern "C" fn c2_scenery_vertices(ptr: *mut core::ffi::c_void, positions: *m
 
 // Keep nearby scenery in all directions resident, updating it when the player
 // changes cell (see ResidentScenery). `reset` forces a full rebuild (the legacy
-// path shares these buffers). Returns the vertices written from `*first`, or -1
-// if the window cannot fit; C then keeps the legacy visible-stream path.
-// Existing 16 MiB GPU streams are reused, not additional resident copies.
+// path shares these buffers). The vertex ranges written go to `written` for the
+// cache flush. Returns the vertices written, or -1 if the window cannot fit (or
+// `capacity` ranges are too few); C then keeps the legacy visible-stream path.
+// The existing 1,048,576-vertex GPU streams are reused, not extra resident copies.
 #[no_mangle]
 pub extern "C" fn c2_scenery_resident_prepare(ptr: *mut core::ffi::c_void, reset: i32,
-    positions: *mut f32, attrs: *mut f32, capacity: u32, first: *mut u32) -> i32 {
+    positions: *mut f32, attrs: *mut f32, capacity: u32,
+    written: *mut static_scene::DrawRange, written_capacity: u32, written_count: *mut u32) -> i32 {
     let sim = unsafe { &mut *ptr.cast::<Simulation>() };
     if reset != 0 { sim.resident_scenery.invalidate(); }
     let cell = ((sim.hunt.player.x / 256.0) as i32, (sim.hunt.player.z / 256.0) as i32);
-    let Simulation { area, models, model_uvs, model_radii, object_lights, transformed, scenery_candidates, resident_scenery, .. } = sim;
-    let written = resident_scenery.update(scenery_candidates, &area.map.objects, models.len(), cell, capacity,
+    unsafe { *written_count = 0; }
+    let Simulation { area, models, model_uvs, model_radii, object_lights, transformed, scenery_candidates, resident_scenery, scenery_written, .. } = sim;
+    let updated = resident_scenery.update(scenery_candidates, &area.map.objects, models.len(), cell, capacity,
         |i| models[area.map.objects[i] as usize].faces.len(),
         |i, n| {
             let id = area.map.objects[i] as usize;
@@ -854,10 +859,13 @@ pub extern "C" fn c2_scenery_resident_prepare(ptr: *mut core::ffi::c_void, reset
                 transformed, positions.add(n as usize*4), attrs.add(n as usize*4)) };
             static_scene::ResidentObject { center, radius: model_radii[id],
                 range: static_scene::DrawRange { first: n, count } }
-        });
-    let Some((start, count)) = written else { return -1; };
-    unsafe { *first = start; }
-    count as i32
+        }, scenery_written);
+    if updated.is_none() || scenery_written.len() > written_capacity as usize { resident_scenery.invalidate(); return -1; }
+    unsafe {
+        core::ptr::copy_nonoverlapping(scenery_written.as_ptr(), written, scenery_written.len());
+        *written_count = scenery_written.len() as u32;
+    }
+    scenery_written.iter().map(|r| r.count).sum::<u32>() as i32
 }
 #[no_mangle]
 pub extern "C" fn c2_scenery_resident_ranges(ptr: *mut core::ffi::c_void,

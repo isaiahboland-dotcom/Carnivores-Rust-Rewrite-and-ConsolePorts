@@ -45,7 +45,7 @@ extern uint32_t c2_water_vertices(void *, float *, float *);
 extern int32_t c2_scenery_atlas(void *, uint8_t *, uint32_t);
 extern uint32_t c2_scenery_vertices(void *, float *, float *, uint32_t);
 typedef struct { uint32_t first, count; } SceneryRange;
-extern int32_t c2_scenery_resident_prepare(void *, int32_t, float *, float *, uint32_t, uint32_t *);
+extern int32_t c2_scenery_resident_prepare(void *, int32_t, float *, float *, uint32_t, SceneryRange *, uint32_t, uint32_t *);
 extern uint32_t c2_scenery_resident_ranges(void *, SceneryRange *, uint32_t, uint32_t *);
 extern uint32_t c2_terrain_resident_update(void *, int32_t, float *, float *, float *, float *, SceneryRange *, uint32_t, uint32_t *);
 extern void c2_terrain_resident_ranges(void *, SceneryRange *, SceneryRange *, uint32_t, uint32_t *, uint32_t *, uint32_t *, uint32_t *);
@@ -648,7 +648,7 @@ end_load:
     OSReport("C2 tiled atlas A/B available %d; D-pad LEFT switches layouts\n", tiled_available);
     GX2RBuffer object_positions = {0}, object_attrs = {0};
     object_positions.flags = GX2R_RESOURCE_BIND_VERTEX_BUFFER | GX2R_RESOURCE_USAGE_CPU_WRITE | GX2R_RESOURCE_USAGE_GPU_READ;
-    object_positions.elemSize = 4 * sizeof(float); object_positions.elemCount = 524288;
+    object_positions.elemSize = 4 * sizeof(float); object_positions.elemCount = 1048576; /* every original window fits (AREA4 peaks at 742,053) */
     object_attrs.flags = object_positions.flags; object_attrs.elemSize = object_positions.elemSize; object_attrs.elemCount = object_positions.elemCount;
     if (!GX2RCreateBuffer(&object_positions) || !GX2RCreateBuffer(&object_attrs)) OSFatal("Scenery probe: object buffer allocation failed");
     GX2RBuffer actor_positions = {0}, actor_attrs = {0}, actor_fog = {0}, weapon_positions = {0}, weapon_attrs = {0}, weapon_fog = {0};
@@ -780,7 +780,7 @@ end_load:
     StaticView static_view = {0};
     int resident_enabled = 1;
     struct { int attempted, active; float cell[2]; uint32_t range_count; } resident = {0};
-    static SceneryRange scenery_ranges[149 * 149];
+    static SceneryRange scenery_ranges[149 * 149], scenery_written[149 * 149];
     /* Resident terrain/water follows the PLUS residency toggle. Blocks of 4x4
      * cells: 37x37 ranges at most. reset forces a full rewrite. */
     struct { int active, reset; float cell[2]; uint32_t terrain_ranges, water_ranges; } terrain_resident = {0, 1};
@@ -884,11 +884,11 @@ end_load:
                 if (pro[channel].pro.rightStick.y > 0.25f || pro[channel].pro.rightStick.y < -0.25f) ry = pro[channel].pro.rightStick.y;
             }
             // Retain edge-triggered toggles across frames with no simulation step.
-            pending_toggles ^= flags & 4334;
+            pending_toggles ^= flags & 4270;
             pending_toggles |= flags & 32;
             if (flags & 0xf00) pending_toggles = (pending_toggles & ~0xf00u) | (flags & 0xf00);
-            pending_toggles |= flags & 32;
-            if (flags & 0xf00) pending_toggles = (pending_toggles & ~0xf00u) | (flags & 0xf00);
+            /* A tapped weapon carries its slot in bits 16-18; the latest tap wins. */
+            if (flags & 64) pending_toggles = (pending_toggles & ~(64u | (7u << 16))) | (flags & (64u | (7u << 16)));
             OSTime now = OSGetTime();
             uint64_t elapsed = now > previous_time ? (uint64_t)(now - previous_time) : 0;
             previous_time = now;
@@ -948,11 +948,11 @@ end_load:
                     mark = OSGetTime();
                     float *rp = stream_lock(&object_positions), *ra = stream_lock(&object_attrs);
                     if (!rp || !ra) OSFatal("Scenery: resident buffer lock failed");
-                    SceneryRange written = {0, 0};
+                    uint32_t written = 0;
                     int32_t uploaded = c2_scenery_resident_prepare(sim, !resident.attempted || !resident.active, rp, ra,
-                                                                   object_positions.elemCount, &written.first);
-                    written.count = scenery_uploaded = uploaded < 0 ? 0u : (uint32_t)uploaded;
-                    stream_unlock_ranges(&object_positions, &written, 1); stream_unlock_ranges(&object_attrs, &written, 1);
+                                                                   object_positions.elemCount, scenery_written, 149 * 149, &written);
+                    scenery_uploaded = uploaded < 0 ? 0u : (uint32_t)uploaded;
+                    stream_unlock_ranges(&object_positions, scenery_written, written); stream_unlock_ranges(&object_attrs, scenery_written, written);
                     resident.attempted = 1; resident.active = uploaded >= 0;
                     resident.cell[0] = static_key[5]; resident.cell[1] = static_key[6];
                     static_view.valid = 0;

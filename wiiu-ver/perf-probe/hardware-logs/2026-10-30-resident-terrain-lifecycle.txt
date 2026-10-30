@@ -1,0 +1,11 @@
+trace v1 open; ProcUI shutdown deferred until cleanup
+foreground release: flushing profiler
+foreground release: stopping audio
+foreground release: acknowledging DrawDoneRelease
+ProcUI EXITING; returning to resource cleanup
+cleanup: profiler close begin
+cleanup: profiler close complete; audio stop begin
+cleanup: audio stopped; geometry free begin
+cleanup: geometry/textures freed; graphics shutdown begin
+cleanup: graphics shutdown complete; controllers/simulation free begin
+cleanup: simulation freed; closing trace and releasing SD next

@@ -486,7 +486,8 @@ cutout ordering match the old stream. No shader, population, view-distance or
 resolution change is involved.
 
 The resident window is rebuilt at cell changes, restart and residency toggles.
-It uses the existing 524,288-vertex buffers (16 MiB total). Preflight rejects an
+It uses the scenery buffers, 1,048,576 vertices since 2026-10-30 (every original
+window fits; AREA4 peaks at 742,053). Preflight rejects an
 oversized or overflowing total before writing anything; dense windows use the
 old visible-stream path for that anchor. Initial/cell-crossing costs and extra
 draw calls need measurement. Resident metadata and the bounded range list add
