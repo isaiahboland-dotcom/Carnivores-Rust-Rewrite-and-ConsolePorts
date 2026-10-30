@@ -43,6 +43,8 @@ const ANIMALS: [&str; 9] = [
     "Velociraptor", "Spinosaurus", "Ceratosaurus", "Tyrannosaurus",
 ];
 const WEAPONS: [&str; 6] = ["Pistol", "Shotgun", "Double-barrel shotgun", "Crossbow", "Rifle", "Sniper rifle"];
+/// Short names for the weapon hexagons.
+const WEAPON_LABELS: [&str; 6] = ["Pistol", "Shotgun", "Double barrel", "Crossbow", "Rifle", "Sniper rifle"];
 const EQUIPMENT: [&str; 4] = ["Camouflage", "Radar", "Cover scent", "Double ammo"];
 const TIMES: [&str; 3] = ["Dawn", "Day", "Night"];
 
@@ -126,13 +128,46 @@ pub struct Menu {
     pics: Vec<Option<Image>>,
     texts: Vec<String>,
     tiles: RefCell<TileCache>,
+    /// What changed since the last `drawn`: everything, or these areas.
+    full: bool,
+    dirty: Vec<Rect>,
 }
+
+// What decides which parts of the screen an input changed.
+#[derive(PartialEq)]
+struct Shown {
+    page: Page,
+    focus: Id,
+    choice: HuntChoice,
+    message: Option<&'static str>,
+    loading: bool,
+}
+const FOOTER: Rect = rect(0.0, 630.0, WIDTH, HEIGHT - 630.0);
+const CONTENT: Rect = rect(0.0, 82.0, WIDTH, 550.0);
 
 const SETUP: [Page; 3] = [Page::Area, Page::Animals, Page::Gear];
 const BACK: Rect = rect(32.0, 648.0, 200.0, 60.0);
 const NEXT: Rect = rect(1048.0, 648.0, 200.0, 60.0);
 const INFO: Rect = rect(800.0, 100.0, 448.0, 524.0);
 const SETTINGS_ROWS: [Id; 5] = [Id::RunSpeed, Id::Ambient, Id::Blood, Id::DeathCam, Id::Units];
+
+const SQRT3: f32 = 1.732_050_8;
+
+/// `n` flat-topped hexagons in rows of `cols`, every other column half a
+/// hexagon lower, touching but for a small gap (the 3DS menu's honeycomb).
+/// `rr` is the layout radius (centre to corner); boxes from `x0`, `top`.
+fn honeycomb(n: usize, cols: usize, rr: f32, x0: f32, top: f32) -> Vec<Rect> {
+    let h = rr * SQRT3;
+    let r = rr - 2.0;
+    (0..n)
+        .map(|i| {
+            let (c, row) = (i % cols, i / cols);
+            let cx = x0 + rr + c as f32 * 1.5 * rr;
+            let cy = top + h / 2.0 + row as f32 * h + if c % 2 == 1 { h / 2.0 } else { 0.0 };
+            rect(cx - r, cy - r * SQRT3 / 2.0, 2.0 * r, r * SQRT3)
+        })
+        .collect()
+}
 
 fn flag(v: u32) -> &'static str {
     if v != 0 { "On" } else { "Off" }
@@ -184,11 +219,14 @@ impl Menu {
             pics: (0..PICTURES).map(|_| None).collect(),
             texts: (PICTURES..FILES.len()).map(|_| String::new()).collect(),
             tiles: RefCell::new(TileCache::default()),
+            full: true,
+            dirty: Vec::new(),
         }
     }
 
     /// A file from `FILES`; returns false if a picture does not decode.
     pub fn set_file(&mut self, slot: usize, bytes: &[u8]) -> bool {
+        self.full = true;
         if slot < PICTURES {
             *self.tiles.borrow_mut() = TileCache::default();
             self.pics[slot] = Image::from_tga(bytes);
@@ -202,6 +240,7 @@ impl Menu {
     }
 
     pub fn open_title(&mut self) {
+        self.full = true;
         self.page = Page::Title;
         self.focus = Id::Play;
         self.action = Action::None;
@@ -210,6 +249,7 @@ impl Menu {
     }
 
     pub fn open_death(&mut self, shots: u32, kills: u32) {
+        self.full = true;
         self.page = Page::Death;
         self.focus = Id::Restart;
         self.action = Action::None;
@@ -234,6 +274,7 @@ impl Menu {
 
     /// Unknown keys and bad values are ignored; values are clamped.
     pub fn load_settings(&mut self, text: &str) {
+        self.full = true;
         let c = &mut self.choice;
         for line in text.lines() {
             let Some((k, v)) = line.split_once('=') else { continue };
@@ -279,34 +320,26 @@ impl Menu {
                 }
             }
             Page::Area => {
-                let (w, h) = (212.0, 184.0);
-                let at = [(40.0, 100.0), (268.0, 100.0), (496.0, 100.0), (154.0, 296.0), (382.0, 296.0)];
-                for (i, (x, y)) in at.into_iter().enumerate() {
-                    v.push((Id::Area(i), rect(x, y, w, h)));
+                for (i, r) in honeycomb(5, 3, 94.5, 171.0, 96.0).into_iter().enumerate() {
+                    v.push((Id::Area(i), r));
                 }
                 for i in 0..3 {
-                    v.push((Id::Time(i), rect(40.0 + i as f32 * 228.0, 508.0, 212.0, 108.0)));
+                    v.push((Id::Time(i), rect(74.0 + i as f32 * 228.0, 516.0, 212.0, 100.0)));
                 }
             }
             Page::Animals => {
-                let (w, h) = (196.0, 166.0);
-                for i in 0..9 {
-                    let (row, col) = (i / 3, i % 3);
-                    let shift = if row == 1 { 106.0 } else { 0.0 };
-                    v.push((Id::Animal(i), rect(40.0 + shift + col as f32 * 212.0, 98.0 + row as f32 * 176.0, w, h)));
+                for (i, r) in honeycomb(9, 5, 92.0, 40.0, 165.0).into_iter().enumerate() {
+                    v.push((Id::Animal(i), r));
                 }
             }
             Page::Gear => {
-                for i in 0..6 {
-                    let (row, col) = (i / 3, i % 3);
-                    let shift = if row == 1 { 93.0 } else { 0.0 };
-                    v.push((Id::Weapon(i), rect(40.0 + shift + col as f32 * 186.0, 98.0 + row as f32 * 158.0, 170.0, 148.0)));
+                for (i, r) in honeycomb(6, 6, 77.5, 40.0, 100.0).into_iter().enumerate() {
+                    v.push((Id::Weapon(i), r));
                 }
-                for i in 0..4 {
-                    v.push((Id::Equip(i), rect(40.0 + i as f32 * 168.0, 418.0, 150.0, 130.0)));
+                let gear = [Id::Equip(0), Id::Equip(1), Id::Equip(2), Id::Equip(3), Id::Tranq, Id::Observer];
+                for (i, id) in gear.into_iter().enumerate() {
+                    v.push((id, rect(40.0 + (i % 2) as f32 * 376.0, 322.0 + (i / 2) as f32 * 68.0, 360.0, 56.0)));
                 }
-                v.push((Id::Tranq, rect(40.0, 564.0, 326.0, 56.0)));
-                v.push((Id::Observer, rect(382.0, 564.0, 326.0, 56.0)));
             }
             Page::Settings => {
                 for (i, id) in SETTINGS_ROWS.into_iter().enumerate() {
@@ -328,7 +361,7 @@ impl Menu {
     }
 
     fn hexagonal(id: Id) -> bool {
-        matches!(id, Id::Area(_) | Id::Animal(_) | Id::Weapon(_) | Id::Equip(_))
+        matches!(id, Id::Area(_) | Id::Animal(_) | Id::Weapon(_))
     }
 
     fn focus_rect(&self) -> Option<Rect> {
@@ -339,6 +372,57 @@ impl Menu {
 
     /// Button edges; returns whether anything changed (redraw).
     pub fn input(&mut self, buttons: u32) -> bool {
+        let before = self.shown();
+        let changed = self.input_inner(buttons);
+        self.mark(before);
+        changed
+    }
+
+    /// A GamePad touch in logical coordinates; returns whether it hit.
+    pub fn touch(&mut self, x: f32, y: f32) -> bool {
+        let before = self.shown();
+        let hit = self.touch_inner(x, y);
+        self.mark(before);
+        hit
+    }
+
+    fn shown(&self) -> Shown {
+        Shown { page: self.page, focus: self.focus, choice: self.choice, message: self.message, loading: self.loading }
+    }
+
+    // Record the screen areas that differ from `before`.
+    fn mark(&mut self, before: Shown) {
+        let now = self.shown();
+        if now == before {
+            return;
+        }
+        if now.page != before.page || now.loading != before.loading || now.page == Page::Settings || now.page == Page::Death {
+            self.full = true;
+            return;
+        }
+        let rect_of = |items: &[(Id, Rect)], id: Id| items.iter().find(|(i, _)| *i == id).map(|(_, r)| *r);
+        let items = self.items();
+        if now.choice != before.choice {
+            self.dirty.push(CONTENT);
+        }
+        for id in [before.focus, now.focus] {
+            if let Some(r) = rect_of(&items, id) {
+                self.dirty.push(r);
+            }
+        }
+        if SETUP.contains(&now.page) {
+            self.dirty.push(INFO);
+            self.dirty.push(FOOTER);
+        }
+    }
+
+    /// Called once every canvas shows the latest state.
+    pub fn drawn(&mut self) {
+        self.full = false;
+        self.dirty.clear();
+    }
+
+    fn input_inner(&mut self, buttons: u32) -> bool {
         use button::*;
         if buttons == 0 || self.loading {
             return false;
@@ -374,8 +458,7 @@ impl Menu {
         true
     }
 
-    /// A GamePad touch in logical coordinates; returns whether it hit.
-    pub fn touch(&mut self, x: f32, y: f32) -> bool {
+    fn touch_inner(&mut self, x: f32, y: f32) -> bool {
         if self.loading {
             return false;
         }
@@ -510,7 +593,21 @@ impl Menu {
 
     // ---- Drawing ------------------------------------------------------
 
+    /// Draw what changed since `drawn` (everything the first time).
     pub fn draw(&self, c: &mut Canvas) {
+        if self.full || self.dirty.is_empty() {
+            c.set_clip(None);
+            self.draw_all(c);
+        } else {
+            for r in &self.dirty {
+                c.set_clip(Some(*r));
+                self.draw_all(c);
+            }
+            c.set_clip(None);
+        }
+    }
+
+    fn draw_all(&self, c: &mut Canvas) {
         c.fill(rect(0.0, 0.0, WIDTH, HEIGHT), BG);
         match self.page {
             Page::Title => self.draw_title(c),
@@ -544,13 +641,13 @@ impl Menu {
         c.text_centered(&self.font, r, 26.0, if enabled { WHITE } else { DIM }, label);
     }
 
-    fn toggle(&self, c: &mut Canvas, r: Rect, label: &str, on: bool, focused: bool) {
+    fn toggle(&self, c: &mut Canvas, r: Rect, label: &str, on: bool, focused: bool, enabled: bool) {
         c.fill(r, if focused { [52, 70, 44, 255] } else { PANEL });
-        c.frame(r, if focused { 4.0 } else { 2.0 }, if focused { WHITE } else if on { GOLD } else { EDGE });
-        c.text(&self.font, r.x + 18.0, r.y + (r.h - 24.0) * 0.5, 24.0, WHITE, label);
+        c.frame(r, if focused { 4.0 } else { 2.0 }, if focused { WHITE } else if on && enabled { GOLD } else { EDGE });
+        c.text(&self.font, r.x + 18.0, r.y + (r.h - 24.0) * 0.5, 24.0, if enabled { WHITE } else { DIM }, label);
         let state = flag(on as u32);
         let w = measure(&self.font, 24.0, state);
-        c.text(&self.font, r.x + r.w - 18.0 - w, r.y + (r.h - 24.0) * 0.5, 24.0, if on { GOLD } else { DIM }, state);
+        c.text(&self.font, r.x + r.w - 18.0 - w, r.y + (r.h - 24.0) * 0.5, 24.0, if on && enabled { GOLD } else { DIM }, state);
     }
 
     fn draw_title(&self, c: &mut Canvas) {
@@ -602,14 +699,15 @@ impl Menu {
             match id {
                 Id::Area(i) => self.hex_item(c, r, PIC_AREA + i, AREAS[i], ch.area == i as u32, focused, true),
                 Id::Animal(i) => self.hex_item(c, r, PIC_DINO + i, ANIMALS[i], ch.animals & (1 << i) != 0, focused, true),
-                Id::Weapon(i) => self.hex_item(c, r, PIC_WEAPON + i, WEAPONS[i], ch.weapons & (1 << i) != 0, focused, !observer),
+                Id::Weapon(i) => self.hex_item(c, r, PIC_WEAPON + i, WEAPON_LABELS[i], ch.weapons & (1 << i) != 0, focused, !observer),
+                // Observer mode carries no weapons or gear but the radar.
                 Id::Equip(i) => {
                     let on = [ch.camo, ch.radar, ch.scent, ch.double_ammo][i] != 0;
-                    self.hex_item(c, r, PIC_EQUIP + i, EQUIPMENT[i], on, focused, !observer || i == 1)
+                    self.toggle(c, r, EQUIPMENT[i], on, focused, !observer || i == 1)
                 }
                 Id::Time(i) => self.time_item(c, r, i, ch.time == i as u32, focused),
-                Id::Tranq => self.toggle(c, r, "Tranquilizer", ch.tranq != 0, focused),
-                Id::Observer => self.toggle(c, r, "Observer mode", observer, focused),
+                Id::Tranq => self.toggle(c, r, "Tranquilizer", ch.tranq != 0, focused, !observer),
+                Id::Observer => self.toggle(c, r, "Observer mode", observer, focused, true),
                 Id::Back => self.button(c, r, "Back", focused, true),
                 Id::Next => {
                     let label = if self.page == Page::Gear { "Hunt!" } else { "Next" };
@@ -657,8 +755,9 @@ impl Menu {
         }
         let outline = if focused { WHITE } else if on && enabled { GOLD } else { EDGE };
         c.hex(r, None, if focused || on { 5.0 } else { 2.0 }, outline);
-        let size = if r.w > 180.0 { 20.0 } else { 17.0 };
-        let label = rect(r.x, r.y + r.h - size - 22.0, r.w, size);
+        // The label fits the hexagon's flat bottom edge (half its width).
+        let size = (if r.w > 180.0 { 20.0 } else { 17.0 } as f32).min(18.0 * r.w * 0.68 / measure(&self.font, 18.0, name).max(1.0));
+        let label = rect(r.x, r.y + r.h - size - r.h * 0.12, r.w, size);
         self.shadowed_centered(c, label, size, if enabled { if on { GOLD } else { WHITE } } else { DIM }, name);
     }
 

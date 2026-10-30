@@ -22,6 +22,7 @@ extern uint32_t c2_menu_touch(void *, float, float);
 extern uint32_t c2_menu_action(void *);
 extern void c2_menu_choice(void *, HuntChoice *);
 extern void c2_menu_draw(void *, uint8_t *, uint32_t, uint32_t, uint32_t);
+extern void c2_menu_drawn(void *);
 
 static const char *menu_areas[] = {"DELPHAEUS HILLS", "FORT CISKIN", "VENGAR FJORDS", "MANYA JUNGLE", "MOUNT RAVAN"};
 

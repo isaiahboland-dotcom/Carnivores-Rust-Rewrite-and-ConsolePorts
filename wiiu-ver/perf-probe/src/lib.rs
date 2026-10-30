@@ -105,7 +105,7 @@ pub struct Snapshot {
     crouch: u32,
 }
 #[repr(C)]
-pub struct HudState { ammo: i32, weapon_ready: u32, call: i32, weapon: i32 }
+pub struct HudState { ammo: i32, weapon_ready: u32, call: i32, weapon: i32, kills: u32 }
 #[no_mangle]
 pub extern "C" fn c2_hud_state(ptr: *mut core::ffi::c_void, out: *mut HudState) {
     let sim = unsafe { &*ptr.cast::<Simulation>() };
@@ -115,6 +115,7 @@ pub extern "C" fn c2_hud_state(ptr: *mut core::ffi::c_void, out: *mut HudState) 
         weapon: w.current as i32,
         ammo: w.shots_left.get(w.current).copied().unwrap_or(0),
         weapon_ready: (w.state == c2_core::game::WeaponState::Ready) as u32,
+        kills: sim.hunt.successes,
     }; }
 }
 #[no_mangle]
@@ -1023,7 +1024,12 @@ pub extern "C" fn c2_menu_action(ptr: *mut core::ffi::c_void) -> u32 { menu_ref(
 pub extern "C" fn c2_menu_choice(ptr: *mut core::ffi::c_void, out: *mut hunt_setup::HuntChoice) {
     unsafe { *out = menu_ref(ptr).choice; }
 }
-/// Draw the menu into an RGBA8 surface (`pitch` in pixels).
+/// After every display's texture is redrawn: the next draw only repaints what
+/// changes from here.
+#[no_mangle]
+pub extern "C" fn c2_menu_drawn(ptr: *mut core::ffi::c_void) { menu_ref(ptr).drawn(); }
+/// Draw the menu into an RGBA8 surface (`pitch` in pixels): only what changed
+/// since `c2_menu_drawn`, so the surface must keep its previous contents.
 #[no_mangle]
 pub extern "C" fn c2_menu_draw(ptr: *mut core::ffi::c_void, pixels: *mut u8, pitch: u32, width: u32, height: u32) {
     let px = unsafe { core::slice::from_raw_parts_mut(pixels, pitch as usize * height as usize * 4) };

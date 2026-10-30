@@ -42,8 +42,8 @@ static void performance_open(const HuntChoice *menu, uint32_t seed, int tiled_av
     if (!performance.open) { OSReport("C2 performance capture could not open SD file\n"); return; }
     GX2ColorBuffer *tv = WHBGfxGetTVColourBuffer(), *drc = WHBGfxGetDRCColourBuffer();
     performance.used = snprintf(performance.data, sizeof(performance.data),
-        "# schema=8 resident_scenery=1 static_view_cache=1 terrain_precompute=1 scenery_candidates=1 tiled_available=%d map_streams=2 hidden_geometry_skip=1 range_upload=%d build=%s %s area=%d animals=%u weapons=%u radar=%u blood_off=%u kill_anim_off=%u time=%u camo=%u scent=%u double_ammo=%u tranq=%u observer=%u run_pct=%u ambient=%u population=%u seed=%u tv=%ux%u drc=%ux%u limit_bytes=%u\n"
-        "frame,start_ms,seed,tv_map,drc_game,ticks,frame_ms,terrain_ms,scenery_ms,water_ms,sky_ms,map_paint_ms,map_cache_ms,sim_ms,animals_ms,gun_ms,draw_ms,geometry_wait_ms,map_wait_ms,present_ms,overlay_ms,unaccounted_ms,previous_profiler_ms,terrain_v,scenery_v,animal_v,gun_v,water_v,sky_v,geometry_stream_bytes,stream_lock_ms,stream_cache_ms,stream_cache_bytes,death_playback,tiled_atlases,static_cache_enabled,static_reused,resident_enabled,resident_active,scenery_ranges,scenery_uploaded_v,gpu_tv_ms,gpu_drc_ms\n",
+        "# schema=9 resident_scenery=1 static_view_cache=1 terrain_precompute=1 scenery_candidates=1 tiled_available=%d map_streams=2 hidden_geometry_skip=1 range_upload=%d build=%s %s area=%d animals=%u weapons=%u radar=%u blood_off=%u kill_anim_off=%u time=%u camo=%u scent=%u double_ammo=%u tranq=%u observer=%u run_pct=%u ambient=%u population=%u seed=%u tv=%ux%u drc=%ux%u limit_bytes=%u\n"
+        "frame,start_ms,seed,tv_map,drc_game,ticks,frame_ms,terrain_ms,scenery_ms,water_ms,sky_ms,map_paint_ms,map_cache_ms,sim_ms,animals_ms,gun_ms,draw_ms,geometry_wait_ms,map_wait_ms,present_ms,overlay_ms,unaccounted_ms,previous_profiler_ms,terrain_v,scenery_v,animal_v,gun_v,water_v,sky_v,geometry_stream_bytes,stream_lock_ms,stream_cache_ms,stream_cache_bytes,death_playback,tiled_atlases,static_cache_enabled,static_reused,resident_enabled,resident_active,scenery_ranges,scenery_uploaded_v,gpu_tv_ms,gpu_drc_ms,vsync\n",
         tiled_available, C2_RANGE_UPLOAD, __DATE__, __TIME__, menu->area + 1, menu->animals, menu->weapons, menu->radar,
         (unsigned)!menu->blood, (unsigned)!menu->death_anim, menu->time, menu->camo, menu->scent, menu->double_ammo,
         menu->tranq, menu->observer, menu->run_pct, menu->ambient, menu->ambient ? 66u : 48u, seed, tv->surface.width, tv->surface.height,
@@ -53,7 +53,7 @@ static void performance_open(const HuntChoice *menu, uint32_t seed, int tiled_av
 static double performance_ms(uint64_t ticks) { return (double)OSTicksToMicroseconds(ticks) / 1000.0; }
 static void performance_frame(const Perf *p, const Perf *b, uint64_t start, uint32_t seed,
     int tv_map, int drc_game, uint32_t ticks, uint64_t gun, uint64_t map_cache,
-    uint64_t overlay, uint64_t geometry_wait, uint64_t map_wait, uint64_t gpu_tv, uint64_t gpu_drc,
+    uint64_t overlay, uint64_t geometry_wait, uint64_t map_wait, uint64_t gpu_tv, uint64_t gpu_drc, int vsync,
     uint32_t terrain_v, uint32_t scenery_v, uint32_t animal_v, uint32_t gun_v,
     uint32_t water_v, uint32_t sky_v, uint32_t death_playback, uint32_t tiled_atlases, uint32_t static_cache_enabled, uint32_t static_reused, uint32_t resident_enabled, uint32_t resident_active, uint32_t scenery_ranges, uint32_t scenery_uploaded) {
     if (!performance.open) return;
@@ -61,7 +61,8 @@ static void performance_frame(const Perf *p, const Perf *b, uint64_t start, uint
     /* Each bucket is disjoint. Buffer locks/unlocks remain in geometry buckets.
      * Draw includes render setup; PRESENT and waits are CPU elapsed times.
      * Since schema 8 frames overlap the GPU: WAIT is the wait for the previous
-     * frame's GPU work, and gpu_tv/gpu_drc are that frame's GPU pass times. */
+     * frame's GPU work; gpu_tv/gpu_drc (GPU timestamps) proved unreliable.
+     * Schema 9: vsync 0 while the D-pad Left diagnostic turns it off. */
     uint64_t accounted = (p->terrain-b->terrain) + (p->scenery-b->scenery) +
         (p->water-b->water) + (p->sky-b->sky) + (p->map-b->map) +
         (p->simulation-b->simulation) + (p->actors-b->actors) +
@@ -69,7 +70,7 @@ static void performance_frame(const Perf *p, const Perf *b, uint64_t start, uint
     uint64_t frame = p->frame-b->frame;
     char row[1024];
     int n = snprintf(row, sizeof(row),
-        "%u,%.3f,%u,%d,%d,%u,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%u,%u,%u,%u,%u,%u,%u,%.3f,%.3f,%u,%u,%u,%u,%u,%u,%u,%u,%u,%.3f,%.3f\n",
+        "%u,%.3f,%u,%d,%d,%u,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%u,%u,%u,%u,%u,%u,%u,%.3f,%.3f,%u,%u,%u,%u,%u,%u,%u,%u,%u,%.3f,%.3f,%d\n",
         ++performance.frame, performance_ms(start-performance.origin), seed, tv_map, drc_game, ticks,
         performance_ms(frame), performance_ms(p->terrain-b->terrain), performance_ms(p->scenery-b->scenery),
         performance_ms(p->water-b->water), performance_ms(p->sky-b->sky),
@@ -80,7 +81,7 @@ static void performance_frame(const Perf *p, const Perf *b, uint64_t start, uint
         performance_ms(performance.overhead), terrain_v, scenery_v, animal_v, gun_v, water_v, sky_v,
         (animal_v+gun_v+scenery_uploaded+(static_reused ? 0 : terrain_v+water_v+sky_v))*32u,
         performance_ms(stream_upload.lock), performance_ms(stream_upload.cache), stream_upload.bytes, death_playback, tiled_atlases, static_cache_enabled, static_reused, resident_enabled, resident_active, scenery_ranges, scenery_uploaded,
-        performance_ms(gpu_tv), performance_ms(gpu_drc));
+        performance_ms(gpu_tv), performance_ms(gpu_drc), vsync);
     if (n <= 0 || n >= (int)sizeof(row)) return;
     if (performance.written + performance.used + (uint32_t)n > PERFORMANCE_LIMIT) {
         performance_close();

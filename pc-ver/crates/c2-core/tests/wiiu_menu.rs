@@ -72,8 +72,9 @@ fn every_page_draws_and_the_setup_reaches_a_hunt() {
     m.input(A);
     m.input(DOWN);
     m.input(A);
-    // Down from the top row's middle lands on the offset row below it.
-    assert_eq!(m.choice.animals, 0b1011);
+    // Right steps to the next (half a row lower) column; Down lands on the
+    // hexagon directly below.
+    assert_eq!(m.choice.animals, 0b100_0011);
     shot(&m, "3-animals");
     m.input(R);
     assert_eq!(m.page, Page::Gear);
@@ -179,4 +180,35 @@ fn part_times() {
         c.fill(ui::rect(0.0, 0.0, 1280.0, 720.0), [16, 22, 16, 255]);
     }
     eprintln!("full fill: {:.2} ms", t.elapsed().as_secs_f64() * 50.0);
+}
+
+// Redrawing only what changed gives the same pixels as drawing everything,
+// at both sizes, through a walk over every page.
+#[test]
+fn partial_redraws_match_full_draws() {
+    let mut m = menu_with_files();
+    let sizes = [(1920usize, 1080usize), (854, 480)];
+    let mut kept: Vec<Vec<u8>> = sizes.iter().map(|&(w, h)| vec![0u8; w.next_multiple_of(32) * h * 4]).collect();
+    let steps = [A, RIGHT, DOWN, A, RIGHT, RIGHT, UP, LEFT, A, R, RIGHT, A, DOWN, DOWN, A, LEFT, R, DOWN, A, DOWN, RIGHT, A, DOWN, DOWN, A, UP, UP, LEFT, L, B, B, DOWN, A, LEFT, RIGHT, DOWN, A, B];
+    for (step, &b) in [0].iter().chain(steps.iter()).enumerate() {
+        if b != 0 {
+            m.input(b);
+        }
+        for (k, &(w, h)) in sizes.iter().enumerate() {
+            let pitch = w.next_multiple_of(32);
+            m.draw(&mut ui::Canvas::new(&mut kept[k], pitch, w, h));
+            let mut full = vec![0u8; pitch * h * 4];
+            let mut fresh = menu_with_files();
+            fresh.page = m.page;
+            fresh.focus = m.focus;
+            fresh.choice = m.choice;
+            fresh.draw(&mut ui::Canvas::new(&mut full, pitch, w, h));
+            let differ = (0..h).flat_map(|y| (0..w).map(move |x| (x, y))).filter(|&(x, y)| {
+                let i = (y * pitch + x) * 4;
+                kept[k][i..i + 4] != full[i..i + 4]
+            }).count();
+            assert_eq!(differ, 0, "step {step} ({:?} focus {:?}) at {w}x{h}: {differ} pixels differ", m.page, m.focus);
+        }
+        m.drawn();
+    }
 }
