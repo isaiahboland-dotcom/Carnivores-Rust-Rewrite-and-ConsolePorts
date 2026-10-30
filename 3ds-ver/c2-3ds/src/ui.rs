@@ -553,8 +553,41 @@ impl Ui {
                 "Y = restart (this hunt isn't saved)",
             );
         }
+        // The controls (the PC's hint bar), over the bottom of the view;
+        // none over a notice, a question or the binoculars' readout.
+        let life = hunt.life_info(&game.area);
+        if game.setup.hints
+            && kill.is_none()
+            && life.is_none()
+            && hunt.health > 0
+            && !hunt.paused
+            && !hunt.show_exit()
+        {
+            let lines = hints(game, hunt);
+            let top = 240.0 - 6.0 - 12.0 * lines.len() as f32;
+            c.rect(
+                [0.0, top - 4.0, TOP_W as f32, 240.0 - top + 4.0],
+                [0, 0, 0, 160],
+            );
+            c.flush(gpu);
+            for (i, parts) in lines.iter().enumerate() {
+                let w: usize = parts
+                    .iter()
+                    .map(|(b, a)| b.len() + a.len() + 3)
+                    .sum::<usize>()
+                    - 2;
+                let mut x = cx - w as f32 * 4.0;
+                for (b, a) in parts {
+                    // The button gold, what it does white.
+                    c.text(gpu, x, top + 12.0 * i as f32, 1.0, GOLD, b);
+                    x += (b.len() + 1) as f32 * 8.0;
+                    c.text(gpu, x, top + 12.0 * i as f32, 1.0, WHITE, a);
+                    x += (a.len() + 2) as f32 * 8.0;
+                }
+            }
+        }
         // Binoculars: what's in the cross-hairs (`Render_LifeInfo`).
-        if let Some(li) = hunt.life_info(&game.area) {
+        if let Some(li) = life {
             let x = cx + 8.0;
             let lines = [
                 li.name.clone(),
@@ -566,6 +599,32 @@ impl Ui {
             }
         }
     }
+}
+
+/// The hint bar's lines (button, action), each at most 50 characters (the
+/// top screen's width).
+fn hints(game: &Game, hunt: &Hunt) -> Vec<Vec<(&'static str, &'static str)>> {
+    use crate::settings::CrouchKey;
+    if hunt.opts.trophy {
+        return vec![vec![("START", "Leave")]];
+    }
+    let mut first = Vec::new();
+    if !hunt.weapons.info.is_empty() {
+        first.extend([("R", "Fire"), ("Right", "Holster"), ("Down", "Next gun")]);
+    }
+    if hunt.survival.is_none() {
+        first.push(("ZR", "Call"));
+    }
+    let mut second = match game.setup.crouch_key {
+        CrouchKey::Zl => vec![("L", "Jump"), ("ZL", "Crouch")],
+        CrouchKey::L => vec![("L", "Jump, hold: Crouch")],
+        CrouchKey::DpadUp => vec![("L", "Jump"), ("Up", "Run/Crouch")],
+    };
+    second.extend([("Left", "Binoculars"), ("START", "Menu")]);
+    vec![first, second]
+        .into_iter()
+        .filter(|l| !l.is_empty())
+        .collect()
 }
 
 /// The area map (`DrawHMap`) with the view-range circle, the hunter and the

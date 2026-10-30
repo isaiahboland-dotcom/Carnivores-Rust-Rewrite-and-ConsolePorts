@@ -125,6 +125,8 @@ const DEATH_ANIM: [f32; 4] = [164.0, 144.0, 140.0, 28.0];
 /// Settings: the mobile game's map look; teleporting by the map.
 const MAP_STYLE: [f32; 4] = [16.0, 176.0, 140.0, 28.0];
 const TELEPORT: [f32; 4] = [164.0, 176.0, 140.0, 28.0];
+/// Settings: the controls shown in a hunt (beside Back).
+const HINTS: [f32; 4] = [164.0, 210.0, 140.0, 26.0];
 
 const BAR_Y: f32 = 212.0;
 const BACK: [f32; 4] = [4.0, BAR_Y, 76.0, 24.0];
@@ -743,6 +745,7 @@ impl Menu {
             stealth: false,
             map_mobile: self.settings.map_mobile,
             teleport: false,
+            hints: self.settings.hints,
             random_ambients: false,
             crouch_key: self.settings.crouch_key,
             gyro_k: 0.0,
@@ -784,6 +787,7 @@ impl Menu {
             stealth: self.settings.stealth,
             map_mobile: self.settings.map_mobile,
             teleport: self.settings.teleport,
+            hints: self.settings.hints,
             random_ambients: self.settings.random_ambients && self.rules.dialect(),
             crouch_key: self.settings.crouch_key,
             gyro_k: self.settings.gyro_pct as f32 / 100.0,
@@ -1333,6 +1337,8 @@ impl Menu {
                 } else if inside(TELEPORT, x, y) {
                     s.teleport = !s.teleport;
                     self.focus = Some("Tap the map in a hunt; 5 s, then a minute".into());
+                } else if inside(HINTS, x, y) {
+                    s.hints = !s.hints;
                 }
             }
             Step::Area => {
@@ -1943,6 +1949,7 @@ impl Menu {
             (DEATH_ANIM, s.death_anim, "Death anim"),
             (MAP_STYLE, s.map_mobile, "Mobile map"),
             (TELEPORT, s.teleport, "Teleport"),
+            (HINTS, s.hints, "Hints"),
         ];
         for (r, on, _) in toggles {
             c.rect(r, if on { [60, 110, 60, 255] } else { PANEL });
@@ -1991,7 +1998,7 @@ impl Menu {
         }
         for (r, on, name) in toggles {
             let t = format!("{name}: {}", if on { "ON" } else { "OFF" });
-            c.text_c(gpu, r[0] + r[2] / 2.0, r[1] + 10.0, 1.0, WHITE, &t);
+            c.text_c(gpu, r[0] + r[2] / 2.0, r[1] + r[3] / 2.0 - 4.0, 1.0, WHITE, &t);
         }
         c.text_c(
             gpu,

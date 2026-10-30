@@ -618,9 +618,23 @@ pub extern "C" fn c2_call_load(ptr: *mut core::ffi::c_void, slot: u32, data: *co
 fn night_vision(pixels: &mut [u8]) {
     for p in pixels.chunks_exact_mut(4) { let g = p[1]; p[0] = g / 8; p[2] = g / 8; }
 }
+/// Dawn, warmer than the original's data alone (the owner's ask: dawn
+/// looked too close to day): red and green up, blue down, over the world,
+/// the sky and the fog.
+const DAWN_TINT: [u32; 3] = [282, 266, 210];
+fn dawn_warmth(pixels: &mut [u8]) {
+    for p in pixels.chunks_exact_mut(4) {
+        for k in 0..3 { p[k] = (p[k] as u32 * DAWN_TINT[k] / 256).min(255) as u8; }
+    }
+}
+// The time of day's look over atlas rows: night vision, or dawn's warmth.
 unsafe fn night_vision_rows(sim: &Simulation, pixels: *mut u8, pitch: u32, width: usize, rows: usize) {
-    if !sim.area.time.night_vision() { return; }
-    for y in 0..rows { night_vision(core::slice::from_raw_parts_mut(pixels.add(y * pitch as usize * 4), width * 4)); }
+    let grade: fn(&mut [u8]) = match sim.area.time {
+        _ if sim.area.time.night_vision() => night_vision,
+        c2_core::area::TimeOfDay::Dusk => dawn_warmth,
+        _ => return,
+    };
+    for y in 0..rows { grade(core::slice::from_raw_parts_mut(pixels.add(y * pitch as usize * 4), width * 4)); }
 }
 
 #[no_mangle]
@@ -910,8 +924,10 @@ pub extern "C" fn c2_sky_texture(ptr: *mut core::ffi::c_void, pixels: *mut u8, p
 #[no_mangle]
 pub extern "C" fn c2_fog_color(ptr: *mut core::ffi::c_void, out: *mut f32) {
     let sim = unsafe { &*ptr.cast::<Simulation>() };
+    let warm = sim.area.time == c2_core::area::TimeOfDay::Dusk;
     for (i, c) in sim.area.sky_rgb().iter().enumerate() {
-        unsafe { *out.add(i) = (*c).clamp(0, 255) as f32 / 255.0; }
+        let c = if warm { *c * DAWN_TINT[i] as i32 / 256 } else { *c };
+        unsafe { *out.add(i) = c.clamp(0, 255) as f32 / 255.0; }
     }
 }
 
@@ -1219,7 +1235,7 @@ pub extern "C" fn c2_menu_profile(ptr: *mut core::ffi::c_void, which: u32, out: 
 /// (6 vertices each, 4 floats) into `pos` and `uv` (room for 5). Returns
 /// the quad count, plus 256 if the texture changed.
 #[no_mangle]
-pub extern "C" fn c2_overlay_draw(ui: *mut core::ffi::c_void, ptr: *mut core::ffi::c_void, pixels: *mut u8, pitch: u32, pos: *mut f32, uv: *mut f32) -> u32 {
+pub extern "C" fn c2_overlay_draw(ui: *mut core::ffi::c_void, ptr: *mut core::ffi::c_void, pixels: *mut u8, pitch: u32, pos: *mut f32, uv: *mut f32, flags: u32) -> u32 {
     let sim = unsafe { &mut *ptr.cast::<Simulation>() };
     let m = menu_ref(ui);
     let px = unsafe { core::slice::from_raw_parts_mut(pixels, pitch as usize * overlay::TEX_H * 4) };
@@ -1227,6 +1243,10 @@ pub extern "C" fn c2_overlay_draw(ui: *mut core::ffi::c_void, ptr: *mut core::ff
     let (pos, uv) = unsafe { (core::slice::from_raw_parts_mut(pos, n), core::slice::from_raw_parts_mut(uv, n)) };
     let view = overlay::View {
         hunt: &sim.hunt,
+        area: &sim.area,
+        map: flags & 1 != 0,
+        map_mobile: sim.choice.map_mobile != 0,
+        hints: sim.choice.hints != 0,
         notice: &sim.notice,
         ask: sim.ask,
         units_us: m.choice.units_us != 0,
@@ -1234,6 +1254,18 @@ pub extern "C" fn c2_overlay_draw(ui: *mut core::ffi::c_void, ptr: *mut core::ff
     };
     let (quads, changed) = sim.overlay.draw(m, &view, &mut overlay::canvas(px, pitch as usize), pos, uv);
     quads as u32 | if changed { 256 } else { 0 }
+}
+
+/// A tap on the GamePad map: teleport to world (`x`, `z`) if the option is
+/// on; says why not otherwise. Returns 1 if it started.
+#[no_mangle]
+pub extern "C" fn c2_teleport(ptr: *mut core::ffi::c_void, x: f32, z: f32) -> u32 {
+    let sim = unsafe { &mut *ptr.cast::<Simulation>() };
+    if !sim.hunt.can_teleport() { return 0; }
+    match sim.hunt.request_teleport(&sim.area, x, z) {
+        Ok(()) => 1,
+        Err(e) => { sim.notice.message(e, 2000); 0 }
+    }
 }
 
 /// After every display's texture is redrawn: the next draw only repaints what

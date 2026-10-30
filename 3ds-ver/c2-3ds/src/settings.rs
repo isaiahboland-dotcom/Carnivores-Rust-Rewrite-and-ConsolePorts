@@ -33,6 +33,8 @@ pub struct Settings {
     /// teleporting by tapping the map.
     pub map_mobile: bool,
     pub teleport: bool,
+    /// The controls along the bottom of the top screen in a hunt.
+    pub hints: bool,
 }
 
 /// How the hunter crouches.
@@ -113,6 +115,7 @@ impl Default for Settings {
             hunter: 0,
             map_mobile: false,
             teleport: false,
+            hints: false,
         }
     }
 }
@@ -143,6 +146,7 @@ impl Settings {
                 ("hunter", v) => s.hunter = v.parse().unwrap_or(0),
                 ("map_mobile", v) => s.map_mobile = v != "0",
                 ("teleport", v) => s.teleport = v != "0",
+                ("button_hints", v) => s.hints = v != "0",
                 ("gyro_aim", v) => {
                     if let Ok(n) = v.parse::<i32>() {
                         s.gyro_pct = n.clamp(GYRO_STEPS[0], 100);
@@ -167,7 +171,7 @@ impl Settings {
             format!(
                 "run_speed = {}\nambient = {}\nblood = {}\ndeath_animation = {}\n\
                  friendly = {}\nstealth_crouch = {}\nrandom_ambients = {}\ncrouch_button = {}\ngyro_aim = {}\n\
-                 hunter = {}\nmap_mobile = {}\nteleport = {}\n",
+                 hunter = {}\nmap_mobile = {}\nteleport = {}\nbutton_hints = {}\n",
                 self.run_pct,
                 i32::from(self.ambient),
                 i32::from(self.blood),
@@ -179,7 +183,8 @@ impl Settings {
                 self.gyro_pct,
                 self.hunter,
                 i32::from(self.map_mobile),
-                i32::from(self.teleport)
+                i32::from(self.teleport),
+                i32::from(self.hints)
             ),
         )
     }

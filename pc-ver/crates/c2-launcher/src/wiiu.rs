@@ -45,7 +45,7 @@ pub fn assets() -> Vec<String> {
         v.push(format!("AREAS/AREA{i}.RSC"));
     }
     // The trophy room and the trophy plaques.
-    for f in ["AREAS/TROPHY.MAP", "AREAS/TROPHY.RSC", "MENU/TROPHY_G.TGA", "MENU/TROPHY.TGA"] {
+    for f in ["AREAS/TROPHY.MAP", "AREAS/TROPHY.RSC", "MENU/TROPHY_G.TGA", "MENU/TROPHY.TGA", "MENU/MAPFRAME.TGA"] {
         v.push(f.to_string());
     }
     for i in 1..=5 {
@@ -161,7 +161,7 @@ mod tests {
     #[test]
     fn asset_names_are_unique_once_flattened() {
         let a = assets();
-        assert_eq!(a.len(), 147);
+        assert_eq!(a.len(), 148);
         let mut names: Vec<&str> = a.iter().filter_map(|r| r.rsplit('/').next()).collect();
         names.sort_unstable();
         names.dedup();

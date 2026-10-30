@@ -189,11 +189,11 @@ static void audio_resume(void *sim) {
     audio_init(sim);
     if (ambient_active) c2_set_ambient(ambient_zone, ambient_gain);
 }
-static const char glyph_chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ.:/-";
+static const char glyph_chars[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ.:/-+";
 static const uint8_t glyph_rows[][7] = {
 {14,17,19,21,25,17,14},{4,12,4,4,4,4,14},{14,17,1,2,4,8,31},{30,1,1,14,1,1,30},{2,6,10,18,31,2,2},{31,16,16,30,1,1,30},{14,16,16,30,17,17,14},{31,1,2,4,8,8,8},{14,17,17,14,17,17,14},{14,17,17,15,1,1,14},
 {14,17,17,31,17,17,17},{30,17,17,30,17,17,30},{14,17,16,16,16,17,14},{30,17,17,17,17,17,30},{31,16,16,30,16,16,31},{31,16,16,30,16,16,16},{14,17,16,23,17,17,15},{17,17,17,31,17,17,17},{14,4,4,4,4,4,14},{7,2,2,2,18,18,12},{17,18,20,24,20,18,17},{16,16,16,16,16,16,31},{17,27,21,21,17,17,17},{17,25,21,19,17,17,17},{14,17,17,17,17,17,14},{30,17,17,30,16,16,16},{14,17,17,17,21,18,13},{30,17,17,30,20,18,17},{15,16,16,14,1,1,30},{31,4,4,4,4,4,4},{17,17,17,17,17,17,14},{17,17,17,17,17,10,4},{17,17,17,21,21,21,10},{17,17,10,4,10,17,17},{17,17,10,4,4,4,4},{31,1,2,4,8,16,31},
-{0,0,0,0,0,6,6},{0,6,6,0,6,6,0},{1,2,2,4,8,8,16},{0,0,0,31,0,0,0}
+{0,0,0,0,0,6,6},{0,6,6,0,6,6,0},{1,2,2,4,8,8,16},{0,0,0,31,0,0,0},{0,4,4,31,4,4,0}
 };
 static void perf_line(GX2Texture *tex, int row, const char *text) {
     uint8_t *pixels = tex->surface.image;
@@ -254,8 +254,23 @@ static uint32_t hunt_edges(uint32_t b, int prompt, int trophy) {
     if (b & BTN_RIGHT) f |= IN_PAUSE;
     return f;
 }
-static void hud_update(GX2Texture *tex, const HudState *hud, uint32_t selection, const char *unarmed) {
+/* The GamePad map's zoom button: HUD texels 448..512 x 64..128, shown at
+ * 618..662 x 6..50 of the 854x480 screen. */
+static int zoom_hit(int x, int y) { return x >= 610 && x < 670 && y < 58; }
+static void hud_update(GX2Texture *tex, const HudState *hud, uint32_t selection, const char *unarmed, int zoomed) {
     memset(tex->surface.image, 0, tex->surface.imageSize);
+    for (int y = 64; y < 128; ++y) for (int x = 448; x < 512; ++x) {
+        int edge = x < 452 || x >= 508 || y < 68 || y >= 124;
+        uint8_t *p = (uint8_t *)tex->surface.image + (y * tex->surface.pitch + x) * 4;
+        p[0] = edge ? 242 : 0; p[1] = edge ? 217 : 0; p[2] = edge ? 51 : 0; p[3] = 255;
+    }
+    /* "-" zooms out; "+" back in. */
+    int glyph = (int)(strchr(glyph_chars, zoomed ? '+' : '-') - glyph_chars);
+    for (int y = 0; y < 7; ++y) for (int x = 0; x < 5; ++x) if (glyph_rows[glyph][y] & (1 << (4-x)))
+        for (int yy = 0; yy < 6; ++yy) for (int xx = 0; xx < 6; ++xx) {
+            uint8_t *p = (uint8_t *)tex->surface.image + ((75 + y*6 + yy) * tex->surface.pitch + 465 + x*6 + xx) * 4;
+            p[0] = 242; p[1] = 217; p[2] = 51; p[3] = 255;
+        }
     char line[40];
     static const char *names[6] = {"PISTOL","SHOTGUN","DB SHOTGUN","X-BOW","RIFLE","SNIPER"};
     int weapon=0, rank=hud->weapon; for(int i=0;i<6;++i) if(selection&(1u<<i)) { if(rank--==0) { weapon=i; break; } }
@@ -898,6 +913,11 @@ end_load:
     init_quad(&hud_pos, &hud_attr, &map_pos, hv, ha);
     init_quad(&panel_ammo_pos, &panel_ammo_attr, &map_pos, tav, taa);
     init_quad(&panel_kills_pos, &panel_kills_attr, &map_pos, tkv, tka);
+    /* The map's zoom button (zoom_hit). */
+    GX2RBuffer zoom_pos = {0}, zoom_attr = {0};
+    const float zv[24] = {0.4473f,0.975f,0,1, 0.5504f,0.975f,0,1, 0.5504f,0.7917f,0,1, 0.4473f,0.975f,0,1, 0.5504f,0.7917f,0,1, 0.4473f,0.7917f,0,1};
+    const float za[24] = {.875f,.5f,1,1, 1,.5f,1,1, 1,1,1,1, .875f,.5f,1,1, 1,1,1,1, .875f,1,1,1};
+    init_quad(&zoom_pos, &zoom_attr, &map_pos, zv, za);
     init_weapon_grid(&gun_icon_pos, &gun_icon_attr, &map_pos); init_quad(&call_icon_pos, &call_icon_attr, &map_pos, civ, cia);
     HudState prev_hud = {-1, 2, -1, -1, UINT32_MAX};
     /* The overlay (kill notice, trophy plaque, messages, questions): Rust
@@ -909,11 +929,11 @@ end_load:
         || !WHBGfxInitShaderAttribute(&overlay_shader, "aTexLight", 1, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32)
         || !WHBGfxInitFetchShader(&overlay_shader)) OSFatal("Overlay: shader setup failed");
     uint32_t overlay_sampler_location = overlay_shader.pixelShader->samplerVars[0].location;
-    GX2Texture overlay_tex; menu_texture(&overlay_tex, 1024, 512);
+    GX2Texture overlay_tex; menu_texture(&overlay_tex, 1024, 1024);
     memset(overlay_tex.surface.image, 0, overlay_tex.surface.imageSize);
     GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, overlay_tex.surface.image, overlay_tex.surface.imageSize);
     GX2RBuffer overlay_pos = {0}, overlay_uv = {0};
-    overlay_pos.flags = map_pos.flags; overlay_pos.elemSize = 4 * sizeof(float); overlay_pos.elemCount = 5 * 6;
+    overlay_pos.flags = map_pos.flags; overlay_pos.elemSize = 4 * sizeof(float); overlay_pos.elemCount = OVERLAY_QUADS * 6;
     overlay_uv = overlay_pos;
     if (!GX2RCreateBuffer(&overlay_pos) || !GX2RCreateBuffer(&overlay_uv)) OSFatal("Overlay: buffer allocation failed");
     uint32_t overlay_quads = 0;
@@ -924,7 +944,10 @@ end_load:
     static uint8_t saved[151 * 151 * 4]; int old_x = -1, old_z = -1;
     static struct { uint32_t offset; uint8_t rgba[4]; } old_blips[256 * 9];
     uint32_t old_blip_count = 0;
-    int full_map = 0, gamepad_game = 0, static_cache_enabled = 1;
+    int gamepad_game = 0, static_cache_enabled = 1;
+    /* R: the map over the TV's view (the PC's); the GamePad map's zoom. */
+    int tv_map = 0, drc_zoom = 0, hud_dirty = 1;
+    float drc_uv[24]; map_view_uv(512, 512, 256, drc_uv);
     StaticView static_view = {0};
     int resident_enabled = 1;
     struct { int attempted, active; float cell[2]; uint32_t range_count; } resident = {0};
@@ -976,13 +999,16 @@ end_load:
                 if (t & VPAD_BUTTON_PLUS) edges |= BTN_PLUS;
                 flags |= hunt_edges(edges, hud.prompt, trophy_room);
                 if (sample.trigger & VPAD_BUTTON_LEFT) { vsync = !vsync; GX2SetSwapInterval(vsync ? 1 : 0); }
-                if (sample.trigger & VPAD_BUTTON_R) full_map = !full_map;
+                if (sample.trigger & VPAD_BUTTON_R) tv_map = !tv_map;
                 if (sample.trigger & VPAD_BUTTON_MINUS) gamepad_game = !gamepad_game;
                 VPADTouchData touch = {0};
                 VPADGetTPCalibratedPointEx(VPAD_CHAN_0, VPAD_TP_854X480, &touch, &sample.tpNormal);
                 int down = touch.touched && touch.validity == VPAD_VALID;
-                if (down && !touch_down && (!gamepad_game || full_map)) {
-                    if (touch.x < 187) {
+                if (down && !touch_down && !gamepad_game) {
+                    float tx, tz;
+                    if (zoom_hit(touch.x, touch.y)) { drc_zoom = !drc_zoom; hud_dirty = 1; }
+                    else if (menu.teleport && map_view_touch(drc_uv, touch.x, touch.y, &tx, &tz)) c2_teleport(sim, tx * 256.0f, tz * 256.0f);
+                    else if (touch.x < 187) {
                         int slot=(touch.y/160)*2+(touch.x>=94);
                         int carried=0; for(int i=0;i<6;++i) if(carried_weapons&(1u<<i)) ++carried;
                         if(slot<carried) flags |= 64 | ((uint32_t)slot<<16);
@@ -1026,7 +1052,7 @@ end_load:
                         if (t & WPAD_PRO_BUTTON_PLUS) edges |= BTN_PLUS;
                         flags |= hunt_edges(edges, hud.prompt, trophy_room);
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_LEFT) { vsync = !vsync; GX2SetSwapInterval(vsync ? 1 : 0); }
-                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_R) full_map = !full_map;
+                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_R) tv_map = !tv_map;
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_MINUS) gamepad_game = !gamepad_game;
                     }
                 } else if (kerr != KPAD_ERROR_NO_SAMPLES) { pro_valid[channel] = 0; }
@@ -1090,7 +1116,7 @@ end_load:
                     static_view.valid = 0; resident.attempted = 0; resident.active = 0; terrain_resident.reset = 1;
                     pending_toggles = 0; accumulated = 0; previous_time = OSGetTime();
                     memset(&gamepad, 0, sizeof(gamepad)); memset(pro, 0, sizeof(pro)); memset(pro_valid, 0, sizeof(pro_valid));
-                    memset(&perf, 0, sizeof(perf)); touch_down = 0; full_map = 0;
+                    memset(&perf, 0, sizeof(perf)); touch_down = 0; tv_map = 0;
                     prev_hud = (HudState){-1, 2, -1, -1, UINT32_MAX};
                     continue;
                 }
@@ -1117,11 +1143,11 @@ end_load:
                 prev_call_page = call_page;
                 GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, icons_tex.surface.image, icons_tex.surface.imageSize);
             }
-            if (hud.call != prev_hud.call || hud.weapon != prev_hud.weapon || hud.ammo != prev_hud.ammo || hud.weapon_ready != prev_hud.weapon_ready || hud.kills != prev_hud.kills) { hud_update(&hud_tex, &hud, carried_weapons, menu.mode == MODE_TROPHY ? "TROPHY ROOM" : "OBSERVER"); prev_hud = hud; }
+            if (hud.call != prev_hud.call || hud.weapon != prev_hud.weapon || hud.ammo != prev_hud.ammo || hud.weapon_ready != prev_hud.weapon_ready || hud.kills != prev_hud.kills || hud_dirty) { hud_update(&hud_tex, &hud, carried_weapons, menu.mode == MODE_TROPHY ? "TROPHY ROOM" : "OBSERVER", drc_zoom); prev_hud = hud; hud_dirty = 0; }
             {
                 float *op = GX2RLockBufferEx(&overlay_pos, 0), *ou = GX2RLockBufferEx(&overlay_uv, 0);
                 if (!op || !ou) OSFatal("Overlay: buffer lock failed");
-                uint32_t r = c2_overlay_draw(ui, sim, overlay_tex.surface.image, overlay_tex.surface.pitch, op, ou);
+                uint32_t r = c2_overlay_draw(ui, sim, overlay_tex.surface.image, overlay_tex.surface.pitch, op, ou, tv_map ? OVERLAY_MAP : 0);
                 GX2RUnlockBufferEx(&overlay_pos, 0); GX2RUnlockBufferEx(&overlay_uv, 0);
                 overlay_quads = r & 255;
                 if (r & 256) GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, overlay_tex.surface.image, overlay_tex.surface.imageSize);
@@ -1129,8 +1155,8 @@ end_load:
             memset(&stream_upload, 0, sizeof(stream_upload));
             perf.tiled_atlases = tiled_atlases; perf.vsync = vsync; perf.static_cache_enabled = static_cache_enabled;
             int death_active = c2_death_active(sim);
-            int show_map[2] = {map_view_visible(death_active, full_map, gamepad_game, 0),
-                              map_view_visible(death_active, full_map, gamepad_game, 1)};
+            int show_map[2] = {map_view_visible(death_active, 0, gamepad_game, 0),
+                              map_view_visible(death_active, 0, gamepad_game, 1)};
             int world_visible = !show_map[0] || !show_map[1];
             uint32_t count = 0, object_count = 0, actor_count = 0, weapon_count = 0, water_count = 0, sky_count = 0;
             int static_reused = 0;
@@ -1255,15 +1281,26 @@ end_load:
                     float forward = ax * dir_x + az * dir_z;
                     float side = ax * -dir_z + az * dir_x;
                     float radius2 = ax * ax + az * az;
-                    // The diagnostic terrain window is 74 cells in each direction.
-                    // Tint a 90-degree forward sector, as on the 3DS mobile map.
-                    if (radius2 <= 5476.0f && forward >= 0 && side >= -forward && side <= forward) {
-                        pixel[0] = (uint8_t)((pixel[0] * 55 + 255 * 45) / 100);
-                        pixel[1] = (uint8_t)((pixel[1] * 55 + 217 * 45) / 100);
-                        pixel[2] = (uint8_t)((pixel[2] * 55 + 26 * 45) / 100);
+                    // The view range is 74 cells each way: a ring (wider
+                    // zoomed out, where a texel is half a screen pixel).
+                    int ring = drc_zoom ? radius2 >= 5256.25f && radius2 <= 5700.25f
+                                        : radius2 >= 5402.25f && radius2 <= 5550.25f;
+                    if (menu.map_mobile) {
+                        // The mobile game's: a yellow line and a forward sector.
+                        if (radius2 <= 5476.0f && forward >= 0 && side >= -forward * 0.8f && side <= forward * 0.8f) {
+                            pixel[0] = (uint8_t)((pixel[0] * 55 + 255 * 45) / 100);
+                            pixel[1] = (uint8_t)((pixel[1] * 55 + 217 * 45) / 100);
+                            pixel[2] = (uint8_t)((pixel[2] * 55 + 26 * 45) / 100);
+                        }
+                        if (ring) { pixel[0] = 255; pixel[1] = 217; pixel[2] = 26; }
+                    } else if (ring) {
+                        // The original's: 48 green dots.
+                        float turn = atan2f(az, ax) * (48.0f / 6.2831853f);
+                        if (turn - floorf(turn) < 0.3f) { pixel[0] = 0; pixel[1] = 143; pixel[2] = 0; }
                     }
-                    if (radius2 >= 5402.25f && radius2 <= 5550.25f) {
-                        pixel[0] = 255; pixel[1] = 217; pixel[2] = 26;
+                    // The hunter (red; yellow in the mobile look).
+                    if (radius2 <= (drc_zoom ? 9.0f : 4.0f)) {
+                        pixel[0] = menu.map_mobile ? 255 : 247; pixel[1] = menu.map_mobile ? 217 : 0; pixel[2] = menu.map_mobile ? 26 : 0;
                     }
                 }
                 RadarBlip blips[256]; uint32_t blip_count = c2_radar_blips(sim, blips, 256);
@@ -1287,7 +1324,8 @@ end_load:
             // The preceding frame wait protects these CPU writes. Both streams
             // are prepared before either display can submit map draws.
             for (int display = 0; display < 2; ++display) if (show_map[display]) {
-                float attrs[24]; map_view_uv(px, pz, display, attrs);
+                float attrs[24]; map_view_uv(px, pz, display == 1 && !drc_zoom ? 256.0f : 1024.0f, attrs);
+                if (display == 1) memcpy(drc_uv, attrs, sizeof(attrs));
                 float *ma = GX2RLockBufferEx(&map_attr[display], 0);
                 if (!ma) OSFatal("Map probe: UV lock failed");
                 memcpy(ma, attrs, sizeof(attrs));
@@ -1326,6 +1364,8 @@ end_load:
                         GX2RSetAttributeBuffer(&panel_ammo_pos, 0, panel_ammo_pos.elemSize, 0); GX2RSetAttributeBuffer(&panel_ammo_attr, 1, panel_ammo_attr.elemSize, 0);
                         GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
                         GX2RSetAttributeBuffer(&panel_kills_pos, 0, panel_kills_pos.elemSize, 0); GX2RSetAttributeBuffer(&panel_kills_attr, 1, panel_kills_attr.elemSize, 0);
+                        GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
+                        GX2RSetAttributeBuffer(&zoom_pos, 0, zoom_pos.elemSize, 0); GX2RSetAttributeBuffer(&zoom_attr, 1, zoom_attr.elemSize, 0);
                         GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
                     }
                     if (display == 0) WHBGfxFinishRenderTV(); else WHBGfxFinishRenderDRC();
@@ -1431,7 +1471,7 @@ end_load:
             GX2SetTVEnable(TRUE); GX2SetDRCEnable(TRUE);
             perf.present += OSGetTime() - mark;
             perf.wait += frame_wait + draw_wait; perf.frame += OSGetTime() - frame_start; perf.frames++;
-            performance_frame(&perf, &before, frame_start, hunt_seed, full_map, gamepad_game,
+            performance_frame(&perf, &before, frame_start, hunt_seed, tv_map, gamepad_game,
                 sim_ticks, gun_ticks, map_cache_ticks, overlay_ticks, frame_wait, draw_wait, gpu_tv, gpu_drc, vsync,
                 count, object_count, actor_count, weapon_count, water_count, sky_count, death_active, tiled_atlases, static_cache_enabled, static_reused, resident_enabled, resident.active && world_visible,
                 world_visible ? (resident.active ? resident.range_count : (object_count ? 1u : 0u)) : 0u, scenery_uploaded);
@@ -1461,6 +1501,7 @@ end_load:
     WHBGfxFreeShaderGroup(&overlay_shader);
     GX2RDestroyBufferEx(&panel_ammo_pos, 0); GX2RDestroyBufferEx(&panel_ammo_attr, 0);
     GX2RDestroyBufferEx(&panel_kills_pos, 0); GX2RDestroyBufferEx(&panel_kills_attr, 0);
+    GX2RDestroyBufferEx(&zoom_pos, 0); GX2RDestroyBufferEx(&zoom_attr, 0);
     GX2RDestroyBufferEx(&gun_icon_pos, 0); GX2RDestroyBufferEx(&gun_icon_attr, 0); GX2RDestroyBufferEx(&call_icon_pos, 0); GX2RDestroyBufferEx(&call_icon_attr, 0); free(icons_tex.surface.image);
     GX2RDestroyBufferEx(&map_pos, 0); GX2RDestroyBufferEx(&map_attr[0], 0); GX2RDestroyBufferEx(&map_attr[1], 0); free(map_tex.surface.image);
     free(tiled_atlas.surface.image); free(tiled_object_atlas.surface.image); free(tiled_actor_atlas.surface.image);

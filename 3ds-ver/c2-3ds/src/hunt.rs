@@ -181,6 +181,8 @@ pub struct Setup {
     /// map.
     pub map_mobile: bool,
     pub teleport: bool,
+    /// Settings: the controls along the bottom of the top screen.
+    pub hints: bool,
     pub random_ambients: bool,
     /// The crouch button (setting).
     pub crouch_key: crate::settings::CrouchKey,

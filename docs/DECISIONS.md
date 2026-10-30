@@ -2,6 +2,29 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-30 — Wii U: warmer dawn, the PC's map on R, map settings, button hints (Wii U and 3DS)
+
+Dawn on the Wii U is tinted warmer than the original's slot-0 light map: the
+world texels and fog are scaled by (282, 266, 210)/256 (`DAWN_TINT` in
+`lib.rs`), as the owner found the dawn too pale on a TV. This is a Wii U-only
+look; the PC and 3DS draw the original's dawn unchanged.
+
+R now draws the PC's map over the TV view (`MAPFRAME.TGA` with the area's
+overview at (11, 23), centred, at twice the original's size on 1080 lines)
+instead of switching the TV to the GamePad's full-screen map. Settings gain
+the PC and 3DS options: "Map look" (the original's green dotted range and red
+hunter, or the mobile game's yellow frame, line and view cone; mobile is the
+default as before) and "Teleport" (off by default). With teleport on, a tap
+on the GamePad map starts the core's teleport (5 s, then a minute's
+cooldown) straight away; the 3DS asks for a confirm tap because its map is
+small, the GamePad's is not. A button on the GamePad map zooms out to the
+whole area and back.
+
+"Button hints" (off by default) shows the controls along the bottom of the
+view as the PC's hint bar does: on the Wii U in the overlay, on the 3DS on
+the top screen (two lines, following the crouch-button setting). They hide
+over a notice, a question, the pause, the map and the binoculars' readout.
+
 ## 2026-10-30 — Wii U: trophies, kill notice, survival, trophy room, exit prompt
 
 The Wii U had no way to leave a hunt but HOME, so nothing could be kept. Now

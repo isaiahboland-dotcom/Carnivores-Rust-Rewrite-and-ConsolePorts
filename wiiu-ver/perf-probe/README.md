@@ -128,7 +128,8 @@ cached between redraws.
   focused item's original picture and description (`MENU/TXT`) are shown on
   the right; the bottom line sums up the picks.
 - Settings: dinosaur run speed (50-100%), ambient animals, blood, death
-  camera, animal descriptions in metric or US units.
+  camera, animal descriptions in metric or US units, the map look (classic
+  or mobile), teleport (tap the GamePad map) and button hints.
 - Controls: D-pad or left stick moves, A picks, B goes back, L/R change the
   setup page, + starts the hunt; or tap the GamePad.
 
@@ -146,11 +147,18 @@ original's format, with its character numbers, so it moves to and from the PC
 and the 3DS) and every kill to `trophy00.rec`; dying keeps only the kills, as
 on the PC. A kill shows the PC's notice (bottom right) or, for a trophy, its
 plaque (`TROPHY_G.TGA`); survival shows the wave. These are drawn by
-`src/overlay.rs` into a 1024x512 texture and blended over the view with the
+`src/overlay.rs` into a 1024x1024 texture and blended over the view with the
 menu shader (which now passes alpha). In the trophy room ZL / ZR move the
 trophy in front to the previous or next free stand, X removes it, Y locks it,
-and + leaves (saving moves and removals). The install now has 147 files (the
-trophy room's map and the two plaques).
+and + leaves (saving moves and removals). The install now has 148 files (the
+trophy room's map, the two plaques and the PC map's frame `MAPFRAME.TGA`).
+
+R shows the PC's map over the TV view (the overlay's map region; the dots
+and the mobile look's cone repaint as they move). The GamePad map has a zoom
+button at its top right ("-" shows the whole area, "+" goes back), and with
+teleport on a tap elsewhere on it teleports there after 5 s. With button
+hints on, the controls run along the bottom of the TV view. Dawn is tinted
+warmer than the original's (a Wii U-only look; see `docs/DECISIONS.md`).
 
 The host test `pc-ver/crates/c2-core/tests/wiiu_menu.rs` drives every page;
 with `C2_MENU_SHOTS=DIR` (and `C2_MENU_FONT=FILE.ttf`, `C2_ORIGINAL_HUNTDAT`)
@@ -169,8 +177,8 @@ L stick moves, R stick looks, A jumps, B toggles sprint, D-pad up toggles
 crouch, ZL draws/holsters the pistol and ZR fires. D-pad down cycles through
 selected targets' calls; X or the GamePad call picture uses that call. The
 GamePad picture updates to match. The HUD shows ammo with no health meter
-or crosshair. Tapping the pistol picture toggles it. R toggles the full map;
-minus switches the GamePad between the map and gameplay.
+or crosshair. Tapping the pistol picture toggles it. R toggles the map over
+the TV view; minus switches the GamePad between the map and gameplay.
 
 AX audio now includes pistol and animal sounds, all nine target calls,
 area loops/random sounds, dry/water footsteps, landing sounds, underwater
@@ -240,7 +248,7 @@ not guaranteed real-hardware timings. Vertex counts are from the latest frame.
   synchronization, and frame pacing. It is not pure GPU time.
 
 The overlay itself costs some time and the frame average includes its periodic
-update. It disappears when the TV full map is open. R toggles that map; minus
+update. R toggles the map over the TV view; minus
 switches the GamePad between map and gameplay. Movement is left stick, look is
 right stick, A jumps, B toggles sprint, and D-pad up toggles crouch. This death-screen update
 has not yet been visually verified in Cemu or tested on hardware.

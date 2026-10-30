@@ -11,12 +11,12 @@ use core::cell::RefCell;
 use alloc::{format, string::String, vec::Vec};
 
 /// Files the menu reads, in slot order: pictures, then descriptions.
-pub const FILES: [&str; 65] = [
+pub const FILES: [&str; 66] = [
     "MENUM.TGA", "AREA1.TGA", "AREA2.TGA", "AREA3.TGA", "AREA4.TGA", "AREA5.TGA",
     "DINO1.TGA", "DINO2.TGA", "DINO3.TGA", "DINO4.TGA", "DINO5.TGA", "DINO6.TGA",
     "DINO7.TGA", "DINO8.TGA", "DINO9.TGA", "WEAPON1.TGA", "WEAPON2.TGA", "WEAPON3.TGA",
     "WEAPON4.TGA", "WEAPON5.TGA", "WEAPON6.TGA", "EQUIP1.TGA", "EQUIP2.TGA", "EQUIP3.TGA",
-    "EQUIP4.TGA", "TROPHY_G.TGA", "TROPHY.TGA",
+    "EQUIP4.TGA", "TROPHY_G.TGA", "TROPHY.TGA", "MAPFRAME.TGA",
     "AREA1.TXT", "AREA2.TXT", "AREA3.TXT", "AREA4.TXT", "AREA5.TXT",
     "DINO1.TXM", "DINO2.TXM", "DINO3.TXM", "DINO4.TXM", "DINO5.TXM", "DINO6.TXM",
     "DINO7.TXM", "DINO8.TXM", "DINO9.TXM",
@@ -26,7 +26,7 @@ pub const FILES: [&str; 65] = [
     "CAMOFLAG.NFO", "RADAR.NFO", "SCENT.NFO", "DOUBLE.NFO", "TRANQ.NFO", "OBSERVE.NFO",
     "DAY1.NFO", "DAY2.NFO", "DAY3.NFO",
 ];
-pub const PICTURES: usize = 27;
+pub const PICTURES: usize = 28;
 const PIC_MENU: usize = 0;
 const PIC_AREA: usize = 1;
 const PIC_DINO: usize = 6;
@@ -35,6 +35,8 @@ const PIC_EQUIP: usize = 21;
 /// The kill's plaque in a hunt, and a trophy's in the trophy room.
 pub const PIC_PLAQUE_HUNT: usize = 25;
 pub const PIC_PLAQUE_ROOM: usize = 26;
+/// The original's map frame (`DrawHMap`), the overview painted in.
+pub const PIC_MAP_FRAME: usize = 27;
 const TXT_AREA: usize = 0;
 const TXT_DINO_METRIC: usize = 5;
 const TXT_DINO_US: usize = 14;
@@ -134,6 +136,9 @@ pub enum Id {
     Blood,
     DeathCam,
     Units,
+    MapMobile,
+    Teleport,
+    Hints,
     Restart,
     MainMenu,
 }
@@ -181,7 +186,7 @@ const SETUP: [Page; 3] = [Page::Area, Page::Animals, Page::Gear];
 const BACK: Rect = rect(32.0, 648.0, 200.0, 60.0);
 const NEXT: Rect = rect(1048.0, 648.0, 200.0, 60.0);
 const INFO: Rect = rect(800.0, 100.0, 448.0, 524.0);
-const SETTINGS_ROWS: [Id; 5] = [Id::RunSpeed, Id::Ambient, Id::Blood, Id::DeathCam, Id::Units];
+const SETTINGS_ROWS: [Id; 8] = [Id::RunSpeed, Id::Ambient, Id::Blood, Id::DeathCam, Id::Units, Id::MapMobile, Id::Teleport, Id::Hints];
 
 const SQRT3: f32 = 1.732_050_8;
 
@@ -346,9 +351,9 @@ impl Menu {
     pub fn settings_text(&self) -> String {
         let c = &self.choice;
         format!(
-            "area={}\ntime={}\nanimals={}\nweapons={}\nradar={}\ncamo={}\nscent={}\ndouble_ammo={}\ntranq={}\nobserver={}\nrun_pct={}\nblood={}\ndeath_anim={}\nambient={}\nunits_us={}\nsurvival={}\n",
+            "area={}\ntime={}\nanimals={}\nweapons={}\nradar={}\ncamo={}\nscent={}\ndouble_ammo={}\ntranq={}\nobserver={}\nrun_pct={}\nblood={}\ndeath_anim={}\nambient={}\nunits_us={}\nsurvival={}\nmap_mobile={}\nteleport={}\nhints={}\n",
             c.area, c.time, c.animals, c.weapons, c.radar, c.camo, c.scent, c.double_ammo, c.tranq,
-            c.observer, c.run_pct, c.blood, c.death_anim, c.ambient, c.units_us, c.survival
+            c.observer, c.run_pct, c.blood, c.death_anim, c.ambient, c.units_us, c.survival, c.map_mobile, c.teleport, c.hints
         )
     }
 
@@ -376,6 +381,9 @@ impl Menu {
                 "ambient" => &mut c.ambient,
                 "units_us" => &mut c.units_us,
                 "survival" => &mut c.survival,
+                "map_mobile" => &mut c.map_mobile,
+                "teleport" => &mut c.teleport,
+                "hints" => &mut c.hints,
                 _ => continue,
             };
             *field = v;
@@ -386,7 +394,7 @@ impl Menu {
         c.animals &= 0x1ff;
         c.weapons &= 0x3f;
         c.run_pct = (c.run_pct / 10 * 10).clamp(50, 100);
-        for f in [&mut c.radar, &mut c.camo, &mut c.scent, &mut c.double_ammo, &mut c.tranq, &mut c.observer, &mut c.blood, &mut c.death_anim, &mut c.ambient, &mut c.units_us] {
+        for f in [&mut c.radar, &mut c.camo, &mut c.scent, &mut c.double_ammo, &mut c.tranq, &mut c.observer, &mut c.blood, &mut c.death_anim, &mut c.ambient, &mut c.units_us, &mut c.map_mobile, &mut c.teleport, &mut c.hints] {
             *f = (*f != 0) as u32;
         }
     }
@@ -432,7 +440,7 @@ impl Menu {
             }
             Page::Settings => {
                 for (i, id) in SETTINGS_ROWS.into_iter().enumerate() {
-                    v.push((id, rect(200.0, 110.0 + i as f32 * 84.0, 880.0, 68.0)));
+                    v.push((id, rect(200.0, 100.0 + i as f32 * 60.0, 880.0, 52.0)));
                 }
             }
             Page::Death => {
@@ -729,6 +737,9 @@ impl Menu {
             Id::Blood => c.blood ^= 1,
             Id::DeathCam => c.death_anim ^= 1,
             Id::Units => c.units_us ^= 1,
+            Id::MapMobile => c.map_mobile ^= 1,
+            Id::Teleport => c.teleport ^= 1,
+            Id::Hints => c.hints ^= 1,
             Id::Restart => self.action = Action::Restart,
             Id::MainMenu => self.action = Action::MainMenu,
         }
@@ -1006,6 +1017,9 @@ impl Menu {
                 Id::Blood => ("Blood", String::from(flag(ch.blood)), "Blood sprays and the trails of wounded animals."),
                 Id::DeathCam => ("Death camera", String::from(flag(ch.death_anim)), "Off: straight to the restart screen when you die."),
                 Id::Units => ("Animal descriptions", String::from(if ch.units_us != 0 { "US units" } else { "Metric" }), "Sizes and weights in the animal descriptions."),
+                Id::MapMobile => ("Map look", String::from(if ch.map_mobile != 0 { "Mobile" } else { "Original" }), "Mobile: a yellow frame, ring and view cone. Original: the PC game's dotted ring."),
+                Id::Teleport => ("Teleport", String::from(flag(ch.teleport)), "Tap a spot on the GamePad map to go there in 5 s, then wait a minute. Not in survival."),
+                Id::Hints => ("Button hints", String::from(flag(ch.hints)), "The hunt's controls along the bottom of the TV."),
                 Id::Back => {
                     self.button(c, r, "Back", focused, true);
                     continue;
@@ -1014,11 +1028,11 @@ impl Menu {
             };
             c.fill(r, if focused { [52, 70, 44, 255] } else { PANEL });
             c.frame(r, if focused { 4.0 } else { 2.0 }, if focused { WHITE } else { EDGE });
-            c.text(&self.font, r.x + 24.0, r.y + (r.h - 28.0) * 0.5, 28.0, WHITE, label);
-            let w = measure(&self.font, 28.0, &value);
-            c.text(&self.font, r.x + r.w - 24.0 - w, r.y + (r.h - 28.0) * 0.5, 28.0, GOLD, &value);
+            c.text(&self.font, r.x + 24.0, r.y + (r.h - 26.0) * 0.5, 26.0, WHITE, label);
+            let w = measure(&self.font, 26.0, &value);
+            c.text(&self.font, r.x + r.w - 24.0 - w, r.y + (r.h - 26.0) * 0.5, 26.0, GOLD, &value);
             if focused {
-                c.text_centered(&self.font, rect(0.0, 548.0, WIDTH, 30.0), 22.0, TEXT, help);
+                c.text_centered(&self.font, rect(0.0, 586.0, WIDTH, 30.0), 22.0, TEXT, help);
             }
         }
         c.fill(rect(0.0, 632.0, WIDTH, 2.0), EDGE);
