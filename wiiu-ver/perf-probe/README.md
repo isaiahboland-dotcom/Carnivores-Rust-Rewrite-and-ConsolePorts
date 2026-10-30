@@ -8,9 +8,9 @@ the display re-enable calls after the loading console shuts down.
 
 Gameplay was reported below 30 FPS. The SD log contains loading results but
 no gameplay timing samples, so measured bottlenecks have not been ranked yet.
-Scope zoom is not connected to rendering, and gun depth is disabled, matching
-overlapping internal geometry. (GamePad weapon taps and the 512x256 menu were
-fixed on 2026-10-30.)
+Scope zoom is not connected to rendering. (GamePad weapon taps, the 512x256
+menu and the gun drawn without depth, which showed the shotgun shells and the
+pistol arm through the gun, were fixed on 2026-10-30.)
 
 See the [hardware review](../../docs/WIIU-HARDWARE-REVIEW.md) for evidence,
 optimization candidates, required profiling, and the prioritized fix list.

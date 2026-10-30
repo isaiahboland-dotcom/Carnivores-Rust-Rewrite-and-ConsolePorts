@@ -1145,6 +1145,13 @@ end_load:
                 if (display == 0) WHBGfxBeginRenderTV(); else WHBGfxBeginRenderDRC();
                 if (show_map[display]) WHBGfxClearColor(0.06f, 0.16f, 0.09f, 1.0f);
                 else WHBGfxClearColor(fog_color[0], fog_color[1], fog_color[2], 1.0f);
+                /* Set after the clear, which restores the context state. The
+                 * world uses depth 0.02..1; the view model gets the front
+                 * 0..0.02 with its own depth test (as on the 3DS), so its
+                 * inner parts stay hidden and the world never covers it. */
+                GX2ColorBuffer *target = display == 0 ? WHBGfxGetTVColourBuffer() : WHBGfxGetDRCColourBuffer();
+                float target_w = (float)target->surface.width, target_h = (float)target->surface.height;
+                GX2SetViewport(0.0f, 0.0f, target_w, target_h, 0.02f, 1.0f);
                 if (show_map[display]) {
                     GX2SetDepthOnlyControl(FALSE, FALSE, GX2_COMPARE_FUNC_ALWAYS);
                     GX2SetCullOnlyControl(GX2_FRONT_FACE_CCW, FALSE, FALSE);
@@ -1223,12 +1230,14 @@ end_load:
                     } else GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, water_count, 0, 1);
                 }
                 if (weapon_count) {
-                    GX2SetDepthOnlyControl(FALSE, FALSE, GX2_COMPARE_FUNC_ALWAYS);
+                    GX2SetViewport(0.0f, 0.0f, target_w, target_h, 0.0f, 0.02f);
+                    GX2SetDepthOnlyControl(TRUE, TRUE, GX2_COMPARE_FUNC_LESS);
                     GX2SetPixelTexture(tiled_atlases ? &tiled_actor_atlas : &actor_atlas, sampler_location);
                     GX2RSetAttributeBuffer(&weapon_positions, 0, weapon_positions.elemSize, 0);
                     GX2RSetAttributeBuffer(&weapon_attrs, 1, weapon_attrs.elemSize, 0);
                     GX2RSetAttributeBuffer(&weapon_fog, 2, weapon_fog.elemSize, 0);
                     GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, weapon_count, 0, 1);
+                    GX2SetViewport(0.0f, 0.0f, target_w, target_h, 0.02f, 1.0f);
                 }
                 GX2SetDepthOnlyControl(FALSE, FALSE, GX2_COMPARE_FUNC_ALWAYS);
                 GX2SetPixelTexture(&hud_tex, sampler_location); GX2SetPixelSampler(&map_sampler, sampler_location);
