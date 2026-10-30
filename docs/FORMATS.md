@@ -95,13 +95,13 @@ Fixed size: **14,155,776 bytes**. All grids row-major `[y][x]`.
 | 3 | TMap2 — second texture index | u16 | 1024² |
 | 4 | OMap — object index (RSC model), 255 = none | u8 | 1024² |
 | 5 | FMap — cell flags | u16 | 1024² |
-| 6 | LMap ×3 — light map: day, dusk, night | u8 | 3×1024² |
+| 6 | LMap ×3 — light map: dawn ("dusk"), day, night | u8 | 3×1024² |
 | 7 | WMap — water index | u8 | 1024² |
 | 8 | HMapO — object height | u8 | 1024² |
 | 9 | FogsMap — fog zone | u8 | 512² |
 | 10 | AmbMap — ambient zone | u8 | 512² |
 
-Time of day (`OptDayNight`): 0 day, 1 dusk, 2 night. The engine reads only the
+Time of day (`OptDayNight`): 0 dawn (the code's "dusk"), 1 day, 2 night. The engine reads only the
 matching `LMap` layer. After loading, `FogsMap` cells are set to 1 where any
 covered height is below fog 1's `YBegin` (if `YBegin > 1`).
 
@@ -112,7 +112,7 @@ i32 FadeRGB[3][3]                        [time of day][r,g,b]
 i32 TransRGB[3][3]
 tc × u16 texture[128×128]                terrain textures (LoadTexture)
 mc × Object
-u16 sky[3][256×256]                      day, dusk, night (LoadSky)
+u16 sky[3][256×256]                      dawn, day, night (LoadSky)
 u8  skymap[128×128]                      (LoadSkyMap)
 i32 FgCount;  TFogEntity[FgCount]        stored as FogsList[1..]; entry 0 = no fog
 i32 RdCount;  RdCount × { i32 len; u8 pcm[len] }           random sounds

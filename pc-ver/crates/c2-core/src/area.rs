@@ -28,10 +28,13 @@ const LANDING: u8 = 254;
 /// `WMap` value meaning "no water".
 pub const NO_WATER: u8 = 255;
 
+/// `OptDayNight`, the index of the light map, sky and fade colour: 0 is the
+/// menu's "Dawn" (low sun, the dimmer light map, a warm sky; the code calls
+/// it dusk), 1 full day, 2 night.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimeOfDay {
-    Day = 0,
-    Dusk = 1,
+    Dusk = 0,
+    Day = 1,
     Night = 2,
 }
 
@@ -39,8 +42,8 @@ impl TimeOfDay {
     /// `Sun3dPos`: sun (moon at night) offset from the camera (`Game.cpp`).
     pub fn sun_pos(self) -> [f32; 3] {
         match self {
-            TimeOfDay::Day => [-4048.0, 2048.0, -4048.0],
-            TimeOfDay::Dusk => [-2048.0, 4048.0, -2048.0],
+            TimeOfDay::Dusk => [-4048.0, 2048.0, -4048.0],
+            TimeOfDay::Day => [-2048.0, 4048.0, -2048.0],
             TimeOfDay::Night => [3048.0, 3048.0, 3048.0],
         }
     }
