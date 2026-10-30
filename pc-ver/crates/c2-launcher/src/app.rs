@@ -629,7 +629,22 @@ impl Launcher {
         let (Some(base), Some(out)) = (self.cfg.base.clone(), self.cfg.wiiu.out.clone()) else {
             return;
         };
-        match crate::wiiu::steps(&base, &app, &out) {
+        let format = self.cfg.wiiu.format;
+        let wuhbtool = if format == crate::config::WiiUFormat::Wuhb {
+            match find_tool(crate::wiiu::WUHB_TOOL, self.cfg.tools.as_deref()) {
+                Some(tool) => Some(tool),
+                None => {
+                    self.note = Some((
+                        "WUHB output needs wuhbtool from devkitPro wut-tools (install it or set the tools folder in Settings).".into(),
+                        RED,
+                    ));
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+        match crate::wiiu::steps(&base, &app, &out, format, wuhbtool.as_deref()) {
             Ok(steps) => {
                 self.job = Some(Job::start("Building the Wii U install", steps));
             }
@@ -1054,8 +1069,8 @@ impl Launcher {
         help(
             ui,
             &format!(
-                "Puts the app and your game's files on the SD card, in wiiu/apps/{}/; start it \
-                 from the Homebrew Launcher. The Wii U version plays the original Carnivores 2 \
+                "Puts the app and your game's files on the SD card, in wiiu/apps/{}/. Choose \
+                 WUHB for Aroma's Wii U Menu or RPX for the Homebrew Launcher. The Wii U version plays the original Carnivores 2 \
                  for now: the rest below comes as the port gets it.",
                 crate::wiiu::SD_FOLDER
             ),
@@ -1178,10 +1193,39 @@ impl Launcher {
                     );
                 }
             }
-            soon(
-                ui,
-                "Also make a .wuhb (shows on the Wii U menu, with your icon)",
-            );
+            ui.horizontal(|ui| {
+                ui.label("Output:");
+                changed |= ui
+                    .radio_value(
+                        &mut self.cfg.wiiu.format,
+                        crate::config::WiiUFormat::Wuhb,
+                        "WUHB (Aroma / Wii U Menu)",
+                    )
+                    .changed();
+                changed |= ui
+                    .radio_value(
+                        &mut self.cfg.wiiu.format,
+                        crate::config::WiiUFormat::Rpx,
+                        "RPX (Homebrew Launcher)",
+                    )
+                    .changed();
+            });
+            if self.cfg.wiiu.format == crate::config::WiiUFormat::Wuhb {
+                match find_tool(crate::wiiu::WUHB_TOOL, self.cfg.tools.as_deref()) {
+                    Some(p) => {
+                        ui.label(
+                            RichText::new(format!("WUHB packager: {}", p.display())).color(TEXT),
+                        );
+                    }
+                    None => {
+                        ui.label(RichText::new("wuhbtool not found (install devkitPro wut-tools or set the tools folder in Settings)").color(RED));
+                    }
+                }
+                help(
+                    ui,
+                    "The WUHB contains the app; the original game files are copied beside it.",
+                );
+            }
         });
         if changed {
             self.save();

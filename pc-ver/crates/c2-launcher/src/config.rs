@@ -195,12 +195,21 @@ impl Default for ThreeDs {
     }
 }
 
-/// The Wii U build (`crate::wiiu`): only where the SD card is, for now.
+/// The Wii U build (`crate::wiiu`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(default)]
 pub struct WiiU {
     /// The SD card (or any folder to copy from by hand).
     pub out: Option<PathBuf>,
+    /// RPX for Homebrew Launcher or WUHB for Aroma's Wii U Menu.
+    pub format: WiiUFormat,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum WiiUFormat {
+    Rpx,
+    #[default]
+    Wuhb,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]

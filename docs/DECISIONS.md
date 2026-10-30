@@ -211,13 +211,17 @@ tabs. It lives in `c2-launcher` beside the 3DS builder rather than under
 stays in `wiiu-ver/`.
 - What it builds today is what the Wii U app reads: the original game's
   files as they are (no cooked pack, no balance), flattened into the fixed SD
-  folder `wiiu/apps/carnivores-probe/` (`main.c`), with the RPX as
-  `carnivores-probe.rpx`. The file list (`c2_launcher::wiiu::assets`, 102
+  folder `wiiu/apps/carnivores-probe/` (`main.c`). The launcher can output
+  `carnivores-probe.rpx` for Homebrew Launcher or package that RPX as
+  `carnivores-probe.wuhb` for Aroma using devkitPro's `wuhbtool` from
+  `wut-tools`. The game files remain beside the executable because the
+  current runtime reads them from that SD folder. The file list
+  (`c2_launcher::wiiu::assets`, 102
   files) mirrors `wiiu-ver/perf-probe/stage_assets.py`; change both together.
   Files are found in any case. A base that isn't plain Carnivores 2 (Ice Age,
   a Modder's Edition style game) is refused for now.
-- Add-ons, overlays, standalones, Ice Age, APK imports, balance and a `.wuhb`
-  show as greyed "not on the Wii U yet" lines; the lists the user sets up are
+- Add-ons, overlays, standalones, Ice Age, APK imports and balance show as
+  greyed "not on the Wii U yet" lines; the lists the user sets up are
   kept, so the build can use them once the port reads them. The install name
   is fixed until the app reads its folder from where it was started.
 - The Wii U builder has no Balance tab (nothing would apply it).

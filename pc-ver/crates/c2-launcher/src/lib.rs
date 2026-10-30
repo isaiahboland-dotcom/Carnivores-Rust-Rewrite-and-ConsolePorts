@@ -49,7 +49,7 @@ pub mod theme {
 
 /// A tool the launcher runs (`c2-pc`, `c2-cook`, `c2-3ds.3dsx`, and for
 /// `.cia` builds `c2-3ds.elf`, `makerom`, `bannertool`; the Wii U app
-/// `c2-wiiu-perf-probe.rpx`): in the tools
+/// `c2-wiiu-perf-probe.rpx` and (for WUHB output) `wuhbtool`): in the tools
 /// folder if set, beside the launcher, or (working from the source tree) in
 /// the other workspace's build folder or the tree's top folder.
 pub fn find_tool(name: &str, tools: Option<&std::path::Path>) -> Option<PathBuf> {
@@ -75,6 +75,12 @@ pub fn find_tool(name: &str, tools: Option<&std::path::Path>) -> Option<PathBuf>
             dirs.push(root.to_path_buf());
         }
     }
+    if let Some(devkitpro) = std::env::var_os("DEVKITPRO").map(PathBuf::from) {
+        dirs.push(devkitpro.join("tools/bin"));
+    }
+    dirs.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
     dirs.into_iter()
         .map(|d| d.join(&file))
         .find(|p| p.is_file())

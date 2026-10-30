@@ -15,6 +15,7 @@ pub const SD_FOLDER: &str = "carnivores-probe";
 
 /// The Wii U app as the Wii U build makes it (`wiiu-ver/perf-probe`).
 pub const APP: &str = "c2-wiiu-perf-probe.rpx";
+pub const WUHB_TOOL: &str = "wuhbtool";
 
 /// The files the Wii U app loads, under `HUNTDAT/` (the list in
 /// `wiiu-ver/perf-probe/stage_assets.py`; keep the two the same).
@@ -80,7 +81,13 @@ fn find_path_ci(dir: &Path, rel: &str) -> Option<PathBuf> {
 
 /// The copies for an install on the SD card `sd` from the game folder
 /// `game`, the app last; or the files the game folder lacks.
-pub fn steps(game: &Path, app: &Path, sd: &Path) -> Result<Vec<Step>, Vec<String>> {
+pub fn steps(
+    game: &Path,
+    app: &Path,
+    sd: &Path,
+    format: crate::config::WiiUFormat,
+    wuhbtool: Option<&Path>,
+) -> Result<Vec<Step>, Vec<String>> {
     let Some(huntdat) = find_ci(game, "HUNTDAT") else {
         return Err(vec!["HUNTDAT".into()]);
     };
@@ -102,10 +109,27 @@ pub fn steps(game: &Path, app: &Path, sd: &Path) -> Result<Vec<Step>, Vec<String
     if !missing.is_empty() {
         return Err(missing);
     }
-    steps.push(Step::Copy {
-        from: app.to_path_buf(),
-        to: dir.join(format!("{SD_FOLDER}.rpx")),
-    });
+    match format {
+        crate::config::WiiUFormat::Rpx => steps.push(Step::Copy {
+            from: app.to_path_buf(),
+            to: dir.join(format!("{SD_FOLDER}.rpx")),
+        }),
+        crate::config::WiiUFormat::Wuhb => {
+            let Some(tool) = wuhbtool else {
+                return Err(vec![format!("{WUHB_TOOL} (from devkitPro wut-tools)")]);
+            };
+            steps.push(Step::Run {
+                program: tool.to_path_buf(),
+                args: vec![
+                    app.display().to_string(),
+                    dir.join(format!("{SD_FOLDER}.wuhb")).display().to_string(),
+                    "--name=Carnivores 2".into(),
+                    "--short-name=C2".into(),
+                    "--author=Carnivores Rust Rewrite".into(),
+                ],
+            });
+        }
+    }
     Ok(steps)
 }
 
@@ -139,10 +163,14 @@ mod tests {
         let app = root.join(APP);
         let _ = std::fs::write(&app, b"rpx");
         let sd = root.join("sd");
-        let n = steps(&game, &app, &sd).map(|s| s.len()).unwrap_or(0);
+        let n = steps(&game, &app, &sd, crate::config::WiiUFormat::Rpx, None)
+            .map(|s| s.len())
+            .unwrap_or(0);
         assert_eq!(n, assets().len() + 1);
         let _ = std::fs::remove_file(huntdat.join("tirex.car"));
-        let missing = steps(&game, &app, &sd).err().unwrap_or_default();
+        let missing = steps(&game, &app, &sd, crate::config::WiiUFormat::Rpx, None)
+            .err()
+            .unwrap_or_default();
         assert_eq!(missing, vec!["TIREX.CAR".to_string()]);
         let _ = std::fs::remove_dir_all(&root);
     }
