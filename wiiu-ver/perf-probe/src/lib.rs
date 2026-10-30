@@ -4,6 +4,7 @@ mod hunt_setup;
 mod static_scene;
 mod ui;
 mod menu;
+mod overlay;
 use static_scene::{TerrainCache, SceneryCandidates, visible_sphere};
 use alloc::{boxed::Box, vec::Vec};
 use c2_core::{
@@ -93,6 +94,35 @@ struct Simulation {
     call_sounds: Vec<Vec<u8>>,
     fx_sounds: Vec<Vec<u8>>,
     panel_icons: Vec<c2_formats::tga::Picture>,
+    /// The kill notice and messages over the world, and what is drawn.
+    notice: overlay::Notice,
+    overlay: overlay::Overlay,
+    /// The trophy room's question waiting for A / B.
+    ask: Option<overlay::Ask>,
+    /// The trophies as saved (this port's numbering): a restart after dying
+    /// starts from them.
+    saved_room: c2_formats::sav::Save,
+    /// Y at the exit prompt.
+    restart: bool,
+}
+
+/// Input bits beyond the movement ones (main.c): the exit prompt (PLUS) and
+/// its answers (A / B while a question shows), and the trophy room's buttons.
+const ESCAPE: u32 = 1 << 13;
+const YES: u32 = 1 << 14;
+const NO: u32 = 1 << 15;
+const TROPHY_PREV: u32 = 1 << 20;
+const TROPHY_NEXT: u32 = 1 << 21;
+const TROPHY_REMOVE: u32 = 1 << 22;
+const TROPHY_LOCK: u32 = 1 << 23;
+/// Y at the exit prompt: start this hunt over, unsaved.
+const RESTART: u32 = 1 << 24;
+const PAUSE: u32 = 1 << 25;
+
+/// The original weapon number (`WEAPON_FILES`) of carried weapon `slot`.
+fn weapon_id(hunt: &Hunt, slot: usize) -> Option<usize> {
+    let w = hunt.weapons.info.get(slot)?;
+    hunt_setup::WEAPON_FILES.iter().position(|f| w.file.eq_ignore_ascii_case(f))
 }
 #[repr(C)]
 pub struct Snapshot {
@@ -105,7 +135,7 @@ pub struct Snapshot {
     crouch: u32,
 }
 #[repr(C)]
-pub struct HudState { ammo: i32, weapon_ready: u32, call: i32, weapon: i32, kills: u32 }
+pub struct HudState { ammo: i32, weapon_ready: u32, call: i32, weapon: i32, kills: u32, prompt: u32 }
 #[no_mangle]
 pub extern "C" fn c2_hud_state(ptr: *mut core::ffi::c_void, out: *mut HudState) {
     let sim = unsafe { &*ptr.cast::<Simulation>() };
@@ -115,13 +145,16 @@ pub extern "C" fn c2_hud_state(ptr: *mut core::ffi::c_void, out: *mut HudState) 
         weapon: w.current as i32,
         ammo: w.shots_left.get(w.current).copied().unwrap_or(0),
         weapon_ready: (w.state == c2_core::game::WeaponState::Ready) as u32,
-        kills: sim.hunt.successes,
+        kills: if sim.hunt.survival.is_some() { sim.hunt.kills.len() as u32 } else { sim.hunt.successes },
+        // A question waits for A / B (main.c sends YES / NO then).
+        prompt: (sim.hunt.health > 0 && (sim.hunt.exit_prompt || sim.ask.is_some())) as u32,
     }; }
 }
 #[no_mangle]
 pub extern "C" fn c2_hunt_dead(ptr: *mut core::ffi::c_void, shots: *mut u32, kills: *mut u32) -> u32 {
     let sim = unsafe { &*ptr.cast::<Simulation>() };
-    unsafe { *shots = sim.hunt.shots_made; *kills = sim.hunt.successes; }
+    let k = if sim.hunt.survival.is_some() { sim.hunt.kills.len() as u32 } else { sim.hunt.successes };
+    unsafe { *shots = sim.hunt.shots_made; *kills = k; }
     hunt_setup::death_menu_ready(&sim.hunt, sim.death_ms) as u32
 }
 
@@ -134,11 +167,74 @@ pub extern "C" fn c2_death_active(ptr: *mut core::ffi::c_void) -> u32 {
 #[no_mangle]
 pub extern "C" fn c2_restart_hunt(ptr: *mut core::ffi::c_void, seed: u32) -> i32 {
     let sim = unsafe { &mut *ptr.cast::<Simulation>() };
-    let hunt = match hunt_setup::restart_with(&sim.area, &sim.hunt, &sim.choice, seed) { Ok(h) => h, Err(e) => return e };
+    let mut hunt = match hunt_setup::restart_with(&sim.area, &sim.hunt, &sim.choice, &sim.saved_room, seed) { Ok(h) => h, Err(e) => return e };
+    hunt.clock = sim.hunt.clock;
     sim.hunt = hunt;
     sim.death_ms = 0;
     sim.events.clear(); sim.sprint = false; sim.crouch = false; sim.first_tick_done = false;
+    sim.notice = overlay::Notice::default(); sim.ask = None; sim.restart = false;
     0
+}
+
+/// 1 once the hunter has left (the exit confirmed, or the trophy room), 2
+/// for a restart asked at the exit prompt.
+#[no_mangle]
+pub extern "C" fn c2_hunt_outcome(ptr: *mut core::ffi::c_void) -> u32 {
+    let sim = unsafe { &*ptr.cast::<Simulation>() };
+    if sim.restart {
+        2
+    } else {
+        matches!(sim.hunt.outcome(), Some(c2_core::game::Outcome::Exited)) as u32
+    }
+}
+
+/// The local date and time, for trophies and the record.
+#[no_mangle]
+pub extern "C" fn c2_set_clock(ptr: *mut core::ffi::c_void, year: i32, month: i32, day: i32, hour: i32, minute: i32) {
+    let sim = unsafe { &mut *ptr.cast::<Simulation>() };
+    sim.hunt.clock = (year, month, day, hour, minute);
+}
+
+/// A hunt is over (`left`: the hunter left; otherwise died): its kills go
+/// into the hunter's record (as on the PC, either way), and on leaving its
+/// trophies and score into the save. C then writes both files. A survival
+/// keeps no trophies; the trophy room keeps its moves and removals.
+#[no_mangle]
+pub extern "C" fn c2_hunt_finish(ptr: *mut core::ffi::c_void, ui: *mut core::ffi::c_void, left: u32) {
+    use c2_core::record::{Kill, Mode};
+    let sim = unsafe { &mut *ptr.cast::<Simulation>() };
+    let m = menu_ref(ui);
+    let h = &mut sim.hunt;
+    let kills = core::mem::take(&mut h.kills);
+    let wave = h.wave();
+    let mode = if h.survival.is_some() { Mode::Survival } else { Mode::Hunt };
+    let area = usize::try_from(h.area_no - 1).ok().and_then(|a| menu::AREAS.get(a)).copied().unwrap_or("");
+    let (y, mo, d, _, _) = h.clock;
+    for k in &kills {
+        let weapon = weapon_id(h, k.weapon).and_then(|w| menu::WEAPONS.get(w)).copied().unwrap_or("");
+        m.record.kills.push(Kill {
+            mode,
+            animal: h.herd.species.get(k.ctype).map_or_else(alloc::string::String::new, |s| s.info.name.clone()),
+            score: k.score,
+            range: k.range,
+            weapon: alloc::string::String::from(weapon),
+            area: alloc::string::String::from(area),
+            date: (y << 20) + (mo << 10) + d,
+        });
+    }
+    m.record.best_wave = m.record.best_wave.max(wave);
+    m.set_wave(wave);
+    if left != 0 && h.survival.is_none() {
+        m.room = hunt_setup::room_to_save(&h.room);
+        sim.saved_room = h.room.clone();
+        m.notice = Some(if h.opts.trophy {
+            alloc::string::String::from("Trophy room saved")
+        } else {
+            alloc::format!("Hunt saved: {} kill{}, score {}", kills.len(), if kills.len() == 1 { "" } else { "s" }, h.room.score)
+        });
+    } else if left != 0 {
+        m.notice = Some(alloc::format!("Survival ended at wave {wave}, {} kill{}", kills.len(), if kills.len() == 1 { "" } else { "s" }));
+    }
 }
 
 // C keeps both buffers alive for the call; this function parses owned data.
@@ -216,6 +312,11 @@ pub extern "C" fn c2_move_create(
         call_sounds: alloc::vec![Vec::new(); hunt_setup::TARGET_AI.len() * 3],
         fx_sounds: alloc::vec![Vec::new(); 11],
         panel_icons: Vec::new(),
+        notice: overlay::Notice::default(),
+        overlay: overlay::Overlay::default(),
+        ask: None,
+        saved_room: hunt_setup::new_save(),
+        restart: false,
     };
     unsafe {
         *result = Box::into_raw(Box::new(sim)).cast();
@@ -316,6 +417,56 @@ pub extern "C" fn c2_move_tick(
             if sim.hunt.opts.targets.has(ai as usize) { sim.hunt.target_call = ai; break; }
         }
     }
+    // The exit prompt and the trophy room's questions.
+    if let Some(ask) = sim.ask {
+        if flags & YES != 0 {
+            match ask {
+                overlay::Ask::Remove => sim.hunt.remove_current_trophy(),
+                overlay::Ask::Lock => { let _ = sim.hunt.toggle_lock_current(); }
+            }
+        }
+        if flags & (YES | NO | ESCAPE) != 0 || sim.hunt.trophy_body.is_none() {
+            sim.ask = None;
+        }
+    } else {
+        if flags & ESCAPE != 0 && !sim.notice.leaving {
+            // From the pause, + goes straight to the exit prompt.
+            sim.hunt.paused = false;
+            sim.hunt.press_escape();
+        }
+        if flags & PAUSE != 0 && !sim.notice.leaving && sim.hunt.health > 0 {
+            sim.hunt.toggle_pause();
+        }
+        if sim.hunt.exit_prompt && flags & RESTART != 0 && !sim.hunt.opts.trophy {
+            sim.restart = true;
+        }
+        if sim.hunt.exit_prompt && flags & YES != 0 {
+            sim.hunt.confirm_exit();
+            sim.notice.leaving = true;
+        } else if sim.hunt.exit_prompt && flags & NO != 0 {
+            sim.hunt.press_escape();
+        }
+        if sim.hunt.opts.trophy {
+            for (bit, dir) in [(TROPHY_PREV, -1), (TROPHY_NEXT, 1)] {
+                if flags & bit != 0 && sim.hunt.trophy_body.is_some() && !sim.hunt.move_current_trophy(&sim.area, dir) {
+                    sim.notice.message(alloc::string::String::from("No free stand that way"), 2000);
+                }
+            }
+            let locked = sim.hunt.trophy_body.and_then(|s| sim.hunt.room.bodies.get(s)).is_some_and(|b| b.locked());
+            if flags & TROPHY_REMOVE != 0 && sim.hunt.trophy_body.is_some() {
+                if locked {
+                    sim.notice.message(alloc::string::String::from("Locked: Y to unlock it first"), 3000);
+                } else {
+                    sim.ask = Some(overlay::Ask::Remove);
+                }
+            }
+            if flags & TROPHY_LOCK != 0 && sim.hunt.trophy_body.is_some() {
+                sim.ask = Some(overlay::Ask::Lock);
+            }
+        }
+    }
+    // A question takes A and B (main.c sends YES / NO instead of jump and
+    // sprint while one shows).
     let direct_call = ((flags >> 8) & 15) as usize;
     if (1..=9).contains(&direct_call) && sim.hunt.opts.targets.has(9 + direct_call) {
         sim.hunt.target_call = (9 + direct_call) as i32;
@@ -325,6 +476,26 @@ pub extern "C" fn c2_move_tick(
     let toggle_weapon = flags & 8 != 0;
     sim.hunt.tick(&sim.area, &cars, &HuntInput { controls, toggle_weapon, fire: flags & 16 != 0, call: flags & 32 != 0, select_weapon: if flags & 4096 != 0 && !sim.hunt.weapons.info.is_empty() { Some((sim.hunt.weapons.current+1) % sim.hunt.weapons.info.len()) } else { select_weapon }, ..Default::default() }, 16, &mut sim.events);
     if sim.hunt.health <= 0 { sim.death_ms += 16; }
+    sim.notice.tick(16);
+    for event in &sim.events {
+        match event {
+            GameEvent::Scored { ctype, score, range, tranq } => {
+                let name = sim.hunt.herd.species.get(*ctype).map_or_else(alloc::string::String::new, |s| s.info.name.clone());
+                sim.notice.kill(name, *score, *range, *tranq);
+            }
+            GameEvent::Message(m) => sim.notice.message(m.clone(), 2000),
+            GameEvent::Killed { trophy: true, .. } => sim.notice.message(alloc::string::String::from("Trophy!"), 2000),
+            // The save keeps the original's weapon numbers, not the
+            // carried slot.
+            GameEvent::Trophy { slot, .. } => {
+                let id = weapon_id(&sim.hunt, sim.hunt.weapons.current);
+                if let (Some(b), Some(id)) = (sim.hunt.room.bodies.get_mut(*slot), id) {
+                    b.weapon = id as i32;
+                }
+            }
+            _ => {}
+        }
+    }
     let (eye, alpha, _) = sim.hunt.camera();
     for event in &sim.events {
         match *event {
@@ -399,13 +570,15 @@ pub extern "C" fn c2_move_destroy(ptr: *mut core::ffi::c_void) {
 
 // Load original definitions and models from the caller-owned SD buffers.
 #[no_mangle]
-pub extern "C" fn c2_hunt_setup(ptr: *mut core::ffi::c_void, files: *const *const u8, lengths: *const u32, choice: *const hunt_setup::HuntChoice, seed: u32) -> i32 {
+pub extern "C" fn c2_hunt_setup(ptr: *mut core::ffi::c_void, files: *const *const u8, lengths: *const u32, choice: *const hunt_setup::HuntChoice, seed: u32, ui: *mut core::ffi::c_void) -> i32 {
     let sim = unsafe { &mut *ptr.cast::<Simulation>() };
     let read = |i: usize| unsafe { core::slice::from_raw_parts(*files.add(i), *lengths.add(i) as usize) };
     let Ok(text) = core::str::from_utf8(read(0)) else { return -1; };
     let assets: [&[u8]; hunt_setup::MODEL_COUNT] = core::array::from_fn(|i| read(i + 1));
     let choice = unsafe { *choice };
-    let (hunt, cars) = match hunt_setup::setup_with(&sim.area, text, &assets, &choice, seed) { Ok(v) => v, Err(e) => return e };
+    let room = hunt_setup::room_from_save(&menu_ref(ui).room);
+    let (hunt, cars) = match hunt_setup::setup_with(&sim.area, text, &assets, &choice, &room, seed) { Ok(v) => v, Err(e) => return e };
+    sim.saved_room = room;
     sim.hunt = hunt;
     sim.choice = choice;
     sim.death_ms = 0;
@@ -1024,6 +1197,45 @@ pub extern "C" fn c2_menu_action(ptr: *mut core::ffi::c_void) -> u32 { menu_ref(
 pub extern "C" fn c2_menu_choice(ptr: *mut core::ffi::c_void, out: *mut hunt_setup::HuntChoice) {
     unsafe { *out = menu_ref(ptr).choice; }
 }
+/// The hunter's save (`which` 0, `trophy00.sav`) or record (1,
+/// `trophy00.rec`) as read from the SD card.
+#[no_mangle]
+pub extern "C" fn c2_menu_load_profile(ptr: *mut core::ffi::c_void, which: u32, data: *const u8, len: u32) {
+    if data.is_null() { return; }
+    menu_ref(ptr).load_profile(which, unsafe { core::slice::from_raw_parts(data, len as usize) });
+}
+/// The hunter's save or record to write in `out`; its length, or 0 if it
+/// does not fit.
+#[no_mangle]
+pub extern "C" fn c2_menu_profile(ptr: *mut core::ffi::c_void, which: u32, out: *mut u8, capacity: u32) -> u32 {
+    let bytes = menu_ref(ptr).profile_bytes(which);
+    if bytes.len() > capacity as usize { return 0; }
+    unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len()); }
+    bytes.len() as u32
+}
+
+/// The hunt overlay (overlay.rs): redraws its changed regions into the
+/// 1024x512 RGBA8 texture (`pitch` in pixels) and writes the visible quads
+/// (6 vertices each, 4 floats) into `pos` and `uv` (room for 5). Returns
+/// the quad count, plus 256 if the texture changed.
+#[no_mangle]
+pub extern "C" fn c2_overlay_draw(ui: *mut core::ffi::c_void, ptr: *mut core::ffi::c_void, pixels: *mut u8, pitch: u32, pos: *mut f32, uv: *mut f32) -> u32 {
+    let sim = unsafe { &mut *ptr.cast::<Simulation>() };
+    let m = menu_ref(ui);
+    let px = unsafe { core::slice::from_raw_parts_mut(pixels, pitch as usize * overlay::TEX_H * 4) };
+    let n = overlay::MAX_QUADS * overlay::QUAD_FLOATS;
+    let (pos, uv) = unsafe { (core::slice::from_raw_parts_mut(pos, n), core::slice::from_raw_parts_mut(uv, n)) };
+    let view = overlay::View {
+        hunt: &sim.hunt,
+        notice: &sim.notice,
+        ask: sim.ask,
+        units_us: m.choice.units_us != 0,
+        night: sim.choice.time == 2,
+    };
+    let (quads, changed) = sim.overlay.draw(m, &view, &mut overlay::canvas(px, pitch as usize), pos, uv);
+    quads as u32 | if changed { 256 } else { 0 }
+}
+
 /// After every display's texture is redrawn: the next draw only repaints what
 /// changes from here.
 #[no_mangle]

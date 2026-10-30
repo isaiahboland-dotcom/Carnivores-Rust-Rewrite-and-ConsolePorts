@@ -9,6 +9,8 @@ def assets():
     files = ['HUNTER1.CAR', '_RES.TXT', 'WEAPONS/PISTOL.CAR', 'WEAPONS/SHOTGUN.CAR', 'WEAPONS/DBSGUN.CAR', 'WEAPONS/X_BOW.CAR', 'WEAPONS/RIFLE.CAR', 'WEAPONS/SNIPER.CAR', 'MENU/MENUM.TGA']
     files += [f'{name}.CAR' for name in ['MOSH', 'GALL', 'DIMOR2', 'PTERA', 'DIMET', 'BRACHI1', 'PAR2', 'ANKYLO1', 'STEGO', 'ALLO', 'CHASMOSA', 'VELO2', 'SPINO', 'CERATO1', 'TIREX']]
     files += [f'AREAS/AREA{i}.{ext}' for i in range(1, 6) for ext in ['MAP', 'RSC']]
+    # The trophy room and the trophy plaques.
+    files += ['AREAS/TROPHY.MAP', 'AREAS/TROPHY.RSC', 'MENU/TROPHY_G.TGA', 'MENU/TROPHY.TGA']
     files += [f'MENU/PICS/AREA{i}.TGA' for i in range(1, 6)]
     files += [f'MENU/PICS/{prefix}{i}.TGA' for prefix in ['DINO', 'CALL'] for i in range(1, 10)]
     files += [f'MENU/PICS/WEAPON{i}.TGA' for i in range(1,7)] + [f'MENU/PICS/EQUIP{i}.TGA' for i in range(1, 5)]

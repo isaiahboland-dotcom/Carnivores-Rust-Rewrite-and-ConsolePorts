@@ -7,6 +7,13 @@
 //! <TAB>weapon<TAB>area<TAB>date` (range in metres, date as the trophies
 //! keep it) and `best_wave<TAB>n`. Unknown lines are skipped.
 
+#[cfg(not(feature = "std"))]
+use alloc::{
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 /// Hunt or survival.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Mode {

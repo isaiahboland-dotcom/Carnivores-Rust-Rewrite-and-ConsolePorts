@@ -2,18 +2,21 @@
 //! times of day, weapons and gear) redrawn for a 16:9 TV and the GamePad,
 //! with the original menu pictures and descriptions in an info panel.
 //! Independent of GX2; C feeds it buttons and touches and shows the canvas.
-use crate::hunt_setup::HuntChoice;
+//! It also keeps the hunter's save (trophies, score) and record (every kill).
+use crate::hunt_setup::{HuntChoice, MODE_HUNT, MODE_SURVIVAL, MODE_TROPHY};
+use c2_core::record::{Mode, Record};
+use c2_formats::sav::{self, Save};
 use crate::ui::{in_hex, measure, rect, Canvas, Clip, Font, Image, Rect, Rgba, TileCache, HEIGHT, WIDTH};
 use core::cell::RefCell;
 use alloc::{format, string::String, vec::Vec};
 
 /// Files the menu reads, in slot order: pictures, then descriptions.
-pub const FILES: [&str; 63] = [
+pub const FILES: [&str; 65] = [
     "MENUM.TGA", "AREA1.TGA", "AREA2.TGA", "AREA3.TGA", "AREA4.TGA", "AREA5.TGA",
     "DINO1.TGA", "DINO2.TGA", "DINO3.TGA", "DINO4.TGA", "DINO5.TGA", "DINO6.TGA",
     "DINO7.TGA", "DINO8.TGA", "DINO9.TGA", "WEAPON1.TGA", "WEAPON2.TGA", "WEAPON3.TGA",
     "WEAPON4.TGA", "WEAPON5.TGA", "WEAPON6.TGA", "EQUIP1.TGA", "EQUIP2.TGA", "EQUIP3.TGA",
-    "EQUIP4.TGA",
+    "EQUIP4.TGA", "TROPHY_G.TGA", "TROPHY.TGA",
     "AREA1.TXT", "AREA2.TXT", "AREA3.TXT", "AREA4.TXT", "AREA5.TXT",
     "DINO1.TXM", "DINO2.TXM", "DINO3.TXM", "DINO4.TXM", "DINO5.TXM", "DINO6.TXM",
     "DINO7.TXM", "DINO8.TXM", "DINO9.TXM",
@@ -23,12 +26,15 @@ pub const FILES: [&str; 63] = [
     "CAMOFLAG.NFO", "RADAR.NFO", "SCENT.NFO", "DOUBLE.NFO", "TRANQ.NFO", "OBSERVE.NFO",
     "DAY1.NFO", "DAY2.NFO", "DAY3.NFO",
 ];
-pub const PICTURES: usize = 25;
+pub const PICTURES: usize = 27;
 const PIC_MENU: usize = 0;
 const PIC_AREA: usize = 1;
 const PIC_DINO: usize = 6;
 const PIC_WEAPON: usize = 15;
 const PIC_EQUIP: usize = 21;
+/// The kill's plaque in a hunt, and a trophy's in the trophy room.
+pub const PIC_PLAQUE_HUNT: usize = 25;
+pub const PIC_PLAQUE_ROOM: usize = 26;
 const TXT_AREA: usize = 0;
 const TXT_DINO_METRIC: usize = 5;
 const TXT_DINO_US: usize = 14;
@@ -37,16 +43,25 @@ const TXT_WEAPON: usize = 23;
 const TXT_GEAR: usize = 29;
 const TXT_TIME: usize = 35;
 
-const AREAS: [&str; 5] = ["Delphaeus Hills", "Fort Ciskin", "Vengar Fjords", "Manya Jungle", "Mount Ravan"];
+pub const AREAS: [&str; 5] = ["Delphaeus Hills", "Fort Ciskin", "Vengar Fjords", "Manya Jungle", "Mount Ravan"];
 const ANIMALS: [&str; 9] = [
     "Parasaurolophus", "Ankylosaurus", "Stegosaurus", "Allosaurus", "Chasmosaurus",
     "Velociraptor", "Spinosaurus", "Ceratosaurus", "Tyrannosaurus",
 ];
-const WEAPONS: [&str; 6] = ["Pistol", "Shotgun", "Double-barrel shotgun", "Crossbow", "Rifle", "Sniper rifle"];
+pub const WEAPONS: [&str; 6] = ["Pistol", "Shotgun", "Double-barrel shotgun", "Crossbow", "Rifle", "Sniper rifle"];
 /// Short names for the weapon hexagons.
 const WEAPON_LABELS: [&str; 6] = ["Pistol", "Shotgun", "Double barrel", "Crossbow", "Rifle", "Sniper rifle"];
 const EQUIPMENT: [&str; 4] = ["Camouflage", "Radar", "Cover scent", "Double ammo"];
 const TIMES: [&str; 3] = ["Dawn", "Day", "Night"];
+const SURVIVALS: [&str; 3] = ["Normal", "Hardcore", "Custom"];
+const SURVIVAL_HELP: [&str; 3] = [
+    "Waves of the animals picked, two more each wave. Unlimited ammunition.",
+    "Each wave also brings one to three more hunters.",
+    "The Tyrannosaurus may come from wave 15.",
+];
+/// The animals that come for the hunter in a survival (`survival::dangerous`):
+/// Allosaurus, Chasmosaurus, Velociraptor, Spinosaurus, Ceratosaurus, T-Rex.
+const DANGEROUS: u32 = 0b1_1111_1000;
 
 const BG: Rgba = [16, 22, 16, 255];
 const PANEL: Rgba = [32, 44, 30, 255];
@@ -90,13 +105,20 @@ pub enum Page {
     Gear,
     Settings,
     Death,
+    /// The hunter's score, trophies and kills.
+    Record,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Id {
     Play,
+    Survival,
+    Trophies,
+    Record,
     Settings,
     Exit,
+    /// Normal, hardcore, custom.
+    SurvivalKind(usize),
     Area(usize),
     Time(usize),
     Animal(usize),
@@ -123,7 +145,14 @@ pub struct Menu {
     pub action: Action,
     pub loading: bool,
     message: Option<&'static str>,
-    death: (u32, u32),
+    /// Shots, kills and (a survival) the wave reached.
+    death: (u32, u32, u32),
+    /// Said on the title after a hunt ("Trophies saved...").
+    pub notice: Option<String>,
+    /// The hunter's save, as the original keeps it (`trophy00.sav`), and
+    /// record (`trophy00.rec`).
+    pub room: Save,
+    pub record: Record,
     font: Font,
     pics: Vec<Option<Image>>,
     texts: Vec<String>,
@@ -142,6 +171,9 @@ struct Shown {
     message: Option<&'static str>,
     loading: bool,
 }
+/// The hunter's files, as C asks for them.
+pub const PROFILE_SAVE: u32 = 0;
+pub const PROFILE_RECORD: u32 = 1;
 const FOOTER: Rect = rect(0.0, 630.0, WIDTH, HEIGHT - 630.0);
 const CONTENT: Rect = rect(0.0, 82.0, WIDTH, 550.0);
 
@@ -214,7 +246,10 @@ impl Menu {
             action: Action::None,
             loading: false,
             message: None,
-            death: (0, 0),
+            death: (0, 0, 0),
+            notice: None,
+            room: crate::hunt_setup::new_save(),
+            record: Record::default(),
             font,
             pics: (0..PICTURES).map(|_| None).collect(),
             texts: (PICTURES..FILES.len()).map(|_| String::new()).collect(),
@@ -254,11 +289,56 @@ impl Menu {
         self.focus = Id::Restart;
         self.action = Action::None;
         self.loading = false;
-        self.death = (shots, kills);
+        self.death = (shots, kills, self.death.2);
+    }
+
+    /// The wave a survival ended in (0: a hunt), for the death screen.
+    pub fn set_wave(&mut self, wave: u32) {
+        self.death.2 = wave;
     }
 
     fn pic(&self, slot: usize) -> Option<&Image> {
         self.pics.get(slot).and_then(Option::as_ref)
+    }
+
+    // For the hunt overlay (overlay.rs), which draws with the menu's font
+    // and pictures.
+    pub fn font(&self) -> &Font {
+        &self.font
+    }
+    pub fn picture(&self, slot: usize) -> Option<&Image> {
+        self.pic(slot)
+    }
+    pub fn tiles(&self) -> &RefCell<TileCache> {
+        &self.tiles
+    }
+
+    // ---- The hunter's files -------------------------------------------
+
+    /// `PROFILE_SAVE` or `PROFILE_RECORD` as read from the SD card; a save
+    /// that does not parse leaves a new hunter.
+    pub fn load_profile(&mut self, which: u32, bytes: &[u8]) {
+        match which {
+            PROFILE_SAVE => {
+                if let Ok(s) = sav::parse(bytes) {
+                    self.room = s;
+                }
+            }
+            PROFILE_RECORD => self.record = Record::parse(&String::from_utf8_lossy(bytes)),
+            _ => {}
+        }
+    }
+
+    pub fn profile_bytes(&self, which: u32) -> Vec<u8> {
+        match which {
+            PROFILE_SAVE => sav::write(&self.room),
+            PROFILE_RECORD => self.record.write().into_bytes(),
+            _ => Vec::new(),
+        }
+    }
+
+    fn trophies(&self) -> usize {
+        self.room.bodies.iter().filter(|b| b.ctype > 0).count()
     }
 
     // ---- Settings file ------------------------------------------------
@@ -266,9 +346,9 @@ impl Menu {
     pub fn settings_text(&self) -> String {
         let c = &self.choice;
         format!(
-            "area={}\ntime={}\nanimals={}\nweapons={}\nradar={}\ncamo={}\nscent={}\ndouble_ammo={}\ntranq={}\nobserver={}\nrun_pct={}\nblood={}\ndeath_anim={}\nambient={}\nunits_us={}\n",
+            "area={}\ntime={}\nanimals={}\nweapons={}\nradar={}\ncamo={}\nscent={}\ndouble_ammo={}\ntranq={}\nobserver={}\nrun_pct={}\nblood={}\ndeath_anim={}\nambient={}\nunits_us={}\nsurvival={}\n",
             c.area, c.time, c.animals, c.weapons, c.radar, c.camo, c.scent, c.double_ammo, c.tranq,
-            c.observer, c.run_pct, c.blood, c.death_anim, c.ambient, c.units_us
+            c.observer, c.run_pct, c.blood, c.death_anim, c.ambient, c.units_us, c.survival
         )
     }
 
@@ -295,12 +375,14 @@ impl Menu {
                 "death_anim" => &mut c.death_anim,
                 "ambient" => &mut c.ambient,
                 "units_us" => &mut c.units_us,
+                "survival" => &mut c.survival,
                 _ => continue,
             };
             *field = v;
         }
         c.area = c.area.min(4);
         c.time = c.time.min(2);
+        c.survival = c.survival.min(2);
         c.animals &= 0x1ff;
         c.weapons &= 0x3f;
         c.run_pct = (c.run_pct / 10 * 10).clamp(50, 100);
@@ -315,8 +397,8 @@ impl Menu {
         let mut v = Vec::new();
         match self.page {
             Page::Title => {
-                for (i, id) in [Id::Play, Id::Settings, Id::Exit].into_iter().enumerate() {
-                    v.push((id, rect(72.0, 330.0 + i as f32 * 84.0, 420.0, 64.0)));
+                for (i, id) in [Id::Play, Id::Survival, Id::Trophies, Id::Record, Id::Settings, Id::Exit].into_iter().enumerate() {
+                    v.push((id, rect(72.0, 258.0 + i as f32 * 64.0, 420.0, 54.0)));
                 }
             }
             Page::Area => {
@@ -328,8 +410,15 @@ impl Menu {
                 }
             }
             Page::Animals => {
-                for (i, r) in honeycomb(9, 5, 92.0, 40.0, 165.0).into_iter().enumerate() {
+                // A survival: the kinds below (the hexagons a row higher).
+                let top = if self.survival() { 100.0 } else { 165.0 };
+                for (i, r) in honeycomb(9, 5, 92.0, 40.0, top).into_iter().enumerate() {
                     v.push((Id::Animal(i), r));
+                }
+                if self.survival() {
+                    for i in 0..3 {
+                        v.push((Id::SurvivalKind(i), rect(40.0 + i as f32 * 244.0, 520.0, 228.0, 56.0)));
+                    }
                 }
             }
             Page::Gear => {
@@ -350,14 +439,19 @@ impl Menu {
                 v.push((Id::Restart, rect(430.0, 420.0, 420.0, 64.0)));
                 v.push((Id::MainMenu, rect(430.0, 500.0, 420.0, 64.0)));
             }
+            Page::Record => {}
         }
-        if SETUP.contains(&self.page) || self.page == Page::Settings {
+        if SETUP.contains(&self.page) || matches!(self.page, Page::Settings | Page::Record) {
             v.push((Id::Back, BACK));
         }
         if SETUP.contains(&self.page) {
             v.push((Id::Next, NEXT));
         }
         v
+    }
+
+    fn survival(&self) -> bool {
+        self.choice.mode == MODE_SURVIVAL
     }
 
     fn hexagonal(id: Id) -> bool {
@@ -396,7 +490,7 @@ impl Menu {
         if now == before {
             return;
         }
-        if now.page != before.page || now.loading != before.loading || now.page == Page::Settings || now.page == Page::Death {
+        if now.page != before.page || now.loading != before.loading || matches!(now.page, Page::Settings | Page::Death | Page::Record) {
             self.full = true;
             return;
         }
@@ -517,13 +611,19 @@ impl Menu {
             Page::Gear => Id::Weapon((0..6).find(|i| self.choice.weapons & (1 << i) != 0).unwrap_or(0)),
             Page::Settings => Id::RunSpeed,
             Page::Death => Id::Restart,
+            Page::Record => Id::Back,
         };
     }
 
     fn back(&mut self) {
         match self.page {
-            Page::Area | Page::Settings => {
-                let from = if self.page == Page::Settings { Id::Settings } else { Id::Play };
+            Page::Area | Page::Settings | Page::Record => {
+                let from = match self.page {
+                    Page::Settings => Id::Settings,
+                    Page::Record => Id::Record,
+                    _ if self.survival() => Id::Survival,
+                    _ => Id::Play,
+                };
                 self.go(Page::Title);
                 self.focus = from;
             }
@@ -534,12 +634,36 @@ impl Menu {
     }
 
     fn problem(&self) -> Option<&'static str> {
-        if self.choice.animals == 0 {
+        let c = &self.choice;
+        if self.survival() {
+            if c.animals & DANGEROUS == 0 {
+                Some("Pick at least one hunter for the waves")
+            } else if c.weapons == 0 {
+                Some("Pick a weapon")
+            } else {
+                None
+            }
+        } else if c.animals == 0 {
             Some("Pick at least one animal to hunt")
-        } else if self.choice.weapons == 0 && self.choice.observer == 0 {
+        } else if c.weapons == 0 && c.observer == 0 {
             Some("Pick a weapon, or Observer mode")
         } else {
             None
+        }
+    }
+
+    // Whether an item can be picked now (a survival has no observer or
+    // tranquilizer, and only the animals that hunt).
+    fn enabled(&self, id: Id) -> bool {
+        let c = &self.choice;
+        let survival = self.survival();
+        let observer = c.observer != 0 && !survival;
+        match id {
+            Id::Animal(i) => !survival || DANGEROUS & (1 << i) != 0,
+            Id::Weapon(_) | Id::Tranq => !observer && !(survival && id == Id::Tranq),
+            Id::Equip(i) => !observer || i == 1,
+            Id::Observer => !survival,
+            _ => true,
         }
     }
 
@@ -547,7 +671,7 @@ impl Menu {
         match self.problem() {
             Some(m) => {
                 self.message = Some(m);
-                if self.choice.animals == 0 {
+                if self.choice.animals == 0 || self.survival() && self.choice.animals & DANGEROUS == 0 {
                     self.go(Page::Animals);
                 }
             }
@@ -559,9 +683,27 @@ impl Menu {
     }
 
     fn activate(&mut self, id: Id) {
+        if !self.enabled(id) {
+            return;
+        }
+        self.notice = None;
         let c = &mut self.choice;
         match id {
-            Id::Play => self.go(Page::Area),
+            Id::Play => {
+                c.mode = MODE_HUNT;
+                self.go(Page::Area);
+            }
+            Id::Survival => {
+                c.mode = MODE_SURVIVAL;
+                self.go(Page::Area);
+            }
+            Id::Trophies => {
+                c.mode = MODE_TROPHY;
+                self.action = Action::Hunt;
+                self.loading = true;
+            }
+            Id::Record => self.go(Page::Record),
+            Id::SurvivalKind(i) => c.survival = i as u32,
             Id::Settings => self.go(Page::Settings),
             Id::Exit => self.action = Action::Exit,
             Id::Area(i) => c.area = i as u32,
@@ -577,6 +719,7 @@ impl Menu {
             Id::Back => self.back(),
             Id::Next => match self.page {
                 Page::Area => self.go(Page::Animals),
+                Page::Animals if c.mode == MODE_SURVIVAL && c.animals & DANGEROUS == 0 => self.message = Some("Pick at least one hunter for the waves"),
                 Page::Animals if c.animals == 0 => self.message = Some("Pick at least one animal to hunt"),
                 Page::Animals => self.go(Page::Gear),
                 _ => self.try_hunt(),
@@ -613,14 +756,20 @@ impl Menu {
             Page::Title => self.draw_title(c),
             Page::Settings => self.draw_settings(c),
             Page::Death => self.draw_death(c),
+            Page::Record => self.draw_record(c),
             _ => self.draw_setup(c),
         }
         if self.loading {
             c.fill(rect(0.0, 0.0, WIDTH, HEIGHT), [0, 0, 0, 150]);
-            let r = rect(440.0, 300.0, 400.0, 120.0);
+            let r = rect(340.0, 300.0, 600.0, 120.0);
+            let what = match self.choice.mode {
+                MODE_TROPHY => "Opening the trophy room...",
+                MODE_SURVIVAL => "Loading survival...",
+                _ => "Loading hunt...",
+            };
             c.fill(r, PANEL);
             c.frame(r, 3.0, GOLD);
-            c.text_centered(&self.font, r, 36.0, GOLD, "Loading hunt...");
+            c.text_centered(&self.font, r, 36.0, GOLD, what);
         }
     }
 
@@ -666,12 +815,18 @@ impl Menu {
         for (id, r) in self.items() {
             let label = match id {
                 Id::Play => "Hunt",
+                Id::Survival => "Survival",
+                Id::Trophies => "Trophy room",
+                Id::Record => "Hunter record",
                 Id::Settings => "Settings",
                 _ => "Exit",
             };
             self.button(c, r, label, self.focus == id, true);
         }
-        c.text(&self.font, 72.0, 660.0, 20.0, DIM, "A: select   D-pad: move   or tap the GamePad");
+        match &self.notice {
+            Some(n) => c.text(&self.font, 72.0, 660.0, 22.0, GOLD, n),
+            None => c.text(&self.font, 72.0, 660.0, 20.0, DIM, "A: select   D-pad: move   or tap the GamePad"),
+        };
     }
 
     fn header(&self, c: &mut Canvas, title: &str) {
@@ -681,9 +836,10 @@ impl Menu {
     }
 
     fn draw_setup(&self, c: &mut Canvas) {
-        self.header(c, "Hunt setup");
+        self.header(c, if self.survival() { "Survival setup" } else { "Hunt setup" });
         let mut x = 460.0;
-        for (i, (page, name)) in SETUP.iter().zip(["Area", "Animals", "Weapons & gear"]).enumerate() {
+        let animals = if self.survival() { "Waves" } else { "Animals" };
+        for (i, (page, name)) in SETUP.iter().zip(["Area", animals, "Weapons & gear"]).enumerate() {
             let on = *page == self.page;
             let label = format!("{}. {name}", i + 1);
             let w = c.text(&self.font, x, 26.0, 26.0, if on { GOLD } else { DIM }, &label);
@@ -693,21 +849,29 @@ impl Menu {
             x += w + 48.0;
         }
         let ch = &self.choice;
-        let observer = ch.observer != 0;
+        let survival = self.survival();
+        let observer = ch.observer != 0 && !survival;
         for (id, r) in self.items() {
             let focused = self.focus == id;
+            let enabled = self.enabled(id);
             match id {
                 Id::Area(i) => self.hex_item(c, r, PIC_AREA + i, AREAS[i], ch.area == i as u32, focused, true),
-                Id::Animal(i) => self.hex_item(c, r, PIC_DINO + i, ANIMALS[i], ch.animals & (1 << i) != 0, focused, true),
-                Id::Weapon(i) => self.hex_item(c, r, PIC_WEAPON + i, WEAPON_LABELS[i], ch.weapons & (1 << i) != 0, focused, !observer),
+                Id::Animal(i) => self.hex_item(c, r, PIC_DINO + i, ANIMALS[i], ch.animals & (1 << i) != 0 && enabled, focused, enabled),
+                Id::Weapon(i) => self.hex_item(c, r, PIC_WEAPON + i, WEAPON_LABELS[i], ch.weapons & (1 << i) != 0, focused, enabled),
                 // Observer mode carries no weapons or gear but the radar.
                 Id::Equip(i) => {
                     let on = [ch.camo, ch.radar, ch.scent, ch.double_ammo][i] != 0;
-                    self.toggle(c, r, EQUIPMENT[i], on, focused, !observer || i == 1)
+                    self.toggle(c, r, EQUIPMENT[i], on, focused, enabled)
                 }
                 Id::Time(i) => self.time_item(c, r, i, ch.time == i as u32, focused),
-                Id::Tranq => self.toggle(c, r, "Tranquilizer", ch.tranq != 0, focused, !observer),
-                Id::Observer => self.toggle(c, r, "Observer mode", observer, focused, true),
+                Id::Tranq => self.toggle(c, r, "Tranquilizer", ch.tranq != 0 && enabled, focused, enabled),
+                Id::Observer => self.toggle(c, r, "Observer mode", observer, focused, enabled),
+                Id::SurvivalKind(i) => {
+                    let on = ch.survival == i as u32;
+                    c.fill(r, if focused { [52, 70, 44, 255] } else { PANEL });
+                    c.frame(r, if focused || on { 4.0 } else { 2.0 }, if focused { WHITE } else if on { GOLD } else { EDGE });
+                    c.text_centered(&self.font, r, 26.0, if on { GOLD } else { WHITE }, SURVIVALS[i]);
+                }
                 Id::Back => self.button(c, r, "Back", focused, true),
                 Id::Next => {
                     let label = if self.page == Page::Gear { "Hunt!" } else { "Next" };
@@ -723,13 +887,17 @@ impl Menu {
         match self.message {
             Some(m) => c.text_centered(&self.font, mid, 26.0, RED, m),
             None => {
-                let animals = ch.animals.count_ones();
+                let animals = if survival { (ch.animals & DANGEROUS).count_ones() } else { ch.animals.count_ones() };
                 let weapons = if observer { String::from("observer") } else { format!("{} weapon{}", ch.weapons.count_ones(), if ch.weapons.count_ones() == 1 { "" } else { "s" }) };
-                let s = format!("{} - {} - {} animal{} - {}", AREAS[ch.area as usize], TIMES[ch.time as usize], animals, if animals == 1 { "" } else { "s" }, weapons);
+                let s = if survival {
+                    format!("{} survival - {} - {} - {} hunter{} - {}", SURVIVALS[ch.survival as usize], AREAS[ch.area as usize], TIMES[ch.time as usize], animals, if animals == 1 { "" } else { "s" }, weapons)
+                } else {
+                    format!("{} - {} - {} animal{} - {}", AREAS[ch.area as usize], TIMES[ch.time as usize], animals, if animals == 1 { "" } else { "s" }, weapons)
+                };
                 c.text_centered(&self.font, mid, 24.0, TEXT, &s);
             }
         }
-        c.text_centered(&self.font, rect(250.0, 682.0, 780.0, 26.0), 18.0, DIM, "A: pick   B: back   L/R: page   +: start the hunt");
+        c.text_centered(&self.font, rect(250.0, 682.0, 780.0, 26.0), 18.0, DIM, if survival { "A: pick   B: back   L/R: page   +: start the survival" } else { "A: pick   B: back   L/R: page   +: start the hunt" });
     }
 
     fn hex_item(&self, c: &mut Canvas, r: Rect, pic: usize, name: &str, on: bool, focused: bool, enabled: bool) {
@@ -792,6 +960,13 @@ impl Menu {
             Id::Equip(i) => (Some(PIC_EQUIP + i), EQUIPMENT[i], TXT_GEAR + i),
             Id::Tranq => (None, "Tranquilizer", TXT_GEAR + 4),
             Id::Observer => (None, "Observer mode", TXT_GEAR + 5),
+            Id::SurvivalKind(i) => {
+                c.fill(INFO, [10, 14, 10, 255]);
+                c.frame(INFO, 2.0, EDGE);
+                self.shadowed(c, INFO.x + 20.0, INFO.y + 20.0, 30.0, GOLD, &format!("{} survival", SURVIVALS[i]));
+                c.paragraph(&self.font, INFO.x + 20.0, INFO.y + 70.0, INFO.w - 40.0, INFO.y + INFO.h - 12.0, 21.0, TEXT, SURVIVAL_HELP[i]);
+                return;
+            }
             _ => match self.page {
                 Page::Area => (Some(PIC_AREA + ch.area as usize), AREAS[ch.area as usize], TXT_AREA + ch.area as usize),
                 _ => (None, "", usize::MAX),
@@ -850,13 +1025,67 @@ impl Menu {
         c.text_centered(&self.font, rect(250.0, 660.0, 780.0, 26.0), 18.0, DIM, "A: change   Left/Right: run speed   B: back (settings are saved)");
     }
 
+    fn draw_record(&self, c: &mut Canvas) {
+        self.header(c, "Hunter record");
+        let r = &self.record;
+        let units = |m: f32| if self.choice.units_us != 0 { format!("{:.0} ft", m / 0.3) } else { format!("{m:.0} m") };
+        let longest = r.longest().map_or(String::from("-"), |k| format!("{} ({}, {})", units(k.range), k.animal, k.weapon));
+        let best = r.best().map_or(String::from("-"), |k| format!("{} points ({})", k.score, k.animal));
+        let rows = [
+            ("Score", format!("{}", self.room.score)),
+            ("Trophies", format!("{} of 24", self.trophies())),
+            ("Kills while hunting", format!("{}", r.count(Mode::Hunt))),
+            ("Kills in survival", format!("{}", r.count(Mode::Survival))),
+            ("Best survival wave", if r.best_wave > 0 { format!("{}", r.best_wave) } else { String::from("-") }),
+            ("Longest shot", longest),
+            ("Best kill", best),
+        ];
+        let panel = rect(40.0, 100.0, 560.0, 520.0);
+        c.fill(panel, PANEL);
+        c.frame(panel, 2.0, EDGE);
+        for (i, (label, value)) in rows.iter().enumerate() {
+            let y = panel.y + 20.0 + i as f32 * 70.0;
+            c.text(&self.font, panel.x + 24.0, y, 22.0, TEXT, label);
+            c.text(&self.font, panel.x + 24.0, y + 28.0, 26.0, WHITE, value);
+        }
+        let list = rect(630.0, 100.0, 610.0, 520.0);
+        c.fill(list, [10, 14, 10, 255]);
+        c.frame(list, 2.0, EDGE);
+        self.shadowed(c, list.x + 20.0, list.y + 16.0, 28.0, GOLD, "Last kills");
+        if r.kills.is_empty() {
+            c.text(&self.font, list.x + 20.0, list.y + 70.0, 22.0, DIM, "None yet. Leave a hunt with + to keep its trophies.");
+        }
+        for (i, k) in r.kills.iter().rev().take(11).enumerate() {
+            let y = list.y + 62.0 + i as f32 * 40.0;
+            let what = match k.mode {
+                Mode::Survival => String::from("survival"),
+                Mode::Hunt => format!("{} pts", k.score),
+            };
+            c.text(&self.font, list.x + 20.0, y, 22.0, WHITE, &k.animal);
+            c.text(&self.font, list.x + 250.0, y, 22.0, TEXT, &format!("{}, {}", units(k.range), k.weapon));
+            let w = measure(&self.font, 22.0, &what);
+            c.text(&self.font, list.x + list.w - 20.0 - w, y, 22.0, GOLD, &what);
+        }
+        c.fill(rect(0.0, 632.0, WIDTH, 2.0), EDGE);
+        for (id, r) in self.items() {
+            if id == Id::Back {
+                self.button(c, r, "Back", self.focus == id, true);
+            }
+        }
+        c.text_centered(&self.font, rect(250.0, 660.0, 780.0, 26.0), 18.0, DIM, "Trophies and score are saved when you leave a hunt (+, then A)");
+    }
+
     fn draw_death(&self, c: &mut Canvas) {
         let panel = rect(240.0, 120.0, 800.0, 480.0);
         c.fill(panel, PANEL);
         c.frame(panel, 3.0, EDGE);
         self.shadowed_centered(c, rect(panel.x, 160.0, panel.w, 70.0), 64.0, RED, "You were killed");
         c.text_centered(&self.font, rect(panel.x, 250.0, panel.w, 40.0), 32.0, GOLD, "Your hunt has ended");
-        let stats = format!("Shots {}   Kills {}", self.death.0, self.death.1);
+        let stats = if self.death.2 > 0 {
+            format!("Survived to wave {}   Shots {}   Kills {}", self.death.2, self.death.0, self.death.1)
+        } else {
+            format!("Shots {}   Kills {}", self.death.0, self.death.1)
+        };
         c.text_centered(&self.font, rect(panel.x, 316.0, panel.w, 36.0), 28.0, WHITE, &stats);
         for (id, r) in self.items() {
             self.button(c, r, if id == Id::Restart { "Restart hunt" } else { "Main menu" }, self.focus == id, true);

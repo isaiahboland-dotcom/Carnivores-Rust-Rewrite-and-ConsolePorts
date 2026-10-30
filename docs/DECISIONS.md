@@ -2,6 +2,23 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-30 — Wii U: trophies, kill notice, survival, trophy room, exit prompt
+
+The Wii U had no way to leave a hunt but HOME, so nothing could be kept. Now
++ is the original's Esc (the exit prompt; the residency diagnostic it was
+went, as the owner pressed it looking for a pause and got 7 fps) and D-pad
+Right the pause, the owner's layout: A leaves, B stays, Y restarts unsaved.
+Leaving writes `trophy00.sav` in the original format, with its character
+numbers (the hunter first; this port keeps him last, so +1 on save and -1 on
+load) and the original weapon numbers (the hunt keeps carried slots;
+converted when the trophy is taken), so a save moves between PC, 3DS and Wii
+U. Kills go to `trophy00.rec` (`c2_core::record`, now built without std, as
+is `profile`) on leaving or dying, as the PC does. The kill notice and plaque
+are the PC's (its layout and text, `TROPHY_G.TGA`), drawn by Rust into a
+small texture as the menus are and alpha-blended by the GPU. Survival uses
+the core's (`SurvivalOptions::pick`, at most 8 a wave); the trophy room the
+core's `place_trophies` with every species already loaded.
+
 ## 2026-10-30 — Time of day: slot 0 is dawn, slot 1 is day (all platforms)
 
 `TimeOfDay` numbered `Day = 0, Dusk = 1`, and the menus map Dawn to `Dusk`

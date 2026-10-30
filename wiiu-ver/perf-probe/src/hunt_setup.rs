@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use c2_core::{
     area::Area,
     dino::{self, Character, DinoInfo, Herd, Species},
-    game::{Hunt, HuntOptions, WeaponInfo, Weapons},
+    game::{Hunt, HuntOptions, SurvivalKind, SurvivalOptions, WeaponInfo, Weapons},
     player::Player,
     rng::MsRand,
 };
@@ -11,7 +11,7 @@ use c2_formats::{
     bits::Bits,
     car::{self, Car},
     res_txt::ResTxt,
-    sav::{Save, TrophyItem},
+    sav::Save,
 };
 
 pub const SPECIES_FILES: [&str; 15] = [
@@ -95,7 +95,18 @@ pub struct HuntChoice {
     pub ambient: u32,
     /// Descriptions in US units (`DINOn.TXU`) instead of metric (`.TXM`).
     pub units_us: u32,
+    /// `MODE_HUNT`, `MODE_SURVIVAL` or `MODE_TROPHY` (the trophy room).
+    pub mode: u32,
+    /// A survival's kind: 0 normal, 1 hardcore, 2 custom (`SurvivalKind::ALL`).
+    pub survival: u32,
 }
+pub const MODE_HUNT: u32 = 0;
+pub const MODE_SURVIVAL: u32 = 1;
+pub const MODE_TROPHY: u32 = 2;
+/// The most animals in a survival wave.
+pub const SURVIVAL_MAX: usize = 8;
+/// The trophy room's door (`TROPHY.MAP`), as the PC and 3DS.
+pub const TROPHY_DOOR: (u16, u16) = (76, 70);
 impl Default for HuntChoice {
     fn default() -> Self {
         Self {
@@ -114,6 +125,8 @@ impl Default for HuntChoice {
             death_anim: 1,
             ambient: 1,
             units_us: 0,
+            mode: MODE_HUNT,
+            survival: 0,
         }
     }
 }
@@ -127,6 +140,35 @@ impl HuntChoice {
             _ => TimeOfDay::Day,
         }
     }
+    pub fn trophy(&self) -> bool {
+        self.mode == MODE_TROPHY
+    }
+    pub fn survival_kind(&self) -> Option<SurvivalKind> {
+        (self.mode == MODE_SURVIVAL).then(|| SurvivalKind::ALL[(self.survival as usize).min(2)])
+    }
+}
+
+/// The original numbers characters in `_RES.TXT` order, the hunter first;
+/// this port has the hunter last (`HUNTER_SPECIES`). Saves keep the
+/// original's numbers, so they work on the PC and the 3DS too.
+pub fn room_from_save(save: &Save) -> Save {
+    let mut room = save.clone();
+    for b in room.bodies.iter_mut().filter(|b| b.ctype > 0) {
+        b.ctype -= 1;
+    }
+    room
+}
+pub fn room_to_save(room: &Save) -> Save {
+    let mut save = room.clone();
+    for b in save.bodies.iter_mut().filter(|b| b.ctype > 0) {
+        b.ctype += 1;
+    }
+    save
+}
+
+/// A new hunter's save: no trophies yet.
+pub fn new_save() -> Save {
+    c2_core::profile::new_player("Hunter", 0, 0)
 }
 
 #[allow(dead_code)] // the host tests' shorthand
@@ -140,7 +182,7 @@ pub fn setup(
     seed: u32,
 ) -> Result<(Hunt, Vec<Car>), i32> {
     let choice = HuntChoice { animals: selected, radar: radar as u32, weapons, ..Default::default() };
-    setup_with(area, definitions, assets, &choice, seed)
+    setup_with(area, definitions, assets, &choice, &new_save(), seed)
 }
 
 pub fn setup_with(
@@ -148,13 +190,17 @@ pub fn setup_with(
     definitions: &str,
     assets: &[&[u8]],
     choice: &HuntChoice,
+    room: &Save,
     seed: u32,
 ) -> Result<(Hunt, Vec<Car>), i32> {
-    let (selected, weapons) = (choice.animals, if choice.observer != 0 { 0 } else { choice.weapons });
+    // The trophy room: no animals to hunt, no weapons. A survival: no
+    // observing.
+    let trophy = choice.trophy();
+    let observer = choice.observer != 0 && choice.mode == MODE_HUNT;
+    let (selected, weapons) = (choice.animals, if observer || trophy { 0 } else { choice.weapons });
     if assets.len() != MODEL_COUNT
-        || selected == 0
-        || selected & !TARGET_MASK != 0
-        || (weapons == 0 && choice.observer == 0)
+        || (!trophy && (selected == 0 || selected & !TARGET_MASK != 0))
+        || (weapons == 0 && !observer && !trophy)
         || weapons & !((1 << WEAPON_COUNT) - 1) != 0
     {
         return Err(-10);
@@ -216,7 +262,7 @@ pub fn setup_with(
         infos.push(info);
         present = present | Bits::bit(infos.len() - 1);
     }
-    let hunt = new_hunt(area, species, infos, anims, present, choice, seed)?;
+    let hunt = new_hunt(area, species, infos, anims, present, choice, room, seed)?;
     Ok((hunt, cars))
 }
 
@@ -232,17 +278,18 @@ pub fn restart(area: &Area, previous: &Hunt, seed: u32) -> Result<Hunt, i32> {
     });
     let ambient = previous.herd.chars.iter().any(|c| c.ctype < AMBIENT_COUNT) as u32;
     let choice = HuntChoice { animals, ambient, ..Default::default() };
-    restart_with(area, previous, &choice, seed)
+    restart_with(area, previous, &choice, &previous.room, seed)
 }
 
 /// A new hunt with `previous`'s loaded animals and weapons, its options
-/// (camouflage, blood...) and `choice`'s animals, ambient population and
-/// double ammo.
-pub fn restart_with(area: &Area, previous: &Hunt, choice: &HuntChoice, seed: u32) -> Result<Hunt, i32> {
+/// (camouflage, blood...), `choice`'s animals, ambient population, double
+/// ammo and mode, and the trophies of `room` (the saved ones: a hunt that
+/// ended in death keeps none of its own).
+pub fn restart_with(area: &Area, previous: &Hunt, choice: &HuntChoice, room: &Save, seed: u32) -> Result<Hunt, i32> {
     let weapons = previous.weapons.info.clone();
     let anims = previous.weapons.anim_ms.clone();
     let present = (0..weapons.len()).fold(Bits::NONE, |bits, i| bits | Bits::bit(i));
-    let mut hunt = new_hunt(area, previous.herd.species.clone(), weapons, anims, present, choice, seed)?;
+    let mut hunt = new_hunt(area, previous.herd.species.clone(), weapons, anims, present, choice, room, seed)?;
     let targets = hunt.opts.targets;
     hunt.opts = previous.opts;
     hunt.opts.targets = targets;
@@ -256,8 +303,12 @@ fn new_hunt(
     anim_ms: Vec<[i32; 4]>,
     present: Bits,
     choice: &HuntChoice,
+    room: &Save,
     seed: u32,
 ) -> Result<Hunt, i32> {
+    if choice.trophy() {
+        return Ok(trophy_room(area, species, info, anim_ms, choice, room, seed));
+    }
     let selected = choice.animals;
     let player = Player::new(area, *area.landings.first().ok_or(-11)?);
     let mut herd = Herd {
@@ -331,17 +382,8 @@ fn new_hunt(
         herd.chars.push(ch);
     }
     let weapons = Weapons::new(info, anim_ms, present, choice.double_ammo != 0);
-    let save = Save {
-        player_name_raw: [0; 128],
-        reg_number: 0,
-        score: 9999,
-        rank: 0,
-        last: Default::default(),
-        total: Default::default(),
-        bodies: [TrophyItem::default(); 24],
-        options: Default::default(),
-    };
-    let hunt = Hunt::new(
+    let observer = choice.observer != 0 && choice.mode == MODE_HUNT;
+    let mut hunt = Hunt::new(
         area,
         player,
         herd,
@@ -352,17 +394,57 @@ fn new_hunt(
             radar: choice.radar != 0,
             camo: choice.camo != 0,
             scent: choice.scent != 0,
-            tranq: choice.tranq != 0,
-            observer: choice.observer != 0,
+            tranq: choice.tranq != 0 && choice.mode == MODE_HUNT,
+            observer,
             dino_run_k: choice.run_pct.clamp(50, 100) as f32 / 100.0,
             blood: choice.blood != 0,
             death_anim: choice.death_anim != 0,
             distant_ai: true,
             ..Default::default()
         },
-        save,
+        room.clone(),
     );
+    hunt.area_no = choice.area as i32 + 1;
+    if let Some(kind) = choice.survival_kind() {
+        let opts = SurvivalOptions::pick(&hunt, kind, SURVIVAL_MAX);
+        hunt.start_survival(area, opts);
+    }
     Ok(hunt)
+}
+
+/// `TROPHY.MAP`: the hunter at the door, the saved trophies on their stands
+/// (every species is loaded), no weapons, nothing alive.
+fn trophy_room(
+    area: &Area,
+    species: Vec<Species>,
+    info: Vec<WeaponInfo>,
+    anim_ms: Vec<[i32; 4]>,
+    choice: &HuntChoice,
+    room: &Save,
+    seed: u32,
+) -> Hunt {
+    let mut rng = MsRand::new(seed);
+    let player = Player::new(area, TROPHY_DOOR);
+    let mut herd = Herd {
+        species,
+        ..Default::default()
+    };
+    herd.place_trophies(area, room, &mut rng);
+    let weapons = Weapons::new(info, anim_ms, Bits::NONE, false);
+    Hunt::new(
+        area,
+        player,
+        herd,
+        weapons,
+        rng,
+        HuntOptions {
+            trophy: true,
+            view_r: 60,
+            blood: choice.blood != 0,
+            ..Default::default()
+        },
+        room.clone(),
+    )
 }
 
 /// Bit 0 disables blood; bit 1 skips death playback. Zero keeps original behavior.
