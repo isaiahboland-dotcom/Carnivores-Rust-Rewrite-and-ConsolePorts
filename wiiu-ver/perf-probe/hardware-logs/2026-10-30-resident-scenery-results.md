@@ -42,3 +42,15 @@ Findings:
 - No dense-region fallback (F) frames occurred in this capture.
 - GamePad mirrored gameplay intervals were short (14 and 27 frames); not
   enough to draw conclusions.
+
+## Next candidate: resident terrain/water and incremental crossings
+
+`carnivores-resident-terrain-v1.wuhb`, SHA-256
+`e1245536f93dac17b7fe75743f0f0c382c0705c06bfd78d6bd061e27e19da725`, copied to
+the SD card. With residency on (TCR), terrain and water stay on the GPU in
+world space like scenery, and a cell crossing rewrites one row or column of
+terrain and appends only the scenery that entered the window. Expected:
+TERRAIN and WATER near 0 while turning; crossing frames well below 106 ms,
+with an occasional full scenery rebuild when the buffer fills. PLUS (TCB)
+still compares against the previous CPU path. Host tests pass. Hardware
+behavior is unverified.

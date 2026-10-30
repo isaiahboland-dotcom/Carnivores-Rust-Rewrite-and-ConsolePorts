@@ -23,3 +23,19 @@ static void stream_unlock(GX2RBuffer *buffer, uint32_t vertices) {
     stream_upload.cache += OSGetTime() - start;
     stream_upload.bytes += (C2_RANGE_UPLOAD ? vertices : buffer->elemCount) * buffer->elemSize;
 }
+/* Resident streams: flush only the vertex ranges rewritten this frame. */
+typedef struct { uint32_t first, count; } StreamRange;
+static void stream_unlock_ranges(GX2RBuffer *buffer, const void *ranges, uint32_t count) {
+    const StreamRange *r = ranges;
+    uint64_t start = OSGetTime();
+    GX2RUnlockBufferEx(buffer, C2_RANGE_UPLOAD ?
+        GX2R_RESOURCE_DISABLE_CPU_INVALIDATE | GX2R_RESOURCE_DISABLE_GPU_INVALIDATE : 0);
+    for (uint32_t i = 0; C2_RANGE_UPLOAD && i < count; ++i) {
+        if (r[i].first + r[i].count > buffer->elemCount) OSFatal("Resident range exceeds GPU buffer");
+        GX2Invalidate(GX2_INVALIDATE_MODE_CPU_ATTRIBUTE_BUFFER,
+                      (uint8_t *)buffer->buffer + r[i].first * buffer->elemSize, r[i].count * buffer->elemSize);
+        stream_upload.bytes += r[i].count * buffer->elemSize;
+    }
+    if (!C2_RANGE_UPLOAD) stream_upload.bytes += buffer->elemCount * buffer->elemSize;
+    stream_upload.cache += OSGetTime() - start;
+}

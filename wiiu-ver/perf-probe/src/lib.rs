@@ -66,7 +66,9 @@ struct Simulation {
     area: Area,
     terrain_cache: TerrainCache,
     scenery_candidates: SceneryCandidates,
-    resident_objects: Vec<static_scene::ResidentObject>,
+    resident_scenery: static_scene::ResidentScenery,
+    resident_terrain: static_scene::ResidentTerrain,
+    terrain_written: Vec<static_scene::DrawRange>,
     models: Vec<PreparedModel>,
     model_uvs: Vec<Vec<[[f32; 2]; 3]>>,
     object_lights: Vec<f32>,
@@ -182,7 +184,9 @@ pub extern "C" fn c2_move_create(
         area,
         terrain_cache,
         scenery_candidates: SceneryCandidates::default(),
-        resident_objects: Vec::new(),
+        resident_scenery: static_scene::ResidentScenery::default(),
+        resident_terrain: static_scene::ResidentTerrain::default(),
+        terrain_written: Vec::new(),
         models,
         model_uvs,
         object_lights,
@@ -827,43 +831,77 @@ pub extern "C" fn c2_scenery_vertices(ptr: *mut core::ffi::c_void, positions: *m
     n as u32
 }
 
-// Populate all nearby scenery directions once per player-cell anchor. Return
-// -1 before writing if it cannot fit; C then keeps the legacy visible-stream
-// path. Existing 16 MiB GPU streams are reused, not additional resident copies.
+// Keep nearby scenery in all directions resident, updating it when the player
+// changes cell (see ResidentScenery). `reset` forces a full rebuild (the legacy
+// path shares these buffers). Returns the vertices written from `*first`, or -1
+// if the window cannot fit; C then keeps the legacy visible-stream path.
+// Existing 16 MiB GPU streams are reused, not additional resident copies.
 #[no_mangle]
-pub extern "C" fn c2_scenery_resident_prepare(ptr: *mut core::ffi::c_void,
-    positions: *mut f32, attrs: *mut f32, capacity: u32) -> i32 {
+pub extern "C" fn c2_scenery_resident_prepare(ptr: *mut core::ffi::c_void, reset: i32,
+    positions: *mut f32, attrs: *mut f32, capacity: u32, first: *mut u32) -> i32 {
     let sim = unsafe { &mut *ptr.cast::<Simulation>() };
+    if reset != 0 { sim.resident_scenery.invalidate(); }
     let cell = ((sim.hunt.player.x / 256.0) as i32, (sim.hunt.player.z / 256.0) as i32);
-    sim.scenery_candidates.update(&sim.area.map.objects, sim.models.len(), cell);
-    sim.resident_objects.clear();
-    let Some(total) = static_scene::resident_vertex_count(sim.scenery_candidates.cells.iter().map(|&i|
-        sim.models[sim.area.map.objects[i] as usize].faces.len()), capacity as usize) else { return -1; };
-    let mut n = 0u32;
-    for &i in &sim.scenery_candidates.cells {
-        let id = sim.area.map.objects[i] as usize;
-        let center = [(i%1024) as f32*256.0+128.0,
-            sim.area.map.object_height[i] as f32*64.0, (i/1024) as f32*256.0+128.0];
-        let count = unsafe { static_scene::emit_scenery_model(&sim.models[id], &sim.model_uvs[id],
-            sim.object_lights[i], center, ((sim.area.map.flags[i] >> 2) & 3) as u8,
-            &mut sim.transformed, positions.add(n as usize*4), attrs.add(n as usize*4)) };
-        sim.resident_objects.push(static_scene::ResidentObject { center,
-            radius: sim.model_radii[id], range: static_scene::DrawRange { first:n, count } });
-        n += count;
-    }
-    debug_assert_eq!(n as usize, total);
-    n as i32
+    let Simulation { area, models, model_uvs, model_radii, object_lights, transformed, scenery_candidates, resident_scenery, .. } = sim;
+    let written = resident_scenery.update(scenery_candidates, &area.map.objects, models.len(), cell, capacity,
+        |i| models[area.map.objects[i] as usize].faces.len(),
+        |i, n| {
+            let id = area.map.objects[i] as usize;
+            let center = [(i%1024) as f32*256.0+128.0,
+                area.map.object_height[i] as f32*64.0, (i/1024) as f32*256.0+128.0];
+            let count = unsafe { static_scene::emit_scenery_model(&models[id], &model_uvs[id],
+                object_lights[i], center, ((area.map.flags[i] >> 2) & 3) as u8,
+                transformed, positions.add(n as usize*4), attrs.add(n as usize*4)) };
+            static_scene::ResidentObject { center, radius: model_radii[id],
+                range: static_scene::DrawRange { first: n, count } }
+        });
+    let Some((start, count)) = written else { return -1; };
+    unsafe { *first = start; }
+    count as i32
 }
 #[no_mangle]
 pub extern "C" fn c2_scenery_resident_ranges(ptr: *mut core::ffi::c_void,
     ranges: *mut static_scene::DrawRange, capacity: u32, vertices: *mut u32) -> u32 {
     let sim = unsafe { &*ptr.cast::<Simulation>() };
-    if (capacity as usize) < sim.resident_objects.len() { unsafe { *vertices = 0; } return u32::MAX; }
+    if (capacity as usize) < sim.resident_scenery.objects.len() { unsafe { *vertices = 0; } return u32::MAX; }
     let out = unsafe { core::slice::from_raw_parts_mut(ranges, capacity as usize) };
     let (eye,yaw,pitch) = sim.hunt.camera();
-    let (count,total) = static_scene::resident_ranges(&sim.resident_objects,eye,yaw,pitch,out);
+    let (count,total) = static_scene::resident_ranges(&sim.resident_scenery.objects,eye,yaw,pitch,out);
     unsafe { *vertices = total; }
     count as u32
+}
+
+// Keep the terrain/water window in world space on the GPU, rewriting only the
+// cells that entered it. `reset` forces a full rewrite (the legacy path shares
+// these buffers). Written vertex ranges go to `written` for the cache flush;
+// returns the cells rewritten, or u32::MAX if `capacity` ranges are too few.
+#[no_mangle]
+pub extern "C" fn c2_terrain_resident_update(ptr: *mut core::ffi::c_void, reset: i32,
+    terrain_positions: *mut f32, terrain_attrs: *mut f32, water_positions: *mut f32, water_attrs: *mut f32,
+    written: *mut static_scene::DrawRange, capacity: u32, written_count: *mut u32) -> u32 {
+    let sim = unsafe { &mut *ptr.cast::<Simulation>() };
+    if reset != 0 { sim.resident_terrain.invalidate(); }
+    let cell = ((sim.hunt.player.x / 256.0) as i32, (sim.hunt.player.z / 256.0) as i32);
+    let cells = unsafe { sim.resident_terrain.update(&sim.area, &sim.terrain_cache, cell,
+        (terrain_positions, terrain_attrs), (water_positions, water_attrs), &mut sim.terrain_written) };
+    if sim.terrain_written.len() > capacity as usize { unsafe { *written_count = 0; } return u32::MAX; }
+    unsafe {
+        core::ptr::copy_nonoverlapping(sim.terrain_written.as_ptr(), written, sim.terrain_written.len());
+        *written_count = sim.terrain_written.len() as u32;
+    }
+    cells
+}
+#[no_mangle]
+pub extern "C" fn c2_terrain_resident_ranges(ptr: *mut core::ffi::c_void,
+    terrain: *mut static_scene::DrawRange, water: *mut static_scene::DrawRange, capacity: u32,
+    terrain_count: *mut u32, terrain_vertices: *mut u32, water_count: *mut u32, water_vertices: *mut u32) {
+    let sim = unsafe { &*ptr.cast::<Simulation>() };
+    if (capacity as usize) < static_scene::BLOCK_COUNT { unsafe { c2_move_panic() } }
+    let terrain = unsafe { core::slice::from_raw_parts_mut(terrain, capacity as usize) };
+    let water = unsafe { core::slice::from_raw_parts_mut(water, capacity as usize) };
+    let (eye, yaw, pitch) = sim.hunt.camera();
+    let (tn, tv, wn, wv) = sim.resident_terrain.ranges(eye, yaw, pitch, terrain, water);
+    unsafe { *terrain_count = tn as u32; *terrain_vertices = tv; *water_count = wn as u32; *water_vertices = wv; }
 }
 
 // Emit water only when all four corners belong to water, matching the

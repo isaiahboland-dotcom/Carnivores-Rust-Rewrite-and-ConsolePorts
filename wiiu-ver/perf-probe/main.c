@@ -45,8 +45,10 @@ extern uint32_t c2_water_vertices(void *, float *, float *);
 extern int32_t c2_scenery_atlas(void *, uint8_t *, uint32_t);
 extern uint32_t c2_scenery_vertices(void *, float *, float *, uint32_t);
 typedef struct { uint32_t first, count; } SceneryRange;
-extern int32_t c2_scenery_resident_prepare(void *, float *, float *, uint32_t);
+extern int32_t c2_scenery_resident_prepare(void *, int32_t, float *, float *, uint32_t, uint32_t *);
 extern uint32_t c2_scenery_resident_ranges(void *, SceneryRange *, uint32_t, uint32_t *);
+extern uint32_t c2_terrain_resident_update(void *, int32_t, float *, float *, float *, float *, SceneryRange *, uint32_t, uint32_t *);
+extern void c2_terrain_resident_ranges(void *, SceneryRange *, SceneryRange *, uint32_t, uint32_t *, uint32_t *, uint32_t *, uint32_t *);
 extern int32_t c2_hunt_setup(void *, const uint8_t **, const uint32_t *, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
 extern uint32_t c2_death_active(void *);
 extern int32_t c2_actor_atlas(void *, uint8_t *, uint32_t);
@@ -779,6 +781,10 @@ end_load:
     int resident_enabled = 1;
     struct { int attempted, active; float cell[2]; uint32_t range_count; } resident = {0};
     static SceneryRange scenery_ranges[149 * 149];
+    /* Resident terrain/water follows the PLUS residency toggle. Blocks of 4x4
+     * cells: 37x37 ranges at most. reset forces a full rewrite. */
+    struct { int active, reset; float cell[2]; uint32_t terrain_ranges, water_ranges; } terrain_resident = {0, 1};
+    static SceneryRange terrain_ranges[37 * 37], water_ranges[37 * 37], terrain_written[37 * 37];
     Snapshot snap = {0};
     const uint64_t step_ticks = OSMillisecondsToTicks(16);
     uint64_t accumulated = 0; OSTime previous_time = OSGetTime();
@@ -812,7 +818,7 @@ end_load:
                 if (sample.trigger & VPAD_BUTTON_X) flags |= 32;
                 if (sample.trigger & VPAD_BUTTON_PLUS) {
                     resident_enabled = !resident_enabled; resident.attempted = 0;
-                    resident.active = 0; static_view.valid = 0;
+                    resident.active = 0; static_view.valid = 0; terrain_resident.reset = 1;
                 }
                 if (sample.trigger & VPAD_BUTTON_RIGHT) static_cache_enabled = !static_cache_enabled;
                 if ((sample.trigger & VPAD_BUTTON_LEFT) && tiled_available) tiled_atlases = !tiled_atlases;
@@ -861,7 +867,7 @@ end_load:
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_X) flags |= 32;
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_PLUS) {
                             resident_enabled = !resident_enabled; resident.attempted = 0;
-                            resident.active = 0; static_view.valid = 0;
+                            resident.active = 0; static_view.valid = 0; terrain_resident.reset = 1;
                         }
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_RIGHT) static_cache_enabled = !static_cache_enabled;
                         if ((sample_pro.pro.trigger & WPAD_PRO_BUTTON_LEFT) && tiled_available) tiled_atlases = !tiled_atlases;
@@ -907,7 +913,7 @@ end_load:
                 if (action == HUNT_RESTART) {
                     hunt_seed = next_hunt_seed();
                     if (c2_restart_hunt(sim, hunt_seed)) OSFatal("Hunt restart failed");
-                    static_view.valid = 0; resident.attempted = 0; resident.active = 0;
+                    static_view.valid = 0; resident.attempted = 0; resident.active = 0; terrain_resident.reset = 1;
                     pending_toggles = 0; accumulated = 0; previous_time = OSGetTime();
                     memset(&gamepad, 0, sizeof(gamepad)); memset(pro, 0, sizeof(pro)); memset(pro_valid, 0, sizeof(pro_valid));
                     memset(&perf, 0, sizeof(perf)); touch_down = 0; full_map = 0;
@@ -942,13 +948,35 @@ end_load:
                     mark = OSGetTime();
                     float *rp = stream_lock(&object_positions), *ra = stream_lock(&object_attrs);
                     if (!rp || !ra) OSFatal("Scenery: resident buffer lock failed");
-                    int32_t uploaded = c2_scenery_resident_prepare(sim, rp, ra, object_positions.elemCount);
-                    scenery_uploaded = uploaded < 0 ? 0u : (uint32_t)uploaded;
-                    stream_unlock(&object_positions, scenery_uploaded); stream_unlock(&object_attrs, scenery_uploaded);
+                    SceneryRange written = {0, 0};
+                    int32_t uploaded = c2_scenery_resident_prepare(sim, !resident.attempted || !resident.active, rp, ra,
+                                                                   object_positions.elemCount, &written.first);
+                    written.count = scenery_uploaded = uploaded < 0 ? 0u : (uint32_t)uploaded;
+                    stream_unlock_ranges(&object_positions, &written, 1); stream_unlock_ranges(&object_attrs, &written, 1);
                     resident.attempted = 1; resident.active = uploaded >= 0;
                     resident.cell[0] = static_key[5]; resident.cell[1] = static_key[6];
                     static_view.valid = 0;
                     perf.scenery += OSGetTime() - mark;
+                }
+                if (resident_enabled != terrain_resident.active) {
+                    float mode = resident_enabled ? -4.0f : -3.0f;
+                    init_gpu_fog(&terrain_fog, fog_color, mode); init_gpu_fog(&water_fog, fog_color, mode);
+                    terrain_resident.active = resident_enabled; terrain_resident.reset = 1;
+                }
+                if (terrain_resident.active && (terrain_resident.reset || terrain_resident.cell[0] != static_key[5] || terrain_resident.cell[1] != static_key[6])) {
+                    mark = OSGetTime();
+                    float *tp = stream_lock(&positions), *ta = stream_lock(&colors);
+                    float *wp = stream_lock(&water_pos), *wa = stream_lock(&water_attr);
+                    if (!tp || !ta || !wp || !wa) OSFatal("Terrain: resident buffer lock failed");
+                    uint32_t written = 0;
+                    if (c2_terrain_resident_update(sim, terrain_resident.reset, tp, ta, wp, wa, terrain_written, 37 * 37, &written) == UINT32_MAX)
+                        OSFatal("Terrain: resident range overflow");
+                    GX2RBuffer *streams[4] = {&positions, &colors, &water_pos, &water_attr};
+                    for (int i = 0; i < 4; ++i) stream_unlock_ranges(streams[i], terrain_written, written);
+                    terrain_resident.reset = 0;
+                    terrain_resident.cell[0] = static_key[5]; terrain_resident.cell[1] = static_key[6];
+                    static_view.valid = 0;
+                    perf.terrain += OSGetTime() - mark;
                 }
                 static_reused = static_view_matches(&static_view, static_key, static_cache_enabled);
                 if (static_reused) {
@@ -958,10 +986,15 @@ end_load:
                 mark = OSGetTime();
                 float *p, *c;
                 if (!static_reused) {
-                    p = stream_lock(&positions); c = stream_lock(&colors);
-                    if (!p || !c) OSFatal("Terrain probe: buffer lock failed");
-                    count = c2_terrain_vertices(sim, p, c);
-                    stream_unlock(&positions, count); stream_unlock(&colors, count);
+                    if (terrain_resident.active) {
+                        c2_terrain_resident_ranges(sim, terrain_ranges, water_ranges, 37 * 37, &terrain_resident.terrain_ranges, &count,
+                                                   &terrain_resident.water_ranges, &water_count);
+                    } else {
+                        p = stream_lock(&positions); c = stream_lock(&colors);
+                        if (!p || !c) OSFatal("Terrain probe: buffer lock failed");
+                        count = c2_terrain_vertices(sim, p, c);
+                        stream_unlock(&positions, count); stream_unlock(&colors, count);
+                    }
                     perf.terrain += OSGetTime() - mark; mark = OSGetTime();
                     if (resident.active) {
                         resident.range_count = c2_scenery_resident_ranges(sim, scenery_ranges, 149*149, &object_count);
@@ -988,10 +1021,12 @@ end_load:
                 gun_ticks = OSGetTime() - gun_start;
                 perf.actors += OSGetTime() - mark; perf.actor_v = actor_count; mark = OSGetTime();
                 if (!static_reused) {
-                    p = stream_lock(&water_pos); c = stream_lock(&water_attr);
-                    if (!p || !c) OSFatal("Water probe: buffer lock failed");
-                    water_count = c2_water_vertices(sim, p, c);
-                    stream_unlock(&water_pos, water_count); stream_unlock(&water_attr, water_count);
+                    if (!terrain_resident.active) {
+                        p = stream_lock(&water_pos); c = stream_lock(&water_attr);
+                        if (!p || !c) OSFatal("Water probe: buffer lock failed");
+                        water_count = c2_water_vertices(sim, p, c);
+                        stream_unlock(&water_pos, water_count); stream_unlock(&water_attr, water_count);
+                    }
                     perf.water += OSGetTime() - mark; mark = OSGetTime();
                     p = stream_lock(&sky_pos); c = stream_lock(&sky_attr);
                     if (!p || !c) OSFatal("Sky probe: buffer lock failed");
@@ -1106,7 +1141,13 @@ end_load:
                 GX2SetPixelTexture(tiled_atlases ? &tiled_atlas : &atlas, sampler_location); GX2SetPixelSampler(&sampler, sampler_location);
                 GX2SetFetchShader(&shader.fetchShader); GX2SetVertexShader(shader.vertexShader); GX2SetPixelShader(shader.pixelShader);
                 GX2RSetAttributeBuffer(&positions, 0, positions.elemSize, 0); GX2RSetAttributeBuffer(&colors, 1, colors.elemSize, 0); GX2RSetAttributeBuffer(&terrain_fog, 2, terrain_fog.elemSize, 0);
-                GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, count, 0, 1);
+                if (terrain_resident.active) {
+                    float camera[8]; c2_scenery_camera(sim, camera);
+                    GX2SetVertexUniformReg(eye_uniform->offset, 4, camera);
+                    GX2SetVertexUniformReg(angles_uniform->offset, 4, camera + 4);
+                    for (uint32_t range = 0; range < terrain_resident.terrain_ranges; ++range)
+                        GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, terrain_ranges[range].count, terrain_ranges[range].first, 1);
+                } else GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, count, 0, 1);
                 if (object_count) {
                     float camera[8]; c2_scenery_camera(sim, camera);
                     GX2SetVertexUniformReg(eye_uniform->offset, 4, camera);
@@ -1135,7 +1176,13 @@ end_load:
                     GX2RSetAttributeBuffer(&water_pos, 0, water_pos.elemSize, 0);
                     GX2RSetAttributeBuffer(&water_attr, 1, water_attr.elemSize, 0);
                     GX2RSetAttributeBuffer(&water_fog, 2, water_fog.elemSize, 0);
-                    GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, water_count, 0, 1);
+                    if (terrain_resident.active) {
+                        float camera[8]; c2_scenery_camera(sim, camera);
+                        GX2SetVertexUniformReg(eye_uniform->offset, 4, camera);
+                        GX2SetVertexUniformReg(angles_uniform->offset, 4, camera + 4);
+                        for (uint32_t range = 0; range < terrain_resident.water_ranges; ++range)
+                            GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, water_ranges[range].count, water_ranges[range].first, 1);
+                    } else GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, water_count, 0, 1);
                 }
                 if (weapon_count) {
                     GX2SetDepthOnlyControl(FALSE, FALSE, GX2_COMPARE_FUNC_ALWAYS);

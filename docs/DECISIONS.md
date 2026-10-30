@@ -2,6 +2,29 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-30 — Wii U: resident terrain and water; scenery updated per crossing
+
+The resident-scenery capture (`wiiu-ver/perf-probe/hardware-logs/2026-10-30-resident-scenery-results.md`)
+showed turning frames bound by CPU-projected terrain (~13 ms) and water
+(~4 ms), and every cell crossing rebuilding ~190k scenery vertices (~106 ms
+frames). With residency on (PLUS):
+
+- Terrain and water are written in world space once into the existing
+  148x148-cell buffers and projected by the shader, like scenery. Slots are
+  toroidal (cell mod 148), so a crossing rewrites only the entering row or
+  column; 4x4-cell blocks are culled with a sphere around everything they
+  hold and drawn as merged ranges. That draws ~17% more terrain triangles
+  than per-cell culling (all off-screen), and a host test checks every
+  triangle the CPU path drew is still drawn, on all five maps.
+- Fog mode -4 (world space, terrain fog start 11366.4) was added to
+  `terrain.vert`; -3 (CPU-projected) remains for the PLUS bypass.
+- A crossing now appends only the scenery objects that entered the window
+  and drops the ones that left. Scenery is no longer strictly in the
+  original near-first order between rebuilds. Blending is off, so only
+  equal-depth ties and draw merging can differ. When the buffer fills, the
+  window is rebuilt in the original order (a hitch every ~200 crossings with
+  the 524,288-vertex buffer).
+
 ## 2026-10-29 — The README for GitHub; the roadmap kept locally
 
 Before publishing (owner's request), `README.md` became the public page:
