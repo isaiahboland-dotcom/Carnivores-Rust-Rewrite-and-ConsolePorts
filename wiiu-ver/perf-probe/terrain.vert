@@ -1,9 +1,10 @@
 #version 330
 in vec4 aPosition;
 in vec4 aTexLight;
-in vec4 aFog;
 uniform vec4 uEye;
 uniform vec4 uAngles;
+// The fog colour and mode, the same for a whole draw.
+uniform vec4 uFog;
 out vec2 vTex;
 out float vLight;
 out float vCutout;
@@ -11,14 +12,14 @@ out vec4 vFog;
 out vec3 vView;
 void main() {
     vec4 position = aPosition;
-    vFog = aFog;
+    vFog = uFog;
     // -2: world space, object fog; -3: CPU-projected, terrain fog;
     // -4: world space, terrain fog (resident terrain and water).
-    if (aFog.a < -2.5 && aFog.a > -3.5) {
+    if (uFog.a < -2.5 && uFog.a > -3.5) {
         vec3 view = vec3(position.x / 0.75, position.y / 1.333, position.w);
         vFog.a = clamp((length(view) - 11366.4) / (18944.0 - 11366.4), 0.0, 1.0);
-    } else if (aFog.a < -1.5) {
-        float fogStart = aFog.a < -3.5 ? 11366.4 : 15155.2;
+    } else if (uFog.a < -1.5) {
+        float fogStart = uFog.a < -3.5 ? 11366.4 : 15155.2;
         vec3 w = aPosition.xyz - uEye.xyz;
         float side = w.x * uAngles.y + w.z * uAngles.x;
         float forward = w.x * uAngles.x - w.z * uAngles.y;

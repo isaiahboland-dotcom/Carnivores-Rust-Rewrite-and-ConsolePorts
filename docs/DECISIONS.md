@@ -2,6 +2,40 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-30 — Wii U: 720p TV world, opaque terrain shader, 16-bit atlases, 32-byte vertices
+
+Four GPU savings for thick jungle, after the mip levels:
+
+- **720p TV world.** The TV's world (sky to gun) is drawn at 1280x720, 2.25x
+  fewer pixels, then scaled up (bilinear) onto WHB's 1080p TV buffer; the HUD,
+  the overlay and the performance text go on top at 1080p, so text stays
+  sharp. The 720p colour and depth buffers live in the memory of WHB's 1080p
+  TV depth buffer (fast MEM1, 8.3 MiB, unused once the world is done: the 2D
+  layers draw without depth), so no allocation of our own has to follow WHB
+  across a foreground release. Only when the TV buffer is taller than 720
+  (a 720p or 480p TV draws as before). L3 draws at the TV's own resolution
+  for an A/B (overlay line 6, 5th letter S / N; capture `tv_world`).
+- **Opaque shader for terrain and water.** `discard` in a pixel shader makes
+  the GPU shade before testing depth. Terrain and water never cut out (the
+  terrain texels are all opaque; water's flag is 0), so they draw with
+  `terrain_opaque.frag`, the same shader without the discard; its
+  `DB_SHADER_CONTROL` is 0x10 (early Z) where the cut-out one is 0x50 (kill).
+  Same pixels, same draw order.
+- **R5G5B5A1 atlases.** The three tiled world atlases are 16-bit. The
+  original's textures are RGB555 widened to 8 bits (`rgb555_to_rgba8`), so
+  level 0 comes back exactly; alpha keeps the 0.5 cut. The mip levels are
+  still averaged in RGBA8 and then rounded to 5 bits, and so are the Wii U's
+  dawn warmth and night vision (the original's `BrightenTexture` also works
+  on 16-bit texels). Sky, map, HUD and menus stay RGBA8 (small or CPU-drawn).
+- **32-byte vertices.** The fog (colour, and the mode in w) was a third
+  16-byte stream with the same value in every vertex of a draw; it is now a
+  vertex-shader uniform set per draw, and the seven fog buffers are gone.
+
+Capture schema 11 (`tv_world`, `tv_target=` in the header). Untested in Cemu
+and on hardware: the 16-bit channel order is from the R600 format
+(`FMT_1_5_5_5`: red in the low bits) and the CPU writes native 16-bit words,
+so a red/blue swap or wrong-looking ground would point there.
+
 ## 2026-10-30 — Wii U: mip levels for the world's atlases
 
 The Wii U is GPU-bound in thick jungle (43-50 ms frames, ~29 ms of it waiting
