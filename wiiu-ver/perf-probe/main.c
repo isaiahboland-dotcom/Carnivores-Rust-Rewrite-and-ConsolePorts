@@ -64,7 +64,7 @@ extern int32_t c2_sound_clip(void *, uint32_t, uint32_t, const uint8_t **, uint3
 typedef struct { float x, z; uint32_t rgba; } RadarBlip;
 extern void c2_set_radar(void *, uint32_t);
 extern uint32_t c2_radar_blips(void *, RadarBlip *, uint32_t);
-typedef struct { int32_t ammo; uint32_t weapon_ready; int32_t call; int32_t weapon; } HudState;
+typedef struct { int32_t ammo; uint32_t weapon_ready; int32_t call; int32_t weapon; uint32_t kills; } HudState;
 extern void c2_hud_state(void *, HudState *);
 extern uint32_t c2_hunt_dead(void *, uint32_t *, uint32_t *);
 extern int32_t c2_restart_hunt(void *, uint32_t);
@@ -207,7 +207,7 @@ static void perf_line(GX2Texture *tex, int row, const char *text) {
         }
     }
 }
-typedef struct { uint64_t frame, wait, terrain, scenery, water, sky, map, draw, present, simulation, actors; uint32_t frames, terrain_v, scenery_v, water_v, actor_v, tiled_atlases, static_cache_enabled, resident_enabled, resident_active; } Perf;
+typedef struct { uint64_t frame, wait, terrain, scenery, water, sky, map, draw, present, simulation, actors; uint32_t frames, terrain_v, scenery_v, water_v, actor_v, vsync, tiled_atlases, static_cache_enabled, resident_enabled, resident_active; } Perf;
 static double avg_ms(uint64_t ticks, uint32_t frames) { return frames ? (double)OSTicksToMicroseconds(ticks) / (1000.0 * frames) : 0.0; }
 static void perf_update(GX2Texture *tex, const Perf *p) {
     uint8_t *pixels = tex->surface.image;
@@ -221,7 +221,7 @@ static void perf_update(GX2Texture *tex, const Perf *p) {
     snprintf(line, sizeof(line), "CPU WATER %.1f SKY %.1f MAP %.1f", avg_ms(p->water,p->frames), avg_ms(p->sky,p->frames), avg_ms(p->map,p->frames)); perf_line(tex,2,line);
     snprintf(line, sizeof(line), "CPU DRAW %.1f PRESENT %.1f", avg_ms(p->draw,p->frames), avg_ms(p->present,p->frames)); perf_line(tex,3,line);
     snprintf(line, sizeof(line), "CPU SIM %.1f ACTORS %.1f", avg_ms(p->simulation,p->frames),avg_ms(p->actors,p->frames)); perf_line(tex,4,line);
-    snprintf(line, sizeof(line), "%c%c%c T %u S %u A %u", p->tiled_atlases ? 'T' : 'L', p->static_cache_enabled ? 'C' : 'B', p->resident_enabled ? (p->resident_active ? 'R' : 'F') : 'B', p->terrain_v,p->scenery_v,p->actor_v); perf_line(tex,5,line);
+    snprintf(line, sizeof(line), "%c%c%c T %u S %u A %u", p->vsync ? 'V' : 'N', p->static_cache_enabled ? 'C' : 'B', p->resident_enabled ? (p->resident_active ? 'R' : 'F') : 'B', p->terrain_v,p->scenery_v,p->actor_v); perf_line(tex,5,line);
     GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, tex->surface.image, tex->surface.imageSize);
 }
 #include "menu.h"
@@ -234,6 +234,7 @@ static void hud_update(GX2Texture *tex, const HudState *hud, uint32_t selection)
     int weapon=0, rank=hud->weapon; for(int i=0;i<6;++i) if(selection&(1u<<i)) { if(rank--==0) { weapon=i; break; } }
     if (selection) snprintf(line, sizeof(line), "%s %d", names[weapon], hud->ammo); else snprintf(line, sizeof(line), "OBSERVER");
     perf_line(tex, 0, line);
+    snprintf(line, sizeof(line), "KILLS %u", hud->kills); perf_line(tex, 1, line);
     GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, tex->surface.image, tex->surface.imageSize);
 }
 
@@ -456,6 +457,7 @@ static int run_menu(void *ui, int death, uint32_t shots, uint32_t kills) {
                 GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, tex[i].surface.image, tex[i].surface.imageSize);
                 took[i] = OSTicksToMicroseconds(OSGetTime() - start);
             }
+            c2_menu_drawn(ui);
             static uint32_t redraws;
             if (++redraws <= 200) {
                 char checkpoint[96];
@@ -706,6 +708,10 @@ end_load:
         && atlas_tiled_copy(&object_atlas, &tiled_object_atlas)
         && atlas_tiled_copy(&actor_atlas, &tiled_actor_atlas);
     int tiled_atlases = tiled_available;
+    /* D-pad Left: a diagnostic that turns vsync off (tearing) so a capture
+     * shows how fast frames really are instead of 30/60 FPS steps. */
+    int vsync = 1;
+    GX2SetSwapInterval(1);
     OSReport("C2 tiled atlas A/B available %d; D-pad LEFT switches layouts\n", tiled_available);
     GX2RBuffer object_positions = {0}, object_attrs = {0};
     object_positions.flags = GX2R_RESOURCE_BIND_VERTEX_BUFFER | GX2R_RESOURCE_USAGE_CPU_WRITE | GX2R_RESOURCE_USAGE_GPU_READ;
@@ -823,17 +829,24 @@ end_load:
     GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, icons_tex.surface.image, icons_tex.surface.imageSize);
     GX2InitTextureRegs(&icons_tex);
     GX2RBuffer hud_pos = {0}, hud_attr = {0};
+    GX2RBuffer panel_kills_pos = {0}, panel_kills_attr = {0};
     GX2RBuffer panel_ammo_pos = {0}, panel_ammo_attr = {0}, gun_icon_pos = {0}, gun_icon_attr = {0}, call_icon_pos = {0}, call_icon_attr = {0};
     const float hv[24] = {0.54f,-0.76f,0,1, 0.98f,-0.76f,0,1, 0.98f,-0.96f,0,1, 0.54f,-0.76f,0,1, 0.98f,-0.96f,0,1, 0.54f,-0.96f,0,1};
     const float ha[24] = {0,0,1,1, .5f,0,1,1, .5f,.3125f,1,1, 0,0,1,1, .5f,.3125f,1,1, 0,.3125f,1,1};
-    const float tav[24] = {-0.98f,0.32f,0,1, -0.60f,0.32f,0,1, -0.60f,0.22f,0,1, -0.98f,0.32f,0,1, -0.60f,0.22f,0,1, -0.98f,0.22f,0,1};
+    /* GamePad panel labels in the strip above the pictures: the carried
+     * weapon and its ammo over the guns, the kills over the calls (HUD rows
+     * 0 and 1). */
+    const float tav[24] = {-0.98f,0.97f,0,1, -0.60f,0.97f,0,1, -0.60f,0.87f,0,1, -0.98f,0.97f,0,1, -0.60f,0.87f,0,1, -0.98f,0.87f,0,1};
     const float taa[24] = {0,0,1,1, .5f,0,1,1, .5f,.15625f,1,1, 0,0,1,1, .5f,.15625f,1,1, 0,.15625f,1,1};
+    const float tkv[24] = {0.60f,0.97f,0,1, 0.98f,0.97f,0,1, 0.98f,0.87f,0,1, 0.60f,0.97f,0,1, 0.98f,0.87f,0,1, 0.60f,0.87f,0,1};
+    const float tka[24] = {0,.1484f,1,1, .5f,.1484f,1,1, .5f,.3047f,1,1, 0,.1484f,1,1, .5f,.3047f,1,1, 0,.3047f,1,1};
     const float civ[24] = {0.60f,0.86f,0,1, 0.98f,0.86f,0,1, 0.98f,-0.86f,0,1, 0.60f,0.86f,0,1, 0.98f,-0.86f,0,1, 0.60f,-0.86f,0,1};
     const float cia[24] = {.5f,0,1,0, 1,0,1,0, 1,1,1,0, .5f,0,1,0, 1,1,1,0, .5f,1,1,0};
     init_quad(&hud_pos, &hud_attr, &map_pos, hv, ha);
     init_quad(&panel_ammo_pos, &panel_ammo_attr, &map_pos, tav, taa);
+    init_quad(&panel_kills_pos, &panel_kills_attr, &map_pos, tkv, tka);
     init_weapon_grid(&gun_icon_pos, &gun_icon_attr, &map_pos); init_quad(&call_icon_pos, &call_icon_attr, &map_pos, civ, cia);
-    HudState prev_hud = {-1, 2, -1, -1};
+    HudState prev_hud = {-1, 2, -1, -1, UINT32_MAX};
     float fog_color[3]; c2_fog_color(sim, fog_color);
     init_gpu_fog(&terrain_fog, fog_color, -3.0f); init_gpu_fog(&water_fog, fog_color, -3.0f);
     init_gpu_fog(&object_fog, fog_color, -2.0f);
@@ -891,7 +904,7 @@ end_load:
                     resident.active = 0; static_view.valid = 0; terrain_resident.reset = 1;
                 }
                 if (sample.trigger & VPAD_BUTTON_RIGHT) static_cache_enabled = !static_cache_enabled;
-                if ((sample.trigger & VPAD_BUTTON_LEFT) && tiled_available) tiled_atlases = !tiled_atlases;
+                if (sample.trigger & VPAD_BUTTON_LEFT) { vsync = !vsync; GX2SetSwapInterval(vsync ? 1 : 0); }
                 if (sample.trigger & VPAD_BUTTON_R) full_map = !full_map;
                 if (sample.trigger & VPAD_BUTTON_MINUS) gamepad_game = !gamepad_game;
                 VPADTouchData touch = {0};
@@ -940,7 +953,7 @@ end_load:
                             resident.active = 0; static_view.valid = 0; terrain_resident.reset = 1;
                         }
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_RIGHT) static_cache_enabled = !static_cache_enabled;
-                        if ((sample_pro.pro.trigger & WPAD_PRO_BUTTON_LEFT) && tiled_available) tiled_atlases = !tiled_atlases;
+                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_LEFT) { vsync = !vsync; GX2SetSwapInterval(vsync ? 1 : 0); }
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_R) full_map = !full_map;
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_MINUS) gamepad_game = !gamepad_game;
                     }
@@ -988,7 +1001,7 @@ end_load:
                     pending_toggles = 0; accumulated = 0; previous_time = OSGetTime();
                     memset(&gamepad, 0, sizeof(gamepad)); memset(pro, 0, sizeof(pro)); memset(pro_valid, 0, sizeof(pro_valid));
                     memset(&perf, 0, sizeof(perf)); touch_down = 0; full_map = 0;
-                    prev_hud = (HudState){-1, 2, -1};
+                    prev_hud = (HudState){-1, 2, -1, -1, UINT32_MAX};
                     continue;
                 }
                 session_result = action;
@@ -1014,9 +1027,9 @@ end_load:
                 prev_call_page = call_page;
                 GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, icons_tex.surface.image, icons_tex.surface.imageSize);
             }
-            if (hud.call != prev_hud.call || hud.weapon != prev_hud.weapon || hud.ammo != prev_hud.ammo || hud.weapon_ready != prev_hud.weapon_ready) { hud_update(&hud_tex, &hud, carried_weapons); prev_hud = hud; }
+            if (hud.call != prev_hud.call || hud.weapon != prev_hud.weapon || hud.ammo != prev_hud.ammo || hud.weapon_ready != prev_hud.weapon_ready || hud.kills != prev_hud.kills) { hud_update(&hud_tex, &hud, carried_weapons); prev_hud = hud; }
             memset(&stream_upload, 0, sizeof(stream_upload));
-            perf.tiled_atlases = tiled_atlases; perf.static_cache_enabled = static_cache_enabled;
+            perf.tiled_atlases = tiled_atlases; perf.vsync = vsync; perf.static_cache_enabled = static_cache_enabled;
             int death_active = c2_death_active(sim);
             int show_map[2] = {map_view_visible(death_active, full_map, gamepad_game, 0),
                               map_view_visible(death_active, full_map, gamepad_game, 1)};
@@ -1214,6 +1227,8 @@ end_load:
                         GX2SetPixelTexture(&hud_tex, sampler_location);
                         GX2RSetAttributeBuffer(&panel_ammo_pos, 0, panel_ammo_pos.elemSize, 0); GX2RSetAttributeBuffer(&panel_ammo_attr, 1, panel_ammo_attr.elemSize, 0);
                         GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
+                        GX2RSetAttributeBuffer(&panel_kills_pos, 0, panel_kills_pos.elemSize, 0); GX2RSetAttributeBuffer(&panel_kills_attr, 1, panel_kills_attr.elemSize, 0);
+                        GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
                     }
                     if (display == 0) WHBGfxFinishRenderTV(); else WHBGfxFinishRenderDRC();
                     continue;
@@ -1309,7 +1324,7 @@ end_load:
             perf.present += OSGetTime() - mark;
             perf.wait += frame_wait + draw_wait; perf.frame += OSGetTime() - frame_start; perf.frames++;
             performance_frame(&perf, &before, frame_start, hunt_seed, full_map, gamepad_game,
-                sim_ticks, gun_ticks, map_cache_ticks, overlay_ticks, frame_wait, draw_wait, gpu_tv, gpu_drc,
+                sim_ticks, gun_ticks, map_cache_ticks, overlay_ticks, frame_wait, draw_wait, gpu_tv, gpu_drc, vsync,
                 count, object_count, actor_count, weapon_count, water_count, sky_count, death_active, tiled_atlases, static_cache_enabled, static_reused, resident_enabled, resident.active && world_visible,
                 world_visible ? (resident.active ? resident.range_count : (object_count ? 1u : 0u)) : 0u, scenery_uploaded);
         }
@@ -1335,6 +1350,7 @@ end_load:
     GX2RDestroyBufferEx(&perf_pos, 0); GX2RDestroyBufferEx(&perf_attr, 0); free(perf_tex.surface.image);
     GX2RDestroyBufferEx(&hud_pos, 0); GX2RDestroyBufferEx(&hud_attr, 0); free(hud_tex.surface.image);
     GX2RDestroyBufferEx(&panel_ammo_pos, 0); GX2RDestroyBufferEx(&panel_ammo_attr, 0);
+    GX2RDestroyBufferEx(&panel_kills_pos, 0); GX2RDestroyBufferEx(&panel_kills_attr, 0);
     GX2RDestroyBufferEx(&gun_icon_pos, 0); GX2RDestroyBufferEx(&gun_icon_attr, 0); GX2RDestroyBufferEx(&call_icon_pos, 0); GX2RDestroyBufferEx(&call_icon_attr, 0); free(icons_tex.surface.image);
     GX2RDestroyBufferEx(&map_pos, 0); GX2RDestroyBufferEx(&map_attr[0], 0); GX2RDestroyBufferEx(&map_attr[1], 0); free(map_tex.surface.image);
     free(tiled_atlas.surface.image); free(tiled_object_atlas.surface.image); free(tiled_actor_atlas.surface.image);

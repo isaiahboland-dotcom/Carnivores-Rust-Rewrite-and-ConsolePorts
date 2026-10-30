@@ -168,16 +168,36 @@ pub struct Canvas<'a> {
     pub h: usize,
     /// Pixels per logical unit.
     pub s: f32,
+    /// Only pixels in this span (x0, y0, x1, y1) are drawn.
+    clip: (usize, usize, usize, usize),
 }
 
 impl<'a> Canvas<'a> {
     pub fn new(px: &'a mut [u8], pitch: usize, w: usize, h: usize) -> Self {
         assert!(px.len() >= pitch * h * 4 && pitch >= w);
-        Canvas { px, pitch, w, h, s: w as f32 / WIDTH }
+        Canvas { px, pitch, w, h, s: w as f32 / WIDTH, clip: (0, 0, w, h) }
     }
 
     // Logical rectangle to a clamped pixel span.
+    /// Draw only inside `r` (logical units; a pixel of margin around it),
+    /// or everywhere with None. Drawing is the same either way, so a part of
+    /// the screen can be redrawn on its own.
+    pub fn set_clip(&mut self, r: Option<Rect>) {
+        self.clip = (0, 0, self.w, self.h);
+        if let Some(r) = r {
+            self.clip = self.span_full(&r.inset(-2.0));
+        }
+    }
+
+    // Logical rectangle to a pixel span, inside the clip.
     fn span(&self, r: &Rect) -> (usize, usize, usize, usize) {
+        let (x0, y0, x1, y1) = self.span_full(r);
+        let (cx0, cy0, cx1, cy1) = self.clip;
+        (x0.max(cx0), y0.max(cy0), x1.min(cx1).max(x0.max(cx0)), y1.min(cy1).max(y0.max(cy0)))
+    }
+
+    // Logical rectangle to a pixel span, inside the canvas.
+    fn span_full(&self, r: &Rect) -> (usize, usize, usize, usize) {
         let x0 = libm::roundf(r.x * self.s).clamp(0.0, self.w as f32) as usize;
         let y0 = libm::roundf(r.y * self.s).clamp(0.0, self.h as f32) as usize;
         let x1 = libm::roundf((r.x + r.w) * self.s).clamp(0.0, self.w as f32) as usize;
@@ -337,7 +357,7 @@ impl<'a> Canvas<'a> {
 
     // The scaled picture over the pixels of `dst`, alpha = clip coverage.
     fn render_tile(&self, img: &Image, src: Rect, dst: Rect, clip: Clip, bright: f32) -> Tile {
-        let (x0, y0, x1, y1) = self.span(&dst);
+        let (x0, y0, x1, y1) = self.span_full(&dst);
         let (kx, ky) = (src.w / (dst.w * self.s), src.h / (dst.h * self.s));
         let ox = dst.x * self.s;
         let oy = dst.y * self.s;
@@ -361,9 +381,18 @@ impl<'a> Canvas<'a> {
     }
 
     fn put(&mut self, t: &Tile) {
-        for (row, line) in t.px.chunks(t.w.max(1)).enumerate() {
-            let base = ((t.y0 + row) * self.pitch + t.x0) * 4;
-            for (k, p) in line.iter().enumerate() {
+        let (cx0, cy0, cx1, cy1) = self.clip;
+        if t.w == 0 {
+            return;
+        }
+        let (kx0, kx1) = (cx0.saturating_sub(t.x0).min(t.w), cx1.saturating_sub(t.x0).min(t.w));
+        for (row, line) in t.px.chunks(t.w).enumerate() {
+            let y = t.y0 + row;
+            if y < cy0 || y >= cy1 {
+                continue;
+            }
+            let base = (y * self.pitch + t.x0) * 4;
+            for (k, p) in line.iter().enumerate().take(kx1).skip(kx0) {
                 self.blend_alpha(base + k * 4, *p, p[3] as u32);
             }
         }
@@ -420,12 +449,12 @@ impl<'a> Canvas<'a> {
                     let (ox, oy) = (whole as i32 + g.x, base + g.y);
                     for (row, line) in g.cov.chunks(g.w.max(1)).enumerate() {
                         let py = oy + row as i32;
-                        if py < 0 || py as usize >= self.h {
+                        if py < self.clip.1 as i32 || py >= self.clip.3 as i32 {
                             continue;
                         }
                         for (col, &v) in line.iter().enumerate() {
                             let px = ox + col as i32;
-                            if v > 0 && px >= 0 && (px as usize) < self.w {
+                            if v > 0 && px >= self.clip.0 as i32 && px < self.clip.2 as i32 {
                                 self.blend_alpha((py as usize * self.pitch + px as usize) * 4, c, (v as u32 * c[3] as u32 + 127) / 255);
                             }
                         }
