@@ -4,6 +4,9 @@
 #include <sndcore2/core.h>
 #include <sndcore2/voice.h>
 #include <gx2/draw.h>
+#include <gx2/display.h>
+#include <gx2/swap.h>
+#include <gx2/state.h>
 #include <gx2/event.h>
 #include <gx2/registers.h>
 #include <gx2/shaders.h>
@@ -79,6 +82,9 @@ extern void c2_move_destroy(void *);
 void *c2_move_alloc(size_t n, size_t a) { if (a < sizeof(void *)) a = sizeof(void *); return memalign(a, n); }
 void c2_move_free(void *p) { free(p); }
 void c2_move_panic(const char *message);
+/* GPU timestamps (gx2.rpl; not in WUT's headers). */
+extern void GX2SampleBottomGPUCycle(uint64_t *result);
+extern uint64_t GX2GPUTimeToCPUTime(uint64_t time);
 void c2_hunt_stage(uint32_t stage) { OSReport("C2 hunt diagnostic stage %u\n", stage); }
 void c2_hunt_values(uint32_t toggle, uint32_t hidden, uint32_t underwater, int32_t health, uint32_t active) {
     OSReport("C2 binoculars toggle %u hidden %u underwater %u health %d active %u\n", toggle, hidden, underwater, health, active);
@@ -797,6 +803,10 @@ end_load:
     if (!pp || !pt) OSFatal("Perf probe: buffer lock failed");
     memcpy(pp,pv,sizeof(pv)); memcpy(pt,pa,sizeof(pa)); GX2RUnlockBufferEx(&perf_pos,0); GX2RUnlockBufferEx(&perf_attr,0);
     Perf perf = {0}; perf_update(&perf_tex, &perf);
+    /* GPU time of the previous frame's TV and GamePad passes (written by the
+     * GPU at the bottom of its pipe; read after the next frame's wait). */
+    static uint64_t gpu_stamp[8] __attribute__((aligned(64)));
+    uint64_t gpu_tv = 0, gpu_drc = 0;
     GX2Texture hud_tex = perf_tex;
     hud_tex.surface.image = memalign(hud_tex.surface.alignment, hud_tex.surface.imageSize);
     if (!hud_tex.surface.image) OSFatal("HUD: texture allocation failed");
@@ -856,8 +866,11 @@ end_load:
             OSTime frame_start = OSGetTime(), mark, draw_start;
             uint64_t frame_wait = 0, draw_wait = 0, gun_ticks = 0, map_cache_ticks = 0;
             uint32_t sim_ticks = 0;
+            /* Take the overlay's 30-frame averages now; draw them into its
+             * texture after the GPU wait below. */
             uint64_t overlay_start = OSGetTime();
-            if (perf.frames >= 30) { perf_update(&perf_tex, &perf); memset(&perf, 0, sizeof(perf)); }
+            static Perf overlay_perf; int overlay_due = perf.frames >= 30;
+            if (overlay_due) { overlay_perf = perf; memset(&perf, 0, sizeof(perf)); }
             uint64_t overlay_ticks = OSGetTime() - overlay_start;
             Perf before = perf;
             VPADStatus sample = {0}; VPADReadError error = VPAD_READ_NO_SAMPLES;
@@ -965,6 +978,7 @@ end_load:
             perf.simulation += OSGetTime() - mark;
             if (c2_hunt_dead(sim, &death.shots, &death.kills)) {
                 audio_silence(1);
+                GX2DrawDone();
                 int action = run_menu(ui, 1, death.shots, death.kills);
                 audio_silence(0);
                 if (action == HUNT_RESTART) {
@@ -980,7 +994,18 @@ end_load:
                 session_result = action;
                 break;
             }
+            /* The previous frame was submitted without waiting: the CPU ran
+             * input and simulation while the GPU drew it. Wait here, before
+             * the first CPU write to anything the GPU reads. */
             mark = OSGetTime(); GX2DrawDone(); frame_wait += OSGetTime() - mark;
+            DCInvalidateRange(gpu_stamp, sizeof(gpu_stamp));
+            if (gpu_stamp[1] > gpu_stamp[0] && gpu_stamp[2] >= gpu_stamp[1]) {
+                gpu_tv = GX2GPUTimeToCPUTime(gpu_stamp[1]) - GX2GPUTimeToCPUTime(gpu_stamp[0]);
+                gpu_drc = GX2GPUTimeToCPUTime(gpu_stamp[2]) - GX2GPUTimeToCPUTime(gpu_stamp[1]);
+            }
+            overlay_start = OSGetTime();
+            if (overlay_due) perf_update(&perf_tex, &overlay_perf);
+            overlay_ticks += OSGetTime() - overlay_start;
             c2_hud_state(sim, &hud);
             if (hud.call != prev_hud.call) call_page = call_page_for(menu.animals, hud.call);
             if (hud.call != prev_hud.call || hud.weapon != prev_hud.weapon || call_page != prev_call_page) {
@@ -1160,6 +1185,7 @@ end_load:
             perf.map += OSGetTime() - mark;
             draw_start = OSGetTime();
             WHBGfxBeginRender();
+            GX2SampleBottomGPUCycle(&gpu_stamp[0]);
             for (int display = 0; display < 2; ++display) {
                 if (display == 0) WHBGfxBeginRenderTV(); else WHBGfxBeginRenderDRC();
                 if (show_map[display]) WHBGfxClearColor(0.06f, 0.16f, 0.09f, 1.0f);
@@ -1272,25 +1298,32 @@ end_load:
                     GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
                 }
                 if (display == 0) WHBGfxFinishRenderTV(); else WHBGfxFinishRenderDRC();
+                GX2SampleBottomGPUCycle(&gpu_stamp[1 + display]);
             }
             mark = OSGetTime();
             perf.draw += (uint64_t)(mark - draw_start) - draw_wait;
-            WHBGfxFinishRender();
+            /* WHBGfxFinishRender without its GX2DrawDone: the GPU draws this
+             * frame while the CPU starts the next one. */
+            GX2SwapScanBuffers(); GX2Flush();
+            GX2SetTVEnable(TRUE); GX2SetDRCEnable(TRUE);
             perf.present += OSGetTime() - mark;
             perf.wait += frame_wait + draw_wait; perf.frame += OSGetTime() - frame_start; perf.frames++;
             performance_frame(&perf, &before, frame_start, hunt_seed, full_map, gamepad_game,
-                sim_ticks, gun_ticks, map_cache_ticks, overlay_ticks, frame_wait, draw_wait,
+                sim_ticks, gun_ticks, map_cache_ticks, overlay_ticks, frame_wait, draw_wait, gpu_tv, gpu_drc,
                 count, object_count, actor_count, weapon_count, water_count, sky_count, death_active, tiled_atlases, static_cache_enabled, static_reused, resident_enabled, resident.active && world_visible,
                 world_visible ? (resident.active ? resident.range_count : (object_count ? 1u : 0u)) : 0u, scenery_uploaded);
         }
     }
+    /* The last frame may still be drawing; wait unless ProcUI already took
+     * the GPU (the foreground release waited for it). */
+    if (!lifecycle_exiting) GX2DrawDone();
     lifecycle_checkpoint("cleanup: profiler close begin");
     performance_close();
     lifecycle_checkpoint("cleanup: profiler close complete; audio stop begin");
     lifecycle_sim = NULL; lifecycle_suspended_audio = 0;
     audio_shutdown();
     lifecycle_checkpoint("cleanup: audio stopped; geometry free begin");
-    // Last rendered frame already completed in WHBGfxFinishRender. Avoid a
+    // The last frame completed above or at the foreground release. Avoid a
     // redundant foreground-only wait after ProcUI has released the display.
     GX2RDestroyBufferEx(&positions, 0); GX2RDestroyBufferEx(&colors, 0);
     GX2RDestroyBufferEx(&object_positions, 0); GX2RDestroyBufferEx(&object_attrs, 0);
