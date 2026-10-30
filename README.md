@@ -40,7 +40,7 @@ the 3DS's PICA200 GPU and the Wii U's PowerPC CPU.
 | Platform | State | Notes |
 |---|---|---|
 | **PC** (Linux; Windows untested) | Playable, feature-rich | The full original game, plus add-ons, Modder's Edition games, standalone games, Carnivores: Ice Age, animals from the mobile games, survival mode and a balance editor. Bugs mostly show up when a lot of mods and add-ons are used at once. |
-| **Nintendo 3DS** (homebrew) | Nearly complete | Full hunts, touch menus, bottom-screen map, sound, saves, trophy room, add-on and standalone packs, `.cia` installs. Tested on real 3DS and 2DS hardware. Like PC, bugs mostly come from packing in too many add-ons or mods. |
+| **Nintendo 3DS** (homebrew) | Nearly complete | Full hunts, touch menus, bottom-screen map, sound, saves, trophy room, add-on and standalone packs, `.cia` installs. Tested on real 3DS and 2DS hardware. Optional settings help with the handheld controls (see [below](#3ds-settings-for-handheld-play)). Like PC, bugs mostly come from packing in too many add-ons or mods. |
 | **Wii U** (homebrew) | Demo, being optimized | Stock Carnivores 2 only: menu, all five maps, the nine animals, six weapons, calls, radar, GamePad map. Runs on a real Wii U under Aroma (`.wuhb`), and exits to the HOME menu cleanly. About 30 FPS standing still, 19 FPS while turning, with a brief stutter each time you walk into a new map cell; work continues ([results](wiiu-ver/perf-probe/hardware-logs/2026-10-30-resident-scenery-results.md)). Known issues: weapon selection, the gun being hidden by scenery, the scope and menu resolution. |
 | **PC VR** (OpenXR) | Early first draft | Menus and the hunt setup on a panel, walking the areas, animals that hunt you. No weapons yet. Tested with a PS VR2 on Linux through Monado. |
 | **PS5 / PS VR2** | Not started | Research notes only (`psvr2-ver/gameplan.md`). |
@@ -148,6 +148,18 @@ More: [docs/MODDING.md](docs/MODDING.md) (mods, recipes, balance files, standalo
 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) (viewers, debug modes, design).
 
 ---
+
+## 3DS settings for handheld play
+
+Aiming and moving on a 3DS can feel awkward when a fast predator is on you, so the 3DS version has some
+optional settings to make it easier (Settings on the title screen):
+
+- **3DS friendly**: animals notice you from a shorter distance (60% of the original's). Off by default.
+- **Dinosaur run speed**: a slider from 50% to 100% that slows every species by the same amount, so the
+  differences between them stay. 100% is the original speed.
+
+With both left at their defaults, the hunt plays as the original does. The one difference from PC is a
+shorter view distance.
 
 ## Nintendo 3DS from the command line
 
