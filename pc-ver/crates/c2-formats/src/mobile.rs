@@ -549,8 +549,12 @@ pub fn car_from_in(cat: &Cat, assets: &dyn Assets, kind: &str) -> Result<Car, Fo
     }
     let mut sounds = Vec::new();
     for file in &cat.sounds {
-        let p = format!("assets/sounds/{kind}/{file}.wav");
-        let pcm = match assets.get(&p) {
+        // Beside the model's kind, else where the game keeps it (the
+        // hunter's model is a character's, its sound the hunter's).
+        let found = [kind, "hunter", "misc"]
+            .iter()
+            .find_map(|k| assets.get(&format!("assets/sounds/{k}/{file}.wav")));
+        let pcm = match found {
             Some(d) => decode_wav(&d)?.0,
             None => Vec::new(),
         };

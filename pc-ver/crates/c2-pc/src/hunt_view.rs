@@ -548,12 +548,16 @@ impl HuntView {
         for _ in 0..ms / TICK_MS {
             self.step(&idle);
         }
-        let Some(d) = self
-            .hunt
-            .herd
+        // By its species' AI number (an extra one runs as another), else
+        // the AI it runs.
+        let herd = &self.hunt.herd;
+        let species_ai =
+            |ch: &c2_core::dino::Character| herd.species.get(ch.ctype).map(|s| s.info.ai);
+        let Some(d) = herd
             .chars
             .iter()
-            .find(|ch| ch.ai == ai_id)
+            .find(|ch| species_ai(ch) == Some(ai_id))
+            .or_else(|| herd.chars.iter().find(|ch| ch.ai == ai_id))
             .cloned()
         else {
             tracing::warn!("no character with ai {ai_id}");
@@ -623,6 +627,21 @@ impl HuntView {
             self.step(&HuntInput::default());
         }
         self.prev_cam = self.hunt.camera().0;
+    }
+
+    /// The animal the picked call is for: the species of that AI, or (the
+    /// dialect) the one answering its slot.
+    fn call_name(&self) -> Option<String> {
+        let h = &self.hunt;
+        let slot = h.target_call - 10;
+        h.herd
+            .species
+            .iter()
+            .find(|s| match &s.mee {
+                Some(m) => m.call_no == slot,
+                None => s.info.ai == h.target_call,
+            })
+            .map(|s| s.info.name.clone())
     }
 
     /// Paused, asking to leave, or a message up (screenshots).
@@ -1798,13 +1817,30 @@ impl Scene for HuntView {
                 let st = Buttons {
                     weapon: Some(h.weapons.current).filter(|&i| h.weapons.carried(i)),
                     weapon_out: h.weapons.pose().is_some() && !h.bin_mode,
+                    ammo: h.weapons.pose().map(|_| {
+                        let w = &h.weapons;
+                        let left = w.shots_left[w.current];
+                        match w.ammo_mag.get(w.current) {
+                            Some(&m) if m > 0 => format!("{} / {left}", w.info[w.current].shots),
+                            _ => left.to_string(),
+                        }
+                    }),
                     binoculars: h.bin_mode,
                     calls: h.call_icon_time > 0,
                 };
                 k.buttons(&self.hud, screen, st, &mut sprites);
             }
-            if let (Some((m, _)), None) = (&self.message, &h.survival) {
-                k.notify(&self.hud, screen, m, &mut sprites);
+            // A message, else the call just picked (no call pictures).
+            let call = (h.call_icon_time > 0)
+                .then(|| self.call_name())
+                .flatten()
+                .map(|n| format!("Call: {n}"));
+            let note = match (&self.message, &h.survival) {
+                (Some((m, _)), None) => Some(m.clone()),
+                _ => call,
+            };
+            if let Some(m) = note {
+                k.notify(&self.hud, screen, &m, &mut sprites);
             }
         }
         if let Some(row) = self.picker {

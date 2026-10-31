@@ -2,6 +2,36 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-31 — APK base: each new animal its own slot; the hunt's missing pieces
+
+**Slots.** The original's rules hunt, call and place by AI number, and the
+menu's slot is a huntable's place in `_RES.TXT` (`MenuData::from_res`); the
+two agree while the k-th huntable has AI 10 + k. The APK's nine new animals
+shared their kind's AI, so on every platform a pick of one hunted its donor
+(the 3DS loaded them together, `c2-cook --check` placed none). They now take
+the next AI numbers after the PC's nine, 19 to 27, in `_RES.TXT` order (the
+PC's nine first), as a patched exe's extra slots (Triassic's Gojirasaurus is
+AI 19), so slot, call and placement are theirs. What they run is given by a
+key of ours, `runsAs = <PC AI>` (kept in `CharacterDef::extra`, read into
+`DinoInfo::runs_as`), which `stock_ai` takes before inferring one from the
+clips: inferred, three of the nine stood still and the raptors ran as the
+Allosaurus. The PC's original placement cycles targets over AIs 10..30
+(was 10..20). Original data is unchanged: its huntables are AI 10..18 in
+order. This supersedes "new animals take their donor's AI" (animals entry
+below) for the AI number; the clips are still arranged in the donor's order.
+
+**Missing pieces.** The conversion now writes the hunter's death cries
+(`HUM_DIE1-4`), both footstep sets (`STEPS/HWALKn`, `FOOTWn`), the menu
+sounds (`MENUGO`, `MENUMOV`; the phone's menu music as `MENUAMB`), a
+`DOUBLE.NFO` of our words, and the hunter's own sound (its model is a
+character's but its sound is in `sounds/hunter`). The phone game has no
+water-ring model: `WCIRCLE2.CAR` is ours, procedural (a 16-segment band
+growing from 24 to 128 units over two seconds, as the original's ring; our
+texture). No sun or moon model either: none drawn, as on the phone. The kit
+hunt screen shows the rounds left beside the weapon button and, without call
+pictures, the picked call's animal on the notification bar; the loading
+screen is the phone's picture and logo. `c2-pc play --screen loading` shows it.
+
 ## 2026-10-31 — APK base: the hunt screen from the phone's kit
 
 An APK-built game has none of the PC's hunt pictures (`MAPFRAME.TGA`,

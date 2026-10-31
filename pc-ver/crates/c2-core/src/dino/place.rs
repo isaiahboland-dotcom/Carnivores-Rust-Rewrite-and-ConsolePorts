@@ -171,8 +171,9 @@ impl Herd {
         }
 
         // Main population: the first 4 (or all, with no targets chosen) are
-        // random among the 7 species from AI 10 on; the rest cycle the targets.
-        let targets: Vec<i32> = (10..20).filter(|&a| o.targets.has(a as usize)).collect();
+        // random among the 7 species from AI 10 on; the rest cycle the targets
+        // (extra AI numbers too: a patched exe's, an APK-built game's).
+        let targets: Vec<i32> = (10..30).filter(|&a| o.targets.has(a as usize)).collect();
         let first_main = self.by_ai(10);
         let mc = 8 + o.density / 30 + rng.r_rand(6);
         let mut tr = 0;

@@ -162,6 +162,20 @@ impl HuntKit {
         let weapon = st
             .weapon
             .and_then(|i| self.weapons.get(i).copied().flatten());
+        if let (Some(f), Some(n), true) = (&self.kit.body, &st.ammo, weapon.is_some()) {
+            let tpx = (px * 0.4).round();
+            let at = (x - f.width(tpx, n) - gap, y + (px - tpx) / 2.0);
+            let o = (1.0, 0.0, 0.0);
+            f.sprites(
+                out,
+                o,
+                (at.0 + 1.0, at.1 + 1.0),
+                tpx,
+                [0.0, 0.0, 0.0, 0.8],
+                n,
+            );
+            f.sprites(out, o, at, tpx, LIGHT, n);
+        }
         for (id, on) in [
             (weapon, st.weapon_out),
             (self.call_button, st.calls),
@@ -257,10 +271,12 @@ impl HuntKit {
 }
 
 /// What the round buttons show.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Buttons {
     pub weapon: Option<usize>,
     pub weapon_out: bool,
+    /// Rounds left, beside the weapon (the phone has no bullet pictures).
+    pub ammo: Option<String>,
     pub binoculars: bool,
     pub calls: bool,
 }

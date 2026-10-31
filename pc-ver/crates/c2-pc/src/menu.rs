@@ -393,6 +393,8 @@ pub struct Menu {
     slider: Option<usize>,
     knob: Option<usize>,
     loading: Option<usize>,
+    /// The phone kit's loading board (an APK-built game).
+    kit_loading: Option<Board>,
     columns: Vec<Column>,
     day_texts: Vec<Vec<String>>,
     tranq_text: Vec<String>,
@@ -591,9 +593,11 @@ impl Menu {
         let kit = (MENU_ART.get().is_none() && find_file(&dir, "MENUM.TGA").is_none())
             .then(|| kit::Kit::load(&huntdat, &mut hud, gpu))
             .flatten();
+        let mut kit_loading = None;
         let (main, stats_board, quit_board, reg, waiver, delete, options, credits) = match &kit {
             Some(k) => {
                 let b = k.boards(&mut hud, gpu, &game_title(&huntdat));
+                kit_loading = Some(b.loading);
                 (
                     b.main, b.stats, b.quit, b.reg, b.waiver, b.delete, b.options, b.credits,
                 )
@@ -957,6 +961,7 @@ impl Menu {
             slider,
             knob,
             loading,
+            kit_loading,
             columns: cols,
             day_texts,
             tranq_text,
@@ -1036,6 +1041,7 @@ impl Menu {
             "options" => Screen::Options,
             "credits" => Screen::Credits,
             "register" => Screen::Register,
+            "loading" => Screen::Loading,
             "quit" => Screen::Quit,
             _ => anyhow::bail!("unknown screen {screen:?}"),
         };
@@ -2183,6 +2189,10 @@ impl Menu {
     }
 
     fn draw_loading(&self, out: &mut Vec<Sprite>) {
+        if let (None, Some(b)) = (self.loading, &self.kit_loading) {
+            self.board(out, b, &[]);
+            return;
+        }
         let Some((id, w, h)) = self
             .loading
             .and_then(|i| self.hud.image(i).map(|im| (i, im.w as f32, im.h as f32)))

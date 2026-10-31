@@ -32,7 +32,7 @@ use c2_core::game::SurvivalKind;
 
 const USAGE: &str = "usage:
   c2-pc play  <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR] [--balance FILE]
-              [--screen main|stats|hunt|options|credits|register|quit]
+              [--screen main|stats|hunt|options|credits|register|quit|loading]
               [--script 'X,Y;'TEXT;enter;esc'] [--shot out.png]\n              [--survival-modes classic,modded,ours] [--mobile-survival FILE]
   c2-pc balance <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]...   (prints prices and scores as a balance file)
   c2-pc mobile <APK> --base <GAME_DIR> [--overlay DIR]... --out <DIR>   (the mobile game's animals as add-ons)
@@ -360,7 +360,7 @@ fn main() -> Result<()> {
             // placement of T-Rex/Cerato and score depend on them.
             let targets = match o.value("target") {
                 None => c2_formats::bits::Bits::NONE,
-                Some("all") => (10..=18).collect(),
+                Some("all") => (10..30).collect(),
                 Some(v) => v
                     .split(',')
                     .map(|a| a.trim().parse::<u32>().map(|a| a as usize))

@@ -416,13 +416,24 @@ impl Game<'_> {
         Ok(())
     }
 
-    fn animal_block(&self, name: &str, file: &str, ai: i32, s: &Stored) -> String {
+    /// A `characters` entry; `runs_as`: the PC AI an extra AI number runs
+    /// as.
+    fn animal_block(
+        &self,
+        name: &str,
+        file: &str,
+        (ai, runs_as): (i32, Option<i32>),
+        s: &Stored,
+    ) -> String {
         let a = s.animal();
         let mut b = format!(
             "{{\n name = '{name}'\n file = '{file}'\n ai = {ai}\n health = {}\n mass = {}\n",
             num(a.health),
             num(a.mass)
         );
+        if let Some(r) = runs_as {
+            let _ = writeln!(b, " runsAs = {r}");
+        }
         if ai >= 6 {
             for (k, v) in [
                 ("length", a.length),
@@ -438,7 +449,7 @@ impl Game<'_> {
             let _ = writeln!(b, " scale0 = {}", num(a.scale0 * 1000.0));
             let _ = writeln!(b, " scaleA = {}", num(a.scale_a * 1000.0));
         }
-        if matches!(ai, 6 | 13 | 15 | 16 | 17 | 18) {
+        if matches!(runs_as.unwrap_or(ai), 6 | 13 | 15 | 16 | 17 | 18) {
             b.push_str(" danger = TRUE\n");
         }
         b.push_str("}\n");
@@ -453,12 +464,19 @@ impl Game<'_> {
             self.res
                 .push_str("{\n name = 'Hunter'\n file = 'hunter1.car'\n ai = 0\n health = 2\n}\n");
         }
-        let list: Vec<(i32, Stored)> = self
+        // The PC's own first, then the new ones: a huntable's menu slot is
+        // its place among them, and each new one takes the next AI number
+        // from 19 (a slot of its own; `runsAs` its kind's AI), as a patched
+        // exe's extra slots.
+        let pc = |i: i32| matches!(i, 7..=12 | 16..=24);
+        let mut list: Vec<(i32, Stored)> = self
             .chars
             .params
             .iter()
             .map(|(i, s)| (*i, s.clone()))
             .collect();
+        list.sort_by_key(|(i, _)| (!pc(*i), *i));
+        let mut extra_ai = 19;
         let mut prices = Vec::new();
         for (index, s) in list {
             let stem = AMBIENTS
@@ -473,9 +491,9 @@ impl Game<'_> {
             };
             let car = car_from_in(&c, self.apk, "characters")?;
             let name = self.name(&s, &stem);
-            let (ai, car) = if matches!(index, 7..=12 | 16..=24) {
+            let (ai, car) = if pc(index) {
                 // The PC's own: the same clips in the same order.
-                (index - 6, car)
+                ((index - 6, None), car)
             } else {
                 let donor = DONORS
                     .iter()
@@ -502,12 +520,17 @@ impl Game<'_> {
                     ));
                     continue;
                 };
-                (ai, car)
+                extra_ai += 1;
+                ((extra_ai - 1, Some(ai)), car)
             };
             let file = format!("{stem}.car");
             self.write_car(&file.to_ascii_uppercase(), &car)?;
             self.res.push_str(&self.animal_block(&name, &file, ai, &s));
-            self.built.animals.push(format!("{name} ({file}, AI {ai})"));
+            let (ai, runs_as) = ai;
+            self.built.animals.push(match runs_as {
+                Some(r) => format!("{name} ({file}, AI {ai} as {r})"),
+                None => format!("{name} ({file}, AI {ai})"),
+            });
             if ai >= 10 {
                 self.menu.push(MenuAnimal {
                     index,
@@ -705,10 +728,38 @@ impl Game<'_> {
             let t = format!("{head} : {full}\r\n\r\n{info}\r\n");
             write(&txt.join(file), t.as_bytes())?;
         }
-        if let Some(d) = self.apk.get("assets/sounds/misc/a_underw.wav") {
-            let (pcm, rate) = c2_formats::mobile::decode_wav(&d)?;
-            let p = self.huntdat.join("SOUNDFX").join("A_UNDERW.WAV");
-            write(&p, &crate::mobile::wav(&pcm, rate))?;
+        // Double ammo has no text in the phone game: ours.
+        write(
+            &txt.join("DOUBLE.NFO"),
+            b"Accessory : Double Ammo\r\n\r\nTwice the ammunition for every weapon you carry.\r\n",
+        )?;
+        // The hunter's and the menus' sounds, by the PC's names.
+        let fx = self.huntdat.join("SOUNDFX");
+        std::fs::create_dir_all(fx.join("STEPS")).map_err(io(&fx))?;
+        // (APK file, PC file): the phone keeps the PC's names, lower case.
+        let mut sounds = vec![
+            ("misc/a_underw".to_string(), "A_UNDERW".to_string()),
+            ("menu/menugo".into(), "MENUGO".into()),
+            ("menu/menumov".into(), "MENUMOV".into()),
+            ("menu/menumusic_cmpr".into(), "MENUAMB".into()),
+        ];
+        for n in 1..=4 {
+            sounds.push((format!("hunter/hum_die{n}"), format!("HUM_DIE{n}")));
+        }
+        for n in 1..=3 {
+            for kind in ["HWALK", "FOOTW"] {
+                let from = format!("steps/{}{n}", kind.to_ascii_lowercase());
+                sounds.push((from, format!("STEPS/{kind}{n}")));
+            }
+        }
+        for (from, to) in sounds {
+            if let Some(d) = self.apk.get(&format!("assets/sounds/{from}.wav")) {
+                let (pcm, rate) = c2_formats::mobile::decode_wav(&d)?;
+                write(
+                    &fx.join(format!("{to}.WAV")),
+                    &crate::mobile::wav(&pcm, rate),
+                )?;
+            }
         }
         Ok(())
     }
@@ -786,7 +837,104 @@ impl Game<'_> {
                 }
             }
         }
-        Ok(())
+        // The phone game has no water rings: ours.
+        self.write_car("WCIRCLE2.CAR", &water_ring())
+    }
+}
+
+/// A water ring (`WCIRCLE2.CAR`, which the hunt spreads where something
+/// wades): a flat band of 16 segments, faint white towards its outer edge,
+/// growing over two seconds from 24 to 128 units across as the original's.
+fn water_ring() -> Car {
+    use c2_formats::car::{Animation, ANIFX_SLOTS};
+    use c2_formats::model::{face_flags, Face, Mesh, Vertex};
+    const SEG: usize = 16;
+    const FRAMES: usize = 41;
+    // Outer and inner radius at `t` (0..=1).
+    let radii = |t: f32| {
+        let outer = 24.0 + 104.0 * t;
+        [outer, (outer - 22.0).max(2.0)]
+    };
+    let at = |r: f32, i: usize| {
+        let a = i as f32 / SEG as f32 * std::f32::consts::TAU;
+        (r * a.cos(), r * a.sin())
+    };
+    // Vertices: the outer circle, then the inner.
+    let ring = |t: f32| -> Vec<(f32, f32)> {
+        radii(t)
+            .iter()
+            .flat_map(|&r| (0..SEG).map(move |i| at(r, i)))
+            .collect()
+    };
+    let vertices = ring(0.0)
+        .into_iter()
+        .enumerate()
+        .map(|(i, (x, z))| Vertex {
+            x,
+            y: 0.0,
+            z,
+            owner: (i / SEG) as i16,
+            hide: 0,
+        })
+        .collect();
+    // Across the band: u 0 (inner) to 63 (outer).
+    let face = |v: [usize; 3], tu: [i32; 3]| Face {
+        v: v.map(|v| v as i32),
+        tu,
+        tv: [8; 3],
+        flags: face_flags::DOUBLE_SIDE,
+        dmask: 0,
+        distant: 0,
+        next: 0,
+        group: 0,
+        reserved: [0; 12],
+    };
+    let mut faces = Vec::new();
+    for i in 0..SEG {
+        let j = (i + 1) % SEG;
+        faces.push(face([i, j, SEG + i], [63, 63, 0]));
+        faces.push(face([j, SEG + j, SEG + i], [63, 0, 0]));
+    }
+    // A soft band, brightest three quarters of the way out (5-5-5 grey).
+    let mut texture = vec![0u16; 256 * 256];
+    for (i, p) in texture.iter_mut().enumerate() {
+        let u = (i % 256) as f32 / 63.0;
+        let v = if u > 1.0 {
+            0.0
+        } else if u < 0.75 {
+            u / 0.75
+        } else {
+            (1.0 - u) / 0.25
+        };
+        let c = (v * 26.0) as u16;
+        *p = c << 10 | c << 5 | c;
+    }
+    let mut data = Vec::with_capacity(FRAMES * SEG * 2 * 3);
+    for f in 0..FRAMES {
+        for (x, z) in ring(f as f32 / (FRAMES - 1) as f32) {
+            data.extend([(x * 8.0) as i16, 0, (-z * 8.0) as i16]);
+        }
+    }
+    let mut name_raw = [0u8; 32];
+    name_raw[..8].copy_from_slice(b"Wcircle2");
+    let mut anim_name = [0u8; 32];
+    anim_name[..5].copy_from_slice(b"Water");
+    Car {
+        name_raw,
+        mesh: Mesh {
+            vertices,
+            faces,
+            texture,
+        },
+        animations: vec![Animation {
+            name_raw: anim_name,
+            kps: 20,
+            frames: FRAMES,
+            data,
+        }],
+        sounds: Vec::new(),
+        anim_sounds: Some([-1; ANIFX_SLOTS]),
+        trailing: Vec::new(),
     }
 }
 
@@ -863,6 +1011,15 @@ mod tests {
             frames: 0,
             data: Vec::new(),
         }
+    }
+
+    #[test]
+    fn water_ring_round_trips() {
+        let car = water_ring();
+        let back = c2_formats::car::parse(&c2_formats::car::write(&car)).expect("parses");
+        assert_eq!(back.mesh.vertices.len(), 32);
+        assert_eq!(back.mesh.faces.len(), 32);
+        assert_eq!(back.animations[0].frames, 41);
     }
 
     #[test]

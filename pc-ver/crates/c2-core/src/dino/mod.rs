@@ -96,6 +96,10 @@ pub struct DinoInfo {
     pub scale0: i32,
     pub scale_a: i32,
     pub danger_call: bool,
+    /// The original AI an extra AI number runs as, when the data says
+    /// (`runsAs`: our key, in games we build from an APK); else inferred
+    /// ([`stock_ai`]).
+    pub runs_as: Option<i32>,
 }
 
 impl DinoInfo {
@@ -116,6 +120,11 @@ impl DinoInfo {
             scale0: d.scale0.unwrap_or(800),
             scale_a: d.scale_a.unwrap_or(600),
             danger_call: d.danger,
+            runs_as: d
+                .extra
+                .iter()
+                .find(|e| e.key.eq_ignore_ascii_case("runsAs"))
+                .and_then(|e| e.value.trim().parse().ok()),
         }
     }
 }
@@ -265,10 +274,13 @@ impl Species {
 /// many clips or more, the death clip (named so) at that AI's death index;
 /// a hunter's first if `danger`, else a grazer's, an exact clip count
 /// first. The Gojirasaurus has the T-Rex's ten clips. Without one it stands
-/// still, as before.
+/// still, as before. An original AI named by `runsAs` is taken as it is.
 pub fn stock_ai(info: &DinoInfo, car: &Car) -> Option<i32> {
     if matches!(info.ai, 0..=6 | 10..=18) {
         return None;
+    }
+    if let Some(a) = info.runs_as.filter(|a| matches!(a, 1..=6 | 10..=18)) {
+        return Some(a);
     }
     // (AI, clips it uses, death clip).
     let layout = |a: i32| -> Option<(usize, usize)> {
@@ -1670,6 +1682,7 @@ mod tests {
             scale0: 1000,
             scale_a: 0,
             danger_call: false,
+            runs_as: None,
         };
         Species::new(info, &car)
     }
@@ -1715,6 +1728,10 @@ mod tests {
         assert_eq!(Species::new(info, &named(&["a", "b"])).stock_ai, None);
         // Known AIs are left alone.
         assert_eq!(Species::new(species(13, 0).info, &gojira).stock_ai, None);
+        // Named by the data (`runsAs`): taken, whatever the clips.
+        let mut named_as = species(22, 0).info;
+        named_as.runs_as = Some(ai::VELO);
+        assert_eq!(Species::new(named_as, &allo).stock_ai, Some(ai::VELO));
     }
 
     fn run(herd: &mut Herd, area: &Area, hunter: HunterView, ms: i32) -> Vec<DinoEvent> {

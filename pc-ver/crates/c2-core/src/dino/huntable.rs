@@ -756,6 +756,7 @@ mod tests {
             scale0: 1000,
             scale_a: 0,
             danger_call: false,
+            runs_as: None,
         };
         let mut s = Species::new(info, &car);
         s.mee = Some(Box::new(m));

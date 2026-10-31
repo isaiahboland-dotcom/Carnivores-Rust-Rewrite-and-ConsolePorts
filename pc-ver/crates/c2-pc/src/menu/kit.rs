@@ -351,6 +351,7 @@ pub(super) struct Boards {
     pub delete: Board,
     pub options: Board,
     pub credits: Board,
+    pub loading: Board,
 }
 
 const FULL: Rect = (0.0, 0.0, CW, CH);
@@ -495,6 +496,16 @@ impl Kit {
                 Words(176.0, 380.0, "Click to go back", false),
             ],
         );
+        // While a hunt loads: the phone's picture and logo.
+        let loading = self.board(
+            hud,
+            gpu,
+            &[
+                Art("menu_main_background", FULL),
+                Art("menu_main_logo", (200.0, 120.0, 400.0, 120.0)),
+                Words(330.0, 420.0, "LOADING...", true),
+            ],
+        );
         Boards {
             main,
             stats,
@@ -504,6 +515,7 @@ impl Kit {
             delete,
             options,
             credits,
+            loading,
         }
     }
 }

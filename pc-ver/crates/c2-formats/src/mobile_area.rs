@@ -526,7 +526,11 @@ pub fn rsc_from(rst: &Rst, assets: &dyn Assets) -> Result<Rsc, FormatError> {
         .iter()
         .map(|s| ambient_sound(assets, s.get("file").unwrap_or_default()))
         .collect::<Result<Vec<_>, _>>()?;
-    let level = |v: f32| (v * 255.0).round() as i32;
+    // Rounded to the nearest (no `f32::round` without std).
+    let level = |v: f32| {
+        let x = v * 255.0;
+        (if x < 0.0 { x - 0.5 } else { x + 0.5 }) as i32
+    };
     let ambients = rst
         .items("ambients")
         .iter()
