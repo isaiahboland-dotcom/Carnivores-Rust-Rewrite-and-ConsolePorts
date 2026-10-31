@@ -23,20 +23,20 @@ pub(crate) fn bad(what: &str) -> FormatError {
 fn u16_at(d: &[u8], o: usize) -> Option<u16> {
     Some(u16::from_le_bytes(d.get(o..o + 2)?.try_into().ok()?))
 }
-fn u32_at(d: &[u8], o: usize) -> Option<u32> {
+pub(crate) fn u32_at(d: &[u8], o: usize) -> Option<u32> {
     Some(u32::from_le_bytes(d.get(o..o + 4)?.try_into().ok()?))
 }
-fn u64_at(d: &[u8], o: usize) -> Option<u64> {
+pub(crate) fn u64_at(d: &[u8], o: usize) -> Option<u64> {
     Some(u64::from_le_bytes(d.get(o..o + 8)?.try_into().ok()?))
 }
 
 /// An ELF64 section: type, address, file offset, size, link.
 pub(crate) struct Section {
-    kind: u32,
-    addr: u64,
-    off: usize,
-    size: usize,
-    link: usize,
+    pub(crate) kind: u32,
+    pub(crate) addr: u64,
+    pub(crate) off: usize,
+    pub(crate) size: usize,
+    pub(crate) link: usize,
 }
 
 pub(crate) fn sections(d: &[u8]) -> Option<Vec<Section>> {
@@ -137,7 +137,7 @@ pub(crate) fn bitmask(n: u32, immr: u32, imms: u32) -> Option<u64> {
 }
 
 /// `FMOV Dd, #imm8` as a double.
-fn fmov_imm(imm8: u32) -> f64 {
+pub(crate) fn fmov_imm(imm8: u32) -> f64 {
     let sign = if imm8 & 0x80 != 0 { -1.0 } else { 1.0 };
     let exp = (((imm8 >> 4) & 7) ^ 4) as i32 - 3;
     sign * (1.0 + f64::from(imm8 & 15) / 16.0) * pow2(exp)

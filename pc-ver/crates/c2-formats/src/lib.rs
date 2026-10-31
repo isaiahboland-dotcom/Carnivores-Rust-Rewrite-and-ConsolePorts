@@ -25,6 +25,7 @@ pub mod menu_txt;
 pub mod mobile;
 pub mod mobile_arcade;
 pub mod mobile_area;
+pub mod mobile_chars;
 pub mod mobile_values;
 pub mod model;
 pub mod portrait;

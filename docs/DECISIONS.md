@@ -2,6 +2,33 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-31 — APK base: animals, weapons and `_RES.TXT` from the game's code
+
+The mobile games keep no `_RES.TXT`: `CharactersManager::CharacterInfo_Init`
+calls `CharacterInfo_SetDefaultParams_DH` (`_IA` in Ice Age) and
+`CharacterInfo_SetDefaultWeaponsParams` per character index, each a `switch`
+filling a 5768-byte `CharacterInfo` with constants, a localization key
+(`STR_T_REX`) and balance-table values (`DINO_T_REX_HEALTH`, found by
+`strcmp`). `c2_formats::mobile_chars` runs those functions on a small AArch64
+interpreter (calls stood in for by their PLT names) and reads the stores;
+`Game::LoadCharacters` gives each index's files.
+- **Field layout**, matched against the PC's values for the shared animals:
+  0x1630 health, 0x1634 mass, 0x1638 length, 0x163c radius, 0x1640 score,
+  0x1644 smell, 0x1648 hear, 0x164c look, 0x1650 shipdelta, 0x1654/0x1658
+  scale0/scaleA over 1000; weapons 0x1664 power, 0x1668 prec, 0x166c trace,
+  0x1670 loud, 0x1674 rate, 0x1678 shots, 0x167c reload (magazine), 0x1680
+  aim field of view (the sniper's 30: `optic`).
+- Index i runs the PC's AI i - 6 (7 Moschops: 1 ... 24 T-Rex: 18); those
+  animals' mobile models are the PC's clip for clip.
+- **A plain `_RES.TXT`, not a Modder's Edition one**: each new animal runs as
+  its kind's PC AI (the add-on import's donors: Troodon as the Velociraptor)
+  with its clips reordered into that AI's numbering; one whose death slot
+  wouldn't hold a falling clip is left out. Names from
+  `localizations/strings.csv`; prices, health and score from the balance
+  table (mobile values, not the PC's).
+- The mobile sniper's texture is an 8x8 white placeholder (the phone draws
+  its scope in the interface): the PC scope picture is still to make.
+
 ## 2026-10-31 — APKs as base games: rebuilt as a PC game folder
 
 The user's own APK (Dinosaur Hunter or Ice Age for Android) becomes a base

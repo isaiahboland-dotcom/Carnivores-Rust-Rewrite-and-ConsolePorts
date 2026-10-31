@@ -281,16 +281,24 @@ pub fn decode_pkm(data: &[u8]) -> Result<Rgba, FormatError> {
     })
 }
 
-/// A `.crt` texture (raw RGBA, top row first).
+/// A `.crt` texture (raw RGBA or RGB, top row first).
 pub fn decode_crt(data: &[u8]) -> Result<Rgba, FormatError> {
     let mut r = Reader::new(data);
     let w = usize::from(r.u16("crt.width")?);
     let h = usize::from(r.u16("crt.height")?);
     let bpp = r.array::<1>("crt.bpp")?[0];
-    if bpp != 32 {
-        return Err(r.err("crt.bpp", FormatErrorKind::BadCount(i64::from(bpp))));
-    }
-    let pixels = r.bytes(w * h * 4, "crt.pixels")?.to_vec();
+    let pixels = match bpp {
+        32 => r.bytes(w * h * 4, "crt.pixels")?.to_vec(),
+        // RGB rows (the sniper rifle's): opaque.
+        24 => r
+            .bytes(w * h * 3, "crt.pixels")?
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .flat_map(|p| [p[0], p[1], p[2], 255])
+            .collect(),
+        _ => return Err(r.err("crt.bpp", FormatErrorKind::BadCount(i64::from(bpp)))),
+    };
     Ok(Rgba {
         width: w,
         height: h,

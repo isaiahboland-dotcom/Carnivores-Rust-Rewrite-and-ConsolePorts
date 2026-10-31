@@ -28,7 +28,7 @@ use crate::ModError;
 
 /// The PC animals a mobile one takes its kind from, in order of preference
 /// (the first the game has).
-const DONORS: &[(&str, &[&str])] = &[
+pub(crate) const DONORS: &[(&str, &[&str])] = &[
     // After the Carnivores 2 kind, Ice Age's (its animals' names there).
     ("amargasaurus", &["Stegosaurus", "Mammoth"]),
     ("carnotaurus", &["Ceratosaurus", "Allosaurus", "Smilodon"]),
@@ -60,7 +60,7 @@ const PC_OWN: &[&str] = &[
 ];
 
 /// Names for animals whose descriptor has a working title (`Pach1`).
-const NAMES: &[(&str, &str)] = &[("pach", "Pachycephalosaurus"), ("diatr", "Diatryma")];
+pub(crate) const NAMES: &[(&str, &str)] = &[("pach", "Pachycephalosaurus"), ("diatr", "Diatryma")];
 
 /// Numbered PC-style animation sets in a known order: each matches a PC
 /// model's clip for clip (frame counts and speeds), whose names give the
@@ -164,7 +164,7 @@ const ORDER: [&str; 11] = [
 /// the death is found by its motion (the one clip that ends much lower than
 /// it starts), the idles are the clips before it, the sleep the one after,
 /// and the jump the extra that lifts the body highest.
-fn roles(cat: &Cat, stem: &str, car: &Car) -> Option<Vec<Option<&'static str>>> {
+pub(crate) fn roles(cat: &Cat, stem: &str, car: &Car) -> Option<Vec<Option<&'static str>>> {
     let named: Vec<_> = cat.animations.iter().map(|(f, _)| role(f)).collect();
     let n = cat.animations.len();
     if named.contains(&Some("die")) {
@@ -249,7 +249,7 @@ fn heights(car: &Car, i: usize) -> Vec<f64> {
 
 /// Does animation `i` look like a death: the body ends much lower than it
 /// starts?
-fn falls(car: &Car, i: usize) -> bool {
+pub(crate) fn falls(car: &Car, i: usize) -> bool {
     let h = heights(car, i);
     match (h.first(), h.last()) {
         (Some(&start), Some(&end)) if h.len() >= 2 => start > 0.0 && end < start * 0.8,
