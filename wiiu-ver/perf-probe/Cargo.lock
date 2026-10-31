@@ -27,6 +27,7 @@ name = "c2-core"
 version = "0.0.1"
 dependencies = [
  "c2-formats",
+ "c2-vfs",
  "libm",
 ]
 
@@ -39,12 +40,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "c2-vfs"
+version = "0.0.1"
+dependencies = [
+ "c2-formats",
+ "thiserror",
+]
+
+[[package]]
 name = "c2-wiiu-terrain-probe"
 version = "0.1.0"
 dependencies = [
  "ab_glyph",
  "c2-core",
  "c2-formats",
+ "c2-vfs",
  "font8x8",
  "libm",
 ]

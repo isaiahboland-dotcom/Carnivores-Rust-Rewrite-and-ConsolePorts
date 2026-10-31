@@ -9,6 +9,20 @@
 //! (switched off upstream); poacher and dog (multiplayer only) are not
 //! placed.
 
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use crate::portable_math::FloatMath;
+#[cfg(not(feature = "std"))]
+#[allow(unused_imports)]
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+
 use c2_formats::mee::{flag, Hunt, Tables};
 use c2_formats::res_txt::{c_atof, c_atoi, Block, CharacterDef, Entry, ResData, ResTxt, WeaponDef};
 

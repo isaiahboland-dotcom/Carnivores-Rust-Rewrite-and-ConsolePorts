@@ -3,7 +3,9 @@
 
 /* Mirrors hunt_setup::HuntChoice. Flags are 0 or 1. */
 typedef struct {
-    uint32_t area, time, animals, weapons, radar, camo, scent, double_ammo, tranq, observer,
+    uint32_t area, time;
+    uint64_t animals;
+    uint32_t weapons, radar, camo, scent, double_ammo, tranq, observer,
              run_pct, blood, death_anim, ambient, units_us, mode, survival, map_mobile, teleport, hints;
 } HuntChoice;
 /* HuntChoice.mode (hunt_setup.rs MODE_*). */
@@ -13,6 +15,8 @@ enum { MODE_HUNT = 0, MODE_SURVIVAL = 1, MODE_TROPHY = 2 };
 enum { IN_ESCAPE = 1 << 13, IN_YES = 1 << 14, IN_NO = 1 << 15,
        IN_TROPHY_PREV = 1 << 20, IN_TROPHY_NEXT = 1 << 21, IN_TROPHY_REMOVE = 1 << 22, IN_TROPHY_LOCK = 1 << 23,
        IN_RESTART = 1 << 24, IN_PAUSE = 1 << 25 };
+/* A tapped call: its index + 1 from this bit (lib.rs CALL_SHIFT). */
+enum { IN_CALL_SHIFT = 26 };
 /* The hunter's files (menu.rs PROFILE_*). */
 enum { PROFILE_SAVE = 0, PROFILE_RECORD = 1 };
 static const char *profile_files[2] = {"trophy00.sav", "trophy00.rec"};
@@ -22,8 +26,7 @@ enum { MENU_UP = 1, MENU_DOWN = 2, MENU_LEFT = 4, MENU_RIGHT = 8, MENU_A = 16, M
 /* c2_menu_action (menu.rs `Action`). */
 enum { MENU_NONE = 0, MENU_HUNT = 1, MENU_EXIT = 2, MENU_RESTART = 3, MENU_MAIN = 4 };
 extern void *c2_menu_new(const uint8_t *, uint32_t);
-extern int32_t c2_menu_file_name(uint32_t, char *, uint32_t);
-extern int32_t c2_menu_set_file(void *, uint32_t, const uint8_t *, uint32_t);
+extern int32_t c2_install_open(void *);
 extern void c2_menu_load_settings(void *, const uint8_t *, uint32_t);
 extern uint32_t c2_menu_settings(void *, char *, uint32_t);
 extern void c2_menu_open(void *, uint32_t, uint32_t, uint32_t);
@@ -41,8 +44,6 @@ enum { OVERLAY_QUADS = 9, OVERLAY_MAP = 1 };
 extern uint32_t c2_overlay_draw(void *, void *, uint8_t *, uint32_t, float *, float *, uint32_t);
 /* A tap on the GamePad map: teleport there (world units), if it's on. */
 extern uint32_t c2_teleport(void *, float, float);
-
-static const char *menu_areas[] = {"DELPHAEUS HILLS", "FORT CISKIN", "VENGAR FJORDS", "MANYA JUNGLE", "MOUNT RAVAN"};
 
 /* Result values also route the outer hunt-session loop. */
 enum { HUNT_EXIT = 0, HUNT_RESTART = 1, HUNT_MAIN_MENU = 2 };

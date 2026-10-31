@@ -195,14 +195,33 @@ impl Default for ThreeDs {
     }
 }
 
-/// The Wii U build (`crate::wiiu`).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+/// The Wii U build (`crate::wiiu`): which installs, each its own Wii U
+/// Menu entry and SD folder.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct WiiU {
     /// The SD card (or any folder to copy from by hand).
     pub out: Option<PathBuf>,
     /// RPX for Homebrew Launcher or WUHB for Aroma's Wii U Menu.
     pub format: WiiUFormat,
+    /// The original game (`carnivores2`).
+    pub original: bool,
+    /// The game with the overlays and add-ons (`carnivores2-addons`).
+    pub addons: bool,
+    /// One install per standalone game.
+    pub standalones: bool,
+}
+
+impl Default for WiiU {
+    fn default() -> Self {
+        WiiU {
+            out: None,
+            format: WiiUFormat::default(),
+            original: true,
+            addons: true,
+            standalones: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]

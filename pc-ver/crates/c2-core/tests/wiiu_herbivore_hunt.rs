@@ -1,94 +1,127 @@
-#![cfg(feature = "portable-hunt")]
+#![cfg(feature = "portable-load")]
+//! The Wii U's hunts of the original game, loaded as the console loads them
+//! (`hunt_setup::load` through an install over C2_ORIGINAL_HUNTDAT's game
+//! folder).
 extern crate alloc;
+#[allow(dead_code)]
 // The Wii U sources keep their own workspace's style.
 #[rustfmt::skip]
 #[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
 #[path = "../../../../wiiu-ver/perf-probe/src/hunt_setup.rs"]
 mod hunt_setup;
+#[allow(dead_code)]
+#[rustfmt::skip]
+#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
+#[path = "../../../../wiiu-ver/perf-probe/src/install.rs"]
+mod install;
+mod wiiu_common;
 use c2_core::{
     area::{Area, TimeOfDay},
-    game::{GameEvent, HuntInput},
+    game::{GameEvent, Hunt, HuntInput},
     model::PreparedModel,
 };
-use c2_formats::{map, rsc};
+use c2_formats::{car::Car, map, rsc};
+use hunt_setup::{HuntChoice, Loaded};
+
+/// This port's population for the original game's data.
+const POPULATION: usize = hunt_setup::AMBIENT_POPULATION + hunt_setup::TARGET_POPULATION;
+/// The hunter's character (the original's first).
+const HUNTER: usize = 0;
+
+fn load(inst: &install::Install, choice: &HuntChoice, seed: u32) -> Loaded {
+    hunt_setup::load(Some(inst), choice, &hunt_setup::new_save(), seed)
+        .unwrap_or_else(|e| panic!("load error {e}"))
+}
+
+/// A new hunt like `hunt` (`hunt_setup::restart` as main.c calls it).
+fn restart(l: &Loaded, hunt: &Hunt, choice: &HuntChoice, seed: u32) -> Hunt {
+    hunt_setup::restart(
+        &l.area,
+        hunt,
+        choice,
+        l.tables.as_ref(),
+        l.targets,
+        &l.roamers,
+        &hunt_setup::new_save(),
+        seed,
+    )
+    .unwrap()
+}
+
+fn refs(cars: &[Option<Car>]) -> Vec<Option<&Car>> {
+    cars.iter().map(Option::as_ref).collect()
+}
 
 #[test]
 fn wiiu_roster_on_all_five_original_maps() {
-    let Ok(root) = std::env::var("C2_ORIGINAL_HUNTDAT") else {
+    let Some((root, inst)) = wiiu_common::original() else {
         return;
     };
-    let root = std::path::Path::new(&root);
     let read = |p: &str| std::fs::read(root.join(p)).unwrap();
-    let defs = std::fs::read_to_string(root.join("_RES.TXT")).unwrap();
-    let mut assets: Vec<Vec<u8>> = hunt_setup::SPECIES_FILES
-        .iter()
-        .map(|file| read(file))
-        .collect();
-    assets.extend(
-        hunt_setup::WEAPON_FILES
-            .iter()
-            .map(|f| read(&format!("WEAPONS/{f}"))),
-    );
-    assets.push(read("HUNTER1.CAR"));
-    let assets: Vec<&[u8]> = assets.iter().map(Vec::as_slice).collect();
-    for number in 1..=5 {
-        let area = Area::new(
-            map::parse(&read(&format!("AREAS/AREA{number}.MAP"))).unwrap(),
-            rsc::parse(&read(&format!("AREAS/AREA{number}.RSC"))).unwrap(),
-            TimeOfDay::Day,
-        );
-        println!(
-            "AREA{number}: {} textures, {} objects, {} ambient zones, {} random sounds",
-            area.rsc.textures.len(),
-            area.rsc.objects.len(),
-            area.rsc.ambients.len(),
-            area.rsc.random_sounds.len()
-        );
-        assert!(area.rsc.textures.len() <= 256);
-        assert!(area.rsc.objects.len() <= 64);
-        assert!(area.rsc.ambients.len() <= 64 && area.rsc.random_sounds.len() <= 64);
-        for selected in (0..9).map(|i| 1 << i).chain([511]) {
-            let (mut hunt, cars) = hunt_setup::setup(&area, &defs, &assets, selected, true, 63, 1)
-                .unwrap_or_else(|e| panic!("AREA{number} targets {selected}: {e}"));
-            assert_eq!(hunt.herd.chars.len(), hunt_setup::POPULATION);
+    assert_eq!(inst.areas.len(), 5);
+    assert_eq!(inst.animals.len(), 9);
+    assert_eq!(inst.weapons.len(), 6);
+    for number in 1..=5u32 {
+        for selected in (0..9).map(|i| 1u32 << i).chain([511]) {
+            let choice = HuntChoice {
+                area: number - 1,
+                animals: wiiu_common::slots(&inst, selected),
+                weapons: 63,
+                radar: 1,
+                ..Default::default()
+            };
+            let l = load(&inst, &choice, 1);
+            let area = &l.area;
+            if selected == 1 {
+                println!(
+                    "AREA{number}: {} textures, {} objects, {} ambient zones, {} random sounds",
+                    area.rsc.textures.len(),
+                    area.rsc.objects.len(),
+                    area.rsc.ambients.len(),
+                    area.rsc.random_sounds.len()
+                );
+                assert!(area.rsc.textures.len() <= 256);
+                assert!(area.rsc.objects.len() <= 64);
+                assert!(area.rsc.ambients.len() <= 64 && area.rsc.random_sounds.len() <= 64);
+            }
+            let mut hunt = restart(&l, &l.hunt, &choice, 1);
+            assert_eq!(hunt.herd.chars.len(), POPULATION);
             assert_eq!(hunt.opts.targets.count(), selected.count_ones() as usize);
-            for car in &cars {
+            let models: Vec<&Car> = l.cars.iter().flatten().chain(&l.weapon_cars).collect();
+            for car in &models {
                 assert_eq!(
                     PreparedModel::from_mesh(&car.mesh).texture_rgba.len(),
                     256 * 256 * 4
                 );
+                assert!(
+                    hunt_setup::animation_radius(car).is_finite()
+                        && hunt_setup::animation_radius(car) > 0.0
+                );
+                assert!(car.mesh.faces.len() * 3 < 65536 - 8192);
             }
-            validate_population(&area, &hunt, selected);
+            validate_population(area, &hunt, selected);
             if selected == 511 {
-                let positions = |h: &c2_core::game::Hunt| {
+                let positions = |h: &Hunt| {
                     h.herd
                         .chars
                         .iter()
                         .map(|c| (c.ctype, c.pos, c.alpha))
                         .collect::<Vec<_>>()
                 };
-                let same = hunt_setup::restart(&area, &hunt, 1).unwrap();
+                let same = restart(&l, &hunt, &choice, 1);
                 assert_eq!(positions(&hunt), positions(&same));
                 for seed in [2, 42, 0x12345678, u32::MAX] {
-                    let other = hunt_setup::restart(&area, &hunt, seed).unwrap();
-                    validate_population(&area, &other, selected);
+                    let other = restart(&l, &hunt, &choice, seed);
+                    validate_population(area, &other, selected);
                     assert_ne!(positions(&hunt), positions(&other));
                 }
             }
-            for car in &cars {
-                assert!(
-                    hunt_setup::animation_radius(car).is_finite()
-                        && hunt_setup::animation_radius(car) > 0.0
-                );
-            }
             let initial_ammo = hunt.weapons.shots_left.clone();
             let initial_pos = [hunt.player.x, hunt.player.y, hunt.player.z];
-            let refs: Vec<_> = (0..=hunt_setup::HUNTER_SPECIES)
-                .map(|i| Some(&cars[hunt_setup::model_for_species(i)]))
-                .collect();
+            let refs = refs(&l.cars);
             let mut events = Vec::new();
             hunt.tick(
-                &area,
+                area,
                 &refs,
                 &HuntInput {
                     call: true,
@@ -100,25 +133,21 @@ fn wiiu_roster_on_all_five_original_maps() {
             assert!(events.iter().any(|e| matches!(e, GameEvent::Call { call, .. } if hunt.opts.targets.has(*call as usize))));
             for _ in 0..100 {
                 events.clear();
-                hunt.tick(&area, &refs, &HuntInput::default(), 16, &mut events);
+                hunt.tick(area, &refs, &HuntInput::default(), 16, &mut events);
             }
             for ch in &hunt.herd.chars {
                 assert!(ch.pos.iter().all(|v| v.is_finite()));
-                assert!(c2_core::dino::pose::pose(
-                    ch,
-                    &cars[hunt_setup::model_for_species(ch.ctype)],
-                    hunt.herd.species[ch.ctype].anims()
-                )
-                .is_some());
+                let car = l.cars[ch.ctype].as_ref().unwrap();
+                assert!(
+                    c2_core::dino::pose::pose(ch, car, hunt.herd.species[ch.ctype].anims())
+                        .is_some()
+                );
             }
-            assert!(cars
-                .iter()
-                .all(|car| car.mesh.faces.len() * 3 < 65536 - 8192));
             for attack_ai in [13, 14, 15, 16, 17, 18] {
                 if !hunt.opts.targets.has(attack_ai as usize) {
                     continue;
                 }
-                hunt = hunt_setup::restart(&area, &hunt, 1).unwrap();
+                hunt = restart(&l, &hunt, &choice, 1);
                 let ch = hunt
                     .herd
                     .chars
@@ -136,7 +165,7 @@ fn wiiu_roster_on_all_five_original_maps() {
                 };
                 ch.pos = [hunt.player.x - head, hunt.player.y, hunt.player.z];
                 events.clear();
-                hunt.tick(&area, &refs, &HuntInput::default(), 16, &mut events);
+                hunt.tick(area, &refs, &HuntInput::default(), 16, &mut events);
                 assert_eq!(
                     hunt.health, 0,
                     "AI {attack_ai} contact must kill on AREA{number}"
@@ -144,14 +173,14 @@ fn wiiu_roster_on_all_five_original_maps() {
                 assert!(hunt.death.is_some());
                 let body = hunt.death.unwrap().body;
                 assert_eq!(hunt.herd.chars[body].ai, 0);
-                assert_eq!(hunt.herd.chars[body].ctype, hunt_setup::HUNTER_SPECIES);
+                assert_eq!(hunt.herd.chars[body].ctype, HUNTER);
                 for _ in 0..750 {
-                    hunt.tick(&area, &refs, &HuntInput::default(), 16, &mut events);
+                    hunt.tick(area, &refs, &HuntInput::default(), 16, &mut events);
                 }
                 assert!(c2_core::dino::pose::pose(
                     &hunt.herd.chars[hunt.death.unwrap().body],
-                    &cars[hunt_setup::HUNTER_MODEL],
-                    hunt.herd.species[hunt_setup::HUNTER_SPECIES].anims()
+                    l.cars[HUNTER].as_ref().unwrap(),
+                    hunt.herd.species[HUNTER].anims()
                 )
                 .is_some());
                 assert!(hunt.camera().0.iter().all(|v| v.is_finite()));
@@ -162,9 +191,9 @@ fn wiiu_roster_on_all_five_original_maps() {
             hunt.shots_made = 5;
             hunt.successes = 1;
             hunt.weapons.shots_left[0] = 0;
-            let fresh = hunt_setup::restart(&area, &hunt, 1).unwrap();
+            let fresh = restart(&l, &hunt, &choice, 1);
             assert!(fresh.health > 0 && fresh.death.is_none());
-            assert_eq!(fresh.herd.chars.len(), hunt_setup::POPULATION);
+            assert_eq!(fresh.herd.chars.len(), POPULATION);
             assert!(fresh.herd.chars.iter().all(|ch| ch.health > 0));
             assert_eq!(fresh.weapons.shots_left, initial_ammo);
             assert_eq!(
@@ -174,9 +203,13 @@ fn wiiu_roster_on_all_five_original_maps() {
             assert_eq!((fresh.shots_made, fresh.successes), (0, 0));
             assert_eq!(fresh.opts.targets, hunt.opts.targets);
             assert_eq!(fresh.opts.radar, hunt.opts.radar);
-            for disabled in 0..4 {
-                hunt_setup::configure(&mut hunt, disabled);
-                let fresh = hunt_setup::restart(&area, &hunt, 1).unwrap();
+            for disabled in 0..4u32 {
+                let c = HuntChoice {
+                    blood: (disabled & 1 == 0) as u32,
+                    death_anim: (disabled & 2 == 0) as u32,
+                    ..choice
+                };
+                let fresh = restart(&l, &hunt, &c, 1);
                 assert_eq!(fresh.opts.blood, disabled & 1 == 0);
                 assert_eq!(fresh.opts.death_anim, disabled & 2 == 0);
                 assert!(!hunt_setup::death_menu_ready(&fresh, 12000));
@@ -185,6 +218,12 @@ fn wiiu_roster_on_all_five_original_maps() {
                 assert_eq!(hunt_setup::death_menu_ready(&dead, 16), disabled & 2 != 0);
                 assert!(hunt_setup::death_menu_ready(&dead, 12000));
             }
+            // Every call sounds.
+            assert_eq!(l.calls.len(), selected.count_ones() as usize);
+            assert!(l
+                .calls
+                .iter()
+                .all(|c| c.sounds.iter().all(|s| !s.is_empty() && s.len() % 2 == 0)));
         }
     }
     for call in 1..=9 {
@@ -198,8 +237,8 @@ fn wiiu_roster_on_all_five_original_maps() {
     }
 }
 
-fn validate_population(area: &Area, hunt: &c2_core::game::Hunt, selected: u32) {
-    assert_eq!(hunt.herd.chars.len(), hunt_setup::POPULATION);
+fn validate_population(area: &Area, hunt: &Hunt, selected: u32) {
+    assert_eq!(hunt.herd.chars.len(), POPULATION);
     let mut counts = [0usize; 9];
     let mut min = [f32::MAX; 2];
     let mut max = [f32::MIN; 2];
@@ -261,37 +300,22 @@ fn actor_culling_keeps_boundary_spheres() {
 
 #[test]
 fn distant_ai_bounds_pending_time_and_resumes_immediately() {
-    let Ok(root) = std::env::var("C2_ORIGINAL_HUNTDAT") else {
+    let Some((_, inst)) = wiiu_common::original() else {
         return;
     };
-    let root = std::path::Path::new(&root);
-    let read = |p: &str| std::fs::read(root.join(p)).unwrap();
-    let defs = std::fs::read_to_string(root.join("_RES.TXT")).unwrap();
-    let mut assets: Vec<Vec<u8>> = hunt_setup::SPECIES_FILES
-        .iter()
-        .map(|file| read(file))
-        .collect();
-    assets.extend(
-        hunt_setup::WEAPON_FILES
-            .iter()
-            .map(|f| read(&format!("WEAPONS/{f}"))),
-    );
-    assets.push(read("HUNTER1.CAR"));
-    let bytes: Vec<&[u8]> = assets.iter().map(Vec::as_slice).collect();
-    let area = Area::new(
-        map::parse(&read("AREAS/AREA1.MAP")).unwrap(),
-        rsc::parse(&read("AREAS/AREA1.RSC")).unwrap(),
-        TimeOfDay::Day,
-    );
-    let (mut hunt, cars) = hunt_setup::setup(&area, &defs, &bytes, 1, true, 63, 1).unwrap();
+    let choice = HuntChoice {
+        animals: wiiu_common::slots(&inst, 1),
+        weapons: 63,
+        ..Default::default()
+    };
+    let l = load(&inst, &choice, 1);
+    let (area, mut hunt) = (&l.area, restart(&l, &l.hunt, &choice, 1));
     assert!(hunt.opts.distant_ai);
-    let refs: Vec<_> = (0..=hunt_setup::HUNTER_SPECIES)
-        .map(|i| Some(&cars[hunt_setup::model_for_species(i)]))
-        .collect();
+    let refs = refs(&l.cars);
     let mut events = Vec::new();
     let mut deferred = None;
     for _ in 0..8 {
-        hunt.tick(&area, &refs, &HuntInput::default(), 16, &mut events);
+        hunt.tick(area, &refs, &HuntInput::default(), 16, &mut events);
         assert!(hunt
             .herd
             .chars
@@ -304,35 +328,21 @@ fn distant_ai_bounds_pending_time_and_resumes_immediately() {
     }
     let i = deferred.expect("far calm animals should defer work");
     hunt.herd.chars[i].afraid_time = 1000;
-    hunt.tick(&area, &refs, &HuntInput::default(), 16, &mut events);
+    hunt.tick(area, &refs, &HuntInput::default(), 16, &mut events);
     assert_eq!(hunt.herd.chars[i].pending_ai_ms, 0);
     hunt.opts.distant_ai = false;
-    hunt.tick(&area, &refs, &HuntInput::default(), 16, &mut events);
+    hunt.tick(area, &refs, &HuntInput::default(), 16, &mut events);
     assert!(hunt.herd.chars.iter().all(|c| c.pending_ai_ms == 0));
 }
 
 #[test]
 fn menu_options_reach_the_hunt_and_survive_a_restart() {
-    let Ok(root) = std::env::var("C2_ORIGINAL_HUNTDAT") else {
+    let Some((_, inst)) = wiiu_common::original() else {
         return;
     };
-    let root = std::path::Path::new(&root);
-    let read = |p: &str| std::fs::read(root.join(p)).unwrap();
-    let defs = std::fs::read_to_string(root.join("_RES.TXT")).unwrap();
-    let mut assets: Vec<Vec<u8>> = hunt_setup::SPECIES_FILES
-        .iter()
-        .map(|file| read(file))
-        .collect();
-    assets.extend(
-        hunt_setup::WEAPON_FILES
-            .iter()
-            .map(|f| read(&format!("WEAPONS/{f}"))),
-    );
-    assets.push(read("HUNTER1.CAR"));
-    let bytes: Vec<&[u8]> = assets.iter().map(Vec::as_slice).collect();
-    let choice = hunt_setup::HuntChoice {
+    let choice = HuntChoice {
         time: 2,
-        animals: 0b11,
+        animals: wiiu_common::slots(&inst, 0b11),
         weapons: 0b101,
         camo: 1,
         scent: 1,
@@ -344,168 +354,124 @@ fn menu_options_reach_the_hunt_and_survive_a_restart() {
         ambient: 0,
         ..Default::default()
     };
-    let area = Area::new(
-        map::parse(&read("AREAS/AREA1.MAP")).unwrap(),
-        rsc::parse(&read("AREAS/AREA1.RSC")).unwrap(),
-        choice.time_of_day(),
-    );
-    assert_eq!(area.time, TimeOfDay::Night);
-    let (hunt, _) =
-        hunt_setup::setup_with(&area, &defs, &bytes, &choice, &hunt_setup::new_save(), 1).unwrap();
-    let o = hunt.opts;
+    let l = load(&inst, &choice, 1);
+    assert_eq!(l.area.time, TimeOfDay::Night);
+    let hunt = &l.hunt;
+    let o = &hunt.opts;
     assert!(o.camo && o.scent && o.tranq && o.radar && !o.observer && !o.blood && !o.death_anim);
     assert_eq!(o.dino_run_k, 0.6);
     assert_eq!(hunt.weapons.info.len(), 2);
+    assert_eq!(l.weapon_ids, vec![0, 2]);
     assert_eq!(hunt.weapons.ammo_mag, vec![1, 1]);
     assert_eq!(hunt.herd.chars.len(), hunt_setup::TARGET_POPULATION);
     assert!(hunt
         .herd
         .chars
         .iter()
-        .all(|c| c.ctype >= hunt_setup::AMBIENT_COUNT));
-    let again = hunt_setup::restart_with(&area, &hunt, &choice, &hunt.room.clone(), 2).unwrap();
+        .all(|c| hunt.herd.species[c.ctype].info.ai >= 10));
+    let again = restart(&l, hunt, &choice, 2);
     assert!(
         again.opts.camo && again.opts.scent && !again.opts.blood && again.opts.dino_run_k == 0.6
     );
     assert_eq!(again.weapons.ammo_mag, vec![1, 1]);
     assert_eq!(again.herd.chars.len(), hunt_setup::TARGET_POPULATION);
     // Observer mode needs no weapon and carries none.
-    let observe = hunt_setup::HuntChoice {
+    let observe = HuntChoice {
         observer: 1,
         weapons: 0,
         ..choice
     };
-    let (hunt, _) =
-        hunt_setup::setup_with(&area, &defs, &bytes, &observe, &hunt_setup::new_save(), 1).unwrap();
-    assert!(hunt.opts.observer && hunt.weapons.info.is_empty());
-    let none = hunt_setup::HuntChoice {
+    let l = load(&inst, &observe, 1);
+    assert!(l.hunt.opts.observer && l.hunt.weapons.info.is_empty());
+    let none = HuntChoice {
         weapons: 0,
         ..choice
     };
-    assert!(
-        hunt_setup::setup_with(&area, &defs, &bytes, &none, &hunt_setup::new_save(), 1).is_err()
-    );
+    assert!(hunt_setup::load(Some(&inst), &none, &hunt_setup::new_save(), 1).is_err());
 }
 
-// A kill takes a stand in the save with its weapon and area; the save
-// converts to the original's character numbers and back; the trophy room
-// stands the trophies up; a survival sends its first wave of hunters.
+// A kill takes a stand in the save with its weapon and area, numbered as
+// the original numbers characters; the trophy room stands the trophies up;
+// a survival sends its first wave of hunters.
 #[test]
 fn trophies_trophy_room_and_survival() {
-    let Ok(root) = std::env::var("C2_ORIGINAL_HUNTDAT") else {
+    let Some((root, inst)) = wiiu_common::original() else {
         return;
     };
-    let root = std::path::Path::new(&root);
-    let read = |p: &str| std::fs::read(root.join(p)).unwrap();
-    let defs = std::fs::read_to_string(root.join("_RES.TXT")).unwrap();
-    let mut assets: Vec<Vec<u8>> = hunt_setup::SPECIES_FILES
-        .iter()
-        .map(|file| read(file))
-        .collect();
-    assets.extend(
-        hunt_setup::WEAPON_FILES
-            .iter()
-            .map(|f| read(&format!("WEAPONS/{f}"))),
-    );
-    assets.push(read("HUNTER1.CAR"));
-    let bytes: Vec<&[u8]> = assets.iter().map(Vec::as_slice).collect();
-    let load = |name: &str| {
-        Area::new(
-            map::parse(&read(&format!("AREAS/{name}.MAP"))).unwrap(),
-            rsc::parse(&read(&format!("AREAS/{name}.RSC"))).unwrap(),
-            TimeOfDay::Day,
-        )
-    };
-    let area = load("AREA1");
-    let cars: Vec<_> = assets
-        .iter()
-        .take(hunt_setup::MODEL_COUNT)
-        .map(|b| c2_formats::car::parse(b).unwrap())
-        .collect();
-    let refs: [Option<&c2_formats::car::Car>; hunt_setup::HUNTER_SPECIES + 1] =
-        std::array::from_fn(|i| cars.get(hunt_setup::model_for_species(i)));
-
     // A hunt: bag the first target.
-    let choice = hunt_setup::HuntChoice {
+    let choice = HuntChoice {
         area: 0,
-        animals: 0b10,
+        animals: wiiu_common::slots(&inst, 0b10),
         weapons: 0b10,
         ..Default::default()
     };
-    let (mut hunt, _) =
-        hunt_setup::setup_with(&area, &defs, &bytes, &choice, &hunt_setup::new_save(), 1).unwrap();
+    let l = load(&inst, &choice, 1);
+    let (area, mut hunt) = (&l.area, restart(&l, &l.hunt, &choice, 1));
     assert_eq!(hunt.area_no, 1);
-    let index = hunt
-        .herd
-        .chars
-        .iter()
-        .position(|c| c.ctype >= hunt_setup::AMBIENT_COUNT)
-        .unwrap();
+    let index = hunt.herd.chars.iter().position(|c| c.ai >= 10).unwrap();
     let ctype = hunt.herd.chars[index].ctype;
     let mut events = Vec::new();
-    hunt.debug_bag(&area, index, &mut events);
+    hunt.debug_bag(area, index, &mut events);
     let slot = hunt.trophy_body.expect("a trophy");
     assert_eq!(hunt.room.bodies[slot].ctype as usize, ctype);
     assert_eq!(hunt.room.bodies[slot].area(), 1);
     assert_eq!(hunt.kills.len(), 1);
-    // The original numbers: the hunter first, so one more.
-    let save = hunt_setup::room_to_save(&hunt.room);
-    assert_eq!(save.bodies[slot].ctype as usize, ctype + 1);
-    let back = c2_formats::sav::parse(&c2_formats::sav::write(&save)).unwrap();
-    assert_eq!(hunt_setup::room_from_save(&back).bodies, hunt.room.bodies);
-    // An original save (Ankylosaurus is 8 there, 7 here).
+    // The original's numbers: Ankylosaurus (slot 1) is 8.
+    assert_eq!(ctype, 8);
+    let back = c2_formats::sav::parse(&c2_formats::sav::write(&hunt.room)).unwrap();
+    assert_eq!(back.bodies, hunt.room.bodies);
     if let Ok(orig) = std::fs::read(root.join("../trophy00.sav")) {
         let s = c2_formats::sav::parse(&orig).unwrap();
-        let room = hunt_setup::room_from_save(&s);
-        for (a, b) in s
-            .bodies
-            .iter()
-            .zip(room.bodies.iter())
-            .filter(|(a, _)| a.ctype > 0)
-        {
-            assert_eq!(a.ctype, b.ctype + 1);
-        }
+        let species = &hunt.herd.species;
+        assert!(s.bodies.iter().filter(|b| b.ctype > 0).all(|b| species
+            .get(b.ctype as usize)
+            .is_some_and(|s| s.info.ai >= 10)));
     }
 
     // The trophy room shows it, no weapons, nothing alive.
-    let room_area = load("TROPHY");
-    let trophy = hunt_setup::HuntChoice {
+    let trophy = HuntChoice {
         mode: hunt_setup::MODE_TROPHY,
         animals: 0,
         weapons: 0,
         ..Default::default()
     };
-    let (mut room, _) =
-        hunt_setup::setup_with(&room_area, &defs, &bytes, &trophy, &hunt.room, 1).unwrap();
+    let r = hunt_setup::load(Some(&inst), &trophy, &hunt.room, 1).unwrap();
+    let mut room = r.hunt;
     assert!(room.opts.trophy && room.weapons.info.is_empty());
     assert_eq!(room.herd.chars.len(), 1);
     assert_eq!(room.herd.chars[0].ctype, ctype);
+    let room_refs = refs(&r.cars);
     for _ in 0..60 {
-        room.tick(&room_area, &refs, &HuntInput::default(), 16, &mut events);
+        room.tick(&r.area, &room_refs, &HuntInput::default(), 16, &mut events);
     }
     assert!(room.health > 0);
     room.press_escape();
     assert_eq!(room.outcome(), Some(c2_core::game::Outcome::Exited));
 
     // A survival: the map's hunters go, waves of the picked ones come.
-    let survive = hunt_setup::HuntChoice {
+    let survive = HuntChoice {
         mode: hunt_setup::MODE_SURVIVAL,
-        animals: 0b1000,
+        animals: wiiu_common::slots(&inst, 0b1000),
         weapons: 0b10,
         ..Default::default()
     };
-    let (mut s, _) =
-        hunt_setup::setup_with(&area, &defs, &bytes, &survive, &hunt_setup::new_save(), 3).unwrap();
+    let sl = load(&inst, &survive, 3);
+    let mut s = restart(&sl, &sl.hunt, &survive, 3);
     assert!(s.survival.is_some() && !s.opts.tranq && !s.opts.observer);
-    let allo = hunt_setup::AMBIENT_COUNT + 3;
+    let allo = s
+        .herd
+        .species
+        .iter()
+        .position(|sp| sp.info.ai == 13)
+        .unwrap();
+    let srefs = refs(&sl.cars);
     for _ in 0..(5000 / 16) {
         events.clear();
-        s.tick(&area, &refs, &HuntInput::default(), 16, &mut events);
+        s.tick(&sl.area, &srefs, &HuntInput::default(), 16, &mut events);
     }
     assert_eq!(s.wave(), 1);
     assert!(s.herd.chars.iter().any(|c| c.wave > 0 && c.ctype == allo));
-    let restarted =
-        hunt_setup::restart_with(&area, &s, &survive, &hunt_setup::new_save(), 4).unwrap();
+    let restarted = restart(&sl, &s, &survive, 4);
     assert!(restarted.survival.is_some() && restarted.wave() == 0);
 }
 
@@ -516,14 +482,16 @@ fn trophies_trophy_room_and_survival() {
 // stocks and arms reach back) are clipped, as they always were.
 #[test]
 fn gun_vertices_fit_the_view_model_depth_range() {
-    let Ok(root) = std::env::var("C2_ORIGINAL_HUNTDAT") else {
+    let Some((_, inst)) = wiiu_common::original() else {
         return;
     };
-    let root = std::path::Path::new(&root);
+    let choice = HuntChoice {
+        weapons: 63,
+        ..Default::default()
+    };
+    let l = load(&inst, &choice, 1);
     let (mut near, mut far) = (f32::MAX, 0.0f32);
-    for f in hunt_setup::WEAPON_FILES {
-        let car =
-            c2_formats::car::parse(&std::fs::read(root.join("WEAPONS").join(f)).unwrap()).unwrap();
+    for car in &l.weapon_cars {
         for anim in &car.animations {
             let duration = c2_core::model::car_anim_duration_ms(anim).max(1);
             for t in (0..duration).step_by(10) {
@@ -552,25 +520,11 @@ fn gun_vertices_fit_the_view_model_depth_range() {
 #[test]
 #[ignore]
 fn crouch_and_sprint_stress() {
-    let root = std::env::var("C2_ORIGINAL_HUNTDAT").unwrap();
-    let root = std::path::Path::new(&root);
-    let read = |p: &str| std::fs::read(root.join(p)).unwrap();
-    let defs = std::fs::read_to_string(root.join("_RES.TXT")).unwrap();
-    let mut assets: Vec<Vec<u8>> = hunt_setup::SPECIES_FILES
-        .iter()
-        .map(|file| read(file))
-        .collect();
-    assets.extend(
-        hunt_setup::WEAPON_FILES
-            .iter()
-            .map(|f| read(&format!("WEAPONS/{f}"))),
-    );
-    assets.push(read("HUNTER1.CAR"));
-    let bytes: Vec<&[u8]> = assets.iter().map(Vec::as_slice).collect();
-    let choice = hunt_setup::HuntChoice {
+    let (_, inst) = wiiu_common::original().unwrap();
+    let choice = HuntChoice {
         area: 4,
         time: 0,
-        animals: 23,
+        animals: wiiu_common::slots(&inst, 23),
         weapons: 63,
         radar: 1,
         camo: 1,
@@ -581,18 +535,10 @@ fn crouch_and_sprint_stress() {
         death_anim: 0,
         ..Default::default()
     };
-    let area = Area::new(
-        map::parse(&read("AREAS/AREA5.MAP")).unwrap(),
-        rsc::parse(&read("AREAS/AREA5.RSC")).unwrap(),
-        choice.time_of_day(),
-    );
     for seed in [1201724847, 597228150, 1, 2, 3] {
-        let (mut hunt, cars) =
-            hunt_setup::setup_with(&area, &defs, &bytes, &choice, &hunt_setup::new_save(), seed)
-                .unwrap();
-        let refs: Vec<_> = (0..=hunt_setup::HUNTER_SPECIES)
-            .map(|i| Some(&cars[hunt_setup::model_for_species(i)]))
-            .collect();
+        let l = load(&inst, &choice, seed);
+        let (area, mut hunt) = (&l.area, restart(&l, &l.hunt, &choice, seed));
+        let refs = refs(&l.cars);
         let mut events = Vec::new();
         for t in 0..20_000u32 {
             let phase = t / 500 % 4;
@@ -615,11 +561,9 @@ fn crouch_and_sprint_stress() {
                 call: t % 2000 == 5,
                 ..Default::default()
             };
-            hunt.tick(&area, &refs, &input, 16, &mut events);
+            hunt.tick(area, &refs, &input, 16, &mut events);
             if hunt.health <= 0 {
-                hunt =
-                    hunt_setup::restart_with(&area, &hunt, &choice, &hunt.room.clone(), seed ^ t)
-                        .unwrap();
+                hunt = restart(&l, &hunt, &choice, seed ^ t);
             }
         }
     }

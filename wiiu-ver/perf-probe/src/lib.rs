@@ -1,6 +1,7 @@
 #![no_std]
 extern crate alloc;
 mod hunt_setup;
+mod install;
 mod static_scene;
 mod ui;
 mod menu;
@@ -9,10 +10,9 @@ use static_scene::{TerrainCache, SceneryCandidates, visible_sphere};
 use alloc::{boxed::Box, vec::Vec};
 use c2_core::{
     area::Area,
-    player::{Controls, Player},
-    dino::{self, Herd},
-    game::{GameEvent, Hunt, HuntInput, HuntOptions, Weapons},
-    rng::MsRand,
+    player::Controls,
+    dino,
+    game::{GameEvent, Hunt, HuntInput},
     model::PreparedModel,
 };
 use core::alloc::{GlobalAlloc, Layout};
@@ -40,6 +40,33 @@ extern "C" {
     fn c2_play_sound(kind: u32, slot: u32, owner: i32, left: f32, right: f32);
     fn c2_set_ambient(zone: i32, gain: f32);
     fn c2_stop_animal(index: u32);
+    fn c2_sd_size(path: *const u8, len: usize) -> i64;
+    fn c2_checkpoint(message: *const u8, len: usize);
+    fn c2_sd_load(path: *const u8, len: usize, out: *mut u8, capacity: u32) -> i32;
+}
+/// The install's files on the SD card, through C (`c2_sd_*` in main.c, in
+/// the app's folder), by the cooker's index; names are upper case there.
+struct SdBackend {
+    files: Vec<alloc::string::String>,
+}
+impl c2_vfs::Backend for SdBackend {
+    fn files(&self) -> Vec<alloc::string::String> {
+        self.files.clone()
+    }
+    fn read(&self, path: &str) -> Result<Vec<u8>, c2_vfs::VfsError> {
+        let upper = path.replace('\\', "/").to_ascii_uppercase();
+        let missing = || c2_vfs::VfsError::NotFound { path: path.into() };
+        let size = unsafe { c2_sd_size(upper.as_ptr(), upper.len()) };
+        let len = u32::try_from(size).map_err(|_| missing())?;
+        let mut data = alloc::vec![0u8; len as usize];
+        if unsafe { c2_sd_load(upper.as_ptr(), upper.len(), data.as_mut_ptr(), len) } != 0 {
+            return Err(missing());
+        }
+        Ok(data)
+    }
+}
+fn sd_read(path: &str) -> Option<Vec<u8>> {
+    c2_vfs::Backend::read(&SdBackend { files: Vec::new() }, path).ok()
 }
 fn first_tick_state(toggle: u32, hidden: u32, underwater: u32, health: i32, active: u32) {
     unsafe { c2_hunt_values(toggle, hidden, underwater, health, active); }
@@ -88,12 +115,25 @@ struct Simulation {
     crouch: bool,
     first_tick_done: bool,
     death_ms: u32,
-    cars: Vec<c2_formats::car::Car>,
+    /// Per character (`_RES.TXT` order): its model, if loaded.
+    cars: Vec<Option<c2_formats::car::Car>>,
+    /// The carried weapons: view models, `_RES.TXT` numbers, pictures.
+    weapon_cars: Vec<c2_formats::car::Car>,
+    weapon_ids: Vec<usize>,
+    weapon_icons: Vec<Option<c2_formats::tga::Picture>>,
+    weapon_names: Vec<alloc::string::String>,
+    /// The actor atlas's models (256x256 slots) and their radii; which
+    /// slot each character and carried weapon has.
     actor_models: Vec<PreparedModel>,
     actor_radii: Vec<f32>,
-    call_sounds: Vec<Vec<u8>>,
+    char_slot: Vec<Option<usize>>,
+    weapon_slot: Vec<usize>,
+    calls: Vec<hunt_setup::Call>,
     fx_sounds: Vec<Vec<u8>>,
-    panel_icons: Vec<c2_formats::tga::Picture>,
+    /// For a restart: the dialect's tables, the targets and roamers.
+    tables: Option<c2_formats::mee::Tables>,
+    targets: c2_formats::bits::Bits,
+    roamers: Vec<install::Roam>,
     /// The kill notice and messages over the world, and what is drawn.
     notice: overlay::Notice,
     overlay: overlay::Overlay,
@@ -122,11 +162,19 @@ const TROPHY_LOCK: u32 = 1 << 23;
 const RESTART: u32 = 1 << 24;
 const PAUSE: u32 = 1 << 25;
 
-/// The original weapon number (`WEAPON_FILES`) of carried weapon `slot`.
-fn weapon_id(hunt: &Hunt, slot: usize) -> Option<usize> {
-    let w = hunt.weapons.info.get(slot)?;
-    hunt_setup::WEAPON_FILES.iter().position(|f| w.file.eq_ignore_ascii_case(f))
-}
+/// Sound kinds for `c2_play_sound` / `c2_sound_clip` (slots within each):
+/// effects (steps 0-5, underwater 6, the hunter's screams 7-10), calls
+/// (call n's answers at 3n..3n+2), the area's random sounds and ambient
+/// loops, the carried weapons (`KIND_WEAPON` + slot), then the characters
+/// (`KIND_CHAR` + `_RES.TXT` number).
+const KIND_FX: u32 = 0;
+const KIND_CALL: u32 = 1;
+const KIND_RANDOM: u32 = 2;
+const KIND_AMBIENT: u32 = 3;
+const KIND_WEAPON: u32 = 4;
+const KIND_CHAR: u32 = KIND_WEAPON + install::MAX_WEAPONS as u32;
+/// Tapped call (index + 1) in `c2_move_tick`'s flags.
+const CALL_SHIFT: u32 = 26;
 #[repr(C)]
 pub struct Snapshot {
     x: i32,
@@ -179,7 +227,7 @@ pub extern "C" fn c2_death_active(ptr: *mut core::ffi::c_void) -> u32 {
 #[no_mangle]
 pub extern "C" fn c2_restart_hunt(ptr: *mut core::ffi::c_void, seed: u32) -> i32 {
     let sim = unsafe { &mut *ptr.cast::<Simulation>() };
-    let mut hunt = match hunt_setup::restart_with(&sim.area, &sim.hunt, &sim.choice, &sim.saved_room, seed) { Ok(h) => h, Err(e) => return e };
+    let mut hunt = match hunt_setup::restart(&sim.area, &sim.hunt, &sim.choice, sim.tables.as_ref(), sim.targets, &sim.roamers, &sim.saved_room, seed) { Ok(h) => h, Err(e) => return e };
     hunt.clock = sim.hunt.clock;
     sim.hunt = hunt;
     sim.death_ms = 0;
@@ -220,24 +268,24 @@ pub extern "C" fn c2_hunt_finish(ptr: *mut core::ffi::c_void, ui: *mut core::ffi
     let kills = core::mem::take(&mut h.kills);
     let wave = h.wave();
     let mode = if h.survival.is_some() { Mode::Survival } else { Mode::Hunt };
-    let area = usize::try_from(h.area_no - 1).ok().and_then(|a| menu::AREAS.get(a)).copied().unwrap_or("");
+    let area = alloc::string::String::from(m.area_numbered(h.area_no));
     let (y, mo, d, _, _) = h.clock;
     for k in &kills {
-        let weapon = weapon_id(h, k.weapon).and_then(|w| menu::WEAPONS.get(w)).copied().unwrap_or("");
+        let weapon = sim.weapon_ids.get(k.weapon).map_or("", |&w| m.weapon_name(w));
         m.record.kills.push(Kill {
             mode,
             animal: h.herd.species.get(k.ctype).map_or_else(alloc::string::String::new, |s| s.info.name.clone()),
             score: k.score,
             range: k.range,
             weapon: alloc::string::String::from(weapon),
-            area: alloc::string::String::from(area),
+            area: area.clone(),
             date: (y << 20) + (mo << 10) + d,
         });
     }
     m.record.best_wave = m.record.best_wave.max(wave);
     m.set_wave(wave);
     if left != 0 && h.survival.is_none() {
-        m.room = hunt_setup::room_to_save(&h.room);
+        m.room = h.room.clone();
         sim.saved_room = h.room.clone();
         m.notice = Some(if h.opts.trophy {
             alloc::string::String::from("Trophy room saved")
@@ -249,45 +297,22 @@ pub extern "C" fn c2_hunt_finish(ptr: *mut core::ffi::c_void, ui: *mut core::ffi
     }
 }
 
-// C keeps both buffers alive for the call; this function parses owned data.
-// Return codes distinguish map and resource parsing errors.
+/// Loads the hunt the menu picked from the install (its area, animals,
+/// weapons, calls and sounds) into a new simulation in `result`. Returns
+/// 0, or `hunt_setup::load`'s error.
 #[no_mangle]
-pub extern "C" fn c2_move_create(
-    map_ptr: *const u8,
-    map_len: usize,
-    rsc_ptr: *const u8,
-    rsc_len: usize,
-    time: u32,
-    result: *mut *mut core::ffi::c_void,
-) -> i32 {
-    let map_data = unsafe { core::slice::from_raw_parts(map_ptr, map_len) };
-    let rsc_data = unsafe { core::slice::from_raw_parts(rsc_ptr, rsc_len) };
-    let map = match c2_formats::map::parse(map_data) {
-        Ok(v) => v,
-        Err(_) => return -1,
-    };
-    let rsc = match c2_formats::rsc::parse(rsc_data) {
-        Ok(v) => v,
-        Err(_) => return -2,
-    };
-    let time = hunt_setup::HuntChoice { time, ..Default::default() }.time_of_day();
-    let area = Area::new(map, rsc, time);
+pub extern "C" fn c2_hunt_load(ui: *mut core::ffi::c_void, seed: u32, result: *mut *mut core::ffi::c_void) -> i32 {
+    let m = menu_ref(ui);
+    let choice = m.choice;
+    let room = m.room.clone();
+    let l = match hunt_setup::load(m.install.as_ref(), &choice, &room, seed) { Ok(l) => l, Err(e) => return e };
+    let area = l.area;
     // The map and time of day are fixed for the session; object lighting is static.
     let mut object_lights = alloc::vec![0.0; area.map.objects.len()];
     for placement in area.placements() {
         let index = usize::from(placement.cell.1) * 1024 + usize::from(placement.cell.0);
         object_lights[index] = area.object_light(&placement);
     }
-    let cell = area.landings.first().copied().unwrap_or((256, 256));
-    let player = Player::new(&area, cell);
-    // Start with an empty hunt until assets and menu selections are wired in.
-    let save = c2_formats::sav::Save {
-        player_name_raw: [0; 128], reg_number: 0, score: 0, rank: 0,
-        last: Default::default(), total: Default::default(),
-        bodies: [c2_formats::sav::TrophyItem::default(); 24], options: Default::default(),
-    };
-    let weapons = Weapons::new(Vec::new(), Vec::new(), c2_formats::bits::Bits::NONE, false);
-    let hunt = Hunt::new(&area, player, Herd::default(), weapons, MsRand::new(1), HuntOptions::default(), save);
     let models: Vec<PreparedModel> = area.rsc.objects.iter().map(|o| PreparedModel::from_mesh(&o.model.mesh)).collect();
     // Atlas coordinates depend only on the model and face, never on the camera.
     let model_uvs = static_scene::scenery_uvs(&models);
@@ -295,6 +320,17 @@ pub extern "C" fn c2_move_create(
     let max_vertices = models.iter().map(|model| model.positions.len()).max().unwrap_or(0);
     let transformed = alloc::vec![[0.0; 4]; max_vertices];
     let terrain_cache = TerrainCache::new(&area);
+    // The actor atlas: each loaded character, then each carried weapon.
+    let mut actor_models = Vec::new();
+    let mut actor_radii = Vec::new();
+    let mut slot_of = |car: &c2_formats::car::Car| {
+        let model = PreparedModel::from_mesh(&car.mesh);
+        actor_radii.push(hunt_setup::animation_radius(car).max(model.radius()));
+        actor_models.push(model);
+        actor_models.len() - 1
+    };
+    let char_slot = l.cars.iter().map(|c| c.as_ref().map(&mut slot_of)).collect();
+    let weapon_slot = l.weapon_cars.iter().map(&mut slot_of).collect();
     let sim = Simulation {
         area,
         terrain_cache,
@@ -303,7 +339,7 @@ pub extern "C" fn c2_move_create(
         resident_terrain: static_scene::ResidentTerrain::default(),
         terrain_written: Vec::new(),
         scenery_written: Vec::new(),
-        choice: hunt_setup::HuntChoice::default(),
+        choice,
         models,
         model_uvs,
         object_lights,
@@ -312,22 +348,30 @@ pub extern "C" fn c2_move_create(
         chunks: (0..CACHE_CHUNKS_PER_SIDE * CACHE_CHUNKS_PER_SIDE).map(|_| None).collect(),
         cache_bytes: 0,
         cache_clock: 0,
-        hunt,
+        hunt: l.hunt,
         events: Vec::new(),
         sprint: false,
         crouch: false,
         first_tick_done: false,
         death_ms: 0,
-        cars: Vec::new(),
-        actor_models: Vec::new(),
-        actor_radii: Vec::new(),
-        call_sounds: alloc::vec![Vec::new(); hunt_setup::TARGET_AI.len() * 3],
-        fx_sounds: alloc::vec![Vec::new(); 11],
-        panel_icons: Vec::new(),
+        cars: l.cars,
+        weapon_cars: l.weapon_cars,
+        weapon_ids: l.weapon_ids,
+        weapon_icons: l.weapon_icons,
+        weapon_names: l.weapon_names,
+        actor_models,
+        actor_radii,
+        char_slot,
+        weapon_slot,
+        calls: l.calls,
+        fx_sounds: l.fx,
+        tables: l.tables,
+        targets: l.targets,
+        roamers: l.roamers,
         notice: overlay::Notice::default(),
         overlay: overlay::Overlay::default(),
         ask: None,
-        saved_room: hunt_setup::new_save(),
+        saved_room: room,
         restart: false,
         aim: core::cell::Cell::new(None),
     };
@@ -422,13 +466,11 @@ pub extern "C" fn c2_move_tick(
         sim.hunt.prof.clock = Some(first_tick_clock);
         sim.hunt.prof.diagnostic_state = Some(first_tick_state);
     }
-    let cars: [Option<&c2_formats::car::Car>; hunt_setup::HUNTER_SPECIES + 1] = core::array::from_fn(|i| sim.cars.get(hunt_setup::model_for_species(i)));
-    if flags & 128 != 0 {
-        let current = hunt_setup::TARGET_AI.iter().position(|&ai| ai == sim.hunt.target_call).unwrap_or(0);
-        for step in 1..=hunt_setup::TARGET_AI.len() {
-            let ai = hunt_setup::TARGET_AI[(current + step) % hunt_setup::TARGET_AI.len()];
-            if sim.hunt.opts.targets.has(ai as usize) { sim.hunt.target_call = ai; break; }
-        }
+    let cars: Vec<Option<&c2_formats::car::Car>> = sim.cars.iter().map(Option::as_ref).collect();
+    // D-pad Down: the next call.
+    if flags & 128 != 0 && !sim.calls.is_empty() {
+        let current = sim.calls.iter().position(|c| c.id == sim.hunt.target_call).unwrap_or(0);
+        sim.hunt.target_call = sim.calls[(current + 1) % sim.calls.len()].id;
     }
     // The exit prompt and the trophy room's questions.
     if let Some(ask) = sim.ask {
@@ -480,9 +522,9 @@ pub extern "C" fn c2_move_tick(
     }
     // A question takes A and B (main.c sends YES / NO instead of jump and
     // sprint while one shows).
-    let direct_call = ((flags >> 8) & 15) as usize;
-    if (1..=9).contains(&direct_call) && sim.hunt.opts.targets.has(9 + direct_call) {
-        sim.hunt.target_call = (9 + direct_call) as i32;
+    let tapped_call = (flags >> CALL_SHIFT) as usize;
+    if let Some(c) = tapped_call.checked_sub(1).and_then(|i| sim.calls.get(i)) {
+        sim.hunt.target_call = c.id;
     }
     let tapped_weapon = ((flags >> 16) & 7) as usize;
     let select_weapon = if flags & 64 != 0 { Some(tapped_weapon) } else { None };
@@ -501,7 +543,7 @@ pub extern "C" fn c2_move_tick(
             // The save keeps the original's weapon numbers, not the
             // carried slot.
             GameEvent::Trophy { slot, .. } => {
-                let id = weapon_id(&sim.hunt, sim.hunt.weapons.current);
+                let id = sim.weapon_ids.get(sim.hunt.weapons.current).copied();
                 if let (Some(b), Some(id)) = (sim.hunt.room.bodies.get_mut(*slot), id) {
                     b.weapon = id as i32;
                 }
@@ -514,13 +556,14 @@ pub extern "C" fn c2_move_tick(
         match *event {
             GameEvent::WeaponSound { weapon, slot } => {
                 let (l, r) = c2_core::sound::lr_gains(256.0, None, eye, alpha);
-                unsafe { c2_play_sound(20 + weapon as u32, slot as u32, -1, l, r); }
+                unsafe { c2_play_sound(KIND_WEAPON + weapon as u32, slot as u32, -1, l, r); }
             }
             GameEvent::Dino(dino::DinoEvent::Sound { index, sound, pos }) => {
                 if let Some(ch) = sim.hunt.herd.chars.get(index) {
-                    if ch.ctype == hunt_setup::HUNTER_SPECIES { continue; } // Hunter scream uses the dedicated WAV effect.
+                    // The hunter's scream is its own WAV effect.
+                    if sim.hunt.herd.species.get(ch.ctype).is_some_and(|s| s.info.ai == 0) { continue; }
                     let (l, r) = c2_core::sound::lr_gains(256.0, Some(pos), eye, alpha);
-                    unsafe { c2_play_sound(ch.ctype as u32, sound as u32, index as i32, l, r); }
+                    unsafe { c2_play_sound(KIND_CHAR + ch.ctype as u32, sound as u32, index as i32, l, r); }
                 }
             }
             GameEvent::Player(c2_core::player::PlayerEvent::Step) |
@@ -533,24 +576,24 @@ pub extern "C" fn c2_move_tick(
                     _ => (variant, 64),
                 };
                 let (l, r) = c2_core::sound::lr_gains(volume as f32, None, eye, alpha);
-                unsafe { c2_play_sound(19, slot, -1, l, r); }
+                unsafe { c2_play_sound(KIND_FX, slot, -1, l, r); }
             }
             GameEvent::HunterDied { kind, scream: true } if kind != dino::hunt::BREATH => {
                 let (l, r) = c2_core::sound::lr_gains(256.0, None, eye, alpha);
-                unsafe { c2_play_sound(19, 7 + (sim.hunt.real_time % 4) as u32, -1, l, r); }
+                unsafe { c2_play_sound(KIND_FX, 7 + (sim.hunt.real_time % 4) as u32, -1, l, r); }
             }
             GameEvent::RandomSound { sound, pos, volume } => {
                 let (l, r) = c2_core::sound::lr_gains(volume as f32, Some(pos), eye, alpha);
-                unsafe { c2_play_sound(17, sound as u32, -1, l, r); }
+                unsafe { c2_play_sound(KIND_RANDOM, sound as u32, -1, l, r); }
             }
             GameEvent::Ambient { zone, volume } => {
                 unsafe { c2_set_ambient(zone.map_or(-1, |z| z as i32), c2_core::sound::ambient_gain(volume)); }
             }
             GameEvent::Killed { index, .. } => unsafe { c2_stop_animal(index as u32); },
             GameEvent::Call { call, variant, pos } => {
-                let Some(index) = hunt_setup::TARGET_AI.iter().position(|&ai| ai == call) else { continue; };
+                let Some(index) = sim.calls.iter().position(|c| c.id == call) else { continue; };
                 let (l, r) = c2_core::sound::lr_gains(256.0, pos, eye, alpha);
-                unsafe { c2_play_sound(16, (index * 3 + variant) as u32, -1, l, r); }
+                unsafe { c2_play_sound(KIND_CALL, (index * 3 + variant) as u32, -1, l, r); }
             }
             _ => {}
         }
@@ -581,48 +624,23 @@ pub extern "C" fn c2_move_destroy(ptr: *mut core::ffi::c_void) {
     }
 }
 
-// Load original definitions and models from the caller-owned SD buffers.
-#[no_mangle]
-pub extern "C" fn c2_hunt_setup(ptr: *mut core::ffi::c_void, files: *const *const u8, lengths: *const u32, choice: *const hunt_setup::HuntChoice, seed: u32, ui: *mut core::ffi::c_void) -> i32 {
-    let sim = unsafe { &mut *ptr.cast::<Simulation>() };
-    let read = |i: usize| unsafe { core::slice::from_raw_parts(*files.add(i), *lengths.add(i) as usize) };
-    let Ok(text) = core::str::from_utf8(read(0)) else { return -1; };
-    let assets: [&[u8]; hunt_setup::MODEL_COUNT] = core::array::from_fn(|i| read(i + 1));
-    let choice = unsafe { *choice };
-    let room = hunt_setup::room_from_save(&menu_ref(ui).room);
-    let (hunt, cars) = match hunt_setup::setup_with(&sim.area, text, &assets, &choice, &room, seed) { Ok(v) => v, Err(e) => return e };
-    sim.saved_room = room;
-    sim.hunt = hunt;
-    sim.choice = choice;
-    sim.death_ms = 0;
-    sim.cars = cars;
-    sim.actor_models = sim.cars.iter().map(|c| PreparedModel::from_mesh(&c.mesh)).collect();
-    sim.actor_radii = sim.cars.iter().zip(&sim.actor_models).map(|(car, model)| hunt_setup::animation_radius(car).max(model.radius())).collect();
-    sim.first_tick_done = false;
-    0
-}
+/// The actor atlas's size: 2048 wide, 256 rows a band of 8 models.
+pub const ACTOR_ATLAS: u32 = 2048;
+/// Blood's texel, in the last slot (never a model's: `MODEL_SLOTS`).
+const BLOOD_TEXEL: (usize, usize) = (1800, 1800);
 
+/// The models into the 2048x2048 RGBA8 actor atlas (`pitch` in pixels).
 #[no_mangle]
 pub extern "C" fn c2_actor_atlas(ptr: *mut core::ffi::c_void, pixels: *mut u8, pitch: u32) -> i32 {
     let sim = unsafe { &*ptr.cast::<Simulation>() };
-    if sim.actor_models.len() != hunt_setup::MODEL_COUNT || pitch < 2048 { return -1; }
-    unsafe { core::ptr::copy_nonoverlapping([160u8, 8, 4, 255].as_ptr(), pixels.add((800 * pitch as usize + 300) * 4), 4); }
+    if sim.actor_models.len() > hunt_setup::MODEL_SLOTS || pitch < ACTOR_ATLAS { return -1; }
+    unsafe { core::ptr::copy_nonoverlapping([160u8, 8, 4, 255].as_ptr(), pixels.add((BLOOD_TEXEL.1 * pitch as usize + BLOOD_TEXEL.0) * 4), 4); }
     for (i, model) in sim.actor_models.iter().enumerate() {
         for y in 0..256usize {
             unsafe { core::ptr::copy_nonoverlapping(model.texture_rgba.as_ptr().add(y * 1024), pixels.add(((y + i / 8 * 256) * pitch as usize + i % 8 * 256) * 4), 1024); }
         }
     }
-    unsafe { night_vision_rows(sim, pixels, pitch, 2048, sim.actor_models.len().div_ceil(8) * 256); }
-    0
-}
-
-#[no_mangle]
-pub extern "C" fn c2_call_load(ptr: *mut core::ffi::c_void, slot: u32, data: *const u8, len: u32) -> i32 {
-    let sim = unsafe { &mut *ptr.cast::<Simulation>() };
-    let Some(dest) = sim.call_sounds.get_mut(slot as usize) else { return -1; };
-    let Ok(wav) = c2_formats::wav::parse(unsafe { core::slice::from_raw_parts(data, len as usize) }) else { return -2; };
-    if wav.format != Some(c2_formats::wav::WavFormat::VANILLA) || wav.pcm.is_empty() || wav.pcm.len() % 2 != 0 { return -3; }
-    *dest = wav.pcm;
+    unsafe { night_vision_rows(sim, pixels, pitch, ACTOR_ATLAS as usize, sim.actor_models.len().div_ceil(8) * 256); }
     0
 }
 
@@ -650,32 +668,66 @@ unsafe fn night_vision_rows(sim: &Simulation, pixels: *mut u8, pitch: u32, width
     for y in 0..rows { grade(core::slice::from_raw_parts_mut(pixels.add(y * pitch as usize * 4), width * 4)); }
 }
 
+/// Carried weapon `slot`'s name for the GamePad's label (upper case, at
+/// most `capacity - 1` letters) as a C string; -1 if none is carried.
 #[no_mangle]
-pub extern "C" fn c2_fx_load(ptr: *mut core::ffi::c_void, slot: u32, data: *const u8, len: u32) -> i32 {
-    let sim = unsafe { &mut *ptr.cast::<Simulation>() };
-    let Some(dest) = sim.fx_sounds.get_mut(slot as usize) else { return -1; };
-    let Ok(wav) = c2_formats::wav::parse(unsafe { core::slice::from_raw_parts(data, len as usize) }) else { return -2; };
-    if wav.format != Some(c2_formats::wav::WavFormat::VANILLA) || wav.pcm.is_empty() || wav.pcm.len() % 2 != 0 { return -3; }
-    *dest = wav.pcm;
+pub extern "C" fn c2_weapon_label(ptr: *mut core::ffi::c_void, slot: u32, out: *mut u8, capacity: u32) -> i32 {
+    let sim = unsafe { &*ptr.cast::<Simulation>() };
+    let Some(name) = sim.weapon_names.get(slot as usize) else { return -1; };
+    let name = name.to_ascii_uppercase();
+    let n = name.len().min(capacity.saturating_sub(1).min(14) as usize);
+    unsafe { core::ptr::copy_nonoverlapping(name.as_ptr(), out, n); *out.add(n) = 0; }
     0
 }
 
+/// The carried weapons (the GamePad's weapon grid).
 #[no_mangle]
-pub extern "C" fn c2_icon_load(ptr: *mut core::ffi::c_void, data: *const u8, len: u32) -> i32 {
-    let sim = unsafe { &mut *ptr.cast::<Simulation>() };
-    let Ok(pic) = c2_formats::tga::parse(unsafe { core::slice::from_raw_parts(data, len as usize) }) else { return -1; };
-    if pic.width == 0 || pic.height == 0 { return -2; }
-    sim.panel_icons.push(pic);
-    0
+pub extern "C" fn c2_weapon_count(ptr: *mut core::ffi::c_void) -> u32 {
+    let sim = unsafe { &*ptr.cast::<Simulation>() };
+    sim.hunt.weapons.info.len() as u32
 }
+
+// ---- The GamePad's call picker: the calls in pages of six.
+#[no_mangle]
+pub extern "C" fn c2_call_count(ptr: *mut core::ffi::c_void) -> u32 {
+    let sim = unsafe { &*ptr.cast::<Simulation>() };
+    sim.calls.len() as u32
+}
+/// The page showing the current call.
+#[no_mangle]
+pub extern "C" fn c2_call_page(ptr: *mut core::ffi::c_void) -> u32 {
+    let sim = unsafe { &*ptr.cast::<Simulation>() };
+    (sim.calls.iter().position(|c| c.id == sim.hunt.target_call).unwrap_or(0) / 6) as u32
+}
+/// The call at picture `slot` (0..6) of `page`, or -1.
+#[no_mangle]
+pub extern "C" fn c2_call_at(ptr: *mut core::ffi::c_void, page: u32, slot: u32) -> i32 {
+    let sim = unsafe { &*ptr.cast::<Simulation>() };
+    let i = page as usize * 6 + slot as usize;
+    if slot < 6 && i < sim.calls.len() { i as i32 } else { -1 }
+}
+/// Call `index`'s label (its animal, upper case, at most `capacity - 1`
+/// letters) as a C string; 1 if it is the current call.
+#[no_mangle]
+pub extern "C" fn c2_call_label(ptr: *mut core::ffi::c_void, index: u32, out: *mut u8, capacity: u32) -> i32 {
+    let sim = unsafe { &*ptr.cast::<Simulation>() };
+    let Some(c) = sim.calls.get(index as usize) else { return -1; };
+    let name = c.name.to_ascii_uppercase();
+    let n = name.len().min(capacity.saturating_sub(1) as usize);
+    unsafe { core::ptr::copy_nonoverlapping(name.as_ptr(), out, n); *out.add(n) = 0; }
+    (c.id == sim.hunt.target_call) as i32
+}
+
+/// The GamePad's weapon grid (2 x 4, 128x64 cells, the current one
+/// framed) and `page`'s call icons (2 x 3, 128x72, from x 256) into the
+/// 512x256 RGBA8 icon texture.
 #[no_mangle]
 pub extern "C" fn c2_icon_atlas(ptr: *mut core::ffi::c_void, pixels: *mut u8, pitch: u32, page: u32, weapon: u32) -> i32 {
     let sim = unsafe { &*ptr.cast::<Simulation>() };
-    if sim.panel_icons.len() != hunt_setup::TARGET_AI.len() + hunt_setup::WEAPON_COUNT || pitch < 512 || page > 1 || (!sim.hunt.weapons.info.is_empty() && weapon as usize >= sim.hunt.weapons.info.len()) { return -1; }
+    if pitch < 512 { return -1; }
     let out = unsafe { core::slice::from_raw_parts_mut(pixels, pitch as usize * 256 * 4) };
     for rgba in out.chunks_exact_mut(4) { rgba.copy_from_slice(&[16,22,16,255]); }
-    let mut draw = |id: usize, x0: usize, y0: usize, width: usize, height: usize, highlight: bool| {
-        let pic = &sim.panel_icons[id];
+    let mut draw = |pic: &c2_formats::tga::Picture, x0: usize, y0: usize, width: usize, height: usize, highlight: bool| {
         for y in 0..height { for x in 0..width {
             let sx = x * pic.width / width; let sy = y * pic.height / height;
             let rgba = c2_core::color::rgb555_to_rgba8(pic.pixels[sy * pic.width + sx], 255);
@@ -697,30 +749,37 @@ pub extern "C" fn c2_icon_atlas(ptr: *mut core::ffi::c_void, pixels: *mut u8, pi
             }
         }
     };
-    for (slot, info) in sim.hunt.weapons.info.iter().enumerate() {
-        let Some(icon) = hunt_setup::WEAPON_FILES.iter().position(|f| info.file.eq_ignore_ascii_case(f)) else { continue; };
-        let x = (slot % 2) * 128 + 4;
-        let y = (slot / 2) * 84 + 2;
-        draw(icon, x, y, 120, 80, slot == weapon as usize);
+    for (slot, icon) in sim.weapon_icons.iter().enumerate().take(install::MAX_WEAPONS) {
+        let Some(icon) = icon else { continue };
+        draw(icon, (slot % 2) * 128 + 4, (slot / 2) * 64 + 2, 120, 60, slot == weapon as usize);
     }
-    for (slot, (i, _)) in hunt_setup::TARGET_AI.iter().enumerate()
-        .filter(|(_, ai)| sim.hunt.opts.targets.has(**ai as usize))
-        .skip(page as usize * 6).take(6).enumerate() {
-        draw(hunt_setup::WEAPON_COUNT+i, 260+(slot%2)*128, 4+(slot/2)*72, 120, 46, false);
+    for (slot, call) in sim.calls.iter().skip(page as usize * 6).take(6).enumerate() {
+        let Some(icon) = &call.icon else { continue };
+        draw(icon, 260 + (slot % 2) * 128, 4 + (slot / 2) * 72, 120, 46, false);
     }
     0
+}
+
+/// How many sound kinds there are (`KIND_*`; the characters last).
+#[no_mangle]
+pub extern "C" fn c2_sound_kinds(ptr: *mut core::ffi::c_void) -> u32 {
+    let sim = unsafe { &*ptr.cast::<Simulation>() };
+    KIND_CHAR + sim.cars.len() as u32
 }
 
 // Returned bytes remain owned by Simulation until it is destroyed.
 #[no_mangle]
 pub extern "C" fn c2_sound_clip(ptr: *mut core::ffi::c_void, kind: u32, slot: u32, data: *mut *const u8, len: *mut u32) -> i32 {
     let sim = unsafe { &*ptr.cast::<Simulation>() };
-    let bytes = if (20..26).contains(&kind) { sim.hunt.weapons.info.get((kind-20) as usize).and_then(|w| hunt_setup::WEAPON_FILES.iter().position(|f| w.file.eq_ignore_ascii_case(f))).and_then(|i| sim.cars.get(hunt_setup::WEAPON_MODEL+i)).and_then(|c| c.sounds.get(slot as usize)).map(|s| s.pcm.as_slice()) }
-        else if kind == 16 { sim.call_sounds.get(slot as usize).map(|v| v.as_slice()) }
-        else if kind == 17 { sim.area.rsc.random_sounds.get(slot as usize).map(|v| v.as_slice()) }
-        else if kind == 18 { sim.area.rsc.ambients.get(slot as usize).map(|v| v.pcm.as_slice()) }
-        else if kind == 19 { sim.fx_sounds.get(slot as usize).map(|v| v.as_slice()) }
-        else { sim.cars.get(kind as usize).and_then(|c| c.sounds.get(slot as usize)).map(|s| s.pcm.as_slice()) };
+    let slot = slot as usize;
+    let bytes = match kind {
+        KIND_FX => sim.fx_sounds.get(slot).map(|v| v.as_slice()),
+        KIND_CALL => sim.calls.get(slot / 3).map(|c| c.sounds[slot % 3].as_slice()),
+        KIND_RANDOM => sim.area.rsc.random_sounds.get(slot).map(|v| v.as_slice()),
+        KIND_AMBIENT => sim.area.rsc.ambients.get(slot).map(|v| v.pcm.as_slice()),
+        k if k < KIND_CHAR => sim.weapon_cars.get((k - KIND_WEAPON) as usize).and_then(|c| c.sounds.get(slot)).map(|s| s.pcm.as_slice()),
+        k => sim.cars.get((k - KIND_CHAR) as usize).and_then(Option::as_ref).and_then(|c| c.sounds.get(slot)).map(|s| s.pcm.as_slice()),
+    };
     let Some(bytes) = bytes.filter(|b| !b.is_empty() && b.len() % 2 == 0) else { return -1; };
     unsafe { *data = bytes.as_ptr(); *len = bytes.len() as u32; }
     0
@@ -739,7 +798,7 @@ pub extern "C" fn c2_actor_vertices(ptr: *mut core::ffi::c_void, positions: *mut
             for k in 0..3 {
                 let p = transform(posed[face.v[k] as usize]);
                 let uv = [((id % 8 * 256) as f32 + (face.uv[k][0] * 256.0).clamp(0.0, 255.0) + 0.5) / 2048.0,
-                          ((id / 8 * 256) as f32 + (face.uv[k][1] * 256.0).clamp(0.0, 255.0) + 0.5) / 1024.0, 0.75, 1.0];
+                          ((id / 8 * 256) as f32 + (face.uv[k][1] * 256.0).clamp(0.0, 255.0) + 0.5) / ACTOR_ATLAS as f32, 0.75, 1.0];
                 unsafe { core::ptr::copy_nonoverlapping(p.as_ptr(), positions.add(n * 4), 4); core::ptr::copy_nonoverlapping(uv.as_ptr(), attrs.add(n * 4), 4); }
                 n += 1;
             }
@@ -750,23 +809,23 @@ pub extern "C" fn c2_actor_vertices(ptr: *mut core::ffi::c_void, positions: *mut
     if mode == 0 {
         let (eye, yaw, pitch) = sim.hunt.camera();
         let distance = |ch: &dino::Character| (ch.pos[0]-eye[0])*(ch.pos[0]-eye[0]) + (ch.pos[1]-eye[1])*(ch.pos[1]-eye[1]) + (ch.pos[2]-eye[2])*(ch.pos[2]-eye[2]);
+        let slot = |ch: &dino::Character| sim.char_slot.get(ch.ctype).copied().flatten();
         let mut visible: Vec<_> = sim.hunt.herd.chars.iter().filter(|ch| {
-            let id = hunt_setup::model_for_species(ch.ctype);
-            sim.actor_radii.get(id).is_some_and(|r| hunt_setup::actor_visible(ch.pos, r*ch.scale, eye, yaw, pitch))
+            slot(ch).and_then(|id| sim.actor_radii.get(id)).is_some_and(|r| hunt_setup::actor_visible(ch.pos, r*ch.scale, eye, yaw, pitch))
         }).collect();
         visible.sort_unstable_by(|a,b| distance(a).total_cmp(&distance(b)));
         for ch in visible {
-            let id = hunt_setup::model_for_species(ch.ctype);
-            let (Some(car), Some(model), Some(species)) = (sim.cars.get(id), sim.actor_models.get(id), sim.hunt.herd.species.get(ch.ctype)) else { continue; };
+            let Some(id) = slot(ch) else { continue; };
+            let (Some(Some(car)), Some(model), Some(species)) = (sim.cars.get(ch.ctype), sim.actor_models.get(id), sim.hunt.herd.species.get(ch.ctype)) else { continue; };
             let Some(posed) = dino::pose::pose(ch, car, species.anims()) else { continue; };
             let angle = dino::pose::quarter_turns(ch) * core::f32::consts::FRAC_PI_2;
             let (s, c) = (libm::sinf(angle), libm::cosf(angle));
             emit(model, &posed, id, &|v| [ch.pos[0] + v[0]*c + v[2]*s, ch.pos[1] + v[1], ch.pos[2] - v[0]*s + v[2]*c, 1.0]);
         }
     } else if let Some((slot, ftime)) = sim.hunt.weapons.pose() {
-        let model_slot = sim.hunt.weapons.info.get(sim.hunt.weapons.current).and_then(|w| hunt_setup::WEAPON_FILES.iter().position(|f| w.file.eq_ignore_ascii_case(f))).map(|i| hunt_setup::WEAPON_MODEL+i);
-        if let Some(model_slot) = model_slot {
-        let (Some(car),Some(model)) = (sim.cars.get(model_slot),sim.actor_models.get(model_slot)) else { return 0; };
+        let current = sim.hunt.weapons.current;
+        if let Some(&model_slot) = sim.weapon_slot.get(current) {
+        let (Some(car),Some(model)) = (sim.weapon_cars.get(current),sim.actor_models.get(model_slot)) else { return 0; };
         if let Some(anim) = car.animations.get(slot) {
             let duration = c2_core::model::car_anim_duration_ms(anim).max(1);
             if let Some(posed) = c2_core::model::pose_car(anim, car.mesh.vertices.len(), (ftime.max(0) as u32).min(duration - 1)) {
@@ -801,7 +860,7 @@ pub extern "C" fn c2_actor_vertices(ptr: *mut core::ffi::c_void, positions: *mut
             for (x,y) in [(0.0,1.0),(-1.0,0.0),(0.0,-1.0),(0.0,1.0),(0.0,-1.0),(1.0,0.0)] {
                 let p = if ground { [pos[0]+x*r,pos[1]+2.0,pos[2]+y*r,1.0] }
                     else { [pos[0]+r*(right[0]*x+up[0]*y),pos[1]+r*up[1]*y,pos[2]+r*(right[2]*x+up[2]*y),1.0] };
-                let uv = [300.5/2048.0,800.5/1024.0,light,0.0];
+                let uv = [(BLOOD_TEXEL.0 as f32 + 0.5) / ACTOR_ATLAS as f32, (BLOOD_TEXEL.1 as f32 + 0.5) / ACTOR_ATLAS as f32, light, 0.0];
                 unsafe { core::ptr::copy_nonoverlapping(p.as_ptr(),positions.add(n*4),4); core::ptr::copy_nonoverlapping(uv.as_ptr(),attrs.add(n*4),4); }
                 n += 1;
             }
@@ -1192,18 +1251,24 @@ pub extern "C" fn c2_menu_new(font: *const u8, len: u32) -> *mut core::ffi::c_vo
     Box::into_raw(Box::new(menu::Menu::new(ui::Font::new(bytes)))).cast()
 }
 fn menu_ref<'a>(ptr: *mut core::ffi::c_void) -> &'a mut menu::Menu { unsafe { &mut *ptr.cast::<menu::Menu>() } }
-/// The name of menu file `slot` as a C string in `out`; -1 past the last.
+/// Opens the install in the app's SD folder (its `FILES.TXT` index and
+/// `INFO.TXT`, then its rules and menu files) for the menus and hunts.
+/// Returns 0; -1 without an index, -2 without rules (`_RES.TXT`).
 #[no_mangle]
-pub extern "C" fn c2_menu_file_name(slot: u32, out: *mut u8, capacity: u32) -> i32 {
-    let Some(name) = menu::FILES.get(slot as usize) else { return -1; };
-    if name.len() + 1 > capacity as usize { return -1; }
-    unsafe { core::ptr::copy_nonoverlapping(name.as_ptr(), out, name.len()); *out.add(name.len()) = 0; }
-    name.len() as i32
-}
-#[no_mangle]
-pub extern "C" fn c2_menu_set_file(ptr: *mut core::ffi::c_void, slot: u32, data: *const u8, len: u32) -> i32 {
-    if data.is_null() { return -1; }
-    if menu_ref(ptr).set_file(slot as usize, unsafe { core::slice::from_raw_parts(data, len as usize) }) { 0 } else { -2 }
+pub extern "C" fn c2_install_open(ptr: *mut core::ffi::c_void) -> i32 {
+    let mark = |m: &str| unsafe { c2_checkpoint(m.as_ptr(), m.len()) };
+    let Some(index) = sd_read("FILES.TXT") else { return -1; };
+    mark("Install: index read");
+    let files = alloc::string::String::from_utf8_lossy(&index).lines().map(alloc::string::String::from).collect();
+    let info = install::Info::parse(&alloc::string::String::from_utf8_lossy(&sd_read("INFO.TXT").unwrap_or_default()));
+    let mut vfs = c2_vfs::Vfs::new();
+    vfs.push("sd", Box::new(SdBackend { files }));
+    mark("Install: rules...");
+    let rules = install::Rules::load(&vfs);
+    mark(if rules.is_some() { "Install: rules parsed; menu lists..." } else { "Install: no rules" });
+    let Some(inst) = install::Install::open_traced(vfs, info, &mark) else { return -2; };
+    menu_ref(ptr).set_install(inst);
+    0
 }
 #[no_mangle]
 pub extern "C" fn c2_menu_load_settings(ptr: *mut core::ffi::c_void, data: *const u8, len: u32) {
@@ -1262,11 +1327,12 @@ pub extern "C" fn c2_menu_profile(ptr: *mut core::ffi::c_void, which: u32, out: 
 #[no_mangle]
 pub extern "C" fn c2_overlay_draw(ui: *mut core::ffi::c_void, ptr: *mut core::ffi::c_void, pixels: *mut u8, pitch: u32, pos: *mut f32, uv: *mut f32, flags: u32) -> u32 {
     let sim = unsafe { &mut *ptr.cast::<Simulation>() };
-    let m = menu_ref(ui);
+    let m: &menu::Menu = menu_ref(ui);
     let px = unsafe { core::slice::from_raw_parts_mut(pixels, pitch as usize * overlay::TEX_H * 4) };
     let n = overlay::MAX_QUADS * overlay::QUAD_FLOATS;
     let (pos, uv) = unsafe { (core::slice::from_raw_parts_mut(pos, n), core::slice::from_raw_parts_mut(uv, n)) };
     let view = overlay::View {
+        menu: m,
         hunt: &sim.hunt,
         area: &sim.area,
         map: flags & 1 != 0,

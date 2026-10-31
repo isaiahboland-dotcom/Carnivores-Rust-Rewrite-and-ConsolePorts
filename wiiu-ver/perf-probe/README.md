@@ -104,13 +104,15 @@ timers. Cemu FPS gains, touch readability and real hardware remain unverified.
 
 # Wii U stock Carnivores 2 roster probe
 
-Run `build/c2-wiiu-random-population.rpx` (or the latest `c2-wiiu-perf-probe.rpx`)
-in Cemu. Supply original Carnivores 2 data in `wiiu/apps/carnivores-probe/`
-on the SD card. Game data is not bundled. To copy the exact required files:
-
-```sh
-python3 wiiu-ver/perf-probe/stage_assets.py /path/to/HUNTDAT /path/to/sdcard/wiiu/apps/carnivores-probe
-```
+Run `build/c2-wiiu-perf-probe.rpx` in Cemu. Game data is not bundled: the app
+reads an install, a game cooked by `c2-cook --target wiiu` into
+`wiiu/apps/<name>/` (`FILES.TXT`, `INFO.TXT`, the `HUNTDAT` tree). A `.wuhb`
+names its folder in `/vol/content/install.txt`; an `.rpx` reads
+`wiiu/apps/carnivores-probe/`. `c2-wiiu-builder --install` (see the main
+README) cooks the game and packages its `.wuhb` with art from the game's menu
+picture. Any game c2-cook takes works: the base game, the Modder's Edition
+with add-ons, standalones (Triassic, Mandibles). `C2_AUTOHUNT=ON` (CMake)
+starts a hunt a second after the title, for Cemu runs without input.
 
 ### The menus (HD, 2026-10-30)
 

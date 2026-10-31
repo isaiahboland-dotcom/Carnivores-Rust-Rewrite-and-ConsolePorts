@@ -180,20 +180,53 @@ fn scaled(
 /// dinosaur (on the right, as the menus have it). `(icon, banner)` as
 /// PNGs; `None` if the game has no such picture.
 pub fn game_art(game: &Path) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
-    let Some((w, h, px)) =
-        c2_mods::pack::find_game_root(game).and_then(|root| tga(&root, "HUNTDAT/MENU/MENUM.TGA"))
-    else {
+    let Some((w, h, px)) = menu_picture(game) else {
         return (None, None);
     };
     let top = h * 4 / 100;
     let bh = (w / 2).min(h - top);
     let banner = png(BANNER.0, BANNER.1, &scaled(&px, w, (0, top, w, bh), BANNER));
+    let icon = png(ICON.0, ICON.1, &scaled(&px, w, icon_square(w, h), ICON));
+    (Some(icon), Some(banner))
+}
+
+/// The game's main menu picture (`MENU/MENUM.TGA`) as RGBA8.
+fn menu_picture(game: &Path) -> Option<(usize, usize, Vec<u8>)> {
+    c2_mods::pack::find_game_root(game).and_then(|root| tga(&root, "HUNTDAT/MENU/MENUM.TGA"))
+}
+
+/// The square round the menu's dinosaur (on the right, as the menus have
+/// it): `(x, y, side, side)`.
+fn icon_square(w: usize, h: usize) -> (usize, usize, usize, usize) {
     let side = (h / 2).min(w);
     let (cx, cy) = (w * 7 / 10, h * 45 / 100);
     let x = cx.saturating_sub(side / 2).min(w - side);
     let y = cy.saturating_sub(side / 2).min(h - side);
-    let icon = png(ICON.0, ICON.1, &scaled(&px, w, (x, y, side, side), ICON));
-    (Some(icon), Some(banner))
+    (x, y, side, side)
+}
+
+/// The Wii U's home-menu art (`wuhbtool`'s sizes).
+pub const WIIU_ICON: (u32, u32) = (128, 128);
+pub const WIIU_TV: (u32, u32) = (1280, 720);
+pub const WIIU_DRC: (u32, u32) = (854, 480);
+
+/// Wii U home-menu art from the game's main menu picture, as for the 3DS:
+/// the icon the square round its dinosaur, the TV's and GamePad's splash
+/// screens its 16:9 top band (the logo and the dinosaur). `[icon, tv,
+/// drc]` as PNGs; `None` if the game has no such picture.
+pub fn wiiu_art(game: &Path) -> Option<[Vec<u8>; 3]> {
+    let (w, h, px) = menu_picture(game)?;
+    let top = h * 4 / 100;
+    let band = (0, top, w, (w * 9 / 16).min(h - top));
+    Some([
+        png(
+            WIIU_ICON.0,
+            WIIU_ICON.1,
+            &scaled(&px, w, icon_square(w, h), WIIU_ICON),
+        ),
+        png(WIIU_TV.0, WIIU_TV.1, &scaled(&px, w, band, WIIU_TV)),
+        png(WIIU_DRC.0, WIIU_DRC.1, &scaled(&px, w, band, WIIU_DRC)),
+    ])
 }
 
 /// A plain placeholder: the menus' olive with a gold edge.

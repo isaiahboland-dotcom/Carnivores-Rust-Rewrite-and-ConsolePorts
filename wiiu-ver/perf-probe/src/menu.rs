@@ -2,57 +2,50 @@
 //! times of day, weapons and gear) redrawn for a 16:9 TV and the GamePad,
 //! with the original menu pictures and descriptions in an info panel.
 //! Independent of GX2; C feeds it buttons and touches and shows the canvas.
-//! It also keeps the hunter's save (trophies, score) and record (every kill).
+//! It also keeps the hunter's save (trophies, score) and record (every kill),
+//! and the install (`install.rs`) whose areas, animals and weapons it lists.
 use crate::hunt_setup::{HuntChoice, MODE_HUNT, MODE_SURVIVAL, MODE_TROPHY};
+use crate::install::{Install, Pick};
 use c2_core::record::{Mode, Record};
 use c2_formats::sav::{self, Save};
 use crate::ui::{in_hex, measure, rect, Canvas, Clip, Font, Image, Rect, Rgba, TileCache, HEIGHT, WIDTH};
 use core::cell::RefCell;
 use alloc::{format, string::String, vec::Vec};
 
-/// Files the menu reads, in slot order: pictures, then descriptions.
-pub const FILES: [&str; 66] = [
-    "MENUM.TGA", "AREA1.TGA", "AREA2.TGA", "AREA3.TGA", "AREA4.TGA", "AREA5.TGA",
-    "DINO1.TGA", "DINO2.TGA", "DINO3.TGA", "DINO4.TGA", "DINO5.TGA", "DINO6.TGA",
-    "DINO7.TGA", "DINO8.TGA", "DINO9.TGA", "WEAPON1.TGA", "WEAPON2.TGA", "WEAPON3.TGA",
-    "WEAPON4.TGA", "WEAPON5.TGA", "WEAPON6.TGA", "EQUIP1.TGA", "EQUIP2.TGA", "EQUIP3.TGA",
-    "EQUIP4.TGA", "TROPHY_G.TGA", "TROPHY.TGA", "MAPFRAME.TGA",
-    "AREA1.TXT", "AREA2.TXT", "AREA3.TXT", "AREA4.TXT", "AREA5.TXT",
-    "DINO1.TXM", "DINO2.TXM", "DINO3.TXM", "DINO4.TXM", "DINO5.TXM", "DINO6.TXM",
-    "DINO7.TXM", "DINO8.TXM", "DINO9.TXM",
-    "DINO1.TXU", "DINO2.TXU", "DINO3.TXU", "DINO4.TXU", "DINO5.TXU", "DINO6.TXU",
-    "DINO7.TXU", "DINO8.TXU", "DINO9.TXU",
-    "WEAPON1.TXT", "WEAPON2.TXT", "WEAPON3.TXT", "WEAPON4.TXT", "WEAPON5.TXT", "WEAPON6.TXT",
+/// The pictures every game has, under `HUNTDAT/MENU/` (by slot); the
+/// areas', animals' and weapons' follow (`Menu::set_install`).
+const FIXED_PICS: [&str; 8] = [
+    "MENUM.TGA", "TROPHY_G.TGA", "TROPHY.TGA", "MAPFRAME.TGA",
+    "PICS/EQUIP1.TGA", "PICS/EQUIP2.TGA", "PICS/EQUIP3.TGA", "PICS/EQUIP4.TGA",
+];
+const PIC_MENU: usize = 0;
+/// The kill's plaque in a hunt, and a trophy's in the trophy room.
+pub const PIC_PLAQUE_HUNT: usize = 1;
+pub const PIC_PLAQUE_ROOM: usize = 2;
+/// The original's map frame (`DrawHMap`), the overview painted in.
+pub const PIC_MAP_FRAME: usize = 3;
+const PIC_EQUIP: usize = 4;
+/// The descriptions every game has, under `HUNTDAT/MENU/TXT/`: camouflage,
+/// radar, cover scent, double ammo, tranquilizer, observer, then the times.
+const FIXED_TEXTS: [&str; 9] = [
     "CAMOFLAG.NFO", "RADAR.NFO", "SCENT.NFO", "DOUBLE.NFO", "TRANQ.NFO", "OBSERVE.NFO",
     "DAY1.NFO", "DAY2.NFO", "DAY3.NFO",
 ];
-pub const PICTURES: usize = 28;
-const PIC_MENU: usize = 0;
-const PIC_AREA: usize = 1;
-const PIC_DINO: usize = 6;
-const PIC_WEAPON: usize = 15;
-const PIC_EQUIP: usize = 21;
-/// The kill's plaque in a hunt, and a trophy's in the trophy room.
-pub const PIC_PLAQUE_HUNT: usize = 25;
-pub const PIC_PLAQUE_ROOM: usize = 26;
-/// The original's map frame (`DrawHMap`), the overview painted in.
-pub const PIC_MAP_FRAME: usize = 27;
-const TXT_AREA: usize = 0;
-const TXT_DINO_METRIC: usize = 5;
-const TXT_DINO_US: usize = 14;
-const TXT_WEAPON: usize = 23;
-/// Camouflage, radar, cover scent, double ammo, tranquilizer, observer.
-const TXT_GEAR: usize = 29;
-const TXT_TIME: usize = 35;
+const TXT_GEAR: usize = 0;
+const TXT_TIME: usize = 6;
 
-pub const AREAS: [&str; 5] = ["Delphaeus Hills", "Fort Ciskin", "Vengar Fjords", "Manya Jungle", "Mount Ravan"];
-const ANIMALS: [&str; 9] = [
-    "Parasaurolophus", "Ankylosaurus", "Stegosaurus", "Allosaurus", "Chasmosaurus",
-    "Velociraptor", "Spinosaurus", "Ceratosaurus", "Tyrannosaurus",
-];
-pub const WEAPONS: [&str; 6] = ["Pistol", "Shotgun", "Double-barrel shotgun", "Crossbow", "Rifle", "Sniper rifle"];
-/// Short names for the weapon hexagons.
-const WEAPON_LABELS: [&str; 6] = ["Pistol", "Shotgun", "Double barrel", "Crossbow", "Rifle", "Sniper rifle"];
+/// Where the install's pictures and texts start (`pics`, `texts`).
+#[derive(Default, Clone, Copy)]
+struct Bases {
+    pic_area: usize,
+    pic_dino: usize,
+    pic_weapon: usize,
+    txt_area: usize,
+    txt_dino_metric: usize,
+    txt_dino_us: usize,
+    txt_weapon: usize,
+}
+
 const EQUIPMENT: [&str; 4] = ["Camouflage", "Radar", "Cover scent", "Double ammo"];
 const TIMES: [&str; 3] = ["Dawn", "Day", "Night"];
 const SURVIVALS: [&str; 3] = ["Normal", "Hardcore", "Custom"];
@@ -61,9 +54,6 @@ const SURVIVAL_HELP: [&str; 3] = [
     "Each wave also brings one to three more hunters.",
     "The Tyrannosaurus may come from wave 15.",
 ];
-/// The animals that come for the hunter in a survival (`survival::dangerous`):
-/// Allosaurus, Chasmosaurus, Velociraptor, Spinosaurus, Ceratosaurus, T-Rex.
-const DANGEROUS: u32 = 0b1_1111_1000;
 
 const BG: Rgba = [16, 22, 16, 255];
 const PANEL: Rgba = [32, 44, 30, 255];
@@ -161,6 +151,9 @@ pub struct Menu {
     font: Font,
     pics: Vec<Option<Image>>,
     texts: Vec<String>,
+    bases: Bases,
+    /// The game: its menu lists and files (`None` until C opens it).
+    pub install: Option<Install>,
     tiles: RefCell<TileCache>,
     /// What changed since the last `drawn`: everything, or these areas.
     full: bool,
@@ -204,6 +197,28 @@ fn honeycomb(n: usize, cols: usize, rr: f32, x0: f32, top: f32) -> Vec<Rect> {
             rect(cx - r, cy - r * SQRT3 / 2.0, 2.0 * r, r * SQRT3)
         })
         .collect()
+}
+
+/// `n` hexagons in the honeycomb that fits `area` with the biggest ones
+/// (at most `max` layout radius), centred across it.
+fn fit_honeycomb(n: usize, area: Rect, max: f32) -> Vec<Rect> {
+    if n == 0 {
+        return Vec::new();
+    }
+    let mut best = (0.0f32, 1usize);
+    for cols in 1..=n {
+        let rows = n.div_ceil(cols);
+        let w = area.w / (2.0 + 1.5 * (cols - 1) as f32);
+        let h = area.h / (SQRT3 * (rows as f32 + if cols > 1 && n > 1 { 0.5 } else { 0.0 }));
+        let rr = w.min(h).min(max);
+        if rr > best.0 + 0.01 {
+            best = (rr, cols);
+        }
+    }
+    let (rr, cols) = best;
+    let width = rr * (2.0 + 1.5 * (cols - 1) as f32);
+    let height = rr * SQRT3 * (n.div_ceil(cols) as f32 + if cols > 1 { 0.5 } else { 0.0 });
+    honeycomb(n, cols, rr, area.x + (area.w - width) * 0.5, area.y + (area.h - height) * 0.5)
 }
 
 fn flag(v: u32) -> &'static str {
@@ -256,26 +271,106 @@ impl Menu {
             room: crate::hunt_setup::new_save(),
             record: Record::default(),
             font,
-            pics: (0..PICTURES).map(|_| None).collect(),
-            texts: (PICTURES..FILES.len()).map(|_| String::new()).collect(),
+            pics: (0..FIXED_PICS.len()).map(|_| None).collect(),
+            texts: (0..FIXED_TEXTS.len()).map(|_| String::new()).collect(),
+            bases: Bases::default(),
+            install: None,
             tiles: RefCell::new(TileCache::default()),
             full: true,
             dirty: Vec::new(),
         }
     }
 
-    /// A file from `FILES`; returns false if a picture does not decode.
-    pub fn set_file(&mut self, slot: usize, bytes: &[u8]) -> bool {
+    /// The game to offer: its lists, and its menu pictures and descriptions
+    /// (a missing one only leaves a blank picture or text).
+    pub fn set_install(&mut self, install: Install) {
+        let read = |path: &str| install.vfs.read(&format!("HUNTDAT/MENU/{path}")).ok();
+        let pic = |path: &str| read(path).and_then(|d| Image::from_tga(&d));
+        let text = |path: &str| read(path).map_or_else(String::new, |d| reflow(&String::from_utf8_lossy(&d)));
+        let mut pics: Vec<Option<Image>> = FIXED_PICS.iter().map(|f| pic(f)).collect();
+        let mut texts: Vec<String> = FIXED_TEXTS.iter().map(|f| text(&format!("TXT/{f}"))).collect();
+        let mut b = Bases { pic_area: pics.len(), txt_area: texts.len(), ..Default::default() };
+        for a in &install.areas {
+            pics.push(pic(&format!("PICS/AREA{}.TGA", a.number)));
+            texts.push(text(&format!("TXT/AREA{}.TXT", a.number)));
+        }
+        // An animal's picture and texts by its menu slot (a roamer has none).
+        let slot = |p: &Pick| match p {
+            Pick::Slot(k) => Some(k + 1),
+            Pick::Roamer(_) => None,
+        };
+        b.pic_dino = pics.len();
+        for a in &install.animals {
+            pics.push(slot(&a.pick).and_then(|n| pic(&format!("PICS/DINO{n}.TGA"))));
+        }
+        for (units, base) in [("TXM", &mut b.txt_dino_metric), ("TXU", &mut b.txt_dino_us)] {
+            *base = texts.len();
+            for a in &install.animals {
+                texts.push(slot(&a.pick).map_or_else(String::new, |n| text(&format!("TXT/DINO{n}.{units}"))));
+            }
+        }
+        b.pic_weapon = pics.len();
+        b.txt_weapon = texts.len();
+        for i in 1..=install.weapons.len() {
+            pics.push(pic(&format!("PICS/WEAPON{i}.TGA")));
+            texts.push(text(&format!("TXT/WEAPON{i}.TXT")));
+        }
+        *self.tiles.borrow_mut() = TileCache::default();
+        self.pics = pics;
+        self.texts = texts;
+        self.bases = b;
+        self.install = Some(install);
+        self.clamp_choice();
         self.full = true;
-        if slot < PICTURES {
-            *self.tiles.borrow_mut() = TileCache::default();
-            self.pics[slot] = Image::from_tga(bytes);
-            self.pics[slot].is_some()
-        } else if slot < FILES.len() {
-            self.texts[slot - PICTURES] = reflow(&String::from_utf8_lossy(bytes));
-            true
-        } else {
-            false
+    }
+
+    /// The game's name for the title (`INFO.TXT`'s `name`).
+    fn game_name(&self) -> &str {
+        self.install.as_ref().map_or("Carnivores 2", |i| i.info.name.as_str())
+    }
+    fn area_count(&self) -> usize {
+        self.install.as_ref().map_or(0, |i| i.areas.len())
+    }
+    fn animal_count(&self) -> usize {
+        self.install.as_ref().map_or(0, |i| i.animals.len())
+    }
+    fn weapon_count(&self) -> usize {
+        self.install.as_ref().map_or(0, |i| i.weapons.len())
+    }
+    pub fn area_name(&self, i: usize) -> &str {
+        self.install.as_ref().and_then(|n| n.areas.get(i)).map_or("", |a| a.name.as_str())
+    }
+    fn animal_name(&self, i: usize) -> &str {
+        self.install.as_ref().and_then(|n| n.animals.get(i)).map_or("", |a| a.name.as_str())
+    }
+    /// `_RES.TXT` weapon `i`'s name.
+    pub fn weapon_name(&self, i: usize) -> &str {
+        self.install.as_ref().and_then(|n| n.weapons.get(i)).map_or("", String::as_str)
+    }
+    /// The name of the area numbered `n` (`AREAn`), for trophies.
+    pub fn area_numbered(&self, n: i32) -> &str {
+        self.install
+            .as_ref()
+            .and_then(|i| i.areas.iter().find(|a| a.number as i32 == n))
+            .map_or("", |a| a.name.as_str())
+    }
+    /// The animals that come for the hunter (a survival's waves), by bit.
+    fn dangerous(&self) -> u64 {
+        self.install.as_ref().map_or(0, |i| {
+            i.animals.iter().enumerate().filter(|(_, a)| a.dangerous).fold(0, |m, (k, _)| m | 1 << k)
+        })
+    }
+
+    /// Keep the picks within the game's lists.
+    fn clamp_choice(&mut self) {
+        let (areas, animals, weapons) = (self.area_count(), self.animal_count(), self.weapon_count());
+        let mask = |n: usize| if n >= 64 { u64::MAX } else { (1u64 << n) - 1 };
+        let c = &mut self.choice;
+        c.area = c.area.min(areas.saturating_sub(1) as u32);
+        c.animals &= mask(animals);
+        c.weapons &= mask(weapons) as u32;
+        if c.weapons == 0 && weapons > 0 {
+            c.weapons = 1;
         }
     }
 
@@ -363,11 +458,16 @@ impl Menu {
         let c = &mut self.choice;
         for line in text.lines() {
             let Some((k, v)) = line.split_once('=') else { continue };
+            if k.trim() == "animals" {
+                if let Ok(v) = v.trim().parse::<u64>() {
+                    c.animals = v;
+                }
+                continue;
+            }
             let Ok(v) = v.trim().parse::<u32>() else { continue };
             let field = match k.trim() {
                 "area" => &mut c.area,
                 "time" => &mut c.time,
-                "animals" => &mut c.animals,
                 "weapons" => &mut c.weapons,
                 "radar" => &mut c.radar,
                 "camo" => &mut c.camo,
@@ -388,14 +488,14 @@ impl Menu {
             };
             *field = v;
         }
-        c.area = c.area.min(4);
         c.time = c.time.min(2);
         c.survival = c.survival.min(2);
-        c.animals &= 0x1ff;
-        c.weapons &= 0x3f;
         c.run_pct = (c.run_pct / 10 * 10).clamp(50, 100);
         for f in [&mut c.radar, &mut c.camo, &mut c.scent, &mut c.double_ammo, &mut c.tranq, &mut c.observer, &mut c.blood, &mut c.death_anim, &mut c.ambient, &mut c.units_us, &mut c.map_mobile, &mut c.teleport, &mut c.hints] {
             *f = (*f != 0) as u32;
+        }
+        if self.install.is_some() {
+            self.clamp_choice();
         }
     }
 
@@ -410,7 +510,7 @@ impl Menu {
                 }
             }
             Page::Area => {
-                for (i, r) in honeycomb(5, 3, 94.5, 171.0, 96.0).into_iter().enumerate() {
+                for (i, r) in fit_honeycomb(self.area_count(), rect(40.0, 96.0, 740.0, 410.0), 94.5).into_iter().enumerate() {
                     v.push((Id::Area(i), r));
                 }
                 for i in 0..3 {
@@ -419,8 +519,8 @@ impl Menu {
             }
             Page::Animals => {
                 // A survival: the kinds below (the hexagons a row higher).
-                let top = if self.survival() { 100.0 } else { 165.0 };
-                for (i, r) in honeycomb(9, 5, 92.0, 40.0, top).into_iter().enumerate() {
+                let grid = if self.survival() { rect(40.0, 96.0, 740.0, 410.0) } else { rect(40.0, 96.0, 740.0, 520.0) };
+                for (i, r) in fit_honeycomb(self.animal_count(), grid, 92.0).into_iter().enumerate() {
                     v.push((Id::Animal(i), r));
                 }
                 if self.survival() {
@@ -430,7 +530,7 @@ impl Menu {
                 }
             }
             Page::Gear => {
-                for (i, r) in honeycomb(6, 6, 77.5, 40.0, 100.0).into_iter().enumerate() {
+                for (i, r) in fit_honeycomb(self.weapon_count(), rect(40.0, 96.0, 740.0, 214.0), 77.5).into_iter().enumerate() {
                     v.push((Id::Weapon(i), r));
                 }
                 let gear = [Id::Equip(0), Id::Equip(1), Id::Equip(2), Id::Equip(3), Id::Tranq, Id::Observer];
@@ -615,8 +715,8 @@ impl Menu {
         self.focus = match page {
             Page::Title => Id::Play,
             Page::Area => Id::Area(self.choice.area as usize),
-            Page::Animals => Id::Animal((0..9).find(|i| self.choice.animals & (1 << i) != 0).unwrap_or(0)),
-            Page::Gear => Id::Weapon((0..6).find(|i| self.choice.weapons & (1 << i) != 0).unwrap_or(0)),
+            Page::Animals => Id::Animal((0..self.animal_count()).find(|i| self.choice.animals & (1 << i) != 0).unwrap_or(0)),
+            Page::Gear => Id::Weapon((0..self.weapon_count()).find(|i| self.choice.weapons & (1 << i) != 0).unwrap_or(0)),
             Page::Settings => Id::RunSpeed,
             Page::Death => Id::Restart,
             Page::Record => Id::Back,
@@ -643,8 +743,10 @@ impl Menu {
 
     fn problem(&self) -> Option<&'static str> {
         let c = &self.choice;
-        if self.survival() {
-            if c.animals & DANGEROUS == 0 {
+        if self.install.is_none() {
+            Some("No game found on the SD card")
+        } else if self.survival() {
+            if c.animals & self.dangerous() == 0 {
                 Some("Pick at least one hunter for the waves")
             } else if c.weapons == 0 {
                 Some("Pick a weapon")
@@ -667,7 +769,7 @@ impl Menu {
         let survival = self.survival();
         let observer = c.observer != 0 && !survival;
         match id {
-            Id::Animal(i) => !survival || DANGEROUS & (1 << i) != 0,
+            Id::Animal(i) => !survival || self.dangerous() & (1 << i) != 0,
             Id::Weapon(_) | Id::Tranq => !observer && !(survival && id == Id::Tranq),
             Id::Equip(i) => !observer || i == 1,
             Id::Observer => !survival,
@@ -679,7 +781,7 @@ impl Menu {
         match self.problem() {
             Some(m) => {
                 self.message = Some(m);
-                if self.choice.animals == 0 || self.survival() && self.choice.animals & DANGEROUS == 0 {
+                if self.choice.animals == 0 || self.survival() && self.choice.animals & self.dangerous() == 0 {
                     self.go(Page::Animals);
                 }
             }
@@ -695,6 +797,7 @@ impl Menu {
             return;
         }
         self.notice = None;
+        let dangerous = self.dangerous();
         let c = &mut self.choice;
         match id {
             Id::Play => {
@@ -705,6 +808,7 @@ impl Menu {
                 c.mode = MODE_SURVIVAL;
                 self.go(Page::Area);
             }
+            Id::Trophies if !self.install.as_ref().is_some_and(|i| i.trophy_room) => self.message = Some("This game has no trophy room"),
             Id::Trophies => {
                 c.mode = MODE_TROPHY;
                 self.action = Action::Hunt;
@@ -727,7 +831,7 @@ impl Menu {
             Id::Back => self.back(),
             Id::Next => match self.page {
                 Page::Area => self.go(Page::Animals),
-                Page::Animals if c.mode == MODE_SURVIVAL && c.animals & DANGEROUS == 0 => self.message = Some("Pick at least one hunter for the waves"),
+                Page::Animals if c.mode == MODE_SURVIVAL && c.animals & dangerous == 0 => self.message = Some("Pick at least one hunter for the waves"),
                 Page::Animals if c.animals == 0 => self.message = Some("Pick at least one animal to hunt"),
                 Page::Animals => self.go(Page::Gear),
                 _ => self.try_hunt(),
@@ -821,7 +925,9 @@ impl Menu {
         }
         c.fill(rect(0.0, 0.0, 540.0, HEIGHT), BG);
         c.fade_right(rect(540.0, 0.0, 120.0, HEIGHT), BG);
-        self.shadowed(c, 72.0, 110.0, 76.0, GOLD, "CARNIVORES 2");
+        let name = self.game_name().to_ascii_uppercase();
+        let size = (76.0f32).min(76.0 * 440.0 / measure(&self.font, 76.0, &name).max(1.0));
+        self.shadowed(c, 72.0, 110.0 + (76.0 - size) * 0.5, size, GOLD, &name);
         self.shadowed(c, 76.0, 200.0, 28.0, TEXT, "Classic, rebuilt for Wii U");
         for (id, r) in self.items() {
             let label = match id {
@@ -866,9 +972,9 @@ impl Menu {
             let focused = self.focus == id;
             let enabled = self.enabled(id);
             match id {
-                Id::Area(i) => self.hex_item(c, r, PIC_AREA + i, AREAS[i], ch.area == i as u32, focused, true),
-                Id::Animal(i) => self.hex_item(c, r, PIC_DINO + i, ANIMALS[i], ch.animals & (1 << i) != 0 && enabled, focused, enabled),
-                Id::Weapon(i) => self.hex_item(c, r, PIC_WEAPON + i, WEAPON_LABELS[i], ch.weapons & (1 << i) != 0, focused, enabled),
+                Id::Area(i) => self.hex_item(c, r, self.bases.pic_area + i, self.area_name(i), ch.area == i as u32, focused, true),
+                Id::Animal(i) => self.hex_item(c, r, self.bases.pic_dino + i, self.animal_name(i), ch.animals & (1 << i) != 0 && enabled, focused, enabled),
+                Id::Weapon(i) => self.hex_item(c, r, self.bases.pic_weapon + i, self.weapon_name(i), ch.weapons & (1 << i) != 0, focused, enabled),
                 // Observer mode carries no weapons or gear but the radar.
                 Id::Equip(i) => {
                     let on = [ch.camo, ch.radar, ch.scent, ch.double_ammo][i] != 0;
@@ -898,12 +1004,12 @@ impl Menu {
         match self.message {
             Some(m) => c.text_centered(&self.font, mid, 26.0, RED, m),
             None => {
-                let animals = if survival { (ch.animals & DANGEROUS).count_ones() } else { ch.animals.count_ones() };
+                let animals = if survival { (ch.animals & self.dangerous()).count_ones() } else { ch.animals.count_ones() };
                 let weapons = if observer { String::from("observer") } else { format!("{} weapon{}", ch.weapons.count_ones(), if ch.weapons.count_ones() == 1 { "" } else { "s" }) };
                 let s = if survival {
-                    format!("{} survival - {} - {} - {} hunter{} - {}", SURVIVALS[ch.survival as usize], AREAS[ch.area as usize], TIMES[ch.time as usize], animals, if animals == 1 { "" } else { "s" }, weapons)
+                    format!("{} survival - {} - {} - {} hunter{} - {}", SURVIVALS[ch.survival as usize], self.area_name(ch.area as usize), TIMES[ch.time as usize], animals, if animals == 1 { "" } else { "s" }, weapons)
                 } else {
-                    format!("{} - {} - {} animal{} - {}", AREAS[ch.area as usize], TIMES[ch.time as usize], animals, if animals == 1 { "" } else { "s" }, weapons)
+                    format!("{} - {} - {} animal{} - {}", self.area_name(ch.area as usize), TIMES[ch.time as usize], animals, if animals == 1 { "" } else { "s" }, weapons)
                 };
                 c.text_centered(&self.font, mid, 24.0, TEXT, &s);
             }
@@ -916,7 +1022,7 @@ impl Menu {
         match self.pic(pic) {
             // Weapons and gear are long: the whole picture across the
             // hexagon, on the picture's own background colour.
-            Some(img) if pic >= PIC_WEAPON => {
+            Some(img) if pic >= self.bases.pic_weapon && pic < self.bases.pic_weapon + self.weapon_count() => {
                 let bg = img.px[img.w * img.h / 2 + 6];
                 c.hex(r, Some(bg.map(|v| (v as f32 * bright) as u8)), 0.0, bg);
                 let h = r.w * img.h as f32 / img.w as f32;
@@ -963,11 +1069,12 @@ impl Menu {
     // The focused item's original picture and description.
     fn draw_info(&self, c: &mut Canvas) {
         let ch = &self.choice;
+        let b = self.bases;
         let (pic, title, text): (Option<usize>, &str, usize) = match self.focus {
-            Id::Area(i) => (Some(PIC_AREA + i), AREAS[i], TXT_AREA + i),
-            Id::Time(i) => (Some(PIC_AREA + ch.area as usize), TIMES[i], TXT_TIME + i),
-            Id::Animal(i) => (Some(PIC_DINO + i), ANIMALS[i], if ch.units_us != 0 { TXT_DINO_US } else { TXT_DINO_METRIC } + i),
-            Id::Weapon(i) => (Some(PIC_WEAPON + i), WEAPONS[i], TXT_WEAPON + i),
+            Id::Area(i) => (Some(b.pic_area + i), self.area_name(i), b.txt_area + i),
+            Id::Time(i) => (Some(b.pic_area + ch.area as usize), TIMES[i], TXT_TIME + i),
+            Id::Animal(i) => (Some(b.pic_dino + i), self.animal_name(i), if ch.units_us != 0 { b.txt_dino_us } else { b.txt_dino_metric } + i),
+            Id::Weapon(i) => (Some(b.pic_weapon + i), self.weapon_name(i), b.txt_weapon + i),
             Id::Equip(i) => (Some(PIC_EQUIP + i), EQUIPMENT[i], TXT_GEAR + i),
             Id::Tranq => (None, "Tranquilizer", TXT_GEAR + 4),
             Id::Observer => (None, "Observer mode", TXT_GEAR + 5),
@@ -979,7 +1086,7 @@ impl Menu {
                 return;
             }
             _ => match self.page {
-                Page::Area => (Some(PIC_AREA + ch.area as usize), AREAS[ch.area as usize], TXT_AREA + ch.area as usize),
+                Page::Area => (Some(b.pic_area + ch.area as usize), self.area_name(ch.area as usize), b.txt_area + ch.area as usize),
                 _ => (None, "", usize::MAX),
             },
         };

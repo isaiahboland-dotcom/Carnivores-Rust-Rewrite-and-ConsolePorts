@@ -1,4 +1,4 @@
-#![cfg(feature = "portable-hunt")]
+#![cfg(feature = "portable-load")]
 //! The Wii U menu, drawn on the host. With C2_ORIGINAL_HUNTDAT set it reads
 //! the original menu pictures and texts; with C2_MENU_SHOTS=DIR it also
 //! writes every page as PNGs at the TV's and the GamePad's sizes, with
@@ -28,7 +28,13 @@ mod menu;
 #[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
 #[path = "../../../../wiiu-ver/perf-probe/src/overlay.rs"]
 mod overlay;
-use menu::{button::*, Action, Id, Menu, Page, FILES};
+#[allow(dead_code)]
+#[rustfmt::skip]
+#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
+#[path = "../../../../wiiu-ver/perf-probe/src/install.rs"]
+mod install;
+mod wiiu_common;
+use menu::{button::*, Action, Id, Menu, Page};
 
 fn font() -> ui::Font {
     let bytes = std::env::var("C2_MENU_FONT")
@@ -37,27 +43,12 @@ fn font() -> ui::Font {
     ui::Font::new(bytes.map(|b| &*Box::leak(b.into_boxed_slice())))
 }
 
-fn menu_with_files() -> Menu {
+/// The menu with the original game (C2_ORIGINAL_HUNTDAT); `None` without.
+fn menu_with_files() -> Option<Menu> {
+    let (_, inst) = wiiu_common::original()?;
     let mut m = Menu::new(font());
-    if let Ok(root) = std::env::var("C2_ORIGINAL_HUNTDAT") {
-        let root = std::path::Path::new(&root).join("MENU");
-        for (slot, name) in FILES.iter().enumerate() {
-            let dir = if name.ends_with(".TGA")
-                && *name != "MENUM.TGA"
-                && !name.starts_with("TROPHY")
-                && *name != "MAPFRAME.TGA"
-            {
-                "PICS"
-            } else if name.ends_with(".TGA") {
-                ""
-            } else {
-                "TXT"
-            };
-            let bytes = std::fs::read(root.join(dir).join(name)).unwrap();
-            assert!(m.set_file(slot, &bytes), "{name}");
-        }
-    }
-    m
+    m.set_install(inst);
+    Some(m)
 }
 
 fn shot(m: &Menu, name: &str) {
@@ -84,7 +75,9 @@ fn shot(m: &Menu, name: &str) {
 
 #[test]
 fn every_page_draws_and_the_setup_reaches_a_hunt() {
-    let mut m = menu_with_files();
+    let Some(mut m) = menu_with_files() else {
+        return;
+    };
     shot(&m, "1-title");
     m.input(A);
     assert_eq!(m.page, Page::Area);
@@ -210,7 +203,9 @@ fn every_page_draws_and_the_setup_reaches_a_hunt() {
 
 #[test]
 fn touches_pick_hexagons_and_settings_survive_a_save() {
-    let mut m = Menu::new(ui::Font::Bitmap);
+    let Some(mut m) = menu_with_files() else {
+        return;
+    };
     m.input(A);
     let area = m
         .items()
@@ -237,7 +232,7 @@ fn touches_pick_hexagons_and_settings_survive_a_save() {
         ..m.choice
     };
     let text = m.settings_text();
-    let mut n = Menu::new(ui::Font::Bitmap);
+    let mut n = menu_with_files().unwrap();
     n.load_settings(&text);
     assert_eq!(n.choice, m.choice);
     n.load_settings("run_pct=7\ntime=9\nanimals=4294967295\ncamo=5\njunk\nblood=x\n");
@@ -261,7 +256,9 @@ fn descriptions_are_reflowed() {
 #[test]
 #[ignore]
 fn draw_time() {
-    let mut m = menu_with_files();
+    let Some(mut m) = menu_with_files() else {
+        return;
+    };
     m.input(A);
     m.input(R);
     let pitch = 1920;
@@ -329,7 +326,9 @@ fn part_times() {
 // at both sizes, through a walk over every page.
 #[test]
 fn partial_redraws_match_full_draws() {
-    let mut m = menu_with_files();
+    let Some(mut m) = menu_with_files() else {
+        return;
+    };
     let sizes = [(1920usize, 1080usize), (854, 480)];
     let mut kept: Vec<Vec<u8>> = sizes
         .iter()
@@ -347,7 +346,7 @@ fn partial_redraws_match_full_draws() {
             let pitch = w.next_multiple_of(32);
             m.draw(&mut ui::Canvas::new(&mut kept[k], pitch, w, h));
             let mut full = vec![0u8; pitch * h * 4];
-            let mut fresh = menu_with_files();
+            let mut fresh = menu_with_files().unwrap();
             fresh.page = m.page;
             fresh.focus = m.focus;
             fresh.choice = m.choice;
@@ -374,26 +373,9 @@ fn partial_redraws_match_full_draws() {
 // the GPU blends it; a second draw changes nothing.
 #[test]
 fn hunt_overlay_shows_the_kill() {
-    let Ok(root) = std::env::var("C2_ORIGINAL_HUNTDAT") else {
+    let Some(m) = menu_with_files() else {
         return;
     };
-    let root = std::path::Path::new(&root);
-    let read = |p: &str| std::fs::read(root.join(p)).unwrap();
-    let defs = std::fs::read_to_string(root.join("_RES.TXT")).unwrap();
-    let mut assets: Vec<Vec<u8>> = hunt_setup::SPECIES_FILES.iter().map(|f| read(f)).collect();
-    assets.extend(
-        hunt_setup::WEAPON_FILES
-            .iter()
-            .map(|f| read(&format!("WEAPONS/{f}"))),
-    );
-    assets.push(read("HUNTER1.CAR"));
-    let bytes: Vec<&[u8]> = assets.iter().map(Vec::as_slice).collect();
-    let area = c2_core::area::Area::new(
-        c2_formats::map::parse(&read("AREAS/AREA1.MAP")).unwrap(),
-        c2_formats::rsc::parse(&read("AREAS/AREA1.RSC")).unwrap(),
-        c2_core::area::TimeOfDay::Day,
-    );
-    let m = menu_with_files();
     // (tranq, shot, R map, mobile look, hints, quads).
     let cases = [
         (0, "12-overlay-trophy", false, false, false, 3),
@@ -404,22 +386,17 @@ fn hunt_overlay_shows_the_kill() {
     ];
     for (tranq, name, map, map_mobile, hints, want) in cases {
         let kill = name.ends_with("trophy") || name.ends_with("notice");
+        let inst = m.install.as_ref().unwrap();
         let choice = hunt_setup::HuntChoice {
-            animals: 0b1000,
+            animals: wiiu_common::slots(inst, 0b1000),
             weapons: 0b10000,
             tranq,
             radar: 1,
             ..Default::default()
         };
-        let (mut hunt, _) =
-            hunt_setup::setup_with(&area, &defs, &bytes, &choice, &hunt_setup::new_save(), 1)
-                .unwrap();
-        let i = hunt
-            .herd
-            .chars
-            .iter()
-            .position(|c| c.ctype >= hunt_setup::AMBIENT_COUNT)
-            .unwrap();
+        let l = hunt_setup::load(Some(inst), &choice, &hunt_setup::new_save(), 1).unwrap();
+        let (area, mut hunt) = (l.area, l.hunt);
+        let i = hunt.herd.chars.iter().position(|c| c.ai >= 10).unwrap();
         let mut events = Vec::new();
         if kill {
             hunt.debug_bag(&area, i, &mut events);
@@ -444,6 +421,7 @@ fn hunt_overlay_shows_the_kill() {
         }
         hunt.player.alpha = 0.7;
         let view = overlay::View {
+            menu: &m,
             hunt: &hunt,
             area: &area,
             map,
@@ -453,6 +431,7 @@ fn hunt_overlay_shows_the_kill() {
             ask: None,
             units_us: false,
             night: false,
+            cross: None,
         };
         let (w, h) = (overlay::TEX_W, overlay::TEX_H);
         let mut tex = vec![0u8; w * h * 4];

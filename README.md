@@ -41,7 +41,7 @@ the 3DS's PICA200 GPU and the Wii U's PowerPC CPU.
 |---|---|---|
 | **PC** (Linux; Windows untested) | Playable, feature-rich | The full original game, plus add-ons, Modder's Edition games, standalone games, Carnivores: Ice Age, animals from the mobile games, survival mode and a balance editor. Bugs mostly show up when a lot of mods and add-ons are used at once. |
 | **Nintendo 3DS** (homebrew) | Nearly complete | Full hunts, touch menus, bottom-screen map, sound, saves, trophy room, add-on and standalone packs, `.cia` installs. Tested on real 3DS and 2DS hardware. Optional settings help with the handheld controls (see [below](#3ds-settings-for-handheld-play)). Like PC, bugs mostly come from packing in too many add-ons or mods. |
-| **Wii U** (homebrew) | Demo, being optimized | Stock Carnivores 2 only: an HD menu (TV and GamePad) with dawn/day/night and all the original gear and options, all five maps, the nine animals, six weapons, calls, radar, GamePad map. Runs on a real Wii U under Aroma (`.wuhb`) and exits to the HOME menu cleanly. A steady 30 FPS in open areas; 20-25 FPS in thick jungle, where the GPU is the limit ([results](wiiu-ver/perf-probe/hardware-logs/2026-10-30-menu-partial-results.md)). New and not yet tested on the console: survival, the trophy room, saved trophies and score (the PC's save format), the PC's kill notice and trophy plaque, the hunter record, and an exit prompt and pause. Add-ons are not on the Wii U yet. |
+| **Wii U** (homebrew) | Demo, being optimized | Stock Carnivores 2 only: an HD menu (TV and GamePad) with dawn/day/night and all the original gear and options, all five maps, the nine animals, six weapons, calls, radar, GamePad map. Runs on a real Wii U under Aroma (`.wuhb`) and exits to the HOME menu cleanly. A steady 30 FPS in open areas; 20-25 FPS in thick jungle, where the GPU is the limit ([results](wiiu-ver/perf-probe/hardware-logs/2026-10-30-menu-partial-results.md)). New and not yet tested on the console: survival, the trophy room, saved trophies and score (the PC's save format), the PC's kill notice and trophy plaque, the hunter record, and an exit prompt and pause. New: any game as its own Wii U Menu entry: add-ons, the Modder's Edition and standalone games such as Triassic and Mandibles (tested in Cemu, not yet on the console). |
 | **PC VR** (OpenXR) | Early first draft | Menus and the hunt setup on a panel, walking the areas, animals that hunt you. No weapons yet. Tested with a PS VR2 on Linux through Monado. |
 | **PS5 / PS VR2** | Not started | Research notes only (`psvr2-ver/gameplan.md`). |
 
@@ -107,10 +107,11 @@ The tabs:
   the packs (one for the original game or the base with its add-ons, and one per standalone game that's
   on) and copies the app into `3ds/<name>/`. It can also make a `.cia` with your own home-menu icon and
   banner (see [.cia builds](#cia-builds-optional)).
-- **Wii U**: choose your SD card and output format. Build a `.wuhb` for the Aroma Wii U Menu
-  (`wuhbtool` from devkitPro `wut-tools` is required), or an `.rpx` for the Homebrew Launcher.
-  Both formats copy the original Carnivores 2 files the app needs into
-  `wiiu/apps/carnivores-probe/`. Add-ons and other games are listed as "not on the Wii U yet".
+- **Wii U**: choose your SD card and output format. **Build for Wii U** makes one install per game: the
+  base game with its overlays and add-ons, and one for each standalone game that's on. Each is a folder
+  `wiiu/apps/<name>/` with its own `.wuhb` for the Aroma Wii U Menu, with an icon and boot images cut from
+  the game's menu picture (`wuhbtool` from devkitPro `wut-tools` is required). An `.rpx` for the Homebrew
+  Launcher is also possible, but only as the one default install (`wiiu/apps/carnivores-probe/`).
 - **Settings**: the tools folder (where `c2-pc`, `c2-cook`, the 3DS and Wii U apps, `wuhbtool`, `makerom` and `bannertool`
   are found), showing the 3DS / Wii U sections, and engine options.
 
@@ -214,7 +215,7 @@ banner (256x128) and banner sound are your own. Without them, they're made from 
 
 ## Wii U from the command line (demo)
 
-The Wii U version is a demo: stock Carnivores 2 only, tested in Cemu and on a real Wii U under Aroma. It's a C
+The Wii U version is a demo, tested in Cemu and on a real Wii U under Aroma. It's a C
 frontend on devkitPro's WUT with the shared Rust code linked in. You need:
 
 - Rust nightly with `rust-src`
@@ -233,13 +234,17 @@ docker run --rm --user "$(id -u):$(id -g)" \
   -v "$(pwd)/wiiu-ver/perf-probe:/src" -w /src devkitpro/devkitppc \
   sh -c '/opt/devkitpro/devkitPPC/bin/powerpc-eabi-objcopy --remove-section .note.GNU-stack target/powerpc-wiiu/release/libc2_wiiu_terrain_probe.a target/wiiu-terrain.a && /opt/devkitpro/portlibs/wiiu/bin/powerpc-eabi-cmake -S . -B build && cmake --build build'
 
-# Copy the game files it needs to the SD card (or use the launcher's Wii U tab):
-python3 wiiu-ver/perf-probe/stage_assets.py PATH/TO/Carnivores2/HUNTDAT SD/wiiu/apps/carnivores-probe
+# An install on the SD card: a game (as c2-cook takes it) and its own Wii U Menu entry.
+# It finds c2-cook, the app and wuhbtool in this tree's builds, $DEVKITPRO/tools/bin or PATH (or --tools DIR).
+cargo run --release --manifest-path pc-ver/Cargo.toml -p c2-launcher --bin c2-wiiu-builder -- \
+  --install carnivores-triassic \
+  --title "Carnivores Triassic" --sd SD -- --game "PATH/TO/Carnivores Triassic"
 ```
 
-Run `wiiu-ver/perf-probe/build/c2-wiiu-perf-probe.rpx` in Cemu, or from the Homebrew Launcher, with the
-files above on the SD card. For the Aroma Wii U Menu, package it as `carnivores-probe.wuhb` with `wuhbtool`
-(the launcher's Wii U tab does this). Hardware frame-time captures and their results are in
+Everything after `--` goes to `c2-cook` (`--game`, `--overlay`, `--mods`, `--recipe`, `--balance`). Add
+`--rpx` for a Homebrew Launcher build instead of a `.wuhb` (it reads `wiiu/apps/carnivores-probe/`).
+To run it in Cemu, cook into Cemu's SD card (`c2-cook --target wiiu --out
+~/.local/share/Cemu/sdcard/wiiu/apps/carnivores-probe ...`) and start the `.rpx`. Hardware frame-time captures and their results are in
 [wiiu-ver/perf-probe/hardware-logs/](wiiu-ver/perf-probe/hardware-logs/). Controls and the current state: [wiiu-ver/perf-probe/README.md](wiiu-ver/perf-probe/README.md);
 the plan: [docs/WIIU.md](docs/WIIU.md) and [wiiu-ver/gameplan.md](wiiu-ver/gameplan.md).
 

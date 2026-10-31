@@ -6,10 +6,15 @@ publish = false
 [lib]
 crate-type = ["staticlib"]
 [dependencies]
-c2-core = { path = "../../pc-ver/crates/c2-core", default-features = false, features = ["hunt-diagnostics"] }
+c2-core = { path = "../../pc-ver/crates/c2-core", default-features = false, features = ["hunt-diagnostics", "portable-load"] }
+c2-vfs = { path = "../../pc-ver/crates/c2-vfs", default-features = false }
 c2-formats = { path = "../../pc-ver/crates/c2-formats", default-features = false }
 libm = "0.2"
 ab_glyph = { version = "0.2", default-features = false, features = ["libm"] }
 font8x8 = { version = "0.3", default-features = false }
 [profile.release]
 panic = "abort"
+# At opt-level 2 and 3 the Modder's Edition rules (`mee::Tables::read`)
+# spin forever on the console (Cemu): see docs/DECISIONS.md.
+[profile.release.package.c2-formats]
+opt-level = 1

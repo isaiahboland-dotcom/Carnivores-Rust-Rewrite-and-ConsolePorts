@@ -22,8 +22,8 @@ static void lifecycle_checkpoint(const char *message) {
 }
 static void lifecycle_trace_open(void) {
     char path[256];
-    snprintf(path, sizeof(path), "%s/wiiu/apps/carnivores-probe/lifecycle-%llx.log",
-        WHBGetSdCardMountPath(), (unsigned long long)OSGetTime());
+    char name[64]; snprintf(name, sizeof(name), "lifecycle-%llx.log", (unsigned long long)OSGetTime());
+    app_path(path, sizeof(path), name);
     FSInitCmdBlock(&lifecycle_cmd);
     lifecycle_log_open = FSOpenFile(&client, &lifecycle_cmd, path, "w", &lifecycle_file, FS_ERROR_FLAG_NONE) == FS_STATUS_OK;
     lifecycle_checkpoint("trace v1 open; ProcUI shutdown deferred until cleanup");

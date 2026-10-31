@@ -56,7 +56,7 @@ extern int32_t c2_scenery_resident_prepare(void *, int32_t, float *, float *, ui
 extern uint32_t c2_scenery_resident_ranges(void *, SceneryRange *, uint32_t, uint32_t *);
 extern uint32_t c2_terrain_resident_update(void *, int32_t, float *, float *, float *, float *, SceneryRange *, uint32_t, uint32_t *);
 extern void c2_terrain_resident_ranges(void *, SceneryRange *, SceneryRange *, uint32_t, uint32_t *, uint32_t *, uint32_t *, uint32_t *);
-extern int32_t c2_hunt_setup(void *, const uint8_t **, const uint32_t *, const void *, uint32_t, void *);
+extern int32_t c2_hunt_load(void *, uint32_t, void **);
 extern uint32_t c2_hunt_outcome(void *);
 extern void c2_hunt_finish(void *, void *, uint32_t);
 extern void c2_set_clock(void *, int32_t, int32_t, int32_t, int32_t, int32_t);
@@ -64,9 +64,14 @@ extern uint32_t c2_death_active(void *);
 extern float c2_hunt_zoom(void *);
 extern int32_t c2_actor_atlas(void *, uint8_t *, uint32_t);
 extern uint32_t c2_actor_vertices(void *, float *, float *, uint32_t, uint32_t);
-extern int32_t c2_fx_load(void *, uint32_t, const uint8_t *, uint32_t);
-extern int32_t c2_call_load(void *, uint32_t, const uint8_t *, uint32_t);
 extern int32_t c2_sound_clip(void *, uint32_t, uint32_t, const uint8_t **, uint32_t *);
+extern uint32_t c2_sound_kinds(void *);
+extern uint32_t c2_weapon_count(void *);
+extern int32_t c2_weapon_label(void *, uint32_t, char *, uint32_t);
+extern uint32_t c2_call_count(void *);
+extern uint32_t c2_call_page(void *);
+extern int32_t c2_call_at(void *, uint32_t, uint32_t);
+extern int32_t c2_call_label(void *, uint32_t, char *, uint32_t);
 typedef struct { float x, z; uint32_t rgba; } RadarBlip;
 extern void c2_set_radar(void *, uint32_t);
 extern uint32_t c2_radar_blips(void *, RadarBlip *, uint32_t);
@@ -74,18 +79,20 @@ typedef struct { int32_t ammo; uint32_t weapon_ready; int32_t call; int32_t weap
 extern void c2_hud_state(void *, HudState *);
 extern uint32_t c2_hunt_dead(void *, uint32_t *, uint32_t *);
 extern int32_t c2_restart_hunt(void *, uint32_t);
-extern int32_t c2_icon_load(void *, const uint8_t *, uint32_t);
 extern int32_t c2_icon_atlas(void *, uint8_t *, uint32_t, uint32_t, uint32_t);
 extern void c2_scenery_camera(void *, float *);
 extern void c2_static_view_key(void *, float *);
 extern int32_t c2_terrain_atlas(void *, uint8_t *, uint32_t);
 extern uint32_t c2_terrain_vertices(void *, float *, float *);
 typedef struct { int32_t x, y, z, yaw_milli, speed_milli; uint32_t sprint, crouch; } Snapshot;
-extern int32_t c2_move_create(const uint8_t *, size_t, const uint8_t *, size_t, uint32_t, void **);
-extern uint32_t c2_move_checks(void *);
 extern void c2_move_tick(void *, float, float, float, float, uint32_t, Snapshot *);
 extern void c2_move_destroy(void *);
-void *c2_move_alloc(size_t n, size_t a) { if (a < sizeof(void *)) a = sizeof(void *); return memalign(a, n); }
+void *c2_move_alloc(size_t n, size_t a) {
+    if (a < sizeof(void *)) a = sizeof(void *);
+    void *p = memalign(a, n);
+    if (!p) OSReport("C2 out of memory: %u bytes (align %u)\n", (unsigned)n, (unsigned)a);
+    return p;
+}
 void c2_move_free(void *p) { free(p); }
 void c2_move_panic(const char *message);
 /* GPU timestamps (gx2.rpl; not in WUT's headers). */
@@ -96,7 +103,11 @@ void c2_hunt_values(uint32_t toggle, uint32_t hidden, uint32_t underwater, int32
     OSReport("C2 binoculars toggle %u hidden %u underwater %u health %d active %u\n", toggle, hidden, underwater, health, active);
 }
 typedef struct { int16_t *samples; uint32_t count; } AudioClip;
-static AudioClip audio_clips[26][64];
+/* The hunt's sounds by kind and slot (lib.rs KIND_*): effects, calls,
+ * random sounds, ambient loops, the carried weapons, the characters. */
+enum { AUDIO_FX = 0, AUDIO_AMBIENT = 3, AUDIO_SLOTS = 128 };
+static AudioClip *audio_clips;
+static uint32_t audio_kinds;
 static AXVoice *audio_voices[8];
 static AXVoice *ambient_voice;
 static int32_t audio_owner[8];
@@ -110,14 +121,17 @@ static void audio_init(void *sim) {
     AXInitWithParams(&params);
     if (!AXIsInit()) { OSReport("C2 audio initialization failed\n"); return; }
     audio_initialized = true;
-    for (uint32_t kind = 0; kind < 26; ++kind) for (uint32_t slot = 0; slot < 64; ++slot) {
+    audio_kinds = c2_sound_kinds(sim);
+    audio_clips = calloc((size_t)audio_kinds * AUDIO_SLOTS, sizeof(AudioClip));
+    if (!audio_clips) audio_kinds = 0;
+    for (uint32_t kind = 0; kind < audio_kinds; ++kind) for (uint32_t slot = 0; slot < AUDIO_SLOTS; ++slot) {
         const uint8_t *src = NULL; uint32_t len = 0;
         if (c2_sound_clip(sim, kind, slot, &src, &len) || len < 2) continue;
         int16_t *samples = memalign(64, len);
         if (!samples) continue;
         for (uint32_t n = 0; n < len / 2; ++n) samples[n] = (int16_t)((uint16_t)src[n * 2] | ((uint16_t)src[n * 2 + 1] << 8));
         DCFlushRange(samples, len);
-        audio_clips[kind][slot] = (AudioClip){samples, len / 2};
+        audio_clips[kind * AUDIO_SLOTS + slot] = (AudioClip){samples, len / 2};
     }
     for (unsigned i = 0; i < 8; ++i) { audio_voices[i] = AXAcquireVoice(31, NULL, NULL); audio_owner[i] = -1; }
     ambient_voice = AXAcquireVoice(31, NULL, NULL);
@@ -130,9 +144,9 @@ void c2_stop_animal(uint32_t index) {
     }
 }
 void c2_play_sound(uint32_t kind, uint32_t slot, int32_t owner, float left, float right) {
-    if (!audio_initialized || kind >= 26 || slot >= 64) return;
+    if (!audio_initialized || kind >= audio_kinds || slot >= AUDIO_SLOTS) return;
     if (left <= 0.0f && right <= 0.0f) return;
-    AudioClip *clip = &audio_clips[kind][slot]; if (!clip->samples || !clip->count) return;
+    AudioClip *clip = &audio_clips[kind * AUDIO_SLOTS + slot]; if (!clip->samples || !clip->count) return;
     AXVoice *voice = NULL; unsigned voice_index = 0;
     for (unsigned i = 0; i < 8; ++i) if (audio_voices[i] && !AXIsVoiceRunning(audio_voices[i])) { voice = audio_voices[i]; voice_index = i; break; }
     if (!voice) return;
@@ -153,7 +167,7 @@ void c2_set_ambient(int32_t zone, float gain) {
     if (!audio_initialized || !ambient_voice) return;
     AXVoiceBegin(ambient_voice);
     AXSetVoiceState(ambient_voice, AX_VOICE_STATE_STOPPED);
-    AudioClip *clip = zone < 0 ? &audio_clips[19][6] : zone < 64 ? &audio_clips[18][zone] : NULL;
+    AudioClip *clip = audio_kinds <= AUDIO_AMBIENT ? NULL : zone < 0 ? &audio_clips[AUDIO_FX * AUDIO_SLOTS + 6] : zone < AUDIO_SLOTS ? &audio_clips[AUDIO_AMBIENT * AUDIO_SLOTS + zone] : NULL;
     ambient_active = clip && clip->count; ambient_zone = zone; ambient_gain = gain;
     if (clip && clip->count) {
         AXVoiceOffsets offsets = {0}; offsets.dataType = AX_VOICE_FORMAT_LPCM16;
@@ -170,7 +184,7 @@ void c2_set_ambient(int32_t zone, float gain) {
 static void audio_silence(int keep_death_sound) {
     if (!audio_initialized) return;
     for (unsigned i=0;i<8;++i) {
-        if (keep_death_sound && audio_kind[i] == 19 && audio_slot[i] >= 7) continue;
+        if (keep_death_sound && audio_kind[i] == AUDIO_FX && audio_slot[i] >= 7) continue;
         if (audio_voices[i]) { AXVoiceBegin(audio_voices[i]); AXSetVoiceState(audio_voices[i], AX_VOICE_STATE_STOPPED); AXVoiceEnd(audio_voices[i]); }
         audio_owner[i] = -1;
     }
@@ -181,8 +195,8 @@ static void audio_shutdown(void) {
     for (unsigned i = 0; i < 8; ++i) if (audio_voices[i]) { AXSetVoiceState(audio_voices[i], AX_VOICE_STATE_STOPPED); AXFreeVoice(audio_voices[i]); }
     if (ambient_voice) { AXSetVoiceState(ambient_voice, AX_VOICE_STATE_STOPPED); AXFreeVoice(ambient_voice); ambient_voice = NULL; }
     AXQuit();
-    for (unsigned i = 0; i < 26; ++i) for (unsigned j = 0; j < 64; ++j) free(audio_clips[i][j].samples);
-    memset(audio_clips, 0, sizeof(audio_clips)); memset(audio_voices, 0, sizeof(audio_voices));
+    for (uint32_t i = 0; audio_clips && i < audio_kinds * AUDIO_SLOTS; ++i) free(audio_clips[i].samples);
+    free(audio_clips); audio_clips = NULL; audio_kinds = 0; memset(audio_voices, 0, sizeof(audio_voices));
     memset(audio_kind, 0, sizeof(audio_kind)); memset(audio_slot, 0, sizeof(audio_slot));
     audio_initialized = false;
 }
@@ -260,7 +274,7 @@ static uint32_t hunt_edges(uint32_t b, int prompt, int trophy) {
 /* The GamePad map's zoom button: HUD texels 448..512 x 64..128, shown at
  * 618..662 x 6..50 of the 854x480 screen. */
 static int zoom_hit(int x, int y) { return x >= 610 && x < 670 && y < 58; }
-static void hud_update(GX2Texture *tex, const HudState *hud, uint32_t selection, const char *unarmed, int zoomed) {
+static void hud_update(GX2Texture *tex, const HudState *hud, const char *weapon, const char *unarmed, int zoomed) {
     memset(tex->surface.image, 0, tex->surface.imageSize);
     for (int y = 64; y < 128; ++y) for (int x = 448; x < 512; ++x) {
         int edge = x < 452 || x >= 508 || y < 68 || y >= 124;
@@ -275,9 +289,7 @@ static void hud_update(GX2Texture *tex, const HudState *hud, uint32_t selection,
             p[0] = 242; p[1] = 217; p[2] = 51; p[3] = 255;
         }
     char line[40];
-    static const char *names[6] = {"PISTOL","SHOTGUN","DB SHOTGUN","X-BOW","RIFLE","SNIPER"};
-    int weapon=0, rank=hud->weapon; for(int i=0;i<6;++i) if(selection&(1u<<i)) { if(rank--==0) { weapon=i; break; } }
-    if (selection) snprintf(line, sizeof(line), "%s %d", names[weapon], hud->ammo); else snprintf(line, sizeof(line), "%s", unarmed);
+    if (weapon) snprintf(line, sizeof(line), "%s %d", weapon, hud->ammo); else snprintf(line, sizeof(line), "%s", unarmed);
     perf_line(tex, 0, line);
     snprintf(line, sizeof(line), "KILLS %u", hud->kills); perf_line(tex, 1, line);
     GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, tex->surface.image, tex->surface.imageSize);
@@ -290,7 +302,75 @@ static void hud_update(GX2Texture *tex, const HudState *hud, uint32_t selection,
 #include "tv_target.h"
 
 static FSClient client;
+/* The install's folder under wiiu/apps/: named by install.txt in the
+ * .wuhb's bundled content (one .wuhb per game, each its own folder on the
+ * SD card), else carnivores-probe. */
+static char app_folder[64] = "carnivores-probe";
+static int app_path(char *out, size_t n, const char *name) {
+    return snprintf(out, n, "%s/wiiu/apps/%s/%s", WHBGetSdCardMountPath(), app_folder, name) < (int)n;
+}
+static void app_folder_init(void) {
+    FSCmdBlock cmd; FSFileHandle file;
+    static uint8_t text[64] __attribute__((aligned(64)));
+    FSInitCmdBlock(&cmd);
+    if (FSOpenFile(&client, &cmd, "/vol/content/install.txt", "r", &file, FS_ERROR_FLAG_ALL) != FS_STATUS_OK) return;
+    FSStatus got = FSReadFile(&client, &cmd, text, 1, sizeof(text) - 1, file, 0, FS_ERROR_FLAG_ALL);
+    FSCloseFile(&client, &cmd, file, FS_ERROR_FLAG_ALL);
+    if (got <= 0) return;
+    char name[64]; int n = 0;
+    for (int i = 0; i < got && n < 63; ++i) {
+        char c = (char)text[i];
+        if (c == '\r' || c == '\n') break;
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == ' ' || c == '.')) return;
+        name[n++] = c;
+    }
+    if (n == 0 || name[0] == '.') return;
+    name[n] = 0;
+    memcpy(app_folder, name, (size_t)n + 1);
+}
+/* For Rust (lib.rs SdBackend): a file of the install by its path in the
+ * app's folder; its size (-1 if missing), and its bytes into `out`. */
+static int sd_relative(char *out, size_t n, const char *path, size_t len) {
+    char name[192];
+    if (len >= sizeof(name)) return 0;
+    memcpy(name, path, len); name[len] = 0;
+    return app_path(out, n, name);
+}
+int64_t c2_sd_size(const char *path, size_t len) {
+    char full[256]; FSCmdBlock cmd; FSStat stat;
+    if (!sd_relative(full, sizeof(full), path, len)) return -1;
+    FSInitCmdBlock(&cmd);
+    if (FSGetStat(&client, &cmd, full, &stat, FS_ERROR_FLAG_ALL) != FS_STATUS_OK) return -1;
+    return (int64_t)stat.size;
+}
+int32_t c2_sd_load(const char *path, size_t len, uint8_t *out, uint32_t size) {
+    static uint8_t bounce[128 * 1024] __attribute__((aligned(64)));
+    char full[256]; FSCmdBlock cmd; FSFileHandle file;
+    if (!sd_relative(full, sizeof(full), path, len)) return -1;
+    FSInitCmdBlock(&cmd);
+    FSStatus s = FSOpenFile(&client, &cmd, full, "r", &file, FS_ERROR_FLAG_ALL);
+    if (s != FS_STATUS_OK) return s;
+    uint32_t pos = 0;
+    while (s == FS_STATUS_OK && pos < size) {
+        uint32_t n = size - pos; if (n > sizeof(bounce)) n = sizeof(bounce);
+        FSStatus got = FSReadFile(&client, &cmd, bounce, 1, n, file, 0, FS_ERROR_FLAG_ALL);
+        if (got < 0) { s = got; break; }
+        if ((uint32_t)got != n) { s = -1001; break; }
+        memcpy(out + pos, bounce, n);
+        pos += n;
+    }
+    FSCloseFile(&client, &cmd, file, FS_ERROR_FLAG_ALL);
+    return s == FS_STATUS_OK ? 0 : (int32_t)s;
+}
 #include "performance.h"
+static void startup_checkpoint(const char *message);
+/* Rust's progress (lib.rs) into the startup log. */
+void c2_checkpoint(const char *message, size_t len) {
+    char line[160];
+    if (len >= sizeof(line)) len = sizeof(line) - 1;
+    memcpy(line, message, len); line[len] = 0;
+    startup_checkpoint(line);
+}
 #include "lifecycle.h"
 /* A Rust panic: keep the capture's last rows and the message on the SD card,
  * then stop with the message on screen. */
@@ -320,7 +400,7 @@ static void startup_checkpoint(const char *message) {
 }
 static void startup_trace_open(void) {
     char path[256];
-    snprintf(path, sizeof(path), "%s/wiiu/apps/carnivores-probe/startup.log", WHBGetSdCardMountPath());
+    app_path(path, sizeof(path), "startup.log");
     FSInitCmdBlock(&startup_cmd);
     startup_open = FSOpenFile(&client, &startup_cmd, path, "w", &startup_file, FS_ERROR_FLAG_NONE) == FS_STATUS_OK;
     startup_checkpoint("Hardware startup trace v3; SD mount and FS client: PASS");
@@ -336,7 +416,7 @@ static int32_t load_file(const char *name, uint8_t **data, uint32_t *len) {
     char path[256]; FSCmdBlock cmd; FSFileHandle file; FSStat stat;
     char checkpoint[128]; snprintf(checkpoint, sizeof(checkpoint), "Reading %s...", name);
     startup_checkpoint(checkpoint);
-    if (snprintf(path, sizeof(path), "%s/wiiu/apps/carnivores-probe/%s", WHBGetSdCardMountPath(), name) >= (int)sizeof(path)) return -1002;
+    if (!app_path(path, sizeof(path), name)) return -1002;
     FSInitCmdBlock(&cmd);
     FSStatus s = FSOpenFile(&client, &cmd, path, "r", &file, FS_ERROR_FLAG_ALL);
     if (s != FS_STATUS_OK) return s;
@@ -405,16 +485,17 @@ static void init_quad(GX2RBuffer *pos, GX2RBuffer *attr, const GX2RBuffer *templ
 }
 static void init_weapon_grid(GX2RBuffer *pos, GX2RBuffer *attr, const GX2RBuffer *template) {
     memset(pos, 0, sizeof(*pos)); memset(attr, 0, sizeof(*attr));
-    pos->flags = template->flags; pos->elemSize = template->elemSize; pos->elemCount = 36;
-    attr->flags = template->flags; attr->elemSize = template->elemSize; attr->elemCount = 36;
+    pos->flags = template->flags; pos->elemSize = template->elemSize; pos->elemCount = 48;
+    attr->flags = template->flags; attr->elemSize = template->elemSize; attr->elemCount = 48;
     if (!GX2RCreateBuffer(pos) || !GX2RCreateBuffer(attr)) OSFatal("HUD: weapon grid allocation failed");
     float *p = GX2RLockBufferEx(pos, 0), *a = GX2RLockBufferEx(attr, 0);
     if (!p || !a) OSFatal("HUD: weapon grid lock failed");
-    for (int slot=0; slot<6; ++slot) {
+    /* Two columns, four rows (c2_icon_atlas's 128x64 cells). */
+    for (int slot=0; slot<8; ++slot) {
         float x0=-0.98f+(slot%2)*0.19f, x1=x0+0.19f;
-        float y1=0.86f-(slot/2)*(1.72f/3.0f), y0=y1-1.72f/3.0f;
+        float y1=0.86f-(slot/2)*(1.72f/4.0f), y0=y1-1.72f/4.0f;
         float u0=(slot%2)*0.25f, u1=u0+0.25f;
-        float v0=(slot/2)*(1.0f/3.0f), v1=v0+1.0f/3.0f;
+        float v0=(slot/2)*0.25f, v1=v0+0.25f;
         float verts[24]={x0,y1,0,1,x1,y1,0,1,x1,y0,0,1,x0,y1,0,1,x1,y0,0,1,x0,y0,0,1};
         float uvs[24]={u0,v0,1,0,u1,v0,1,0,u1,v1,1,0,u0,v0,1,0,u1,v1,1,0,u0,v1,1,0};
         memcpy(p+slot*24,verts,sizeof(verts)); memcpy(a+slot*24,uvs,sizeof(uvs));
@@ -512,6 +593,10 @@ static int run_menu(void *ui, int death, uint32_t shots, uint32_t kills) {
         }
         if (input && buttons && c2_menu_input(ui, buttons)) dirty = 1;
         action = c2_menu_action(ui);
+#if C2_AUTOHUNT
+        /* Testing without input (Cemu): the title's picks, hunted. */
+        if (!death && menu_frames == 60) action = MENU_HUNT;
+#endif
         /* One more frame shows the loading notice (or the last state)
          * before leaving the menu. */
         if (action != MENU_NONE && !final_frame) { final_frame = 1; dirty = 1; }
@@ -576,7 +661,7 @@ static int run_menu(void *ui, int death, uint32_t shots, uint32_t kills) {
 }
 static int32_t save_file(const char *name, const void *data, uint32_t len) {
     char path[256]; FSCmdBlock cmd; FSFileHandle file;
-    if (snprintf(path, sizeof(path), "%s/wiiu/apps/carnivores-probe/%s", WHBGetSdCardMountPath(), name) >= (int)sizeof(path)) return -1002;
+    if (!app_path(path, sizeof(path), name)) return -1002;
     uint8_t *buffer = memalign(64, (len + 63u) & ~63u);
     if (!buffer) return -1003;
     memcpy(buffer, data, len);
@@ -613,10 +698,8 @@ static int run_session(void *ui) {
     int session_result = HUNT_EXIT;
     uint32_t hunt_seed = 0;
     int mounted = 0, added = 0, graphics_ready = 0; void *sim = NULL;
-    uint8_t *map = NULL, *rsc = NULL; uint32_t map_len = 0, rsc_len = 0;
-    static int menu_files_loaded;
+    static int install_opened;
     HuntChoice menu = {0};
-    uint8_t *hunt_data[23] = {0}; uint32_t hunt_lengths[23] = {0};
     WHBLogConsoleInit();
     startup_console = 1;
     WHBLogPrint("Carnivores Wii U stock hunt");
@@ -627,20 +710,22 @@ static int run_session(void *ui) {
     FSStatus s = FSAddClient(&client, FS_ERROR_FLAG_ALL);
     if (s != FS_STATUS_OK) { WHBLogPrintf("FS client: FAIL %d", s); goto end_load; }
     added = 1;
+    /* Which install this is (install.txt in the .wuhb), before any log. */
+    app_folder_init();
     startup_trace_open();
     lifecycle_trace_open();
     int32_t status = 0;
-    /* The menu's original pictures and descriptions, once per app run; a
-     * missing one only leaves a blank picture or text. */
-    for (uint32_t slot = 0; !menu_files_loaded; ++slot) {
-        if (!app_running()) goto end_load;
-        char name[32];
-        if (c2_menu_file_name(slot, name, sizeof(name)) < 0) { menu_files_loaded = 1; break; }
-        uint8_t *data = NULL; uint32_t len = 0;
-        status = load_file(name, &data, &len);
-        if (!status) status = c2_menu_set_file(ui, slot, data, len);
-        free(data);
-        if (status) { char checkpoint[96]; snprintf(checkpoint, sizeof(checkpoint), "%s: skipped (%d)", name, (int)status); startup_checkpoint(checkpoint); }
+    /* The game (its rules, lists, menu pictures and descriptions), once per
+     * app run, from this .wuhb's folder. */
+    if (!install_opened) {
+        char checkpoint[128];
+        snprintf(checkpoint, sizeof(checkpoint), "Install wiiu/apps/%s: opening...", app_folder);
+        startup_checkpoint(checkpoint);
+        status = c2_install_open(ui);
+        snprintf(checkpoint, sizeof(checkpoint), "Install: %s (%d)", status ? "FAIL" : "PASS", (int)status);
+        startup_checkpoint(checkpoint);
+        if (status) WHBLogPrintf("No game in wiiu/apps/%s (build it with the Wii U builder)", app_folder);
+        install_opened = 1;
         status = 0;
     }
     {
@@ -666,68 +751,21 @@ static int run_session(void *ui) {
     }
     graphics_ready = 1;
     if (!start_hunt) goto end_load;
-    char area_file[24], area_name[16];
-    /* The trophy room is its own map, by day. */
     int trophy_room = menu.mode == MODE_TROPHY;
-    if (trophy_room) snprintf(area_name, sizeof(area_name), "TROPHY"); else snprintf(area_name, sizeof(area_name), "AREA%d", menu.area + 1);
-    snprintf(area_file, sizeof(area_file), "%s.MAP", area_name);
-    WHBLogPrintf("Loading %s...", trophy_room ? "the trophy room" : menu_areas[menu.area]);
-    status = load_file(area_file, &map, &map_len);
-    if (status) { WHBLogPrintf("%s read: FAIL %d", area_file, status); goto end_load; }
-    snprintf(area_file, sizeof(area_file), "%s.RSC", area_name);
-    status = load_file(area_file, &rsc, &rsc_len);
-    if (status) { WHBLogPrintf("%s read: FAIL %d", area_file, status); goto end_load; }
-    status = c2_move_create(map, map_len, rsc, rsc_len, trophy_room ? 1 : menu.time, &sim);
-    free(map); map = NULL; free(rsc); rsc = NULL;
-    if (status) { WHBLogPrintf("Map parse: FAIL %d", status); goto end_load; }
-    const char *hunt_files[23] = {"_RES.TXT", "MOSH.CAR", "GALL.CAR", "DIMOR2.CAR", "PTERA.CAR", "DIMET.CAR", "BRACHI1.CAR", "PAR2.CAR", "ANKYLO1.CAR", "STEGO.CAR", "ALLO.CAR", "CHASMOSA.CAR", "VELO2.CAR", "SPINO.CAR", "CERATO1.CAR", "TIREX.CAR", "PISTOL.CAR", "SHOTGUN.CAR", "DBSGUN.CAR", "X_BOW.CAR", "RIFLE.CAR", "SNIPER.CAR", "HUNTER1.CAR"};
-    for (int i = 0; i < 23; ++i) {
-        status = load_file(hunt_files[i], &hunt_data[i], &hunt_lengths[i]);
-        if (status != 0) { WHBLogPrintf("%s read: FAIL %d", hunt_files[i], status); c2_move_destroy(sim); sim = NULL; goto end_load; }
-    }
+    WHBLogPrint(trophy_room ? "Loading the trophy room..." : "Loading the hunt...");
+    startup_checkpoint("Hunt: loading from the install...");
     hunt_seed = next_hunt_seed();
-    status = c2_hunt_setup(sim, (const uint8_t **)hunt_data, hunt_lengths, &menu, hunt_seed, ui);
-    if (status != 0) { WHBLogPrintf("Hunt assets: FAIL %d", status); c2_move_destroy(sim); sim = NULL; goto end_load; }
+    status = c2_hunt_load(ui, hunt_seed, &sim);
+    if (status) { char checkpoint[64]; snprintf(checkpoint, sizeof(checkpoint), "Hunt load: FAIL %d", (int)status); startup_checkpoint(checkpoint); WHBLogPrint(checkpoint); sim = NULL; goto end_load; }
     {
         /* The console's local time, for the trophies' dates. */
         OSCalendarTime now; OSTicksToCalendarTime(OSGetTime(), &now);
         c2_set_clock(sim, now.tm_year, now.tm_mon + 1, now.tm_mday, now.tm_hour, now.tm_min);
     }
-    const int calls[9] = {1,2,3,4,5,6,7,8,9};
-    for (int i = 0; i < 27; ++i) {
-        char name[24]; snprintf(name, sizeof(name), "CALL%d_%c.WAV", calls[i/3], 'A'+i%3);
-        uint8_t *data = NULL; uint32_t len = 0;
-        status = load_file(name, &data, &len);
-        if (!status) status = c2_call_load(sim, i, data, len);
-        free(data);
-        if (status) { WHBLogPrintf("%s: FAIL %d", name, status); c2_move_destroy(sim); sim = NULL; goto end_load; }
-    }
-    const char *icon_names[15] = {"WEAPON1.TGA", "WEAPON2.TGA", "WEAPON3.TGA", "WEAPON4.TGA", "WEAPON5.TGA", "WEAPON6.TGA", "CALL1.TGA", "CALL2.TGA", "CALL3.TGA", "CALL4.TGA", "CALL5.TGA", "CALL6.TGA", "CALL7.TGA", "CALL8.TGA", "CALL9.TGA"};
-    for (int i = 0; i < 15; ++i) {
-        uint8_t *data = NULL; uint32_t len = 0;
-        status = load_file(icon_names[i], &data, &len);
-        if (!status) status = c2_icon_load(sim, data, len);
-        free(data);
-        if (status) { WHBLogPrintf("%s: FAIL %d", icon_names[i], status); c2_move_destroy(sim); sim = NULL; goto end_load; }
-    }
-    const char *fx_names[11] = {"HWALK1.WAV", "HWALK2.WAV", "HWALK3.WAV", "FOOTW1.WAV", "FOOTW2.WAV", "FOOTW3.WAV", "A_UNDERW.WAV", "HUM_DIE1.WAV", "HUM_DIE2.WAV", "HUM_DIE3.WAV", "HUM_DIE4.WAV"};
-    for (int i = 0; i < 11; ++i) {
-        uint8_t *data = NULL; uint32_t len = 0;
-        status = load_file(fx_names[i], &data, &len);
-        if (status == 0) status = c2_fx_load(sim, i, data, len);
-        free(data);
-        if (status != 0) { WHBLogPrintf("%s: FAIL %d", fx_names[i], status); c2_move_destroy(sim); sim = NULL; goto end_load; }
-    }
-    WHBLogPrint("Stock hunt and audio: READY"); WHBLogConsoleDraw();
-    if (menu.area == 0 && !trophy_room) {
-        uint32_t checks = c2_move_checks(sim);
-        WHBLogPrintf("AREA1 movement checkpoints: %s", checks == 7 ? "PASS" : "FAIL");
-    }
+    WHBLogPrint("Hunt and audio: READY"); WHBLogConsoleDraw();
 end_load:
     startup_checkpoint(sim ? "Hunt loading complete; releasing SD client" : "Session loading/menu ended without a hunt; releasing SD client");
     startup_trace_close();
-    free(map); free(rsc);
-    for (int i = 0; i < 23; ++i) free(hunt_data[i]);
     if (!sim) lifecycle_trace_close();
     if (!sim && added && FSDelClient(&client, FS_ERROR_FLAG_ALL) != FS_STATUS_OK) WHBLogPrint("FS client removal: FAIL");
     if (!sim && mounted && !WHBUnmountSdCard()) WHBLogPrint("SD unmount: FAIL");
@@ -785,7 +823,7 @@ end_load:
     GX2InitTextureRegs(&object_atlas);
     GX2Texture actor_atlas = {0};
     actor_atlas.surface.dim = GX2_SURFACE_DIM_TEXTURE_2D;
-    actor_atlas.surface.width = 2048; actor_atlas.surface.height = 1024; actor_atlas.surface.depth = 1;
+    actor_atlas.surface.width = 2048; actor_atlas.surface.height = 2048; actor_atlas.surface.depth = 1;
     actor_atlas.surface.mipLevels = 1; actor_atlas.surface.format = GX2_SURFACE_FORMAT_UNORM_R8_G8_B8_A8;
     actor_atlas.surface.aa = GX2_AA_MODE1X; actor_atlas.surface.use = GX2_SURFACE_USE_TEXTURE;
     actor_atlas.surface.tileMode = GX2_TILE_MODE_LINEAR_ALIGNED;
@@ -1001,8 +1039,8 @@ end_load:
     int reported_gamepad = 0, reported_pro = 0, gamepad_connected = 0, touch_down = 0;
     VPADStatus gamepad = {0}; KPADStatus pro[4] = {0}; int pro_valid[4] = {0};
     if (sim) { KPADInit(); WPADEnableURCC(TRUE); }
-    /* Observer mode carries no weapons. */
-    const uint32_t carried_weapons = (menu.observer && menu.mode == MODE_HUNT) || trophy_room ? 0 : menu.weapons;
+    /* Observer mode and the trophy room carry no weapons. */
+    const uint32_t carried_weapons = c2_weapon_count(sim);
     performance_open(&menu, hunt_seed, tiled_available, tv_target.available);
     while (app_running()) {
         if (sim) {
@@ -1049,17 +1087,16 @@ end_load:
                     if (zoom_hit(touch.x, touch.y)) { drc_zoom = !drc_zoom; hud_dirty = 1; }
                     else if (menu.teleport && map_view_touch(drc_uv, touch.x, touch.y, &tx, &tz)) c2_teleport(sim, tx * 256.0f, tz * 256.0f);
                     else if (touch.x < 187) {
-                        int slot=(touch.y/160)*2+(touch.x>=94);
-                        int carried=0; for(int i=0;i<6;++i) if(carried_weapons&(1u<<i)) ++carried;
-                        if(slot<carried) flags |= 64 | ((uint32_t)slot<<16);
+                        int slot=(touch.y/120)*2+(touch.x>=94);
+                        if(slot<(int)carried_weapons) flags |= 64 | ((uint32_t)slot<<16);
                     }
                     else {
                         int hit = call_hit(touch.x, touch.y);
                         if (hit == 6 && call_page > 0) --call_page;
-                        else if (hit == 7 && (call_page+1)*6 < call_count(menu.animals)) ++call_page;
+                        else if (hit == 7 && (uint32_t)(call_page+1)*6 < c2_call_count(sim)) ++call_page;
                         else if (hit >= 0 && hit < 6) {
-                            int target = call_index(menu.animals, call_page, hit);
-                            if (target >= 0) flags |= 32 | ((uint32_t)(target+1) << 8);
+                            int target = c2_call_at(sim, (uint32_t)call_page, (uint32_t)hit);
+                            if (target >= 0) flags |= 32 | ((uint32_t)(target+1) << IN_CALL_SHIFT);
                         }
                     }
                 }
@@ -1109,7 +1146,9 @@ end_load:
             // Retain edge-triggered toggles across frames with no simulation step.
             pending_toggles ^= flags & 4270;
             pending_toggles |= flags & (32u | IN_ESCAPE | IN_YES | IN_NO | IN_RESTART | IN_PAUSE | (15u << 20));
-            if (flags & 0xf00) pending_toggles = (pending_toggles & ~0xf00u) | (flags & 0xf00);
+            /* A tapped call carries its index + 1 from IN_CALL_SHIFT; the latest wins. */
+            const uint32_t call_bits = ~0u << IN_CALL_SHIFT;
+            if (flags & call_bits) pending_toggles = (pending_toggles & ~call_bits) | (flags & call_bits);
             /* A tapped weapon carries its slot in bits 16-18; the latest tap wins. */
             if (flags & 64) pending_toggles = (pending_toggles & ~(64u | (7u << 16))) | (flags & (64u | (7u << 16)));
             OSTime now = OSGetTime();
@@ -1178,14 +1217,14 @@ end_load:
             if (overlay_due) perf_update(&perf_tex, &overlay_perf);
             overlay_ticks += OSGetTime() - overlay_start;
             c2_hud_state(sim, &hud);
-            if (hud.call != prev_hud.call) call_page = call_page_for(menu.animals, hud.call);
+            if (hud.call != prev_hud.call) call_page = (int)c2_call_page(sim);
             if (hud.call != prev_hud.call || hud.weapon != prev_hud.weapon || call_page != prev_call_page) {
                 if (c2_icon_atlas(sim, icons_tex.surface.image, icons_tex.surface.pitch, call_page, hud.weapon)) OSFatal("HUD: call icon update failed");
-                call_labels(&icons_tex, menu.animals, call_page, hud.call);
+                call_labels(&icons_tex, sim, call_page);
                 prev_call_page = call_page;
                 GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, icons_tex.surface.image, icons_tex.surface.imageSize);
             }
-            if (hud.call != prev_hud.call || hud.weapon != prev_hud.weapon || hud.ammo != prev_hud.ammo || hud.weapon_ready != prev_hud.weapon_ready || hud.kills != prev_hud.kills || hud_dirty) { hud_update(&hud_tex, &hud, carried_weapons, menu.mode == MODE_TROPHY ? "TROPHY ROOM" : "OBSERVER", drc_zoom); prev_hud = hud; hud_dirty = 0; }
+            if (hud.call != prev_hud.call || hud.weapon != prev_hud.weapon || hud.ammo != prev_hud.ammo || hud.weapon_ready != prev_hud.weapon_ready || hud.kills != prev_hud.kills || hud_dirty) { char weapon[24]; hud_update(&hud_tex, &hud, c2_weapon_label(sim, (uint32_t)hud.weapon, weapon, sizeof(weapon)) ? NULL : weapon, menu.mode == MODE_TROPHY ? "TROPHY ROOM" : "OBSERVER", drc_zoom); prev_hud = hud; hud_dirty = 0; }
             {
                 float *op = GX2RLockBufferEx(&overlay_pos, 0), *ou = GX2RLockBufferEx(&overlay_uv, 0);
                 if (!op || !ou) OSFatal("Overlay: buffer lock failed");
@@ -1407,7 +1446,7 @@ end_load:
                     if (display == 1) {
                         GX2SetPixelTexture(&icons_tex, world.sampler);
                         GX2RSetAttributeBuffer(&gun_icon_pos, 0, gun_icon_pos.elemSize, 0); GX2RSetAttributeBuffer(&gun_icon_attr, 1, gun_icon_attr.elemSize, 0);
-                        GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 36, 0, 1);
+                        GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 48, 0, 1);
                         GX2RSetAttributeBuffer(&call_icon_pos, 0, call_icon_pos.elemSize, 0); GX2RSetAttributeBuffer(&call_icon_attr, 1, call_icon_attr.elemSize, 0);
                         GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
                         GX2SetPixelTexture(&hud_tex, world.sampler);

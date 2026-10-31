@@ -6,7 +6,7 @@
 //! the scope's cross-hairs (`DrawOpticCross`).
 //! Drawn into regions of one small texture, each only when its text
 //! changes; C shows the visible ones as quads over the TV and GamePad view.
-use crate::menu::{Menu, AREAS, PIC_MAP_FRAME, PIC_PLAQUE_HUNT, PIC_PLAQUE_ROOM, WEAPONS};
+use crate::menu::{Menu, PIC_MAP_FRAME, PIC_PLAQUE_HUNT, PIC_PLAQUE_ROOM};
 use crate::ui::{measure, rect, Canvas, Rect, Rgba, HEIGHT, WIDTH};
 use alloc::{format, string::String, vec::Vec};
 use c2_core::{area::Area, game::Hunt};
@@ -108,6 +108,8 @@ pub struct Overlay {
 
 /// The hunt state the overlay reads.
 pub struct View<'a> {
+    /// The game's names (areas, weapons) for the plaques.
+    pub menu: &'a Menu,
     pub hunt: &'a Hunt,
     pub area: &'a Area,
     /// R: the map over the view.
@@ -367,7 +369,7 @@ fn plaque_size(menu: &Menu, v: &View) -> (f32, f32) {
 fn plaque_lines(v: &View, slot: usize) -> Option<Vec<String>> {
     let b = v.hunt.room.bodies.get(slot)?;
     let info = v.hunt.herd.species.get(usize::try_from(b.ctype).ok()?).map(|s| &s.info)?;
-    let weapon = usize::try_from(b.weapon).ok().and_then(|w| WEAPONS.get(w)).copied().unwrap_or("");
+    let weapon = usize::try_from(b.weapon).map_or("", |w| v.menu.weapon_name(w));
     let (sc, us) = (b.scale, v.units_us);
     let (weight, len, range) = if us {
         (format!("{:.2}t", info.mass * sc * sc / 0.907), format!("{:.2}ft", info.length * sc / 0.3), format!("{:.1}ft", b.range / 0.3))
@@ -378,7 +380,7 @@ fn plaque_lines(v: &View, slot: usize) -> Option<Vec<String>> {
     let date = if us { format!("{m}.{d}.{y}") } else { format!("{d}.{m}.{y}") };
     let time = format!("{}:{:02}", (b.time >> 10) & 255, b.time & 255);
     let lock = if b.locked() { "  (locked)" } else { "" };
-    let area = usize::try_from(b.area() - 1).ok().and_then(|a| AREAS.get(a)).copied().unwrap_or("");
+    let area = v.menu.area_numbered(b.area());
     Some(alloc::vec![
         format!("Name: \u{1}{}{lock}", info.name),
         format!("Weight: \u{1}{weight}  \u{1}Length: \u{1}{len}"),

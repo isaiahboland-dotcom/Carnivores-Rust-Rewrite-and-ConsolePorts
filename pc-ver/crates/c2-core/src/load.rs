@@ -2,6 +2,9 @@
 //! Paths are as the original opens them, relative to the game folder:
 //! `HUNTDAT/_RES.TXT`, `HUNTDAT/<character>.CAR`, `HUNTDAT/WEAPONS/<weapon>.CAR`.
 
+#[cfg(not(feature = "std"))]
+use alloc::{format, string::String, vec, vec::Vec};
+
 use c2_formats::car::{self, Car};
 use c2_formats::res_txt::{ResData, ResTxt};
 use c2_formats::{map, rsc, FormatError};
@@ -12,16 +15,35 @@ use crate::dino::{DinoInfo, Species};
 use crate::game::WeaponInfo;
 use crate::model::car_anim_duration_ms;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum LoadError {
-    #[error(transparent)]
-    Vfs(#[from] VfsError),
-    #[error("{path}: {source}")]
-    Format {
-        path: String,
-        #[source]
-        source: FormatError,
-    },
+    Vfs(VfsError),
+    Format { path: String, source: FormatError },
+}
+
+// By hand rather than `thiserror`, so no_std targets need no extra crate.
+impl core::fmt::Display for LoadError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            LoadError::Vfs(e) => e.fmt(f),
+            LoadError::Format { path, source } => write!(f, "{path}: {source}"),
+        }
+    }
+}
+
+impl core::error::Error for LoadError {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        match self {
+            LoadError::Vfs(e) => e.source(),
+            LoadError::Format { source, .. } => Some(source),
+        }
+    }
+}
+
+impl From<VfsError> for LoadError {
+    fn from(e: VfsError) -> Self {
+        LoadError::Vfs(e)
+    }
 }
 
 fn parse<T>(
@@ -43,13 +65,12 @@ pub fn res(vfs: &Vfs) -> Result<ResData, LoadError> {
 
 /// A `.CAR`, or `None` (logged) if it is missing or broken.
 fn optional_car(vfs: &Vfs, path: &str) -> Option<Car> {
-    match parse(vfs, path, car::parse) {
-        Ok(c) => Some(c),
-        Err(e) => {
-            tracing::warn!("{e}");
-            None
-        }
-    }
+    parse(vfs, path, car::parse)
+        .inspect_err(|_e| {
+            #[cfg(feature = "std")]
+            tracing::warn!("{_e}");
+        })
+        .ok()
 }
 
 fn empty_car() -> Car {

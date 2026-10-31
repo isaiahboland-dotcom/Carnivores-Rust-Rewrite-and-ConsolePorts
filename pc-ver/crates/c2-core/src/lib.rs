@@ -21,9 +21,9 @@ pub mod dino;
 pub mod effects;
 #[cfg(any(feature = "std", feature = "portable-hunt"))]
 pub mod game;
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", feature = "portable-load"))]
 pub mod load;
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", feature = "portable-load"))]
 pub mod mee;
 pub mod model;
 pub mod player;

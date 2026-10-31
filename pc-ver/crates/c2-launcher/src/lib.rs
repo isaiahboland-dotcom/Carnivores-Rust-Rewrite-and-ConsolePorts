@@ -144,6 +144,68 @@ pub fn cia_cli(args: &[String]) -> Result<std::path::PathBuf, String> {
     }
 }
 
+/// `c2-wiiu-builder --install NAME --title TITLE --sd DIR [--tools DIR]
+/// [--rpx] [--art-from GAME] -- COOK_ARGS...`: one Wii U install without
+/// the window: `c2-cook --target wiiu` with `COOK_ARGS` (`--game`,
+/// `--overlay`, `--mod`, `--recipe`...) into `SD/wiiu/apps/NAME/`, and
+/// `NAME.wuhb` (its own Wii U Menu entry; `--rpx`: the Homebrew Launcher's
+/// default install instead). The tools are found as the window finds them.
+pub fn wiiu_cli(args: &[String]) -> Result<std::path::PathBuf, String> {
+    use std::path::PathBuf;
+    let split = args.iter().position(|a| a == "--").unwrap_or(args.len());
+    let (own, cook_args) = (&args[..split], args.get(split + 1..).unwrap_or_default());
+    let get = |k: &str| {
+        own.iter()
+            .position(|a| a == k)
+            .and_then(|i| own.get(i + 1))
+            .cloned()
+    };
+    let name = config::install_name(&get("--install").ok_or("--install NAME")?);
+    let title = get("--title").unwrap_or_else(|| name.clone());
+    let sd = PathBuf::from(get("--sd").ok_or("--sd DIR")?);
+    let tools = get("--tools").map(PathBuf::from);
+    let tool = |n: &str| {
+        find_tool(n, tools.as_deref()).ok_or_else(|| format!("{n} not found (--tools DIR)"))
+    };
+    let (cook, app) = (tool("c2-cook")?, tool(wiiu::APP)?);
+    let wuhbtool = if own.iter().any(|a| a == "--rpx") {
+        None
+    } else {
+        Some(tool(wiiu::WUHB_TOOL)?)
+    };
+    let art = get("--art-from")
+        .map(PathBuf::from)
+        .or_else(|| wiiu::art_source(cook_args));
+    let work = config::data_dir().join("wiiu").join(&name);
+    let steps = wiiu::steps(
+        &wiiu::Install {
+            name: &name,
+            title: &title,
+            cook_args: cook_args.to_vec(),
+            art_from: art.as_deref(),
+        },
+        &wiiu::Tools {
+            cook: &cook,
+            app: &app,
+            wuhbtool: wuhbtool.as_deref(),
+        },
+        &sd,
+        &work,
+    );
+    let job = jobs::Job::start(format!("wiiu {name}"), steps);
+    while job.result().is_none() {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    for l in job.lines() {
+        eprintln!("{l}");
+    }
+    if job.result() == Some(true) {
+        Ok(sd.join("wiiu").join("apps").join(&name))
+    } else {
+        Err(format!("building the Wii U install {name} failed"))
+    }
+}
+
 pub fn run(mode: Mode) -> eframe::Result {
     let title = match mode {
         Mode::Full => "Carnivores 2 (Rust) - Launcher",

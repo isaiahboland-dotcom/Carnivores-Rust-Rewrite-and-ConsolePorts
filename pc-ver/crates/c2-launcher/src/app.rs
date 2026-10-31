@@ -615,23 +615,81 @@ impl Launcher {
 
     /// The base game's files and the Wii U app onto the SD card
     /// (`crate::wiiu`).
+    /// The Wii U installs the tab's choices make: (folder, title, `c2-cook`
+    /// arguments). An `.rpx` is one install only (the Homebrew Launcher's).
+    fn wiiu_installs(&self) -> Vec<(String, String, Vec<String>)> {
+        let Some(base) = self.cfg.base.clone() else {
+            return Vec::new();
+        };
+        let w = &self.cfg.wiiu;
+        let game = |root: &std::path::Path| vec!["--game".to_string(), root.display().to_string()];
+        let survival = self.survival_args();
+        let addons = self.cfg.enabled_addons();
+        let modded = !addons.is_empty() || !self.cfg.overlays.is_empty();
+        let mut v = Vec::new();
+        if w.original {
+            let mut a = game(&base);
+            a.extend(survival.clone());
+            if !modded {
+                a.extend(self.balance_args());
+            }
+            v.push(("carnivores2".to_string(), "Carnivores 2".to_string(), a));
+        }
+        if w.addons && modded {
+            let mut a = game(&base);
+            for o in &self.cfg.overlays {
+                a.extend(["--overlay".to_string(), o.display().to_string()]);
+            }
+            for m in addons {
+                a.extend(["--mod".to_string(), m.display().to_string()]);
+            }
+            a.extend(self.balance_args());
+            a.extend(survival.clone());
+            v.push((
+                "carnivores2-addons".to_string(),
+                "Carnivores 2 Add-ons".to_string(),
+                a,
+            ));
+        }
+        if w.standalones {
+            for s in self.cfg.enabled_standalones() {
+                let Some(root) = c2_mods::pack::find_game_root(&s) else {
+                    continue;
+                };
+                let title = s
+                    .file_name()
+                    .map_or_else(|| "Carnivores".into(), |n| n.to_string_lossy().into_owned());
+                let mut a = game(&root);
+                a.extend(survival.clone());
+                v.push((install_name(&c2_mods::manifest::slug(&title)), title, a));
+            }
+        }
+        if w.format == crate::config::WiiUFormat::Rpx {
+            v.truncate(1);
+        }
+        v
+    }
+
     fn build_wiiu(&mut self) {
-        let Some(app) = find_tool(crate::wiiu::APP, self.cfg.tools.as_deref()) else {
+        let tools = self.cfg.tools.clone();
+        let (Some(cook), Some(app)) = (
+            find_tool("c2-cook", tools.as_deref()),
+            find_tool(crate::wiiu::APP, tools.as_deref()),
+        ) else {
             self.note = Some((
                 format!(
-                    "{} not found: set the tools folder in Settings.",
+                    "c2-cook or {} not found: set the tools folder in Settings.",
                     crate::wiiu::APP
                 ),
                 RED,
             ));
             return;
         };
-        let (Some(base), Some(out)) = (self.cfg.base.clone(), self.cfg.wiiu.out.clone()) else {
+        let Some(out) = self.cfg.wiiu.out.clone() else {
             return;
         };
-        let format = self.cfg.wiiu.format;
-        let wuhbtool = if format == crate::config::WiiUFormat::Wuhb {
-            match find_tool(crate::wiiu::WUHB_TOOL, self.cfg.tools.as_deref()) {
+        let wuhbtool = if self.cfg.wiiu.format == crate::config::WiiUFormat::Wuhb {
+            match find_tool(crate::wiiu::WUHB_TOOL, tools.as_deref()) {
                 Some(tool) => Some(tool),
                 None => {
                     self.note = Some((
@@ -644,20 +702,26 @@ impl Launcher {
         } else {
             None
         };
-        match crate::wiiu::steps(&base, &app, &out, format, wuhbtool.as_deref()) {
-            Ok(steps) => {
-                self.job = Some(Job::start("Building the Wii U install", steps));
-            }
-            Err(missing) => {
-                self.note = Some((
-                    format!(
-                        "The game folder lacks what the Wii U needs: {}",
-                        missing.join(", ")
-                    ),
-                    RED,
-                ));
-            }
+        let mut steps = Vec::new();
+        for (name, title, cook_args) in self.wiiu_installs() {
+            let art = crate::wiiu::art_source(&cook_args);
+            steps.extend(crate::wiiu::steps(
+                &crate::wiiu::Install {
+                    name: &name,
+                    title: &title,
+                    cook_args,
+                    art_from: art.as_deref(),
+                },
+                &crate::wiiu::Tools {
+                    cook: &cook,
+                    app: &app,
+                    wuhbtool: wuhbtool.as_deref(),
+                },
+                &out,
+                &crate::config::data_dir().join("wiiu").join(&name),
+            ));
         }
+        self.job = Some(Job::start("Building the Wii U installs", steps));
     }
 
     // ------------------------------------------------------------ tabs
@@ -1068,12 +1132,10 @@ impl Launcher {
         heading(ui, "Build for Wii U");
         help(
             ui,
-            &format!(
-                "Puts the app and your game's files on the SD card, in wiiu/apps/{}/. Choose \
-                 WUHB for Aroma's Wii U Menu or RPX for the Homebrew Launcher. The Wii U version plays the original Carnivores 2 \
-                 for now: the rest below comes as the port gets it.",
-                crate::wiiu::SD_FOLDER
-            ),
+            "Puts each game on the SD card as its own Wii U Menu entry, in wiiu/apps/<name>/: the \
+             original game, the game with your overlays and add-ons, and each standalone game. Its \
+             icon and start screens are cut from the game's own menu picture. Choose WUHB for \
+             Aroma's Wii U Menu or RPX for the Homebrew Launcher (one game only).",
         );
         ui.add_space(6.0);
         let mut changed = false;
@@ -1101,77 +1163,51 @@ impl Launcher {
                     }
                 }
             });
-            ui.horizontal(|ui| {
-                ui.label("Install name:");
-                ui.add_enabled(
-                    false,
-                    egui::TextEdit::singleline(&mut crate::wiiu::SD_FOLDER.to_string())
-                        .desired_width(200.0),
-                );
-                help(ui, "fixed for now (the app reads this folder)");
-            });
         });
         ui.add_space(8.0);
         panel(ui, |ui| {
             ui.label(RichText::new("What goes on").color(GOLD));
-            ui.horizontal(|ui| {
-                ui.add_enabled(
-                    false,
-                    egui::Checkbox::new(&mut true, "Base game (Carnivores 2)"),
-                );
-                match kind {
-                    Some("Carnivores 2") => help(
-                        ui,
-                        "its five areas, nine animals and six weapons; 102 files, copied as they are",
-                    ),
-                    Some(k) => {
-                        ui.label(
-                            RichText::new(format!(
-                                "{k}: the Wii U plays the original Carnivores 2 only for now"
-                            ))
-                            .color(RED),
-                        );
-                    }
-                    None => {
-                        ui.label(
-                            RichText::new("set the game folder first (The game tab)").color(RED),
-                        );
-                    }
-                }
-            });
+            if kind.is_none() {
+                ui.label(RichText::new("set the game folder first (The game tab)").color(RED));
+            }
             let on = self.cfg.enabled_addons().len();
-            soon(
-                ui,
-                &format!(
-                    "Add-ons pack ({on} add-on{} on, Add-ons tab)",
-                    if on == 1 { "" } else { "s" }
-                ),
-            );
-            soon(
-                ui,
-                &format!(
-                    "Modder's Edition and other base overlays ({})",
-                    self.cfg.overlays.len()
-                ),
-            );
-            soon(
-                ui,
-                &format!(
-                    "A pack per standalone game ({} on)",
-                    self.cfg.enabled_standalones().len()
-                ),
-            );
+            let overlays = self.cfg.overlays.len();
+            let standalones = self.cfg.enabled_standalones().len();
+            let w = &mut self.cfg.wiiu;
+            changed |= ui
+                .checkbox(&mut w.original, "The original game (carnivores2)")
+                .changed();
+            changed |= ui
+                .checkbox(
+                    &mut w.addons,
+                    format!(
+                        "The game with {} overlay{} and {on} add-on{} (carnivores2-addons)",
+                        overlays,
+                        if overlays == 1 { "" } else { "s" },
+                        if on == 1 { "" } else { "s" }
+                    ),
+                )
+                .changed();
+            changed |= ui
+                .checkbox(
+                    &mut w.standalones,
+                    format!("Each standalone game ({standalones} on)"),
+                )
+                .changed();
             soon(
                 ui,
                 "Carnivores: Ice Age (as the base game, or beside Carnivores 2)",
             );
             soon(ui, "Animals and weapons from the mobile game (APK)");
-            soon(ui, "Balance changes (Balance tab)");
-            help(
-                ui,
-                "Add-ons, overlays and standalones you set up here are kept: the Wii U build \
-                 will use the same list once it can.",
-            );
+            help(ui, "The balance file goes with the add-ons install (or the original game without add-ons).");
+            let names: Vec<String> = self
+                .wiiu_installs()
+                .into_iter()
+                .map(|(n, t, _)| format!("{t} -> wiiu/apps/{n}/"))
+                .collect();
+            for n in names {
+                ui.label(RichText::new(n).color(DIM));
+            }
         });
         ui.add_space(8.0);
         panel(ui, |ui| {
@@ -1223,7 +1259,7 @@ impl Launcher {
                 }
                 help(
                     ui,
-                    "The WUHB contains the app; the original game files are copied beside it.",
+                    "Each WUHB holds the app and the name of its folder; the game's files go beside it.",
                 );
             }
         });
@@ -1231,7 +1267,8 @@ impl Launcher {
             self.save();
         }
         ui.add_space(12.0);
-        let ready = kind == Some("Carnivores 2") && self.cfg.wiiu.out.is_some();
+        let ready =
+            kind.is_some() && self.cfg.wiiu.out.is_some() && !self.wiiu_installs().is_empty();
         if big_button(ui, "BUILD", ready && !self.busy()) {
             self.build_wiiu();
         }

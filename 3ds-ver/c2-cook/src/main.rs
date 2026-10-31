@@ -25,12 +25,18 @@ use c2_formats::cooked::{tile, write_pack, write_texture, TexFormat};
 use c2_vfs::{MemBackend, Vfs};
 
 mod check;
+mod wiiu;
 
 const USAGE: &str = "usage:
   c2-cook --game <GAME_DIR> [--overlay DIR]... [--mod MOD]...
           [--recipe RECIPE.toml --mods DIR] [--balance FILE] [--areas N,N]
           [--mobile-survival FILE] [--survival-modes classic,modded,ours]
           [--target n3ds|o3ds] [--force] --out <PACK.c2pk>
+
+  c2-cook --game <GAME_DIR> ... --target wiiu [--title NAME] --out <DIR>
+                                the game as the Wii U reads it: a folder of the
+                                merged game files (upper-case names), with
+                                INFO.TXT and an index, for `wiiu/apps/<name>/`
 
   c2-cook --check <PACK.c2pk>   loads a pack as the 3DS does and plays a short
                                 hunt for each animal (finds missing files);
@@ -232,6 +238,8 @@ struct Args {
     survival_modes: Option<String>,
     areas: Option<String>,
     target: Option<String>,
+    /// The game's name on the Wii U's title screen.
+    title: Option<String>,
     force: bool,
     out: Option<PathBuf>,
 }
@@ -260,6 +268,7 @@ fn parse_args() -> Result<Args> {
             "--survival-modes" => a.survival_modes = Some(val()?),
             "--areas" => a.areas = Some(val()?),
             "--target" => a.target = Some(val()?),
+            "--title" => a.title = Some(val()?),
             "--out" => a.out = Some(val()?.into()),
             "--force" => a.force = true,
             "-h" | "--help" => {
@@ -815,6 +824,48 @@ fn rules(vfs: &Vfs) -> Result<Rules> {
     })
 }
 
+/// Areas whose `.c2map` says it snows (Ice Age's beside C2's).
+fn snowy<'a>(vfs: &Vfs, areas: &'a [String]) -> Vec<&'a str> {
+    areas
+        .iter()
+        .filter(|n| {
+            vfs.read(&format!("HUNTDAT/AREAS/{n}.c2map"))
+                .ok()
+                .and_then(|d| c2_formats::menu_txt::parse_c2map(&String::from_utf8_lossy(&d)))
+                .is_some_and(|a| a.snow)
+        })
+        .map(String::as_str)
+        .collect()
+}
+
+/// Where each roaming add-on spawns (per area its tables), so the menus
+/// needn't resolve the rules for every area when they open (seconds on an
+/// Old 3DS for a combined game's many): the areas by character.
+fn roam_areas<'a>(
+    raw: &c2_formats::res_txt::ResTxt,
+    areas: &'a [String],
+) -> BTreeMap<usize, Vec<&'a str>> {
+    let mut by_char: BTreeMap<usize, Vec<&str>> = BTreeMap::new();
+    for name in areas.iter().filter(|a| !a.eq_ignore_ascii_case("TROPHY")) {
+        let h = c2_formats::mee::Hunt {
+            area: c2_formats::mee::area_of(name),
+            time: 1,
+            picked: c2_formats::bits::Bits::ALL,
+        };
+        let t = c2_formats::mee::Tables::read(raw, &h);
+        let raw_chars = raw.section("characters").map_or(&[][..], |s| &s.blocks);
+        for (i, ch) in t.characters.iter().enumerate() {
+            let ai = ch.block.get(&["ai"]).map(c2_formats::res_txt::c_atoi);
+            let slot = c2_formats::mee::menu_slot(raw_chars.get(i), &ch.block);
+            let roams = slot.is_none() && ai.is_some_and(|a| (10..30).contains(&a));
+            if roams && (!ch.spawn.is_empty() || !ch.packs.is_empty()) {
+                by_char.entry(i).or_default().push(name);
+            }
+        }
+    }
+    by_char
+}
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -827,10 +878,11 @@ fn main() -> Result<()> {
     }
     let game = a.game.clone().context(USAGE)?;
     let out = a.out.clone().context(USAGE)?;
+    let wiiu_target = a.target.as_deref() == Some("wiiu");
     let profile = match a.target.as_deref().unwrap_or("n3ds") {
-        "n3ds" => &N3DS,
+        "n3ds" | "wiiu" => &N3DS,
         "o3ds" => &O3DS,
-        t => bail!("unknown target {t:?} (n3ds or o3ds)"),
+        t => bail!("unknown target {t:?} (n3ds, o3ds or wiiu)"),
     };
     let vfs = merged(&a, &game)?;
     let rules = rules(&vfs)?;
@@ -861,6 +913,20 @@ fn main() -> Result<()> {
     }
     if wanted.is_none() && vfs.resolve("HUNTDAT/AREAS/TROPHY.MAP").is_some() {
         areas.push("TROPHY".into());
+    }
+    if wiiu_target {
+        let info = wiiu::Info {
+            name: a.title.as_deref().unwrap_or("Carnivores 2"),
+            areas: &areas,
+            snow: snowy(&vfs, &areas),
+            roams: rules
+                .raw
+                .as_ref()
+                .map(|raw| roam_areas(raw, &areas))
+                .unwrap_or_default(),
+            survival: a.survival_modes.as_deref().unwrap_or("classic,modded"),
+        };
+        return wiiu::install(&vfs, &info, &out);
     }
 
     // Everything a hunt can use, whatever is picked.
@@ -1194,19 +1260,9 @@ fn main() -> Result<()> {
     for (area, kb) in &base_heap {
         info += &format!("heap.{area} = {kb}\n");
     }
-    // Areas whose `.c2map` says it snows (Ice Age's beside C2's).
-    let snowy: Vec<&String> = areas
-        .iter()
-        .filter(|n| {
-            vfs.read(&format!("HUNTDAT/AREAS/{n}.c2map"))
-                .ok()
-                .and_then(|d| c2_formats::menu_txt::parse_c2map(&String::from_utf8_lossy(&d)))
-                .is_some_and(|a| a.snow)
-        })
-        .collect();
+    let snowy = snowy(&vfs, &areas);
     if !snowy.is_empty() {
-        let names: Vec<&str> = snowy.iter().map(|s| s.as_str()).collect();
-        info += &format!("snow = {}\n", names.join(","));
+        info += &format!("snow = {}\n", snowy.join(","));
     }
     // The mobile Survive mode, from the player's own APK import.
     if let Some(f) = &a.mobile_survival {
@@ -1224,25 +1280,7 @@ fn main() -> Result<()> {
     // on an Old 3DS for a combined game's many).
     if let Some(raw) = &rules.raw {
         info += "roam_map = 1\n";
-        let mut by_char: BTreeMap<usize, Vec<&str>> = BTreeMap::new();
-        for name in areas.iter().filter(|a| !a.eq_ignore_ascii_case("TROPHY")) {
-            let h = c2_formats::mee::Hunt {
-                area: c2_formats::mee::area_of(name),
-                time: 1,
-                picked: c2_formats::bits::Bits::ALL,
-            };
-            let t = c2_formats::mee::Tables::read(raw, &h);
-            let raw_chars = raw.section("characters").map_or(&[][..], |s| &s.blocks);
-            for (i, ch) in t.characters.iter().enumerate() {
-                let ai = ch.block.get(&["ai"]).map(c2_formats::res_txt::c_atoi);
-                let slot = c2_formats::mee::menu_slot(raw_chars.get(i), &ch.block);
-                let roams = slot.is_none() && ai.is_some_and(|a| (10..30).contains(&a));
-                if roams && (!ch.spawn.is_empty() || !ch.packs.is_empty()) {
-                    by_char.entry(i).or_default().push(name);
-                }
-            }
-        }
-        for (i, list) in by_char {
+        for (i, list) in roam_areas(raw, &areas) {
             info += &format!("roam.{i} = {}\n", list.join(","));
         }
     }

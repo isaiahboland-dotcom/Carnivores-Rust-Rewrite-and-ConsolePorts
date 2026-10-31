@@ -2,6 +2,40 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-30 — Wii U: any game as an install; one Wii U Menu entry per game
+
+The Wii U read a fixed base-game roster (15 species, 6 weapons, five areas)
+from flat files in `wiiu/apps/carnivores-probe/`. It now reads a game the way
+the PC does, so add-ons, the Modder's Edition and standalones work:
+
+- **Installs.** `c2-cook --target wiiu` writes the merged game (base,
+  overlays, add-ons, recipe, balance) in the original formats, nothing
+  converted: the `HUNTDAT` tree with upper-case names, `FILES.TXT` (the
+  app's index; the SD card is read through `c2-vfs` by it) and `INFO.TXT`
+  (game name, areas, snowy areas, roaming add-ons, survivals: what the 3DS
+  pack's info says). The app (`src/install.rs`) builds its menus from the
+  rules the 3DS port uses (Rules / Role / Roam / Pick: vanilla `_RES.TXT`
+  and the Modder's Edition dialect alike), so rosters of any size: up to 24
+  animals, 12 areas, 8 weapons (a 2x4 GamePad grid), paged calls. c2-core's
+  `load` and `mee` modules build `no_std` (feature `portable-load`) for it.
+- **One entry per game.** Each install is `wiiu/apps/<name>/` with its own
+  `<name>.wuhb`, whose `/vol/content/install.txt` names the folder; the art
+  (icon, TV and GamePad boot images) is cut from the game's menu picture as
+  the 3DS `.cia` does. Saves and logs stay in each install's folder. An
+  `.rpx` can't carry `install.txt`, so it reads the default
+  `carnivores-probe`. Built with `c2-wiiu-builder --install NAME --title T
+  --sd DIR -- <c2-cook game args>` or the launcher's Wii U tab.
+  `stage_assets.py` (the old flat layout) is gone.
+- **`c2-formats` at opt-level 1 on the Wii U.** At opt-level 2 or 3 the
+  Modder's Edition rules spun forever in Cemu, inside `mee::trophy_spot`
+  (the reverse key lookups of a `tropinfo` block; the emulated CPU thread
+  at 100%, no panic, no allocation failure). Statically the generated code
+  looked right and the host runs it fine, so it is either an LLVM PowerPC
+  miscompile or a Cemu recompiler bug; not known which, so the workaround
+  goes to hardware too. The crate is load-time parsing; the frame's hot
+  code (c2-core, the app) stays at opt-level 3. Revisit with a newer
+  nightly or a hardware test of an opt-level 3 build.
+
 ## 2026-10-30 — Wii U: the scope zooms; leaving from the menu with HOME
 
 - **Scope.** The original multiplies `CameraW` / `CameraH` by 3 in optic mode
@@ -413,6 +447,7 @@ stays in `wiiu-ver/`.
   current runtime reads them from that SD folder. The file list
   (`c2_launcher::wiiu::assets`, 143
   files) mirrors `wiiu-ver/perf-probe/stage_assets.py`; change both together.
+  (Superseded 2026-10-30: installs cooked by `c2-cook --target wiiu`.)
   Files are found in any case. A base that isn't plain Carnivores 2 (Ice Age,
   a Modder's Edition style game) is refused for now.
 - Add-ons, overlays, standalones, Ice Age, APK imports and balance show as

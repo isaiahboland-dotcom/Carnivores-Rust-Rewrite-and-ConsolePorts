@@ -1,206 +1,203 @@
-//! The Wii U install (`wiiu-ver/`): for now the base game only. The Wii U
-//! app reads the original files as they are (no cooked pack yet) from one
-//! fixed SD folder, `wiiu/apps/carnivores-probe/`, each file by its bare
-//! name (`wiiu-ver/perf-probe/main.c`, `stage_assets.py`). Add-ons, the
-//! Modder's Edition, Ice Age and standalones show in the tab as "not on the
-//! Wii U yet" until the port reads them.
+//! Wii U installs (`wiiu-ver/`). Each game is its own install: a folder
+//! `wiiu/apps/<name>/` on the SD card holding the merged game as the app
+//! reads it (`c2-cook --target wiiu`: the original formats, upper-case
+//! names, `INFO.TXT`, `FILES.TXT`), its saves and logs, and `<name>.wuhb`,
+//! a home-menu entry of its own. The `.wuhb` bundles `install.txt` (the
+//! folder's name, which the app reads from its `/vol/content`) and art cut
+//! from the game's own menu picture (`cia::wiiu_art`), so several games sit
+//! side by side on the Wii U Menu (say Triassic, Mandibles, and Carnivores
+//! 2 with the Modder's Edition and add-ons). An `.rpx` (Homebrew Launcher)
+//! has no bundle: it can only be the default install, `carnivores-probe`.
 
 use std::path::{Path, PathBuf};
 
-use crate::config::find_ci;
 use crate::jobs::Step;
 
-/// The SD folder the Wii U app reads (fixed in its `main.c`).
+/// The install an `.rpx`, or a `.wuhb` without `install.txt`, reads.
 pub const SD_FOLDER: &str = "carnivores-probe";
 
 /// The Wii U app as the Wii U build makes it (`wiiu-ver/perf-probe`).
 pub const APP: &str = "c2-wiiu-perf-probe.rpx";
 pub const WUHB_TOOL: &str = "wuhbtool";
 
-/// The files the Wii U app loads, under `HUNTDAT/` (the list in
-/// `wiiu-ver/perf-probe/stage_assets.py`; keep the two the same).
-pub fn assets() -> Vec<String> {
-    let mut v: Vec<String> = [
-        "HUNTER1.CAR",
-        "_RES.TXT",
-        "WEAPONS/PISTOL.CAR",
-        "WEAPONS/SHOTGUN.CAR",
-        "WEAPONS/DBSGUN.CAR",
-        "WEAPONS/X_BOW.CAR",
-        "WEAPONS/RIFLE.CAR",
-        "WEAPONS/SNIPER.CAR",
-        "MENU/MENUM.TGA",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
-    for n in [
-        "MOSH", "GALL", "DIMOR2", "PTERA", "DIMET", "BRACHI1", "PAR2", "ANKYLO1", "STEGO", "ALLO",
-        "CHASMOSA", "VELO2", "SPINO", "CERATO1", "TIREX",
-    ] {
-        v.push(format!("{n}.CAR"));
-    }
-    for i in 1..=5 {
-        v.push(format!("AREAS/AREA{i}.MAP"));
-        v.push(format!("AREAS/AREA{i}.RSC"));
-    }
-    // The trophy room and the trophy plaques.
-    for f in [
-        "AREAS/TROPHY.MAP",
-        "AREAS/TROPHY.RSC",
-        "MENU/TROPHY_G.TGA",
-        "MENU/TROPHY.TGA",
-        "MENU/MAPFRAME.TGA",
-    ] {
-        v.push(f.to_string());
-    }
-    for i in 1..=5 {
-        v.push(format!("MENU/PICS/AREA{i}.TGA"));
-    }
-    for p in ["DINO", "CALL"] {
-        for i in 1..=9 {
-            v.push(format!("MENU/PICS/{p}{i}.TGA"));
-        }
-    }
-    for i in 1..=6 {
-        v.push(format!("MENU/PICS/WEAPON{i}.TGA"));
-    }
-    for i in 1..=4 {
-        v.push(format!("MENU/PICS/EQUIP{i}.TGA"));
-    }
-    // The menu's descriptions (src/menu.rs `FILES`).
-    for i in 1..=5 {
-        v.push(format!("MENU/TXT/AREA{i}.TXT"));
-    }
-    for ext in ["TXM", "TXU"] {
-        for i in 1..=9 {
-            v.push(format!("MENU/TXT/DINO{i}.{ext}"));
-        }
-    }
-    for i in 1..=6 {
-        v.push(format!("MENU/TXT/WEAPON{i}.TXT"));
-    }
-    for n in [
-        "CAMOFLAG", "RADAR", "SCENT", "DOUBLE", "TRANQ", "OBSERVE", "DAY1", "DAY2", "DAY3",
-    ] {
-        v.push(format!("MENU/TXT/{n}.NFO"));
-    }
-    for i in 1..=9 {
-        for c in ['A', 'B', 'C'] {
-            v.push(format!("SOUNDFX/CALLS/CALL{i}_{c}.WAV"));
-        }
-    }
-    for p in ["HWALK", "FOOTW"] {
-        for i in 1..=3 {
-            v.push(format!("SOUNDFX/STEPS/{p}{i}.WAV"));
-        }
-    }
-    v.push("SOUNDFX/A_UNDERW.WAV".into());
-    for i in 1..=4 {
-        v.push(format!("SOUNDFX/HUM_DIE{i}.WAV"));
-    }
-    v
+/// One game for the Wii U.
+pub struct Install<'a> {
+    /// Its folder under `wiiu/apps/` and the `.wuhb`'s file name.
+    pub name: &'a str,
+    /// Its name on the Wii U Menu and title screen.
+    pub title: &'a str,
+    /// `c2-cook`'s arguments for the game (`--game`, `--overlay`, `--mod`,
+    /// `--recipe` ...), without `--target` and `--out`.
+    pub cook_args: Vec<String>,
+    /// The game folder whose menu picture the home-menu art is cut from.
+    pub art_from: Option<&'a Path>,
 }
 
-/// `rel` (with `/`) under `dir`, each part in any case.
-fn find_path_ci(dir: &Path, rel: &str) -> Option<PathBuf> {
-    rel.split('/')
-        .try_fold(dir.to_path_buf(), |d, part| find_ci(&d, part))
+/// The tools an install is built with.
+pub struct Tools<'a> {
+    pub cook: &'a Path,
+    pub app: &'a Path,
+    /// `None`: an `.rpx` for the Homebrew Launcher.
+    pub wuhbtool: Option<&'a Path>,
 }
 
-/// The copies for an install on the SD card `sd` from the game folder
-/// `game`, the app last; or the files the game folder lacks.
-pub fn steps(
-    game: &Path,
-    app: &Path,
-    sd: &Path,
-    format: crate::config::WiiUFormat,
-    wuhbtool: Option<&Path>,
-) -> Result<Vec<Step>, Vec<String>> {
-    let Some(huntdat) = find_ci(game, "HUNTDAT") else {
-        return Err(vec!["HUNTDAT".into()]);
+/// The game folder `c2-cook` is given (`--game`), or the last overlay (a
+/// Modder's Edition release has its own menu picture).
+pub fn art_source(cook_args: &[String]) -> Option<PathBuf> {
+    let last = |key: &str| {
+        cook_args
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| *a == key)
+            .filter_map(|(i, _)| cook_args.get(i + 1))
+            .next_back()
+            .map(PathBuf::from)
     };
-    let dir = sd.join("wiiu").join("apps").join(SD_FOLDER);
-    let mut steps = Vec::new();
-    let mut missing = Vec::new();
-    for rel in assets() {
-        match find_path_ci(&huntdat, &rel) {
-            Some(from) => {
-                let name = rel.rsplit('/').next().unwrap_or(&rel).to_string();
-                steps.push(Step::Copy {
-                    from,
-                    to: dir.join(name),
-                });
-            }
-            None => missing.push(rel),
+    last("--overlay").or_else(|| last("--game"))
+}
+
+/// The steps for install `i` on the SD card `sd` (`work`: a folder for the
+/// bundle's content and art).
+pub fn steps(i: &Install, t: &Tools, sd: &Path, work: &Path) -> Vec<Step> {
+    // An .rpx can't say which folder it is: the default one.
+    let name = if t.wuhbtool.is_some() {
+        i.name
+    } else {
+        SD_FOLDER
+    };
+    let dir = sd.join("wiiu").join("apps").join(name);
+    let mut cook = i.cook_args.clone();
+    cook.extend([
+        "--target".into(),
+        "wiiu".into(),
+        "--title".into(),
+        i.title.to_string(),
+        "--out".into(),
+        dir.display().to_string(),
+    ]);
+    let mut steps = vec![
+        Step::Dir(dir.clone()),
+        Step::Run {
+            program: t.cook.to_path_buf(),
+            args: cook,
+        },
+    ];
+    let Some(tool) = t.wuhbtool else {
+        steps.push(Step::Copy {
+            from: t.app.to_path_buf(),
+            to: dir.join(format!("{name}.rpx")),
+        });
+        return steps;
+    };
+    let content = work.join("content");
+    steps.push(Step::Write {
+        path: content.join("install.txt"),
+        bytes: format!("{name}\n").into_bytes(),
+    });
+    let mut args = vec![
+        t.app.display().to_string(),
+        dir.join(format!("{name}.wuhb")).display().to_string(),
+        format!("--name={}", i.title),
+        format!("--short-name={}", i.title),
+        "--author=Carnivores Rust Rewrite".into(),
+        format!("--content={}", content.display()),
+    ];
+    if let Some(art) = i.art_from.and_then(crate::cia::wiiu_art) {
+        for (bytes, (file, flag)) in art.into_iter().zip([
+            ("icon.png", "--icon"),
+            ("tv.png", "--tv-image"),
+            ("drc.png", "--drc-image"),
+        ]) {
+            let path = work.join(file);
+            args.push(format!("{flag}={}", path.display()));
+            steps.push(Step::Write { path, bytes });
         }
     }
-    if !missing.is_empty() {
-        return Err(missing);
-    }
-    match format {
-        crate::config::WiiUFormat::Rpx => steps.push(Step::Copy {
-            from: app.to_path_buf(),
-            to: dir.join(format!("{SD_FOLDER}.rpx")),
-        }),
-        crate::config::WiiUFormat::Wuhb => {
-            let Some(tool) = wuhbtool else {
-                return Err(vec![format!("{WUHB_TOOL} (from devkitPro wut-tools)")]);
-            };
-            steps.push(Step::Run {
-                program: tool.to_path_buf(),
-                args: vec![
-                    app.display().to_string(),
-                    dir.join(format!("{SD_FOLDER}.wuhb")).display().to_string(),
-                    "--name=Carnivores 2".into(),
-                    "--short-name=C2".into(),
-                    "--author=Carnivores Rust Rewrite".into(),
-                ],
-            });
-        }
-    }
-    Ok(steps)
+    steps.push(Step::Run {
+        program: tool.to_path_buf(),
+        args,
+    });
+    steps
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn asset_names_are_unique_once_flattened() {
-        let a = assets();
-        assert_eq!(a.len(), 148);
-        let mut names: Vec<&str> = a.iter().filter_map(|r| r.rsplit('/').next()).collect();
-        names.sort_unstable();
-        names.dedup();
-        assert_eq!(names.len(), a.len());
+    fn tools<'a>(wuhb: Option<&'a Path>) -> Tools<'a> {
+        Tools {
+            cook: Path::new("c2-cook"),
+            app: Path::new("app.rpx"),
+            wuhbtool: wuhb,
+        }
     }
 
     #[test]
-    fn steps_find_files_in_any_case_and_report_missing() {
-        let root = std::env::temp_dir().join(format!("c2-wiiu-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        let game = root.join("game");
-        let huntdat = game.join("huntdat");
-        for rel in assets() {
-            let p = huntdat.join(rel.to_lowercase());
-            if let Some(d) = p.parent() {
-                let _ = std::fs::create_dir_all(d);
-            }
-            let _ = std::fs::write(&p, b"x");
-        }
-        let app = root.join(APP);
-        let _ = std::fs::write(&app, b"rpx");
-        let sd = root.join("sd");
-        let n = steps(&game, &app, &sd, crate::config::WiiUFormat::Rpx, None)
-            .map(|s| s.len())
-            .unwrap_or(0);
-        assert_eq!(n, assets().len() + 1);
-        let _ = std::fs::remove_file(huntdat.join("tirex.car"));
-        let missing = steps(&game, &app, &sd, crate::config::WiiUFormat::Rpx, None)
-            .err()
-            .unwrap_or_default();
-        assert_eq!(missing, vec!["TIREX.CAR".to_string()]);
-        let _ = std::fs::remove_dir_all(&root);
+    fn a_wuhb_names_its_folder_and_cooks_into_it() {
+        let i = Install {
+            name: "triassic",
+            title: "Carnivores Triassic",
+            cook_args: vec!["--game".into(), "T".into()],
+            art_from: None,
+        };
+        let steps = steps(
+            &i,
+            &tools(Some(Path::new("wuhbtool"))),
+            Path::new("sd"),
+            Path::new("w"),
+        );
+        let dir = Path::new("sd/wiiu/apps/triassic");
+        let Step::Run { args, .. } = &steps[1] else {
+            panic!("cook first")
+        };
+        assert_eq!(args[..2], ["--game".to_string(), "T".into()]);
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--out", &dir.display().to_string()]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--title", "Carnivores Triassic"]));
+        let Step::Write { path, bytes } = &steps[2] else {
+            panic!("install.txt")
+        };
+        assert_eq!(
+            (path.as_path(), bytes.as_slice()),
+            (Path::new("w/content/install.txt"), &b"triassic\n"[..])
+        );
+        let Step::Run { args, .. } = steps.last().unwrap() else {
+            panic!("wuhbtool last")
+        };
+        assert_eq!(args[1], dir.join("triassic.wuhb").display().to_string());
+        assert!(args.contains(&"--name=Carnivores Triassic".to_string()));
+    }
+
+    #[test]
+    fn an_rpx_is_the_default_install() {
+        let i = Install {
+            name: "triassic",
+            title: "T",
+            cook_args: Vec::new(),
+            art_from: None,
+        };
+        let steps = steps(&i, &tools(None), Path::new("sd"), Path::new("w"));
+        let Step::Copy { to, .. } = steps.last().unwrap() else {
+            panic!("copy")
+        };
+        assert_eq!(
+            to,
+            &Path::new("sd/wiiu/apps")
+                .join(SD_FOLDER)
+                .join(format!("{SD_FOLDER}.rpx"))
+        );
+    }
+
+    #[test]
+    fn art_comes_from_the_last_overlay_else_the_game() {
+        let a = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(art_source(&a(&["--game", "G"])), Some(PathBuf::from("G")));
+        assert_eq!(
+            art_source(&a(&["--game", "G", "--overlay", "A", "--overlay", "B"])),
+            Some(PathBuf::from("B"))
+        );
     }
 }
