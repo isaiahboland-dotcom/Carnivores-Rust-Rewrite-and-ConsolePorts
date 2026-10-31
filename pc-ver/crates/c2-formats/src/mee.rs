@@ -362,6 +362,9 @@ pub struct Tables {
     pub snow: Option<Snow>,
     /// The hunt's area's survival spot (its `areatable` entry).
     pub survival: Option<SurvivalSpot>,
+    /// Where the trophy room starts the hunter, in cells: `common {}`'s
+    /// `trophyPlayerX/Y` (ME 1.2; `None` = the original's door, 76, 70).
+    pub trophy_start: Option<(u16, u16)>,
 }
 
 /// The dialect's survival mode (`-survival`) as the `common {}` section
@@ -638,7 +641,19 @@ impl Tables {
         let mut t = Tables::default();
         for sec in &res.sections {
             let name = sec.name.to_ascii_lowercase();
-            if name.contains("spawntable") {
+            if name.contains("common") {
+                let get = |k: &str| {
+                    sec.entries
+                        .iter()
+                        .chain(sec.blocks.iter().flat_map(|b| b.entries.iter()))
+                        .find(|e| e.key.eq_ignore_ascii_case(k))
+                        .map(|e| c_atoi(&e.value))
+                };
+                if let (Some(x), Some(y)) = (get("trophyPlayerX"), get("trophyPlayerY")) {
+                    let cell = |v: i32| v.clamp(0, 1023) as u16;
+                    t.trophy_start = Some((cell(x), cell(y)));
+                }
+            } else if name.contains("spawntable") {
                 t.spawn_groups.clear();
                 for s in sec.subs.iter().filter(|s| s.name.contains("spawngroup")) {
                     let g = spawn_group(&resolve(&s.block, h));
@@ -725,6 +740,21 @@ impl Tables {
 #[cfg(test)]
 mod trophy_tests {
     use super::*;
+
+    #[test]
+    fn trophy_start_from_common() {
+        let hunt = Hunt {
+            area: None,
+            time: 1,
+            picked: crate::bits::Bits::NONE,
+        };
+        let res = ResTxt::parse("common {\n trophyPlayerX = 60\n trophyPlayerY = 81\n}\n.\n")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(Tables::read(&res, &hunt).trophy_start, Some((60, 81)));
+        let res =
+            ResTxt::parse("common {\n dropShip = TRUE\n}\n.\n").unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(Tables::read(&res, &hunt).trophy_start, None);
+    }
 
     #[test]
     fn trophy_spots_in_engine_order() {

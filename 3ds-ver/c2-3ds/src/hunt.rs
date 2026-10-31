@@ -416,7 +416,7 @@ fn new_hunt(
     let trophy = setup.trophy();
     let mut rng = MsRand::new(seed);
     let player = if trophy {
-        Player::new(area, (76, 70))
+        Player::new(area, tables.and_then(|t| t.trophy_start).unwrap_or((76, 70)))
     } else {
         let cell = area
             .landings

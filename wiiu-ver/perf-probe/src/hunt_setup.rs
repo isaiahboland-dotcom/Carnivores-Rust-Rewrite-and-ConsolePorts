@@ -354,7 +354,7 @@ fn new_hunt(
 ) -> Result<Hunt, i32> {
     let trophy = choice.trophy();
     let mut rng = MsRand::new(seed);
-    let player = if trophy { Player::new(area, TROPHY_DOOR) } else { Player::new(area, *area.landings.first().ok_or(-11)?) };
+    let player = if trophy { Player::new(area, tables.and_then(|t| t.trophy_start).unwrap_or(TROPHY_DOOR)) } else { Player::new(area, *area.landings.first().ok_or(-11)?) };
     let mut herd = Herd { species, ..Default::default() };
     if let Some(t) = tables {
         herd.trophy_spots = t.trophies.clone();

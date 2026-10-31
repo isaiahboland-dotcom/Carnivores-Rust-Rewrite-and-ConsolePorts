@@ -2,6 +2,21 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-31 — Trophy room start; Triassic's "-ERROR-" area kept
+
+- **Trophy room start.** Both Modder's Edition engines start the hunter at
+  the original's door (76, 70): the modernized fork hard-codes it, and ME
+  1.2 reads `trophyPlayerX` / `trophyPlayerY` from `common {}` (every
+  shipped `_RES.TXT` says 76 / 70). So our start was already the ME's. We
+  now read those two keys too (`mee::Tables::trophy_start`, PC / 3DS /
+  Wii U), so a game that moves them is followed; without them, 76, 70.
+- **Triassic's 8th area is called "-ERROR-" on purpose.** Its
+  `AREA8.TXT` reads "-ERROR- / Error 4052: This data file is missing or
+  corrupted.", with a blank picture and, in the MEE version, a "Rank:" line
+  that decodes (letters as numbers) to "FLEE WHILE YOU CAN"; the readme
+  calls it the mystery 8th map. It's the author's, so the menus show it as
+  written.
+
 ## 2026-10-31 — "All dinos huntable"; Wii U map dots and teleport button
 
 Owner's requests after the console test.
