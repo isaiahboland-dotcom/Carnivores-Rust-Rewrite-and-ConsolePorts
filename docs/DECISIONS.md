@@ -2,6 +2,35 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-31 — "All dinos huntable"; Wii U map dots and teleport button
+
+Owner's requests after the console test.
+- **"All dinos huntable"** (PC Options > Game, 3DS Settings, Wii U
+  Settings), **off by default**. Off: a modded game's roaming add-ons
+  (huntable AI, no menu slot: Suchomimus, Manospondylus) aren't listed, so
+  they are met where their makers put them; on: listed after the menu's
+  animals and hunted by their own slots, as before. This changes the
+  default: until now roamers were always listed.
+- **Consoles: roamers not picked now come on their own maps.** The 3DS and
+  Wii U loaded a roamer only when picked (memory), so off would have hidden
+  them entirely. A hunt now also loads the unpicked roamers whose tables
+  spawn them on its map: on the 3DS as far as the pack's memory figures
+  allow after the picks (`Setup::native_roamers`; the menu's memory check
+  leaves them out, so they never block a hunt), on the Wii U before the
+  ambient animals while model slots last. Not in survivals or the trophy
+  room. The PC loads every character, so it already did this.
+- **Wii U menu order**: roamers come after the menu's animals (by price
+  within each), as on PC, so the list shrinks from the end when the setting
+  is off. A saved pick by position may move once.
+- **Wii U GamePad map dots**: on a whole-area view (zoomed out, or the TV
+  map alone) an animal is a disc 9 texels across on an 11-texel dark rim
+  (about 4 and 5 GamePad pixels; it was 3 texels, about 1.5 pixels, on
+  green ground). Zoomed in they stay 3x3 texels (about 6 pixels).
+- **Wii U teleport confirm**, as the 3DS: a tap on the map marks the spot
+  with a yellow ring and shows a TELEPORT button under the map's middle;
+  tapping it starts the 5 s countdown, a tap elsewhere on the map moves the
+  spot. Switching the GamePad to the game view or restarting drops it.
+
 ## 2026-10-31 — Owner's console test: Gojirasaurus, the ME trophy room, the 3DS trophy room, a Mandibles stall
 
 - **An AI the original engine lacks runs as the one its clips fit.**

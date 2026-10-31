@@ -131,7 +131,9 @@ cached between redraws.
   the right; the bottom line sums up the picks.
 - Settings: dinosaur run speed (50-100%), ambient animals, blood, death
   camera, animal descriptions in metric or US units, the map look (classic
-  or mobile), teleport (tap the GamePad map) and button hints.
+  or mobile), teleport (tap the GamePad map) and button hints, and "All dinos
+  huntable" (a modded game's roaming add-ons in the animal list; off, they
+  only roam their own maps).
 - Controls: D-pad or left stick moves, A picks, B goes back, L/R change the
   setup page, + starts the hunt; or tap the GamePad.
 
@@ -170,8 +172,10 @@ streams instead of three.
 
 R shows the PC's map over the TV view (the overlay's map region; the dots
 and the mobile look's cone repaint as they move). The GamePad map has a zoom
-button at its top right ("-" shows the whole area, "+" goes back), and with
-teleport on a tap elsewhere on it teleports there after 5 s. With button
+button at its top right ("-" shows the whole area, "+" goes back; the whole
+area shows the animals as bigger dots on a dark rim), and with teleport on a
+tap elsewhere on it marks the spot with a yellow ring and shows a TELEPORT
+button below it: tapped, the hunter goes there after 5 s. With button
 hints on, the controls run along the bottom of the TV view. Dawn is tinted
 warmer than the original's (a Wii U-only look; see `docs/DECISIONS.md`).
 

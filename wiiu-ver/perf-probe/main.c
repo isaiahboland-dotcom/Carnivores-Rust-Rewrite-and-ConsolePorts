@@ -274,6 +274,9 @@ static uint32_t hunt_edges(uint32_t b, int prompt, int trophy) {
 /* The GamePad map's zoom button: HUD texels 448..512 x 64..128, shown at
  * 618..662 x 6..50 of the 854x480 screen. */
 static int zoom_hit(int x, int y) { return x >= 610 && x < 670 && y < 58; }
+/* The teleport button under a picked spot: HUD texels 256..448 x 64..128,
+ * shown at 346..508 x 420..474. */
+static int confirm_hit(int x, int y) { return x >= 340 && x < 514 && y >= 412 && y < 480; }
 static void hud_update(GX2Texture *tex, const HudState *hud, const char *weapon, const char *unarmed, int zoomed) {
     memset(tex->surface.image, 0, tex->surface.imageSize);
     for (int y = 64; y < 128; ++y) for (int x = 448; x < 512; ++x) {
@@ -288,6 +291,20 @@ static void hud_update(GX2Texture *tex, const HudState *hud, const char *weapon,
             uint8_t *p = (uint8_t *)tex->surface.image + ((75 + y*6 + yy) * tex->surface.pitch + 465 + x*6 + xx) * 4;
             p[0] = 242; p[1] = 217; p[2] = 51; p[3] = 255;
         }
+    /* The teleport button: "TELEPORT" in a frame. */
+    for (int y = 64; y < 128; ++y) for (int x = 256; x < 448; ++x) {
+        int edge = x < 260 || x >= 444 || y < 68 || y >= 124;
+        uint8_t *p = (uint8_t *)tex->surface.image + (y * tex->surface.pitch + x) * 4;
+        p[0] = edge ? 242 : 0; p[1] = edge ? 217 : 0; p[2] = edge ? 51 : 0; p[3] = 255;
+    }
+    for (int c = 0; c < 8; ++c) {
+        int g = (int)(strchr(glyph_chars, "TELEPORT"[c]) - glyph_chars);
+        for (int y = 0; y < 7; ++y) for (int x = 0; x < 5; ++x) if (glyph_rows[g][y] & (1 << (4-x)))
+            for (int yy = 0; yy < 3; ++yy) for (int xx = 0; xx < 3; ++xx) {
+                uint8_t *p = (uint8_t *)tex->surface.image + ((86 + y*3 + yy) * tex->surface.pitch + 281 + c*18 + x*3 + xx) * 4;
+                p[0] = 242; p[1] = 217; p[2] = 51; p[3] = 255;
+            }
+    }
     char line[40];
     if (weapon) snprintf(line, sizeof(line), "%s %d", weapon, hud->ammo); else snprintf(line, sizeof(line), "%s", unarmed);
     perf_line(tex, 0, line);
@@ -987,6 +1004,11 @@ end_load:
     const float zv[24] = {0.4473f,0.975f,0,1, 0.5504f,0.975f,0,1, 0.5504f,0.7917f,0,1, 0.4473f,0.975f,0,1, 0.5504f,0.7917f,0,1, 0.4473f,0.7917f,0,1};
     const float za[24] = {.875f,.5f,1,1, 1,.5f,1,1, 1,1,1,1, .875f,.5f,1,1, 1,1,1,1, .875f,1,1,1};
     init_quad(&zoom_pos, &zoom_attr, &map_pos, zv, za);
+    /* The teleport button (confirm_hit). */
+    GX2RBuffer confirm_pos = {0}, confirm_attr = {0};
+    const float cv[24] = {-0.1897f,-0.75f,0,1, 0.1897f,-0.75f,0,1, 0.1897f,-0.975f,0,1, -0.1897f,-0.75f,0,1, 0.1897f,-0.975f,0,1, -0.1897f,-0.975f,0,1};
+    const float ca[24] = {.5f,.5f,1,1, .875f,.5f,1,1, .875f,1,1,1, .5f,.5f,1,1, .875f,1,1,1, .5f,1,1,1};
+    init_quad(&confirm_pos, &confirm_attr, &map_pos, cv, ca);
     init_weapon_grid(&gun_icon_pos, &gun_icon_attr, &map_pos); init_quad(&call_icon_pos, &call_icon_attr, &map_pos, civ, cia);
     HudState prev_hud = {-1, 2, -1, -1, UINT32_MAX};
     /* The overlay (kill notice, trophy plaque, messages, questions): Rust
@@ -1018,11 +1040,14 @@ end_load:
     const float tqa[24] = {0,0,1,0, 1,0,1,0, 1,1,1,0, 0,0,1,0, 1,1,1,0, 0,1,1,0};
     init_quad(&tv_quad_pos, &tv_quad_uv, &map_pos, tqv, tqa);
     static uint8_t saved[151 * 151 * 4]; int old_x = -1, old_z = -1;
-    static struct { uint32_t offset; uint8_t rgba[4]; } old_blips[256 * 9];
+    static struct { uint32_t offset; uint8_t rgba[4]; } old_blips[256 * 140 + 400];
     uint32_t old_blip_count = 0;
     int gamepad_game = 0, static_cache_enabled = 1;
     /* R: the map over the TV's view (the PC's); the GamePad map's zoom. */
     int tv_map = 0, drc_zoom = 0, hud_dirty = 1;
+    /* A spot tapped on the GamePad map (world units), waiting for the
+     * teleport button. */
+    int tele_pick = 0; float tele_x = 0, tele_z = 0;
     float drc_uv[24]; map_view_uv(512, 512, 256, drc_uv);
     StaticView static_view = {0};
     int resident_enabled = 1;
@@ -1078,14 +1103,15 @@ end_load:
                 if (sample.trigger & VPAD_BUTTON_STICK_R) mipmaps = !mipmaps;
                 if (sample.trigger & VPAD_BUTTON_STICK_L) tv_scaled = !tv_scaled;
                 if (sample.trigger & VPAD_BUTTON_R) tv_map = !tv_map;
-                if (sample.trigger & VPAD_BUTTON_MINUS) gamepad_game = !gamepad_game;
+                if (sample.trigger & VPAD_BUTTON_MINUS) { gamepad_game = !gamepad_game; tele_pick = 0; }
                 VPADTouchData touch = {0};
                 VPADGetTPCalibratedPointEx(VPAD_CHAN_0, VPAD_TP_854X480, &touch, &sample.tpNormal);
                 int down = touch.touched && touch.validity == VPAD_VALID;
                 if (down && !touch_down && !gamepad_game) {
                     float tx, tz;
                     if (zoom_hit(touch.x, touch.y)) { drc_zoom = !drc_zoom; hud_dirty = 1; }
-                    else if (menu.teleport && map_view_touch(drc_uv, touch.x, touch.y, &tx, &tz)) c2_teleport(sim, tx * 256.0f, tz * 256.0f);
+                    else if (tele_pick && confirm_hit(touch.x, touch.y)) { c2_teleport(sim, tele_x, tele_z); tele_pick = 0; }
+                    else if (menu.teleport && map_view_touch(drc_uv, touch.x, touch.y, &tx, &tz)) { tele_pick = 1; tele_x = tx * 256.0f; tele_z = tz * 256.0f; }
                     else if (touch.x < 187) {
                         int slot=(touch.y/120)*2+(touch.x>=94);
                         if(slot<(int)carried_weapons) flags |= 64 | ((uint32_t)slot<<16);
@@ -1197,7 +1223,7 @@ end_load:
                     static_view.valid = 0; resident.attempted = 0; resident.active = 0; terrain_resident.reset = 1;
                     pending_toggles = 0; accumulated = 0; previous_time = OSGetTime();
                     memset(&gamepad, 0, sizeof(gamepad)); memset(pro, 0, sizeof(pro)); memset(pro_valid, 0, sizeof(pro_valid));
-                    memset(&perf, 0, sizeof(perf)); touch_down = 0; tv_map = 0;
+                    memset(&perf, 0, sizeof(perf)); touch_down = 0; tv_map = 0; tele_pick = 0;
                     prev_hud = (HudState){-1, 2, -1, -1, UINT32_MAX};
                     continue;
                 }
@@ -1382,17 +1408,35 @@ end_load:
                         pixel[0] = menu.map_mobile ? 255 : 247; pixel[1] = menu.map_mobile ? 217 : 0; pixel[2] = menu.map_mobile ? 26 : 0;
                     }
                 }
+                // Animals: 3x3 texels on the GamePad's zoomed-in map; on a
+                // whole-map view (a texel under half a GamePad pixel) a disc
+                // 9 across, on a dark rim (every rim first, so a neighbour's
+                // doesn't cut a dot), to be seen on green ground.
                 RadarBlip blips[256]; uint32_t blip_count = c2_radar_blips(sim, blips, 256);
-                for (uint32_t i = 0; i < blip_count; ++i) {
-                    int x = (int)blips[i].x, z = (int)blips[i].z;
-                    for (int dz = -1; dz <= 1; ++dz) for (int dx = -1; dx <= 1; ++dx) {
-                        int bx = x + dx, bz = z + dz;
-                        if (bx < 0 || bx >= 1024 || bz < 0 || bz >= 1024) continue;
+                int whole = drc_zoom || !show_map[1];
+                for (int pass = whole ? 0 : 1; pass < 2; ++pass) for (uint32_t i = 0; i < blip_count; ++i) {
+                    int x = (int)blips[i].x, z = (int)blips[i].z, reach = whole ? 5 : 1;
+                    uint32_t rgba = pass == 0 ? 0x101010ffu : blips[i].rgba;
+                    for (int dz = -reach; dz <= reach; ++dz) for (int dx = -reach; dx <= reach; ++dx) {
+                        int bx = x + dx, bz = z + dz, d2 = dx * dx + dz * dz;
+                        if (bx < 0 || bx >= 1024 || bz < 0 || bz >= 1024 || (whole && d2 > (pass == 0 ? 26 : 16))) continue;
                         uint32_t offset = (bz * map_tex.surface.pitch + bx) * 4;
                         old_blips[old_blip_count].offset = offset;
                         memcpy(old_blips[old_blip_count++].rgba, map_pixels + offset, 4);
-                        map_pixels[offset] = blips[i].rgba >> 24; map_pixels[offset + 1] = blips[i].rgba >> 16;
-                        map_pixels[offset + 2] = blips[i].rgba >> 8; map_pixels[offset + 3] = blips[i].rgba;
+                        map_pixels[offset] = rgba >> 24; map_pixels[offset + 1] = rgba >> 16;
+                        map_pixels[offset + 2] = rgba >> 8; map_pixels[offset + 3] = rgba;
+                    }
+                }
+                // The teleport spot picked: a yellow ring.
+                if (tele_pick) {
+                    int x = (int)(tele_x / 256.0f), z = (int)(tele_z / 256.0f), r0 = whole ? 49 : 9, r1 = whole ? 81 : 20;
+                    for (int dz = -9; dz <= 9; ++dz) for (int dx = -9; dx <= 9; ++dx) {
+                        int bx = x + dx, bz = z + dz, d2 = dx * dx + dz * dz;
+                        if (bx < 0 || bx >= 1024 || bz < 0 || bz >= 1024 || d2 < r0 || d2 > r1) continue;
+                        uint32_t offset = (bz * map_tex.surface.pitch + bx) * 4;
+                        old_blips[old_blip_count].offset = offset;
+                        memcpy(old_blips[old_blip_count++].rgba, map_pixels + offset, 4);
+                        map_pixels[offset] = 242; map_pixels[offset + 1] = 217; map_pixels[offset + 2] = 51; map_pixels[offset + 3] = 255;
                     }
                 }
                 old_x = mx; old_z = mz;
@@ -1456,6 +1500,10 @@ end_load:
                         GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
                         GX2RSetAttributeBuffer(&zoom_pos, 0, zoom_pos.elemSize, 0); GX2RSetAttributeBuffer(&zoom_attr, 1, zoom_attr.elemSize, 0);
                         GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
+                        if (tele_pick) {
+                            GX2RSetAttributeBuffer(&confirm_pos, 0, confirm_pos.elemSize, 0); GX2RSetAttributeBuffer(&confirm_attr, 1, confirm_attr.elemSize, 0);
+                            GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
+                        }
                     }
                     if (display == 0) WHBGfxFinishRenderTV(); else WHBGfxFinishRenderDRC();
                     continue;
@@ -1599,6 +1647,7 @@ end_load:
     GX2RDestroyBufferEx(&panel_ammo_pos, 0); GX2RDestroyBufferEx(&panel_ammo_attr, 0);
     GX2RDestroyBufferEx(&panel_kills_pos, 0); GX2RDestroyBufferEx(&panel_kills_attr, 0);
     GX2RDestroyBufferEx(&zoom_pos, 0); GX2RDestroyBufferEx(&zoom_attr, 0);
+    GX2RDestroyBufferEx(&confirm_pos, 0); GX2RDestroyBufferEx(&confirm_attr, 0);
     GX2RDestroyBufferEx(&gun_icon_pos, 0); GX2RDestroyBufferEx(&gun_icon_attr, 0); GX2RDestroyBufferEx(&call_icon_pos, 0); GX2RDestroyBufferEx(&call_icon_attr, 0); free(icons_tex.surface.image);
     GX2RDestroyBufferEx(&map_pos, 0); GX2RDestroyBufferEx(&map_attr[0], 0); GX2RDestroyBufferEx(&map_attr[1], 0); free(map_tex.surface.image);
     free(tiled_atlas.surface.image); free(tiled_object_atlas.surface.image); free(tiled_actor_atlas.surface.image);

@@ -1148,7 +1148,7 @@ impl Menu {
                 Id::DeathCam => ("Death camera", String::from(flag(ch.death_anim)), "Off: straight to the restart screen when you die."),
                 Id::Units => ("Animal descriptions", String::from(if ch.units_us != 0 { "US units" } else { "Metric" }), "Sizes and weights in the animal descriptions."),
                 Id::MapMobile => ("Map look", String::from(if ch.map_mobile != 0 { "Mobile" } else { "Original" }), "Mobile: a yellow frame, ring and view cone. Original: the PC game's dotted ring."),
-                Id::Teleport => ("Teleport", String::from(flag(ch.teleport)), "Tap a spot on the GamePad map to go there in 5 s, then wait a minute. Not in survival."),
+                Id::Teleport => ("Teleport", String::from(flag(ch.teleport)), "Tap a spot on the GamePad map, then Teleport: there in 5 s, then wait a minute. Not in survival."),
                 Id::Hints => ("Button hints", String::from(flag(ch.hints)), "The hunt's controls along the bottom of the TV."),
                 Id::AllHuntable => ("All dinos huntable", String::from(flag(ch.all_huntable)), "Add-ons that only roam their own maps are in the animal list too."),
                 Id::Back => {
