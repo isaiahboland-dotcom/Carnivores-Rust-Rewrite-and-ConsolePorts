@@ -280,6 +280,8 @@ pub struct Install {
     pub areas: Vec<AreaItem>,
     /// Cheapest first (the game's order, then add-ons, for equal prices).
     pub animals: Vec<Animal>,
+    /// The menu's own animals (the first in `animals`); roamers follow.
+    pub menu_animals: usize,
     pub weapons: Vec<String>,
     pub trophy_room: bool,
 }
@@ -355,7 +357,10 @@ impl Install {
         }
         mark("Install: dangerous");
         animals.truncate(MAX_ANIMALS);
-        animals.sort_by_key(|a| a.price);
+        // Roamers after the menu's own, so "All dinos huntable" off shows
+        // the first ones only.
+        animals.sort_by_key(|a| (matches!(a.pick, Pick::Roamer(_)), a.price));
+        let menu_animals = animals.iter().filter(|a| matches!(a.pick, Pick::Slot(_))).count();
         let weapons = neutral
             .res
             .weapons
@@ -364,7 +369,7 @@ impl Install {
             .map(|(i, w)| menu.weapons.get(i).map(|m| m.name.clone()).filter(|n| !n.is_empty()).or_else(|| w.name.clone()).unwrap_or_else(|| format!("Weapon {}", i + 1)))
             .take(MAX_WEAPONS)
             .collect();
-        Some(Install { vfs, rules, info, areas, animals, weapons, trophy_room })
+        Some(Install { vfs, rules, info, areas, animals, menu_animals, weapons, trophy_room })
     }
 
     /// The picked animals (bits by position in `animals`) as hunt targets

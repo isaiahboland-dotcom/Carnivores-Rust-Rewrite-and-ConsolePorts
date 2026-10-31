@@ -460,6 +460,10 @@ fn menu(
         if m.quit || io.quit() {
             return Ok(None);
         }
+        if std::mem::take(&mut m.reload) {
+            loading_screen(vfs, gpu, "the menu");
+            m = Menu::new(vfs, info.clone())?;
+        }
         // A new profile: the name on the system keyboard.
         if std::mem::take(&mut m.want_name) {
             use ctru::applets::swkbd::{

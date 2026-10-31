@@ -308,16 +308,17 @@ const GAME_OPTS: [Opt; 8] = [
     Opt::Toggle("Measurement", ["Metric", "US"], |s| &mut s.options.sys),
     Opt::PcToggle("Blood", |p| &mut p.blood),
     Opt::PcToggle("Death animation", |p| &mut p.death_anim),
-    Opt::PcToggle("Map: where you look", |p| &mut p.map_heading),
+    Opt::PcToggle("All dinos huntable", |p| &mut p.all_huntable),
     Opt::ClearTrophies,
 ];
 
-const VIDEO_OPTS: [Opt; 6] = [
+const VIDEO_OPTS: [Opt; 7] = [
     Opt::Slider("View range", |s| &mut s.options.view_r),
     Opt::PcSlider("Render distance", |p| &mut p.render),
     Opt::Slider("Brightness", |s| &mut s.options.brightness),
     Opt::PcToggle("Far sprites", |p| &mut p.far_sprites),
     Opt::PcToggle("Mobile radar", |p| &mut p.map_mobile),
+    Opt::PcToggle("Map: where you look", |p| &mut p.map_heading),
     Opt::PcToggle("Teleport (map)", |p| &mut p.teleport),
 ];
 
@@ -395,6 +396,8 @@ pub struct Menu {
     fog_text: Vec<String>,
     /// Render distance and fog (not in the original save).
     pc: PcSettings,
+    /// The menu's own animals; the roaming add-ons follow them.
+    menu_animals: usize,
     observe_text: Vec<String>,
     areas: Vec<PathBuf>,
     players: Vec<Save>,
@@ -605,9 +608,10 @@ impl Menu {
         // The hunt lists: `_MENU.TXT` if the game has one (Modder's Edition
         // Engine), else `_RES.TXT`; see `c2_formats::menu_txt`.
         let mut menu = menu_data(&huntdat)?;
+        let menu_animals = menu.huntables.len();
         // A dialect game's roaming add-ons (no menu slot of their own) are
         // picked as its animals are, in the slots after them; priced as the
-        // menu animal with their AI.
+        // menu animal with their AI (listed with "All dinos huntable" on).
         if let Some(res) = dialect_res(&huntdat) {
             let first = menu.huntables.len();
             for (i, _) in c2_core::mee::roamers(&res, first) {
@@ -917,6 +921,7 @@ impl Menu {
             tranq_text,
             fog_text,
             pc: PcSettings::load(),
+            menu_animals,
             observe_text,
             areas,
             players,
@@ -944,7 +949,26 @@ impl Menu {
             cursor: None,
         };
         m.restore_choice();
+        m.offer_animals();
         Ok(m)
+    }
+
+    /// The animal list by "All dinos huntable": off, the roaming add-ons
+    /// aren't listed (or picked); they roam their own maps only.
+    fn offer_animals(&mut self) {
+        let all = self.pc.all_huntable != 0;
+        let first = self.menu_animals;
+        if let Some(c) = self.columns.get_mut(1) {
+            c.order = (0..c.names.len()).filter(|&i| all || i < first).collect();
+            c.order
+                .sort_by_key(|&i| c.prices.get(i).copied().unwrap_or(0));
+            c.scroll = c.scroll.min(c.order.len().saturating_sub(c.visible()));
+        }
+        if !all {
+            for i in first..Bits::LEN {
+                self.choice.dinos.clear(i);
+            }
+        }
     }
 
     /// Opens a screen directly (screenshots): signs in the first hunter.
@@ -1649,6 +1673,7 @@ impl Menu {
                     Opt::PcToggle(_, f) => {
                         let v = f(&mut self.pc);
                         *v = i32::from(*v == 0);
+                        self.offer_animals();
                     }
                     Opt::ClearTrophies => {}
                 }

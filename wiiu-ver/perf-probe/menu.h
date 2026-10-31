@@ -6,7 +6,7 @@ typedef struct {
     uint32_t area, time;
     uint64_t animals;
     uint32_t weapons, radar, camo, scent, double_ammo, tranq, observer,
-             run_pct, blood, death_anim, ambient, units_us, mode, survival, map_mobile, teleport, hints;
+             run_pct, blood, death_anim, ambient, units_us, mode, survival, map_mobile, teleport, hints, all_huntable;
 } HuntChoice;
 /* HuntChoice.mode (hunt_setup.rs MODE_*). */
 enum { MODE_HUNT = 0, MODE_SURVIVAL = 1, MODE_TROPHY = 2 };

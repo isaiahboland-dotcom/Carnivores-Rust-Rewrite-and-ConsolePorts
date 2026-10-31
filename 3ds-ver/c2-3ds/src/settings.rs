@@ -35,6 +35,10 @@ pub struct Settings {
     pub teleport: bool,
     /// The controls along the bottom of the top screen in a hunt.
     pub hints: bool,
+    /// Every huntable animal in the menu: a modded game's roaming add-ons
+    /// too, which their makers left out of it to be come across on their
+    /// own maps; off, they only roam there.
+    pub all_huntable: bool,
 }
 
 /// How the hunter crouches.
@@ -116,6 +120,7 @@ impl Default for Settings {
             map_mobile: false,
             teleport: false,
             hints: false,
+            all_huntable: false,
         }
     }
 }
@@ -147,6 +152,7 @@ impl Settings {
                 ("map_mobile", v) => s.map_mobile = v != "0",
                 ("teleport", v) => s.teleport = v != "0",
                 ("button_hints", v) => s.hints = v != "0",
+                ("all_huntable", v) => s.all_huntable = v != "0",
                 ("gyro_aim", v) => {
                     if let Ok(n) = v.parse::<i32>() {
                         s.gyro_pct = n.clamp(GYRO_STEPS[0], 100);
@@ -171,7 +177,7 @@ impl Settings {
             format!(
                 "run_speed = {}\nambient = {}\nblood = {}\ndeath_animation = {}\n\
                  friendly = {}\nstealth_crouch = {}\nrandom_ambients = {}\ncrouch_button = {}\ngyro_aim = {}\n\
-                 hunter = {}\nmap_mobile = {}\nteleport = {}\nbutton_hints = {}\n",
+                 hunter = {}\nmap_mobile = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\n",
                 self.run_pct,
                 i32::from(self.ambient),
                 i32::from(self.blood),
@@ -184,7 +190,8 @@ impl Settings {
                 self.hunter,
                 i32::from(self.map_mobile),
                 i32::from(self.teleport),
-                i32::from(self.hints)
+                i32::from(self.hints),
+                i32::from(self.all_huntable)
             ),
         )
     }

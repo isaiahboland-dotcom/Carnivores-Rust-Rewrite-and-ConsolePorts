@@ -17,7 +17,7 @@ use c2_formats::car::Car;
 use c2_formats::sav::Save;
 use c2_vfs::Vfs;
 
-use crate::rules::{Roam, Role, Rules};
+use crate::rules::{HuntRules, Roam, Role, Rules};
 use crate::world::DrawInfo;
 
 /// Simulation step: 20 ms, half the PC's rate. Every animal costs about
@@ -230,6 +230,64 @@ impl Setup {
 
     pub fn carried(&self) -> Vec<usize> {
         self.weapons.iter().collect()
+    }
+
+    /// Memory the hunt's loads take (KiB: linear, main), by `c2-cook`'s
+    /// figures: the area with the hunter and ambient animals, each other
+    /// character `keep` loads and the carried weapons.
+    pub fn load_kb(
+        &self,
+        info: &PackInfo,
+        rules: &HuntRules,
+        keep: &dyn Fn(usize, Role) -> bool,
+    ) -> (usize, usize) {
+        let mut lin = info.cost("hunt") + info.cost(&self.area);
+        let mut heap = info.heap(&self.area);
+        for (c, &role) in rules.roles.iter().enumerate() {
+            if !keep(c, role) {
+                continue;
+            }
+            let m = format!("m:{}", rules.keys[c]);
+            lin += info.cost(&m);
+            // The hunter and ambient animals are in the area's figure.
+            if matches!(role, Role::Slot(_) | Role::Roamer) {
+                heap += info.heap(&m);
+            }
+        }
+        for w in self.carried() {
+            lin += info.cost(&format!("wpn{w}"));
+            heap += info.heap(&format!("wpn{w}"));
+        }
+        (lin, heap)
+    }
+
+    /// The roaming add-ons not picked whose tables put them on this map:
+    /// loaded as far as memory allows after the picks, so they roam it as
+    /// their makers meant (the menu lists them with "All dinos huntable").
+    pub fn native_roamers(&self, info: &PackInfo, rules: &HuntRules) -> Vec<usize> {
+        let Some(t) = &rules.tables else {
+            return Vec::new();
+        };
+        if self.trophy() || self.survival.is_some() || self.mobile_survival.is_some() {
+            return Vec::new();
+        }
+        let (mut lin, mut heap) = self.load_kb(info, rules, &|i, r| self.keeps_char(i, r));
+        let mut out = Vec::new();
+        for (i, &role) in rules.roles.iter().enumerate() {
+            let here = t.characters.get(i).is_some_and(|c| c.spawns());
+            if role != Role::Roamer || self.keeps_char(i, role) || !here {
+                continue;
+            }
+            let m = format!("m:{}", rules.keys[i]);
+            let (l, h) = (info.cost(&m), info.heap(&m));
+            let fits = lin + l <= info.linear_kb && heap + h <= info.heap_kb;
+            if info.costs.contains_key(&m) && fits {
+                lin += l;
+                heap += h;
+                out.push(i);
+            }
+        }
+        out
     }
 }
 
@@ -544,6 +602,7 @@ impl Game {
                 .collect();
             pick(&all, 4, seed)
         });
+        let natives = setup.native_roamers(&info, &rules);
         let (mut species, cars) = load::species_with(vfs, &rules.res, &|i| {
             if setup.trophy() {
                 return trophies.contains(&i) || rules.roles.get(i) == Some(&Role::Hunter);
@@ -553,7 +612,7 @@ impl Game {
                     return setup.max_ambient > 0 && a.contains(&i);
                 }
             }
-            rules.roles.get(i).is_some_and(|&r| setup.keeps_char(i, r))
+            rules.roles.get(i).is_some_and(|&r| setup.keeps_char(i, r)) || natives.contains(&i)
         });
         if let Some(t) = &rules.tables {
             c2_core::mee::tune(&mut species, t);

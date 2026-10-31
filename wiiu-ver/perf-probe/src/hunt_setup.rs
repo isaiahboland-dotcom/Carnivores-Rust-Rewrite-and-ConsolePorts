@@ -72,6 +72,9 @@ pub struct HuntChoice {
     pub teleport: u32,
     /// The controls along the bottom of the TV in a hunt.
     pub hints: u32,
+    /// Roaming add-ons listed among the animals; off, they only roam
+    /// their own maps (as their makers meant).
+    pub all_huntable: u32,
 }
 pub const MODE_HUNT: u32 = 0;
 pub const MODE_SURVIVAL: u32 = 1;
@@ -103,6 +106,7 @@ impl Default for HuntChoice {
             map_mobile: 1,
             teleport: 0,
             hints: 0,
+            all_huntable: 0,
         }
     }
 }
@@ -224,10 +228,24 @@ pub fn load(install: Option<&Install>, choice: &HuntChoice, room: &Save, seed: u
             Role::Roamer | Role::Off => false,
         })
         .collect();
+    // Roaming add-ons not picked whose tables put them on this map come
+    // too (after the picks, before ambient animals, if there's room).
+    let natives: Vec<usize> = match &rules.tables {
+        Some(t) if !trophy && choice.mode == MODE_HUNT => (0..rules.roles.len())
+            .filter(|&i| rules.roles[i] == Role::Roamer && t.characters.get(i).is_some_and(|c| c.spawns()))
+            .collect(),
+        _ => Vec::new(),
+    };
     let mut budget = MODEL_SLOTS - carried.len();
     for (i, r) in rules.roles.iter().enumerate() {
         if keep[i] && *r != Role::Ambient {
             budget = budget.saturating_sub(1);
+        }
+    }
+    for &i in &natives {
+        if budget > 0 {
+            keep[i] = true;
+            budget -= 1;
         }
     }
     for (i, r) in rules.roles.iter().enumerate() {

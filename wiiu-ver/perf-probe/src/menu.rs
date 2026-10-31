@@ -131,6 +131,7 @@ pub enum Id {
     MapMobile,
     Teleport,
     Hints,
+    AllHuntable,
     Restart,
     MainMenu,
 }
@@ -181,7 +182,7 @@ const SETUP: [Page; 3] = [Page::Area, Page::Animals, Page::Gear];
 const BACK: Rect = rect(32.0, 648.0, 200.0, 60.0);
 const NEXT: Rect = rect(1048.0, 648.0, 200.0, 60.0);
 const INFO: Rect = rect(800.0, 100.0, 448.0, 524.0);
-const SETTINGS_ROWS: [Id; 8] = [Id::RunSpeed, Id::Ambient, Id::Blood, Id::DeathCam, Id::Units, Id::MapMobile, Id::Teleport, Id::Hints];
+const SETTINGS_ROWS: [Id; 9] = [Id::RunSpeed, Id::Ambient, Id::AllHuntable, Id::Blood, Id::DeathCam, Id::Units, Id::MapMobile, Id::Teleport, Id::Hints];
 
 const SQRT3: f32 = 1.732_050_8;
 
@@ -342,8 +343,9 @@ impl Menu {
     fn area_count(&self) -> usize {
         self.install.as_ref().map_or(0, |i| i.areas.len())
     }
+    /// The animals listed: roamers too with "All dinos huntable" on.
     fn animal_count(&self) -> usize {
-        self.install.as_ref().map_or(0, |i| i.animals.len())
+        self.install.as_ref().map_or(0, |i| if self.choice.all_huntable != 0 { i.animals.len() } else { i.menu_animals })
     }
     fn weapon_count(&self) -> usize {
         self.install.as_ref().map_or(0, |i| i.weapons.len())
@@ -462,9 +464,9 @@ impl Menu {
     pub fn settings_text(&self) -> String {
         let c = &self.choice;
         format!(
-            "area={}\ntime={}\nanimals={}\nweapons={}\nradar={}\ncamo={}\nscent={}\ndouble_ammo={}\ntranq={}\nobserver={}\nrun_pct={}\nblood={}\ndeath_anim={}\nambient={}\nunits_us={}\nsurvival={}\nmap_mobile={}\nteleport={}\nhints={}\n",
+            "area={}\ntime={}\nanimals={}\nweapons={}\nradar={}\ncamo={}\nscent={}\ndouble_ammo={}\ntranq={}\nobserver={}\nrun_pct={}\nblood={}\ndeath_anim={}\nambient={}\nunits_us={}\nsurvival={}\nmap_mobile={}\nteleport={}\nhints={}\nall_huntable={}\n",
             c.area, c.time, c.animals, c.weapons, c.radar, c.camo, c.scent, c.double_ammo, c.tranq,
-            c.observer, c.run_pct, c.blood, c.death_anim, c.ambient, c.units_us, c.survival, c.map_mobile, c.teleport, c.hints
+            c.observer, c.run_pct, c.blood, c.death_anim, c.ambient, c.units_us, c.survival, c.map_mobile, c.teleport, c.hints, c.all_huntable
         )
     }
 
@@ -500,6 +502,7 @@ impl Menu {
                 "map_mobile" => &mut c.map_mobile,
                 "teleport" => &mut c.teleport,
                 "hints" => &mut c.hints,
+                "all_huntable" => &mut c.all_huntable,
                 _ => continue,
             };
             *field = v;
@@ -507,7 +510,7 @@ impl Menu {
         c.time = c.time.min(2);
         c.survival = c.survival.min(2);
         c.run_pct = (c.run_pct / 10 * 10).clamp(50, 100);
-        for f in [&mut c.radar, &mut c.camo, &mut c.scent, &mut c.double_ammo, &mut c.tranq, &mut c.observer, &mut c.blood, &mut c.death_anim, &mut c.ambient, &mut c.units_us, &mut c.map_mobile, &mut c.teleport, &mut c.hints] {
+        for f in [&mut c.radar, &mut c.camo, &mut c.scent, &mut c.double_ammo, &mut c.tranq, &mut c.observer, &mut c.blood, &mut c.death_anim, &mut c.ambient, &mut c.units_us, &mut c.map_mobile, &mut c.teleport, &mut c.hints, &mut c.all_huntable] {
             *f = (*f != 0) as u32;
         }
         if self.install.is_some() {
@@ -556,7 +559,7 @@ impl Menu {
             }
             Page::Settings => {
                 for (i, id) in SETTINGS_ROWS.into_iter().enumerate() {
-                    v.push((id, rect(200.0, 100.0 + i as f32 * 60.0, 880.0, 52.0)));
+                    v.push((id, rect(200.0, 96.0 + i as f32 * 54.0, 880.0, 48.0)));
                 }
             }
             Page::Death => {
@@ -860,6 +863,10 @@ impl Menu {
             Id::MapMobile => c.map_mobile ^= 1,
             Id::Teleport => c.teleport ^= 1,
             Id::Hints => c.hints ^= 1,
+            Id::AllHuntable => {
+                c.all_huntable ^= 1;
+                self.clamp_choice();
+            }
             Id::Restart => self.action = Action::Restart,
             Id::MainMenu => self.action = Action::MainMenu,
         }
@@ -1143,6 +1150,7 @@ impl Menu {
                 Id::MapMobile => ("Map look", String::from(if ch.map_mobile != 0 { "Mobile" } else { "Original" }), "Mobile: a yellow frame, ring and view cone. Original: the PC game's dotted ring."),
                 Id::Teleport => ("Teleport", String::from(flag(ch.teleport)), "Tap a spot on the GamePad map to go there in 5 s, then wait a minute. Not in survival."),
                 Id::Hints => ("Button hints", String::from(flag(ch.hints)), "The hunt's controls along the bottom of the TV."),
+                Id::AllHuntable => ("All dinos huntable", String::from(flag(ch.all_huntable)), "Add-ons that only roam their own maps are in the animal list too."),
                 Id::Back => {
                     self.button(c, r, "Back", focused, true);
                     continue;

@@ -91,7 +91,9 @@ const TROPHIES: [f32; 4] = [60.0, 114.0, 200.0, 30.0];
 const SETTINGS: [f32; 4] = [60.0, 150.0, 200.0, 30.0];
 const QUIT: [f32; 4] = [60.0, 186.0, 200.0, 30.0];
 /// Settings: remove every unlocked trophy (a second tap does it).
-const CLEAR_TROPHIES: [f32; 4] = [60.0, 80.0, 200.0, 26.0];
+const CLEAR_TROPHIES: [f32; 4] = [16.0, 80.0, 140.0, 26.0];
+/// Settings: "All dinos huntable" (a modded game's roaming add-ons listed).
+const ALL_HUNTABLE: [f32; 4] = [164.0, 80.0, 140.0, 26.0];
 /// The original's game options (`Options > Game`), 0..=255, kept in the
 /// save: bars for aggressiveness, density and sensitivity.
 const GAME_OPTS: [(&str, f32); 3] = [
@@ -329,6 +331,9 @@ pub struct Menu {
     pub want_name: bool,
     /// Settings: "Remove unlocked trophies" tapped once.
     clear_armed: bool,
+    /// "All dinos huntable" changed: the menu loop builds the menu again
+    /// (its animal list).
+    pub reload: bool,
     /// The hunter's record (the title shows it).
     record: c2_core::record::Record,
     /// A survival (README M13) instead of a hunt: free, the animals come.
@@ -408,7 +413,13 @@ impl Menu {
             .collect();
         let first = info.areas.first().cloned().unwrap_or_default();
         let neutral = rules.hunt(&first, TimeOfDay::Day, Bits::ALL);
-        for r in Rules::roams(&neutral) {
+        // Off, they roam their own maps only (`Setup::native_roamers`).
+        let roams = if settings.all_huntable {
+            Rules::roams(&neutral)
+        } else {
+            Vec::new()
+        };
+        for r in roams {
             let name = neutral
                 .res
                 .characters
@@ -561,6 +572,7 @@ impl Menu {
             on_disk,
             want_name: false,
             clear_armed: false,
+            reload: false,
             record: crate::save::load_record(),
             survival: None,
             kinds,
@@ -664,27 +676,13 @@ impl Menu {
         }
         let i = &self.info;
         let setup = self.setup();
-        let area = self.areas.get(self.area).map_or("AREA1", |a| a.0.as_str());
-        let mut lin = i.cost("hunt") + i.cost(area);
-        let mut heap = i.heap(area);
-        let rules = self
-            .rules
-            .hunt_with(area, TIMES[self.time].0, setup.targets, &setup.roamers);
-        for (c, &role) in rules.roles.iter().enumerate() {
-            if !setup.keeps_char(c, role) {
-                continue;
-            }
-            let m = format!("m:{}", rules.keys[c]);
-            lin += i.cost(&m);
-            // The hunter and ambient animals are in the area's figure.
-            if matches!(role, Role::Slot(_) | Role::Roamer) {
-                heap += i.heap(&m);
-            }
-        }
-        for w in setup.carried() {
-            lin += i.cost(&format!("wpn{w}"));
-            heap += i.heap(&format!("wpn{w}"));
-        }
+        let rules = self.rules.hunt_with(
+            &setup.area,
+            TIMES[self.time].0,
+            setup.targets,
+            &setup.roamers,
+        );
+        let (lin, heap) = setup.load_kb(i, &rules, &|c, role| setup.keeps_char(c, role));
         let m = Memory {
             linear: (lin, i.linear_kb),
             heap: (heap, i.heap_kb),
@@ -1339,6 +1337,13 @@ impl Menu {
                     self.focus = Some("Tap the map in a hunt; 5 s, then a minute".into());
                 } else if inside(HINTS, x, y) {
                     s.hints = !s.hints;
+                } else if inside(ALL_HUNTABLE, x, y) {
+                    s.all_huntable = !s.all_huntable;
+                    self.focus = Some(if s.all_huntable {
+                        "Add-ons that roam are in the list".into()
+                    } else {
+                        "Add-ons that roam: on their maps".into()
+                    });
                 }
             }
             Step::Area => {
@@ -1465,6 +1470,7 @@ impl Menu {
     /// B / the Back button.
     pub fn back(&mut self) {
         if matches!(self.step, Step::Settings | Step::Options) {
+            self.reload = self.settings.all_huntable != self.on_disk.0.all_huntable;
             self.store_settings();
         }
         // The game options live in the save, as on PC.
@@ -1939,17 +1945,19 @@ impl Menu {
             .filter(|b| b.ctype != 0 && !b.locked())
             .count();
         let t = if self.clear_armed {
-            format!("Tap again: remove {unlocked}")
+            format!("Again: remove {unlocked}")
         } else {
-            "Remove unlocked trophies".into()
+            "Clear trophies".into()
         };
-        c.text_c(gpu, 160.0, CLEAR_TROPHIES[1] + 9.0, 1.0, WHITE, &t);
+        let r = CLEAR_TROPHIES;
+        c.text_c(gpu, r[0] + r[2] / 2.0, r[1] + 9.0, 1.0, WHITE, &t);
         let toggles = [
             (BLOOD, s.blood, "Blood"),
             (DEATH_ANIM, s.death_anim, "Death anim"),
             (MAP_STYLE, s.map_mobile, "Mobile map"),
             (TELEPORT, s.teleport, "Teleport"),
             (HINTS, s.hints, "Hints"),
+            (ALL_HUNTABLE, s.all_huntable, "All dinos"),
         ];
         for (r, on, _) in toggles {
             c.rect(r, if on { [60, 110, 60, 255] } else { PANEL });

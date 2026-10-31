@@ -139,6 +139,33 @@ fn installs_open_and_hunt() {
                 assert!(s.hunt.survival.is_some());
             }
         }
+        // A roaming add-on not picked still comes on its own maps.
+        for a in &inst.animals {
+            let install::Pick::Roamer(r) = a.pick else {
+                continue;
+            };
+            let on = inst.info.roam.get(&r.char).cloned().unwrap_or_default();
+            let Some(area) = inst
+                .areas
+                .iter()
+                .position(|x| on.iter().any(|n| n.eq_ignore_ascii_case(&x.file)))
+            else {
+                continue;
+            };
+            let choice = hunt_setup::HuntChoice {
+                area: area as u32,
+                animals: 1,
+                ..Default::default()
+            };
+            let l =
+                hunt_setup::load(Some(&inst), &choice, &hunt_setup::new_save(), 3).expect("hunt");
+            println!("  {} roams {}, not picked", a.name, inst.areas[area].file);
+            assert!(
+                l.cars.get(r.char).is_some_and(Option::is_some),
+                "{} not loaded",
+                a.name
+            );
+        }
         if inst.trophy_room {
             let choice = hunt_setup::HuntChoice {
                 mode: hunt_setup::MODE_TROPHY,

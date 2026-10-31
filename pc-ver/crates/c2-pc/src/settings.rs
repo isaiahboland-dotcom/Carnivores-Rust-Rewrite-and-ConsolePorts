@@ -36,6 +36,10 @@ pub struct PcSettings {
     /// jump, crouch, for the pad or the keys, whichever was used last. The
     /// exit and pause prompts show theirs either way.
     pub hints: i32,
+    /// Every huntable animal in the hunt menu (1 = on): a dialect game's
+    /// roaming add-ons too, which their makers left out of the menu to be
+    /// come across on their own maps; off, they only roam there.
+    pub all_huntable: i32,
 }
 
 impl Default for PcSettings {
@@ -50,6 +54,7 @@ impl Default for PcSettings {
             map_mobile: 0,
             teleport: 0,
             hints: 0,
+            all_huntable: 0,
         }
     }
 }
@@ -81,6 +86,7 @@ impl PcSettings {
                 "map_mobile" => s.map_mobile = i32::from(v != 0),
                 "teleport" => s.teleport = i32::from(v != 0),
                 "button_hints" => s.hints = i32::from(v != 0),
+                "all_huntable" => s.all_huntable = i32::from(v != 0),
                 _ => {}
             }
         }
@@ -90,7 +96,7 @@ impl PcSettings {
     pub fn store(&self) {
         let text = format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nfar_sprites = {}\n\
-             map_heading = {}\nmap_mobile = {}\nteleport = {}\nbutton_hints = {}\n",
+             map_heading = {}\nmap_mobile = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\n",
             self.render,
             self.fog,
             self.blood,
@@ -99,7 +105,8 @@ impl PcSettings {
             self.map_heading,
             self.map_mobile,
             self.teleport,
-            self.hints
+            self.hints,
+            self.all_huntable
         );
         if let Some(dir) = path().parent() {
             let _ = std::fs::create_dir_all(dir);
