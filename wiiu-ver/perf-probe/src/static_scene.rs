@@ -578,17 +578,43 @@ fn block_bounds(area: &Area, cache: &TerrainCache, low: (i32, i32), block: usize
 // of that fits is the window rebuilt from the start, in the original near-first
 // order. Objects are kept sorted by buffer position so visible neighbours merge
 // into one draw. Order only affects equal-depth ties; blending is off.
+// A window too dense for the buffer (a Mandibles jungle: per-frame streaming at
+// ~120 ms) keeps the nearest rings that fit in 7/8 of it, the rest left for
+// crossings; it grows back to the full window once that fits the buffer again.
 #[derive(Default)]
 pub struct ResidentScenery {
     anchor: Option<(i32, i32)>,
+    radius: i32,
     tail: u32,
     pub objects: Vec<ResidentObject>,
     free: Vec<DrawRange>,
     entering: Vec<(usize, u32)>,
 }
 
-fn in_window(cell: (i32, i32), x: i32, z: i32) -> bool {
-    (x - cell.0).abs() <= 74 && (z - cell.1).abs() <= 74
+const FULL_RADIUS: i32 = 74;
+
+fn in_window(cell: (i32, i32), radius: i32, x: i32, z: i32) -> bool {
+    (x - cell.0).abs() <= radius && (z - cell.1).abs() <= radius
+}
+
+// The widest ring radius whose objects (near-first order) fit `budget`
+// vertices, and how many of `cells` that is; None if not even the hunter's
+// own cell fits.
+fn fitting_radius(cells: &[usize], cell: (i32, i32), budget: usize,
+    faces: impl Fn(usize) -> usize) -> Option<(i32, usize)> {
+    let (mut vertices, mut ring_start, mut ring) = (0usize, 0usize, 0i32);
+    for (n, &i) in cells.iter().enumerate() {
+        let r = ((i % SIDE) as i32 - cell.0).abs().max(((i / SIDE) as i32 - cell.1).abs());
+        if r != ring {
+            ring = r;
+            ring_start = n;
+        }
+        vertices = vertices.saturating_add(faces(i).saturating_mul(3));
+        if vertices > budget {
+            return (ring > 0).then(|| (ring - 1, ring_start));
+        }
+    }
+    Some((FULL_RADIUS, cells.len()))
 }
 
 // Sort and merge free ranges; a gap at the end of the used part shortens it.
@@ -655,21 +681,26 @@ impl ResidentScenery {
         if self.anchor == Some(cell) {
             return Some(false);
         }
-        if let Some(old) = self.anchor.filter(|old| in_window(*old, cell.0, cell.1)) {
+        let radius = self.radius;
+        let regrow = self.anchor.is_some() && radius < FULL_RADIUS && {
+            candidates.update(objects, model_count, cell);
+            resident_vertex_count(candidates.cells.iter().map(|&i| faces(i)), capacity as usize).is_some()
+        };
+        if let Some(old) = self.anchor.filter(|old| !regrow && in_window(*old, radius, cell.0, cell.1)) {
             let mut free = self.free.clone();
             let mut tail = self.tail;
             for o in &self.objects {
-                if !in_window(cell, (o.center[0] / 256.0) as i32, (o.center[2] / 256.0) as i32) {
+                if !in_window(cell, radius, (o.center[0] / 256.0) as i32, (o.center[2] / 256.0) as i32) {
                     free.push(o.range);
                 }
             }
             coalesce(&mut free, &mut tail);
             self.entering.clear();
             let mut fits = true;
-            'cells: for z in (cell.1 - 74).max(0)..=(cell.1 + 74).min(SIDE as i32 - 1) {
-                for x in (cell.0 - 74).max(0)..=(cell.0 + 74).min(SIDE as i32 - 1) {
+            'cells: for z in (cell.1 - radius).max(0)..=(cell.1 + radius).min(SIDE as i32 - 1) {
+                for x in (cell.0 - radius).max(0)..=(cell.0 + radius).min(SIDE as i32 - 1) {
                     let i = z as usize * SIDE + x as usize;
-                    if in_window(old, x, z) || (objects[i] as usize) >= model_count {
+                    if in_window(old, radius, x, z) || (objects[i] as usize) >= model_count {
                         continue;
                     }
                     match allocate(&mut free, &mut tail, faces(i) as u32 * 3, capacity) {
@@ -683,7 +714,7 @@ impl ResidentScenery {
             }
             if fits {
                 self.objects.retain(|o| {
-                    in_window(cell, (o.center[0] / 256.0) as i32, (o.center[2] / 256.0) as i32)
+                    in_window(cell, radius, (o.center[0] / 256.0) as i32, (o.center[2] / 256.0) as i32)
                 });
                 for &(i, first) in &self.entering {
                     let object = emit(i, first);
@@ -700,9 +731,13 @@ impl ResidentScenery {
         }
         candidates.update(objects, model_count, cell);
         self.invalidate();
-        resident_vertex_count(candidates.cells.iter().map(|&i| faces(i)), capacity as usize)?;
+        let (radius, end) = match resident_vertex_count(candidates.cells.iter().map(|&i| faces(i)), capacity as usize) {
+            Some(_) => (FULL_RADIUS, candidates.cells.len()),
+            None => fitting_radius(&candidates.cells, cell, capacity as usize - capacity as usize / 8, &faces)?,
+        };
+        self.radius = radius;
         let mut n = 0;
-        for &i in &candidates.cells {
+        for &i in &candidates.cells[..end] {
             let object = emit(i, n);
             n += object.range.count;
             self.objects.push(object);

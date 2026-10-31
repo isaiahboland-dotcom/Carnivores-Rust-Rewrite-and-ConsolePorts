@@ -555,3 +555,73 @@ fn largest_scenery_windows() {
         );
     }
 }
+
+// A window too dense for the buffer keeps the nearest rings that fit (it used
+// to give up: per-frame streaming, ~120 ms a frame on a Mandibles map), walks
+// on without rebuilding, and is whole again on sparse ground.
+#[test]
+fn dense_scenery_window_shrinks_and_grows_back() {
+    // One 10-face model on every cell west of x = 500; none east of it.
+    let objects: Vec<u8> = (0..1024 * 1024)
+        .map(|i| if i % 1024 < 500 { 0 } else { 255 })
+        .collect();
+    let faces = |_: usize| 10;
+    let emit = |i: usize, n: u32| ResidentObject {
+        center: [
+            (i % 1024) as f32 * 256.0 + 128.0,
+            0.0,
+            (i / 1024) as f32 * 256.0 + 128.0,
+        ],
+        radius: 1.0,
+        range: DrawRange {
+            first: n,
+            count: 30,
+        },
+    };
+    let (mut resident, mut candidates, mut written) = (
+        ResidentScenery::default(),
+        SceneryCandidates::default(),
+        Vec::new(),
+    );
+    // The full window, 149 x 149 cells, is 666,030 vertices: over 300,000.
+    let capacity = 300_000;
+    let mut update = |resident: &mut ResidentScenery, cell| {
+        resident.update(
+            &mut candidates,
+            &objects,
+            1,
+            cell,
+            capacity,
+            faces,
+            emit,
+            &mut written,
+        )
+    };
+    assert_eq!(update(&mut resident, (200, 500)), Some(true));
+    let near = resident.objects.len();
+    // 7/8 of the buffer is 262,500 vertices: 8,750 objects, rings 0..=46 whole.
+    assert_eq!(near, 93 * 93);
+    let span = |r: &ResidentScenery| {
+        r.objects
+            .iter()
+            .map(|o| ((o.center[0] / 256.0) as i32 - 200).abs())
+            .max()
+    };
+    assert_eq!(span(&resident), Some(46));
+    for x in 201..=210 {
+        assert_eq!(update(&mut resident, (x, 500)), Some(false), "x {x}");
+        assert_eq!(resident.objects.len(), near);
+    }
+    // Far enough east the full window (a quarter of it trees) fits again.
+    let mut rebuilt = false;
+    for x in 211..=540 {
+        rebuilt |= update(&mut resident, (x, 500)) == Some(true);
+    }
+    assert!(rebuilt);
+    let east = resident
+        .objects
+        .iter()
+        .map(|o| (o.center[0] / 256.0) as i32)
+        .min();
+    assert_eq!(east, Some(540 - 74));
+}

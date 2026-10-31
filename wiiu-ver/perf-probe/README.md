@@ -544,9 +544,10 @@ resolution change is involved.
 
 The resident window is rebuilt at cell changes, restart and residency toggles.
 It uses the scenery buffers, 1,048,576 vertices since 2026-10-30 (every original
-window fits; AREA4 peaks at 742,053). Preflight rejects an
-oversized or overflowing total before writing anything; dense windows use the
-old visible-stream path for that anchor. Initial/cell-crossing costs and extra
+window fits; AREA4 peaks at 742,053). A window over the
+buffer (a dense Mandibles jungle) keeps the nearest whole rings that fit 7/8 of
+it and grows back once the whole window fits (2026-10-31; it used the old
+visible-stream path, ~120 ms a frame). Initial/cell-crossing costs and extra
 draw calls need measurement. Resident metadata and the bounded range list add
 under 1 MiB. No additional GPU geometry allocation is made. Terrain continues
 using the precomputed CPU path and exact-view cache.
