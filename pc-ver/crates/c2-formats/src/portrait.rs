@@ -8,6 +8,28 @@ use alloc::{vec, vec::Vec};
 
 const MODEL_TEXTURE_SIZE: usize = TEXTURE_WIDTH;
 
+/// Whether a menu picture (RGB555, `w` x `h`) is an empty frame: its middle
+/// half one flat colour, where the animal would be (Carnivores Triassic
+/// ships one for its 10th animal). Real pictures vary there by 12 levels
+/// (of 31) and more, empty ones by 1; such a picture is drawn from the
+/// model instead.
+pub fn blank_picture(pixels: &[u16], w: usize, h: usize) -> bool {
+    if w < 4 || h < 4 || pixels.len() < w * h {
+        return false;
+    }
+    let (mut lo, mut hi) = ([31u16; 3], [0u16; 3]);
+    for y in h / 4..3 * h / 4 {
+        for &p in &pixels[y * w + w / 4..y * w + 3 * w / 4] {
+            for (k, shift) in [0, 5, 10].into_iter().enumerate() {
+                let c = (p >> shift) & 31;
+                lo[k] = lo[k].min(c);
+                hi[k] = hi[k].max(c);
+            }
+        }
+    }
+    (0..3).all(|k| hi[k] - lo[k] <= 2)
+}
+
 /// What the renderer needs of a model: positions in world units (`*2`,
 /// `z` flipped, as the engine loads them), faces with texture coordinates
 /// (0..1) and the texture as RGBA8, 256 x 256.
@@ -224,6 +246,23 @@ fn sqrt(value: f32) -> f32 {
 mod tests {
     use super::*;
     use crate::model::{Face as MeshFace, Vertex};
+
+    #[test]
+    fn an_empty_frame_is_blank() {
+        // A frame (bright border) round a flat dark panel, one level of noise.
+        let (w, h) = (40, 20);
+        let mut px: Vec<u16> = (0..w * h)
+            .map(|i| if i % 7 == 0 { 0x0421 * 3 } else { 0x0421 * 2 })
+            .collect();
+        for x in 0..w {
+            px[x] = 0x7FFF;
+        }
+        assert!(blank_picture(&px, w, h));
+        // An animal in the middle is not.
+        px[10 * w + 20] = 0x7C00;
+        assert!(!blank_picture(&px, w, h));
+        assert!(!blank_picture(&px[..10], w, h));
+    }
 
     #[test]
     fn a_triangle_fills_the_middle() {

@@ -2059,7 +2059,12 @@ impl Hunt {
                     }
                     (m.call_no == slot, hears)
                 }
-                None => (c.ai == self.target_call, d < range),
+                // By its species' AI: a patched exe's extra slot runs as
+                // another (`Species::stock_ai`).
+                None => (
+                    self.herd.species.get(c.ctype).map(|s| s.info.ai) == Some(self.target_call),
+                    d < range,
+                ),
             };
             let c = &self.herd.chars[i];
             if !answers || c.health == 0 || c.afraid_time != 0 || c.state != 0 {
@@ -2283,7 +2288,7 @@ impl Hunt {
         match &sp.mee {
             Some(m) if (10..=29).contains(&m.ai) => Some(10 + m.call_no),
             Some(_) => None,
-            None => Some(c.ai),
+            None => Some(sp.info.ai),
         }
     }
 

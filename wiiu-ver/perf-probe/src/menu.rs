@@ -297,15 +297,19 @@ impl Menu {
             texts.push(text(&format!("TXT/AREA{}.TXT", a.number)));
         }
         // An animal's picture and texts by its menu slot; a roamer has
-        // none, so its picture is drawn from its model.
+        // none, and some games ship an empty frame (Triassic's 10th), so
+        // those are drawn from the model.
         let slot = |p: &Pick| match p {
             Pick::Slot(k) => Some(k + 1),
             Pick::Roamer(_) => None,
         };
         b.pic_dino = pics.len();
         for a in &install.animals {
-            pics.push(match (slot(&a.pick), &a.model) {
-                (Some(n), _) => pic(&format!("PICS/DINO{n}.TGA")),
+            let own = slot(&a.pick).and_then(|n| read(&format!("PICS/DINO{n}.TGA"))).filter(|d| {
+                c2_formats::tga::parse(d).is_ok_and(|t| !c2_formats::portrait::blank_picture(&t.pixels, t.width, t.height))
+            });
+            pics.push(match (own, &a.model) {
+                (Some(d), _) => Image::from_tga(&d),
                 (None, Some(car)) => install.vfs.read(car).ok().and_then(|d| Image::portrait(&d, PORTRAIT_BACK)),
                 (None, None) => None,
             });

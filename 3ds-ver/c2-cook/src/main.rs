@@ -704,6 +704,9 @@ struct Rules {
     roamers: std::collections::BTreeSet<String>,
     /// The menu: `_MENU.TXT` if there is one, else `_RES.TXT`.
     menu: c2_formats::menu_txt::MenuData,
+    /// The model of each menu slot's animal (slot 0 = `DINO1.TGA`), for
+    /// menu pictures that are an empty frame.
+    slot_files: BTreeMap<usize, String>,
 }
 
 /// A dialect character with a menu slot (`callNo`): a hunt target. Without
@@ -770,12 +773,12 @@ fn rules(vfs: &Vfs) -> Result<Rules> {
         };
         let m = c2_core::mee::read(&raw, &h);
         let raw_chars = raw.section("characters").map_or(&[][..], |s| &s.blocks);
-        let slots: Vec<bool> = m
+        let slots: Vec<Option<usize>> = m
             .tables
             .characters
             .iter()
             .enumerate()
-            .map(|(i, c)| c2_formats::mee::menu_slot(raw_chars.get(i), &c.block).is_some())
+            .map(|(i, c)| c2_formats::mee::menu_slot(raw_chars.get(i), &c.block))
             .collect();
         (m.res, slots)
     } else {
@@ -783,14 +786,24 @@ fn rules(vfs: &Vfs) -> Result<Rules> {
     };
     let mut models = BTreeMap::new();
     let mut roamers = std::collections::BTreeSet::new();
+    let mut slot_files = BTreeMap::new();
     for (i, def) in res.characters.iter().enumerate() {
         let info = DinoInfo::from_def(def);
         let key = c2_formats::cooked::model_key(&info.file);
-        if dialect && !slots.get(i).copied().unwrap_or(false) && (10..30).contains(&info.ai) {
+        let slot = if dialect {
+            slots.get(i).copied().flatten()
+        } else {
+            // The original's slot is the AI - 10.
+            usize::try_from(info.ai - 10).ok()
+        };
+        if let Some(k) = slot {
+            slot_files.entry(k).or_insert_with(|| info.file.clone());
+        }
+        if dialect && slot.is_none() && (10..30).contains(&info.ai) {
             roamers.insert(key.clone());
         }
         let always = if dialect {
-            !slots.get(i).copied().unwrap_or(false) && (0..10).contains(&info.ai)
+            slot.is_none() && (0..10).contains(&info.ai)
         } else {
             info.ai < 10
         };
@@ -821,6 +834,7 @@ fn rules(vfs: &Vfs) -> Result<Rules> {
         raw: dialect.then_some(raw),
         roamers,
         menu,
+        slot_files,
     })
 }
 
@@ -1060,12 +1074,17 @@ fn main() -> Result<()> {
         );
     }
     for n in 1..=rules.menu.huntables.len() {
-        c.menu_picture(
-            &vfs,
-            &format!("DINO{n}.TGA"),
-            &format!("C2RS/MENU/DINO{n}.TX"),
-            128,
-        );
+        let name = format!("C2RS/MENU/DINO{n}.TX");
+        // An empty frame (Triassic's 10th animal): drawn from the model.
+        let blank = vfs
+            .read(&format!("HUNTDAT/MENU/PICS/DINO{n}.TGA"))
+            .ok()
+            .and_then(|d| c2_formats::tga::parse(&d).ok())
+            .is_some_and(|t| c2_formats::portrait::blank_picture(&t.pixels, t.width, t.height));
+        match rules.slot_files.get(&(n - 1)) {
+            Some(file) if blank => c.portrait(&vfs, &format!("HUNTDAT/{file}"), &name),
+            _ => c.menu_picture(&vfs, &format!("DINO{n}.TGA"), &name, 128),
+        }
     }
     for n in 1..=winfos.len() {
         c.menu_picture(

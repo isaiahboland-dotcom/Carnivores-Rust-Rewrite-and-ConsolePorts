@@ -213,6 +213,9 @@ pub struct Species {
     pub frames: Vec<usize>,
     /// `Anifx`: sound index per animation, -1 = none.
     pub anifx: Vec<i32>,
+    /// The original AI an AI number the engine lacks runs as ([`stock_ai`]);
+    /// `info.ai` stays its identity (menu slot, call, radar).
+    pub stock_ai: Option<i32>,
 }
 
 impl Species {
@@ -224,6 +227,7 @@ impl Species {
             .collect();
         let frames = car.animations.iter().map(|a| a.frames).collect();
         let anifx = car.anim_sounds.map_or_else(|| vec![-1; 64], |t| t.to_vec());
+        let stock_ai = stock_ai(&info, car);
         Self {
             info,
             tuning: Tuning::default(),
@@ -231,7 +235,13 @@ impl Species {
             ani_time,
             frames,
             anifx,
+            stock_ai,
         }
+    }
+
+    /// The AI its characters run (`TCharacter::AI`).
+    pub fn runs_as(&self) -> i32 {
+        self.stock_ai.unwrap_or(self.info.ai)
     }
 
     /// Logical phase -> model animation (`animIndex`; the identity for
@@ -247,6 +257,65 @@ impl Species {
             .copied()
             .unwrap_or(1)
     }
+}
+
+/// For an AI number the original engine lacks (a patched exe's extra slot:
+/// Carnivores Triassic's Gojirasaurus is AI 19), the original huntable AI
+/// whose clip layout its model has, as that exe's AI must have read it: as
+/// many clips or more, the death clip (named so) at that AI's death index;
+/// a hunter's first if `danger`, else a grazer's, an exact clip count
+/// first. The Gojirasaurus has the T-Rex's ten clips. Without one it stands
+/// still, as before.
+pub fn stock_ai(info: &DinoInfo, car: &Car) -> Option<i32> {
+    if matches!(info.ai, 0..=6 | 10..=18) {
+        return None;
+    }
+    // (AI, clips it uses, death clip).
+    let layout = |a: i32| -> Option<(usize, usize)> {
+        if a == ai::TREX {
+            return Some((10, trex::DIE));
+        }
+        if let Some(p) = CarnivoreParams::for_ai(a) {
+            let used = [p.run, p.walk, p.swim, p.slide, p.jump, p.die, p.eat, p.slp];
+            let idles = p.idles[..p.n_idles].iter();
+            let n = used
+                .iter()
+                .chain(idles)
+                .filter(|&&k| k != usize::MAX)
+                .max()?;
+            return Some((n + 1, p.die));
+        }
+        let p = HerbivoreParams::for_ai(a)?;
+        let n = [
+            p.walk,
+            p.run,
+            p.idle1 + p.n_idles.saturating_sub(1),
+            p.die,
+            p.slp,
+        ];
+        Some((n.iter().max()? + 1, p.die))
+    };
+    let hunters = [ai::TREX, ai::ALLO, ai::VELO, ai::SPINO, ai::CERAT];
+    let grazers = [ai::PARA, ai::ANKY, ai::STEGO, ai::CHASM];
+    let order: Vec<i32> = if info.danger_call {
+        hunters.iter().chain(&grazers).copied().collect()
+    } else {
+        grazers.iter().chain(&hunters).copied().collect()
+    };
+    let clips = car.animations.len();
+    let dies = |k: usize| {
+        car.animations.get(k).is_some_and(|a| {
+            let n = a.name().to_ascii_lowercase();
+            ["die", "death", "dead"].iter().any(|w| n.contains(w))
+        })
+    };
+    let fits = |exact: bool| {
+        order.iter().copied().find(|&a| {
+            layout(a)
+                .is_some_and(|(n, die)| (if exact { clips == n } else { clips >= n }) && dies(die))
+        })
+    };
+    fits(true).or_else(|| fits(false))
 }
 
 /// The model animation of `phase` under an `animIndex` table (empty: the
@@ -804,7 +873,7 @@ impl Character {
     /// `ResetCharacter`.
     pub fn reset(&mut self, species: &Species, rng: &mut MsRand, opt_agres: i32) {
         self.pending_ai_ms = 0;
-        self.ai = species.info.ai;
+        self.ai = species.runs_as();
         self.state = 0;
         self.state_f = 0;
         self.phase = 0;
@@ -1603,6 +1672,49 @@ mod tests {
             danger_call: false,
         };
         Species::new(info, &car)
+    }
+
+    /// Carnivores Triassic's Gojirasaurus: AI 19 (a patched exe's slot)
+    /// with the T-Rex's clips runs as the T-Rex, keeping its own number.
+    #[test]
+    fn an_extra_slot_ai_runs_as_the_stock_ai_its_clips_fit() {
+        let named = |names: &[&str]| Car {
+            name_raw: [0; 32],
+            mesh: Default::default(),
+            animations: names
+                .iter()
+                .map(|n| {
+                    let mut name_raw = [0; 32];
+                    name_raw[..n.len()].copy_from_slice(n.as_bytes());
+                    Animation {
+                        name_raw,
+                        kps: 2,
+                        frames: 2,
+                        data: vec![0; 6],
+                    }
+                })
+                .collect(),
+            sounds: vec![],
+            anim_sounds: None,
+            trailing: Vec::new(),
+        };
+        let gojira = named(&[
+            "run", "walk", "roar", "run2", "ldown", "lup", "sup", "sdown", "die", "kill3",
+        ]);
+        let mut info = species(19, 0).info;
+        info.danger_call = true;
+        let sp = Species::new(info.clone(), &gojira);
+        assert_eq!(
+            (sp.stock_ai, sp.runs_as(), sp.info.ai),
+            (Some(ai::TREX), ai::TREX, 19)
+        );
+        // The Allosaurus' layout (death 6th of 8).
+        let allo = named(&["run", "wlk", "swim", "sld", "jmp", "die", "eat", "slp"]);
+        assert_eq!(Species::new(info.clone(), &allo).stock_ai, Some(ai::ALLO));
+        // A model naming no death where any AI has one: as before.
+        assert_eq!(Species::new(info, &named(&["a", "b"])).stock_ai, None);
+        // Known AIs are left alone.
+        assert_eq!(Species::new(species(13, 0).info, &gojira).stock_ai, None);
     }
 
     fn run(herd: &mut Herd, area: &Area, hunter: HunterView, ms: i32) -> Vec<DinoEvent> {

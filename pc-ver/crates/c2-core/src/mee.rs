@@ -499,6 +499,8 @@ pub fn tune(species: &mut [Species], tables: &Tables) {
             s.info.base_score = c_atof(v);
         }
         let mee_ai = s.tuning.mee_ai.unwrap_or(s.info.ai);
+        // The dialect has AIs past 18 of its own.
+        s.stock_ai = None;
         if is_ported(mee_ai) {
             s.info.ai = mee_ai;
             s.mee = Some(Box::new(info(&c.block, mee_ai)));

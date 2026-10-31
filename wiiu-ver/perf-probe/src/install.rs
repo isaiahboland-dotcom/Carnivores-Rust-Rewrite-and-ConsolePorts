@@ -252,8 +252,9 @@ pub struct Animal {
     pub price: i32,
     /// It comes for the hunter (a survival's waves).
     pub dangerous: bool,
-    /// A roamer's model (`HUNTDAT/MANOS.CAR`): it has no menu picture, so
-    /// the menu draws one from the model, as the 3DS cook does.
+    /// Its model (`HUNTDAT/MANOS.CAR`): a roamer has no menu picture, and
+    /// a menu animal's may be an empty frame, so the menu draws one from
+    /// the model, as the 3DS cook does.
     pub model: Option<String>,
 }
 
@@ -346,6 +347,9 @@ impl Install {
         for a in &mut animals {
             let char = char_of(&a.pick);
             let ai = char.and_then(|j| neutral.res.characters.get(j)).map(|d| DinoInfo::from_def(d).ai);
+            if a.model.is_none() {
+                a.model = char.and_then(|j| neutral.res.characters.get(j)?.file.clone()).map(|f| format!("HUNTDAT/{f}"));
+            }
             let aggress = char.and_then(|j| neutral.tables.as_ref()?.characters.get(j)).and_then(|c| c.block.get(&["aggress"])).map(c_atoi);
             a.dangerous = ai.is_some_and(|ai| c2_core::game::dangerous_ai(ai, dialect.then(|| aggress.unwrap_or(0))));
         }
