@@ -125,7 +125,7 @@ fn io(path: &Path) -> impl Fn(std::io::Error) -> ModError + '_ {
 }
 
 /// The animation keys an entry's role names give (`carnotaurus_run`).
-fn role(file: &str) -> Option<&'static str> {
+pub(crate) fn role(file: &str) -> Option<&'static str> {
     let f = file.to_ascii_lowercase();
     [
         ("_walk", "walk"),
@@ -369,8 +369,40 @@ pub(crate) fn make_entry(
     b
 }
 
+/// The animal's picture in the APK's help (`Help/<name>.png`, or one named
+/// longer: `pach` -> `pachycephalosaurus.png`), by any of `keys` (names
+/// compared by their letters: `T-Rex` is `trex.png`).
+pub(crate) fn help_picture(apk: &Apk, keys: &[String]) -> Option<(usize, usize, Vec<u8>)> {
+    let letters = |s: &str| -> String {
+        s.chars()
+            .filter(char::is_ascii_alphanumeric)
+            .map(|c| c.to_ascii_lowercase())
+            .collect()
+    };
+    let help: Vec<String> = apk
+        .0
+        .files()
+        .into_iter()
+        .filter(|f| {
+            let l = f.to_ascii_lowercase();
+            l.starts_with("assets/help/") && l.ends_with(".png")
+        })
+        .collect();
+    let stem = |f: &str| letters(f.rsplit('/').next().unwrap_or(f).trim_end_matches(".png"));
+    keys.iter()
+        .map(|k| letters(k))
+        .filter(|k| !k.is_empty())
+        .find_map(|k| {
+            help.iter()
+                .find(|f| stem(f) == k)
+                .or_else(|| help.iter().find(|f| stem(f).starts_with(&k)))
+        })
+        .and_then(|f| apk.get(f))
+        .and_then(|d| decode_png(&d))
+}
+
 /// An RGBA PNG (8-bit, any colour type).
-fn decode_png(data: &[u8]) -> Option<(usize, usize, Vec<u8>)> {
+pub(crate) fn decode_png(data: &[u8]) -> Option<(usize, usize, Vec<u8>)> {
     let mut d = png::Decoder::new(Cursor::new(data));
     d.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
     let mut r = d.read_info().ok()?;
@@ -392,7 +424,7 @@ fn decode_png(data: &[u8]) -> Option<(usize, usize, Vec<u8>)> {
 
 /// A menu picture (357x208, as the PC menus' `DINOn.TGA`) with the image
 /// fitted to its height and centred on the menus' olive.
-fn menu_picture(w: usize, h: usize, rgba: &[u8]) -> Vec<u8> {
+pub(crate) fn menu_picture(w: usize, h: usize, rgba: &[u8]) -> Vec<u8> {
     let (cw, ch) = (357usize, 208usize);
     let k = (ch as f32 / h.max(1) as f32).min(cw as f32 / w.max(1) as f32);
     let (dw, dh) = ((w as f32 * k) as usize, (h as f32 * k) as usize);
@@ -424,7 +456,7 @@ fn menu_picture(w: usize, h: usize, rgba: &[u8]) -> Vec<u8> {
 }
 
 /// 16-bit PCM bytes as a mono WAV.
-fn wav(pcm: &[u8], rate: u32) -> Vec<u8> {
+pub(crate) fn wav(pcm: &[u8], rate: u32) -> Vec<u8> {
     let mut w = b"RIFF".to_vec();
     w.extend_from_slice(&(36 + pcm.len() as u32).to_le_bytes());
     w.extend_from_slice(b"WAVEfmt ");
@@ -453,7 +485,7 @@ fn wav_data(d: &[u8]) -> &[u8] {
 
 /// The APK's `callN` set (`_a`, `_b`, `_c`) holding one of `sounds` (the
 /// animal's call or growl).
-fn call_set(apk: &Apk, sounds: &[Vec<u8>]) -> Option<Vec<Vec<u8>>> {
+pub(crate) fn call_set(apk: &Apk, sounds: &[Vec<u8>]) -> Option<Vec<Vec<u8>>> {
     for k in 1..=64 {
         let p = |l: char| format!("assets/sounds/calls/call{k}_{l}.wav");
         let set: Vec<Vec<u8>> = ['a', 'b', 'c']
@@ -706,7 +738,7 @@ fn mobile_balance(
 }
 
 /// A picture of the model (side view), for what the APK has none of.
-fn model_picture(car: &c2_formats::car::Car) -> Option<(usize, usize, Vec<u8>)> {
+pub(crate) fn model_picture(car: &c2_formats::car::Car) -> Option<(usize, usize, Vec<u8>)> {
     let (w, h) = (357, 208);
     c2_formats::portrait::render(&car.mesh, w, h, 0.8).map(|px| (w, h, px))
 }
@@ -1088,25 +1120,7 @@ pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Import, ModError> {
         )?;
         match slot {
             Some(n) => {
-                // `Help/<name>.png`, or one named longer (`pach` ->
-                // `pachycephalosaurus.png`).
-                let help: Vec<String> = zip
-                    .0
-                    .files()
-                    .into_iter()
-                    .filter(|f| f.to_ascii_lowercase().starts_with("assets/help/"))
-                    .collect();
-                let pic = [name.to_ascii_lowercase().replace(' ', ""), stem.clone()]
-                    .iter()
-                    .find_map(|s| {
-                        help.iter().find(|f| {
-                            let n = f.to_ascii_lowercase();
-                            n.ends_with(&format!("/{s}.png"))
-                                || n.starts_with(&format!("assets/help/{s}")) && n.ends_with(".png")
-                        })
-                    })
-                    .and_then(|f| zip.get(f))
-                    .and_then(|d| decode_png(&d));
+                let pic = help_picture(&zip, &[name.clone(), stem.clone()]);
                 // None in the APK: one drawn from the model.
                 let pic = pic.or_else(|| model_picture(&car));
                 match pic {

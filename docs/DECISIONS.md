@@ -2,6 +2,26 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-31 — APK base: menu files, and the phone game's interface kept
+
+Owner: a game built only from an APK should look as close to the mobile game
+as possible. So the conversion keeps the phone interface's art for the
+frontends to draw their menus with, instead of us drawing PC-style frames:
+`HUNTDAT/MOBILE/*.PNG` (the atlases, alpha kept) and `MOBILE/SPRITES.CFG`
+(every `ui/sprites_*.cfg` sprite, the other game's menu left out, rectangles
+scaled to the atlases' own pixels: the APK's atlases are a power of two
+larger than the configs' layout; `c2_formats::mobile_ui`).
+- Also written, for every frontend: `MENU/TXT` (areas, animals, weapons,
+  times, observer, accessories from `localizations/strings.csv`, `%d` filled
+  from the balance table), `MENU/PICS` (animals from `Help/*.png` by name,
+  else drawn from the model; areas and weapons from the menu's hexagon and
+  weapon sprites), `SOUNDFX/CALLS` and the underwater sound.
+- The APK's `callN` sets go by character index (`call1` is index 16's):
+  checked on the four whose calls are named. Weapon sprites 1-6 are the
+  PC's six in order, 7 the photo camera, 8 the revolver.
+- Positions of the phone layouts live in the game's code; matched by eye
+  (owner's screenshots asked for).
+
 ## 2026-10-31 — APK base: animals, weapons and `_RES.TXT` from the game's code
 
 The mobile games keep no `_RES.TXT`: `CharactersManager::CharacterInfo_Init`

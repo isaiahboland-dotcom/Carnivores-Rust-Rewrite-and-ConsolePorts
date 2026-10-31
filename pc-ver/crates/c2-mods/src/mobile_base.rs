@@ -12,7 +12,7 @@
 use crate::mobile::{falls, roles, Apk, DONORS};
 use crate::ModError;
 use c2_formats::car::Car;
-use c2_formats::mobile::{car_from_in, parse_cat, Assets, Cat};
+use c2_formats::mobile::{car_from_in, parse_cat, Assets, Cat, Rgba};
 use c2_formats::mobile_area;
 use c2_formats::mobile_chars::{self, Characters, Stored};
 use c2_vfs::Backend;
@@ -210,6 +210,95 @@ fn cat(apk: &Apk, stem: &str) -> Option<Cat> {
     parse_cat(&String::from_utf8_lossy(&t)).ok()
 }
 
+/// The phone game's interface: its sprites (in their atlases' pixels) and
+/// the atlases they use.
+struct Kit {
+    sprites: BTreeMap<String, c2_formats::mobile_ui::Sprite>,
+    atlases: BTreeMap<String, Rgba>,
+}
+
+impl Kit {
+    /// The sprite configs (the other game's menu left out: both APKs carry
+    /// both) and every atlas they name.
+    fn load(apk: &Apk, ice_age: bool) -> Option<Self> {
+        let skip = if ice_age { "dinhunter" } else { "iceage" };
+        let mut raw = BTreeMap::new();
+        let files = apk.0.files();
+        for f in files
+            .iter()
+            .filter(|f| f.starts_with("assets/ui/") && f.ends_with(".cfg") && !f.contains(skip))
+        {
+            if let Some(d) = apk.get(f) {
+                c2_formats::mobile_ui::parse(&String::from_utf8_lossy(&d), &mut raw);
+            }
+        }
+        let mut atlases = BTreeMap::new();
+        for t in raw.values().map(|s| s.texture.clone()) {
+            if atlases.contains_key(&t) {
+                continue;
+            }
+            let found = files.iter().find(|f| {
+                let l = f.to_ascii_lowercase();
+                l.starts_with("assets/textures/")
+                    && l.rsplit('/')
+                        .next()
+                        .and_then(|n| n.rsplit_once('.'))
+                        .is_some_and(|(n, e)| {
+                            n == t.to_ascii_lowercase() && ["pkm", "crt", "tga", "png"].contains(&e)
+                        })
+            });
+            let img = found.and_then(|f| {
+                let d = apk.get(f)?;
+                if f.to_ascii_lowercase().ends_with(".png") {
+                    let (width, height, pixels) = crate::mobile::decode_png(&d)?;
+                    Some(Rgba {
+                        width,
+                        height,
+                        pixels,
+                    })
+                } else {
+                    c2_formats::mobile::decode_texture(f, &d).ok()
+                }
+            });
+            if let Some(img) = img {
+                atlases.insert(t, img);
+            }
+        }
+        let sprites =
+            c2_formats::mobile_ui::scale(&raw, &|t| atlases.get(t).map(|i: &Rgba| i.width as u32));
+        (!sprites.is_empty()).then_some(Self { sprites, atlases })
+    }
+
+    /// A sprite's pixels.
+    fn crop(&self, name: &str) -> Option<Rgba> {
+        let s = self.sprites.get(name)?;
+        let a = self.atlases.get(&s.texture)?;
+        let (x0, y0, w, h) = (s.x as usize, s.y as usize, s.w as usize, s.h as usize);
+        let mut pixels = Vec::with_capacity(w * h * 4);
+        for y in y0..y0 + h {
+            let i = (y.min(a.height.saturating_sub(1)) * a.width + x0) * 4;
+            pixels.extend_from_slice(a.pixels.get(i..i + w * 4)?);
+        }
+        Some(Rgba {
+            width: w,
+            height: h,
+            pixels,
+        })
+    }
+}
+
+/// RGBA as a PNG.
+fn png(img: &Rgba) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut e = png::Encoder::new(&mut out, img.width as u32, img.height as u32);
+    e.set_color(png::ColorType::Rgba);
+    e.set_depth(png::BitDepth::Eight);
+    if let Ok(mut w) = e.write_header() {
+        let _ = w.write_image_data(&img.pixels);
+    }
+    out
+}
+
 /// A number as `_RES.TXT` writes it (no trailing zeros).
 fn num(v: f32) -> String {
     let s = format!("{:.3}", v);
@@ -224,6 +313,21 @@ struct Game<'a> {
     strings: BTreeMap<String, String>,
     res: String,
     built: Built,
+    /// The menu's animals and weapons, in order.
+    menu: Vec<MenuAnimal>,
+    weapon_menu: Vec<(i32, Stored, String)>,
+    kit: Option<Kit>,
+}
+
+/// A huntable as the menus show it.
+struct MenuAnimal {
+    /// Its character index.
+    index: i32,
+    stem: String,
+    name: String,
+    stored: Stored,
+    cat: Cat,
+    car: Car,
 }
 
 impl Game<'_> {
@@ -249,7 +353,7 @@ impl Game<'_> {
             .iter()
             .map(|(i, s)| (*i, s.clone()))
             .collect();
-        for (_, s) in list {
+        for (index, s) in list {
             // Its tuning key names it (the camera has none).
             let Some(key) = s.keys.first() else { continue };
             let Some(&(_, stem, pic)) = WEAPONS
@@ -300,6 +404,7 @@ impl Game<'_> {
             }
             b.push_str("}\n");
             self.res.push_str(&b);
+            self.weapon_menu.push((index, s.clone(), name.clone()));
             self.built.weapons.push(name);
         }
         self.res.push_str("}\n\n");
@@ -399,6 +504,14 @@ impl Game<'_> {
             self.res.push_str(&self.animal_block(&name, &file, ai, &s));
             self.built.animals.push(format!("{name} ({file}, AI {ai})"));
             if ai >= 10 {
+                self.menu.push(MenuAnimal {
+                    index,
+                    stem: stem.clone(),
+                    name: name.clone(),
+                    stored: s.clone(),
+                    cat: c.clone(),
+                    car: car.clone(),
+                });
                 let key = s.keys.first().map(|k| k.replace("_HEALTH", "_PRICE"));
                 prices.push(
                     key.and_then(|k| self.balance.get(&k).copied())
@@ -431,6 +544,186 @@ impl Game<'_> {
         }
         p.push_str(" acces = 0\n acces = 0\n acces = 0\n acces = 0\n}\n\n.\n");
         self.res.push_str(&p);
+        Ok(())
+    }
+
+    /// A string with the mobile text's escapes (`\n`) as lines, and its
+    /// `%d` as `value` (`%d%%`: a percentage).
+    fn text(&self, key: &str, value: Option<f64>) -> Option<String> {
+        let t = self.strings.get(key)?;
+        let v = value.map_or(String::new(), |v| format!("{}", v.abs().round() as i64));
+        Some(
+            t.replace("%d%%", &format!("{v}%"))
+                .replace("%d", &v)
+                .replace("\\n", "\n")
+                .lines()
+                .map(str::trim)
+                .collect::<Vec<_>>()
+                .join("\r\n"),
+        )
+    }
+
+    /// The menus' texts, pictures and calls (`MENU/TXT`, `MENU/PICS`,
+    /// `SOUNDFX`), from the APK's strings, help pictures and sprites.
+    fn menu_files(&mut self) -> Result<(), ModError> {
+        let txt = self.huntdat.join("MENU").join("TXT");
+        let pics = self.huntdat.join("MENU").join("PICS");
+        let calls = self.huntdat.join("SOUNDFX").join("CALLS");
+        for d in [&txt, &pics, &calls] {
+            std::fs::create_dir_all(d).map_err(io(d))?;
+        }
+        let areas = self.built.areas.len().saturating_sub(1);
+        for n in 1..=areas {
+            let name = self.text(&format!("STR_AREA{n}"), None);
+            let info = self.text(&format!("STR_AREA{n}_INFO"), None);
+            if let Some(name) = name {
+                let t = format!("{name}\r\n\r\n{}\r\n", info.unwrap_or_default());
+                write(&txt.join(format!("AREA{n}.TXT")), t.as_bytes())?;
+            }
+            if let Some(img) = self
+                .kit
+                .as_ref()
+                .and_then(|k| k.crop(&format!("button_area_active_{n}")))
+            {
+                let tga = crate::mobile::menu_picture(img.width, img.height, &img.pixels);
+                write(&pics.join(format!("AREA{n}.TGA")), &tga)?;
+            }
+        }
+        for (i, a) in self.menu.iter().enumerate() {
+            let n = i + 1;
+            let key = a.stored.name.clone().unwrap_or_default();
+            let score = Some(f64::from(a.stored.animal().score));
+            let info = self.text(&format!("{key}_INFO"), score).unwrap_or_default();
+            let t = format!("Name   : {}\r\n{info}\r\n", a.name);
+            // The mobile texts give both units.
+            write(&txt.join(format!("DINO{n}.TXM")), t.as_bytes())?;
+            write(&txt.join(format!("DINO{n}.TXU")), t.as_bytes())?;
+            let pic = crate::mobile::help_picture(self.apk, &[a.name.clone(), a.stem.clone()])
+                .or_else(|| crate::mobile::model_picture(&a.car));
+            if let Some((w, h, px)) = pic {
+                write(
+                    &pics.join(format!("DINO{n}.TGA")),
+                    &crate::mobile::menu_picture(w, h, &px),
+                )?;
+            }
+            // Its calls: the `callN` set holding its call or growl; else
+            // the set its index gives (`call1` is index 16's, the
+            // Parasaurolophus: the sets go by index, checked on the four
+            // whose calls are named).
+            let snd = |f: &str| self.apk.get(&format!("assets/sounds/characters/{f}.wav"));
+            let mine: Vec<Vec<u8>> = a
+                .cat
+                .sounds
+                .iter()
+                .filter(|f| matches!(crate::mobile::role(f), Some("call" | "growl")))
+                .filter_map(|f| snd(f))
+                .chain(snd(&format!("{}_call", a.stem)))
+                .collect();
+            let by_index = || {
+                let k = a.index - 15;
+                let set: Vec<Vec<u8>> = ['a', 'b', 'c']
+                    .iter()
+                    .filter_map(|l| {
+                        self.apk
+                            .get(&format!("assets/sounds/calls/call{k}_{l}.wav"))
+                    })
+                    .collect();
+                (k > 0 && !set.is_empty()).then_some(set)
+            };
+            match crate::mobile::call_set(self.apk, &mine).or_else(by_index) {
+                Some(set) => {
+                    for (l, d) in ['A', 'B', 'C'].iter().zip(set) {
+                        let (pcm, rate) = c2_formats::mobile::decode_wav(&d)?;
+                        let w = crate::mobile::wav(&pcm, rate);
+                        write(&calls.join(format!("CALL{n}_{l}.WAV")), &w)?;
+                    }
+                }
+                None => self.built.notes.push(format!("{}: no call", a.name)),
+            }
+        }
+        for (i, (index, w, name)) in self.weapon_menu.iter().enumerate() {
+            let n = i + 1;
+            let key = w.name.clone().unwrap_or_default();
+            let info = self.text(&format!("{key}_INFO"), None).unwrap_or_default();
+            let t = format!("Weapon : {name}\r\n\r\n{info}\r\n");
+            write(&txt.join(format!("WEAPON{n}.TXT")), t.as_bytes())?;
+            // The mobile menu's weapon pictures: 1-6 in order, the camera 7th,
+            // the revolver 8th.
+            let slot = if *index == 41 { 8 } else { index + 1 };
+            if let Some(img) = self
+                .kit
+                .as_ref()
+                .and_then(|k| k.crop(&format!("button_weapon_active_{slot}")))
+            {
+                let tga = crate::mobile::menu_picture(img.width, img.height, &img.pixels);
+                write(&pics.join(format!("WEAPON{n}.TGA")), &tga)?;
+            }
+        }
+        // Hunting times, observer mode and the accessories.
+        let score = |k: &str| self.balance.get(k).copied();
+        for (file, key, head, value) in [
+            ("DAY1.NFO", "DAWN", "Hunting time", None),
+            ("DAY2.NFO", "DAY", "Hunting time", None),
+            ("DAY3.NFO", "NIGHT", "Hunting time", None),
+            ("OBSERVE.NFO", "OBSERVER_MODE", "Mode", None),
+            (
+                "CAMOFLAG.NFO",
+                "CAMOUFLAGE",
+                "Accessory",
+                score("SCORE_BONUS_CAMOUFLAGE"),
+            ),
+            (
+                "SCENT.NFO",
+                "COVER_SCENT",
+                "Accessory",
+                score("SCORE_BONUS_COVER_SCENT"),
+            ),
+            (
+                "RADAR.NFO",
+                "RADAR",
+                "Accessory",
+                score("SCORE_BONUS_NO_RADAR"),
+            ),
+            (
+                "TRANQ.NFO",
+                "TRANQUILIZER",
+                "Accessory",
+                score("SCORE_BONUS_TRANQUILIZER"),
+            ),
+        ] {
+            let (Some(full), Some(info)) = (
+                self.text(&format!("STR_{key}_FULL"), None),
+                self.text(&format!("STR_{key}_INFO"), value),
+            ) else {
+                continue;
+            };
+            let t = format!("{head} : {full}\r\n\r\n{info}\r\n");
+            write(&txt.join(file), t.as_bytes())?;
+        }
+        if let Some(d) = self.apk.get("assets/sounds/misc/a_underw.wav") {
+            let (pcm, rate) = c2_formats::mobile::decode_wav(&d)?;
+            let p = self.huntdat.join("SOUNDFX").join("A_UNDERW.WAV");
+            write(&p, &crate::mobile::wav(&pcm, rate))?;
+        }
+        Ok(())
+    }
+
+    /// The mobile interface's art (`MOBILE/*.PNG`, `MOBILE/SPRITES.CFG`),
+    /// for menus drawn as the phone game's.
+    fn ui_kit(&mut self) -> Result<(), ModError> {
+        let Some(kit) = &self.kit else { return Ok(()) };
+        let dir = self.huntdat.join("MOBILE");
+        std::fs::create_dir_all(&dir).map_err(io(&dir))?;
+        for (name, img) in &kit.atlases {
+            write(
+                &dir.join(format!("{}.PNG", name.to_ascii_uppercase())),
+                &png(img),
+            )?;
+        }
+        write(
+            &dir.join("SPRITES.CFG"),
+            c2_formats::mobile_ui::write(&kit.sprites).as_bytes(),
+        )?;
         Ok(())
     }
 
@@ -475,6 +768,7 @@ pub fn build(apk: &Path, out: &Path) -> Result<Built, ModError> {
         return Ok(built);
     };
     let chars = mobile_chars::characters(&lib, &balance)?;
+    let ice_age = zip.0.files().iter().any(|f| f.ends_with("/libiceAge.so"));
     // English names; Ice Age's own strings over the shared ones.
     let mut strings = BTreeMap::new();
     for f in [
@@ -493,10 +787,15 @@ pub fn build(apk: &Path, out: &Path) -> Result<Built, ModError> {
         strings,
         res: String::new(),
         built,
+        menu: Vec::new(),
+        weapon_menu: Vec::new(),
+        kit: Kit::load(&zip, ice_age),
     };
     g.weapons()?;
     g.animals()?;
     g.props()?;
+    g.menu_files()?;
+    g.ui_kit()?;
     let res = g.huntdat.join("_RES.TXT");
     write(&res, g.res.replace('\n', "\r\n").as_bytes())?;
     Ok(g.built)
