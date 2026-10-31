@@ -2,6 +2,59 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-31 — Owner's console test: Gojirasaurus, the ME trophy room, the 3DS trophy room, a Mandibles stall
+
+- **An AI the original engine lacks runs as the one its clips fit.**
+  Carnivores Triassic's Gojirasaurus is AI 19, a slot its patched exe added;
+  we ran unknown AIs as nothing, so it stood still, never fell when shot,
+  and its body still killed the hunter. Its model has the T-Rex's ten clips
+  in the T-Rex's order (run, walk, roar, swim, two looks, two smells, death,
+  kill), so the patched exe's AI must have been a T-Rex one. Now an AI
+  number outside 0-6 / 10-18 in original rules (`Species::stock_ai`) runs as
+  the original huntable AI whose layout its model has: as many clips or
+  more, a clip named as a death at that AI's death index, a hunter's first
+  if `danger`, an exact clip count first; none fits: it stands, as before.
+  `info.ai` stays its identity (menu slot, call, radar, placement): the
+  character's `ai` is what it runs as, and calls and the target bit read the
+  species' number. Dialect species (`mee::tune`) are unaffected: the
+  dialect has AIs past 18 of its own. Played alone on PC, 3DS and Wii U;
+  the combined game already converted it (`standalone::to_dialect`).
+- **Empty menu pictures are drawn from the model.** Triassic's `DINO10.TGA`
+  is an empty frame (the original shows a blank too). A picture whose middle
+  half is one flat colour (`portrait::blank_picture`; 655 animal pictures in
+  the owner's mods: real ones vary there by 12 levels or more, empty ones by
+  1) is replaced by the model's portrait, as roamers' are: the Wii U menu
+  and the 3DS cook (`C2RS/MENU/DINOn.TX`). Deviation from the original, for
+  a picture its author never made.
+- **The Modder's Edition trophy room uses the map's landing cells.** The
+  dialect's `tropPos` indexes the map's own `OMap == 254` cells: the engine
+  dropped the original's fixed 24-stand ring in trophy mode
+  (`Resources.cpp`, the ring commented out). We loaded the ring for every
+  trophy room, so `tropPos` picked ring cells: trophies stood in the
+  original room's 66-87 square, a corner of the ME's bigger room (20 cells,
+  52-102 x 64-114), on its paths. `Area::marked_landings` keeps the map's
+  cells; dialect spots stand on them (the ring if a room has none). Original
+  games keep the ring.
+- **3DS trophy room fits the memory.** It loaded a model for every species
+  on display; with add-ons that is up to 24 big animals, past what the menu
+  allows any hunt, and it crashed on every modded pack. Species now load by
+  stand while the pack's `cost.` / `heap.` figures fit (as the menu checks a
+  hunt); a trophy whose species doesn't fit isn't shown (kept in the save).
+  `place_trophies` skips species without a model, as `spawn` does.
+  `c2-cook --check` now opens the trophy room too (every stand filled).
+  Not yet tested on hardware.
+- **Wii U: a scenery window too big for the buffer shrinks.** In a dense
+  Mandibles jungle the 149x149-cell window passed the 1,048,576-vertex
+  buffer; the app then streamed every visible object each frame (~120 ms a
+  frame, ~7 s while crossing it; the owner's "lag spike"). Now the window
+  keeps the nearest whole rings that fit 7/8 of the buffer (room for the
+  crossings' new objects) and grows back once the whole window fits; a
+  window that fits is taken whole, as before. The far rings it drops are
+  in the fog.
+- Both Wii U golden-hash tests (`wiiu_static_scene`, the resident scenery's
+  visible streams) fail on the committed code as well: stale goldens since
+  a lighting change, not this work; left for a separate update.
+
 ## 2026-10-30 — Wii U: world atlases back to RGBA8; roamers' menu pictures from their models
 
 - **RGBA8 again.** The owner's first console run of the installs (red-high
