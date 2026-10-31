@@ -545,7 +545,7 @@ fn clock_seed() -> u32 {
         .map_or(1, |d| d.subsec_nanos() ^ d.as_secs() as u32)
 }
 
-mod kit;
+pub(crate) mod kit;
 mod mobile;
 
 impl Menu {

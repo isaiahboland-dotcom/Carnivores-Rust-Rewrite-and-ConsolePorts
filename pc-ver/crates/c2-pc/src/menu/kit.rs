@@ -41,7 +41,7 @@ fn decode_png(data: &[u8]) -> Option<Pic> {
 }
 
 /// A font: its glyphs, its atlas (a HUD image) and atlas pixels per unit.
-pub(super) struct KitFont {
+pub(crate) struct KitFont {
     font: c2_formats::bmfont::Font,
     image: usize,
     k: f32,
@@ -49,21 +49,21 @@ pub(super) struct KitFont {
     ah: f32,
 }
 
-pub(super) struct Kit {
+pub(crate) struct Kit {
     dir: PathBuf,
     sprites: BTreeMap<String, KitSprite>,
     atlases: std::cell::RefCell<BTreeMap<String, Option<Pic>>>,
     /// Headings and buttons (Lithos), and body text.
-    pub(super) title: Option<KitFont>,
-    pub(super) body: Option<KitFont>,
+    pub(crate) title: Option<KitFont>,
+    pub(crate) body: Option<KitFont>,
 }
 
 /// The menus' gold, as the phone game's buttons.
-pub(super) const GOLD: [f32; 4] = [0.96, 0.82, 0.45, 1.0];
-pub(super) const LIGHT: [f32; 4] = [1.0, 0.95, 0.8, 1.0];
+pub(crate) const GOLD: [f32; 4] = [0.96, 0.82, 0.45, 1.0];
+pub(crate) const LIGHT: [f32; 4] = [1.0, 0.95, 0.8, 1.0];
 
 impl Kit {
-    pub(super) fn load(huntdat: &Path, hud: &mut Hud, gpu: &Gpu) -> Option<Self> {
+    pub(crate) fn load(huntdat: &Path, hud: &mut Hud, gpu: &Gpu) -> Option<Self> {
         let dir = find_file(huntdat, "MOBILE")?;
         let cfg = std::fs::read(find_file(&dir, "SPRITES.CFG")?).ok()?;
         let mut sprites = BTreeMap::new();
@@ -114,7 +114,7 @@ impl Kit {
     }
 
     /// A sprite as a HUD image.
-    pub(super) fn image(&self, name: &str, hud: &mut Hud, gpu: &Gpu) -> Option<usize> {
+    pub(crate) fn image(&self, name: &str, hud: &mut Hud, gpu: &Gpu) -> Option<usize> {
         let p = self.sprite(name)?;
         Some(hud.add_image_filtered(gpu, p.w as u32, p.h as u32, &p.px, true))
     }
@@ -293,13 +293,13 @@ pub(super) struct Label {
 
 impl KitFont {
     /// Width of `text` at `px` tall.
-    pub(super) fn width(&self, px: f32, text: &str) -> f32 {
+    pub(crate) fn width(&self, px: f32, text: &str) -> f32 {
         self.font.width(text) as f32 * px / self.font.line_height.max(1) as f32
     }
 
     /// `text` at canvas-space `x`, `y` (its top), `px` tall: screen sprites
     /// for scale `s` and origin `ox`, `oy`.
-    pub(super) fn sprites(
+    pub(crate) fn sprites(
         &self,
         out: &mut Vec<Sprite>,
         (s, ox, oy): (f32, f32, f32),

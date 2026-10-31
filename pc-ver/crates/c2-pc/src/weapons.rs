@@ -26,6 +26,9 @@ pub struct WeaponAssets {
     /// World position of the view model's last vertex: the scope's aim point
     /// (`DrawOpticCross(VCount-1)`).
     pub aim_point: Option<[f32; 3]>,
+    /// Not drawn while scoped: the phone kit's scope covers the view
+    /// instead (an APK-built game's sniper has no scope model).
+    pub hide_scoped: bool,
 }
 
 /// The most bullet icons drawn in a row; more rounds show as one and a
@@ -125,6 +128,7 @@ pub fn load_weapons(
                 (p, m)
             }),
             aim_point: None,
+            hide_scoped: false,
         },
     )
 }
@@ -181,6 +185,9 @@ impl WeaponAssets {
             return;
         }
         let w = &hunt.weapons;
+        if self.hide_scoped && w.optic_mode && hunt.zoom() > 1.0 {
+            return;
+        }
         let Some((slot, ftime)) = w.pose() else {
             return;
         };

@@ -25,6 +25,7 @@ use crate::dinos::{load_res, load_ship, load_species, DinoAssets};
 use crate::effects_view::EffectsView;
 use crate::gpu::Gpu;
 use crate::hud::{load_tga, Hud, Sprite};
+use crate::hunt_kit::{Buttons, HuntKit};
 use crate::input::Input;
 use crate::keys;
 use crate::scene::Scene;
@@ -129,6 +130,10 @@ pub struct HuntView {
     hud: Hud,
     exit_img: Option<usize>,
     map_img: Option<usize>,
+    /// Where the area sits in the map picture (`MAPFRAME.TGA`'s 11, 23).
+    map_at: (f32, f32),
+    /// The phone game's hunt screen (an APK-built game).
+    kit: Option<HuntKit>,
     /// The map's tick for where the hunter looks (PC setting).
     map_heading: bool,
     /// The map drawn as the mobile game's (PC setting).
@@ -243,8 +248,11 @@ impl HuntView {
             c2_core::mee::tune(&mut species, t);
         }
         let mut hud = Hud::new(gpu);
-        let (weapon_infos, weapon_anims, weapons) =
+        let (weapon_infos, weapon_anims, mut weapons) =
             load_weapons(gpu, view.globals(), &mut hud, &huntdat, &res.weapons);
+        // A game built from an APK: the hunt screen as the phone game's.
+        let kit = HuntKit::load(&huntdat, &mut hud, gpu, res.weapons.len());
+        weapons.hide_scoped = kit.is_some();
         let exit_img = menu_pic(&mut hud, gpu, &huntdat, "EXIT.TGA");
         let plaque_img = menu_pic(
             &mut hud,
@@ -275,6 +283,16 @@ impl HuntView {
                 let rgba = c2_core::color::image_to_rgba8(&frame.pixels, false);
                 hud.add_image(gpu, frame.width as u32, frame.height as u32, &rgba)
             });
+        // No frame (an APK-built game): the area alone, the kit's frame
+        // drawn around it.
+        let (map_img, map_at) = match map_img {
+            Some(i) => (Some(i), (11.0, 23.0)),
+            None if kit.is_some() => {
+                let rgba = c2_core::color::image_to_rgba8(&Hunt::map_image(view.area()), false);
+                (Some(hud.add_image(gpu, 256, 256, &rgba)), (0.0, 0.0))
+            }
+            None => (None, (11.0, 23.0)),
+        };
         // Call icons (`MENU/PICS/CALLn.TGA`), by call id 10.. (menu slot +
         // 10), for the hunted animals.
         let pics = find_file(&huntdat, "MENU").and_then(|m| find_file(&m, "PICS"));
@@ -331,8 +349,10 @@ impl HuntView {
             hud,
             exit_img,
             map_img,
+            map_at,
             map_heading: setup.pc.map_heading != 0,
-            map_mobile: setup.pc.map_mobile != 0,
+            map_mobile: setup.pc.map_mobile != 0 || kit.is_some(),
+            kit,
             map_cursor: None,
             teleport_pick: None,
             call_imgs,
@@ -603,6 +623,15 @@ impl HuntView {
             self.step(&HuntInput::default());
         }
         self.prev_cam = self.hunt.camera().0;
+    }
+
+    /// Paused, asking to leave, or a message up (screenshots).
+    pub fn show(&mut self, pause: bool, exit: bool, message: Option<&str>) {
+        self.hunt.paused |= pause;
+        self.hunt.exit_prompt |= exit;
+        if let Some(m) = message {
+            self.message = Some((m.to_string(), 2.0));
+        }
     }
 
     /// Opens the map right away (screenshots).
@@ -1406,7 +1435,17 @@ impl Scene for HuntView {
 
         // HUD at an integer scale of the original's 640x480 layout.
         let scale = (screen.1 as f32 / 480.0).floor().max(1.0);
-        let mut sprites = self.weapons.hud_sprites(&self.hud, &self.hunt, scale);
+        let mut sprites = Vec::new();
+        if let Some(k) = &self.kit {
+            if self.hunt.death.is_none() {
+                if self.hunt.bin_mode {
+                    k.binoculars(&self.hud, screen, &mut sprites);
+                } else if self.hunt.weapons.optic_mode && self.hunt.zoom() > 1.0 {
+                    k.scope(&self.hud, screen, &mut sprites);
+                }
+            }
+        }
+        sprites.extend(self.weapons.hud_sprites(&self.hud, &self.hunt, scale));
         // The last kill: a box in the bottom right.
         if let Some((name, score, range, tranq, _)) = &self.kill {
             let us = self.hunt.room.options.sys != 0;
@@ -1534,6 +1573,11 @@ impl Scene for HuntView {
         }
         // Map (`DrawHMap`): view range circle, the hunter, radar blips.
         if self.hunt.map_mode {
+            // The phone's map fills most of the screen's height.
+            let scale = match self.kit {
+                Some(_) => screen.1 as f32 * 0.75 / 256.0,
+                None => scale,
+            };
             if let Some((id, mw, mh)) = self
                 .map_img
                 .and_then(|i| self.hud.image(i).map(|im| (i, im.w as f32, im.h as f32)))
@@ -1541,7 +1585,10 @@ impl Scene for HuntView {
                 let (cx, cy) = (screen.0 as f32 / 2.0, screen.1 as f32 / 2.0);
                 let (fx, fy) = (cx - mw * scale / 2.0, cy - (mh / 2.0 + 6.0) * scale);
                 sprites.push(Sprite::new(id, fx, fy, scale));
-                let (ox, oy) = (fx + 11.0 * scale, fy + 23.0 * scale);
+                let (ox, oy) = (fx + self.map_at.0 * scale, fy + self.map_at.1 * scale);
+                if let Some(k) = &self.kit {
+                    k.map_frame(&self.hud, (ox, oy, 256.0 * scale), &mut sprites);
+                }
                 let p = &self.hunt.player;
                 // CCX = (x / 512) * 2; one map pixel per 4 cells.
                 let ccx = ((p.x as i32 / 512) * 2) as f32 / 4.0;
@@ -1606,13 +1653,24 @@ impl Scene for HuntView {
                         ring,
                     ));
                 }
-                sprites.extend(dot(ccx + 1.0, ccy + 1.0, [0.25, 0.0, 0.0, 1.0]));
-                let me = if self.map_mobile {
-                    yellow
-                } else {
-                    [0.97, 0.0, 0.0, 1.0]
-                };
-                sprites.extend(dot(ccx, ccy, me));
+                let marker = (
+                    ox + (ccx + 1.0) * scale,
+                    oy + (ccy + 1.0) * scale,
+                    5.0 * scale,
+                );
+                if !self
+                    .kit
+                    .as_ref()
+                    .is_some_and(|k| k.map_me(marker, &mut sprites))
+                {
+                    sprites.extend(dot(ccx + 1.0, ccy + 1.0, [0.25, 0.0, 0.0, 1.0]));
+                    let me = if self.map_mobile {
+                        yellow
+                    } else {
+                        [0.97, 0.0, 0.0, 1.0]
+                    };
+                    sprites.extend(dot(ccx, ccy, me));
+                }
                 // Teleporting: the marker, and when it can go.
                 if let Some((x, z)) = self.map_cursor {
                     let (mx, my) = (x / 1024.0, z / 1024.0);
@@ -1733,6 +1791,22 @@ impl Scene for HuntView {
                 sprites.extend(self.plaque_text(slot, x, y, scale));
             }
         }
+        if let Some(k) = &self.kit {
+            let h = &self.hunt;
+            let quiet = h.paused || h.show_exit() || h.map_mode || self.picker.is_some();
+            if h.death.is_none() && !h.opts.trophy && !quiet {
+                let st = Buttons {
+                    weapon: Some(h.weapons.current).filter(|&i| h.weapons.carried(i)),
+                    weapon_out: h.weapons.pose().is_some() && !h.bin_mode,
+                    binoculars: h.bin_mode,
+                    calls: h.call_icon_time > 0,
+                };
+                k.buttons(&self.hud, screen, st, &mut sprites);
+            }
+            if let (Some((m, _)), None) = (&self.message, &h.survival) {
+                k.notify(&self.hud, screen, m, &mut sprites);
+            }
+        }
         if let Some(row) = self.picker {
             sprites.extend(self.picker_sprites(row, screen, scale));
         }
@@ -1770,6 +1844,7 @@ impl Scene for HuntView {
                 sprites.extend(self.hud.label(x + 8.0 * scale, y + 6.0 * scale, px, c, &t));
             }
         }
+        let mut pause_below = None;
         if self.hunt.paused {
             if let Some((id, w, h)) = self
                 .pause_img
@@ -1778,6 +1853,8 @@ impl Scene for HuntView {
                 let x = (screen.0 as f32 - w as f32 * scale) / 2.0;
                 let y = (screen.1 as f32 - h as f32 * scale) / 2.0;
                 sprites.push(Sprite::new(id, x, y, scale));
+            } else if let Some(k) = self.kit.as_ref().filter(|_| !self.hunt.show_exit()) {
+                pause_below = Some(k.popup(&self.hud, screen, "Paused", &mut sprites));
             }
         }
         if self.hunt.show_exit() {
@@ -1790,6 +1867,8 @@ impl Scene for HuntView {
                 let y = (screen.1 as f32 - h as f32 * scale) / 2.0;
                 sprites.push(Sprite::new(id, x, y, scale));
                 below = y + h as f32 * scale;
+            } else if let Some(k) = &self.kit {
+                below = k.popup(&self.hud, screen, "Leave the hunt?", &mut sprites);
             }
             let hint: &[(&str, &str)] = if self.pad_last {
                 &[("A", "Leave"), ("Y", "Restart"), ("B", "Resume")]
@@ -1798,12 +1877,13 @@ impl Scene for HuntView {
             };
             self.hint_bar(&mut sprites, screen, scale, below + 8.0 * scale, true, hint);
         } else if self.hunt.paused {
-            let below = self
-                .pause_img
-                .and_then(|i| self.hud.image(i))
-                .map_or(screen.1 as f32 / 2.0, |im| {
-                    (screen.1 as f32 + im.h as f32 * scale) / 2.0
-                });
+            let below = pause_below.unwrap_or_else(|| {
+                self.pause_img
+                    .and_then(|i| self.hud.image(i))
+                    .map_or(screen.1 as f32 / 2.0, |im| {
+                        (screen.1 as f32 + im.h as f32 * scale) / 2.0
+                    })
+            });
             let hint: &[(&str, &str)] = if self.pad_last {
                 &[("+", "Resume"), ("-", "Exit menu")]
             } else {

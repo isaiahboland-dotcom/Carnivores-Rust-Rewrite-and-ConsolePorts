@@ -2,6 +2,24 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-31 — APK base: the hunt screen from the phone's kit
+
+An APK-built game has none of the PC's hunt pictures (`MAPFRAME.TGA`,
+`BINOCUL.3DF`, `PAUSE.TGA`, `EXIT.TGA`), and its sniper has no scope model
+(its texture is a white placeholder). With `MOBILE/` present, c2-pc draws
+the phone's instead (`hunt_kit.rs`): the binocular and scope masks (the kit
+keeps half of each; drawn mirrored, screen-tall, their outer edge stretched
+to the sides of a wide screen; the weapon model is not drawn while scoped,
+the mask's cross being the aim), the map large (three quarters of the
+screen's height) in the kit's borders with its player marker and the mobile
+radar look, the round weapon / call / binocular buttons down the right as
+indicators (the mouse is captured, so they are not clicked), messages on the
+notification bar, and the pause and leave questions on the pop-up panel
+(also a quarter, mirrored four ways) in the game's lettering. Positions are
+by eye until the owner's phone screenshots. A PC game folder has no
+`MOBILE/` and is drawn as before. `c2-pc hunt` gained `--pause`, `--exit`
+and `--message TEXT` for screenshots.
+
 ## 2026-10-31 — APK base: the PC menus drawn from the phone's interface kit
 
 When the game folder has `MOBILE/` (an APK-built game) and no PC menu art
