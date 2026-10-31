@@ -2,6 +2,27 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-30 — Wii U: world atlases back to RGBA8; roamers' menu pictures from their models
+
+- **RGBA8 again.** The owner's first console run of the installs (red-high
+  R5G5B5A1, `fb289f7`): the world "hella pixelated", animals' skin with
+  pixel-sized holes, the gun not drawn. That is what the console reading
+  another bit order does: the low colour bits land in the high ones (texel
+  noise), and alpha comes from a colour bit, so the cut-out shader drops
+  dark texels (most of a dino's skin, all of the dark-grey gun). The low-red
+  order before it was also wrong on the console ("as if inverted"), and
+  Cemu showed both differently from the console, so the right order is not
+  known without a hardware test pattern. The atlases go back to RGBA8 with
+  their mip levels, as in `carnivores-mipmaps-v1`, which the owner saw
+  right on the console at near 60 fps. The 16-bit packer and its test are
+  removed; 720p (L3) and the opaque terrain shader stay.
+- **Roamers' pictures.** A roaming add-on (Manospondylus, Suchomimus,
+  Anatotitan, Agathaumas in `c2-mee-addons`) has no menu slot, so no
+  `DINOn.TGA`, and the Wii U menu showed none. The app now draws one from
+  the model when the install opens (`c2_formats::portrait`, the 3DS cook's
+  renderer; 357x208 like the originals, on the menu's panel colour), so
+  installs stay the original files.
+
 ## 2026-10-30 — Wii U: any game as an install; one Wii U Menu entry per game
 
 The Wii U read a fixed base-game roster (15 species, 6 weapons, five areas)
@@ -73,7 +94,7 @@ Four GPU savings for thick jungle, after the mip levels:
   `terrain_opaque.frag`, the same shader without the discard; its
   `DB_SHADER_CONTROL` is 0x10 (early Z) where the cut-out one is 0x50 (kill).
   Same pixels, same draw order.
-- **R5G5B5A1 atlases.** The three tiled world atlases are 16-bit. The
+- **R5G5B5A1 atlases** (reverted the same day, see above). The three tiled world atlases are 16-bit. The
   original's textures are RGB555 widened to 8 bits (`rgb555_to_rgba8`), so
   level 0 comes back exactly; alpha keeps the 0.5 cut. The mip levels are
   still averaged in RGBA8 and then rounded to 5 bits, and so are the Wii U's

@@ -64,7 +64,7 @@ static void performance_frame(const Perf *p, const Perf *b, uint64_t start, uint
      * frame's GPU work; gpu_tv/gpu_drc (GPU timestamps) proved unreliable.
      * Schema 9: vsync 0 while the D-pad Left diagnostic turns it off.
      * Schema 10: tiled_atlases 2 = tiled with mip levels, 1 = without (R3).
-     * Schema 11: the atlases are R5G5B5A1; terrain and water draw with the
+     * Schema 11: terrain and water draw with the
      * opaque shader; tv_world = the height the TV's world was drawn at (720
      * on the 720p target, the TV's own with L3 or without it; 0 when the TV
      * shows the map); 32-byte vertices (the fog is a uniform). */

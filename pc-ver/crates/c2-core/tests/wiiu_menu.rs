@@ -51,6 +51,40 @@ fn menu_with_files() -> Option<Menu> {
     Some(m)
 }
 
+/// Every animal of each cooked install (C2_WIIU_INSTALLS, folders separated
+/// by `:`) has a menu picture: roaming add-ons have none of their own, so
+/// theirs are drawn from their models.
+#[test]
+fn every_animal_has_a_picture() {
+    let Ok(dirs) = std::env::var("C2_WIIU_INSTALLS") else {
+        eprintln!("C2_WIIU_INSTALLS not set: skipped");
+        return;
+    };
+    for dir in dirs.split(':').filter(|d| !d.is_empty()) {
+        let root = std::path::Path::new(dir);
+        let mut vfs = c2_vfs::Vfs::new();
+        vfs.push("install", Box::new(wiiu_common::Folder::new(root)));
+        let info = install::Info::parse(
+            &std::fs::read_to_string(root.join("INFO.TXT")).expect("INFO.TXT"),
+        );
+        let inst = install::Install::open(vfs, info).expect("rules");
+        let names: Vec<String> = inst.animals.iter().map(|a| a.name.clone()).collect();
+        let mut m = Menu::new(font());
+        m.set_install(inst);
+        for (i, name) in names.iter().enumerate() {
+            assert!(
+                m.animal_picture(i).is_some(),
+                "{dir}: {name} has no picture"
+            );
+        }
+        m.page = Page::Animals;
+        shot(
+            &m,
+            &format!("animals-{}", root.file_name().unwrap().to_string_lossy()),
+        );
+    }
+}
+
 fn shot(m: &Menu, name: &str) {
     for (w, h, tag) in [(1920usize, 1080usize, "tv"), (854, 480, "gamepad")] {
         // The GamePad texture's rows are padded, as GX2 pads them.

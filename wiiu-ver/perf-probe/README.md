@@ -165,8 +165,7 @@ with the HUD, overlay and performance text drawn on top at full resolution
 (`tv_target.h`; the 720p buffers reuse the memory of the 1080p TV depth
 buffer). L3 draws it at the TV's own resolution for an A/B (overlay line 6,
 5th letter `S`/`N`; capture `tv_world`, schema 11). Terrain and water use
-`terrain_opaque.frag` (no `discard`, so early depth testing), the world
-atlases are R5G5B5A1, and the fog is a per-draw uniform: two 16-byte vertex
+`terrain_opaque.frag` (no `discard`, so early depth testing), and the fog is a per-draw uniform: two 16-byte vertex
 streams instead of three.
 
 R shows the PC's map over the TV view (the overlay's map region; the dots

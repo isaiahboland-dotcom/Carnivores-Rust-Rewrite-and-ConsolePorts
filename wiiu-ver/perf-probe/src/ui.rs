@@ -48,6 +48,21 @@ impl Image {
         let px = pic.pixels.iter().map(|&p| c2_core::color::rgb555_to_rgba8(p, 255)).collect();
         Some(Image { w: pic.width, h: pic.height, px })
     }
+    /// A model drawn as a menu picture (`c2_formats::portrait`), the size
+    /// of the original pictures (357x208), on `back` (pictures are opaque).
+    pub fn portrait(car: &[u8], back: Rgba) -> Option<Image> {
+        let (w, h) = (357, 208);
+        let mesh = c2_formats::car::parse(car).ok()?.mesh;
+        let rgba = c2_formats::portrait::render(&mesh, w, h, 0.6)?;
+        let px = rgba
+            .chunks_exact(4)
+            .map(|p| {
+                let a = u32::from(p[3]);
+                core::array::from_fn(|k| if k == 3 { 255 } else { ((u32::from(p[k]) * a + u32::from(back[k]) * (255 - a)) / 255) as u8 })
+            })
+            .collect();
+        Some(Image { w, h, px })
+    }
     // Bilinear sample at source coordinates (pixel centres at +0.5).
     fn sample(&self, x: f32, y: f32) -> [f32; 3] {
         let x = (x - 0.5).clamp(0.0, (self.w - 1) as f32);

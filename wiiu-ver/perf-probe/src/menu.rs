@@ -64,6 +64,8 @@ const WHITE: Rgba = [255, 255, 255, 255];
 const DIM: Rgba = [120, 128, 112, 255];
 const RED: Rgba = [240, 80, 60, 255];
 const SHADOW: Rgba = [0, 0, 0, 200];
+/// Behind a picture drawn from a model (a roamer's).
+const PORTRAIT_BACK: Rgba = PANEL;
 
 /// Buttons, as C passes them (edges, one bit each).
 pub mod button {
@@ -294,14 +296,19 @@ impl Menu {
             pics.push(pic(&format!("PICS/AREA{}.TGA", a.number)));
             texts.push(text(&format!("TXT/AREA{}.TXT", a.number)));
         }
-        // An animal's picture and texts by its menu slot (a roamer has none).
+        // An animal's picture and texts by its menu slot; a roamer has
+        // none, so its picture is drawn from its model.
         let slot = |p: &Pick| match p {
             Pick::Slot(k) => Some(k + 1),
             Pick::Roamer(_) => None,
         };
         b.pic_dino = pics.len();
         for a in &install.animals {
-            pics.push(slot(&a.pick).and_then(|n| pic(&format!("PICS/DINO{n}.TGA"))));
+            pics.push(match (slot(&a.pick), &a.model) {
+                (Some(n), _) => pic(&format!("PICS/DINO{n}.TGA")),
+                (None, Some(car)) => install.vfs.read(car).ok().and_then(|d| Image::portrait(&d, PORTRAIT_BACK)),
+                (None, None) => None,
+            });
         }
         for (units, base) in [("TXM", &mut b.txt_dino_metric), ("TXU", &mut b.txt_dino_us)] {
             *base = texts.len();
@@ -408,6 +415,11 @@ impl Menu {
     }
     pub fn picture(&self, slot: usize) -> Option<&Image> {
         self.pic(slot)
+    }
+    /// The picture of `animals[i]` (by position in the install's list).
+    #[allow(dead_code)] // the host tests'
+    pub fn animal_picture(&self, i: usize) -> Option<&Image> {
+        self.pic(self.bases.pic_dino + i)
     }
     pub fn tiles(&self) -> &RefCell<TileCache> {
         &self.tiles

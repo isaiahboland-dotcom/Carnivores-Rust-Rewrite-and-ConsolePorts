@@ -31,20 +31,3 @@ static void atlas_mip_halve(const uint8_t *src, uint32_t src_pitch, uint8_t *dst
         }
     }
 }
-
-/* One RGBA8 texel as the GPU's R5G5B5A1 (GX2_SURFACE_FORMAT_UNORM_R5_G5_B5_A1:
- * red in the top five bits, alpha the lowest bit, as OpenGL's 5_5_5_1; red
- * low and alpha on top is the other format, A1_B5_G5_R5, and showed
- * scrambled colours on the console), a native 16-bit word. The
- * atlases are the original's RGB555 texels widened to 8 bits, so they come
- * back exactly; alpha keeps the shader's 0.5 cut (128 and up is opaque). */
-static uint16_t atlas_rgb5a1(const uint8_t *p) {
-    uint32_t r = (p[0] * 31u + 127u) / 255u, g = (p[1] * 31u + 127u) / 255u, b = (p[2] * 31u + 127u) / 255u;
-    return (uint16_t)(r << 11 | g << 6 | b << 1 | (p[3] >= 128 ? 1u : 0u));
-}
-/* An RGBA8 image to R5G5B5A1 (pitches in texels). */
-static void atlas_to_rgb5a1(const uint8_t *src, uint32_t src_pitch, uint16_t *dst, uint32_t dst_pitch,
-                            uint32_t width, uint32_t height) {
-    for (uint32_t y = 0; y < height; ++y)
-        for (uint32_t x = 0; x < width; ++x) dst[y * dst_pitch + x] = atlas_rgb5a1(src + (y * src_pitch + x) * 4);
-}

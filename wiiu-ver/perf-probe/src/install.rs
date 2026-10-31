@@ -252,6 +252,9 @@ pub struct Animal {
     pub price: i32,
     /// It comes for the hunter (a survival's waves).
     pub dangerous: bool,
+    /// A roamer's model (`HUNTDAT/MANOS.CAR`): it has no menu picture, so
+    /// the menu draws one from the model, as the 3DS cook does.
+    pub model: Option<String>,
 }
 
 /// An area the menu offers (the trophy room is apart).
@@ -323,19 +326,21 @@ impl Install {
             .huntables
             .iter()
             .enumerate()
-            .map(|(k, d)| Animal { pick: Pick::Slot(k), name: d.name.clone(), price: d.price, dangerous: false })
+            .map(|(k, d)| Animal { pick: Pick::Slot(k), name: d.name.clone(), price: d.price, dangerous: false, model: None })
             .collect();
         // Roaming add-ons that spawn on one of the areas offered (once
         // picked, they come on any).
         for r in Rules::roams(&neutral) {
             let Some(on) = info.roam.get(&r.char) else { continue };
             let spawns = areas.iter().any(|a| on.iter().any(|n| n.eq_ignore_ascii_case(&a.file)));
-            let name = neutral.res.characters.get(r.char).map(|d| DinoInfo::from_def(d).name).unwrap_or_default();
+            let info = neutral.res.characters.get(r.char).map(DinoInfo::from_def);
+            let name = info.as_ref().map(|d| d.name.clone()).unwrap_or_default();
             if !spawns || animals.iter().any(|a| a.name == name) {
                 continue;
             }
             let price = r.donor.and_then(|k| menu.huntables.get(k)).map_or(0, |d| d.price);
-            animals.push(Animal { pick: Pick::Roamer(r), name, price, dangerous: false });
+            let model = info.map(|d| format!("HUNTDAT/{}", d.file));
+            animals.push(Animal { pick: Pick::Roamer(r), name, price, dangerous: false, model });
         }
         mark("Install: roamers");
         for a in &mut animals {
