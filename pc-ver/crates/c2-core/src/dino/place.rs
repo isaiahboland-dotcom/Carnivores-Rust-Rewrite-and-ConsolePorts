@@ -548,7 +548,13 @@ impl Herd {
         }
         for (slot, b) in room.bodies.iter().enumerate().take(24) {
             let ctype = b.ctype as usize;
-            if b.ctype <= 0 || ctype >= self.species.len() {
+            // Not loaded (the 3DS loads what fits): not shown.
+            if b.ctype <= 0
+                || self
+                    .species
+                    .get(ctype)
+                    .is_none_or(|s| s.ani_time.is_empty())
+            {
                 continue;
             }
             let Some(&(cx, cz)) = area.landings.get(slot) else {
@@ -619,10 +625,18 @@ impl Herd {
             let Some(spot) = at[slot].and_then(|t| self.trophy_spots.get(t)).cloned() else {
                 continue;
             };
-            let Some(&(lx, lz)) = area.landings.get(spot.pos) else {
+            // The map's own landing cells, as the Modder's Edition reads
+            // them (it dropped the original's ring, `Resources.cpp`); a room
+            // with none keeps the ring.
+            let landings = if area.marked_landings.is_empty() {
+                &area.landings
+            } else {
+                &area.marked_landings
+            };
+            let Some(&(lx, lz)) = landings.get(spot.pos) else {
                 continue;
             };
-            let Some(sp) = self.species.get(ctype) else {
+            let Some(sp) = self.species.get(ctype).filter(|s| !s.ani_time.is_empty()) else {
                 continue;
             };
             // How much bigger than usual, in `scaleA`s.

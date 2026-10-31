@@ -70,8 +70,12 @@ pub struct Area {
     pub map: Map,
     pub rsc: Rsc,
     pub time: TimeOfDay,
-    /// Landing cells (`LandingList`), from `OMap == 254`.
+    /// Landing cells (`LandingList`), from `OMap == 254`; in the trophy
+    /// room the original's fixed ring ([`Area::set_trophy_mode`]).
     pub landings: Vec<(u16, u16)>,
+    /// The map's own landing cells (`OMap == 254`), kept in the trophy room:
+    /// the Modder's Edition places trophies on them (`tropPos`).
+    pub marked_landings: Vec<(u16, u16)>,
     /// `OMap` entries naming a model the RSC doesn't have (the original halts).
     pub bad_object_cells: usize,
     /// Collision data per RSC object, in world units.
@@ -107,6 +111,7 @@ impl Area {
             map,
             rsc,
             time,
+            marked_landings: landings.clone(),
             landings,
             bad_object_cells: bad,
             random_map: random_map(),

@@ -508,12 +508,34 @@ impl Game {
             Rules::load(vfs)?.hunt_with(&setup.area, setup.time, setup.targets, &setup.roamers);
         progress("animals");
         // The trophy room needs only the species on display (every one a
-        // pack with add-ons has won't fit in an Old 3DS).
-        let trophies: Vec<usize> = room
-            .bodies
-            .iter()
-            .filter_map(|b| usize::try_from(b.ctype).ok().filter(|&c| c != 0))
-            .collect();
+        // pack with add-ons has won't fit in an Old 3DS), and of those as
+        // many as fit, by stand (24 big add-ons crashed it); a trophy whose
+        // species doesn't fit isn't shown (the save keeps it).
+        let mut trophies: Vec<usize> = Vec::new();
+        if setup.trophy() {
+            let cost = |i: usize, f: &dyn Fn(&str) -> usize| {
+                rules.keys.get(i).map_or(0, |k| f(&format!("m:{k}")))
+            };
+            let hunter = (0..rules.roles.len()).filter(|&i| rules.roles[i] == Role::Hunter);
+            let mut lin = info.cost("hunt") + info.cost(&setup.area);
+            lin += hunter.map(|i| cost(i, &|p| info.cost(p))).sum::<usize>();
+            let mut heap = info.heap(&setup.area);
+            for b in &room.bodies {
+                let Some(c) = usize::try_from(b.ctype).ok().filter(|&c| c != 0) else {
+                    continue;
+                };
+                if trophies.contains(&c) {
+                    continue;
+                }
+                let (l, h) = (cost(c, &|p| info.cost(p)), cost(c, &|p| info.heap(p)));
+                if lin + l > info.linear_kb || heap + h > info.heap_kb {
+                    continue;
+                }
+                lin += l;
+                heap += h;
+                trophies.push(c);
+            }
+        }
         // Random ambients: 4 ambient species this hunt (modded games add
         // many; the rest aren't loaded, so they don't spawn).
         let ambients = setup.random_ambients.then(|| {

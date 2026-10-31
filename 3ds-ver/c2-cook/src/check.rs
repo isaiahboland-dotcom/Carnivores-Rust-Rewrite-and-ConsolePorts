@@ -235,6 +235,9 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
             );
         }
     }
+    if bench.is_none() && !trophy_room(&vfs, &info)? {
+        problems += 1;
+    }
     if bench.is_none() {
         if let Some(d) = vfs.read("C2RS/SURVIVE.TXT").ok() {
             let m = c2_formats::mobile_arcade::Survive::parse(&String::from_utf8_lossy(&d));
@@ -251,6 +254,110 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
     }
     println!("ok");
     Ok(())
+}
+
+/// The trophy room as the 3DS opens it (`hunt.rs`): its map, the rules
+/// for `TROPHY` with nothing picked, only the species on display loaded,
+/// here a trophy of every huntable on every stand; placed, then a few
+/// seconds. Whether every trophy stands on the room's map.
+fn trophy_room(vfs: &Vfs, info: &str) -> Result<bool> {
+    let listed = info
+        .lines()
+        .find_map(|l| l.strip_prefix("areas = "))
+        .is_some_and(|a| a.split(',').any(|a| a.eq_ignore_ascii_case("TROPHY")));
+    if !listed {
+        println!("trophy room: none");
+        return Ok(true);
+    }
+    let area = c2_core::load::area_with(vfs, "TROPHY", TimeOfDay::Day, true)?;
+    let rules = Rules::load(vfs)?;
+    let hr = rules.hunt_with("TROPHY", TimeOfDay::Day, Bits::NONE, &[]);
+    let huntable: Vec<usize> = (0..hr.roles.len())
+        .filter(|&i| matches!(hr.roles[i], Role::Slot(_) | Role::Roamer))
+        .collect();
+    let mut room = c2_core::profile::new_player("check", 0, 0);
+    let stands = room.bodies.len();
+    for (slot, b) in room.bodies.iter_mut().enumerate() {
+        let Some(&ctype) = huntable.get(slot % huntable.len().max(1)) else {
+            break;
+        };
+        b.ctype = ctype as i32;
+        b.scale = 1.0;
+    }
+    let shown: Vec<usize> = room
+        .bodies
+        .iter()
+        .filter_map(|b| usize::try_from(b.ctype).ok().filter(|&c| c != 0))
+        .collect();
+    let (mut species, cars) = c2_core::load::species_with(vfs, &hr.res, &|i| {
+        shown.contains(&i) || hr.roles.get(i) == Some(&Role::Hunter)
+    });
+    if let Some(t) = &hr.tables {
+        c2_core::mee::tune(&mut species, t);
+    }
+    let mut rng = MsRand::new(7);
+    let mut herd = Herd {
+        species,
+        ..Default::default()
+    };
+    if let Some(t) = &hr.tables {
+        herd.trophy_spots = t.trophies.clone();
+    }
+    herd.place_trophies(&area, &room, &mut rng);
+    let placed = herd.chars.len();
+    // Inside the map, on the room's ground (not under it or far above).
+    let stray = herd
+        .chars
+        .iter()
+        .filter(|c| {
+            let (x, z) = (c.pos[0] / 256.0, c.pos[2] / 256.0);
+            !(1.0..1022.0).contains(&x) || !(1.0..1022.0).contains(&z)
+        })
+        .count();
+    // Where they stand, in cells (the room's own landing cells, not the
+    // original's ring, in a Modder's Edition room).
+    let span = |k: usize| {
+        let v = herd.chars.iter().map(|c| (c.pos[k] / 256.0) as i32);
+        (v.clone().min().unwrap_or(0), v.max().unwrap_or(0))
+    };
+    let (sx, sz) = (span(0), span(2));
+    let opts = HuntOptions {
+        view_r: 60,
+        trophy: true,
+        ..Default::default()
+    };
+    let mut hunt = Hunt::new(
+        &area,
+        Player::new(&area, (76, 70)),
+        herd,
+        Weapons::new(vec![], vec![], Bits::NONE, false),
+        rng,
+        opts,
+        room,
+    );
+    let car_refs: Vec<_> = cars.iter().map(Option::as_ref).collect();
+    let mut out = Vec::new();
+    for _ in 0..250 {
+        hunt.tick(&area, &car_refs, &HuntInput::default(), 20, &mut out);
+        out.clear();
+    }
+    println!(
+        "trophy room: {placed} of {stands} stands filled ({} spots, {} kinds), {} landing cells, \
+         in cells x {}..{} z {}..{}{}",
+        hunt.herd.trophy_spots.len(),
+        huntable.len(),
+        area.marked_landings.len(),
+        sx.0,
+        sx.1,
+        sz.0,
+        sz.1,
+        if stray > 0 {
+            format!("  OFF THE MAP: {stray}")
+        } else {
+            String::new()
+        }
+    );
+    Ok(stray == 0)
 }
 
 /// A survival's hunt on `area_name` with every animal loaded.
