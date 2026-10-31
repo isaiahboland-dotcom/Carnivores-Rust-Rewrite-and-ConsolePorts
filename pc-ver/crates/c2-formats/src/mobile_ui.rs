@@ -8,14 +8,15 @@
 use alloc::collections::BTreeMap;
 use alloc::{format, string::String, string::ToString};
 
-/// One sprite: its atlas (by name, no extension) and rectangle.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// One sprite: its atlas (by name, no extension) and rectangle (some
+/// configs give halves: `tc_x = 238.5`).
+#[derive(Debug, Clone, PartialEq)]
 pub struct Sprite {
     pub texture: String,
-    pub x: u32,
-    pub y: u32,
-    pub w: u32,
-    pub h: u32,
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
 }
 
 /// Every `sprite name { ... }` in a `.cfg` (later ones replace earlier).
@@ -36,7 +37,11 @@ pub fn parse(text: &str, into: &mut BTreeMap<String, Sprite>) {
                 (key.trim() == k).then(|| v.trim().trim_matches('"').to_string())
             })
         };
-        let num = |k: &str| get(k).and_then(|v| v.parse::<u32>().ok());
+        let num = |k: &str| {
+            get(k)
+                .and_then(|v| v.parse::<f32>().ok())
+                .filter(|v| *v >= 0.0)
+        };
         if let (Some(texture), Some(x), Some(y), Some(w), Some(h)) = (
             get("texture"),
             num("tc_x"),
@@ -61,23 +66,24 @@ pub fn parse(text: &str, into: &mut BTreeMap<String, Sprite>) {
 }
 
 /// The sprites in their atlases' own pixels: each atlas's rectangles grown
-/// by the power of two that fits them to its width (`width` gives an
-/// atlas's width; sprites of an unknown atlas are dropped).
+/// by the largest power of two that still fits them in its width and its
+/// height (`size` gives an atlas's; sprites of an unknown atlas are
+/// dropped). Width alone misleads on a sparse atlas (`gui_04`).
 pub fn scale(
     sprites: &BTreeMap<String, Sprite>,
-    width: &dyn Fn(&str) -> Option<u32>,
+    size: &dyn Fn(&str) -> Option<(u32, u32)>,
 ) -> BTreeMap<String, Sprite> {
-    let mut extent: BTreeMap<&str, u32> = BTreeMap::new();
+    let mut extent: BTreeMap<&str, (f32, f32)> = BTreeMap::new();
     for s in sprites.values() {
-        let e = extent.entry(&s.texture).or_insert(0);
-        *e = (*e).max(s.x + s.w);
+        let e = extent.entry(&s.texture).or_insert((0.0, 0.0));
+        *e = (e.0.max(s.x + s.w), e.1.max(s.y + s.h));
     }
-    let mut k_of: BTreeMap<&str, u32> = BTreeMap::new();
-    for (&t, &e) in &extent {
-        let Some(w) = width(t) else { continue };
-        let mut k = 1;
-        while e > 0 && e * k * 2 <= w {
-            k *= 2;
+    let mut k_of: BTreeMap<&str, f32> = BTreeMap::new();
+    for (&t, &(ex, ey)) in &extent {
+        let Some((w, h)) = size(t) else { continue };
+        let mut k = 1.0;
+        while ex > 0.0 && ex * k * 2.0 <= w as f32 && ey * k * 2.0 <= h as f32 {
+            k *= 2.0;
         }
         k_of.insert(t, k);
     }
@@ -125,21 +131,21 @@ mod tests {
             &mut m,
         );
         let s = scale(&m, &|t| match t {
-            "menu_01" => Some(2048),
-            "gui" => Some(32),
+            "menu_01" => Some((2048, 2048)),
+            "gui" => Some((32, 8)),
             _ => None,
         });
         assert_eq!(
             s["a"],
             Sprite {
                 texture: "menu_01".into(),
-                x: 1024,
-                y: 0,
-                w: 1024,
-                h: 768
+                x: 1024.0,
+                y: 0.0,
+                w: 1024.0,
+                h: 768.0
             }
         );
-        assert_eq!((s["b"].x, s["b"].w), (10, 20));
+        assert_eq!((s["b"].x, s["b"].w), (10.0, 20.0));
         let mut back = BTreeMap::new();
         parse(&write(&s), &mut back);
         assert_eq!(back, s);

@@ -313,16 +313,14 @@ pub fn decode_texture(name: &str, data: &[u8]) -> Result<Rgba, FormatError> {
         decode_pkm(data)
     } else if lower.ends_with(".crt") {
         decode_crt(data)
+    } else if let Some(img) = tga_rgba(data) {
+        Ok(img)
     } else {
         let p = crate::tga::parse(data)?;
-        // A 32-bit file's alpha survives as the top bit; one whose alpha is
-        // all clear has none (opaque).
-        let alpha = data.get(16) == Some(&32) && p.pixels.iter().any(|px| px & 0x8000 != 0);
         let mut pixels = Vec::with_capacity(p.pixels.len() * 4);
         for px in &p.pixels {
             let c = |s: u16| ((((px >> s) & 31) << 3) | (((px >> s) & 31) >> 2)) as u8;
-            let a = if !alpha || px & 0x8000 != 0 { 255 } else { 0 };
-            pixels.extend_from_slice(&[c(10), c(5), c(0), a]);
+            pixels.extend_from_slice(&[c(10), c(5), c(0), 255]);
         }
         Ok(Rgba {
             width: p.width,
@@ -330,6 +328,60 @@ pub fn decode_texture(name: &str, data: &[u8]) -> Result<Rgba, FormatError> {
             pixels,
         })
     }
+}
+
+/// A true-colour TGA (24 or 32-bit, raw or run-length) with its alpha
+/// whole; `None` for other kinds. A 32-bit file whose alpha is all clear
+/// has none (opaque).
+fn tga_rgba(d: &[u8]) -> Option<Rgba> {
+    let (id_len, cmap, kind) = (usize::from(*d.first()?), *d.get(1)?, *d.get(2)?);
+    let bpp = usize::from(*d.get(16)?);
+    if cmap != 0 || !matches!(kind, 2 | 10) || !matches!(bpp, 24 | 32) {
+        return None;
+    }
+    let w = usize::from(u16::from_le_bytes([*d.get(12)?, *d.get(13)?]));
+    let h = usize::from(u16::from_le_bytes([*d.get(14)?, *d.get(15)?]));
+    let top_first = d.get(17)? & 0x20 != 0;
+    let n = bpp / 8;
+    let mut src = d.get(18 + id_len..)?;
+    let mut px: Vec<[u8; 4]> = Vec::with_capacity(w * h);
+    let read = |p: &[u8]| [p[2], p[1], p[0], if n == 4 { p[3] } else { 255 }];
+    while px.len() < w * h {
+        if kind == 2 {
+            px.push(read(src.get(..n)?));
+            src = &src[n..];
+        } else {
+            let head = *src.first()?;
+            let count = usize::from(head & 0x7F) + 1;
+            src = &src[1..];
+            if head & 0x80 != 0 {
+                let p = read(src.get(..n)?);
+                src = &src[n..];
+                px.extend(core::iter::repeat_n(p, count));
+            } else {
+                for _ in 0..count {
+                    px.push(read(src.get(..n)?));
+                    src = &src[n..];
+                }
+            }
+        }
+    }
+    px.truncate(w * h);
+    if n == 4 && px.iter().all(|p| p[3] == 0) {
+        px.iter_mut().for_each(|p| p[3] = 255);
+    }
+    let mut pixels = Vec::with_capacity(w * h * 4);
+    for y in 0..h {
+        let row = if top_first { y } else { h - 1 - y };
+        for p in &px[row * w..row * w + w] {
+            pixels.extend_from_slice(p);
+        }
+    }
+    Some(Rgba {
+        width: w,
+        height: h,
+        pixels,
+    })
 }
 
 /// RGBA into a `.CAR` texture: 256 wide, `RGB555`, rows of the image

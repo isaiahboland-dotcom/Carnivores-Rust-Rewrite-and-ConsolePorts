@@ -147,6 +147,8 @@ struct Board {
     lit: Vec<Option<(usize, Rect)>>,
     /// 400x300 region ids.
     hit: Vec<u8>,
+    /// Words drawn over it (a board composed from the mobile art).
+    labels: Vec<kit::Label>,
 }
 
 fn read_tga(dir: &Path, name: &str) -> Option<c2_formats::tga::Picture> {
@@ -168,6 +170,7 @@ impl Board {
                 hud.add_image_filtered(gpu, t.width as u32, t.height as u32, &rgba, true)
             }),
             lit: Vec::new(),
+            labels: Vec::new(),
             hit: find_file(dir, map)
                 .and_then(|p| std::fs::read(p).ok())
                 .filter(|h| h.len() == 400 * 300)
@@ -424,6 +427,8 @@ pub struct Menu {
     /// (0 maps, 1 animals, 2 weapons and gear).
     mobile: Option<mobile::Art>,
     mobile_page: usize,
+    /// The phone game's interface art (a game built from an APK).
+    kit: Option<kit::Kit>,
     /// The signed-in hunter's record (`trophy0N.rec`), read when the
     /// statistics open.
     record: c2_core::record::Record,
@@ -540,6 +545,7 @@ fn clock_seed() -> u32 {
         .map_or(1, |d| d.subsec_nanos() ^ d.as_secs() as u32)
 }
 
+mod kit;
 mod mobile;
 
 impl Menu {
@@ -580,6 +586,29 @@ impl Menu {
         let setup = board("MENU2.TGA", "MENU2_ON.TGA", "M2_MAP.RAW");
         let options = board("OPT_OFF.TGA", "OPT_ON.TGA", "OPT_MAP.RAW");
         let credits = board("CREDITS.TGA", "", "");
+        // A game built from the player's APK keeps the phone's interface
+        // art and has no PC frames: its menus are drawn as the phone's.
+        let kit = (MENU_ART.get().is_none() && find_file(&dir, "MENUM.TGA").is_none())
+            .then(|| kit::Kit::load(&huntdat, &mut hud, gpu))
+            .flatten();
+        let (main, stats_board, quit_board, reg, waiver, delete, options, credits) = match &kit {
+            Some(k) => {
+                let b = k.boards(&mut hud, gpu, &game_title(&huntdat));
+                (
+                    b.main, b.stats, b.quit, b.reg, b.waiver, b.delete, b.options, b.credits,
+                )
+            }
+            None => (
+                main,
+                stats_board,
+                quit_board,
+                reg,
+                waiver,
+                delete,
+                options,
+                credits,
+            ),
+        };
         let mut pic = |name: &str, linear: bool| {
             read_tga(&art, name)
                 .or_else(|| read_tga(&dir, name))
@@ -591,6 +620,14 @@ impl Menu {
         let slider = pic("SL_BAR.TGA", true);
         let knob = pic("SL_BUT.TGA", true);
         let loading = pic("LOADING.TGA", true);
+        // The phone's slider where the game has no PC one.
+        let (slider, knob) = match &kit {
+            Some(k) if slider.is_none() => (
+                k.image_sized("slider_body", 128, 14, &mut hud, gpu),
+                k.image_sized("slider_controller", 8, 14, &mut hud, gpu),
+            ),
+            _ => (slider, knob),
+        };
 
         let pics_dir = find_file(&dir, "PICS");
         let txt = find_file(&dir, "TXT");
@@ -890,14 +927,18 @@ impl Menu {
             }
         }
         let signed_in = player.and_then(|r| players.iter().position(|p| p.reg_number == r));
-        let mobile = MOBILE_MENU
-            .get()
-            .copied()
-            .unwrap_or(false)
-            .then(|| mobile::Art::new(&mut hud, gpu));
+        let mobile = (MOBILE_MENU.get().copied().unwrap_or(false) || kit.is_some()).then(|| {
+            let mut art = mobile::Art::new(&mut hud, gpu);
+            art.kit = kit.as_ref().map(|k| {
+                let n = |i: usize| cols.get(i).map_or(0, |c: &Column| c.names.len());
+                k.art(&mut hud, gpu, [n(0), n(1), n(2)])
+            });
+            art
+        });
         let mut m = Self {
             mobile,
             mobile_page: 0,
+            kit,
             record: Default::default(),
             clear_armed: false,
             hud,
@@ -1738,6 +1779,53 @@ impl Menu {
                 self.image(out, Some(*id), *rect);
             }
         }
+        for l in &b.labels {
+            self.kit_words(out, l);
+        }
+    }
+
+    /// A composed board's words, in the phone game's lettering.
+    fn kit_words(&self, out: &mut Vec<Sprite>, l: &kit::Label) {
+        self.kit_words_sized(out, l, if l.title { 24.0 } else { 17.0 });
+    }
+
+    fn kit_words_sized(&self, out: &mut Vec<Sprite>, l: &kit::Label, px: f32) {
+        let font = self.kit.as_ref().and_then(|k| {
+            if l.title {
+                k.title.as_ref()
+            } else {
+                k.body.as_ref()
+            }
+        });
+        let (x, y, color) = if l.centred && l.rect.2 > 0.0 {
+            let w = font.map_or_else(|| self.text_width(px, &l.text), |f| f.width(px, &l.text));
+            (
+                l.rect.0 + (l.rect.2 - w) / 2.0,
+                l.rect.1 + (l.rect.3 - px) / 2.0,
+                kit::GOLD,
+            )
+        } else {
+            (
+                l.rect.0,
+                l.rect.1,
+                if l.title { kit::GOLD } else { kit::LIGHT },
+            )
+        };
+        match font {
+            Some(f) => {
+                let c = self.canvas();
+                f.sprites(
+                    out,
+                    (c.0, c.1 + c.0, c.2 + c.0),
+                    (x, y),
+                    px,
+                    SHADOW,
+                    &l.text,
+                );
+                f.sprites(out, c, (x, y), px, color, &l.text);
+            }
+            None => self.text(out, x, y, px, color, &l.text),
+        }
     }
 
     fn draw_register(&self, out: &mut Vec<Sprite>, region: u8) {
@@ -2221,4 +2309,15 @@ impl Scene for Menu {
             Ok(Box::new(HuntView::load(gpu, setup)?) as Box<dyn Scene>)
         }))
     }
+}
+
+/// The game's name for the credits (`MOBILE/GAME.TXT`, which the APK
+/// conversion writes).
+fn game_title(huntdat: &Path) -> String {
+    find_file(huntdat, "MOBILE")
+        .and_then(|d| find_file(&d, "GAME.TXT"))
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| "the mobile game".into())
 }

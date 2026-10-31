@@ -647,6 +647,7 @@ dependencies = [
  "font8x8",
  "glam",
  "kira",
+ "png",
  "pollster 1.0.1",
  "toml",
  "tracing",

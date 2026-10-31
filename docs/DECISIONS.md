@@ -2,6 +2,28 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-31 — APK base: the PC menus drawn from the phone's interface kit
+
+When the game folder has `MOBILE/` (an APK-built game) and no PC menu art
+(`MENUM.TGA` missing, `MENU_ART` unset), c2-pc composes its menu boards from
+the kit's sprites instead: the hunt background, wooden planks for buttons,
+the hexagon cells, selector ring and lamps of the hunt setup, its sliders.
+Each board keeps the PC's regions (the original's hit-map rectangles, so
+keys, clicks and the menu code stay unchanged); a lit button is the same
+plank drawn brighter. Words are drawn with the phone's own fonts (BMFont
+`.fnt`/`.fnthd`: Lithos Pro for headings, the body fonts for text,
+`c2_formats::bmfont`), exported by the conversion with their atlases. The
+waiver and credits pages are our own text: the mobile game has no
+equivalent. Positions follow the PC layout until the owner's phone
+screenshots let us match the mobile screens.
+
+The conversion's TGA reader now keeps full 8-bit alpha (types 2 and 10, 24
+and 32 bpp; a picture whose alpha is all zero counts as opaque); the kit's
+atlases lost their soft edges with the top-bit-only alpha. Some sprite
+configs give half pixels (`tc_x = 238.5`), so sprite rectangles are floats;
+an atlas's scale is the largest power of two fitting both its width and its
+height (width alone picked 4x on the sparse `gui_04`).
+
 ## 2026-10-31 — APK base: menu files, and the phone game's interface kept
 
 Owner: a game built only from an APK should look as close to the mobile game

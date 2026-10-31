@@ -17,6 +17,7 @@ mod error;
 mod reader;
 
 pub mod bits;
+pub mod bmfont;
 pub mod car;
 pub mod cooked;
 pub mod map;

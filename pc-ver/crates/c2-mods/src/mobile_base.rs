@@ -264,8 +264,11 @@ impl Kit {
                 atlases.insert(t, img);
             }
         }
-        let sprites =
-            c2_formats::mobile_ui::scale(&raw, &|t| atlases.get(t).map(|i: &Rgba| i.width as u32));
+        let sprites = c2_formats::mobile_ui::scale(&raw, &|t| {
+            atlases
+                .get(t)
+                .map(|i: &Rgba| (i.width as u32, i.height as u32))
+        });
         (!sprites.is_empty()).then_some(Self { sprites, atlases })
     }
 
@@ -273,7 +276,8 @@ impl Kit {
     fn crop(&self, name: &str) -> Option<Rgba> {
         let s = self.sprites.get(name)?;
         let a = self.atlases.get(&s.texture)?;
-        let (x0, y0, w, h) = (s.x as usize, s.y as usize, s.w as usize, s.h as usize);
+        let (x0, y0) = (s.x.round() as usize, s.y.round() as usize);
+        let (w, h) = (s.w.round() as usize, s.h.round() as usize);
         let mut pixels = Vec::with_capacity(w * h * 4);
         for y in y0..y0 + h {
             let i = (y.min(a.height.saturating_sub(1)) * a.width + x0) * 4;
@@ -317,6 +321,7 @@ struct Game<'a> {
     menu: Vec<MenuAnimal>,
     weapon_menu: Vec<(i32, Stored, String)>,
     kit: Option<Kit>,
+    ice_age: bool,
 }
 
 /// A huntable as the menus show it.
@@ -720,6 +725,48 @@ impl Game<'_> {
                 &png(img),
             )?;
         }
+        // The interface's bitmap fonts (BMFont): each descriptor with its
+        // atlas as a PNG beside it.
+        let fonts: Vec<String> = self
+            .apk
+            .0
+            .files()
+            .into_iter()
+            .filter(|f| f.starts_with("assets/fonts/") && f.contains(".fnt"))
+            .collect();
+        for f in fonts {
+            let Some(d) = self.apk.get(&f) else { continue };
+            let text = String::from_utf8_lossy(&d).into_owned();
+            let font = c2_formats::bmfont::parse(&text);
+            let page = format!("assets/fonts/{}", font.page);
+            let Some(img) = self
+                .apk
+                .get(&page)
+                .and_then(|p| c2_formats::mobile::decode_texture(&page, &p).ok())
+            else {
+                continue;
+            };
+            let atlas = font
+                .page
+                .rsplit_once('.')
+                .map_or(font.page.as_str(), |(n, _)| n)
+                .to_ascii_uppercase();
+            write(&dir.join(format!("{atlas}.PNG")), &png(&img))?;
+            let stem = f
+                .rsplit('/')
+                .next()
+                .and_then(|n| n.split_once('.'))
+                .map_or("FONT", |(n, _)| n)
+                .to_ascii_uppercase();
+            let text = text.replace(&format!("\"{}\"", font.page), &format!("\"{atlas}.PNG\""));
+            write(&dir.join(format!("{stem}.FNT")), text.as_bytes())?;
+        }
+        let title = if self.ice_age {
+            "Carnivores: Ice Age"
+        } else {
+            "Carnivores: Dinosaur Hunter"
+        };
+        write(&dir.join("GAME.TXT"), title.as_bytes())?;
         write(
             &dir.join("SPRITES.CFG"),
             c2_formats::mobile_ui::write(&kit.sprites).as_bytes(),
@@ -790,6 +837,7 @@ pub fn build(apk: &Path, out: &Path) -> Result<Built, ModError> {
         menu: Vec::new(),
         weapon_menu: Vec::new(),
         kit: Kit::load(&zip, ice_age),
+        ice_age,
     };
     g.weapons()?;
     g.animals()?;

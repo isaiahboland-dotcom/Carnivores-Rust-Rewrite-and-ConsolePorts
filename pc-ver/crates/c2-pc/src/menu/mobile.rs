@@ -32,6 +32,8 @@ pub(super) struct Art {
     button: usize,
     /// A lamp, white (tinted red).
     led: usize,
+    /// The phone game's own pieces, for a game built from its APK.
+    pub(super) kit: Option<super::kit::KitArt>,
 }
 
 /// How far (pixels) a point is inside a flat-topped hexagon `w` x `h`
@@ -108,6 +110,7 @@ impl Art {
             ring: hud.add_image_filtered(gpu, w as u32, h as u32, &ring, true),
             button: hud.add_image_filtered(gpu, bw as u32, bh as u32, &button, true),
             led: hud.add_image_filtered(gpu, n as u32, n as u32, &led, true),
+            kit: None,
         }
     }
 }
@@ -248,6 +251,30 @@ impl Menu {
         }
     }
 
+    /// Words centred in `r`, in the phone game's lettering when the game
+    /// has it (`title`: its headline face).
+    pub(super) fn say(&self, out: &mut Vec<Sprite>, r: Rect, text: &str, px: f32, title: bool) {
+        let label = super::kit::Label {
+            rect: r,
+            text: text.to_string(),
+            title,
+            centred: true,
+        };
+        if self.kit.is_some() {
+            self.kit_words_sized(out, &label, px);
+        } else {
+            let w = self.text_width(px, text);
+            self.text(
+                out,
+                r.0 + (r.2 - w) / 2.0,
+                r.1 + (r.3 - px) / 2.0,
+                px,
+                SAND,
+                text,
+            );
+        }
+    }
+
     /// A filled rectangle on the canvas.
     pub(super) fn fill(&self, out: &mut Vec<Sprite>, r: Rect, color: [f32; 4]) {
         let (s, ox, oy) = self.canvas();
@@ -272,6 +299,26 @@ impl Menu {
     fn mobile_button(&self, out: &mut Vec<Sprite>, r: Rect, label: &str, lamp: Option<bool>) {
         let Some(art) = &self.mobile else { return };
         let hover = inside(self.cursor, r);
+        if let Some(k) = &art.kit {
+            // The phone's: a plank, its lamp in it when it has one.
+            let id = match lamp {
+                Some(true) => k.lamp_on,
+                Some(false) => k.lamp_off,
+                None => k.button,
+            };
+            let tint = if hover {
+                [1.3, 1.3, 1.25, 1.0]
+            } else {
+                [1.0; 4]
+            };
+            if let Some(id) = id {
+                self.tinted(out, id, r, [0.0, 0.0, 1.0, 1.0], tint);
+            }
+            let x0 = if lamp.is_some() { r.0 + r.3 * 0.9 } else { r.0 };
+            let w = r.0 + r.2 - x0;
+            self.say(out, (x0, r.1, w, r.3), label, 20.0, true);
+            return;
+        }
         let tint = if hover {
             [1.15, 1.2, 1.1, 1.0]
         } else {
@@ -319,9 +366,16 @@ impl Menu {
     pub(super) fn draw_mobile(&self, out: &mut Vec<Sprite>) {
         let Some(art) = &self.mobile else { return };
         self.fill(out, (0.0, 0.0, CW, CH), BG_F);
+        if let Some(bg) = art.kit.as_ref().and_then(|k| k.bg) {
+            self.tinted(out, bg, (0.0, 0.0, CW, CH), [0.0, 0.0, 1.0, 1.0], [1.0; 4]);
+        }
         // The page and the account.
         let page = self.mobile_page.min(2);
-        self.text(out, 20.0, 18.0, 18.0, PICKED, PAGES[page]);
+        if self.kit.is_some() {
+            self.say(out, (20.0, 12.0, 0.0, 30.0), PAGES[page], 26.0, true);
+        } else {
+            self.text(out, 20.0, 18.0, 18.0, PICKED, PAGES[page]);
+        }
         let score = self.me().map_or(0, |s| s.score);
         let acc = format!("{} / {score}", self.remaining());
         let w = self.text_width(16.0, &acc);
@@ -348,6 +402,71 @@ impl Menu {
             } else {
                 [0.4, 0.4, 0.4, 1.0]
             };
+            let hover = self.choice.focus == Some((col, i));
+            if let Some(k) = &art.kit {
+                // The phone's: the plate, the item (a silhouette when out
+                // of reach), the red ring when picked.
+                let lit = if hover {
+                    [1.25, 1.25, 1.2, 1.0]
+                } else {
+                    [1.0; 4]
+                };
+                if col != 0 {
+                    if let Some(id) = k.cell {
+                        self.tinted(out, id, r, [0.0, 0.0, 1.0, 1.0], lit);
+                    }
+                }
+                let (on_art, off_art) = k
+                    .items
+                    .get(col)
+                    .and_then(|v| v.get(i))
+                    .copied()
+                    .unwrap_or((None, None));
+                let item = if afford { on_art } else { off_art.or(on_art) };
+                if let Some(id) = item {
+                    let (iw, ih) = self
+                        .hud
+                        .image(id)
+                        .map_or((1.0, 1.0), |im| (im.w as f32, im.h as f32));
+                    let f = if col == 0 { 1.0 } else { 0.84 };
+                    let s = (w * f / iw).min(h * f / ih);
+                    let (dw, dh) = (iw * s, ih * s);
+                    self.tinted(
+                        out,
+                        id,
+                        (cx - dw / 2.0, cy - dh / 2.0, dw, dh),
+                        [0.0, 0.0, 1.0, 1.0],
+                        if afford { lit } else { dim },
+                    );
+                }
+                if on {
+                    if let Some(id) = k.selector {
+                        self.tinted(out, id, r, [0.0, 0.0, 1.0, 1.0], [1.0; 4]);
+                    }
+                }
+                if item.is_none() {
+                    let name: String = c.names[i].chars().take(12).collect();
+                    self.say(out, (cx - w / 2.0, cy - 10.0, w, 20.0), &name, 15.0, false);
+                }
+                if let Some(&p) = c.prices.get(i).filter(|&&p| p > 0) {
+                    let t = p.to_string();
+                    let tw = self.text_width(12.0, &t);
+                    self.fill(
+                        out,
+                        (cx - tw / 2.0 - 4.0, cy + h / 2.0 - 20.0, tw + 8.0, 15.0),
+                        [0.0, 0.0, 0.0, 0.6],
+                    );
+                    self.text(
+                        out,
+                        cx - tw / 2.0,
+                        cy + h / 2.0 - 19.0,
+                        12.0,
+                        if afford { PICKED } else { DIM },
+                        &t,
+                    );
+                }
+                continue;
+            }
             match c.pics.get(i).copied().flatten() {
                 Some(id) => {
                     // The middle of the picture, at the hexagon's shape.
@@ -366,7 +485,6 @@ impl Menu {
                 None => self.fill(out, r, [0.12, 0.17, 0.11, 1.0]),
             }
             self.tinted(out, art.frame, r, [0.0, 0.0, 1.0, 1.0], [1.0; 4]);
-            let hover = self.choice.focus == Some((col, i));
             let rim = if on {
                 [1.0, 0.85, 0.3, 1.0]
             } else if hover {
