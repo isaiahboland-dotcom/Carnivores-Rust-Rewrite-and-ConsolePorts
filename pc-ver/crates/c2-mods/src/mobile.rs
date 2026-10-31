@@ -109,7 +109,7 @@ pub struct Imported {
 }
 
 /// The APK, read as a zip.
-struct Apk(c2_vfs::ZipBackend);
+pub(crate) struct Apk(pub(crate) c2_vfs::ZipBackend);
 
 impl Assets for Apk {
     fn get(&self, path: &str) -> Option<Vec<u8>> {

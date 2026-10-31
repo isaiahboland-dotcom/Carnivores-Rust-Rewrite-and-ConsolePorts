@@ -9,6 +9,7 @@ pub mod ice_age;
 pub mod loose;
 pub mod manifest;
 pub mod mobile;
+pub mod mobile_base;
 pub mod pack;
 pub mod patch;
 pub mod recipe;

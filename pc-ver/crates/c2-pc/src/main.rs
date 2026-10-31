@@ -36,6 +36,7 @@ const USAGE: &str = "usage:
   c2-pc balance <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]...   (prints prices and scores as a balance file)
   c2-pc mobile <APK> --base <GAME_DIR> [--overlay DIR]... --out <DIR>   (the mobile game's animals as add-ons)
   c2-pc mobile <APK> --values                                         (its tuning values)
+  c2-pc mobile-base <APK> --out <DIR>   (the APK rebuilt as a game folder; so far its areas)
   c2-pc iceage <ICE_AGE_DIR> --base <GAME_DIR> [--overlay DIR]... --out <DIR>
                                         (Ice Age's animals and areas as add-ons beside C2's)
   c2-pc combine <GAME_DIR>... --base <GAME_DIR> --overlay <ME_DIR> [--mod DIR]... [--ambients tied|random] --out <DIR>
@@ -229,6 +230,18 @@ fn main() -> Result<()> {
             for n in &a.notes {
                 println!("  {n}");
             }
+        }
+        return Ok(());
+    }
+    if cmd == "mobile-base" {
+        let apk = o
+            .positional
+            .first()
+            .context("c2-pc mobile-base <APK> --out DIR")?;
+        let out = PathBuf::from(o.value("out").context("--out DIR")?);
+        let built = c2_mods::mobile_base::build(std::path::Path::new(apk), &out)?;
+        for a in built.areas {
+            println!("{}", a.display());
         }
         return Ok(());
     }

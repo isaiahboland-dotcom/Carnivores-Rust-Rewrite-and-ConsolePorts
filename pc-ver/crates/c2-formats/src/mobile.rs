@@ -106,17 +106,22 @@ pub fn parse_3dn(data: &[u8]) -> Result<(String, Mesh), FormatError> {
     r.i32("3dn.reserved")?;
     let name = crate::reader::c_str(r.bytes(32, "3dn.name")?);
     r.i32("3dn.reserved2")?;
+    Ok((name, read_mesh(&mut r, vc, fc)?))
+}
+
+/// A `.3dn`'s vertices and faces (after its header), untextured.
+pub(crate) fn read_mesh(r: &mut Reader<'_>, vc: i32, fc: i32) -> Result<Mesh, FormatError> {
     let count = |n: i32, size: usize, what: &str, r: &Reader<'_>| {
         usize::try_from(n)
             .ok()
             .filter(|&n| n.checked_mul(size).is_some_and(|b| b <= r.remaining()))
             .ok_or_else(|| r.err(what, FormatErrorKind::BadCount(i64::from(n))))
     };
-    let vc = count(vc, Vertex::SIZE, "3dn.vcount", &r)?;
+    let vc = count(vc, Vertex::SIZE, "3dn.vcount", r)?;
     let vertices = (0..vc)
-        .map(|_| Vertex::read(&mut r))
+        .map(|_| Vertex::read(r))
         .collect::<Result<Vec<_>, _>>()?;
-    let fc = count(fc, 52, "3dn.fcount", &r)?;
+    let fc = count(fc, 52, "3dn.fcount", r)?;
     let mut faces = Vec::with_capacity(fc);
     for _ in 0..fc {
         let v = [
@@ -142,14 +147,11 @@ pub fn parse_3dn(data: &[u8]) -> Result<(String, Mesh), FormatError> {
             reserved: r.array("3dn.face.reserved")?,
         });
     }
-    Ok((
-        name,
-        Mesh {
-            vertices,
-            faces,
-            texture: Vec::new(),
-        },
-    ))
+    Ok(Mesh {
+        vertices,
+        faces,
+        texture: Vec::new(),
+    })
 }
 
 /// A `.ani` clip for a model of `vcount` vertices.
@@ -305,10 +307,14 @@ pub fn decode_texture(name: &str, data: &[u8]) -> Result<Rgba, FormatError> {
         decode_crt(data)
     } else {
         let p = crate::tga::parse(data)?;
+        // A 32-bit file's alpha survives as the top bit; one whose alpha is
+        // all clear has none (opaque).
+        let alpha = data.get(16) == Some(&32) && p.pixels.iter().any(|px| px & 0x8000 != 0);
         let mut pixels = Vec::with_capacity(p.pixels.len() * 4);
         for px in &p.pixels {
             let c = |s: u16| ((((px >> s) & 31) << 3) | (((px >> s) & 31) >> 2)) as u8;
-            pixels.extend_from_slice(&[c(10), c(5), c(0), 255]);
+            let a = if !alpha || px & 0x8000 != 0 { 255 } else { 0 };
+            pixels.extend_from_slice(&[c(10), c(5), c(0), a]);
         }
         Ok(Rgba {
             width: p.width,
@@ -414,7 +420,7 @@ pub fn decode_wav(data: &[u8]) -> Result<(Vec<u8>, u32), FormatError> {
 /// Faces drawn mostly on see-through texels (the mobile games blend a
 /// muzzle flash by its texture's alpha) become what the PC uses for one:
 /// colour-keyed (`sfOpacity`, black see-through) and double-sided.
-fn mark_see_through(mesh: &mut Mesh, img: &Rgba) {
+pub(crate) fn mark_see_through(mesh: &mut Mesh, img: &Rgba) {
     use crate::model::face_flags::{DOUBLE_SIDE, OPACITY};
     let alpha = |u: i32, v: i32| {
         let (w, h) = (img.width.max(1), img.height.max(1));

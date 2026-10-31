@@ -2,6 +2,36 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-10-31 — APKs as base games: rebuilt as a PC game folder
+
+The user's own APK (Dinosaur Hunter or Ice Age for Android) becomes a base
+game by rebuilding its pieces as a PC `HUNTDAT` folder
+(`c2_mods::mobile_base`, `c2-pc mobile-base APK --out DIR`), locally, from
+the user's file. Every frontend (PC, the 3DS cook, the Wii U installer)
+then reads it as it reads a PC install, so nothing downstream forks. First
+step: the areas.
+- **`.man`** (from the game's loader, `Terrain::Load` and
+  `FilesManagerAndroid::ReadCompressed`): raw 1024x1024 height, three
+  light maps, flags' low byte; a raw 512x512 mobile-only grid; then
+  run-length grids (`u32` bytes, `(value, run)` pairs): texture, a
+  mobile-only 512x512, objects, object heights, water, fog, ambient zones.
+  Dinosaur Hunter's areas 1-3 are the PC's layer for layer (object heights
+  93%). No second texture or flags' high byte: the PC leaves both unused.
+- **`.rst`** (text) into the `.RSC`: the terrain atlas's tiles (64 px)
+  scaled to the PC's 128; objects from `models/objects/*.3dn` (the PC's
+  model plus a bone count and a sprite name; the model's own name is its
+  texture's, as objects share them), bounds and shadow lines halved (the PC
+  stores half), collision and lighting keys as the PC's flags; sprites
+  from the 128-px atlas cells; the sky plane blended over the sky colour;
+  fog colours as the PC's `0x00BBGGRR`; volumes from 0-1 to 0-255.
+- The mobile games blend by alpha where the PC keys colour 0 on flagged
+  faces: faces over see-through texels get the PC's see-through flags, and
+  32-bit TGAs keep alpha (unless it is all clear) — this also reaches the
+  mobile animals import.
+- The mobile trophy room is its own map (an open field), not the PC's room;
+  Ice Age's area 2 reuses Dinosaur Hunter's area 6 terrain with its own
+  look. Both kept as the APK has them.
+
 ## 2026-10-31 — Trophy room start; Triassic's "-ERROR-" area kept
 
 - **Trophy room start.** Both Modder's Edition engines start the hunter at
