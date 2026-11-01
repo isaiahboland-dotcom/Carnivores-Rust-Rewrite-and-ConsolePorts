@@ -381,6 +381,7 @@ fn info_line(m: &mut MeeInfo, key: &str, v: &str) {
         "swmspd" => m.swim_speed = c_atof(v),
         "jmpspd" => m.jump_speed = c_atof(v),
         "killdist" => m.kill_dist = c_atoi(v),
+        "hunterfile" => m.hunter_file = Some(v.trim().trim_matches('\'').to_string()),
         "aggress" => m.aggress = c_atoi(v),
         "defensive" => m.defensive = truthy(v),
         "fearshothear" => m.fear_hear_shot = truthy(v),

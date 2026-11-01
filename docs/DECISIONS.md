@@ -2,6 +2,23 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-01 — Combined standalones: a hunter of another body is kept as the game's own
+
+When a standalone's hunter model has a different vertex count from the base's,
+its kill animations can't be merged into the shared hunter. Before, it was left out, and
+its animals' kills played the shared hunter's animations at the standalone's
+numbers (JPHL: 924 vertices against 475). Now the combined game keeps it as a second AI 0
+character, "Hunter (<game>)", with its files under `MODS/<game>/`. The game's animals carry
+`hunterFile = '<that model>'` (our own key), and their kill types keep its own animation
+numbers (no remap). `Hunt::kill_hunter` lays the body on the hunter its killer
+names (matched by model file, so platform rosters that are subsets still find
+it), else on the first. A kill type naming an animation past the hunter's own
+falls back to the first death (an original-engine game's kill types are borrowed
+from the base's same-AI animals). Checked: JPHL combines with its own 8-animation hunter (its
+animals' borrowed numbers 0 and 3 are `Hr_dead1` and `Hr_Kill` on it).
+The consoles cook each standalone alone, so only a combined pack carries the extra
+model.
+
 ## 2026-11-01 — M2 polish: see-through faces at 0x70, object turns checked, the water's shimmer
 
 From the original's source, settling the M2 "known approximations":

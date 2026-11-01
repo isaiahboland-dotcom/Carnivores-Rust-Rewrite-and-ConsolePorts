@@ -1769,12 +1769,26 @@ impl Hunt {
         self.bin_mode = false;
         self.weapons.optic_mode = false;
         let (cam, alpha, beta) = self.camera();
-        // Small platform rosters need not keep the hunter in slot zero.
-        let hunter_type = self
-            .herd
-            .species
-            .iter()
-            .position(|s| s.info.ai == ai::HUNTER)
+        // Small platform rosters need not keep the hunter in slot zero; a
+        // killer naming its own hunter (`hunterFile`) gets that one.
+        let own = by
+            .and_then(|i| self.herd.chars.get(i))
+            .and_then(|c| self.herd.species.get(c.ctype))
+            .and_then(|s| s.mee.as_ref()?.hunter_file.as_deref());
+        let hunters = || {
+            self.herd
+                .species
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| s.info.ai == ai::HUNTER)
+        };
+        let hunter_type = own
+            .and_then(|f| {
+                hunters()
+                    .find(|(_, s)| s.info.file.eq_ignore_ascii_case(f))
+                    .map(|(i, _)| i)
+            })
+            .or_else(|| hunters().next().map(|(i, _)| i))
             .unwrap_or(0);
         let mut body = Character {
             ctype: hunter_type,
@@ -1804,6 +1818,16 @@ impl Hunt {
             body.pos = [x, area.land_qh(x, z, self.player.y), z];
         }
         body.phase = kind.max(0) as usize;
+        // A kill type borrowed for another hunter may name an animation past
+        // its own: the first death instead.
+        if self
+            .herd
+            .species
+            .get(hunter_type)
+            .is_some_and(|sp| body.phase >= sp.ani_time.len())
+        {
+            body.phase = 0;
+        }
         body.prev_phase = body.phase;
         self.herd.chars.push(body);
         let index = self.herd.chars.len() - 1;
@@ -2699,6 +2723,32 @@ mod tests {
         let opts = HuntOptions::default();
         let hunt = Hunt::new(&area, player, herd, weapons, rng, opts, blank_save());
         (area, hunt, car)
+    }
+
+    #[test]
+    fn a_killer_naming_its_hunter_lays_that_body() {
+        let (area, mut hunt, car) = setup(false);
+        let own = DinoInfo {
+            file: "MODS/game/HUNTER.CAR".into(),
+            ..info(0)
+        };
+        hunt.herd.species.push(Species::new(own, &car));
+        let mut m = crate::dino::mee::MeeInfo::new(ai::STEGO);
+        m.hunter_file = Some("mods/game/hunter.car".into());
+        hunt.herd.species[1].mee = Some(Box::new(m));
+        let mut out = Vec::new();
+        hunt.kill_hunter(&area, Some(0), 0, false, &mut out);
+        let body = hunt.death.as_ref().map(|d| d.body).expect("dead");
+        assert_eq!(hunt.herd.chars[body].ctype, 2, "its own hunter");
+        // Without the name, the first hunter.
+        let (area, mut hunt, _) = setup(false);
+        hunt.kill_hunter(&area, Some(0), 99, false, &mut out);
+        let body = hunt.death.as_ref().map(|d| d.body).expect("dead");
+        assert_eq!(hunt.herd.chars[body].ctype, 0);
+        assert_eq!(
+            hunt.herd.chars[body].phase, 0,
+            "past its animations: the first"
+        );
     }
 
     #[test]

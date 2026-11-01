@@ -89,6 +89,9 @@ pub struct KillType {
 pub struct MeeInfo {
     /// The dialect's AI number (`Clone`).
     pub ai: i32,
+    /// Ours (`hunterFile`): the hunter model its kills play on, when a
+    /// combined standalone game keeps a hunter of another body.
+    pub hunter_file: Option<String>,
     /// Logical phase -> model animation (`animIndex`).
     pub anim_index: Vec<usize>,
     pub run: usize,
@@ -178,6 +181,7 @@ impl MeeInfo {
     pub fn new(ai: i32) -> Self {
         Self {
             ai,
+            hunter_file: None,
             anim_index: Vec::new(),
             run: 0,
             walk: 0,

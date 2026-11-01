@@ -319,3 +319,83 @@ prices {\n start = 100\n area = 10\n dino = 20\n}\n.\n";
     assert!(chars[0].subs.iter().any(|s| s.name == "overwrite char0"));
     let _ = std::fs::remove_dir_all(game);
 }
+
+#[test]
+fn a_hunter_of_another_body_is_kept_for_its_own_animals_kills() {
+    let base = tmp("body-base");
+    write(
+        &base,
+        &[
+            ("HUNTDAT/_RES.TXT", BASE_RES.as_bytes()),
+            ("HUNTDAT/_MENU.TXT", BASE_MENU.as_bytes()),
+            ("HUNTDAT/hunter.car", &model(&["stand"])),
+            ("HUNTDAT/velo.car", &model(&["run", "walk", "die"])),
+            ("HUNTDAT/WEAPONS/pistol.car", b"pistol"),
+            ("HUNTDAT/AREAS/AREA1.MAP", b"base map"),
+            ("HUNTDAT/AREAS/AREA1.RSC", b"base rsc"),
+        ],
+    );
+    // A hunter of two vertices (the base's has one).
+    let mut two = car::parse(&model(&["dead", "rex kill"])).expect("model");
+    two.mesh.vertices.push(two.mesh.vertices[0]);
+    for a in &mut two.animations {
+        a.data = vec![0; 6];
+    }
+    let game = tmp("body-games").join("Game C");
+    write(
+        &game,
+        &[
+            (
+                "HUNTDAT/_RES.TXT",
+                b"weapons {\n{\n name = 'Bow'\n file = 'bow.car'\n power = 3\n}\n}\n\
+characters {\n{\n name = 'Hunter'\n file = 'hunter.car'\n ai = 0\n}\n\
+{\n name = 'Rex'\n file = 'rex.car'\n ai = 18\n callNo = 0\n runAnim = 0\n\
+ killtype {\n  hunterAnim = 1\n }\n spawninfo {\n  spawngroup = 0\n }\n}\n}\n\
+spawntable {\n spawngroup {\n  spawnmax = 2\n }\n}\n\
+prices {\n start = 100\n area = 30\n dino = 40\n weapon = 7\n}\n.\n",
+            ),
+            ("HUNTDAT/hunter.car", &car::write(&two)),
+            ("HUNTDAT/rex.car", &model(&["run"])),
+            ("HUNTDAT/WEAPONS/bow.car", b"bow"),
+            ("HUNTDAT/AREAS/AREA1.MAP", b"c map"),
+            ("HUNTDAT/AREAS/AREA1.RSC", b"c rsc"),
+        ],
+    );
+    let out = tmp("body-out");
+    let built = build(
+        std::slice::from_ref(&base),
+        std::slice::from_ref(&game),
+        &out,
+        &Options {
+            ambients: Ambients::Tied,
+        },
+    )
+    .expect("combine");
+    assert!(built.report.contains("another body"), "{}", built.report);
+    let res = ResTxt::parse(&std::fs::read_to_string(out.join("HUNTDAT/_RES.TXT")).expect("res"))
+        .expect("parse");
+    let chars = &res.section("characters").expect("characters").blocks;
+    let rex = chars
+        .iter()
+        .find(|c| c.get(&["name"]) == Some("'Rex'"))
+        .expect("rex");
+    assert_eq!(rex.get(&["hunterFile"]), Some("'MODS/game-c/hunter.car'"));
+    // Its kill keeps its own hunter's animation number.
+    let kill = rex
+        .subs
+        .iter()
+        .find(|s| s.name.eq_ignore_ascii_case("killtype"))
+        .expect("killtype");
+    assert_eq!(kill.block.get(&["hunterAnim"]), Some("1"));
+    let own = chars
+        .iter()
+        .find(|c| c.get(&["name"]) == Some("'Hunter (Game C)'"))
+        .expect("its own hunter");
+    assert_eq!(own.get(&["file"]), Some("'MODS/game-c/hunter.car'"));
+    assert_eq!(own.get(&["ai"]), Some("0"));
+    // The base's hunter is still the first.
+    assert_eq!(chars[0].get(&["file"]), Some("'hunter.car'"));
+    for d in [base, game, out] {
+        let _ = std::fs::remove_dir_all(d);
+    }
+}

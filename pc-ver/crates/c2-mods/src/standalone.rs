@@ -842,21 +842,33 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
             .and_then(|f| crate::pack::find_path(&g.root, &f))
             .and_then(|p| std::fs::read(p).ok())
             .and_then(|d| c2_formats::car::parse(&d).ok());
+        // Another body: the game keeps its own hunter, a second AI 0
+        // character its animals name (`hunterFile`), kills unmerged.
+        let mut own_hunter: Option<Block> = None;
         let hunter_map = match g_hunter {
             Some(h) => {
                 match crate::hunter::merge(&mut hunter, std::slice::from_ref(&h)).remove(0) {
                     crate::hunter::Outcome::Merged { map } => map,
                     crate::hunter::Outcome::Incompatible(why) => {
                         report.push_str(&format!(
-                        "- **{}**: its hunter model is left out ({why}); its kills may show the wrong animation\n",
-                        g.name
-                    ));
+                            "- **{}**: its hunter has another body ({why}); kept as its own, for its animals' kills\n",
+                            g.name
+                        ));
+                        own_hunter = game_hunter(&g.res).cloned().map(|mut b| {
+                            prefix_files(&mut b, &g.slug);
+                            set(&mut b, "ai", "0".into());
+                            set(&mut b, "name", format!("'Hunter ({})'", g.name));
+                            b
+                        });
                         Vec::new()
                     }
                 }
             }
             None => Vec::new(),
         };
+        let hunter_file = own_hunter
+            .as_ref()
+            .and_then(|b| b.get(&["file"]).map(unquote));
 
         // Weapons: shared when the game already has the same one.
         let mut weapon_slot: Vec<usize> = Vec::new();
@@ -987,8 +999,14 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
             if tie_ok(&b) {
                 tie(&mut b, &my_areas);
             }
+            if let Some(f) = &hunter_file {
+                set(&mut b, "hunterFile", format!("'{f}'"));
+            }
             section_mut(&mut res, "characters").blocks.push(b);
             added += 1;
+        }
+        if let Some(b) = own_hunter {
+            section_mut(&mut res, "characters").blocks.push(b);
         }
         for (_, b) in &new_weapons {
             let mut b = b.clone();
