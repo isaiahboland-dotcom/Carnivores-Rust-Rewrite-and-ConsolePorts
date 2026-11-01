@@ -56,6 +56,8 @@ pub enum Ask {
     Nothing,
     /// Use the recipe as it is set up ([`Page::to_use`]).
     Use,
+    /// ... and play it.
+    Play,
     Close,
     /// Build the game from the player's APK, for this recipe.
     ChooseApk,
@@ -73,6 +75,8 @@ pub struct Page {
     /// Downloads folders being looked through.
     scanning: usize,
     note: Option<String>,
+    /// Play once every entry is found (an instance's Play).
+    pub play_when_ready: bool,
     tx: Sender<Msg>,
     rx: Receiver<Msg>,
 }
@@ -123,6 +127,7 @@ impl Page {
             base_status: Status::Unset,
             scanning: 0,
             note: None,
+            play_when_ready: false,
             tx,
             rx,
         };
@@ -298,7 +303,61 @@ impl Page {
         }
     }
 
-    pub fn ui(&mut self, ui: &mut egui::Ui, game_dirs: &[PathBuf], busy: bool) -> Ask {
+    /// The entries not found yet (once nothing is being checked).
+    pub fn missing(&self) -> Vec<&Row> {
+        if self.working() {
+            return Vec::new();
+        }
+        self.rows
+            .iter()
+            .filter(|r| !matches!(r.status, Status::Ok(_)))
+            .collect()
+    }
+
+    /// The downloads still to get, each with its author and download page.
+    fn missing_ui(&self, ui: &mut egui::Ui) {
+        let missing = self.missing();
+        if missing.is_empty() {
+            return;
+        }
+        panel(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(format!("Missing: {}", missing.len()))
+                        .color(RED)
+                        .strong(),
+                );
+                let links: Vec<&str> = missing
+                    .iter()
+                    .map(|r| r.entry.url.as_str())
+                    .filter(|u| !u.is_empty())
+                    .collect();
+                if !links.is_empty() && ui.button("Copy the links").clicked() {
+                    ui.ctx().copy_text(links.join("\n"));
+                }
+            });
+            help(
+                ui,
+                "Download each from its page and unpack it into a search folder (Settings),                  or give its folder below.",
+            );
+            for r in missing {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(&r.entry.id).color(SAND));
+                    if !r.entry.credit.is_empty() {
+                        ui.label(RichText::new(format!("by {}", r.entry.credit)).color(DIM));
+                    }
+                    if r.entry.url.is_empty() {
+                        ui.label(RichText::new("no link in the recipe").color(DIM));
+                    } else {
+                        ui.hyperlink_to(&r.entry.url, &r.entry.url);
+                    }
+                });
+            }
+        });
+        ui.add_space(4.0);
+    }
+
+    pub fn ui(&mut self, ui: &mut egui::Ui, game_dirs: &[PathBuf], busy: bool, play: bool) -> Ask {
         let mut ask = Ask::Nothing;
         let r = &self.recipe.recipe;
         ui.label(
@@ -389,6 +448,7 @@ impl Page {
             }
         });
         ui.add_space(4.0);
+        self.missing_ui(ui);
         let mut browse: Option<usize> = None;
         let mut clear: Option<usize> = None;
         if self.rows.is_empty() {
@@ -464,6 +524,13 @@ impl Page {
                 .clicked()
             {
                 ask = Ask::Use;
+            }
+            if play
+                && ui
+                    .add_enabled(ready && !busy, egui::Button::new("Play").fill(GREEN))
+                    .clicked()
+            {
+                ask = Ask::Play;
             }
             if ui.button("Close").clicked() {
                 ask = Ask::Close;

@@ -2,6 +2,50 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-01 — Recipes are whole instances: `[settings]`, the launcher's Instances tab
+
+The owner wants the launcher to work like a Minecraft instance manager such
+as Prism: each recipe is a game you can rebuild after an update without
+redoing the setup. A recipe can now carry `[settings]`:
+- `menu`, `survival`, `three_ds_target`, `ice_age_title`;
+- `balance` (prices and scores, as the balance editor's file);
+- `[settings.pictures]` (`scope`, `weapons`, `bullets`, `animals`) and
+  `[settings.tuning]` (`shotgun`, `scoring`, `animals`), each `auto`, `pc`
+  or `mobile`.
+
+Unset values leave the launcher's choice alone, and a recipe with no
+choices writes no `[settings]`, so the existing recipes are unchanged.
+
+The owner's rule for `auto` tuning (`Recipe::mobile_rules`): the phone's
+shotgun, scoring and animal values are used only on an APK base with no PC
+game beside it, meaning no overlay (the Modder's Edition) and no
+standalone. Everywhere else the PC's are used. Add-ons over an APK base
+don't change this, since they bring no PC rules of their own. For `auto`
+pictures, the game uses the phone's where the game has them.
+
+The pictures and tuning choices are stored and kept through saves, but
+nothing reads them yet. They take effect with the phone's hunt pictures on
+the 3DS and Wii U, and with the phone's rules.
+
+Instances are every recipe under `recipes/`, any folder deep
+(`c2_mods::recipe::find_recipes`, `.toml` files with a `[recipe]` table, so
+`bases/` is passed over). The owner's own go in
+`recipes/instances/testing/` (gitignored), and the rest are the shared ones.
+A recipe in a subfolder finds `recipes/bases/` by looking upward.
+
+The launcher:
+- opens on the Instances tab.
+- Play looks for the downloads: first the folders the recipe was last given
+  (`remembered` in `launcher.toml`), then the search folders (Settings;
+  default `source/`, `source/mods/`, `addons/` and `mods/` beside
+  `recipes/`). It plays straight away if everything is found. Otherwise the
+  recipe page stays up with a "Missing" list: each download's id, author and
+  download page as a link, plus "Copy the links".
+- "Save as instance" saves to `recipes/` by default. It saves the recipe in
+  use with the current choices, or the setup from the other tabs (base
+  matched to a `bases/` profile, add-ons, overlays and standalones pinned
+  from their hashes).
+
 ## 2026-11-01 — Wii U: ground reads stay inside their atlas tile at every mip level
 
 The owner saw a faint grid over part of the ground on the Wii U, like

@@ -10,6 +10,7 @@ mod app;
 mod balance;
 mod cia;
 mod config;
+mod instances;
 mod jobs;
 mod options;
 mod recipe_page;

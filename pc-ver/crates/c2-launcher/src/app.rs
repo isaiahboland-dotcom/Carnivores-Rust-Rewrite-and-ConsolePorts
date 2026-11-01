@@ -12,6 +12,7 @@ use crate::{find_tool, Mode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tab {
+    Instances,
     Game,
     AddOns,
     Balance,
@@ -36,8 +37,11 @@ pub struct Launcher {
     apk_base: Option<PathBuf>,
     /// ... the recipe page's game instead.
     apk_for_recipe: bool,
-    /// A recipe being set up (Add-ons tab).
+    /// A recipe being set up (Add-ons or Instances tab).
     recipe_page: Option<crate::recipe_page::Page>,
+    instances: crate::instances::List,
+    /// "Save as instance" making a recipe from the setup.
+    saving: Option<std::sync::mpsc::Receiver<crate::instances::Saved>>,
 }
 
 fn style(ctx: &egui::Context) {
@@ -107,7 +111,7 @@ impl Launcher {
             .unwrap_or_default();
         Self {
             mode,
-            tab: Tab::Game,
+            tab: Tab::Instances,
             cfg,
             job: None,
             base_text,
@@ -121,6 +125,8 @@ impl Launcher {
             apk_base: None,
             apk_for_recipe: false,
             recipe_page: None,
+            instances: Default::default(),
+            saving: None,
         }
     }
 
@@ -380,15 +386,149 @@ impl Launcher {
         }
     }
 
-    /// The recipe page for `path` (a dropped or opened `.toml`).
+    /// The recipe page for `path` (a dropped or opened `.toml`, or an
+    /// instance): the folders it was last given, the rest looked for in
+    /// the search folders.
     fn open_recipe(&mut self, path: PathBuf) {
         let dirs = self.game_folders().0;
-        match crate::recipe_page::Page::open(&path, self.cfg.recipe.as_ref(), dirs) {
-            Ok(p) => {
+        match crate::recipe_page::Page::open(&path, self.cfg.remembered(&path), dirs) {
+            Ok(mut p) => {
+                p.scan(self.cfg.search_dirs());
                 self.recipe_page = Some(p);
-                self.tab = Tab::AddOns;
+                if self.tab != Tab::Instances {
+                    self.tab = Tab::AddOns;
+                }
             }
             Err(e) => self.note = Some((format!("Not a recipe: {e}"), RED)),
+        }
+    }
+
+    /// The recipe page's recipe in use (its choices taken in), and played.
+    fn use_recipe(&mut self, play: bool) {
+        let Some(p) = self.recipe_page.take() else {
+            return;
+        };
+        let u = p.to_use();
+        let s = &p.recipe.settings;
+        self.cfg.apply(s);
+        if let Some(b) = &s.balance {
+            self.balance.edits = b.clone();
+            let _ = self.balance.store();
+        }
+        self.cfg.remember(&u);
+        self.note = Some((
+            format!("Recipe '{}' in use: play and the builds go by it.", u.id()),
+            TEXT,
+        ));
+        self.cfg.recipe = Some(u);
+        self.save();
+        if play {
+            self.play();
+        }
+    }
+
+    /// "Save as instance": the recipe in use with the choices made now, or
+    /// the setup (game, add-ons, standalones) as a new recipe, saved under
+    /// the recipes folder by default.
+    fn save_instance(&mut self) {
+        let dir = crate::config::recipes_dir();
+        let _ = std::fs::create_dir_all(&dir);
+        let current = self.active_recipe().cloned();
+        let name = current.as_ref().map_or("my-instance".into(), |u| u.id());
+        let Some(out) = rfd::FileDialog::new()
+            .set_directory(&dir)
+            .set_file_name(format!("{name}.toml"))
+            .add_filter("Recipe", &["toml"])
+            .save_file()
+        else {
+            return;
+        };
+        let stem = out
+            .file_stem()
+            .map_or(String::new(), |s| s.to_string_lossy().into_owned());
+        let Some(u) = current else {
+            self.saving = Some(crate::instances::from_setup(
+                &self.cfg,
+                out,
+                crate::instances::id_from(&stem),
+            ));
+            self.note = Some(("Saving the instance (hashing its files)...".into(), TEXT));
+            return;
+        };
+        let mut r = match c2_mods::recipe::Recipe::load(&u.path) {
+            Ok(r) => r,
+            Err(e) => {
+                self.note = Some((format!("Not saved: {e}"), RED));
+                return;
+            }
+        };
+        // A recipe's patches are found beside it.
+        if !r.patches.is_empty() && out.parent() != u.path.parent() {
+            self.note = Some((
+                "Not saved: the recipe has patches beside it; save it in the same folder.".into(),
+                RED,
+            ));
+            return;
+        }
+        if out != u.path {
+            r.recipe.id = crate::instances::id_from(&stem);
+            r.recipe.name = stem;
+        }
+        r.settings = self.cfg.settings(&r.settings);
+        r.settings.balance = self.balance.file().map(|_| self.balance.edits.clone());
+        self.write_instance(r, RecipeUse { path: out, ..u });
+    }
+
+    fn write_instance(&mut self, r: c2_mods::recipe::Recipe, u: RecipeUse) {
+        match std::fs::write(&u.path, r.to_toml()) {
+            Ok(()) => {
+                self.note = Some((format!("Instance saved: {}", u.path.display()), TEXT));
+                self.cfg.remember(&u);
+                self.cfg.recipe = Some(u);
+                self.save();
+                self.instances.refresh(&self.cfg);
+            }
+            Err(e) => self.note = Some((format!("Not saved: {e}"), RED)),
+        }
+    }
+
+    /// A "Save as instance" of the setup that finished.
+    fn saving_done(&mut self) {
+        let Some(rx) = &self.saving else {
+            return;
+        };
+        let Ok(made) = rx.try_recv() else {
+            return;
+        };
+        self.saving = None;
+        match made {
+            Ok((mut r, u)) => {
+                r.settings.balance = self.balance.file().map(|_| self.balance.edits.clone());
+                self.write_instance(r, u);
+            }
+            Err(e) => self.note = Some((format!("Not saved: {e}"), RED)),
+        }
+    }
+
+    /// The Instances tab: the recipe page while one is open, else the list.
+    fn instances_tab(&mut self, ui: &mut egui::Ui) {
+        heading(ui, "Instances");
+        if self.recipe_page.is_some() {
+            self.recipe_ui(ui);
+            return;
+        }
+        let play = self.mode == Mode::Full;
+        let busy = self.busy() || self.saving.is_some();
+        match self.instances.ui(ui, &self.cfg, play, busy) {
+            crate::instances::Ask::Nothing => {}
+            crate::instances::Ask::Open(p) => self.open_recipe(p),
+            crate::instances::Ask::Play(p) => {
+                self.open_recipe(p);
+                if let Some(page) = &mut self.recipe_page {
+                    page.play_when_ready = true;
+                }
+            }
+            crate::instances::Ask::Save => self.save_instance(),
         }
     }
 
@@ -1127,19 +1267,12 @@ impl Launcher {
         let busy = self.busy();
         if let Some(p) = &mut self.recipe_page {
             let mut ask = crate::recipe_page::Ask::Nothing;
-            panel(ui, |ui| ask = p.ui(ui, &dirs, busy));
+            let play = self.mode == Mode::Full;
+            panel(ui, |ui| ask = p.ui(ui, &dirs, busy, play));
             match ask {
                 crate::recipe_page::Ask::Nothing => {}
-                crate::recipe_page::Ask::Use => {
-                    let u = p.to_use();
-                    self.recipe_page = None;
-                    self.note = Some((
-                        format!("Recipe '{}' in use: play and the builds go by it.", u.id()),
-                        TEXT,
-                    ));
-                    self.cfg.recipe = Some(u);
-                    self.save();
-                }
+                crate::recipe_page::Ask::Use => self.use_recipe(false),
+                crate::recipe_page::Ask::Play => self.use_recipe(true),
                 crate::recipe_page::Ask::Close => self.recipe_page = None,
                 crate::recipe_page::Ask::ChooseApk => {
                     if let Some(apk) = rfd::FileDialog::new()
@@ -1802,6 +1935,8 @@ impl Launcher {
                 ui.label(RichText::new(text).color(col));
             }
         });
+        ui.add_space(8.0);
+        self.search_dirs_ui(ui);
         if self.mode == Mode::Full {
             ui.add_space(8.0);
             panel(ui, |ui| {
@@ -1817,6 +1952,51 @@ impl Launcher {
                     self.save();
                 }
             });
+        }
+    }
+
+    /// Where instances' downloads are looked for.
+    fn search_dirs_ui(&mut self, ui: &mut egui::Ui) {
+        let mut changed = false;
+        panel(ui, |ui| {
+            ui.label(RichText::new("Search folders").color(GOLD));
+            help(
+                ui,
+                "Where an instance's downloads are looked for (each folder and the folders \
+                 and .zips right inside it). With none added: source, source/mods, addons and \
+                 mods beside the recipes folder.",
+            );
+            let mut remove = None;
+            for (i, d) in self.cfg.search_dirs().iter().enumerate() {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(d.display().to_string()).color(SAND));
+                    if !self.cfg.mod_dirs.is_empty() && ui.small_button("Remove").clicked() {
+                        remove = Some(i);
+                    }
+                });
+            }
+            if let Some(i) = remove {
+                self.cfg.mod_dirs.remove(i);
+                changed = true;
+            }
+            ui.horizontal(|ui| {
+                if ui.button("Add folder...").clicked() {
+                    if let Some(p) = rfd::FileDialog::new().pick_folder() {
+                        if self.cfg.mod_dirs.is_empty() {
+                            self.cfg.mod_dirs = self.cfg.search_dirs();
+                        }
+                        self.cfg.mod_dirs.push(p);
+                        changed = true;
+                    }
+                }
+                if !self.cfg.mod_dirs.is_empty() && ui.button("Reset").clicked() {
+                    self.cfg.mod_dirs.clear();
+                    changed = true;
+                }
+            });
+        });
+        if changed {
+            self.save();
         }
     }
 
@@ -1928,11 +2108,34 @@ impl eframe::App for Launcher {
         self.dropped(dropped);
         self.import_done();
         self.apk_base_done();
+        self.saving_done();
+        if self.saving.is_some() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(200));
+        }
+        let mut play_now = false;
+        let busy = self.busy();
         if let Some(p) = &mut self.recipe_page {
             p.poll();
             if p.working() {
                 ctx.request_repaint_after(std::time::Duration::from_millis(150));
+            } else if p.play_when_ready {
+                // An instance's Play: straight in once everything is found,
+                // else the page stays up with what is missing.
+                p.play_when_ready = false;
+                play_now = p.ready() && !busy;
+                if !p.ready() {
+                    self.note = Some((
+                        format!(
+                            "{} download(s) missing: their pages are listed.",
+                            p.missing().len()
+                        ),
+                        RED,
+                    ));
+                }
             }
+        }
+        if play_now {
+            self.use_recipe(true);
         }
         if self.busy() {
             ctx.request_repaint_after(std::time::Duration::from_millis(200));
@@ -1949,7 +2152,11 @@ impl eframe::App for Launcher {
                             .strong(),
                     );
                     ui.add_space(16.0);
-                    let mut tabs = vec![(Tab::Game, "The game"), (Tab::AddOns, "Add-ons")];
+                    let mut tabs = vec![
+                        (Tab::Instances, "Instances"),
+                        (Tab::Game, "The game"),
+                        (Tab::AddOns, "Add-ons"),
+                    ];
                     // The Wii U reads the game's files as they are: no balance yet.
                     if self.mode != Mode::WiiU {
                         tabs.push((Tab::Balance, "Balance"));
@@ -1991,6 +2198,7 @@ impl eframe::App for Launcher {
             });
         egui::CentralPanel::default().show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| match self.tab {
+                Tab::Instances => self.instances_tab(ui),
                 Tab::Game => self.game_tab(ui),
                 Tab::AddOns => self.addons_tab(ui),
                 Tab::Balance => self.balance_tab(ui),

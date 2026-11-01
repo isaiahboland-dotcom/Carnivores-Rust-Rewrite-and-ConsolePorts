@@ -37,6 +37,111 @@ pub struct Recipe {
     pub resolve: Vec<Resolve>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub patches: Vec<PatchRef>,
+    /// Everything else chosen before playing (the launcher's instances):
+    /// with it a recipe rebuilds the same game later.
+    #[serde(skip_serializing_if = "Settings::is_empty")]
+    pub settings: Settings,
+}
+
+/// Which version a feature comes from where the PC and phone games each
+/// have their own.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Source {
+    /// The default for the game being built (see [`Recipe::mobile_rules`];
+    /// pictures: the phone's where the game has them).
+    #[default]
+    Auto,
+    Pc,
+    Mobile,
+}
+
+impl Source {
+    pub fn is_auto(&self) -> bool {
+        *self == Source::Auto
+    }
+
+    /// Whether the phone's version is used, `mobile` being the default.
+    pub fn mobile(self, mobile: bool) -> bool {
+        match self {
+            Source::Auto => mobile,
+            Source::Pc => false,
+            Source::Mobile => true,
+        }
+    }
+}
+
+/// `[settings]`: a recipe's choices beyond its files. Empty or missing
+/// values are the launcher's defaults.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Settings {
+    /// PC menu: `mod`, `original`, `ice-age` or `mobile`.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub menu: String,
+    /// The survivals offered (`classic`, `modded`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub survival: Option<Vec<String>>,
+    /// Hunt pictures: the phone's or the PC's.
+    #[serde(skip_serializing_if = "Pictures::is_auto")]
+    pub pictures: Pictures,
+    /// Game rules: the phone's or the PC's.
+    #[serde(skip_serializing_if = "Tuning::is_auto")]
+    pub tuning: Tuning,
+    /// 3DS: `o3ds` or `n3ds`.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub three_ds_target: String,
+    /// 3DS: Ice Age's title art.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ice_age_title: Option<bool>,
+    /// Prices and scores changed from the game's (the launcher's balance
+    /// editor, `crate::balance`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub balance: Option<crate::balance::Balance>,
+}
+
+impl Settings {
+    pub fn is_empty(&self) -> bool {
+        *self == Settings::default()
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Pictures {
+    #[serde(skip_serializing_if = "Source::is_auto")]
+    pub scope: Source,
+    #[serde(skip_serializing_if = "Source::is_auto")]
+    pub weapons: Source,
+    #[serde(skip_serializing_if = "Source::is_auto")]
+    pub bullets: Source,
+    /// Icons of the animals both games have.
+    #[serde(skip_serializing_if = "Source::is_auto")]
+    pub animals: Source,
+}
+
+impl Pictures {
+    pub fn is_auto(&self) -> bool {
+        *self == Pictures::default()
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Tuning {
+    #[serde(skip_serializing_if = "Source::is_auto")]
+    pub shotgun: Source,
+    #[serde(skip_serializing_if = "Source::is_auto")]
+    pub scoring: Source,
+    /// The animals' values (speed, health, senses).
+    #[serde(skip_serializing_if = "Source::is_auto")]
+    pub animals: Source,
+}
+
+impl Tuning {
+    pub fn is_auto(&self) -> bool {
+        *self == Tuning::default()
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -153,6 +258,53 @@ impl Recipe {
     pub fn to_toml(&self) -> String {
         toml::to_string_pretty(self).unwrap_or_default()
     }
+
+    /// Whether the phone's game rules (shotgun, scoring, animals' values)
+    /// are the default: an APK base with no PC game beside it, neither an
+    /// overlay (the Modder's Edition) nor a standalone (owner, 2026-11-01).
+    pub fn mobile_rules(&self, base: Option<&Base>) -> bool {
+        base.is_some_and(|b| !b.base.apk.is_empty())
+            && self.overlays.is_empty()
+            && self.standalones.is_empty()
+    }
+}
+
+/// Every recipe under `dir`, any folder deep (`recipes/instances/...`),
+/// sorted by path: `.toml` files with a `[recipe]` table, so the base
+/// hash lists (`bases/`) and other files are passed over.
+pub fn find_recipes(dir: &Path) -> Vec<PathBuf> {
+    fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for e in rd.flatten() {
+            let p = e.path();
+            let hidden = p
+                .file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with('.'));
+            if hidden {
+                continue;
+            }
+            if p.is_dir() {
+                if depth < 8 {
+                    walk(&p, depth + 1, out);
+                }
+            } else if p
+                .extension()
+                .is_some_and(|x| x.eq_ignore_ascii_case("toml"))
+                && std::fs::read_to_string(&p)
+                    .ok()
+                    .and_then(|t| t.parse::<toml::Table>().ok())
+                    .is_some_and(|t| t.get("recipe").is_some_and(|r| r.is_table()))
+            {
+                out.push(p);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(dir, 0, &mut out);
+    out.sort();
+    out
 }
 
 pub fn sha256(data: &[u8]) -> String {
@@ -429,16 +581,20 @@ fn locate_among(list: &[RecipeMod], cands: &[Cand]) -> Vec<Located> {
         .collect()
 }
 
-/// The base profile `bases/<base>.toml` beside the recipe, if any.
+/// The base profile `bases/<base>.toml` beside the recipe or a folder above it, if any.
 pub fn load_base(recipe_path: &Path, r: &Recipe) -> Option<Base> {
     if r.recipe.base.is_empty() {
         return None;
     }
-    let p = recipe_path
-        .parent()?
-        .join("bases")
-        .join(format!("{}.toml", r.recipe.base));
-    toml::from_str(&std::fs::read_to_string(p).ok()?).ok()
+    // Beside the recipe, or beside a folder above it (a recipe in
+    // `recipes/instances/...` uses `recipes/bases/`).
+    let name = format!("{}.toml", r.recipe.base);
+    let text = recipe_path
+        .ancestors()
+        .skip(1)
+        .take(8)
+        .find_map(|d| std::fs::read_to_string(d.join("bases").join(&name)).ok())?;
+    toml::from_str(&text).ok()
 }
 
 /// For a base built from an APK (`apk` set): whether the game folder `game`

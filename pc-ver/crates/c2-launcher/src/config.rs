@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use c2_mods::recipe::Settings;
 use serde::{Deserialize, Serialize};
 
 /// The data folder `c2-pc` uses (`c2-pc/src/save.rs`: `data_dir`).
@@ -68,6 +69,29 @@ pub enum MenuStyle {
     IceAge,
     /// A touch-style layout after the mobile game's (experimental).
     Mobile,
+}
+
+impl MenuStyle {
+    /// Its name in a recipe's `[settings]`.
+    pub fn name(self) -> &'static str {
+        match self {
+            MenuStyle::Mod => "mod",
+            MenuStyle::Original => "original",
+            MenuStyle::IceAge => "ice-age",
+            MenuStyle::Mobile => "mobile",
+        }
+    }
+
+    pub fn from_name(s: &str) -> Option<Self> {
+        [
+            MenuStyle::Mod,
+            MenuStyle::Original,
+            MenuStyle::IceAge,
+            MenuStyle::Mobile,
+        ]
+        .into_iter()
+        .find(|m| m.name().eq_ignore_ascii_case(s))
+    }
 }
 
 /// Which survivals the games offer (owner, 2026-10-23): the mobile game's
@@ -268,6 +292,13 @@ pub struct Config {
     pub ice_age: Option<PathBuf>,
     /// A recipe set up on the Add-ons tab (`crate::recipe_page`).
     pub recipe: Option<RecipeUse>,
+    /// The folders each recipe was last given, so an instance plays again
+    /// without being set up again.
+    pub remembered: Vec<RecipeUse>,
+    /// Where an instance's downloads are looked for, besides the ones it
+    /// was last given; empty: `source/`, `source/mods`, `addons/` and
+    /// `mods/` beside the recipes folder, those that exist.
+    pub mod_dirs: Vec<PathBuf>,
 }
 
 /// A recipe and the folder given for each of its entries; while `on`, play
@@ -318,6 +349,22 @@ fn path() -> PathBuf {
     data_dir().join("launcher.toml")
 }
 
+/// The recipes folder (instances, any folder deep): beside the launcher,
+/// or (working from the source tree) the tree's `recipes/`; a new one is
+/// made beside the launcher.
+pub fn recipes_dir() -> PathBuf {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(Path::to_path_buf))
+        .unwrap_or_default();
+    // pc-ver/target/release -> the tree's top folder
+    let tree = exe_dir.ancestors().nth(3).map(|r| r.join("recipes"));
+    std::iter::once(exe_dir.join("recipes"))
+        .chain(tree)
+        .find(|d| d.is_dir())
+        .unwrap_or_else(|| exe_dir.join("recipes"))
+}
+
 impl Config {
     pub fn load() -> Self {
         std::fs::read_to_string(path())
@@ -341,6 +388,77 @@ impl Config {
             .filter(|a| a.enabled)
             .map(|a| a.path.clone())
             .collect()
+    }
+
+    /// The folders an instance's downloads are looked for in.
+    pub fn search_dirs(&self) -> Vec<PathBuf> {
+        if !self.mod_dirs.is_empty() {
+            return self.mod_dirs.clone();
+        }
+        let top = recipes_dir()
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default();
+        ["source", "source/mods", "addons", "mods"]
+            .iter()
+            .map(|d| top.join(d))
+            .filter(|d| d.is_dir())
+            .collect()
+    }
+
+    /// The folders last given for the recipe at `path`.
+    pub fn remembered(&self, path: &Path) -> Option<&RecipeUse> {
+        self.recipe
+            .iter()
+            .chain(&self.remembered)
+            .find(|u| u.path == path)
+    }
+
+    /// Remembers a recipe's folders (the newest kept).
+    pub fn remember(&mut self, u: &RecipeUse) {
+        self.remembered.retain(|r| r.path != u.path);
+        self.remembered.push(u.clone());
+    }
+
+    /// Takes in a recipe's choices: those it leaves unset stay as they are.
+    pub fn apply(&mut self, s: &Settings) {
+        if let Some(m) = MenuStyle::from_name(&s.menu) {
+            self.menu_style = m;
+        }
+        if let Some(v) = &s.survival {
+            let has = |k: &str| v.iter().any(|x| x.eq_ignore_ascii_case(k));
+            self.survival_modes = SurvivalModes {
+                classic: has("classic"),
+                modded: has("modded"),
+            };
+        }
+        match s.three_ds_target.as_str() {
+            "o3ds" => self.three_ds.target = Target::Old,
+            "n3ds" => self.three_ds.target = Target::New,
+            _ => {}
+        }
+        if let Some(t) = s.ice_age_title {
+            self.three_ds.ice_age_title = t;
+        }
+    }
+
+    /// The choices to save in a recipe: the launcher's, over `old` (a
+    /// recipe's own, which keep what the launcher has no control for).
+    pub fn settings(&self, old: &Settings) -> Settings {
+        let m = self.survival_modes;
+        Settings {
+            menu: self.menu_style.name().into(),
+            survival: Some(
+                [("classic", m.classic), ("modded", m.modded)]
+                    .iter()
+                    .filter(|(_, on)| *on)
+                    .map(|(k, _)| k.to_string())
+                    .collect(),
+            ),
+            three_ds_target: self.three_ds.target.arg().into(),
+            ice_age_title: Some(self.three_ds.ice_age_title),
+            ..old.clone()
+        }
     }
 
     pub fn enabled_addons(&self) -> Vec<PathBuf> {
@@ -432,6 +550,33 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(u.mods_args(), ["--mods", "a=/d/a", "--mods", "b=/d/b"]);
+    }
+
+    #[test]
+    fn recipe_settings_in_and_out() {
+        let mut c = Config::default();
+        let s = Settings {
+            menu: "mobile".into(),
+            survival: Some(vec!["classic".into()]),
+            three_ds_target: "n3ds".into(),
+            pictures: c2_mods::recipe::Pictures {
+                scope: c2_mods::recipe::Source::Mobile,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        c.apply(&s);
+        assert_eq!(c.menu_style, MenuStyle::Mobile);
+        assert!(c.survival_modes.classic && !c.survival_modes.modded);
+        assert_eq!(c.three_ds.target, Target::New);
+        // What the launcher has no control for is kept from the recipe.
+        let back = c.settings(&s);
+        assert_eq!(back.pictures, s.pictures);
+        assert_eq!(back.menu, "mobile");
+        assert_eq!(back.survival, s.survival);
+        // Unset leaves the launcher's choice alone.
+        c.apply(&Settings::default());
+        assert_eq!(c.menu_style, MenuStyle::Mobile);
     }
 
     #[test]

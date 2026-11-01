@@ -170,6 +170,24 @@ the folder whose files match the hashes, and lists every missing or different
 file with the URL to get it. Only the listed files are used, so a recipe
 builds the same game everywhere.
 
+A recipe can also hold the choices made for its game, so the launcher's
+Instances tab can rebuild it later exactly as it was:
+```toml
+[settings]
+menu = "mobile"              # mod, original, ice-age, mobile
+survival = ["classic", "modded"]
+three_ds_target = "o3ds"     # or n3ds
+
+[settings.pictures]          # auto (default), pc or mobile
+scope = "mobile"
+
+[settings.tuning]            # auto: the phone's only on an APK base alone
+shotgun = "pc"
+```
+Unset values keep the launcher's choice. The launcher lists every recipe
+under `recipes/`, any folder deep. `recipes/instances/testing/` is ignored
+by git, for your own.
+
 ### Standalone games
 Whole games made from Carnivores 2 (most need the Modder's Edition as the
 overlay) are combined beside the base: each keeps its own areas, animals

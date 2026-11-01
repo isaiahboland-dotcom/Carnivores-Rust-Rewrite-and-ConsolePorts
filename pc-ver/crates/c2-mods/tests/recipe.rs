@@ -170,3 +170,78 @@ fn entries_from_their_own_folders() {
     assert!(found[0].complete(), "{found:?}");
     let _ = std::fs::remove_dir_all(mine);
 }
+
+#[test]
+fn settings_round_trip_and_stay_out_when_unset() {
+    use c2_mods::recipe::{Settings, Source};
+    let plain = Recipe::parse("[recipe]\nid = \"a\"\n").expect("parse");
+    assert!(!plain.to_toml().contains("settings"));
+    let text =
+        "[recipe]\nid = \"a\"\n\n[settings]\nmenu = \"mobile\"\nsurvival = [\"classic\"]\n\n\
+                [settings.pictures]\nscope = \"mobile\"\n\n[settings.tuning]\nshotgun = \"pc\"\n";
+    let r = Recipe::parse(text).expect("parse");
+    assert_eq!(r.settings.menu, "mobile");
+    assert_eq!(r.settings.pictures.scope, Source::Mobile);
+    assert_eq!(r.settings.pictures.weapons, Source::Auto);
+    assert_eq!(r.settings.tuning.shotgun, Source::Pc);
+    let back = Recipe::parse(&r.to_toml()).expect("reparse");
+    assert_eq!(back, r);
+    assert_ne!(back.settings, Settings::default());
+}
+
+#[test]
+fn phone_rules_only_on_an_apk_base_alone() {
+    use c2_mods::recipe::{load_base, Source};
+    let root = tmp("rules");
+    write(
+        &root,
+        &[
+            (
+                "bases/dh-apk.toml",
+                b"[base]\nid = \"dh-apk\"\napk = \"sha256:00\"\n",
+            ),
+            ("bases/c2.toml", b"[base]\nid = \"c2\"\n"),
+        ],
+    );
+    let deep = root.join("instances/testing/r.toml");
+    let apk = Recipe::parse("[recipe]\nid = \"a\"\nbase = \"dh-apk\"\n").expect("parse");
+    let b = load_base(&deep, &apk);
+    assert!(b.is_some(), "bases/ found from a folder below");
+    assert!(apk.mobile_rules(b.as_ref()));
+    assert!(Source::Auto.mobile(apk.mobile_rules(b.as_ref())));
+    assert!(!Source::Pc.mobile(true));
+    let mut with_me = apk.clone();
+    with_me.overlays.push(Default::default());
+    assert!(!with_me.mobile_rules(b.as_ref()));
+    let pc = Recipe::parse("[recipe]\nid = \"b\"\nbase = \"c2\"\n").expect("parse");
+    assert!(!pc.mobile_rules(load_base(&deep, &pc).as_ref()));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn recipes_found_in_subfolders_but_not_base_lists() {
+    let root = tmp("find");
+    write(
+        &root,
+        &[
+            ("a.toml", b"[recipe]\nid = \"a\"\n"),
+            ("instances/testing/b.toml", b"[recipe]\nid = \"b\"\n"),
+            ("bases/c2.toml", b"[base]\nid = \"c2\"\n"),
+            ("notes.txt", b"[recipe]\n"),
+            ("broken.toml", b"[recipe\n"),
+        ],
+    );
+    let found = c2_mods::recipe::find_recipes(&root);
+    let names: Vec<_> = found
+        .iter()
+        .map(|p| p.strip_prefix(&root).expect("under root").to_path_buf())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            PathBuf::from("a.toml"),
+            PathBuf::from("instances/testing/b.toml")
+        ]
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
