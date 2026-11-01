@@ -72,7 +72,7 @@ The launcher sets up the game, manages mods, plays on PC, and builds 3DS and Wii
 command line.
 
 ```sh
-git clone <this repository> c2rs
+git clone https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts.git c2rs
 cd c2rs/pc-ver
 cargo build --release          # builds c2-pc, the launchers and c2-vr into pc-ver/target/release/
 cargo run --release -p c2-launcher
