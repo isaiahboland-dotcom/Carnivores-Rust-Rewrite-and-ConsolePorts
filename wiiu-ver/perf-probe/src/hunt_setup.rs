@@ -330,7 +330,7 @@ pub fn restart(area: &Area, previous: &Hunt, choice: &HuntChoice, tables: Option
         area,
         previous.herd.species.clone(),
         previous.weapons.info.clone(),
-        previous.weapons.anim_ms.clone(),
+        previous.weapons.anims.clone(),
         choice,
         tables,
         targets,
@@ -348,7 +348,7 @@ fn new_hunt(
     area: &Area,
     species: Vec<Species>,
     info: Vec<WeaponInfo>,
-    anim_ms: Vec<[i32; 4]>,
+    anim_ms: Vec<c2_core::game::WeaponAnims>,
     choice: &HuntChoice,
     tables: Option<&Tables>,
     targets: Bits,
@@ -389,6 +389,8 @@ fn new_hunt(
             teleport: choice.teleport != 0,
             distant_ai: true,
             no_call_bonus: roamers.iter().map(|r| r.slot + 10).collect(),
+            // No buttons left for the dialect's reload and rack.
+            auto_chamber: true,
             ..Default::default()
         }
     };

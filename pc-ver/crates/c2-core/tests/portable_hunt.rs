@@ -4,7 +4,8 @@ use c2_core::{
     area::Area,
     dino::Herd,
     game::{
-        weapon_anim, GameEvent, Hunt, HuntInput, HuntOptions, WeaponInfo, WeaponState, Weapons,
+        weapon_anim, GameEvent, Hunt, HuntInput, HuntOptions, WeaponAnims, WeaponInfo, WeaponState,
+        Weapons,
     },
     player::Player,
     rng::MsRand,
@@ -42,7 +43,12 @@ fn portable_hunt_draws_and_fires_a_weapon() {
         fall: false,
         mee: None,
     };
-    let weapons = Weapons::new(vec![rifle], vec![[100; 4]], Bits::bit(0), false);
+    let weapons = Weapons::new(
+        vec![rifle],
+        vec![WeaponAnims::uniform(100)],
+        Bits::bit(0),
+        false,
+    );
     let save = Save {
         player_name_raw: [0; 128],
         reg_number: 0,
@@ -91,6 +97,6 @@ fn portable_hunt_draws_and_fires_a_weapon() {
     assert_eq!(hunt.weapons.shots_left[0], 13);
     assert!(events.contains(&GameEvent::WeaponSound {
         weapon: 0,
-        slot: weapon_anim::FIRE
+        sound: weapon_anim::FIRE
     }));
 }

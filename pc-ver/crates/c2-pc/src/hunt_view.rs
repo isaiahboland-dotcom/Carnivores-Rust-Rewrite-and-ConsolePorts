@@ -127,7 +127,7 @@ pub struct HuntView {
     dinos: DinoAssets,
     weapons: WeaponAssets,
     weapon_infos: Vec<WeaponInfo>,
-    weapon_anims: Vec<[i32; 4]>,
+    weapon_anims: Vec<c2_core::game::WeaponAnims>,
     hud: Hud,
     exit_img: Option<usize>,
     map_img: Option<usize>,
@@ -387,6 +387,9 @@ impl HuntView {
             mee.as_ref(),
         );
         hunt.ship_anim_ms = dinos.ship_anim_ms();
+        if let Some(ms) = weapons.muzzle_ms() {
+            hunt.weapons.muzzle_ms = ms;
+        }
         view.radius = hunt.opts.render_r.max(hunt.opts.view_r) as u32;
         // Past the original range, fog only softens the far edge.
         if hunt.opts.render_r > hunt.opts.view_r {
@@ -448,7 +451,7 @@ impl HuntView {
         view: &AreaView,
         species: Vec<c2_core::dino::Species>,
         infos: &[WeaponInfo],
-        anims: &[[i32; 4]],
+        anims: &[c2_core::game::WeaponAnims],
         seed: u32,
         setup: &HuntSetup,
         mee: Option<&c2_formats::mee::Tables>,
@@ -524,6 +527,7 @@ impl HuntView {
             notice_k: 1.0,
             stealth: false,
             teleport: setup.pc.teleport != 0,
+            auto_chamber: false,
         };
         let mut opts = opts;
         opts.render_r = if trophy {
@@ -1110,7 +1114,7 @@ impl HuntView {
                     [0.2, 0.45, 0.2, 0.9],
                 ));
             }
-            let shots = w.shots_left.get(i).copied().unwrap_or(0);
+            let shots = w.rounds(i);
             let color = if shots > 0 { white } else { grey };
             let num = if k < 9 {
                 format!("{}.", k + 1)
@@ -1186,7 +1190,11 @@ impl HuntView {
             &self.setup,
             self.mee.as_ref(),
         );
+        let muzzle = self.weapons.muzzle_ms();
         self.hunt.ship_anim_ms = ship_ms;
+        if let Some(ms) = muzzle {
+            self.hunt.weapons.muzzle_ms = ms;
+        }
         self.prev_cam = self.hunt.camera().0;
     }
 
@@ -1409,7 +1417,8 @@ impl Scene for HuntView {
         let weapon = match w.pose() {
             Some(_) => format!(
                 " — {} ({} left)",
-                w.info[w.current].name, w.shots_left[w.current]
+                w.info[w.current].name,
+                w.rounds(w.current)
             ),
             None => String::new(),
         };
@@ -1587,6 +1596,11 @@ impl Scene for HuntView {
         let mut hin = HuntInput {
             controls: self.controls(input, dt),
             fire: keys::held(input, k.fire) || pad.held(Pad::Fire),
+            // The Modder's Edition's weapons (keys of their own here: the
+            // dialect shares Look up, Strafe and Turn right).
+            reload: input.held(KeyCode::KeyR) || pad.held(Pad::Reload),
+            rack: input.held(KeyCode::KeyF) || pad.held(Pad::Rack),
+            switch_mode: input.held(KeyCode::KeyV) || pad.held(Pad::FireMode),
             zoom_in: input.held(KeyCode::Equal) || input.held(KeyCode::NumpadAdd),
             zoom_out: input.held(KeyCode::Minus) || input.held(KeyCode::NumpadSubtract),
             ..self.pending
@@ -1736,6 +1750,7 @@ impl Scene for HuntView {
                 .draw_with(gpu, pass, aspect, &mut |gpu, pass, globals| {
                     dinos.draw(gpu, pass, globals, &hunt.herd, &hunt.ship, eye, max);
                     effects.draw(gpu, pass, globals, &hunt.effects);
+                    weapons.draw_rounds(gpu, pass, globals, hunt);
                     weapons.draw(gpu, pass, globals, hunt, view, light, aspect);
                 });
         }
@@ -2153,10 +2168,16 @@ impl Scene for HuntView {
                     weapon_out: h.weapons.pose().is_some() && !h.bin_mode,
                     ammo: h.weapons.pose().map(|_| {
                         let w = &h.weapons;
-                        let left = w.shots_left[w.current];
-                        match w.ammo_mag.get(w.current) {
-                            Some(&m) if m > 0 => format!("{} / {left}", w.info[w.current].shots),
-                            _ => left.to_string(),
+                        let cur = w.current;
+                        let left = w.shots_left[cur];
+                        if w.info[cur].chambers() {
+                            // The dialect's: chambered / the reserve.
+                            format!("{} / {left}", w.chambered[cur])
+                        } else {
+                            match w.ammo_mag.get(cur) {
+                                Some(&m) if m > 0 => format!("{} / {left}", w.info[cur].shots),
+                                _ => left.to_string(),
+                            }
                         }
                     }),
                     binoculars: h.bin_mode,

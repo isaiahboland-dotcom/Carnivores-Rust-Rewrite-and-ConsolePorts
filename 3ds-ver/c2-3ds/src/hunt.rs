@@ -416,7 +416,7 @@ fn new_hunt(
     setup: &Setup,
     species: &[c2_core::dino::Species],
     tables: Option<&c2_formats::mee::Tables>,
-    weapon_info: &[(c2_core::game::WeaponInfo, [i32; 4])],
+    weapon_info: &[(c2_core::game::WeaponInfo, c2_core::game::WeaponAnims)],
     ship_ms: i32,
     seed: u32,
     room: Save,
@@ -511,6 +511,8 @@ fn new_hunt(
         },
         stealth: setup.stealth,
         teleport: setup.teleport,
+        // No buttons left for the dialect's reload and rack: on their own.
+        auto_chamber: true,
         distant_ai: false,
         no_call_bonus: setup.roamers.iter().map(|r| r.slot + 10).collect(),
     };

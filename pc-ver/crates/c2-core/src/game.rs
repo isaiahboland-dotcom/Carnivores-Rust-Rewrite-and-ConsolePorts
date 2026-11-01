@@ -33,6 +33,7 @@ use crate::ship::{Ship, ShipEvent};
 use crate::trace::{trace_look, trace_shot, Hit};
 use c2_formats::sav::{Save, TrophyItem};
 
+mod arms;
 mod survival;
 mod teleport;
 pub use survival::{
@@ -68,7 +69,7 @@ pub struct WeaponInfo {
 
 /// A dialect weapon's extras (`Resources.cpp: ReadWeaponLine` in the
 /// Modder's Edition): flying bullets, recoil, firing modes, trackers.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct MeeWeapon {
     /// `land_veloc`: bullets fly `64 * veloc` units per 17 ms
     /// (`AddBullet`); 0 (not given) keeps the original's instant trace, as
@@ -96,9 +97,48 @@ pub struct MeeWeapon {
     pub cross: bool,
     /// `unzoom`: no zoom or cross-hairs while drawing, hiding, reloading.
     pub unzoom: bool,
-    /// Model animations for draw, fire, hide, reload (`getAnim`, `shtAnim`,
-    /// `putAnim`, `rldAnimFull`); the original order when not given.
-    pub anims: [usize; 4],
+    /// Model animation per [`weapon_anim`] slot (`getAnim`, `shtAnim`,
+    /// `putAnim`, `rldAnimFull`, `rldAnimPart`, `rckAnim`, `modAnim`,
+    /// `emptyAnim`, `getEmpAnim`, `putEmpAnim`): draw, fire and hide in the
+    /// original order when not given; the rest none (`-1`, or `<= 0` for
+    /// those the dialect tests so).
+    pub anims: [Option<usize>; weapon_anim::SLOTS],
+    /// Underwater sounds per slot (`getAqSnd`, `shtAqSnd`, `putAqSnd`,
+    /// `rldAqSndFull`, `rldAqSndPart`, `rckAqSnd`, `modAqSnd`): the model's
+    /// sound numbers.
+    pub aq_sounds: [Option<usize>; weapon_anim::SLOTS],
+    /// `mustRack`: rack after every shot; `autoRack`: on its own;
+    /// `autoReload`: reload on its own when empty.
+    pub must_rack: bool,
+    pub auto_rack: bool,
+    pub auto_reload: bool,
+    /// `semiAuto` (with `fullAuto` and a `modAnim`: switchable).
+    pub semi_auto: bool,
+    /// `harpoon`: fires under water too, with the `aqua_*` numbers.
+    pub harpoon: bool,
+    /// `aqua_power`, `aqua_veloc`, `aqua_prec`, `aqua_fall`: under water
+    /// (the land numbers where not given; the dialect would read -1).
+    pub aqua: Aqua,
+    /// `retrieve`: a round that stops in the ground or an object stays
+    /// there to be picked up again.
+    pub retrieve: bool,
+    /// `muzzflash`, `chamflash`: the muzzle flash; the HUD's round flash.
+    pub muzz_flash: bool,
+    pub cham_flash: bool,
+    /// `bModel`: the round's model in flight (`WEAPONS/`).
+    pub bullet_model: Option<String>,
+    /// `picc`: the chamber picture beside the rounds (`WEAPONS/`).
+    pub chamber_pic: Option<String>,
+}
+
+/// A dialect weapon's numbers under water (`PowerAq`, `VelocAq`, `PrecAq`,
+/// `FallAq`).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Aqua {
+    pub power: f32,
+    pub veloc: f32,
+    pub prec: f32,
+    pub fall: f32,
 }
 
 impl MeeWeapon {
@@ -118,6 +158,20 @@ impl MeeWeapon {
         "rldanimfull",
         "cross",
         "unzoom",
+        "rldanimpart",
+        "rckanim",
+        "modanim",
+        "emptyanim",
+        "harpoon",
+        "retrieve",
+        "muzzflash",
+        "chamflash",
+        "bmodel",
+        "picc",
+        "mustrack",
+        "autorack",
+        "autoreload",
+        "semiauto",
     ];
 
     fn from_def(d: &WeaponDef) -> Option<Self> {
@@ -132,12 +186,19 @@ impl MeeWeapon {
         }
         let num = |k: &str| get(k).map_or(0.0, |v| c2_formats::res_txt::c_atof(&v));
         let flag = |k: &str| get(k).is_some_and(|v| v.eq_ignore_ascii_case("true") || v == "1");
-        let anim = |k: &str, default: usize| {
-            get(k)
-                .map(|v| c2_formats::res_txt::c_atoi(&v))
-                .and_then(|n| usize::try_from(n).ok())
-                .unwrap_or(default)
-        };
+        let int = |k: &str| get(k).map(|v| c2_formats::res_txt::c_atoi(&v));
+        // `>= 0` counts for these (`rldAnimPart >= 0`), `> 0` for those
+        // the dialect tests `<= 0` (`pmpAnim`, `modAnim`, the empties).
+        let anim = |k: &str| int(k).and_then(|n| usize::try_from(n).ok());
+        let anim_pos = |k: &str| int(k).filter(|&n| n > 0).map(|n| n as usize);
+        let file = |k: &str| get(k).map(|v| v.trim_matches('\'').to_string());
+        let land = (
+            num("land_power"),
+            num("land_veloc").max(0.0),
+            num("land_prec"),
+            num("land_fall"),
+        );
+        let or_land = |k: &str, l: f32| get(k).map_or(l, |v| c2_formats::res_txt::c_atof(&v));
         let colour = |k: &str| num(k).clamp(0.0, 255.0) as u8;
         Some(Self {
             veloc: num("land_veloc").max(0.0),
@@ -157,11 +218,45 @@ impl MeeWeapon {
                 )
             }),
             anims: [
-                anim("getAnim", 0),
-                anim("shtAnim", 1),
-                anim("putAnim", 2),
-                anim("rldAnimFull", 3),
+                Some(anim("getAnim").unwrap_or(0)),
+                Some(anim("shtAnim").unwrap_or(1)),
+                Some(anim("putAnim").unwrap_or(2)),
+                anim("rldAnimFull"),
+                anim("rldAnimPart"),
+                anim_pos("rckAnim"),
+                anim_pos("modAnim"),
+                anim_pos("emptyAnim"),
+                anim_pos("getEmpAnim"),
+                anim_pos("putEmpAnim"),
             ],
+            aq_sounds: [
+                anim("getAqSnd"),
+                anim("shtAqSnd"),
+                anim("putAqSnd"),
+                anim("rldAqSndFull"),
+                anim("rldAqSndPart"),
+                anim("rckAqSnd"),
+                anim("modAqSnd"),
+                None,
+                None,
+                None,
+            ],
+            must_rack: flag("mustRack"),
+            auto_rack: flag("autoRack"),
+            auto_reload: flag("autoReload"),
+            semi_auto: flag("semiAuto"),
+            harpoon: flag("harpoon"),
+            aqua: Aqua {
+                power: or_land("aqua_power", land.0),
+                veloc: or_land("aqua_veloc", land.1),
+                prec: or_land("aqua_prec", land.2),
+                fall: or_land("aqua_fall", land.3),
+            },
+            retrieve: flag("retrieve"),
+            muzz_flash: flag("muzzflash"),
+            cham_flash: flag("chamflash"),
+            bullet_model: file("bModel"),
+            chamber_pic: file("picc"),
         })
     }
 }
@@ -194,12 +289,19 @@ impl WeaponInfo {
         self
     }
 
-    /// The model animation (and sound) for a `weapon_anim` slot.
-    pub fn anim_of(&self, slot: usize) -> usize {
-        self.mee
-            .as_ref()
-            .and_then(|m| m.anims.get(slot).copied())
-            .unwrap_or(slot)
+    /// The model animation for a `weapon_anim` slot: the original's four
+    /// in order; a dialect weapon's as its keys say.
+    pub fn anim_of(&self, slot: usize) -> Option<usize> {
+        match &self.mee {
+            Some(m) => m.anims.get(slot).copied().flatten(),
+            None => (slot <= weapon_anim::RELOAD).then_some(slot),
+        }
+    }
+
+    /// The dialect's ammo model (rounds chambered, reloads and racking by
+    /// hand): a weapon with the Modder's Edition's keys.
+    pub fn chambers(&self) -> bool {
+        self.mee.is_some()
     }
 }
 
@@ -209,6 +311,67 @@ pub mod weapon_anim {
     pub const FIRE: usize = 1;
     pub const HIDE: usize = 2;
     pub const RELOAD: usize = 3;
+    /// The dialect's: a part reload, racking, the firing mode switch, and
+    /// the poses with nothing chambered (ready, drawing, hiding).
+    pub const PART: usize = 4;
+    pub const RACK: usize = 5;
+    pub const MODE: usize = 6;
+    pub const EMPTY: usize = 7;
+    pub const DRAW_EMPTY: usize = 8;
+    pub const HIDE_EMPTY: usize = 9;
+    pub const SLOTS: usize = 10;
+}
+
+/// A weapon's animations per [`weapon_anim`] slot: lengths in ms (0: none)
+/// and the model sound each plays (the original: the slot's own; the
+/// dialect: the animation's `Anifx`; -1: none).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WeaponAnims {
+    pub ms: [i32; weapon_anim::SLOTS],
+    pub fx: [i32; weapon_anim::SLOTS],
+}
+
+impl Default for WeaponAnims {
+    fn default() -> Self {
+        Self {
+            ms: [0; weapon_anim::SLOTS],
+            fx: [-1; weapon_anim::SLOTS],
+        }
+    }
+}
+
+impl WeaponAnims {
+    /// From the weapon's view model.
+    pub fn from_car(info: &WeaponInfo, car: &Car) -> Self {
+        let mut a = Self::default();
+        for slot in 0..weapon_anim::SLOTS {
+            let Some(i) = info.anim_of(slot) else {
+                continue;
+            };
+            let Some(an) = car.animations.get(i) else {
+                continue;
+            };
+            a.ms[slot] = crate::model::car_anim_duration_ms(an) as i32;
+            a.fx[slot] = if info.mee.is_some() {
+                car.anim_sounds
+                    .and_then(|t| t.get(i).copied())
+                    .unwrap_or(-1)
+            } else {
+                slot as i32
+            };
+        }
+        a
+    }
+
+    /// The original's four, all `ms` long, each with its own sound (tests).
+    pub fn uniform(ms: i32) -> Self {
+        let mut a = Self::default();
+        for slot in 0..=weapon_anim::RELOAD {
+            a.ms[slot] = ms;
+            a.fx[slot] = slot as i32;
+        }
+        a
+    }
 }
 
 /// A dialect round in flight (`TBullet`).
@@ -217,6 +380,17 @@ pub struct Bullet {
     pub pos: [f32; 3],
     /// Units per 17 ms.
     pub vel: [f32; 3],
+    /// Its speed once it crosses the water's surface (`ldif`), and the fall
+    /// so far (`fallTotal`).
+    pub land_vel: [f32; 3],
+    pub fall_total: f32,
+    /// `aqState`: fired above water (0) or under it (1); crossed (2).
+    pub aq_state: u8,
+    /// A retrievable round that stopped (`state = 1`): lying there to be
+    /// picked up.
+    pub stuck: bool,
+    /// Its model's animation time (`bModel`).
+    pub ftime: i32,
     pub weapon: usize,
 }
 
@@ -229,20 +403,39 @@ pub enum WeaponState {
     Ready = 2,
     Hiding = 3,
     Reloading = 4,
+    /// The dialect's: a part reload, racking, switching the firing mode.
+    PartReload = 5,
+    Racking = 6,
+    Switching = 7,
 }
 
 #[derive(Debug, Clone)]
 pub struct Weapons {
     pub info: Vec<WeaponInfo>,
-    /// `AniTime` of draw/fire/hide/reload per weapon (0 = missing).
-    pub anim_ms: Vec<[i32; 4]>,
+    /// Animation lengths and sounds per weapon.
+    pub anims: Vec<WeaponAnims>,
     pub current: usize,
     pub target: usize,
     pub state: WeaponState,
     pub ftime: i32,
     pub shakel: f32,
+    /// Rounds left: all of them (the original); the reserve, beside those
+    /// chambered and the spare magazine (the dialect's).
     pub shots_left: Vec<i32>,
     pub ammo_mag: Vec<i32>,
+    /// The dialect's: rounds chambered (`Chambered`), the spare
+    /// magazine's (`MagShotsLeft`), the firing mode (`FiringMode`: 1 full
+    /// auto) and the rounds a reload is putting in (`ammoIn`).
+    pub chambered: Vec<i32>,
+    pub mag_shots: Vec<i32>,
+    pub fire_mode: Vec<u8>,
+    pub ammo_in: i32,
+    /// The HUD's round flash (`FlashP`: 1..=4, 0 off) and the muzzle flash
+    /// (`Muzz`, `MuzzGamma`: its turn, rad).
+    pub flash: u8,
+    pub muzzle: Option<f32>,
+    /// The muzzle flash's length (`MUZZ4.CAR`'s animation), ms.
+    pub muzzle_ms: i32,
     /// Sniper scope view (`OPTICMODE`).
     pub optic_mode: bool,
     /// What `new` was given, for [`resupply`](Self::resupply).
@@ -254,14 +447,14 @@ impl Weapons {
     /// `ReInitGame`: full ammo for every weapon in `present` (bit mask).
     pub fn new(
         info: Vec<WeaponInfo>,
-        anim_ms: Vec<[i32; 4]>,
+        anims: Vec<WeaponAnims>,
         present: Bits,
         double_ammo: bool,
     ) -> Self {
         let n = info.len();
         let mut w = Self {
             info,
-            anim_ms,
+            anims,
             current: 0,
             target: 0,
             state: WeaponState::Hidden,
@@ -269,6 +462,13 @@ impl Weapons {
             shakel: 0.0,
             shots_left: vec![0; n],
             ammo_mag: vec![0; n],
+            chambered: vec![0; n],
+            mag_shots: vec![0; n],
+            fire_mode: vec![0; n],
+            ammo_in: 0,
+            flash: 0,
+            muzzle: None,
+            muzzle_ms: arms::MUZZLE_MS,
             optic_mode: false,
             present,
             double_ammo,
@@ -276,10 +476,7 @@ impl Weapons {
         let mut first = None;
         for i in 0..n.min(Bits::LEN) {
             if present.has(i) {
-                w.shots_left[i] = w.info[i].shots;
-                if double_ammo {
-                    w.ammo_mag[i] = 1;
-                }
+                w.refill(i, true);
                 first.get_or_insert(i);
             }
         }
@@ -288,15 +485,73 @@ impl Weapons {
         w
     }
 
+    /// `refillWeapons`: weapon `i`'s ammo as at the start (`init`), or
+    /// topped up (the dialect then leaves what is chambered where it would
+    /// be reloaded or racked by hand).
+    fn refill(&mut self, i: usize, init: bool) {
+        let info = &self.info[i];
+        if !info.chambers() {
+            self.shots_left[i] = info.shots;
+            self.ammo_mag[i] = i32::from(self.double_ammo);
+            return;
+        }
+        let a = self.anims.get(i).copied().unwrap_or_default();
+        let no_reload = a.ms[weapon_anim::RELOAD] == 0;
+        let no_rack = a.ms[weapon_anim::RACK] == 0;
+        self.fire_mode[i] = u8::from(info.mee.as_ref().is_some_and(|m| m.full_auto));
+        self.shots_left[i] = info.shots;
+        if self.double_ammo {
+            if info.reload != 0 || no_reload {
+                self.shots_left[i] *= 2;
+            } else {
+                self.ammo_mag[i] = 1;
+                self.mag_shots[i] = info.shots;
+            }
+        }
+        if info.reload != 0 {
+            if init || no_reload {
+                let n = info.reload.min(self.shots_left[i]).max(0);
+                self.chambered[i] = n;
+                self.shots_left[i] -= n;
+            }
+        } else if (init || no_rack) && self.shots_left[i] > 0 {
+            self.chambered[i] = 1;
+            self.shots_left[i] -= 1;
+        }
+    }
+
     /// Every carried weapon back to the ammo it started with (not in the
-    /// original: the 3DS "extra ammo" gear).
+    /// original: the 3DS "extra ammo" gear, unlimited survival ammo).
     pub fn resupply(&mut self) {
         for i in 0..self.info.len().min(Bits::LEN) {
             if self.present.has(i) {
-                self.shots_left[i] = self.info[i].shots;
-                self.ammo_mag[i] = i32::from(self.double_ammo);
+                if self.info[i].chambers() {
+                    // Topped up, keeping what is chambered.
+                    let c = self.chambered[i];
+                    self.refill(i, false);
+                    self.chambered[i] = self.chambered[i].max(c);
+                } else {
+                    self.refill(i, false);
+                }
             }
         }
+    }
+
+    /// All the rounds weapon `i` has: chambered, left and the spare
+    /// magazine's (the dialect's "no weapon" test).
+    pub fn rounds(&self, i: usize) -> i32 {
+        let g = |v: &Vec<i32>| v.get(i).copied().unwrap_or(0);
+        let mag = if g(&self.ammo_mag) > 0 && self.info.get(i).is_some_and(WeaponInfo::chambers) {
+            g(&self.mag_shots)
+        } else {
+            0
+        };
+        g(&self.shots_left) + g(&self.chambered) + mag
+    }
+
+    /// The current weapon's animation lengths and sounds.
+    pub fn cur_anims(&self) -> WeaponAnims {
+        self.anims.get(self.current).copied().unwrap_or_default()
     }
 
     /// Whether weapon `i` was taken on the hunt.
@@ -305,22 +560,43 @@ impl Weapons {
     }
 
     fn anim(&self, slot: usize) -> i32 {
-        self.anim_ms.get(self.current).map_or(0, |a| a[slot])
+        self.anims.get(self.current).map_or(0, |a| a.ms[slot])
+    }
+
+    /// The [`weapon_anim`] slot the view model shows (the dialect's empty
+    /// poses with nothing chambered, where the weapon has them).
+    pub fn pose_slot(&self) -> Option<usize> {
+        use weapon_anim as wa;
+        let empty = self.chambered.get(self.current).copied().unwrap_or(0) == 0
+            && self
+                .info
+                .get(self.current)
+                .is_some_and(WeaponInfo::chambers);
+        let has = |slot| self.anim(slot) > 0;
+        Some(match self.state {
+            WeaponState::Hidden => return None,
+            WeaponState::Drawing if empty && has(wa::DRAW_EMPTY) => wa::DRAW_EMPTY,
+            WeaponState::Drawing => wa::DRAW,
+            WeaponState::Ready if empty && self.ftime == 0 && has(wa::EMPTY) => wa::EMPTY,
+            WeaponState::Ready => wa::FIRE,
+            WeaponState::Hiding if empty && has(wa::HIDE_EMPTY) => wa::HIDE_EMPTY,
+            WeaponState::Hiding => wa::HIDE,
+            WeaponState::Reloading => wa::RELOAD,
+            WeaponState::PartReload => wa::PART,
+            WeaponState::Racking => wa::RACK,
+            WeaponState::Switching => wa::MODE,
+        })
     }
 
     /// The model animation and time to pose the view model with.
     pub fn pose(&self) -> Option<(usize, i32)> {
-        match self.state {
-            WeaponState::Hidden => None,
-            s => {
-                let slot = s as usize - 1;
-                let anim = self
-                    .info
-                    .get(self.current)
-                    .map_or(slot, |i| i.anim_of(slot));
-                Some((anim, self.ftime))
-            }
-        }
+        let slot = self.pose_slot()?;
+        let anim = self
+            .info
+            .get(self.current)
+            .map_or(Some(slot), |i| i.anim_of(slot))
+            .unwrap_or(slot);
+        Some((anim, self.ftime))
     }
 
     /// The current weapon's dialect extras, if any.
@@ -341,11 +617,15 @@ impl Weapons {
 /// Things the frontend should present (sounds, effects, messages).
 #[derive(Debug, Clone, PartialEq)]
 pub enum GameEvent {
-    /// Weapon sound slot (`weapon_anim::*`) of the current weapon.
+    /// A sound of weapon `weapon`'s model (its number there).
     WeaponSound {
         weapon: usize,
-        slot: usize,
+        sound: usize,
     },
+    /// The dialect's empty click (`CLICKn.WAV`, 0..3) and a round picked
+    /// up (`COLLECTn.WAV`).
+    Click(usize),
+    Collect(usize),
     Player(PlayerEvent),
     Dino(DinoEvent),
     /// A bullet impact (`AddElements`).
@@ -461,6 +741,10 @@ pub struct HuntOptions {
     pub stealth: bool,
     /// Teleporting by the map (the mobile game's, a setting).
     pub teleport: bool,
+    /// The dialect's weapons reload and rack on their own (as with
+    /// `autoReload` and `autoRack`): the consoles, which have no buttons
+    /// left for them.
+    pub auto_chamber: bool,
 }
 
 impl Default for HuntOptions {
@@ -486,6 +770,7 @@ impl Default for HuntOptions {
             no_call_bonus: Bits::NONE,
             notice_k: 1.0,
             stealth: false,
+            auto_chamber: false,
             teleport: false,
         }
     }
@@ -516,6 +801,11 @@ pub struct HuntInput {
     pub change_call: bool,
     /// Map key pressed.
     pub toggle_map: bool,
+    /// The dialect's reload, rack and firing-mode keys, held
+    /// (`ProcessReload`, `ProcessPump`, `ProcessFireMode`).
+    pub reload: bool,
+    pub rack: bool,
+    pub switch_mode: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1141,7 +1431,7 @@ impl Hunt {
     ) {
         if let Some(w) = input.select_weapon {
             if self.weapons.ftime == 0 {
-                if self.weapons.shots_left.get(w).copied().unwrap_or(0) == 0 {
+                if self.weapons.rounds(w) == 0 {
                     out.push(GameEvent::Message("No weapon".into()));
                 } else {
                     self.weapons.target = w;
@@ -1155,56 +1445,131 @@ impl Hunt {
         if input.toggle_weapon {
             self.hide_weapon(out);
         }
-        // A dialect weapon fires once per pull unless `fullAuto`; the
-        // original's fire whenever ready while the trigger is held.
-        let once = self.weapons.mee().is_some_and(|m| !m.full_auto);
-        if input.fire && !(once && self.fire_held) {
+        // A dialect weapon fires once per pull unless in its full-auto mode;
+        // the original's fire whenever ready while the trigger is held.
+        if input.fire {
             self.process_shoot(area, cars, out);
         }
         self.fire_held = input.fire;
+        if self
+            .weapons
+            .info
+            .get(self.weapons.current)
+            .is_some_and(WeaponInfo::chambers)
+        {
+            if input.rack {
+                self.rack(out);
+            }
+            if input.switch_mode {
+                self.switch_mode(out);
+            }
+            if input.reload {
+                self.reload(out);
+            }
+        }
+    }
+
+    /// The current weapon's sound for a [`weapon_anim`] slot: its
+    /// animation's (the dialect's under water: its `*AqSnd`, else none).
+    fn weapon_sound(&self, slot: usize, out: &mut Vec<GameEvent>) {
+        let w = &self.weapons;
+        let mee = w.mee();
+        let sound = match mee {
+            Some(m) if self.player.underwater => m.aq_sounds.get(slot).copied().flatten(),
+            _ => usize::try_from(w.cur_anims().fx[slot]).ok(),
+        };
+        if let Some(sound) = sound {
+            out.push(GameEvent::WeaponSound {
+                weapon: w.current,
+                sound,
+            });
+        }
     }
 
     /// `HideWeapon`: draw if hidden, put away if ready.
     pub fn hide_weapon(&mut self, out: &mut Vec<GameEvent>) {
-        let w = &mut self.weapons;
-        if self.player.underwater && w.state == WeaponState::Hidden {
+        let harpoon = self.weapons.mee().is_some_and(|m| m.harpoon);
+        if self.player.underwater && self.weapons.state == WeaponState::Hidden && !harpoon {
             return;
         }
         if self.opts.observer || self.opts.trophy {
             return;
         }
+        let w = &mut self.weapons;
         if w.state == WeaponState::Hidden {
-            if w.shots_left.get(w.current).copied().unwrap_or(0) == 0 {
+            if w.rounds(w.current) == 0 {
                 return;
             }
             w.optic_mode = w.info.get(w.current).is_some_and(|i| i.optic);
             self.bin_mode = false;
-            out.push(GameEvent::WeaponSound {
-                weapon: w.current,
-                slot: weapon_anim::DRAW,
-            });
             w.ftime = 0;
             w.state = WeaponState::Drawing;
             w.shakel = w.mee().and_then(|m| m.shake).map_or(0.2, |s| s * 4.0);
+            let empty = w.info.get(w.current).is_some_and(WeaponInfo::chambers)
+                && w.chambered.get(w.current) == Some(&0)
+                && w.anim(weapon_anim::DRAW_EMPTY) > 0;
+            self.weapon_sound(
+                if empty {
+                    weapon_anim::DRAW_EMPTY
+                } else {
+                    weapon_anim::DRAW
+                },
+                out,
+            );
             return;
         }
         if w.state != WeaponState::Ready || w.ftime != 0 {
             return;
         }
-        out.push(GameEvent::WeaponSound {
-            weapon: w.current,
-            slot: weapon_anim::HIDE,
-        });
         w.state = WeaponState::Hiding;
         w.ftime = 0;
         w.optic_mode = false;
+        let empty = w.info.get(w.current).is_some_and(WeaponInfo::chambers)
+            && w.chambered.get(w.current) == Some(&0)
+            && w.anim(weapon_anim::HIDE_EMPTY) > 0;
+        self.weapon_sound(
+            if empty {
+                weapon_anim::HIDE_EMPTY
+            } else {
+                weapon_anim::HIDE
+            },
+            out,
+        );
     }
 
-    /// Weapon animation state machine (from `DrawPostObjects`).
+    /// Weapon animation state machine (from `DrawPostObjects`; the
+    /// dialect's in [`arms`]).
     fn weapon_step(&mut self, dt: i32, out: &mut Vec<GameEvent>) {
+        // The HUD's round flash: four pictures, a step each (`FlashP`).
+        let w = &mut self.weapons;
+        if w.flash > 0 {
+            w.flash = if w.flash >= 4 { 0 } else { w.flash + 1 };
+        }
         if self.weapons.state == WeaponState::Hidden {
             return;
         }
+        if self
+            .weapons
+            .info
+            .get(self.weapons.current)
+            .is_some_and(WeaponInfo::chambers)
+        {
+            self.chamber_step(dt, out);
+        } else {
+            self.original_step(dt, out);
+        }
+        // Out of ammo: put it away and pick another weapon that has some.
+        let w = &mut self.weapons;
+        if w.state != WeaponState::Hidden && w.rounds(w.current) == 0 {
+            if let Some(next) = (0..w.info.len()).find(|&i| w.rounds(i) > 0) {
+                w.target = next;
+            }
+            self.hide_weapon(out);
+        }
+    }
+
+    /// The original's weapon states: reloads come on their own.
+    fn original_step(&mut self, dt: i32, out: &mut Vec<GameEvent>) {
         let w = &mut self.weapons;
         w.shakel = (w.shakel + dt as f32 / 10000.0).min(4.0);
         let cur = w.current;
@@ -1229,16 +1594,14 @@ impl Hunt {
                     w.ftime = 0;
                     let info = &w.info[cur];
                     let left = w.shots_left[cur];
+                    let mut reload = false;
                     if info.reload != 0
                         && left % info.reload == 0
                         && (left > 0 || w.ammo_mag[cur] > 0)
                     {
                         w.state = WeaponState::Reloading;
                         w.ftime = 1;
-                        out.push(GameEvent::WeaponSound {
-                            weapon: cur,
-                            slot: weapon_anim::RELOAD,
-                        });
+                        reload = true;
                     }
                     if w.shots_left[cur] == 0 && w.ammo_mag[cur] > 0 {
                         w.ammo_mag[cur] -= 1;
@@ -1246,11 +1609,11 @@ impl Hunt {
                         if w.anim(weapon_anim::RELOAD) != 0 {
                             w.state = WeaponState::Reloading;
                             w.ftime = 1;
-                            out.push(GameEvent::WeaponSound {
-                                weapon: cur,
-                                slot: weapon_anim::RELOAD,
-                            });
+                            reload = true;
                         }
+                    }
+                    if reload {
+                        self.weapon_sound(weapon_anim::RELOAD, out);
                     }
                 }
             }
@@ -1263,43 +1626,52 @@ impl Hunt {
                         w.current = w.target;
                         self.hide_weapon(out);
                     }
-                    return;
                 }
             }
             _ => {}
-        }
-        // Out of ammo: put it away and pick another weapon that has some.
-        let w = &mut self.weapons;
-        if w.shots_left.get(w.current).copied().unwrap_or(0) == 0 {
-            if let Some(next) = w.shots_left.iter().position(|&s| s > 0) {
-                w.target = next;
-            }
-            self.hide_weapon(out);
         }
     }
 
     /// `ProcessShoot`.
     fn process_shoot(&mut self, area: &Area, cars: &[Option<&Car>], out: &mut Vec<GameEvent>) {
         let cur = self.weapons.current;
-        if self.weapons.shots_left.get(cur).copied().unwrap_or(0) == 0 {
-            return;
+        let chambers = self.weapons.info.get(cur).is_some_and(WeaponInfo::chambers);
+        let mee = self.weapons.mee().cloned();
+        if !chambers {
+            // The original fires whenever ready while the trigger is held,
+            // a dialect weapon without the ammo model once per pull.
+            if self.weapons.shots_left.get(cur).copied().unwrap_or(0) == 0 {
+                return;
+            }
         }
-        if self.player.underwater {
+        let harpoon = mee.as_ref().is_some_and(|m| m.harpoon);
+        if self.player.underwater && !harpoon {
             self.hide_weapon(out);
             return;
         }
         if self.weapons.state != WeaponState::Ready || self.weapons.ftime != 0 {
             return;
         }
+        if chambers {
+            if self.weapons.chambered[cur] <= 0 {
+                if !self.fire_held && !self.player.underwater {
+                    out.push(GameEvent::Click(self.rng.r_rand(2) as usize));
+                }
+                return;
+            }
+            if self.fire_held && self.weapons.fire_mode[cur] == 0 {
+                return;
+            }
+        } else if self.fire_held && mee.is_some() && !mee.as_ref().is_some_and(|m| m.full_auto) {
+            return;
+        }
         self.weapons.ftime = 1;
         self.player.head_back_r = 64.0;
-        out.push(GameEvent::WeaponSound {
-            weapon: cur,
-            slot: weapon_anim::FIRE,
-        });
+        self.weapon_sound(weapon_anim::FIRE, out);
         self.shots_made += 1;
 
         let info = self.weapons.info[cur].clone();
+        let under = self.player.underwater;
         let (da, db) = self.weapons.sway(self.real_time);
         let p = &self.player;
         let origin = [p.x, p.y + p.head_y, p.z];
@@ -1310,19 +1682,44 @@ impl Hunt {
             let r = m.recoil / 100.0;
             self.recoil[1] = -r;
             self.recoil[0] += (self.rng.r_rand(8) - 4) as f32 / 8.0 * r;
+            if m.muzz_flash || m.cham_flash {
+                self.weapons.flash = 1;
+            }
+            if m.muzz_flash {
+                self.weapons.muzzle = Some(self.rng.r_rand(100) as f32 / 50.0 * PI);
+            }
         }
-        let flying = info.mee.as_ref().filter(|m| m.veloc > 0.0).map(|m| m.veloc);
+        // Under water a harpoon has its own spread and speed; a round
+        // crossing the surface takes the slower of the two (`ldif`).
+        let prec = match &info.mee {
+            Some(m) if under => m.aqua.prec,
+            _ => info.prec,
+        };
+        let flying = info.mee.as_ref().filter(|m| m.veloc > 0.0).map(|m| {
+            let v = if under { m.aqua.veloc } else { m.veloc };
+            let l = if m.veloc > m.aqua.veloc {
+                m.aqua.veloc
+            } else {
+                m.veloc
+            };
+            (v, l)
+        });
         for _ in 0..=info.trace_c.max(0) {
-            let ra = self.rng.si_rand(128) as f32 * 0.0001 * (2.0 - info.prec);
-            let rb = self.rng.si_rand(128) as f32 * 0.0001 * (2.0 - info.prec);
+            let ra = self.rng.si_rand(128) as f32 * 0.0001 * (2.0 - prec);
+            let rb = self.rng.si_rand(128) as f32 * 0.0001 * (2.0 - prec);
             let (sa, ca) = (alpha + da + ra).sin_cos();
             let (sb, cb) = (beta + db + rb).sin_cos();
             let nv = [sa * cb, -sb, -ca * cb];
-            if let Some(v) = flying {
+            if let Some((v, l)) = flying {
                 // AddBullet: 64 * veloc units per 17 ms.
                 self.bullets.push(Bullet {
                     pos: origin,
                     vel: nv.map(|n| n * 64.0 * v),
+                    land_vel: nv.map(|n| n * 64.0 * l),
+                    fall_total: 0.0,
+                    aq_state: u8::from(under),
+                    stuck: false,
+                    ftime: 0,
                     weapon: cur,
                 });
                 continue;
@@ -1334,17 +1731,23 @@ impl Hunt {
             ];
             self.make_shot(area, cars, &info, origin, to, out);
         }
-        // Stealth crouch: crouched, a shot carries half as far.
-        let hush = if self.opts.stealth && self.player.head_y <= 180.0 {
-            0.5
+        if !under {
+            // Stealth crouch: crouched, a shot carries half as far.
+            let hush = if self.opts.stealth && self.player.head_y <= 180.0 {
+                0.5
+            } else {
+                1.0
+            };
+            self.make_noise(
+                [self.player.x, self.player.y, self.player.z],
+                self.opts.view_r as f32 * 200.0 * info.loud * hush,
+            );
+        }
+        if chambers {
+            self.weapons.chambered[cur] -= 1;
         } else {
-            1.0
-        };
-        self.make_noise(
-            [self.player.x, self.player.y, self.player.z],
-            self.opts.view_r as f32 * 200.0 * info.loud * hush,
-        );
-        self.weapons.shots_left[cur] -= 1;
+            self.weapons.shots_left[cur] -= 1;
+        }
     }
 
     /// `MakeShot`: trace one round (in three falling segments for the
@@ -1381,24 +1784,32 @@ impl Hunt {
             r
         };
         let Some((hit, pos)) = res else { return };
-        self.apply_hit(area, info, hit, pos, out);
+        self.apply_hit(area, info, hit, pos, false, out);
     }
 
     /// A round's hit (`MakeShot` / `AnimateBullet`): impact effects, then
     /// damage to an animal.
+    /// `poon`: a harpoon's round under water (`AnimateBullet`): its
+    /// `aqua_power`, and no dust where it stops.
     fn apply_hit(
         &mut self,
         area: &Area,
         info: &WeaponInfo,
         hit: Hit,
         pos: [f32; 3],
+        poon: bool,
         out: &mut Vec<GameEvent>,
     ) {
         out.push(GameEvent::Impact { hit, pos });
         // AddElements per surface (MakeShot).
         let a = self.camera().1;
-        let pw = info.power as i32;
+        let power = match &info.mee {
+            Some(m) if poon => m.aqua.power,
+            _ => info.power,
+        };
+        let pw = power.min(100.0) as i32;
         match hit {
+            Hit::Ground | Hit::Model if poon => {}
             Hit::Ground | Hit::Model => self.effects.add(
                 area,
                 &mut self.rng,
@@ -1446,7 +1857,7 @@ impl Hunt {
         if mortal {
             c.health = 0;
         } else {
-            c.health -= info.power as i32;
+            c.health -= power as i32;
         }
         c.health = c.health.max(0);
         let mee = self
@@ -1507,17 +1918,54 @@ impl Hunt {
         let bullets = core::mem::take(&mut self.bullets);
         let mut kept = Vec::with_capacity(bullets.len());
         for mut b in bullets {
+            if b.stuck {
+                if !self.pick_up(&b, out) {
+                    kept.push(b);
+                }
+                continue;
+            }
             let Some(info) = self.weapons.info.get(b.weapon).cloned() else {
                 continue;
             };
+            let m = info.mee.clone().unwrap_or_default();
+            // A harpoon's round under the surface (`poon`); crossing it, the
+            // round takes its other speed, less the fall so far.
+            let wet = |x: f32, y: f32, z: f32| {
+                let up = area.land_up_h(x, z);
+                m.harpoon && up > area.land_height(x, z) && up > y
+            };
+            let poon = wet(b.pos[0], b.pos[1], b.pos[2]);
+            if b.aq_state < 2 && poon != (b.aq_state == 1) {
+                b.aq_state = 2;
+                b.vel = b.land_vel;
+                b.vel[1] -= b.fall_total;
+            }
             let to = [
                 b.pos[0] + b.vel[0] * k,
                 b.pos[1] + b.vel[1] * k,
                 b.pos[2] + b.vel[2] * k,
             ];
-            let res = trace_shot(area, &self.herd.chars, &self.herd.species, cars, b.pos, to);
+            if wet(to[0], to[1], to[2]) {
+                self.effects.add(
+                    area,
+                    &mut self.rng,
+                    to,
+                    crate::effects::Part::Bubble,
+                    1,
+                    0.0,
+                );
+            }
+            let res = trace_shot(area, &self.herd.chars, &self.herd.species, cars, b.pos, to)
+                // A harpoon goes through the surface.
+                .filter(|(h, _)| !(m.harpoon && matches!(h, Hit::Water)));
             if let Some((hit, pos)) = res {
-                self.apply_hit(area, &info, hit, pos, out);
+                let under = wet(pos[0], pos[1], pos[2]);
+                self.apply_hit(area, &info, hit, pos, under, out);
+                if m.retrieve && matches!(hit, Hit::Ground | Hit::Model) {
+                    b.stuck = true;
+                    b.pos = pos;
+                    kept.push(b);
+                }
                 continue;
             }
             let (dx, dz) = (self.player.x - to[0], self.player.z - to[2]);
@@ -1525,7 +1973,12 @@ impl Hunt {
                 continue;
             }
             b.pos = to;
-            b.vel[1] -= info.mee.as_ref().map_or(0.0, |m| m.fall) * k;
+            let fall = if poon { m.aqua.fall } else { m.fall } * k;
+            b.vel[1] -= fall;
+            if b.aq_state < 2 {
+                b.fall_total += fall;
+            }
+            b.ftime += dt;
             kept.push(b);
         }
         kept.append(&mut self.bullets);
@@ -2632,7 +3085,7 @@ mod tests {
     fn resupply_refills_carried_weapons_only() {
         let mut w = Weapons::new(
             vec![rifle(), rifle()],
-            vec![[100; 4]; 2],
+            vec![WeaponAnims::uniform(100); 2],
             Bits::bit(0),
             true,
         );
@@ -2648,7 +3101,7 @@ mod tests {
         let n = 50;
         let mut w = Weapons::new(
             vec![rifle(); n],
-            vec![[100; 4]; n],
+            vec![WeaponAnims::uniform(100); n],
             Bits::bit(40) | Bits::bit(2),
             false,
         );
@@ -2716,7 +3169,7 @@ mod tests {
         herd.chars.push(c);
         let weapons = Weapons::new(
             vec![rifle()],
-            vec![[100, 100, 100, 100]],
+            vec![WeaponAnims::uniform(100)],
             Bits::bit(0),
             false,
         );
@@ -3271,7 +3724,12 @@ mod tests {
         assert!(!info.fall, "land_fall isn't the crossbow flag");
 
         let (area, mut h, car) = setup(false);
-        h.weapons = Weapons::new(vec![info], vec![[100, 100, 100, 100]], Bits::bit(0), false);
+        h.weapons = Weapons::new(
+            vec![info],
+            vec![WeaponAnims::uniform(100)],
+            Bits::bit(0),
+            false,
+        );
         let cars = [Some(&car), Some(&car)];
         let mut ev = Vec::new();
         let toggle = HuntInput {
@@ -3297,13 +3755,170 @@ mod tests {
         assert!(h.player.beta < beta, "the recoil lifts the aim");
         // Held past the fire animation: no second shot until released.
         weapon_ticks(&mut h, &area, &cars, fire, 20, &mut ev);
-        assert_eq!(h.weapons.shots_left[0], 6);
+        assert_eq!(h.weapons.rounds(0), 6);
+        assert_eq!(h.weapons.chambered[0], 1, "the next round chambered");
         weapon_ticks(&mut h, &area, &cars, HuntInput::default(), 1, &mut ev);
         weapon_ticks(&mut h, &area, &cars, fire, 1, &mut ev);
-        assert_eq!(h.weapons.shots_left[0], 5);
+        assert_eq!(h.weapons.rounds(0), 5);
         // The tracker runs out after its second.
         weapon_ticks(&mut h, &area, &cars, HuntInput::default(), 120, &mut ev);
         assert!(h.herd.chars[0].tracked.is_none());
+    }
+
+    /// A dialect weapon from its `_RES.TXT` keys, drawn and ready, its
+    /// animations 100 ms (those in `extra` too).
+    fn chamber_weapon(keys: &str, extra: &[usize]) -> (Area, Hunt, Car) {
+        let res = c2_formats::res_txt::ResTxt::parse(&format!(
+            "weapons {{\n{{\n name = 'Gun'\n land_power = 4\n shots = 6\n getAnim = 0\n{keys}}}\n}}\n.\n"
+        ))
+        .unwrap_or_default();
+        let block = crate::mee::vanilla_keys_for_test(&res.sections[0].blocks[0]);
+        let info = WeaponInfo::from_def(&WeaponDef::from_block(&block));
+        let mut a = WeaponAnims::uniform(100);
+        a.ms[weapon_anim::RELOAD] = if info.anim_of(weapon_anim::RELOAD).is_some() {
+            100
+        } else {
+            0
+        };
+        for &slot in extra {
+            a.ms[slot] = 100;
+        }
+        let (area, mut h, car) = setup(false);
+        h.weapons = Weapons::new(vec![info], vec![a], Bits::bit(0), false);
+        let cars = [Some(&car), Some(&car)];
+        let mut ev = Vec::new();
+        let toggle = HuntInput {
+            toggle_weapon: true,
+            ..Default::default()
+        };
+        weapon_ticks(&mut h, &area, &cars, toggle, 1, &mut ev);
+        weapon_ticks(&mut h, &area, &cars, HuntInput::default(), 12, &mut ev);
+        assert_eq!(h.weapons.state, WeaponState::Ready);
+        (area, h, car)
+    }
+
+    /// Fires once and lets the fire animation finish.
+    fn shoot(h: &mut Hunt, area: &Area, car: &Car, ev: &mut Vec<GameEvent>) {
+        let cars = [Some(car), Some(car)];
+        let fire = HuntInput {
+            fire: true,
+            ..Default::default()
+        };
+        weapon_ticks(h, area, &cars, fire, 1, ev);
+        weapon_ticks(h, area, &cars, HuntInput::default(), 12, ev);
+    }
+
+    #[test]
+    fn a_loaded_one_by_one_weapon_reloads_by_hand_in_part_or_full() {
+        // Two rounds a load (`reload = 2`), a part reload animation.
+        let (area, mut h, car) = chamber_weapon(
+            " reload = 2\n rldAnimFull = 3\n rldAnimPart = 4\n",
+            &[weapon_anim::PART],
+        );
+        let cars = [Some(&car), Some(&car)];
+        let mut ev = Vec::new();
+        assert_eq!((h.weapons.chambered[0], h.weapons.shots_left[0]), (2, 4));
+        shoot(&mut h, &area, &car, &mut ev);
+        assert_eq!(h.weapons.chambered[0], 1, "no round from the reserve");
+        // One left in: a part reload, one round.
+        let reload = HuntInput {
+            reload: true,
+            ..Default::default()
+        };
+        weapon_ticks(&mut h, &area, &cars, reload, 1, &mut ev);
+        assert_eq!(h.weapons.state, WeaponState::PartReload);
+        weapon_ticks(&mut h, &area, &cars, HuntInput::default(), 12, &mut ev);
+        assert_eq!((h.weapons.chambered[0], h.weapons.shots_left[0]), (2, 3));
+        // Both fired: empty, the trigger clicks.
+        shoot(&mut h, &area, &car, &mut ev);
+        shoot(&mut h, &area, &car, &mut ev);
+        assert_eq!(h.weapons.chambered[0], 0);
+        ev.clear();
+        shoot(&mut h, &area, &car, &mut ev);
+        assert!(ev.iter().any(|e| matches!(e, GameEvent::Click(_))));
+        // Empty with a full load left: the full reload.
+        weapon_ticks(&mut h, &area, &cars, reload, 1, &mut ev);
+        assert_eq!(h.weapons.state, WeaponState::Reloading);
+        weapon_ticks(&mut h, &area, &cars, HuntInput::default(), 12, &mut ev);
+        assert_eq!((h.weapons.chambered[0], h.weapons.shots_left[0]), (2, 1));
+    }
+
+    #[test]
+    fn a_rack_weapon_racks_after_each_shot_and_switches_mode() {
+        let (area, mut h, car) = chamber_weapon(
+            " rckAnim = 5\n mustRack = TRUE\n semiAuto = TRUE\n fullAuto = TRUE\n modAnim = 6\n",
+            &[weapon_anim::RACK, weapon_anim::MODE],
+        );
+        let cars = [Some(&car), Some(&car)];
+        let mut ev = Vec::new();
+        assert_eq!(h.weapons.fire_mode[0], 1, "full auto to start with");
+        shoot(&mut h, &area, &car, &mut ev);
+        assert_eq!(h.weapons.chambered[0], 0, "must rack");
+        let rack = HuntInput {
+            rack: true,
+            ..Default::default()
+        };
+        weapon_ticks(&mut h, &area, &cars, rack, 1, &mut ev);
+        assert_eq!(h.weapons.state, WeaponState::Racking);
+        weapon_ticks(&mut h, &area, &cars, HuntInput::default(), 12, &mut ev);
+        assert_eq!((h.weapons.chambered[0], h.weapons.shots_left[0]), (1, 4));
+        let switch = HuntInput {
+            switch_mode: true,
+            ..Default::default()
+        };
+        weapon_ticks(&mut h, &area, &cars, switch, 1, &mut ev);
+        weapon_ticks(&mut h, &area, &cars, HuntInput::default(), 12, &mut ev);
+        assert_eq!(h.weapons.fire_mode[0], 0, "semi auto");
+    }
+
+    #[test]
+    fn a_magazine_weapon_swaps_for_its_spare_and_auto_reloads() {
+        let (area, mut h, car) = chamber_weapon(" rldAnimFull = 3\n autoReload = TRUE\n", &[]);
+        let mut ev = Vec::new();
+        h.weapons.ammo_mag[0] = 1;
+        h.weapons.mag_shots[0] = 6;
+        for _ in 0..6 {
+            shoot(&mut h, &area, &car, &mut ev);
+        }
+        assert_eq!(h.weapons.state, WeaponState::Reloading, "on its own");
+        let cars = [Some(&car), Some(&car)];
+        weapon_ticks(&mut h, &area, &cars, HuntInput::default(), 12, &mut ev);
+        // The magazine ran dry: the spare went in on its own.
+        assert_eq!(h.weapons.ammo_mag[0], 0);
+        assert_eq!((h.weapons.chambered[0], h.weapons.shots_left[0]), (1, 5));
+    }
+
+    #[test]
+    fn a_harpoon_fires_under_water_with_its_own_numbers_and_a_bolt_is_picked_up() {
+        let (area, mut h, car) = chamber_weapon(
+            " harpoon = TRUE\n aqua_power = 9\n aqua_prec = 1.5\n retrieve = TRUE\n",
+            &[],
+        );
+        let m = h.weapons.mee().cloned().expect("dialect");
+        assert_eq!((m.aqua.power, m.aqua.prec), (9.0, 1.5));
+        assert_eq!(m.aqua.veloc, 0.0, "the land number where not given");
+        let mut ev = Vec::new();
+        h.player.underwater = true;
+        shoot(&mut h, &area, &car, &mut ev);
+        assert_ne!(h.weapons.state, WeaponState::Hiding, "kept out under water");
+        assert_eq!(h.weapons.rounds(0), 5);
+        // A bolt lying by the hunter is picked up again.
+        h.player.underwater = false;
+        h.bullets.push(Bullet {
+            pos: [h.player.x + 100.0, h.player.y, h.player.z],
+            vel: [0.0; 3],
+            land_vel: [0.0; 3],
+            fall_total: 0.0,
+            aq_state: 0,
+            stuck: true,
+            ftime: 0,
+            weapon: 0,
+        });
+        let cars = [Some(&car), Some(&car)];
+        weapon_ticks(&mut h, &area, &cars, HuntInput::default(), 1, &mut ev);
+        assert!(h.bullets.is_empty());
+        assert_eq!(h.weapons.rounds(0), 6);
+        assert!(ev.iter().any(|e| matches!(e, GameEvent::Collect(_))));
     }
 
     #[test]
@@ -3339,7 +3954,7 @@ mod tests {
         assert_eq!(h.weapons.shots_left[0], 13);
         assert!(ev.contains(&GameEvent::WeaponSound {
             weapon: 0,
-            slot: weapon_anim::FIRE
+            sound: weapon_anim::FIRE
         }));
         // Held fire doesn't re-fire until the fire animation finishes.
         weapon_ticks(
@@ -3581,7 +4196,12 @@ mod tests {
         // 2.5 cells ahead of it.
         let mut player = Player::new(&area, (69, 68));
         player.z = 66.0 * 256.0 + 128.0 + 640.0;
-        let weapons = Weapons::new(vec![rifle()], vec![[100; 4]], Bits::NONE, false);
+        let weapons = Weapons::new(
+            vec![rifle()],
+            vec![WeaponAnims::uniform(100)],
+            Bits::NONE,
+            false,
+        );
         let opts = HuntOptions {
             trophy: true,
             ..Default::default()

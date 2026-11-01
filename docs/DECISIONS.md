@@ -2,6 +2,65 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-01 — The Modder's Edition's weapons: chambered rounds, reloads and racking, harpoons, retrieving, rounds and flashes drawn
+
+A weapon with the dialect's keys now follows the Modder's Edition's ammo model
+(`Hunt.cpp`: `ProcessReload`, `ProcessPump`, `ProcessFireMode`, the states in
+`DrawPostObjects`; `refillWeapons`), in `c2_core::game::arms`. Weapons without
+those keys keep the original's model.
+
+- **Ammo**: rounds are fired from the chamber (`chambered`). After a shot, a
+  magazine weapon (`reload = 0`) chambers the next round from the reserve
+  unless `mustRack`. A weapon that loads one by one (`reload = N`) holds N and
+  is reloaded by hand: a part reload (`rldAnimPart`) when some are left or
+  fewer than N remain, else the full one. A magazine weapon's reload swaps in
+  the spare magazine (double ammo). Racking (`rckAnim`) throws out what is
+  chambered and chambers the next round. `autoReload` and `autoRack` do them on
+  their own. `semiAuto` + `fullAuto` + `modAnim` switch the firing mode, and
+  full auto starts on. An empty trigger clicks (`CLICKn.WAV`). The
+  "no weapon" test counts chambered, reserve and spare. Unlimited survival ammo
+  stops taking rounds from the reserve, as the dialect's `SurvivalMode` does.
+- **Animations**: ten slots (`weapon_anim`): draw, fire, hide, the full and part
+  reloads, rack, mode, and the empty poses (`emptyAnim`, `getEmpAnim`,
+  `putEmpAnim`). Draw, fire and hide keep the original order when not given; the
+  others are none, as the dialect's -1 (`rldAnimFull` too: ten of the games'
+  weapons, all crossbows, bows and one shotgun, leave it out). A dialect weapon plays each animation's
+  own sound (`Anifx`), and under water its `*AqSnd` or nothing. So
+  `GameEvent::WeaponSound` now carries the model's sound number, which all
+  three platforms already played it as. Under water every weapon animation
+  runs at half speed. A load-one-by-one weapon with no reload animation at all
+  (the dialect would read slot -1) takes its rounds at once.
+- **Under water**: a `harpoon` stays out and fires there, with `aqua_prec`
+  and `aqua_veloc` (not given: the land number, where the dialect would read
+  -1). A round under the surface does `aqua_power` and falls by `aqua_fall`,
+  leaves bubbles, and passes through the surface. Crossing it, a round takes the slower speed less its
+  fall so far (`ldif`, `fallTotal`). No noise is made under water.
+- **Retrieving**: a `retrieve` round that stops in the ground or an object
+  lies there and is picked up within 300 units when there is room for it
+  (`COLLECTn.WAV`). It goes into the chamber of an empty weapon that chambers by hand, else the reserve.
+- **Drawn (PC)**: the round's model in flight and lying there (`bModel`, its
+  animation looping, light 210), pointed along its way with its file's +z end in front. The dialect's
+  own placement (a pitch in the morph and another in camera space) lines up
+  only when the camera looks along the round. The muzzle flash is `MUZZ4.CAR`
+  for its animation's length, turned by a random roll, with the view model. The HUD
+  shows the chamber picture (`picc`), the chambered rounds, the reserve after
+  room for a full load, the spare magazine below, and the round flash
+  (`FLASH1..4.TGA`, a step each). The rounds' slide during a reload is not
+  drawn.
+- **Keys**: the dialect gives reload, rack and firing mode to the original's
+  Look up, Strafe and Turn right bindings, and they still do their old jobs too. Here they get their own:
+  R, F and V on PC (free in the default map), and D-pad Left, D-pad Right and
+  the left stick click on a pad. The consoles have no buttons left (the
+  owner's layout), so there `HuntOptions::auto_chamber` reloads and racks on
+  their own. Their counters show all the rounds a weapon has. The muzzle
+  flash, round models, chamber picture and click/collect sounds are PC only
+  for now.
+- Checked: `tests/dialect_weapons.rs` (`C2_GAMES_DIR`) loads all 70 weapons of
+  the owner's extracted games from their own files, and fires each until it
+  is empty, by hand and with `auto_chamber` (140 runs). Plus unit tests for part
+  and full reloads, racking and the mode switch, the spare magazine with
+  `autoReload`, harpoons under water and picking a bolt up.
+
 ## 2026-11-01 — Combined standalones: a hunter of another body is kept as the game's own
 
 When a standalone's hunter model has a different vertex count from the base's,

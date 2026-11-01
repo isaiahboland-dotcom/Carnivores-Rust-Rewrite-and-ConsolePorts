@@ -196,7 +196,7 @@ pub extern "C" fn c2_hud_state(ptr: *mut core::ffi::c_void, out: *mut HudState) 
     unsafe { *out = HudState {
         call: sim.hunt.target_call,
         weapon: w.current as i32,
-        ammo: w.shots_left.get(w.current).copied().unwrap_or(0),
+        ammo: w.rounds(w.current),
         weapon_ready: (w.state == c2_core::game::WeaponState::Ready) as u32,
         kills: if sim.hunt.survival.is_some() { sim.hunt.kills.len() as u32 } else { sim.hunt.successes },
         // A question waits for A / B (main.c sends YES / NO then).
@@ -572,7 +572,7 @@ pub extern "C" fn c2_move_tick(
     let (eye, alpha, _) = sim.hunt.camera();
     for event in &sim.events {
         match *event {
-            GameEvent::WeaponSound { weapon, slot } => {
+            GameEvent::WeaponSound { weapon, sound: slot } => {
                 let (l, r) = c2_core::sound::lr_gains(256.0, None, eye, alpha);
                 unsafe { c2_play_sound(KIND_WEAPON + weapon as u32, slot as u32, -1, l, r); }
             }

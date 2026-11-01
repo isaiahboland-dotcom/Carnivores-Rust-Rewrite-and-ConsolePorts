@@ -22,6 +22,9 @@ pub struct SoundBank {
     pub screams: Vec<Option<Clip>>,
     /// Hunting calls by call id 10.. (menu slot + 10): `CALLS/CALL{n}_A/B/C.WAV`.
     pub calls: Vec<Vec<Option<Clip>>>,
+    /// The Modder's Edition's `CLICKn.WAV`, `COLLECTn.WAV` (none elsewhere).
+    pub clicks: Vec<Option<Clip>>,
+    pub collects: Vec<Option<Clip>>,
 }
 
 fn car_sounds(car: Option<&Car>) -> Vec<Option<Clip>> {
@@ -84,6 +87,11 @@ impl SoundBank {
                     "HUM_DIE4.WAV",
                 ],
             ),
+            clicks: many(fx.as_deref(), &["CLICK1.WAV", "CLICK2.WAV", "CLICK3.WAV"]),
+            collects: many(
+                fx.as_deref(),
+                &["COLLECT1.WAV", "COLLECT2.WAV", "COLLECT3.WAV"],
+            ),
             calls: {
                 let dir = fx.as_deref().and_then(|d| find_file(d, "CALLS"));
                 // Only the hunted animals' calls (as the original): with
@@ -128,6 +136,8 @@ impl SoundBank {
             SoundId::Step(i) => get(&self.steps, i),
             SoundId::StepWater(i) => get(&self.steps_water, i),
             SoundId::Scream(i) => get(&self.screams, i),
+            SoundId::Click(i) => get(&self.clicks, i),
+            SoundId::Collect(i) => get(&self.collects, i),
             SoundId::Call { ai, variant } => {
                 get(self.calls.get((ai - 10).max(0) as usize)?, variant)
             }

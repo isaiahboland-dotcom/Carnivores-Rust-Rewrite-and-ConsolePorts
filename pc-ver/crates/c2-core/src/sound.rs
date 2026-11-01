@@ -46,6 +46,10 @@ pub enum SoundId {
         ai: i32,
         variant: usize,
     },
+    /// The Modder's Edition's `SOUNDFX/CLICKn.WAV` (an empty chamber) and
+    /// `COLLECTn.WAV` (a round picked up), n = 1..=3.
+    Click(usize),
+    Collect(usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -70,14 +74,16 @@ pub fn commands(events: &[GameEvent], h: &Hunt) -> Vec<SoundCmd> {
         .iter()
         .filter_map(|e| {
             Some(match e {
-                GameEvent::WeaponSound { weapon, slot } => play(
+                GameEvent::WeaponSound { weapon, sound } => play(
                     SoundId::Weapon {
                         weapon: *weapon,
-                        slot: *slot,
+                        slot: *sound,
                     },
                     None,
                     256,
                 ),
+                GameEvent::Click(i) => play(SoundId::Click(*i), None, 256),
+                GameEvent::Collect(i) => play(SoundId::Collect(*i), None, 256),
                 GameEvent::Dino(DinoEvent::Sound { index, sound, pos }) => {
                     let ctype = h.herd.chars.get(*index)?.ctype;
                     play(

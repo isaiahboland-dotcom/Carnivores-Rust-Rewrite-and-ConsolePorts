@@ -656,6 +656,7 @@ fn tick_bench(game: &Path, area_n: u32) -> Result<()> {
         stealth: false,
         teleport: false,
         distant_ai: false,
+        auto_chamber: false,
     };
     // The first weapon, drawn and aimed at the animal: real hits (blood
     // trail, hit reactions) rather than a scripted kill.
@@ -668,7 +669,7 @@ fn tick_bench(game: &Path, area_n: u32) -> Result<()> {
     let n = infos.len();
     let weapons = Weapons::new(
         infos,
-        vec![[300; 4]; n],
+        vec![c2_core::game::WeaponAnims::uniform(300); n],
         c2_formats::bits::Bits::bit(0),
         false,
     );

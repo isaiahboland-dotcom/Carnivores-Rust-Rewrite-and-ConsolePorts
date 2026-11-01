@@ -12,7 +12,7 @@ use c2_vfs::{Vfs, VfsError};
 
 use crate::area::{Area, TimeOfDay};
 use crate::dino::{DinoInfo, Species};
-use crate::game::WeaponInfo;
+use crate::game::{WeaponAnims, WeaponInfo};
 use crate::model::car_anim_duration_ms;
 
 #[derive(Debug)]
@@ -110,11 +110,11 @@ pub fn species_with(
     (species, cars)
 }
 
-/// A `_RES.TXT` weapon: its info, `[draw, fire, reload, hide]` animation
-/// lengths and its view model.
+/// A `_RES.TXT` weapon: its info, animation lengths and sounds, and its
+/// view model.
 pub struct LoadedWeapon {
     pub info: WeaponInfo,
-    pub anims: [i32; 4],
+    pub anims: WeaponAnims,
     pub car: Option<Car>,
 }
 
@@ -132,15 +132,10 @@ pub fn weapons_with(vfs: &Vfs, res: &ResData, keep: &dyn Fn(usize) -> bool) -> V
             let car = keep(i)
                 .then(|| optional_car(vfs, &format!("HUNTDAT/WEAPONS/{}", info.file)))
                 .flatten();
-            let mut anims = [0; 4];
-            if let Some(c) = &car {
-                for (slot, t) in anims.iter_mut().enumerate() {
-                    *t = c
-                        .animations
-                        .get(info.anim_of(slot))
-                        .map_or(0, |a| car_anim_duration_ms(a) as i32);
-                }
-            }
+            let anims = car
+                .as_ref()
+                .map(|c| WeaponAnims::from_car(&info, c))
+                .unwrap_or_default();
             LoadedWeapon { info, anims, car }
         })
         .collect()

@@ -53,9 +53,13 @@ pub enum Action {
     Exit,
     /// VR only.
     Recenter,
+    /// The Modder's Edition's weapons: reload, rack, the firing mode.
+    Reload,
+    Rack,
+    FireMode,
 }
 
-const ACTIONS: usize = 13;
+const ACTIONS: usize = 16;
 
 /// The layout: which button does what.
 fn action(b: Button) -> Option<Action> {
@@ -73,6 +77,9 @@ fn action(b: Button) -> Option<Action> {
         Button::Start => Action::Pause,
         Button::Select => Action::Exit,
         Button::RightThumb => Action::Recenter,
+        Button::DPadLeft => Action::Reload,
+        Button::DPadRight => Action::Rack,
+        Button::LeftThumb => Action::FireMode,
         _ => return None,
     })
 }
@@ -234,6 +241,9 @@ mod tests {
             Button::Start,
             Button::Select,
             Button::RightThumb,
+            Button::DPadLeft,
+            Button::DPadRight,
+            Button::LeftThumb,
         ];
         let mut seen = [false; ACTIONS];
         for b in buttons {

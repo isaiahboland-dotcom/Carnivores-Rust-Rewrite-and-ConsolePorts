@@ -267,7 +267,7 @@ impl Ui {
                 .take(9)
                 .collect();
             c.text(gpu, 4.0, y + 41.0, 1.0, WHITE, &name);
-            let shots = w.shots_left.get(*i).copied().unwrap_or(0);
+            let shots = w.rounds(*i);
             let col = if *i == w.current && drawn {
                 WHITE
             } else {

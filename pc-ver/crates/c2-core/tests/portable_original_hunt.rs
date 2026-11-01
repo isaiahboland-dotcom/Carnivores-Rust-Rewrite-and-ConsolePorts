@@ -90,13 +90,8 @@ fn original_pistol_and_animals_load_and_simulate() {
         .unwrap();
     let info = WeaponInfo::from_def(weapon);
     assert_eq!(info.shots, 16);
-    let anims = core::array::from_fn(|slot| {
-        pistol
-            .animations
-            .get(info.anim_of(slot))
-            .map_or(0, |a| car_anim_duration_ms(a) as i32)
-    });
-    assert!(anims[0] > 0 && anims[1] > 0);
+    let anims = c2_core::game::WeaponAnims::from_car(&info, &pistol);
+    assert!(anims.ms[0] > 0 && anims.ms[1] > 0);
     assert!(pose_car(&pistol.animations[0], pistol.mesh.vertices.len(), 0).is_some());
     let area = Area::new(
         map::parse(&read("AREAS/AREA1.MAP")).unwrap(),
