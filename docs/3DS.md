@@ -21,6 +21,8 @@ From `3ds-ver/`:
 cargo run --release -p c2-cook -- --game ../source/c2-original --target o3ds --out c2rs.c2pk
 #    options: --target n3ds|o3ds  --areas 1,2 (fewer areas, smaller pack)
 #             --mod DIR... or --recipe R.toml --mods DIR  (add-on mods)
+#             (--mods repeatable; --mods ID=FOLDER for one entry; a recipe with
+#             standalones: c2-pc recipe build ... --out DIR first, then --game DIR)
 
 # 2. Build the app.
 export DEVKITPRO=/opt/devkitpro DEVKITARM=/opt/devkitpro/devkitARM

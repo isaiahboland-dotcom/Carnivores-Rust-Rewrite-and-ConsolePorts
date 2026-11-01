@@ -194,15 +194,26 @@ fn verify(
     recipe_path: &Path,
     r: &c2_mods::recipe::Recipe,
     bases: &[PathBuf],
-    mods_dir: &Path,
+    mods_dirs: &[PathBuf],
 ) -> Result<Verified> {
-    use c2_mods::recipe::{check_base, load_base, locate};
+    use c2_mods::recipe::{check_apk, check_base, load_base, locate};
     let v = vanilla(bases)?;
     println!(
         "recipe {} — {} {}",
         r.recipe.id, r.recipe.name, r.recipe.version
     );
+    let apk = load_base(recipe_path, r).and_then(|b| {
+        let game = bases.first()?;
+        check_apk(&b, game)
+    });
     match load_base(recipe_path, r) {
+        Some(_) if apk == Some(true) => {
+            println!("  base '{}': ok (built from that APK)", r.recipe.base);
+        }
+        Some(_) if apk == Some(false) => println!(
+            "  base '{}': not built from that APK (c2-pc mobile-base APK --out DIR; another version differs)",
+            r.recipe.base
+        ),
         Some(b) => {
             let (missing, bad) = check_base(&b, &v);
             if missing.is_empty() && bad.is_empty() {
@@ -225,9 +236,9 @@ fn verify(
             r.recipe.base
         ),
     }
-    let found = locate(r, mods_dir);
-    let overlays = c2_mods::recipe::locate_games(&r.overlays, mods_dir);
-    let games = c2_mods::recipe::locate_games(&r.standalones, mods_dir);
+    let found = locate(r, mods_dirs);
+    let overlays = c2_mods::recipe::locate_games(&r.overlays, mods_dirs);
+    let games = c2_mods::recipe::locate_games(&r.standalones, mods_dirs);
     let kinds = overlays
         .iter()
         .map(|l| ("overlay", l))
@@ -296,12 +307,12 @@ impl Verified {
 pub fn build_recipe(
     recipe_path: &Path,
     bases: &[PathBuf],
-    mods_dir: &Path,
+    mods_dirs: &[PathBuf],
     balance_file: Option<&Path>,
     out: &Path,
 ) -> Result<()> {
     let r = c2_mods::recipe::Recipe::load(recipe_path)?;
-    let found = verify(recipe_path, &r, bases, mods_dir)?;
+    let found = verify(recipe_path, &r, bases, mods_dirs)?;
     // The recipe's own overlays, when it lists them, over the given game.
     let bases: Vec<PathBuf> = if r.overlays.is_empty() {
         bases.to_vec()
@@ -359,7 +370,8 @@ pub fn recipe_pack_dir(recipe_path: &Path) -> PathBuf {
 
 pub struct RecipeArgs<'a> {
     pub bases: Vec<PathBuf>,
-    pub mods: Option<&'a str>,
+    /// `--mods DIR` (repeatable): downloads folders, or one mod's folder.
+    pub mods: Vec<PathBuf>,
     pub out: Option<&'a str>,
     pub id: Option<&'a str>,
     pub name: Option<&'a str>,
@@ -381,8 +393,7 @@ pub fn run_recipe(args: &[String], a: &RecipeArgs<'_>) -> Result<()> {
         "verify" => {
             let p = first()?;
             let r = c2_mods::recipe::Recipe::load(&p)?;
-            let mods = PathBuf::from(a.mods.context("--mods DIR is required")?);
-            let found = verify(&p, &r, bases, &mods)?;
+            let found = verify(&p, &r, bases, &mods_dirs(&r, &a.mods)?)?;
             if found.complete() {
                 println!("everything matches; `recipe build` will work");
                 Ok(())
@@ -391,9 +402,10 @@ pub fn run_recipe(args: &[String], a: &RecipeArgs<'_>) -> Result<()> {
             }
         }
         "build" => {
-            let mods = PathBuf::from(a.mods.context("--mods DIR is required")?);
+            let p = first()?;
+            let r = c2_mods::recipe::Recipe::load(&p)?;
             let out = PathBuf::from(a.out.context("--out DIR is required")?);
-            build_recipe(&first()?, bases, &mods, None, &out)
+            build_recipe(&p, bases, &mods_dirs(&r, &a.mods)?, None, &out)
         }
         "new" => {
             let id = a.id.context("--id ID is required")?;
@@ -435,6 +447,14 @@ pub fn run_recipe(args: &[String], a: &RecipeArgs<'_>) -> Result<()> {
         }
         _ => bail!("unknown recipe command {sub:?}"),
     }
+}
+
+/// The `--mods` folders, which a recipe listing anything to find needs.
+pub fn mods_dirs(r: &c2_mods::recipe::Recipe, mods: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    if mods.is_empty() && c2_mods::recipe::entries(r).next().is_some() {
+        bail!("--mods DIR is required (repeatable: downloads folders, or a mod's own folder)");
+    }
+    Ok(mods.to_vec())
 }
 
 /// Prints `text`, or writes it to a file that must not exist yet.

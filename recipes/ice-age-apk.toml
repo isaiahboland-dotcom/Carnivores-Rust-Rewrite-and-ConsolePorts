@@ -1,0 +1,25 @@
+# Carnivores: Ice Age (Android): the mobile game as the base game, on its own.
+#
+# Credits, download pages and file hashes only; no game or mod files.
+# No PC game needed: the game is rebuilt from your own APK (never shared), version 2.0.1.
+# The launcher: drop this file in, then drop the APK on the base line (or the Game tab's
+# "Use my APK as the game..."). On the command line:
+#
+#   c2-pc mobile-base Carnivores_+Ice+Age_2.0.1.apk --out GAME
+#   c2-pc recipe verify THIS.toml --base GAME
+#   c2-pc play GAME
+#
+# 3DS pack (Old 3DS: --target o3ds), into sdmc:/3ds/<install>/:
+#   c2-cook --game GAME --mobile-survival DH_GAME/mobile-survival.txt --target o3ds --out ice-age-apk.c2pk
+# (the classic survival comes with the Dinosaur Hunter APK's game, DH_GAME;
+# six of Ice Age's animals aren't in yet: they need Ice Age's own behaviour)
+#
+
+[recipe]
+id = "ice-age-apk"
+name = "Carnivores: Ice Age (Android)"
+version = "0.1"
+base = "ice-age-apk"
+
+[load_order]
+order = []

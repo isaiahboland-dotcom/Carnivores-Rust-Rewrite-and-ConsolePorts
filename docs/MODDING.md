@@ -193,7 +193,10 @@ cargo run --release -p c2-pc -- recipe new ADDON... --base ../source/c2-original
 cargo run --release -p c2-pc -- recipe build my-pack.toml --base ../source/c2-original --mods DOWNLOADS --out DIR
 ```
 `--mods DOWNLOADS` holds each download in a folder of its own; the overlay
-comes from the recipe.
+comes from the recipe. `--mods` can be given more than once, and
+`--mods ID=FOLDER` names the folder of one entry (`ID` its id) so nothing
+else is searched. In the launcher, drop the recipe on the window: the Add-ons
+tab lists each entry with its download page and takes a folder for it.
 
 Loose add-ons work the same way (`loose = true` on the mod): their files are
 listed by their path in the add-on's folder (the models, menu files, sounds,

@@ -288,7 +288,7 @@ fn recipes_pin_loose_add_ons() {
         ],
     );
     let rpath = downloads.join("big.toml");
-    let found = locate(&r, &downloads);
+    let found = locate(&r, std::slice::from_ref(&downloads));
     assert!(found[0].complete(), "{found:?}");
     let (sources, opts) = prepare(&rpath, &r, &found, &v).expect("prepare");
     assert_eq!(sources[0].manifest.info.id, "big-dino");
@@ -313,7 +313,7 @@ fn recipes_pin_loose_add_ons() {
 
     // A changed model is caught.
     write(&downloads, &[("bigdino_v1/big.car", b"big v2")]);
-    let found = locate(&r, &downloads);
+    let found = locate(&r, std::slice::from_ref(&downloads));
     assert_eq!(found[0].mismatched.len(), 1);
     assert!(prepare(&rpath, &r, &found, &v).is_err());
     for d in [base, authoring, downloads] {

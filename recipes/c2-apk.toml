@@ -1,0 +1,23 @@
+# Carnivores: Dinosaur Hunter (Android): the mobile game as the base game, on its own.
+#
+# Credits, download pages and file hashes only; no game or mod files.
+# No PC game needed: the game is rebuilt from your own APK (never shared), version 2.0.1.
+# The launcher: drop this file in, then drop the APK on the base line (or the Game tab's
+# "Use my APK as the game..."). On the command line:
+#
+#   c2-pc mobile-base Carnivores_+Dinosaur+Hunter_2.0.1.apk --out GAME
+#   c2-pc recipe verify THIS.toml --base GAME
+#   c2-pc play GAME
+#
+# 3DS pack (Old 3DS: --target o3ds), into sdmc:/3ds/<install>/:
+#   c2-cook --game GAME --mobile-survival GAME/mobile-survival.txt --target o3ds --out c2-apk.c2pk
+#
+
+[recipe]
+id = "c2-apk"
+name = "Carnivores: Dinosaur Hunter (Android)"
+version = "0.1"
+base = "dinosaur-hunter-apk"
+
+[load_order]
+order = []

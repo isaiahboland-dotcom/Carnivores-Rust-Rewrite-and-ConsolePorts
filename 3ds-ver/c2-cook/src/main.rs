@@ -29,7 +29,7 @@ mod wiiu;
 
 const USAGE: &str = "usage:
   c2-cook --game <GAME_DIR> [--overlay DIR]... [--mod MOD]...
-          [--recipe RECIPE.toml --mods DIR] [--balance FILE] [--areas N,N]
+          [--recipe RECIPE.toml --mods DIR...] [--balance FILE] [--areas N,N]
           [--mobile-survival FILE] [--survival-modes classic,modded,ours]
           [--target n3ds|o3ds] [--force] --out <PACK.c2pk>
 
@@ -229,7 +229,8 @@ struct Args {
     overlays: Vec<PathBuf>,
     mods: Vec<PathBuf>,
     recipe: Option<PathBuf>,
-    mods_dir: Option<PathBuf>,
+    /// `--mods` (repeatable): downloads folders, or a mod's own folder.
+    mods_dirs: Vec<PathBuf>,
     balance: Option<PathBuf>,
     /// Menu style: the game folder whose title art is used (Ice Age's).
     menu_art: Option<PathBuf>,
@@ -261,7 +262,7 @@ fn parse_args() -> Result<Args> {
             "--check" => a.check = Some(val()?.into()),
             "--bench" => a.bench = Some(val()?),
             "--recipe" => a.recipe = Some(val()?.into()),
-            "--mods" => a.mods_dir = Some(val()?.into()),
+            "--mods" => a.mods_dirs.push(val()?.into()),
             "--balance" => a.balance = Some(val()?.into()),
             "--menu-art" => a.menu_art = Some(val()?.into()),
             "--mobile-survival" => a.mobile_survival = Some(val()?.into()),
@@ -297,15 +298,37 @@ fn merged(a: &Args, game: &Path) -> Result<Vfs> {
 }
 
 fn merged_game(a: &Args, game: &Path) -> Result<Vfs> {
-    let bases: Vec<PathBuf> = std::iter::once(game.to_path_buf())
+    let mut bases: Vec<PathBuf> = std::iter::once(game.to_path_buf())
         .chain(a.overlays.iter().cloned())
         .collect();
-    let game = &bases[..];
     if let Some(r) = &a.recipe {
-        let mods_dir = a.mods_dir.as_deref().context("--recipe needs --mods DIR")?;
         let recipe = c2_mods::recipe::Recipe::load(r)?;
+        if !recipe.standalones.is_empty() {
+            bail!(
+                "{} combines standalone games: build it first (c2-pc recipe build ... --out DIR), then --game DIR",
+                r.display()
+            );
+        }
+        if a.mods_dirs.is_empty() && !(recipe.mods.is_empty() && recipe.overlays.is_empty()) {
+            bail!("--recipe needs --mods DIR");
+        }
+        // The recipe's own overlays, when it lists them, over the game.
+        if !recipe.overlays.is_empty() {
+            bases.truncate(1);
+            for l in c2_mods::recipe::locate_games(&recipe.overlays, &a.mods_dirs) {
+                match (&l.root, l.complete()) {
+                    (Some(root), true) => bases.push(root.clone()),
+                    _ => bail!(
+                        "overlay '{}' is missing or doesn't match (get it from {})",
+                        l.id,
+                        if l.url.is_empty() { "?" } else { &l.url }
+                    ),
+                }
+            }
+        }
+        let game = &bases[..];
         let vanilla = c2_mods::vanilla(game)?;
-        let found = c2_mods::recipe::locate(&recipe, mods_dir);
+        let found = c2_mods::recipe::locate(&recipe, &a.mods_dirs);
         for l in found.iter().filter(|l| !l.complete()) {
             eprintln!(
                 "mod '{}': {} missing, {} different — get it from {}",
@@ -318,6 +341,7 @@ fn merged_game(a: &Args, game: &Path) -> Result<Vfs> {
         let (sources, opts) = c2_mods::recipe::prepare(r, &recipe, &found, &vanilla)?;
         return Ok(c2_mods::build_with(game, sources, &opts)?.vfs);
     }
+    let game = &bases[..];
     if a.mods.is_empty() {
         return Ok(c2_mods::vanilla(game)?);
     }

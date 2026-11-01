@@ -1,0 +1,6 @@
+[base]
+id = "dinosaur-hunter-apk"
+note = "The game built from your own copy of the mobile game, version 2.0.1 (Carnivores_+Dinosaur+Hunter_2.0.1.apk); its hash, not its files. Other versions differ; verify only warns."
+apk = "sha256:90906e066b0ba78976b11bc0ae30c77ec690f4577db8a0cad39f6cfc16a6271f"
+
+[files]

@@ -1,0 +1,6 @@
+[base]
+id = "ice-age-apk"
+note = "The game built from your own copy of the mobile game, version 2.0.1 (Carnivores_+Ice+Age_2.0.1.apk); its hash, not its files. Other versions differ; verify only warns."
+apk = "sha256:cf9e1495b2d4c4238f20ecdebafdfe6771fcaaf7446df87752f82742a5b77309"
+
+[files]

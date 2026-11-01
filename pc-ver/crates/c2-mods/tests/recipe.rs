@@ -104,7 +104,7 @@ fn recipe_round_trip() {
         &downloads.join("Blue Menu.zip"),
         &[("Blue Menu/HUNTDAT/MENU/MENUM.TGA", b"blue")],
     );
-    let found = locate(&r, &downloads);
+    let found = locate(&r, std::slice::from_ref(&downloads));
     assert!(found.iter().all(|l| l.complete()), "{found:?}");
     let (sources, opts) = prepare(&rpath, &r, &found, &v).expect("prepare");
     let pack = build_with(std::slice::from_ref(&base), sources, &opts).expect("build");
@@ -125,10 +125,48 @@ fn recipe_round_trip() {
         &downloads.join("Blue Menu.zip"),
         &[("Blue Menu/HUNTDAT/MENU/MENUM.TGA", b"BLUE v2")],
     );
-    let found = locate(&r, &downloads);
+    let found = locate(&r, std::slice::from_ref(&downloads));
     assert_eq!(found[1].mismatched.len(), 1);
     assert!(prepare(&rpath, &r, &found, &v).is_err());
     for d in [base, authoring, rdir, downloads, out] {
         let _ = std::fs::remove_dir_all(d);
     }
+}
+
+/// Each entry's own folder (the launcher's recipe page): checked alone, and
+/// given as `ID=FOLDER` it is that entry's whatever its name.
+#[test]
+fn entries_from_their_own_folders() {
+    use c2_mods::recipe::{check_folder, RecipeMod};
+    let mine = tmp("own-folders");
+    write(
+        &mine,
+        &[
+            ("whatever name/HUNTDAT/MENU/MENUM.TGA", b"red"),
+            ("other/HUNTDAT/MENU/MENUM.TGA", b"blue"),
+        ],
+    );
+    let entry = RecipeMod {
+        id: "red-menu".into(),
+        files: [(
+            "HUNTDAT/MENU/MENUM.TGA".to_string(),
+            c2_mods::recipe::sha256(b"red"),
+        )]
+        .into(),
+        ..Default::default()
+    };
+    assert!(check_folder(&entry, &mine.join("whatever name"), false).complete());
+    let wrong = check_folder(&entry, &mine.join("other"), false);
+    assert_eq!(wrong.mismatched.len(), 1, "{wrong:?}");
+    assert!(check_folder(&entry, &mine.join("none"), false)
+        .root
+        .is_none());
+    let r = Recipe {
+        mods: vec![entry],
+        ..Default::default()
+    };
+    let arg = PathBuf::from(format!("red-menu={}", mine.join("whatever name").display()));
+    let found = locate(&r, &[arg]);
+    assert!(found[0].complete(), "{found:?}");
+    let _ = std::fs::remove_dir_all(mine);
 }

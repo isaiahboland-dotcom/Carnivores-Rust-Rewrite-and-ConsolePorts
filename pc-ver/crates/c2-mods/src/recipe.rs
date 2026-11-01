@@ -121,6 +121,17 @@ pub struct Base {
 pub struct BaseInfo {
     pub id: String,
     pub note: String,
+    /// Who made the game and where it is downloaded (a standalone game as
+    /// the base).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub credit: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub url: String,
+    /// `sha256:<hex>` of the APK the base is built from (README M17): the
+    /// game folder `mobile_base::build` made from it records the same in
+    /// [`crate::mobile_base::SOURCE_APK`]. `files` is then empty.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub apk: String,
 }
 
 impl Recipe {
@@ -226,84 +237,164 @@ pub fn pin_game(dir: &Path) -> Result<RecipeMod, ModError> {
     })
 }
 
-/// Finds each of `games` (standalones or overlays) under `mods_dir`, as
-/// [`locate`] does mods, its game folder possibly a few folders down.
-pub fn locate_games(games: &[RecipeMod], mods_dir: &Path) -> Vec<Located> {
-    let mut cands: Vec<(String, PathBuf, Box<dyn Backend>, bool)> = Vec::new();
-    if let Ok(rd) = std::fs::read_dir(mods_dir) {
-        let mut subs: Vec<PathBuf> = rd
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.is_dir())
-            .collect();
-        subs.sort();
-        for d in subs {
-            let name = d
-                .file_name()
-                .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-            if let Some(root) = crate::pack::find_game_root(&d) {
-                if let Ok(b) = open_root(&root) {
-                    cands.push((name.clone(), root.clone(), b, false));
-                }
-                // Keep the extracted package as a second lookup view. Recipes
-                // pinned from an unpacked download can include its wrapper
-                // directory in every path, while `open_root` starts at HUNTDAT's
-                // parent and omits that prefix. `root` remains the actual game
-                // directory used later when building the recipe.
-                if let Ok(b) = DirBackend::new(&d) {
-                    cands.push((name, root, Box::new(b), false));
-                }
-            }
-        }
+/// A folder that may hold a recipe entry: `(name, root, files, loose)`.
+type Cand = (String, PathBuf, Box<dyn Backend>, bool);
+
+fn dir_name(d: &Path) -> String {
+    if d.is_file() {
+        d.file_stem()
+    } else {
+        d.file_name()
     }
-    locate_among(games, &cands)
+    .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
 }
 
-/// Finds each recipe mod under `mods_dir`: the folder named by `folder` or
-/// like the id, else the folder where most listed files match their hashes.
-pub fn locate(r: &Recipe, mods_dir: &Path) -> Vec<Located> {
-    // (folder name, root, files, loose add-on)
-    let mut cands: Vec<(String, PathBuf, Box<dyn Backend>, bool)> = Vec::new();
-    let mut dirs = vec![mods_dir.to_path_buf()];
-    if let Ok(rd) = std::fs::read_dir(mods_dir) {
+/// `dir` and the folders (and `.zip`s, when `zips`) right inside it.
+fn dir_and_subs(dir: &Path, zips: bool) -> Vec<PathBuf> {
+    let mut dirs = vec![dir.to_path_buf()];
+    if let Ok(rd) = std::fs::read_dir(dir) {
         let mut subs: Vec<PathBuf> = rd
             .flatten()
             .map(|e| e.path())
-            .filter(|p| p.is_dir() || p.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")))
+            .filter(|p| {
+                p.is_dir() || (zips && p.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")))
+            })
             .collect();
         subs.sort();
         dirs.extend(subs);
     }
-    for d in dirs {
-        let name = if d.is_file() {
-            d.file_stem()
-        } else {
-            d.file_name()
+    dirs
+}
+
+/// `d` as a standalone or overlay game: its game folder, possibly a few
+/// folders down.
+fn game_cands(d: &Path, cands: &mut Vec<Cand>) {
+    let name = dir_name(d);
+    if let Some(root) = crate::pack::find_game_root(d) {
+        if let Ok(b) = open_root(&root) {
+            cands.push((name.clone(), root.clone(), b, false));
         }
-        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-        if let Some(root) = mod_root(&d) {
-            if let Ok(b) = open_root(&root) {
-                cands.push((name.clone(), root, b, false));
-            }
+        // Keep the extracted package as a second lookup view. Recipes
+        // pinned from an unpacked download can include its wrapper
+        // directory in every path, while `open_root` starts at HUNTDAT's
+        // parent and omits that prefix. `root` remains the actual game
+        // directory used later when building the recipe.
+        if let Ok(b) = DirBackend::new(d) {
+            cands.push((name, root, Box::new(b), false));
         }
-        // Recipe loose-file paths are relative to the extracted download,
-        // which can contain a nested HUNTDAT (or only map files, with no
-        // .car/.txt for `is_loose` to detect). Keep the download folder as
-        // a candidate even when `mod_root` also found a game-data root.
-        if d.is_dir() {
-            if let Ok(b) = DirBackend::new(&d) {
-                cands.push((name, d, Box::new(b), true));
+    }
+}
+
+/// `d` as a mod: its game-data root, and the folder as a loose add-on.
+fn mod_cands(d: &Path, cands: &mut Vec<Cand>) {
+    let name = dir_name(d);
+    if let Some(root) = mod_root(d) {
+        if let Ok(b) = open_root(&root) {
+            cands.push((name.clone(), root, b, false));
+        }
+    }
+    // Recipe loose-file paths are relative to the extracted download,
+    // which can contain a nested HUNTDAT (or only map files, with no
+    // .car/.txt for `is_loose` to detect). Keep the download folder as
+    // a candidate even when `mod_root` also found a game-data root.
+    if d.is_dir() {
+        if let Ok(b) = DirBackend::new(d) {
+            cands.push((name, d.to_path_buf(), Box::new(b), true));
+        }
+    }
+}
+
+/// A `--mods` value: a folder of downloads (or a mod's own folder), or
+/// `ID=FOLDER`, the folder given for the entry `ID` (the launcher's).
+pub fn mods_arg(p: &Path) -> (Option<String>, PathBuf) {
+    if !p.exists() {
+        if let Some((id, dir)) = p.to_str().and_then(|s| s.split_once('=')) {
+            if !id.is_empty() && !id.contains(['/', '\\']) {
+                return (Some(id.to_string()), PathBuf::from(dir));
             }
         }
     }
-    locate_among(&r.mods, &cands)
+    (None, p.to_path_buf())
+}
+
+/// The candidates from `--mods` values: an `ID=FOLDER` one is that folder
+/// alone, named `ID`; a plain folder is itself and the folders inside it.
+fn cands_from(dirs: &[PathBuf], zips: bool, add: fn(&Path, &mut Vec<Cand>)) -> Vec<Cand> {
+    let mut cands = Vec::new();
+    for arg in dirs {
+        match mods_arg(arg) {
+            (Some(id), d) => {
+                let from = cands.len();
+                add(&d, &mut cands);
+                for c in &mut cands[from..] {
+                    c.0 = id.clone();
+                }
+            }
+            (None, dir) => {
+                for d in dir_and_subs(&dir, zips) {
+                    add(&d, &mut cands);
+                }
+            }
+        }
+    }
+    cands
+}
+
+/// Finds each of `games` (standalones or overlays) in `dirs` or one folder
+/// down (see [`mods_arg`]), as [`locate`] does mods, its game folder
+/// possibly a few folders down.
+pub fn locate_games(games: &[RecipeMod], dirs: &[PathBuf]) -> Vec<Located> {
+    let add: fn(&Path, &mut Vec<Cand>) = |d, c| {
+        if d.is_dir() {
+            game_cands(d, c);
+        }
+    };
+    locate_among(games, &cands_from(dirs, false, add))
+}
+
+/// Finds each recipe mod in `dirs` (downloads folders, mod folders, or
+/// `ID=FOLDER`: see [`mods_arg`]): the folder named by `folder` or like the
+/// id, else the folder where most listed files match their hashes.
+pub fn locate(r: &Recipe, dirs: &[PathBuf]) -> Vec<Located> {
+    locate_among(&r.mods, &cands_from(dirs, true, mod_cands))
+}
+
+/// One recipe entry checked against the one folder the player gave for it
+/// (the launcher's recipe page): `game` for an overlay or standalone.
+pub fn check_folder(m: &RecipeMod, dir: &Path, game: bool) -> Located {
+    let mut cands = Vec::new();
+    if game {
+        game_cands(dir, &mut cands);
+    } else {
+        mod_cands(dir, &mut cands);
+    }
+    let l = locate_among(std::slice::from_ref(m), &cands)
+        .pop()
+        .unwrap_or_default();
+    if l.root.is_none() {
+        // Nothing of it there: no root, so the folder isn't taken.
+        return Located {
+            id: m.id.clone(),
+            url: m.url.clone(),
+            missing: m.files.keys().cloned().collect(),
+            ..Default::default()
+        };
+    }
+    l
+}
+
+/// Every entry of a recipe, its kind and whether it is a whole game
+/// (overlay or standalone): `("overlay" | "standalone" | "mod", entry, game)`.
+pub fn entries(r: &Recipe) -> impl Iterator<Item = (&'static str, &RecipeMod, bool)> {
+    r.overlays
+        .iter()
+        .map(|m| ("overlay", m, true))
+        .chain(r.standalones.iter().map(|m| ("standalone", m, true)))
+        .chain(r.mods.iter().map(|m| ("mod", m, false)))
 }
 
 /// Each of `list` among the candidate folders: `(name, root, files, loose)`.
-fn locate_among(
-    list: &[RecipeMod],
-    cands: &[(String, PathBuf, Box<dyn Backend>, bool)],
-) -> Vec<Located> {
+fn locate_among(list: &[RecipeMod], cands: &[Cand]) -> Vec<Located> {
     list.iter()
         .map(|m| {
             let kind = cands.iter().filter(|c| c.3 == m.loose);
@@ -350,6 +441,36 @@ pub fn load_base(recipe_path: &Path, r: &Recipe) -> Option<Base> {
     toml::from_str(&std::fs::read_to_string(p).ok()?).ok()
 }
 
+/// For a base built from an APK (`apk` set): whether the game folder `game`
+/// was built from that APK (`None` for other bases).
+pub fn check_apk(base: &Base, game: &Path) -> Option<bool> {
+    if base.base.apk.is_empty() {
+        return None;
+    }
+    let got = std::fs::read_to_string(game.join(crate::mobile_base::SOURCE_APK)).ok();
+    Some(got.is_some_and(|g| g.trim().eq_ignore_ascii_case(base.base.apk.trim())))
+}
+
+/// `sha256:<hex>` of a file, read in pieces (APKs are hundreds of MiB).
+pub fn sha256_file(path: &Path) -> std::io::Result<String> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(path)?;
+    let mut h = Sha256::new();
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        let n = f.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        h.update(&buf[..n]);
+    }
+    let mut s = String::from("sha256:");
+    for b in h.finalize() {
+        s.push_str(&format!("{b:02x}"));
+    }
+    Ok(s)
+}
+
 /// Base files missing or different in the user's game: `(missing, mismatched)`.
 pub fn check_base(base: &Base, vanilla: &Vfs) -> (Vec<String>, Vec<String>) {
     let (mut missing, mut mismatched) = (Vec::new(), Vec::new());
@@ -376,6 +497,7 @@ pub fn base_profile(id: &str, note: &str, vanilla: &Vfs) -> Result<Base, ModErro
         base: BaseInfo {
             id: id.into(),
             note: note.into(),
+            ..Default::default()
         },
         files,
     })

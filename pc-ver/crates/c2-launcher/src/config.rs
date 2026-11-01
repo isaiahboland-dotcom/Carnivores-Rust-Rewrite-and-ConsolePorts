@@ -1,6 +1,7 @@
 //! What the launcher remembers, in `launcher.toml` in the game's data folder
 //! (beside the saves): the game folders, the add-ons and the 3DS build.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -265,6 +266,52 @@ pub struct Config {
     /// can take art from.
     pub menu_style: MenuStyle,
     pub ice_age: Option<PathBuf>,
+    /// A recipe set up on the Add-ons tab (`crate::recipe_page`).
+    pub recipe: Option<RecipeUse>,
+}
+
+/// A recipe and the folder given for each of its entries; while `on`, play
+/// and the builds go by it instead of the add-on and standalone lists.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct RecipeUse {
+    pub path: PathBuf,
+    /// Its own game folder (a standalone game, or one built from an APK);
+    /// `None`: the Game tab's, with its overlays.
+    pub game: Option<PathBuf>,
+    /// Entry id -> its folder.
+    pub folders: BTreeMap<String, PathBuf>,
+    pub on: bool,
+}
+
+impl RecipeUse {
+    /// `--mods ID=FOLDER` for each entry (`c2_mods::recipe::mods_arg`).
+    pub fn mods_args(&self) -> Vec<String> {
+        self.folders
+            .iter()
+            .flat_map(|(id, dir)| ["--mods".to_string(), format!("{id}={}", dir.display())])
+            .collect()
+    }
+
+    /// The recipe's id (its pack's name), or the file's name.
+    pub fn id(&self) -> String {
+        c2_mods::recipe::Recipe::load(&self.path)
+            .ok()
+            .map(|r| r.recipe.id)
+            .filter(|id| !id.is_empty())
+            .or_else(|| {
+                self.path
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+            })
+            .unwrap_or_else(|| "recipe".into())
+    }
+
+    /// Whether the recipe combines standalone games (built with `c2-pc`
+    /// first for the consoles).
+    pub fn has_standalones(&self) -> bool {
+        c2_mods::recipe::Recipe::load(&self.path).is_ok_and(|r| !r.standalones.is_empty())
+    }
 }
 
 fn path() -> PathBuf {
@@ -371,6 +418,20 @@ mod tests {
         assert_eq!(install_name("Ice Age + C2"), "Ice-Age---C2");
         assert_eq!(install_name("  "), "c2rs");
         assert_eq!(install_name("c2_ice-age"), "c2_ice-age");
+    }
+
+    #[test]
+    fn recipe_folders_become_mods_args() {
+        let u = RecipeUse {
+            folders: [
+                ("b".to_string(), PathBuf::from("/d/b")),
+                ("a".into(), "/d/a".into()),
+            ]
+            .into_iter()
+            .collect(),
+            ..Default::default()
+        };
+        assert_eq!(u.mods_args(), ["--mods", "a=/d/a", "--mods", "b=/d/b"]);
     }
 
     #[test]

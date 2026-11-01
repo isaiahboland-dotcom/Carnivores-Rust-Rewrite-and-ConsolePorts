@@ -31,7 +31,7 @@ use c2_core::area::TimeOfDay;
 use c2_core::game::SurvivalKind;
 
 const USAGE: &str = "usage:
-  c2-pc play  <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR] [--balance FILE]
+  c2-pc play  <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR...] [--balance FILE]
               [--screen main|stats|hunt|options|credits|register|quit|loading]
               [--script 'X,Y;'TEXT;enter;esc'] [--shot out.png]\n              [--survival-modes classic,modded,ours] [--mobile-survival FILE]
   c2-pc balance <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]...   (prints prices and scores as a balance file)
@@ -44,8 +44,8 @@ const USAGE: &str = "usage:
                                         (standalone games beside the base, add-ons over them)
   c2-pc mod detect <MOD_DIR>... --base <GAME_DIR> [--write]
   c2-pc mod build  <MOD_DIR>... --base <GAME_DIR> --out <DIR>
-  c2-pc recipe verify <RECIPE.toml> --base <GAME_DIR> --mods <DIR>
-  c2-pc recipe build  <RECIPE.toml> --base <GAME_DIR> --mods <DIR> --out <DIR>
+  c2-pc recipe verify <RECIPE.toml> --base <GAME_DIR> [--overlay DIR]... --mods <DIR>...
+  c2-pc recipe build  <RECIPE.toml> --base <GAME_DIR> [--overlay DIR]... --mods <DIR>... --out <DIR>
   c2-pc recipe new    <MOD_DIR>... --base <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... --id ID [--name NAME] [--base-id ID] [--out RECIPE.toml]
   c2-pc recipe base   --base <GAME_DIR> [--id c2-vanilla|ice-age] [--out recipes/bases/c2-vanilla.toml]
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
@@ -313,7 +313,7 @@ fn main() -> Result<()> {
     if cmd == "recipe" {
         let a = mods_cli::RecipeArgs {
             bases: mods_cli::bases(o.value("base"), &o.values("overlay"))?,
-            mods: o.value("mods"),
+            mods: o.values("mods").into_iter().map(PathBuf::from).collect(),
             out: o.value("out"),
             id: o.value("id"),
             name: o.value("name"),
@@ -534,9 +534,10 @@ fn main() -> Result<()> {
                 )?;
                 out
             } else if let Some(r) = recipe {
-                let mods_dir = PathBuf::from(o.value("mods").context("--recipe needs --mods DIR")?);
+                let mods: Vec<PathBuf> = o.values("mods").into_iter().map(PathBuf::from).collect();
+                let mods = mods_cli::mods_dirs(&c2_mods::recipe::Recipe::load(&r)?, &mods)?;
                 let out = mods_cli::recipe_pack_dir(&r);
-                mods_cli::build_recipe(&r, &bases, &mods_dir, balance, &out)?;
+                mods_cli::build_recipe(&r, &bases, &mods, balance, &out)?;
                 out
             } else if mods.is_empty()
                 && overlays.is_empty()

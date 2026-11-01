@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use eframe::egui::{self, Color32, RichText};
 
-use crate::config::{describe_game, install_name, AddOn, Config, MenuStyle, Target};
+use crate::config::{describe_game, install_name, AddOn, Config, MenuStyle, RecipeUse, Target};
 use crate::jobs::{is_archive, Job, Step};
 use crate::theme::*;
 use crate::{find_tool, Mode};
@@ -34,6 +34,10 @@ pub struct Launcher {
     importing: Option<PathBuf>,
     /// A game being built from the player's APK, to become the base.
     apk_base: Option<PathBuf>,
+    /// ... the recipe page's game instead.
+    apk_for_recipe: bool,
+    /// A recipe being set up (Add-ons tab).
+    recipe_page: Option<crate::recipe_page::Page>,
 }
 
 fn style(ctx: &egui::Context) {
@@ -115,6 +119,8 @@ impl Launcher {
             },
             importing: None,
             apk_base: None,
+            apk_for_recipe: false,
+            recipe_page: None,
         }
     }
 
@@ -220,6 +226,13 @@ impl Launcher {
         };
         match self.job.as_ref().and_then(Job::result) {
             None => return,
+            Some(true) if self.apk_for_recipe => {
+                let dirs = self.game_folders().0;
+                if let Some(p) = &mut self.recipe_page {
+                    p.game = Some(out.clone());
+                    p.check_base(dirs);
+                }
+            }
             Some(true) => {
                 self.set_base(out.clone());
                 self.base_text = out.display().to_string();
@@ -227,6 +240,7 @@ impl Launcher {
             Some(false) => {}
         }
         self.apk_base = None;
+        self.apk_for_recipe = false;
     }
 
     /// After an import: its folders become add-ons, its values go to the
@@ -352,6 +366,32 @@ impl Launcher {
         (bases, mods)
     }
 
+    /// The recipe in use, if it is on.
+    fn active_recipe(&self) -> Option<&RecipeUse> {
+        self.cfg.recipe.as_ref().filter(|r| r.on)
+    }
+
+    /// A recipe's game folders: its own game, or the Game tab's with its
+    /// overlays.
+    fn recipe_game(&self, r: &RecipeUse) -> Vec<PathBuf> {
+        match &r.game {
+            Some(g) => vec![g.clone()],
+            None => self.game_folders().0,
+        }
+    }
+
+    /// The recipe page for `path` (a dropped or opened `.toml`).
+    fn open_recipe(&mut self, path: PathBuf) {
+        let dirs = self.game_folders().0;
+        match crate::recipe_page::Page::open(&path, self.cfg.recipe.as_ref(), dirs) {
+            Ok(p) => {
+                self.recipe_page = Some(p);
+                self.tab = Tab::AddOns;
+            }
+            Err(e) => self.note = Some((format!("Not a recipe: {e}"), RED)),
+        }
+    }
+
     /// `--balance FILE` if the balance editor changed anything.
     fn balance_args(&self) -> Vec<String> {
         match self.balance.file() {
@@ -408,20 +448,30 @@ impl Launcher {
     /// `play <base> --overlay .. --mod .. [--balance ..]`
     fn play_args(&self) -> Vec<String> {
         let mut args = vec!["play".to_string()];
-        if let Some(b) = &self.cfg.base {
-            args.push(b.display().to_string());
-        }
-        for o in &self.cfg.overlays {
-            args.push("--overlay".into());
-            args.push(o.display().to_string());
-        }
-        for s in self.cfg.enabled_standalones() {
-            args.push("--standalone".into());
-            args.push(s.display().to_string());
-        }
-        for a in self.cfg.enabled_addons() {
-            args.push("--mod".into());
-            args.push(a.display().to_string());
+        if let Some(r) = self.active_recipe() {
+            let game = self.recipe_game(r);
+            args.extend(game.first().map(|g| g.display().to_string()));
+            for o in game.iter().skip(1) {
+                args.extend(["--overlay".to_string(), o.display().to_string()]);
+            }
+            args.extend(["--recipe".to_string(), r.path.display().to_string()]);
+            args.extend(r.mods_args());
+        } else {
+            if let Some(b) = &self.cfg.base {
+                args.push(b.display().to_string());
+            }
+            for o in &self.cfg.overlays {
+                args.push("--overlay".into());
+                args.push(o.display().to_string());
+            }
+            for s in self.cfg.enabled_standalones() {
+                args.push("--standalone".into());
+                args.push(s.display().to_string());
+            }
+            for a in self.cfg.enabled_addons() {
+                args.push("--mod".into());
+                args.push(a.display().to_string());
+            }
         }
         args.extend(self.balance_args());
         args.extend(self.survival_args());
@@ -546,7 +596,14 @@ impl Launcher {
             ));
             return;
         };
-        let (Some(base), Some(out)) = (self.cfg.base.clone(), self.cfg.three_ds.out.clone()) else {
+        let recipe = self.active_recipe().cloned();
+        let recipe_game = recipe.as_ref().map(|r| self.recipe_game(r));
+        let base = match &recipe_game {
+            Some(g) => g.first().cloned(),
+            None => self.cfg.base.clone(),
+        };
+        let (Some(base), Some(out)) = (base, self.cfg.three_ds.out.clone()) else {
+            self.note = Some(("Set the game folder and the SD card first.".into(), RED));
             return;
         };
         let t = &self.cfg.three_ds;
@@ -585,7 +642,54 @@ impl Launcher {
                 args: cook_args(extra, "c2rs.c2pk"),
             });
         }
-        if t.addons_pack && modded {
+        if let (Some(r), Some(game)) = (&recipe, &recipe_game) {
+            // The recipe's pack in place of the add-ons and standalone ones.
+            if t.addons_pack {
+                let id = install_name(&r.id());
+                let mut extra = self.balance_args();
+                let mut from = base.clone();
+                if r.has_standalones() {
+                    // `c2-cook` takes a combined game built first.
+                    let Some(pc) = find_tool("c2-pc", tools.as_deref()) else {
+                        self.note = Some((
+                            "c2-pc not found (it combines the recipe's games): set the tools folder in Settings.".into(),
+                            RED,
+                        ));
+                        return;
+                    };
+                    let built = crate::config::data_dir().join("recipes").join(&id);
+                    let mut a = vec![
+                        "recipe".to_string(),
+                        "build".into(),
+                        r.path.display().to_string(),
+                        "--base".into(),
+                        base.display().to_string(),
+                    ];
+                    for o in game.iter().skip(1) {
+                        a.extend(["--overlay".to_string(), o.display().to_string()]);
+                    }
+                    a.extend(r.mods_args());
+                    a.extend(["--out".to_string(), built.display().to_string()]);
+                    steps.push(Step::Run {
+                        program: pc,
+                        args: a,
+                    });
+                    from = built;
+                } else {
+                    for o in game.iter().skip(1) {
+                        extra.extend(["--overlay".to_string(), o.display().to_string()]);
+                    }
+                    extra.extend(["--recipe".to_string(), r.path.display().to_string()]);
+                    extra.extend(r.mods_args());
+                }
+                let mut a = cook_args(extra, &format!("{id}.c2pk"));
+                a[1] = from.display().to_string();
+                steps.push(Step::Run {
+                    program: cook.clone(),
+                    args: a,
+                });
+            }
+        } else if t.addons_pack && modded {
             let mut extra = self.balance_args();
             for o in &self.cfg.overlays {
                 extra.push("--overlay".into());
@@ -601,7 +705,7 @@ impl Launcher {
             });
         }
         // A pack per standalone, each its own game (as on PC played alone).
-        if t.standalone_packs {
+        if t.standalone_packs && recipe.is_none() {
             for s in self.cfg.enabled_standalones() {
                 let Some(root) = c2_mods::pack::find_game_root(&s) else {
                     continue;
@@ -686,7 +790,24 @@ impl Launcher {
             }
             v.push(("carnivores2".to_string(), "Carnivores 2".to_string(), a));
         }
-        if w.addons && modded {
+        if let Some(r) = self
+            .active_recipe()
+            .filter(|r| w.addons && !r.has_standalones())
+        {
+            let g = self.recipe_game(r);
+            let mut a = game(g.first().unwrap_or(&base));
+            for o in g.iter().skip(1) {
+                a.extend(["--overlay".to_string(), o.display().to_string()]);
+            }
+            a.extend(["--recipe".to_string(), r.path.display().to_string()]);
+            a.extend(r.mods_args());
+            a.extend(self.balance_args());
+            a.extend(survival.clone());
+            let name = c2_mods::recipe::Recipe::load(&r.path)
+                .map(|x| x.recipe.name)
+                .unwrap_or_default();
+            v.push((install_name(&r.id()), name, a));
+        } else if w.addons && modded {
             let mut a = game(&base);
             for o in &self.cfg.overlays {
                 a.extend(["--overlay".to_string(), o.display().to_string()]);
@@ -704,6 +825,9 @@ impl Launcher {
         }
         if w.standalones {
             for s in self.cfg.enabled_standalones() {
+                if self.active_recipe().is_some() {
+                    break;
+                }
                 let Some(root) = c2_mods::pack::find_game_root(&s) else {
                     continue;
                 };
@@ -884,6 +1008,8 @@ impl Launcher {
             );
         }
         ui.add_space(6.0);
+        self.recipe_ui(ui);
+        ui.add_space(6.0);
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(
@@ -992,6 +1118,90 @@ impl Launcher {
         }
         ui.add_space(12.0);
         self.standalones_ui(ui);
+    }
+
+    /// The recipe page while one is set up, else the recipe in use (or a
+    /// button to open one).
+    fn recipe_ui(&mut self, ui: &mut egui::Ui) {
+        let dirs = self.game_folders().0;
+        let busy = self.busy();
+        if let Some(p) = &mut self.recipe_page {
+            let mut ask = crate::recipe_page::Ask::Nothing;
+            panel(ui, |ui| ask = p.ui(ui, &dirs, busy));
+            match ask {
+                crate::recipe_page::Ask::Nothing => {}
+                crate::recipe_page::Ask::Use => {
+                    let u = p.to_use();
+                    self.recipe_page = None;
+                    self.note = Some((
+                        format!("Recipe '{}' in use: play and the builds go by it.", u.id()),
+                        TEXT,
+                    ));
+                    self.cfg.recipe = Some(u);
+                    self.save();
+                }
+                crate::recipe_page::Ask::Close => self.recipe_page = None,
+                crate::recipe_page::Ask::ChooseApk => {
+                    if let Some(apk) = rfd::FileDialog::new()
+                        .add_filter("Android app", &["apk"])
+                        .pick_file()
+                    {
+                        self.base_from_apk(apk);
+                        self.apk_for_recipe = true;
+                    }
+                }
+            }
+            return;
+        }
+        let mut open = None;
+        let mut stop = false;
+        let mut changed = false;
+        panel(ui, |ui| {
+            ui.horizontal(|ui| {
+                match &mut self.cfg.recipe {
+                    Some(r) => {
+                        changed |= ui
+                            .checkbox(&mut r.on, RichText::new("Recipe").color(SAND).strong())
+                            .on_hover_text(
+                                "On: play and the builds use the recipe instead of the lists                                  below.",
+                            )
+                            .changed();
+                        ui.label(r.id()).on_hover_text(r.path.display().to_string());
+                        if ui.button("Edit").clicked() {
+                            open = Some(r.path.clone());
+                        }
+                        if ui.button("Stop using").clicked() {
+                            stop = true;
+                        }
+                    }
+                    None => {
+                        ui.label(RichText::new("Recipe").color(SAND).strong());
+                        help(ui, "none: drop a recipe (.toml) on the window, or");
+                    }
+                }
+                if ui.button("Open a recipe...").clicked() {
+                    open = rfd::FileDialog::new()
+                        .add_filter("Recipe", &["toml"])
+                        .pick_file();
+                }
+            });
+            if self.active_recipe().is_some() {
+                help(
+                    ui,
+                    "While the recipe is on, the add-on list and the standalone games below                      aren't used.",
+                );
+            }
+        });
+        if stop {
+            self.cfg.recipe = None;
+            changed = true;
+        }
+        if changed {
+            self.save();
+        }
+        if let Some(p) = open {
+            self.open_recipe(p);
+        }
     }
 
     /// Standalone games: whole games made from Carnivores 2, combined beside
@@ -1128,6 +1338,7 @@ impl Launcher {
         );
         ui.add_space(6.0);
         let mut changed = false;
+        let recipe_id = self.active_recipe().map(|r| install_name(&r.id()));
         panel(ui, |ui| {
             let t = &mut self.cfg.three_ds;
             ui.horizontal(|ui| {
@@ -1164,18 +1375,30 @@ impl Launcher {
             changed |= ui
                 .checkbox(&mut t.vanilla_pack, "Original game pack (c2rs.c2pk)")
                 .changed();
-            changed |= ui
-                .checkbox(
-                    &mut t.addons_pack,
-                    "Add-ons pack (modded.c2pk: base overlays and the add-ons that are on)",
-                )
-                .changed();
-            changed |= ui
-                .checkbox(
-                    &mut t.standalone_packs,
-                    "A pack per standalone game that is on (each played on its own)",
-                )
-                .changed();
+            match &recipe_id {
+                Some(id) => {
+                    changed |= ui
+                        .checkbox(
+                            &mut t.addons_pack,
+                            format!("The recipe's pack ({id}.c2pk; recipe on, Add-ons tab)"),
+                        )
+                        .changed();
+                }
+                None => {
+                    changed |= ui
+                        .checkbox(
+                            &mut t.addons_pack,
+                            "Add-ons pack (modded.c2pk: base overlays and the add-ons that are on)",
+                        )
+                        .changed();
+                    changed |= ui
+                        .checkbox(
+                            &mut t.standalone_packs,
+                            "A pack per standalone game that is on (each played on its own)",
+                        )
+                        .changed();
+                }
+            }
             help(
                 ui,
                 "The app asks which pack at start; each keeps its own save.",
@@ -1189,11 +1412,11 @@ impl Launcher {
         }
         ui.add_space(12.0);
         let t = &self.cfg.three_ds;
-        let ready = self
-            .cfg
-            .base
-            .as_deref()
-            .is_some_and(|b| describe_game(b).is_some())
+        let game = match self.active_recipe() {
+            Some(r) => self.recipe_game(r).first().cloned(),
+            None => self.cfg.base.clone(),
+        };
+        let ready = game.as_deref().is_some_and(|b| describe_game(b).is_some())
             && t.out.is_some()
             && (t.vanilla_pack || t.addons_pack || t.standalone_packs);
         if big_button(ui, "BUILD", ready && !self.busy()) {
@@ -1630,6 +1853,27 @@ impl Launcher {
         // A game folder dropped on the game tab (or anywhere while there is
         // none) is the base; everything else is an add-on.
         let first = files[0].clone();
+        let ext_is =
+            |p: &PathBuf, e: &str| p.extension().is_some_and(|x| x.eq_ignore_ascii_case(e));
+        // A recipe opens its page; while it is open, folders dropped are
+        // looked through for its entries, and an APK is its game.
+        if ext_is(&first, "toml") {
+            self.open_recipe(first);
+            return;
+        }
+        let busy = self.busy();
+        if let Some(p) = &mut self.recipe_page {
+            if ext_is(&first, "apk") && p.is_apk_base() && !busy {
+                self.base_from_apk(first);
+                self.apk_for_recipe = true;
+                self.tab = Tab::AddOns;
+                return;
+            }
+            if self.tab == Tab::AddOns && files.iter().all(|f| f.is_dir()) {
+                p.scan(files);
+                return;
+            }
+        }
         // An APK with no game set (or on the game tab): the game from it.
         let apk = first
             .extension()
@@ -1684,6 +1928,12 @@ impl eframe::App for Launcher {
         self.dropped(dropped);
         self.import_done();
         self.apk_base_done();
+        if let Some(p) = &mut self.recipe_page {
+            p.poll();
+            if p.working() {
+                ctx.request_repaint_after(std::time::Duration::from_millis(150));
+            }
+        }
         if self.busy() {
             ctx.request_repaint_after(std::time::Duration::from_millis(200));
         }

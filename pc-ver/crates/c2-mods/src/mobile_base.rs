@@ -1049,12 +1049,19 @@ fn water_ring() -> Car {
     }
 }
 
+/// Beside the game's `HUNTDAT`: `sha256:<hex>` of the APK it was built
+/// from, for recipes whose base is an APK (`recipe::check_apk`).
+pub const SOURCE_APK: &str = "from-apk.txt";
+
 /// Rebuilds what is done so far of `apk` as a game folder at `out`.
 pub fn build(apk: &Path, out: &Path) -> Result<Built, ModError> {
     let zip = Apk(c2_vfs::ZipBackend::new(apk, "")?);
     let huntdat = out.join("HUNTDAT");
     let dir = huntdat.join("AREAS");
     std::fs::create_dir_all(&dir).map_err(io(&dir))?;
+    let sum = crate::recipe::sha256_file(apk).map_err(io(apk))?;
+    let p = out.join(SOURCE_APK);
+    write(&p, format!("{sum}\n").as_bytes())?;
     let mut built = Built::default();
     for n in 1.. {
         if zip.get(&format!("assets/areas/area{n}.man")).is_none() {
@@ -1168,7 +1175,7 @@ mod tests {
     fn surround_cleared_marks_kept() {
         // 5x5: black all round, a lit middle with a black mark in it.
         let mut px = vec![0u8; 5 * 5 * 4];
-        for (i, p) in px.chunks_exact_mut(4).enumerate() {
+        for (i, p) in px.as_chunks_mut::<4>().0.iter_mut().enumerate() {
             let (x, y) = (i % 5, i / 5);
             let lit = (1..4).contains(&x) && (1..4).contains(&y) && (x, y) != (2, 2);
             p.copy_from_slice(&if lit {

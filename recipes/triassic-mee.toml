@@ -1,0 +1,21 @@
+# Triassic MEE: the standalone game on its own (no add-ons).
+#
+# Credits, download pages and file hashes only; no game or mod files.
+# Download page and credits: to fill in (see bases/triassic-mee.toml)
+# The game is the base: unpack it and use that folder as the game.
+#
+#   c2-pc recipe verify THIS.toml --base GAME
+#   c2-pc play GAME
+#
+# 3DS pack (Old 3DS: --target o3ds), into sdmc:/3ds/<install>/:
+#   c2-cook --game GAME --target o3ds --out triassic-mee.c2pk
+#
+
+[recipe]
+id = "triassic-mee"
+name = "Triassic MEE"
+version = "0.1"
+base = "triassic-mee"
+
+[load_order]
+order = []

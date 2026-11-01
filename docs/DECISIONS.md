@@ -2,6 +2,38 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-01 — Recipes: `--mods` repeatable and `ID=FOLDER`; APK and standalone bases; the launcher's recipe page
+
+`--mods` (`c2-pc recipe verify|build`, `play --recipe`, `c2-cook`) now takes
+several folders, and a value `ID=FOLDER` (only when no such path exists)
+is the folder of entry `ID` alone (`recipe::mods_arg`): the launcher gives
+each entry the folder the player picked, so nothing else is searched or
+hashed. A recipe with nothing to find needs no `--mods`.
+
+A base profile (`recipes/bases/*.toml`) may name its game's `credit` and
+`url` (a standalone game as the base: `anachronous`, `jphl`,
+`carnivores-triassic`, `triassic-mee`, each recipe of its own), or an `apk`
+hash: the game `mobile_base::build` makes records its APK's
+`sha256:` in `from-apk.txt`, and verify compares that (an APK base has no
+file list: the folder is ours, rebuilt per release). `c2-cook --recipe`
+refuses a recipe with standalones (build it with `c2-pc recipe build`
+first) and puts the recipe's own `[[overlays]]` over the game.
+
+The launcher's recipe page (Add-ons tab; drop a `.toml` or open one) lists
+the entries with credit, download link and a folder each. A folder is
+checked against the entry's hashes in a thread (`recipe::check_folder`);
+dropping folders, or "Look in a downloads folder", runs the usual matcher
+for the entries still to find. Only the listed files are taken. The game
+is the Game tab's (with its overlays) or the recipe's own (a standalone
+game, or built from the player's APK on the page); a base mismatch is a
+warning as in `verify`. In use, play, the 3DS build (`<id>.c2pk` in place
+of the add-ons and standalone packs) and the Wii U build go by it.
+
+The 3DS batch of 2026-11-01 uses P.Rex's "my last carnivores update"
+(ModDB) for Carnivores Triassic and Mandibles; Triassic MEE moved to an
+install of its own; c2-android and ice-age-android became `c2-apk` and
+`ice-age-apk` (the APK as the base game).
+
 ## 2026-11-01 — APK base: the phone's trophy room gets stands of its own (`TROPHY.SPOT`)
 
 The PC places trophies on a fixed ring (`Area::set_trophy_mode`, cells

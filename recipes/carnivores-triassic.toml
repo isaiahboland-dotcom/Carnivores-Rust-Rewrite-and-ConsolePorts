@@ -1,0 +1,21 @@
+# Carnivores Triassic: the standalone game on its own (no add-ons).
+#
+# Credits, download pages and file hashes only; no game or mod files.
+# Download: https://www.moddb.com/mods/carnivores-triassic/downloads/my-last-carnivores-update (P.Rex)
+# The game is the base: unpack it (its `Carnivores Triassic` folder) and use that folder as the game.
+#
+#   c2-pc recipe verify THIS.toml --base GAME
+#   c2-pc play GAME
+#
+# 3DS pack (Old 3DS: --target o3ds), into sdmc:/3ds/<install>/:
+#   c2-cook --game GAME --target o3ds --out carnivores-triassic.c2pk
+#
+
+[recipe]
+id = "carnivores-triassic"
+name = "Carnivores Triassic"
+version = "0.1"
+base = "carnivores-triassic"
+
+[load_order]
+order = []

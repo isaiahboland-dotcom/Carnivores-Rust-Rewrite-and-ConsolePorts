@@ -12,6 +12,7 @@ mod cia;
 mod config;
 mod jobs;
 mod options;
+mod recipe_page;
 mod wiiu;
 
 use std::path::PathBuf;
