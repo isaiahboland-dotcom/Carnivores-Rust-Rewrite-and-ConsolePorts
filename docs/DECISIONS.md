@@ -2,6 +2,25 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-01 — Wii U: ground reads stay inside their atlas tile at every mip level
+
+The owner saw a faint grid over part of the ground on the Wii U, like
+cracks between the textures. The terrain atlas packs its 128-texel tiles
+edge to edge, and a cell's UVs sit 0.9465 texels inside its tile. That
+covers the bilinear half-texel at level 0, but the inset halves at each mip
+level (2026-10-30), so from level 2 the four reads at a cell's edge take
+up to ~40% of the neighbouring tile (another texture, or an empty one).
+Mid-distance and far ground showed every cell edge.
+
+`terrain_opaque.frag` (terrain and water, the only users of the terrain
+atlas) now picks the level itself by the GL rule (log2 of rho, nearest of
+the 5 levels), clamps the read to half a texel inside the tile at that
+level, and samples it with `textureLod` at the same level. Near ground is
+unchanged: the clamp only takes effect where the GPU already read a smaller
+level. It costs a few ALU instructions a pixel. The pixels are still tested
+before shading (early Z), so hidden ground costs nothing. Scenery and
+animals (256-texel cells, the cut-out shader) are unchanged.
+
 ## 2026-11-01 — 3DS: the phone's 76-cell range unless "3DS friendly"; frustum-culled, coarse far ground
 
 **Gameplay range (owner's call).** With "3DS friendly" off (the default),
