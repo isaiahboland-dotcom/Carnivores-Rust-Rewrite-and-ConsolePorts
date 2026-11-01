@@ -2,6 +2,37 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-01 — Ice Age's APK as a game: its own animals on Ice Age's AIs, the rest from Ice Age donors
+
+A game built from the Ice Age APK had only its 6 animals that aren't in Ice
+Age, each run as a Carnivores 2 kind. Its 10 Ice Age animals were left out,
+because no PC kind fits them: Brontotherium, boar, wolf, woolly rhino,
+Diatryma, giant deer, Smilodon, mammoth, bear and yeti. So classic survival
+on its 5th area had none of its stand-ins.
+
+**The APK's Ice Age animals.** The APK's models have the PC Ice Age models'
+clips in the same order. That was checked by clip count for all 12 (pig and
+archaeopteryx included) and by the PC files' clip names. The hunter's 13
+kills match too. So `mobile_base` writes them as Ice Age's own `_RES.TXT`
+does, with Ice Age AI numbers 10–19 in Ice Age's menu order. The existing
+`ice_age::layer` then runs them on the Modder's Edition's Ice Age AIs,
+exactly as with the PC Ice Age.
+
+**The APK's own animals.** On the Ice Age APK, Indricotherium, Hyaenodon,
+Doedicurus, Andrewsarchus and Titanis take an Ice Age donor: the second
+name in `DONORS` (Brontotherium, Wolf, Brontotherium, Bear, Diatryma). They
+keep their clips as they are, with roles marked in the block (`iaDonor`,
+`roles`). The layer builds each one's entry from the donor's
+(`mobile::make_entry`): the donor's speeds and kill (the hunter's matching
+death), with its own animations, numbers and menu slot. Their AI numbers
+start at 20, after the Yeti.
+
+**Result.** `c2-cook --check` of the Old 3DS pack passes: 15 menu animals
+that place and move on all five areas, and classic survival on area 5 sends
+its waves (rhinos, Smilodons, wolves). The Dinosaur Hunter APK's game is
+unchanged (its `_RES.TXT` is byte for byte the same). Games built from the
+Ice Age APK before this need rebuilding.
+
 ## 2026-11-01 — The phone's pictures and rules on any game: `--phone-pictures`, PC or phone rules
 
 The owner wants the consoles' hunt screen layout to stay as it is: the
