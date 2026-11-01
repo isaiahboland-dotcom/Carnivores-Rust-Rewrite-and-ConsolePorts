@@ -2,6 +2,40 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-01 — APK games' home-menu art; survival waves never give up (the mobile Survive mode)
+
+**Home-menu art for a game built from the player's APK.** Such a game has
+no `MENU/MENUM.TGA`, so `cia::game_art` / `wiiu_art` (3DS icon and banner,
+Wii U icon and splash screens) fall back to the phone game's own: the icon
+is its launcher icon (the largest `res/*/ic_launcher.png`, kept by
+`mobile_base` as `MOBILE/ICON.PNG`), the banner and splash screens its main
+menu (`menu_main_background`) with its logo (`menu_main_logo`) over the top
+left, as on the phone. All made on the player's machine from their APK.
+
+**Survival waves never give up the chase.** Read from the user's
+`libdinHunter.so`: `Menu::OnArcadeButtonAction` calls
+`StartPlayingTheGame(false, true)`, which stores the second argument in a
+global flag. Every carnivore's AI (`AI_Velociraptor`, `AI_Allosaurus`, ...)
+and `AI_Chasmosaurus` read it. With the flag set, a hunting animal's target
+is the hunter whatever the distance; without it, the PC's give-up rule with
+a fixed range (12 160 units, `ctViewR` 76 x 160 for the raptor). Ours scaled
+the give-up distance by `view_r`; the 3DS's is 42 cells, so a raptor gave
+up past ~26 cells and an Allosaurus past ~21, while a wave spawns ~29 cells
+out (`spawn_wave_animal`): it turned away at once, survival re-aimed it,
+and so on. The classic carnivore AI (`dino/carnivore.rs`) now skips the
+give-up for a wave animal (`c.wave > 0`), as the modded AI and the
+herbivores already did. Hunts are unchanged.
+
+**The phone's view range** is fixed at 76 cells (`Game::Process` passes
+19 456 units to `Camera::CalculateFrustum`; fog per time of day is a
+fraction of it, `day_fog_start` etc. in the `.rst`). It draws that far with
+a terrain quadtree (`Terrain::CalculateQuadTree`, a bounding sphere and
+lowest height per block, culled against the frustum) prepared on a worker
+thread. `CharactersManager::Navigations_Process` is empty: the phone has
+no navigation mesh; pathing is the original's `LookForAWay` /
+`CheckPossiblePath`. Its noticing (`AI_CheckAfraid`) also uses a fixed
+distance (9 760 units a step) rather than `ctViewR`.
+
 ## 2026-11-01 — Recipes: `--mods` repeatable and `ID=FOLDER`; APK and standalone bases; the launcher's recipe page
 
 `--mods` (`c2-pc recipe verify|build`, `play --recipe`, `c2-cook`) now takes

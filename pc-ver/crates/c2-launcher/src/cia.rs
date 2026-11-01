@@ -177,17 +177,97 @@ fn scaled(
 /// made on the player's machine (nothing of it is kept in this project):
 /// the banner from its top band at 2:1 (the logo and the menu's dinosaur;
 /// below the name / account bar), the icon a square round the menu's
-/// dinosaur (on the right, as the menus have it). `(icon, banner)` as
-/// PNGs; `None` if the game has no such picture.
+/// dinosaur (on the right, as the menus have it). A game built from the
+/// player's APK has no such picture: its art is the phone game's
+/// ([`phone_icon`], [`phone_scene`]). `(icon, banner)` as PNGs; `None` if
+/// the game has neither.
 pub fn game_art(game: &Path) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
     let Some((w, h, px)) = menu_picture(game) else {
-        return (None, None);
+        let Some(root) = c2_mods::pack::find_game_root(game) else {
+            return (None, None);
+        };
+        return (phone_icon(&root, ICON), phone_scene(&root, BANNER));
     };
     let top = h * 4 / 100;
     let bh = (w / 2).min(h - top);
     let banner = png(BANNER.0, BANNER.1, &scaled(&px, w, (0, top, w, bh), BANNER));
     let icon = png(ICON.0, ICON.1, &scaled(&px, w, icon_square(w, h), ICON));
     (Some(icon), Some(banner))
+}
+
+/// One of a phone game's interface pictures (`MOBILE/<name>`, written by
+/// the APK base) as RGBA8.
+fn phone_png(root: &Path, name: &str) -> Option<(usize, usize, Vec<u8>)> {
+    let p = c2_mods::pack::find_path(root, &format!("HUNTDAT/MOBILE/{name}"))?;
+    c2_mods::mobile::decode_png(&std::fs::read(p).ok()?)
+}
+
+/// A phone game's interface sprite (`MOBILE/SPRITES.CFG`, in its atlas's
+/// pixels) as RGBA8.
+fn phone_sprite(root: &Path, name: &str) -> Option<(usize, usize, Vec<u8>)> {
+    let cfg = c2_mods::pack::find_path(root, "HUNTDAT/MOBILE/SPRITES.CFG")?;
+    let mut sprites = std::collections::BTreeMap::new();
+    c2_formats::mobile_ui::parse(&std::fs::read_to_string(cfg).ok()?, &mut sprites);
+    let s = sprites.get(name)?;
+    let (aw, ah, atlas) = phone_png(root, &format!("{}.PNG", s.texture.to_ascii_uppercase()))?;
+    let (x, y) = (s.x.round() as usize, s.y.round() as usize);
+    let (w, h) = (s.w.round() as usize, s.h.round() as usize);
+    if w == 0 || h == 0 || x + w > aw || y + h > ah {
+        return None;
+    }
+    let mut px = Vec::with_capacity(w * h * 4);
+    for row in y..y + h {
+        px.extend_from_slice(atlas.get((row * aw + x) * 4..(row * aw + x + w) * 4)?);
+    }
+    Some((w, h, px))
+}
+
+/// The phone game's app icon (`MOBILE/ICON.PNG`, its launcher icon) at
+/// `size`, as a PNG; else the square round its main menu's animal.
+fn phone_icon(root: &Path, size: (u32, u32)) -> Option<Vec<u8>> {
+    let (w, h, px) =
+        phone_png(root, "ICON.PNG").or_else(|| phone_sprite(root, "menu_main_background"))?;
+    let side = w.min(h);
+    let x = if w > h { (w - side) * 7 / 10 } else { 0 };
+    Some(png(
+        size.0,
+        size.1,
+        &scaled(&px, w, (x, (h - side) / 2, side, side), size),
+    ))
+}
+
+/// The phone game's main menu at `size` (`menu_main_background`, its
+/// middle band cut to the size's shape) with its logo (`menu_main_logo`)
+/// over the top left, as on the phone, as a PNG.
+fn phone_scene(root: &Path, (tw, th): (u32, u32)) -> Option<Vec<u8>> {
+    let (w, h, px) = phone_sprite(root, "menu_main_background")?;
+    let bh = (w * th as usize / tw as usize).min(h);
+    let mut out = scaled(&px, w, (0, (h - bh) / 3, w, bh), (tw, th));
+    if let Some((lw, lh, mut logo)) = phone_sprite(root, "menu_main_logo") {
+        // Premultiplied, so the scaled logo's edges don't darken.
+        for p in logo.as_chunks_mut::<4>().0 {
+            let a = u32::from(p[3]);
+            for c in &mut p[..3] {
+                *c = (u32::from(*c) * a / 255) as u8;
+            }
+        }
+        let dw = (tw as usize * 11 / 20).max(1);
+        let dh = (lh * dw / lw.max(1)).max(1);
+        let small = scaled(&logo, lw, (0, 0, lw, lh), (dw as u32, dh as u32));
+        let (ox, oy) = (tw as usize / 32, th as usize / 24);
+        for y in 0..dh.min(th as usize - oy) {
+            for x in 0..dw.min(tw as usize - ox) {
+                let s = &small[(y * dw + x) * 4..(y * dw + x) * 4 + 4];
+                let i = ((oy + y) * tw as usize + ox + x) * 4;
+                let a = u32::from(s[3]);
+                for c in 0..3 {
+                    out[i + c] =
+                        (u32::from(s[c]) + u32::from(out[i + c]) * (255 - a) / 255).min(255) as u8;
+                }
+            }
+        }
+    }
+    Some(png(tw, th, &out))
 }
 
 /// The game's main menu picture (`MENU/MENUM.TGA`) as RGBA8.
@@ -212,10 +292,18 @@ pub const WIIU_DRC: (u32, u32) = (854, 480);
 
 /// Wii U home-menu art from the game's main menu picture, as for the 3DS:
 /// the icon the square round its dinosaur, the TV's and GamePad's splash
-/// screens its 16:9 top band (the logo and the dinosaur). `[icon, tv,
+/// screens its 16:9 top band (the logo and the dinosaur); a game built
+/// from the player's APK, the phone game's (as [`game_art`]). `[icon, tv,
 /// drc]` as PNGs; `None` if the game has no such picture.
 pub fn wiiu_art(game: &Path) -> Option<[Vec<u8>; 3]> {
-    let (w, h, px) = menu_picture(game)?;
+    let Some((w, h, px)) = menu_picture(game) else {
+        let root = c2_mods::pack::find_game_root(game)?;
+        return Some([
+            phone_icon(&root, WIIU_ICON)?,
+            phone_scene(&root, WIIU_TV)?,
+            phone_scene(&root, WIIU_DRC)?,
+        ]);
+    };
     let top = h * 4 / 100;
     let band = (0, top, w, (w * 9 / 16).min(h - top));
     Some([
@@ -608,6 +696,38 @@ mod tests {
         for id in [a, b, unique_id("")] {
             assert!((0xF0000..0xFF000).contains(&id));
         }
+    }
+
+    #[test]
+    fn a_phone_game_gets_its_icon_and_menu_with_the_logo() {
+        let dir = std::env::temp_dir().join(format!("c2rs-cia-phone-{}", std::process::id()));
+        let m = dir.join("HUNTDAT/MOBILE");
+        let _ = std::fs::create_dir_all(&m);
+        let _ = std::fs::write(dir.join("HUNTDAT/_RES.TXT"), "");
+        let solid = |w: u32, h: u32, c: [u8; 4]| png(w, h, &c.repeat((w * h) as usize));
+        let _ = std::fs::write(m.join("ICON.PNG"), solid(16, 16, [0, 0, 255, 255]));
+        let _ = std::fs::write(m.join("MENU_01.PNG"), solid(64, 48, [0, 200, 0, 255]));
+        let _ = std::fs::write(m.join("MENU_02.PNG"), solid(32, 8, [255, 0, 0, 255]));
+        let _ = std::fs::write(
+            m.join("SPRITES.CFG"),
+            "sprite menu_main_background {\n\ttexture = \"menu_01\"\n\ttc_x = 0\n\ttc_y = 0\n\t\
+             tc_width = 64\n\ttc_height = 48\n}\nsprite menu_main_logo {\n\ttexture = \"menu_02\"\n\t\
+             tc_x = 0\n\ttc_y = 0\n\ttc_width = 32\n\ttc_height = 8\n}\n",
+        );
+        let (icon, banner) = game_art(&dir);
+        let decode = |p: Option<Vec<u8>>| p.and_then(|p| c2_mods::mobile::decode_png(&p));
+        let (iw, ih, ipx) = decode(icon).unwrap_or_default();
+        assert_eq!((iw, ih, &ipx[..4]), (48, 48, &[0, 0, 255, 255][..]));
+        let (bw, bh, bpx) = decode(banner).unwrap_or_default();
+        assert_eq!((bw, bh), (256, 128));
+        // The logo over the top left; the menu below it.
+        let at = |x: usize, y: usize| &bpx[(y * bw + x) * 4..(y * bw + x) * 4 + 3];
+        assert_eq!(
+            (at(20, 10), at(200, 100)),
+            (&[255, 0, 0][..], &[0, 200, 0][..])
+        );
+        assert!(wiiu_art(&dir).is_some());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

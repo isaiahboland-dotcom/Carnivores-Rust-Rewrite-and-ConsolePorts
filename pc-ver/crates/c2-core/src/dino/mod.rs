@@ -1909,6 +1909,31 @@ mod tests {
     }
 
     #[test]
+    fn a_survival_raptor_keeps_coming_from_afar() {
+        let area = Area::flat(10);
+        let hunter = HunterView {
+            x: 512.0 * 256.0,
+            z: 512.0 * 256.0,
+            y: 640.0,
+            head_y: 220.0,
+            alive: true,
+            ..Default::default()
+        };
+        // Beyond where a hunting raptor gives up (74 * 160 + 128 / 8).
+        let start = [hunter.x + 14_000.0, 0.0, hunter.z];
+        let moved = |wave| {
+            let mut herd = herd_with(&area, ai::VELO, 10, start);
+            herd.chars[0].state = 1;
+            herd.chars[0].wave = wave;
+            run(&mut herd, &area, hunter, 3000);
+            dist(&herd.chars[0], &hunter) - 14_000.0
+        };
+        let (hunt, wave) = (moved(0), moved(1));
+        assert!(hunt > 0.0, "a hunt's raptor goes off ({hunt})");
+        assert!(wave < -1000.0, "a wave's comes on ({wave})");
+    }
+
+    #[test]
     fn find_vector_alpha_matches_atan2() {
         for (x, y) in [
             (1.0, 0.0),

@@ -402,7 +402,7 @@ pub(crate) fn help_picture(apk: &Apk, keys: &[String]) -> Option<(usize, usize, 
 }
 
 /// An RGBA PNG (8-bit, any colour type).
-pub(crate) fn decode_png(data: &[u8]) -> Option<(usize, usize, Vec<u8>)> {
+pub fn decode_png(data: &[u8]) -> Option<(usize, usize, Vec<u8>)> {
     let mut d = png::Decoder::new(Cursor::new(data));
     d.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
     let mut r = d.read_info().ok()?;

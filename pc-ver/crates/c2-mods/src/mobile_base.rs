@@ -929,6 +929,20 @@ impl Game<'_> {
             "Carnivores: Dinosaur Hunter"
         };
         write(&dir.join("GAME.TXT"), title.as_bytes())?;
+        // The app's own launcher icon (its largest), for the home menus'
+        // icons (`c2-launcher`'s `cia::game_art`).
+        let icon = self
+            .apk
+            .0
+            .files()
+            .into_iter()
+            .filter(|f| f.starts_with("res/") && f.ends_with("/ic_launcher.png"))
+            .filter_map(|f| self.apk.get(&f))
+            .filter_map(|d| Some((crate::mobile::decode_png(&d)?, d)))
+            .max_by_key(|((w, _, _), _)| *w);
+        if let Some((_, d)) = icon {
+            write(&dir.join("ICON.PNG"), &d)?;
+        }
         write(
             &dir.join("SPRITES.CFG"),
             c2_formats::mobile_ui::write(&kit.sprites).as_bytes(),

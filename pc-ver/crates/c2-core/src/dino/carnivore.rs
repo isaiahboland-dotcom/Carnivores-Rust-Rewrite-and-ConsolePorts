@@ -242,7 +242,13 @@ pub fn animate(
                 c.state = 0;
             }
             if c.state != 0 {
-                if pdist > ctx.view_r as f32 * p.give_up_k + (ctx.opt_agres / p.give_up_div) as f32
+                // A survival wave's never gives up: the mobile games' Survive
+                // mode heads its hunters straight for the hunter whatever the
+                // distance (`AI_Velociraptor` and the others, on the flag
+                // `Menu::StartPlayingTheGame` sets).
+                if c.wave == 0
+                    && pdist
+                        > ctx.view_r as f32 * p.give_up_k + (ctx.opt_agres / p.give_up_div) as f32
                 {
                     // Too far: wander off and lose interest.
                     let l = pdist.max(1e-6);
