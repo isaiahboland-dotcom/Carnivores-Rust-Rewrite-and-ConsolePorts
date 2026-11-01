@@ -149,6 +149,10 @@ struct Board {
     hit: Vec<u8>,
     /// Words drawn over it (a board composed from the mobile art).
     labels: Vec<kit::Label>,
+    /// The picture filling the window behind it, and whether the window
+    /// around the board is darkened as the board is (the phone's).
+    back: Option<usize>,
+    dim: bool,
 }
 
 fn read_tga(dir: &Path, name: &str) -> Option<c2_formats::tga::Picture> {
@@ -171,6 +175,8 @@ impl Board {
             }),
             lit: Vec::new(),
             labels: Vec::new(),
+            back: None,
+            dim: false,
             hit: find_file(dir, map)
                 .and_then(|p| std::fs::read(p).ok())
                 .filter(|h| h.len() == 400 * 300)
@@ -411,6 +417,10 @@ pub struct Menu {
     screen: Screen,
     /// The statistics panel is open on the main menu.
     stats: bool,
+    /// The phone's MORE page of the main menu (an APK-built game): the
+    /// hunter, options, credits, quit.
+    more: bool,
+    more_board: Board,
     /// Registration: typed name and highlighted list entry.
     name: String,
     picked: Option<usize>,
@@ -594,10 +604,13 @@ impl Menu {
             .then(|| kit::Kit::load(&huntdat, &mut hud, gpu))
             .flatten();
         let mut kit_loading = None;
+        let mut more_board = Board::default();
+        let survive = classic().is_some() || modded.is_some() || ours_offered();
         let (main, stats_board, quit_board, reg, waiver, delete, options, credits) = match &kit {
             Some(k) => {
-                let b = k.boards(&mut hud, gpu, &game_title(&huntdat));
+                let b = k.boards(&mut hud, gpu, &game_title(&huntdat), survive);
                 kit_loading = Some(b.loading);
+                more_board = b.more;
                 (
                     b.main, b.stats, b.quit, b.reg, b.waiver, b.delete, b.options, b.credits,
                 )
@@ -886,9 +899,10 @@ impl Menu {
                     .sort_by_key(|&i| c.prices.get(i).copied().unwrap_or(0));
             }
         }
-        // Wrap descriptions to the info panel.
+        // Wrap descriptions to the info panel (the phone's pages keep the
+        // files' own lines, as the phone does).
         let info_w = 340.0;
-        for c in &mut cols {
+        for c in cols.iter_mut().filter(|_| kit.is_none()) {
             for t in c.texts.iter_mut().chain(c.texts_us.iter_mut()) {
                 *t = wrap(&hud, 12.0, info_w, t);
             }
@@ -978,6 +992,8 @@ impl Menu {
                 Screen::Register
             },
             stats: false,
+            more: false,
+            more_board,
             modded,
             survival_pick: false,
             name: String::new(),
@@ -1024,8 +1040,13 @@ impl Menu {
         }
         self.screen = match screen {
             "main" => Screen::Main,
+            "more" => {
+                self.more = self.kit.is_some();
+                Screen::Main
+            }
             "stats" => {
                 self.stats = true;
+                self.more = self.kit.is_some();
                 if let Some(p) = self.me() {
                     self.record = crate::save::load_record(p.reg_number);
                 }
@@ -1161,6 +1182,19 @@ impl Menu {
             && self.remaining() >= 0
     }
 
+    /// The canvas rectangle a 4:3 picture covers the whole window with
+    /// (cropped to it, centred).
+    fn cover(&self) -> Rect {
+        let (s, _, _) = self.canvas();
+        if self.screen_size.0 == 0 || self.screen_size.1 == 0 {
+            return (0.0, 0.0, CW, CH);
+        }
+        let (w, h) = (self.screen_size.0 as f32 / s, self.screen_size.1 as f32 / s);
+        let k = (w / CW).max(h / CH);
+        let (cw, ch) = (CW * k, CH * k);
+        ((CW - cw) / 2.0, (CH - ch) / 2.0, cw, ch)
+    }
+
     /// Canvas mapping for the last drawn window size: (scale, x0, y0).
     fn canvas(&self) -> (f32, f32, f32) {
         // Not drawn yet (a test script): the canvas's own size.
@@ -1268,6 +1302,8 @@ impl Menu {
         if input.pressed(KeyCode::Escape) {
             if self.survival_pick {
                 self.survival_pick = false;
+            } else if self.more {
+                (self.more, self.stats) = (false, false);
             } else {
                 self.screen = Screen::Quit;
             }
@@ -1287,7 +1323,12 @@ impl Menu {
             }
             return;
         }
-        if inside(self.cursor, SURVIVAL_BUTTON) {
+        let survive = if self.kit.is_some() {
+            region == 7
+        } else {
+            inside(self.cursor, SURVIVAL_BUTTON)
+        };
+        if survive {
             match self.survival_modes()[..] {
                 [] => {}
                 [one] => self.start_survival(one),
@@ -1296,7 +1337,7 @@ impl Menu {
             return;
         }
         // The name field: change hunter.
-        if inside(self.cursor, (84.0, 4.0, 272.0, 34.0)) {
+        if (self.kit.is_none() || self.more) && inside(self.cursor, (84.0, 4.0, 272.0, 34.0)) {
             self.name = self.me().map(|p| p.player_name()).unwrap_or_default();
             self.picked = self.player;
             self.screen = Screen::Register;
@@ -1317,6 +1358,8 @@ impl Menu {
             }
             4 => self.screen = Screen::Credits,
             5 => self.screen = Screen::Quit,
+            8 => self.more = true,
+            9 => (self.more, self.stats) = (false, false),
             6 => {
                 self.stats = !self.stats;
                 if let (true, Some(p)) = (self.stats, self.me()) {
@@ -1779,6 +1822,22 @@ impl Menu {
 
     /// The board, with `lit` regions shown lit.
     fn board(&self, out: &mut Vec<Sprite>, b: &Board, lit: &[u8]) {
+        if b.back.is_some() {
+            let r = self.cover();
+            self.image(out, b.back, r);
+            if b.dim {
+                // Around the board (it darkens its own part).
+                let (x1, y1) = (r.0 + r.2, r.1 + r.3);
+                for s in [
+                    (r.0, r.1, -r.0, r.3),
+                    (CW, r.1, x1 - CW, r.3),
+                    (0.0, r.1, CW, -r.1),
+                    (0.0, CH, CW, y1 - CH),
+                ] {
+                    self.fill(out, s, [0.0, 0.0, 0.0, 150.0 / 255.0]);
+                }
+            }
+        }
         self.image(out, b.base, (0.0, 0.0, CW, CH));
         for &r in lit {
             if let Some(Some((id, rect))) = b.lit.get(r as usize) {
@@ -1808,7 +1867,7 @@ impl Menu {
             (
                 l.rect.0 + (l.rect.2 - w) / 2.0,
                 l.rect.1 + (l.rect.3 - px) / 2.0,
-                kit::GOLD,
+                kit::STONE,
             )
         } else {
             (
@@ -1872,6 +1931,8 @@ impl Menu {
     fn draw_main(&self, out: &mut Vec<Sprite>, region: u8) {
         let b = if self.stats {
             &self.stats_board
+        } else if self.more {
+            &self.more_board
         } else {
             &self.main
         };
@@ -1881,8 +1942,11 @@ impl Menu {
         }
         self.board(out, b, &lit);
         let Some(p) = self.me() else { return };
-        self.text(out, 92.0, 14.0, 16.0, SAND, &p.player_name());
-        self.text(out, 474.0, 14.0, 16.0, SAND, &p.score.to_string());
+        let kit = self.kit.is_some();
+        if !kit || self.more {
+            self.text(out, 92.0, 14.0, 16.0, SAND, &p.player_name());
+            self.text(out, 474.0, 14.0, 16.0, SAND, &p.score.to_string());
+        }
         // Survival: one button; the chooser when more than one is offered.
         let modes = self.survival_modes();
         let mut buttons = Vec::new();
@@ -1896,7 +1960,7 @@ impl Menu {
                 };
                 buttons.push((Self::pick_rect(i, modes.len()), label));
             }
-        } else if !modes.is_empty() {
+        } else if !modes.is_empty() && !kit {
             buttons.push((SURVIVAL_BUTTON, "SURVIVAL"));
         }
         for (r, label) in buttons {
@@ -1908,6 +1972,8 @@ impl Menu {
         if !self.stats {
             return;
         }
+        // The panel: the PC's at the right edge, the phone's wider.
+        let (sx, sw) = if kit { (548.0, 252.0) } else { (612.0, 186.0) };
         let us = p.options.sys != 0;
         let rank = ["Beginner", "Advanced", "Expert"]
             .get(p.rank.clamp(0, 2) as usize)
@@ -1932,7 +1998,7 @@ impl Menu {
                 format!("Success: {}", st.success),
             ];
             for (i, l) in lines.iter().chain(extra.iter()).enumerate() {
-                self.text(out, 612.0, y0 + i as f32 * 18.0, 12.0, SAND, l);
+                self.text(out, sx, y0 + i as f32 * 18.0, 12.0, SAND, l);
             }
         }
         // Records (ours: `trophy0N.rec`).
@@ -1962,9 +2028,9 @@ impl Menu {
         lines.push((format!("  {} survival", r.count(Mode::Survival)), SAND));
         lines.push((format!("Best wave: {}", r.best_wave), SAND));
         let h = lines.len() as f32 * 18.0 + 10.0;
-        self.fill(out, (604.0, 322.0, 186.0, h), [0.0, 0.0, 0.0, 0.65]);
+        self.fill(out, (sx - 8.0, 322.0, sw, h), [0.0, 0.0, 0.0, 0.65]);
         for (i, (l, c)) in lines.iter().enumerate() {
-            self.text(out, 612.0, 330.0 + i as f32 * 18.0, 12.0, *c, l);
+            self.text(out, sx, 330.0 + i as f32 * 18.0, 12.0, *c, l);
         }
     }
 

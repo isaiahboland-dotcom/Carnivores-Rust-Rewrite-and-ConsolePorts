@@ -2,6 +2,32 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-01 — APK base: the menus laid out as the owner's phone screenshots
+
+The owner sent four screenshots of the phone game (main menu, maps,
+weapons, dinosaurs). A game built from the APK now follows them:
+
+- **Wide screens.** The phone's pictures fill the window (cropped, centred);
+  the 800 x 600 board stays in the middle, darkening around it when a
+  question is open. The PC's own menus keep their 4:3 frame.
+- **Main menu.** The phone's logo and four buttons (HUNT, SURVIVE when a
+  survival is offered, TROPHY, MORE). The PC's other buttons (statistics,
+  options, credits, quit) and the hunter's name and points move to MORE;
+  Esc goes back.
+- **Hunt setup.** The honeycomb at the left (corner-up cells, the longer
+  rows last: 2-2-3 maps and weapons, 4-4-5-5 animals; more rows when a game
+  has more), the empty cells all over the background; at the right the
+  item's name in the red FieryTurk face, its cost, and the files' own
+  lines in Officina (whose small size has the ratings' pips); two rows of
+  toggles with lamp and picture; BACK, "Your Account", NEXT/HUNT along the
+  bottom. NEXT stays dim until an animal is picked, as the phone's. No
+  prices on the cells (the phone shows the cost by the name).
+- **Area texts.** The Dinosaur Hunter APK carries Ice Age's strings too;
+  the conversion read them over the game's own, so the areas had Ice Age's
+  names. Ice Age's strings are read only for Ice Age.
+- **Kill notice and plaque** are on the phone's panels (`game_stats_window`,
+  `trophy_info_window`).
+
 ## 2026-10-31 — APK base: each new animal its own slot; the hunt's missing pieces
 
 **Slots.** The original's rules hunt, call and place by AI number, and the

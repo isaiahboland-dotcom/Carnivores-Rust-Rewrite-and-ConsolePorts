@@ -53,14 +53,20 @@ pub(crate) struct Kit {
     dir: PathBuf,
     sprites: BTreeMap<String, KitSprite>,
     atlases: std::cell::RefCell<BTreeMap<String, Option<Pic>>>,
-    /// Headings and buttons (Lithos), and body text.
+    /// Headings and buttons (Lithos), body text, and the setup pages' red
+    /// headlines (FieryTurk).
     pub(crate) title: Option<KitFont>,
     pub(crate) body: Option<KitFont>,
+    pub(crate) heading: Option<KitFont>,
 }
 
 /// The menus' gold, as the phone game's buttons.
 pub(crate) const GOLD: [f32; 4] = [0.96, 0.82, 0.45, 1.0];
 pub(crate) const LIGHT: [f32; 4] = [1.0, 0.95, 0.8, 1.0];
+/// The phone's button words, its descriptions, and its headlines.
+pub(crate) const STONE: [f32; 4] = [0.8, 0.79, 0.76, 1.0];
+pub(crate) const PALE: [f32; 4] = [0.86, 0.85, 0.82, 1.0];
+pub(crate) const RED: [f32; 4] = [0.8, 0.05, 0.08, 1.0];
 
 impl Kit {
     pub(crate) fn load(huntdat: &Path, hud: &mut Hud, gpu: &Gpu) -> Option<Self> {
@@ -82,13 +88,17 @@ impl Kit {
             })
         };
         let title = font("LITH18.FNT");
-        let body = font("OFS15.FNT").or_else(|| font("OFS13.FNT"));
+        // The smaller has the pips of the descriptions' ratings (`=`, `{`,
+        // `^`: full, half, empty), as the phone draws them.
+        let body = font("OFS13.FNT").or_else(|| font("OFS15.FNT"));
+        let heading = font("CCRA14.FNT");
         (!sprites.is_empty()).then(|| Self {
             dir,
             sprites,
             atlases: Default::default(),
             title,
             body,
+            heading,
         })
     }
 
@@ -199,6 +209,9 @@ impl Canvas {
 
 /// What a board is made of.
 pub(super) enum Part<'a> {
+    /// The picture behind it all, filling the window (drawn apart: the
+    /// board is the 800 x 600 middle of a wider screen).
+    Back(&'a str),
     /// A sprite filling a rectangle.
     Art(&'a str, Rect),
     /// A darkened panel.
@@ -218,6 +231,7 @@ impl Kit {
         let mut hit = vec![0u8; 400 * 300];
         let mut buttons = Vec::new();
         let mut labels = Vec::new();
+        let (mut back, mut dim) = (None, false);
         let mark = |hit: &mut Vec<u8>, id: u8, r: Rect| {
             for y in (r.1 / 2.0) as usize..((r.1 + r.3) / 2.0).min(300.0) as usize {
                 for x in (r.0 / 2.0) as usize..((r.0 + r.2) / 2.0).min(400.0) as usize {
@@ -227,12 +241,20 @@ impl Kit {
         };
         for p in parts {
             match *p {
+                Part::Back(name) => back = self.image(name, hud, gpu),
                 Part::Art(name, r) => {
                     if let Some(s) = self.sprite(name) {
                         c.blit(&s, r, 1.0);
                     }
                 }
-                Part::Panel(r) => c.shade(r, [0, 0, 0, 150]),
+                Part::Panel(r) => {
+                    // A question over it all: the words under it go.
+                    if r == FULL {
+                        dim = true;
+                        labels.clear();
+                    }
+                    c.shade(r, [0, 0, 0, 150]);
+                }
                 Part::Button(id, r, sprite, word) => {
                     if let Some(s) = self.sprite(sprite) {
                         c.blit(&s, r, 1.0);
@@ -278,6 +300,8 @@ impl Kit {
             lit,
             hit,
             labels,
+            back,
+            dim,
         }
     }
 }
@@ -344,6 +368,7 @@ impl KitFont {
 /// The menus' boards, composed.
 pub(super) struct Boards {
     pub main: Board,
+    pub more: Board,
     pub stats: Board,
     pub quit: Board,
     pub reg: Board,
@@ -357,66 +382,72 @@ pub(super) struct Boards {
 const FULL: Rect = (0.0, 0.0, CW, CH);
 
 impl Kit {
-    pub(super) fn boards(&self, hud: &mut Hud, gpu: &Gpu, title: &str) -> Boards {
+    pub(super) fn boards(&self, hud: &mut Hud, gpu: &Gpu, title: &str, survive: bool) -> Boards {
         use Part::*;
-        // The main menu: the phone's picture and logo, the five buttons on
-        // the PC's places, statistics at the top right.
-        let main_parts = |extra: &mut Vec<Part<'static>>| {
+        // The main menu as the phone's: its picture, the logo, four
+        // buttons (hunt, survive when offered, trophy, more); the rest
+        // under MORE.
+        let mut main_parts: Vec<Part> = vec![
+            Back("menu_main_background"),
+            Art("menu_main_logo", (10.0, 44.0, 588.0, 156.0)),
+            Art("menu_main_pro", (590.0, 168.0, 92.0, 50.0)),
+        ];
+        let buttons = [(1, "HUNT"), (7, "SURVIVE"), (3, "TROPHY"), (8, "MORE")];
+        for (i, &(id, w)) in buttons.iter().filter(|b| survive || b.0 != 7).enumerate() {
+            let y = 254.0 + i as f32 * 73.0;
+            main_parts.push(Button(id, (205.0, y, 234.0, 58.0), "button_med_01", w));
+        }
+        let main = self.board(hud, gpu, &main_parts);
+        // More: the hunter (name, points, statistics), options, credits,
+        // quit; back to the main menu.
+        let more_parts = |extra: &mut Vec<Part<'static>>| {
             let mut p: Vec<Part<'static>> = vec![
-                Art("menu_main_background", FULL),
-                Art("menu_main_logo", (24.0, 52.0, 360.0, 108.0)),
+                Back("menu_more_background"),
                 Panel((8.0, 6.0, 300.0, 34.0)),
                 Words(16.0, 13.0, "NAME", false),
                 Panel((380.0, 6.0, 200.0, 34.0)),
                 Words(388.0, 13.0, "POINTS", false),
-                Button(
-                    6,
-                    (604.0, 4.0, 184.0, 44.0),
-                    "button_small_01",
-                    "STATISTICS",
-                ),
             ];
-            for (i, w) in ["HUNT", "OPTIONS", "TROPHY", "CREDITS", "QUIT"]
-                .iter()
-                .enumerate()
+            for (i, (id, w)) in [
+                (6, "STATISTICS"),
+                (2, "OPTIONS"),
+                (4, "CREDITS"),
+                (5, "QUIT"),
+                (9, "BACK"),
+            ]
+            .into_iter()
+            .enumerate()
             {
-                let y = 214.0 + i as f32 * 70.0;
-                p.push(Button(
-                    i as u8 + 1,
-                    (26.0, y + 8.0, 276.0, 54.0),
-                    "button_med_01",
-                    w,
-                ));
+                let y = 120.0 + i as f32 * 73.0;
+                p.push(Button(id, (205.0, y, 234.0, 58.0), "button_med_01", w));
             }
             p.append(extra);
             p
         };
-        let main = self.board(hud, gpu, &main_parts(&mut Vec::new()));
+        let more = self.board(hud, gpu, &more_parts(&mut Vec::new()));
         let stats = self.board(
             hud,
             gpu,
-            &main_parts(&mut vec![
-                Panel((602.0, 50.0, 190.0, 268.0)),
-                Words(612.0, 54.0, "LAST HUNT", true),
-                Words(612.0, 184.0, "OVERALL", true),
+            &more_parts(&mut vec![
+                Panel((532.0, 50.0, 260.0, 268.0)),
+                Words(548.0, 54.0, "LAST HUNT", true),
+                Words(548.0, 184.0, "OVERALL", true),
             ]),
         );
-        let quit = self.board(
-            hud,
-            gpu,
-            &main_parts(&mut vec![
-                Panel(FULL),
-                Art("base_popup_background", (250.0, 270.0, 300.0, 124.0)),
-                Words(296.0, 290.0, "QUIT GAME?", true),
-                Button(1, (270.0, 344.0, 128.0, 38.0), "button_small_01", "YES"),
-                Button(2, (402.0, 344.0, 128.0, 38.0), "button_small_01", "NO"),
-            ]),
-        );
+        let mut quit_parts = main_parts;
+        quit_parts.append(&mut vec![
+            Panel(FULL),
+            Art("base_popup_background", (250.0, 270.0, 300.0, 124.0)),
+            Words(296.0, 290.0, "QUIT GAME?", true),
+            Button(1, (270.0, 344.0, 128.0, 38.0), "button_small_01", "YES"),
+            Button(2, (402.0, 344.0, 128.0, 38.0), "button_small_01", "NO"),
+        ]);
+        let quit = self.board(hud, gpu, &quit_parts);
         // Registration: on the phone's second picture, a panel with the
         // name field and the hunters.
         let reg_parts = |extra: &mut Vec<Part<'static>>| {
             let mut p: Vec<Part<'static>> = vec![
-                Art("menu_more_background", FULL),
+                Back("menu_more_background"),
                 Art("menu_main_logo_small", (230.0, 40.0, 340.0, 102.0)),
                 Art("base_popup_background", (270.0, 240.0, 260.0, 304.0)),
                 Words(296.0, 262.0, "PLEASE REGISTER", true),
@@ -469,7 +500,7 @@ impl Kit {
             hud,
             gpu,
             &[
-                Art("menu_options_background", FULL),
+                Back("menu_options_background"),
                 Panel((40.0, 20.0, 340.0, 254.0)),
                 Region(1, (0.0, 0.0, 384.0, 72.0)),
                 Words(56.0, 30.0, "GAME", true),
@@ -486,7 +517,7 @@ impl Kit {
             hud,
             gpu,
             &[
-                Art("menu_about_background", FULL),
+                Back("menu_about_background"),
                 Art("menu_main_logo", (200.0, 40.0, 400.0, 120.0)),
                 Panel((150.0, 210.0, 500.0, 230.0)),
                 Words(176.0, 228.0, "Built from your own copy of", false),
@@ -501,13 +532,14 @@ impl Kit {
             hud,
             gpu,
             &[
-                Art("menu_main_background", FULL),
+                Back("menu_main_background"),
                 Art("menu_main_logo", (200.0, 120.0, 400.0, 120.0)),
                 Words(330.0, 420.0, "LOADING...", true),
             ],
         );
         Boards {
             main,
+            more,
             stats,
             quit,
             reg,
@@ -530,6 +562,12 @@ pub(super) struct KitArt {
     pub lamp_off: Option<usize>,
     pub lamp_on: Option<usize>,
     pub button: Option<usize>,
+    /// The bottom bar's planks; the honeycomb's empty cells; the toggles'
+    /// pictures (dawn, day, night, observer, tranquilizer, radar, cover
+    /// scent, camouflage).
+    pub plank: Option<usize>,
+    pub empty: Option<usize>,
+    pub icons: [Option<usize>; 8],
     /// Each page's items: (in colour, as a silhouette).
     pub items: [Vec<(Option<usize>, Option<usize>)>; 3],
 }
@@ -571,6 +609,19 @@ impl Kit {
         let lamp_off = img("button_checkbox_wide_off");
         let lamp_on = img("button_checkbox_wide_on");
         let button = img("button_small_01");
+        let plank = img("button_med_01");
+        let empty = img("menu_hunt_cell_empty");
+        let icons = [
+            "dawn",
+            "day",
+            "night",
+            "observer",
+            "tranquilizer",
+            "radar",
+            "cover_scent",
+            "camouflage",
+        ]
+        .map(|n| img(&format!("icon_{n}")));
         let mut items: [Vec<(Option<usize>, Option<usize>)>; 3] = Default::default();
         for (page, kind) in ["area", "dino", "weapon"].iter().enumerate() {
             for i in 0..counts[page] {
@@ -588,6 +639,9 @@ impl Kit {
             lamp_off,
             lamp_on,
             button,
+            plank,
+            empty,
+            icons,
             items,
         }
     }

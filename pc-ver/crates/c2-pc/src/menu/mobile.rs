@@ -160,14 +160,64 @@ impl Menu {
         self.mobile_page.min(2)
     }
 
-    /// The page's hexagons: (item, centre x, y, width), cheapest first.
-    fn mobile_cells(&self) -> Vec<(usize, f32, f32, f32)> {
+    /// The page's hexagons: (item, centre x, y, width, height), cheapest
+    /// first.
+    fn mobile_cells(&self) -> Vec<(usize, f32, f32, f32, f32)> {
         let col = &self.columns[self.mobile_col()];
+        if self.kit.is_some() {
+            let comb = Comb::new(col.order.len(), self.mobile_page);
+            return comb
+                .cells()
+                .into_iter()
+                .zip(&col.order)
+                .map(|((x, y), &i)| (i, x + comb.w / 2.0, y + comb.h / 2.0, comb.w, comb.h))
+                .collect();
+        }
         hex_grid(col.order.len())
             .into_iter()
             .zip(&col.order)
-            .map(|((x, y, w), &i)| (i, x, y, w))
+            .map(|((x, y, w), &i)| (i, x, y, w, w * 0.866))
             .collect()
+    }
+
+    /// The side buttons' rects, in `mobile_side`'s order.
+    fn side_rects(&self) -> Vec<Rect> {
+        if self.kit.is_none() {
+            return side(4);
+        }
+        // Two rows of two under the words; the weapons page's as the
+        // phone's: camouflage, cover scent / tranquilizer, radar.
+        let order = if self.mobile_page == 2 {
+            [2, 3, 1, 0]
+        } else {
+            [0, 1, 2, 3]
+        };
+        order
+            .iter()
+            .map(|&k| {
+                let (x, y) = ((k % 2) as f32, (k / 2) as f32);
+                (510.0 + x * 144.0, 364.0 + y * 72.0, 124.0, 52.0)
+            })
+            .collect()
+    }
+
+    /// Back and next (or hunt).
+    fn bottom_rects(&self) -> (Rect, Rect) {
+        if self.kit.is_some() {
+            (KIT_BACK, KIT_NEXT)
+        } else {
+            (BACK_BTN, NEXT_BTN)
+        }
+    }
+
+    /// Whether next (or hunt) can be pressed.
+    fn next_ready(&self) -> bool {
+        let c = &self.choice;
+        match self.mobile_page {
+            0 => true,
+            1 => self.kit.is_none() || !c.dinos.is_empty() || c.observer || c.survival.is_some(),
+            _ => self.can_hunt(),
+        }
     }
 
     /// The side buttons of the page: label and whether it is on.
@@ -203,7 +253,8 @@ impl Menu {
 
     pub(super) fn update_mobile(&mut self, input: &Input) {
         let p = self.cursor;
-        if input.pressed(KeyCode::Escape) || (input.clicked && inside(p, BACK_BTN)) {
+        let (back, next) = self.bottom_rects();
+        if input.pressed(KeyCode::Escape) || (input.clicked && inside(p, back)) {
             if self.mobile_page == 0 {
                 self.save_equipment();
                 self.screen = Screen::Main;
@@ -213,10 +264,16 @@ impl Menu {
             return;
         }
         let col = self.mobile_col();
+        let kit = self.kit.is_some();
         let hovered = p.and_then(|(x, y)| {
-            self.mobile_cells()
-                .into_iter()
-                .find(|&(_, cx, cy, w)| hex_depth(x - cx, y - cy, w, w * 0.866) >= 0.0)
+            self.mobile_cells().into_iter().find(|&(_, cx, cy, w, h)| {
+                if kit {
+                    // The phone's stand on a corner.
+                    hex_depth(y - cy, x - cx, h * 0.96, w * 0.94) >= 0.0
+                } else {
+                    hex_depth(x - cx, y - cy, w, h) >= 0.0
+                }
+            })
         });
         if let Some((i, ..)) = hovered {
             self.choice.focus = Some((col, i));
@@ -224,8 +281,9 @@ impl Menu {
         if !input.clicked {
             return;
         }
-        if inside(p, NEXT_BTN) {
-            if self.mobile_page < 2 {
+        if inside(p, next) {
+            if !self.next_ready() {
+            } else if self.mobile_page < 2 {
                 self.mobile_page += 1;
             } else if self.can_hunt() {
                 self.launch_hunt();
@@ -236,7 +294,7 @@ impl Menu {
             self.pick(col, i);
             return;
         }
-        let hit = side(4).into_iter().position(|r| inside(p, r));
+        let hit = self.side_rects().into_iter().position(|r| inside(p, r));
         match (self.mobile_page, hit) {
             (0, Some(t @ 0..=2)) => self.choice.time = t,
             (0, Some(3)) => self.toggle_observer(),
@@ -248,30 +306,6 @@ impl Menu {
             // Radar, cover scent, camouflage: equipment bits 1, 2, 0.
             (2, Some(b @ 1..=3)) => self.pick(3, [1, 2, 0][b - 1]),
             _ => {}
-        }
-    }
-
-    /// Words centred in `r`, in the phone game's lettering when the game
-    /// has it (`title`: its headline face).
-    pub(super) fn say(&self, out: &mut Vec<Sprite>, r: Rect, text: &str, px: f32, title: bool) {
-        let label = super::kit::Label {
-            rect: r,
-            text: text.to_string(),
-            title,
-            centred: true,
-        };
-        if self.kit.is_some() {
-            self.kit_words_sized(out, &label, px);
-        } else {
-            let w = self.text_width(px, text);
-            self.text(
-                out,
-                r.0 + (r.2 - w) / 2.0,
-                r.1 + (r.3 - px) / 2.0,
-                px,
-                SAND,
-                text,
-            );
         }
     }
 
@@ -299,26 +333,6 @@ impl Menu {
     fn mobile_button(&self, out: &mut Vec<Sprite>, r: Rect, label: &str, lamp: Option<bool>) {
         let Some(art) = &self.mobile else { return };
         let hover = inside(self.cursor, r);
-        if let Some(k) = &art.kit {
-            // The phone's: a plank, its lamp in it when it has one.
-            let id = match lamp {
-                Some(true) => k.lamp_on,
-                Some(false) => k.lamp_off,
-                None => k.button,
-            };
-            let tint = if hover {
-                [1.3, 1.3, 1.25, 1.0]
-            } else {
-                [1.0; 4]
-            };
-            if let Some(id) = id {
-                self.tinted(out, id, r, [0.0, 0.0, 1.0, 1.0], tint);
-            }
-            let x0 = if lamp.is_some() { r.0 + r.3 * 0.9 } else { r.0 };
-            let w = r.0 + r.2 - x0;
-            self.say(out, (x0, r.1, w, r.3), label, 20.0, true);
-            return;
-        }
         let tint = if hover {
             [1.15, 1.2, 1.1, 1.0]
         } else {
@@ -365,17 +379,14 @@ impl Menu {
 
     pub(super) fn draw_mobile(&self, out: &mut Vec<Sprite>) {
         let Some(art) = &self.mobile else { return };
-        self.fill(out, (0.0, 0.0, CW, CH), BG_F);
-        if let Some(bg) = art.kit.as_ref().and_then(|k| k.bg) {
-            self.tinted(out, bg, (0.0, 0.0, CW, CH), [0.0, 0.0, 1.0, 1.0], [1.0; 4]);
+        if let Some(k) = &art.kit {
+            self.draw_kit_page(out, k);
+            return;
         }
+        self.fill(out, (0.0, 0.0, CW, CH), BG_F);
         // The page and the account.
         let page = self.mobile_page.min(2);
-        if self.kit.is_some() {
-            self.say(out, (20.0, 12.0, 0.0, 30.0), PAGES[page], 26.0, true);
-        } else {
-            self.text(out, 20.0, 18.0, 18.0, PICKED, PAGES[page]);
-        }
+        self.text(out, 20.0, 18.0, 18.0, PICKED, PAGES[page]);
         let score = self.me().map_or(0, |s| s.score);
         let acc = format!("{} / {score}", self.remaining());
         let w = self.text_width(16.0, &acc);
@@ -392,8 +403,7 @@ impl Menu {
         let c = &self.columns[col];
         let mask = self.picked_mask(col);
         let left = self.remaining();
-        for (i, cx, cy, w) in self.mobile_cells() {
-            let h = w * 0.866;
+        for (i, cx, cy, w, h) in self.mobile_cells() {
             let r = (cx - w / 2.0, cy - h / 2.0, w, h);
             let on = mask.has(i);
             let afford = on || c.prices.get(i).is_some_and(|&p| p <= left) || self.choice.observer;
@@ -403,70 +413,6 @@ impl Menu {
                 [0.4, 0.4, 0.4, 1.0]
             };
             let hover = self.choice.focus == Some((col, i));
-            if let Some(k) = &art.kit {
-                // The phone's: the plate, the item (a silhouette when out
-                // of reach), the red ring when picked.
-                let lit = if hover {
-                    [1.25, 1.25, 1.2, 1.0]
-                } else {
-                    [1.0; 4]
-                };
-                if col != 0 {
-                    if let Some(id) = k.cell {
-                        self.tinted(out, id, r, [0.0, 0.0, 1.0, 1.0], lit);
-                    }
-                }
-                let (on_art, off_art) = k
-                    .items
-                    .get(col)
-                    .and_then(|v| v.get(i))
-                    .copied()
-                    .unwrap_or((None, None));
-                let item = if afford { on_art } else { off_art.or(on_art) };
-                if let Some(id) = item {
-                    let (iw, ih) = self
-                        .hud
-                        .image(id)
-                        .map_or((1.0, 1.0), |im| (im.w as f32, im.h as f32));
-                    let f = if col == 0 { 1.0 } else { 0.84 };
-                    let s = (w * f / iw).min(h * f / ih);
-                    let (dw, dh) = (iw * s, ih * s);
-                    self.tinted(
-                        out,
-                        id,
-                        (cx - dw / 2.0, cy - dh / 2.0, dw, dh),
-                        [0.0, 0.0, 1.0, 1.0],
-                        if afford { lit } else { dim },
-                    );
-                }
-                if on {
-                    if let Some(id) = k.selector {
-                        self.tinted(out, id, r, [0.0, 0.0, 1.0, 1.0], [1.0; 4]);
-                    }
-                }
-                if item.is_none() {
-                    let name: String = c.names[i].chars().take(12).collect();
-                    self.say(out, (cx - w / 2.0, cy - 10.0, w, 20.0), &name, 15.0, false);
-                }
-                if let Some(&p) = c.prices.get(i).filter(|&&p| p > 0) {
-                    let t = p.to_string();
-                    let tw = self.text_width(12.0, &t);
-                    self.fill(
-                        out,
-                        (cx - tw / 2.0 - 4.0, cy + h / 2.0 - 20.0, tw + 8.0, 15.0),
-                        [0.0, 0.0, 0.0, 0.6],
-                    );
-                    self.text(
-                        out,
-                        cx - tw / 2.0,
-                        cy + h / 2.0 - 19.0,
-                        12.0,
-                        if afford { PICKED } else { DIM },
-                        &t,
-                    );
-                }
-                continue;
-            }
             match c.pics.get(i).copied().flatten() {
                 Some(id) => {
                     // The middle of the picture, at the hexagon's shape.
@@ -532,4 +478,376 @@ impl Menu {
 /// A list item with no picture (its name is written in the hexagon).
 fn pics_missing(c: &Column, i: usize) -> bool {
     c.pics.get(i).copied().flatten().is_none()
+}
+
+/// The phone's page (an APK-built game), after the owner's screenshots:
+/// the honeycomb at the left, the item's name, cost and words set against
+/// the right with two rows of toggles under them, back and next along the
+/// bottom with the account between.
+const KIT_GRID: Rect = (9.0, 55.0, 620.0, 440.0);
+const KIT_BACK: Rect = (11.0, 505.0, 178.0, 52.0);
+const KIT_NEXT: Rect = (611.0, 505.0, 178.0, 52.0);
+const KIT_RIGHT: f32 = 787.0;
+/// The lamp's square in the toggles' art (`button_checkbox_wide_*`).
+const LAMP_UV: [f32; 4] = [14.0 / 456.0, 8.0 / 78.0, 64.0 / 456.0, 60.0 / 78.0];
+
+/// The honeycomb: corner-up cells `w` x `h`, `sx` apart in a row and `sy`
+/// between rows, every other row half a cell in; the first cell's top
+/// left, and each row's length (the longer rows last, as the phone's).
+struct Comb {
+    w: f32,
+    h: f32,
+    sx: f32,
+    sy: f32,
+    x0: f32,
+    y0: f32,
+    rows: Vec<usize>,
+}
+
+impl Comb {
+    /// `n` cells: the phone's rows (three; four of animals), more and
+    /// smaller when they wouldn't fit across.
+    fn new(n: usize, page: usize) -> Self {
+        let (gx, gy, gw, gh) = KIT_GRID;
+        let mut r: usize = if page == 1 { 4 } else { 3 };
+        loop {
+            let h = (420.0 / (1.0 + 0.843 * (r - 1) as f32)).min(163.0);
+            let (w, sy) = (h * 0.9, h * 0.843);
+            let sx = w * 1.06;
+            let long = n.div_ceil(r).max(1);
+            if (long - 1) as f32 * sx + w + sx / 2.0 <= gw || r >= 12 {
+                let (base, extra) = (n / r, n % r);
+                let rows = (0..r).map(|i| base + usize::from(i >= r - extra)).collect();
+                let tall = h + sy * (r - 1) as f32;
+                return Self {
+                    w,
+                    h,
+                    sx,
+                    sy,
+                    x0: gx,
+                    y0: gy + ((gh - tall) / 2.0).max(0.0),
+                    rows,
+                };
+            }
+            r += 1;
+        }
+    }
+
+    /// Cell `row`, `col`'s top left (beyond the rows too: the empty
+    /// cells around).
+    fn at(&self, row: i32, col: i32) -> (f32, f32) {
+        let odd = if row.rem_euclid(2) == 1 {
+            self.sx / 2.0
+        } else {
+            0.0
+        };
+        (
+            self.x0 + col as f32 * self.sx + odd,
+            self.y0 + row as f32 * self.sy,
+        )
+    }
+
+    fn cells(&self) -> Vec<(f32, f32)> {
+        self.rows
+            .iter()
+            .enumerate()
+            .flat_map(|(r, &n)| (0..n).map(move |c| (r, c)))
+            .map(|(r, c)| self.at(r as i32, c as i32))
+            .collect()
+    }
+}
+
+/// The kit's faces.
+#[derive(Clone, Copy)]
+enum Face {
+    Heading,
+    Title,
+    Body,
+}
+
+impl Menu {
+    /// A line in the kit's `face` at `x` (its left, middle or right by
+    /// `align` 0, 0.5, 1), top at `y`; its width.
+    #[allow(clippy::too_many_arguments)]
+    fn kit_line(
+        &self,
+        out: &mut Vec<Sprite>,
+        face: Face,
+        (x, y): (f32, f32),
+        px: f32,
+        color: [f32; 4],
+        text: &str,
+        align: f32,
+    ) -> f32 {
+        let Some(k) = &self.kit else { return 0.0 };
+        let f = match face {
+            Face::Heading => k.heading.as_ref(),
+            Face::Title => k.title.as_ref(),
+            Face::Body => k.body.as_ref(),
+        };
+        let Some(f) = f.or(k.body.as_ref()) else {
+            return 0.0;
+        };
+        let w = f.width(px, text);
+        let x = x - w * align;
+        let c = self.canvas();
+        let shadow = [0.0, 0.0, 0.0, color[3]];
+        f.sprites(out, (c.0, c.1 + c.0, c.2 + c.0), (x, y), px, shadow, text);
+        f.sprites(out, c, (x, y), px, color, text);
+        w
+    }
+
+    fn draw_kit_page(&self, out: &mut Vec<Sprite>, k: &super::kit::KitArt) {
+        use super::kit::{PALE, RED, STONE};
+        let page = self.mobile_page.min(2);
+        let col = self.mobile_col();
+        let c = &self.columns[col];
+        let full = [0.0, 0.0, 1.0, 1.0];
+        let cover = self.cover();
+        self.fill(out, cover, BG_F);
+        if let Some(bg) = k.bg {
+            self.tinted(out, bg, cover, full, [1.0; 4]);
+        }
+        // The empty cells of the honeycomb, all over.
+        let comb = Comb::new(c.order.len(), page);
+        if let Some(id) = k.empty {
+            let r0 = ((cover.1 - comb.y0) / comb.sy).floor() as i32 - 1;
+            let r1 = ((cover.1 + cover.3 - comb.y0) / comb.sy).ceil() as i32;
+            let c0 = ((cover.0 - comb.x0) / comb.sx).floor() as i32 - 1;
+            let c1 = ((cover.0 + cover.2 - comb.x0) / comb.sx).ceil() as i32;
+            for r in r0..=r1 {
+                for cc in c0..=c1 {
+                    let used = usize::try_from(r)
+                        .ok()
+                        .and_then(|r| comb.rows.get(r))
+                        .is_some_and(|&n| (0..n as i32).contains(&cc));
+                    if !used {
+                        let (x, y) = comb.at(r, cc);
+                        let a = 0.25;
+                        self.tinted(out, id, (x, y, comb.w, comb.h), full, [1.0, 1.0, 1.0, a]);
+                    }
+                }
+            }
+        }
+        // The items: the plate, the item (a silhouette when out of reach),
+        // the red ring when picked.
+        let mask = self.picked_mask(col);
+        let left = self.remaining();
+        for (i, cx, cy, w, h) in self.mobile_cells() {
+            let r = (cx - w / 2.0, cy - h / 2.0, w, h);
+            let on = mask.has(i);
+            let afford = on || c.prices.get(i).is_some_and(|&p| p <= left) || self.choice.observer;
+            let lit = if self.choice.focus == Some((col, i)) {
+                [1.2, 1.2, 1.15, 1.0]
+            } else {
+                [1.0; 4]
+            };
+            if col != 0 {
+                if let Some(id) = k.cell {
+                    self.tinted(out, id, r, full, lit);
+                }
+            }
+            let (on_art, off_art) = k
+                .items
+                .get(col)
+                .and_then(|v| v.get(i))
+                .copied()
+                .unwrap_or((None, None));
+            let item = if afford { on_art } else { off_art.or(on_art) };
+            if let Some(id) = item {
+                let (iw, ih) = self
+                    .hud
+                    .image(id)
+                    .map_or((1.0, 1.0), |im| (im.w as f32, im.h as f32));
+                let f = if col == 0 { 1.0 } else { 0.84 };
+                let s = (w * f / iw).min(h * f / ih);
+                let (dw, dh) = (iw * s, ih * s);
+                let tint = if afford { lit } else { [0.4, 0.4, 0.4, 1.0] };
+                self.tinted(out, id, (cx - dw / 2.0, cy - dh / 2.0, dw, dh), full, tint);
+            } else {
+                let name: String = c.names[i].chars().take(12).collect();
+                self.kit_line(out, Face::Body, (cx, cy - 9.0), 17.0, PALE, &name, 0.5);
+            }
+            if on {
+                if let Some(id) = k.selector {
+                    self.tinted(out, id, r, full, [1.0; 4]);
+                }
+            }
+        }
+        // The item shown at the right: the one pointed at, else the one
+        // picked.
+        let shown = self
+            .choice
+            .focus
+            .filter(|f| f.0 == col)
+            .map(|f| f.1)
+            .or_else(|| (0..c.names.len()).find(|&i| mask.has(i)));
+        let us = self.me().is_some_and(|s| s.options.sys != 0);
+        let (heading, cost, words): (Vec<String>, Option<i32>, Vec<String>) = match shown {
+            Some(i) => {
+                let t = if us { &c.texts_us } else { &c.texts };
+                // The first line repeats the name ("Weapon : Pistol").
+                let words = t.get(i).map_or_else(Vec::new, |v| {
+                    v.iter()
+                        .skip(1)
+                        .skip_while(|l| l.trim().is_empty())
+                        .map(|l| l.trim().to_string())
+                        .collect()
+                });
+                let cost = c.prices.get(i).copied().filter(|&p| p > 0);
+                (vec![c.names[i].to_uppercase()], cost, words)
+            }
+            None if page == 1 => (
+                vec!["PLEASE SELECT".into(), "A DINOSAUR".into()],
+                None,
+                vec![
+                    "To start exploring you need to".into(),
+                    "select at least one dinosaur.".into(),
+                ],
+            ),
+            None => (Vec::new(), None, Vec::new()),
+        };
+        let mut y = 44.0;
+        for l in &heading {
+            // Narrower when long.
+            let px = 30.0;
+            let w = self
+                .kit
+                .as_ref()
+                .and_then(|k| k.heading.as_ref())
+                .map_or(0.0, |f| f.width(px, l));
+            let px = if w > 440.0 { px * 440.0 / w } else { px };
+            self.kit_line(out, Face::Heading, (KIT_RIGHT, y), px, RED, l, 1.0);
+            y += 34.0;
+        }
+        if let Some(p) = cost {
+            self.kit_line(
+                out,
+                Face::Body,
+                (KIT_RIGHT, y - 4.0),
+                24.0,
+                PALE,
+                &format!("cost: {p}"),
+                1.0,
+            );
+        }
+        let bottom = if page == 1 { 495.0 } else { 350.0 };
+        // The files' own lines; a long one (ours, the score) wrapped to the
+        // room beside the honeycomb's rows at its height.
+        let width = |t: &str| {
+            self.kit
+                .as_ref()
+                .and_then(|k| k.body.as_ref())
+                .map_or(0.0, |f| f.width(20.0, t))
+        };
+        let room = |y: f32| {
+            let edge = comb
+                .rows
+                .iter()
+                .enumerate()
+                .filter(|&(r, &n)| {
+                    let top = comb.at(r as i32, 0).1;
+                    n > 0 && top < y + 22.0 && top + comb.h > y
+                })
+                .map(|(r, &n)| comb.at(r as i32, n as i32 - 1).0 + comb.w)
+                .fold(0.0, f32::max);
+            KIT_RIGHT - edge.max(KIT_RIGHT - 480.0) - 12.0
+        };
+        let mut y = 122.0;
+        let put = |out: &mut Vec<Sprite>, y: &mut f32, t: &str| {
+            if *y + 20.0 <= bottom && !t.is_empty() {
+                self.kit_line(out, Face::Body, (KIT_RIGHT, *y), 20.0, PALE, t, 1.0);
+            }
+            *y += 22.5;
+        };
+        for l in &words {
+            let mut cur = String::new();
+            for w in l.split(' ') {
+                let next = if cur.is_empty() {
+                    w.to_string()
+                } else {
+                    format!("{cur} {w}")
+                };
+                if width(&next) > room(y) && !cur.is_empty() {
+                    put(out, &mut y, &cur);
+                    cur = w.to_string();
+                } else {
+                    cur = next;
+                }
+            }
+            put(out, &mut y, &cur);
+        }
+        // The toggles: plank, lamp, picture.
+        let icons = if page == 2 {
+            &k.icons[4..]
+        } else {
+            &k.icons[..4]
+        };
+        for ((r, (label, on)), icon) in self
+            .side_rects()
+            .into_iter()
+            .zip(self.mobile_side())
+            .zip(icons)
+        {
+            let tint = if inside(self.cursor, r) {
+                [1.3, 1.3, 1.25, 1.0]
+            } else {
+                [1.0; 4]
+            };
+            if let Some(id) = k.button {
+                self.tinted(out, id, r, full, tint);
+            }
+            let lamp = if on { k.lamp_on } else { k.lamp_off };
+            if let Some(id) = lamp {
+                let s = r.3 * 0.62;
+                self.tinted(
+                    out,
+                    id,
+                    (r.0 + r.2 * 0.1, r.1 + (r.3 - s) / 2.0, s, s),
+                    LAMP_UV,
+                    [1.0; 4],
+                );
+            }
+            match icon {
+                Some(id) => {
+                    let ih = r.3 * 0.7;
+                    let iw = ih * 60.0 / 48.0;
+                    let r = (r.0 + r.2 * 0.72 - iw / 2.0, r.1 + (r.3 - ih) / 2.0, iw, ih);
+                    self.tinted(out, *id, r, full, [1.0; 4]);
+                }
+                None => {
+                    let at = (r.0 + r.2 * 0.66, r.1 + r.3 * 0.3);
+                    self.kit_line(out, Face::Body, at, 16.0, PALE, &label, 0.5);
+                }
+            }
+        }
+        // Back, the account, next (dim until it can be pressed).
+        let (back, next) = self.bottom_rects();
+        let ready = self.next_ready();
+        let word = if page < 2 { "NEXT" } else { "HUNT" };
+        for (r, w, live) in [(back, "BACK", true), (next, word, ready)] {
+            let tint = match (live, inside(self.cursor, r)) {
+                (false, _) => [0.6, 0.6, 0.6, 0.7],
+                (true, true) => [1.3, 1.3, 1.25, 1.0],
+                _ => [1.0; 4],
+            };
+            if let Some(id) = k.plank {
+                self.tinted(out, id, r, full, tint);
+            }
+            let color = if live { STONE } else { [0.45, 0.45, 0.43, 0.8] };
+            let px = 28.0;
+            self.kit_line(
+                out,
+                Face::Title,
+                (r.0 + r.2 / 2.0, r.1 + (r.3 - px) / 2.0),
+                px,
+                color,
+                w,
+                0.5,
+            );
+        }
+        let acc = format!("Your Account: {left}");
+        let color = if left < 0 { RED } else { PALE };
+        self.kit_line(out, Face::Body, (CW / 2.0, 517.0), 26.0, color, &acc, 0.5);
+    }
 }
