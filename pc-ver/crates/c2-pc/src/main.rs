@@ -165,14 +165,21 @@ fn ambients(o: &Opts) -> Result<c2_mods::standalone::Ambients> {
     })
 }
 
-/// `--mobile-survival FILE`: the mobile game's Survive mode.
+/// `--mobile-survival FILE`: the mobile game's Survive mode; without it,
+/// a game built from the APK brings its own (`mobile-survival.txt` in the
+/// game folder).
 fn mobile_survival(o: &Opts) -> Result<Option<c2_formats::mobile_arcade::Survive>> {
-    o.value("mobile-survival")
-        .map(|f| {
-            let t = std::fs::read_to_string(f).with_context(|| format!("reading {f}"))?;
-            Ok(c2_formats::mobile_arcade::Survive::parse(&t))
-        })
-        .transpose()
+    let own = o
+        .positional
+        .first()
+        .map(|d| std::path::Path::new(d).join(c2_mods::mobile::MOBILE_SURVIVAL))
+        .filter(|p| p.is_file());
+    let file = o.value("mobile-survival").map(PathBuf::from).or(own);
+    file.map(|f| {
+        let t = std::fs::read_to_string(&f).with_context(|| format!("reading {}", f.display()))?;
+        Ok(c2_formats::mobile_arcade::Survive::parse(&t))
+    })
+    .transpose()
 }
 
 fn time_of_day(o: &Opts) -> TimeOfDay {

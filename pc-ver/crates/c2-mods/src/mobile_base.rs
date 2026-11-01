@@ -1025,6 +1025,11 @@ pub fn build(apk: &Path, out: &Path) -> Result<Built, ModError> {
             .push("no game library with its tables in the APK: no animals or weapons".into());
         return Ok(built);
     };
+    // Its Survive mode (Dinosaur Hunter's), offered by the game beside it.
+    if let Ok(Some(sv)) = crate::mobile::survive(apk) {
+        let p = out.join(crate::mobile::MOBILE_SURVIVAL);
+        std::fs::write(&p, sv.write()).map_err(io(&p))?;
+    }
     let chars = mobile_chars::characters(&lib, &balance)?;
     let ice_age = zip.0.files().iter().any(|f| f.ends_with("/libiceAge.so"));
     // English names; Ice Age's own strings over the shared ones (a

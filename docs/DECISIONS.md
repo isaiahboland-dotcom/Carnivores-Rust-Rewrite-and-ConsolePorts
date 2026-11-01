@@ -10,8 +10,10 @@ runs `c2_mods::mobile_base::build` into the data folder
 (`apk-base/<apk name>/`, rebuilt clean each time) and makes it the base
 game, which the PC game, the 3DS builder and the Wii U installer then use
 as any other. The game tab calls it "the mobile game, built from your APK"
-(a `HUNTDAT/MOBILE` folder). The APK's classic survival isn't offered from
-it yet (the add-on import's `mobile-survival` file).
+(a `HUNTDAT/MOBILE` folder). The conversion also writes the APK's Survive mode
+(`mobile-survival.txt`) beside `HUNTDAT`; the game offers it (SURVIVE on
+the main menu) when no `--mobile-survival` is given. Its area number is the
+APK's own, which an APK-built game shares (Mount Ravan, area 5).
 
 ## 2026-11-01 — APK base: the options as the phone's list, in three tabs
 
