@@ -62,6 +62,21 @@ fn load_texture(vfs: &Vfs, path: &str) -> Option<Texture> {
     Texture::new(&t)
 }
 
+/// A water vertex's light bytes (signed): the original's
+/// `168 - 24 * sin(theta + t)` (`c2_core::area::water_light`, theta from
+/// the vertex's `RandomMap` phase) is `168 - 24 * (sin theta cos t + cos theta
+/// sin t)`, so the vertex keeps `sin theta` and `cos theta` and the draw's light
+/// selector carries the time: the shimmer costs nothing per frame.
+fn water_lit(phase: u8) -> [u8; 4] {
+    let theta = -std::f32::consts::FRAC_PI_2 + f32::from(phase);
+    let b = |x: f32| (x * 127.0).round() as i8 as u8;
+    [b(theta.sin()), b(theta.cos()), 0, 0]
+}
+
+/// The alpha of `sfTransparent` faces: the original's Direct3D 0x70
+/// (`renderd3d.cpp`, `almask`).
+const TRANSPARENT_ALPHA: u8 = 0x70;
+
 /// A model in GPU memory: opaque faces first, then transparent ones.
 struct Model {
     buf: LinearBuf<Vertex>,
@@ -126,7 +141,7 @@ impl Model {
         gpu.draw(&self.buf, lit, 0, self.opaque);
         if self.total > self.opaque {
             gpu.blend(Blend::Alpha);
-            gpu.texenv(Some(128));
+            gpu.texenv(Some(TRANSPARENT_ALPHA));
             gpu.depth(false, false);
             gpu.draw(&self.buf, lit, self.opaque, self.total - self.opaque);
             gpu.blend(Blend::Cutout);
@@ -566,7 +581,7 @@ impl World {
                             Vertex {
                                 pos: [vx as f32 * CELL, level, vy as f32 * CELL],
                                 uv: self.atlas_uv(tex, [d[0] as f32, d[1] as f32]),
-                                lit: [255, 0, 0, 0],
+                                lit: water_lit(area.water_phase(vx, vy)),
                             }
                         });
                         water.push((usize::from(w), quad));
@@ -786,9 +801,14 @@ impl World {
         self.draw_animals(gpu, hunt, poser, view, eye);
         self.draw_ship(gpu, hunt, view, eye);
 
-        // Water, blended, after everything opaque.
+        // Water, blended, after everything opaque, lit as `water_lit` says.
         gpu.set_model_view(view);
-        gpu.set_light(0.0, Some(0));
+        let (sin_t, cos_t) = (f64::from(hunt.real_time) / 200.0).sin_cos();
+        let k = -24.0 / (255.0 * 127.0);
+        gpu.set_light_vec(
+            168.0 / 255.0,
+            [k * cos_t as f32, k * sin_t as f32, 0.0, 0.0],
+        );
         gpu.blend(Blend::Alpha);
         gpu.depth(false, false);
         if let Some(t) = &self.terrain {
@@ -800,7 +820,7 @@ impl World {
                 let Some(w) = &c.water else { continue };
                 for &(ty, first, n) in &c.water_ranges {
                     gpu.texenv(Some(self.water_alpha.get(ty).copied().unwrap_or(128)));
-                    gpu.draw(w, Lit::Unsigned, first, n);
+                    gpu.draw(w, Lit::Signed, first, n);
                 }
             }
         }
@@ -1179,7 +1199,7 @@ impl World {
         // See-through faces (a scope's glass) blended, as on PC.
         if v.len() > opaque {
             gpu.blend(Blend::Alpha);
-            gpu.texenv(Some(128));
+            gpu.texenv(Some(TRANSPARENT_ALPHA));
             gpu.depth(true, false);
             gpu.draw(buf, Lit::Signed, opaque, v.len() - opaque);
             gpu.blend(Blend::Cutout);

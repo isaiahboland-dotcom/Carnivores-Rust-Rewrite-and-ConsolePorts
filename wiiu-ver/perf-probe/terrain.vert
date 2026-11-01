@@ -5,7 +5,8 @@ uniform vec4 uEye;
 uniform vec4 uAngles;
 // The fog colour and mode, the same for a whole draw.
 uniform vec4 uFog;
-// x: the scope or binoculars' zoom for world draws (fog mode < 0), else 1.
+// x: the scope or binoculars' zoom for world draws (fog mode < 0), else 1;
+// y: the water shimmer's time, RealTime / 200 (wrapped).
 uniform vec4 uZoom;
 out vec2 vTex;
 out float vLight;
@@ -34,6 +35,12 @@ void main() {
     gl_Position = vec4(position.xy * uZoom.x, position.zw);
     vTex = aTexLight.xy;
     vLight = aTexLight.z;
+    // Water marks its light -(RandomMap / 128 + 1): Hunt2.cpp's
+    // Light = 168 - (int)(24 * sin(-pi/2 + RandomMap / 128 + RealTime / 200)).
+    if (aTexLight.z < 0.0) {
+        float phase = -aTexLight.z - 1.0;
+        vLight = (168.0 - trunc(24.0 * sin(-1.5707964 + phase + uZoom.y))) / 255.0;
+    }
     vCutout = aTexLight.w;
     vView = vec3(position.x / 0.75, position.y / 1.333, position.w) / 100000.0;
 }

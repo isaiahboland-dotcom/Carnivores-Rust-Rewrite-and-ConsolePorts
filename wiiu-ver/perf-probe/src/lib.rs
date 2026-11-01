@@ -220,6 +220,15 @@ pub extern "C" fn c2_hunt_zoom(ptr: *mut core::ffi::c_void) -> f32 {
     sim.hunt.zoom()
 }
 
+/// The water shimmer's time, `RealTime / 200` wrapped to one turn, for the
+/// world shader (`terrain.vert`, water vertices).
+#[no_mangle]
+pub extern "C" fn c2_water_time(ptr: *mut core::ffi::c_void) -> f32 {
+    let sim = unsafe { &*ptr.cast::<Simulation>() };
+    let t = f64::from(sim.hunt.real_time) / 200.0;
+    (t % core::f64::consts::TAU) as f32
+}
+
 #[no_mangle]
 pub extern "C" fn c2_death_active(ptr: *mut core::ffi::c_void) -> u32 {
     let sim = unsafe { &*ptr.cast::<Simulation>() };
@@ -1233,7 +1242,7 @@ pub extern "C" fn c2_water_vertices(ptr: *mut core::ffi::c_void, positions: *mut
             let pos = [side * 0.75, up * 1.333, (32768.0 / (32768.0 - 16.0)) * (depth - 16.0), depth];
             let u = ((tex % 16) as f32 * 128.0 + 0.9465 + ox as f32 * 126.107) / 2048.0;
             let v = ((tex / 16) as f32 * 128.0 + 0.9465 + oz as f32 * 126.107) / 2048.0;
-            let attr = [u, v, 1.0, 0.0];
+            let attr = [u, v, static_scene::water_marker(&sim.area, x + ox, z + oz), 0.0];
             unsafe { core::ptr::copy_nonoverlapping(pos.as_ptr(), positions.add(n * 4), 4); core::ptr::copy_nonoverlapping(attr.as_ptr(), attribs.add(n * 4), 4); }
             n += 1;
         }

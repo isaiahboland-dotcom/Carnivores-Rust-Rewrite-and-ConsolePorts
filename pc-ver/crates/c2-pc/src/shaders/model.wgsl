@@ -93,12 +93,13 @@ fn fs_opaque(i: VOut) -> @location(0) vec4<f32> {
     return vec4<f32>(fogged(texel(c.rgb) * i.light, i.dist), 1.0);
 }
 
-// sfTransparent faces: blended. The exact original factor is still to be
-// confirmed against the retail build; 50% matches it by eye.
+// sfTransparent faces: blended at the original's Direct3D alpha, 0x70 in
+// the vertex colour times the texel's (`renderd3d.cpp`, `almask`; its 3dfx
+// path used 0x80).
 @fragment
 fn fs_blend(i: VOut) -> @location(0) vec4<f32> {
     let c = textureSample(tex, samp, i.uv, i.layer);
-    return vec4<f32>(fogged(texel(c.rgb) * i.light, i.dist), c.a * 0.5);
+    return vec4<f32>(fogged(texel(c.rgb) * i.light, i.dist), c.a * (112.0 / 255.0));
 }
 
 // Water rings (`RenderWCircles`): added on top (`D3DBLEND_ONE`); the fade is

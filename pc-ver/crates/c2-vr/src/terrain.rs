@@ -217,8 +217,12 @@ impl TerrainScene {
         let light = area.light_map();
         let cells: Vec<u8> = (0..m.height.len())
             .flat_map(|i| {
-                let a =
-                    u32::from(m.height[i]) | u32::from(light[i]) << 8 | u32::from(m.water[i]) << 16;
+                let size = c2_formats::map::MAP_SIZE;
+                let phase = area.water_phase(i % size, i / size);
+                let a = u32::from(m.height[i])
+                    | u32::from(light[i]) << 8
+                    | u32::from(m.water[i]) << 16
+                    | u32::from(phase) << 24;
                 let b = u32::from(m.texture1[i]) | u32::from(m.flags[i]) << 16;
                 [a.to_ne_bytes(), b.to_ne_bytes()].concat()
             })

@@ -592,8 +592,13 @@ impl TerrainRenderer {
         let light = area.light_map();
         let cells: Vec<[u32; 2]> = (0..m.height.len())
             .map(|i| {
+                let size = c2_formats::map::MAP_SIZE;
+                let phase = area.water_phase(i % size, i / size);
                 [
-                    u32::from(m.height[i]) | u32::from(light[i]) << 8 | u32::from(m.water[i]) << 16,
+                    u32::from(m.height[i])
+                        | u32::from(light[i]) << 8
+                        | u32::from(m.water[i]) << 16
+                        | u32::from(phase) << 24,
                     u32::from(m.texture1[i]) | u32::from(m.flags[i]) << 16,
                 ]
             })

@@ -2,6 +2,35 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-01 — M2 polish: see-through faces at 0x70, object turns checked, the water's shimmer
+
+From the original's source, settling the M2 "known approximations":
+
+- **`sfTransparent` faces** blend at the Direct3D renderer's vertex alpha
+  0x70 (112/255) times the texel's alpha, SRCALPHA / INVSRCALPHA
+  (`renderd3d.cpp`, `almask`). Its 3dfx path used a constant 0x80; we follow
+  Direct3D, which is the renderer the game runs with today. Applies to PC and VR (`model.wgsl`) and the
+  3DS (`TRANSPARENT_ALPHA`). The Wii U doesn't blend model faces yet
+  (opaque or cut out), and stays that way for now.
+- **Object quarter turns**: the original turns an object by
+  `fi = CameraAlpha + FI * pi/2` with `x' = x cos + z sin, z' = z cos - x sin`
+  (`RenderModelClip`), models z-flipped at load (`*= -2`). It turns collision boxes the same way
+  (`Game.cpp`). Ours on PC, VR, the 3DS (`from_rotation_y`), the Wii U
+  (`(x, z) -> (z, -x)` for one turn) and `collide::rotated` is the same
+  formula, so this is confirmed, with no change.
+- **Water light** (`Hunt2.cpp`): each map vertex's light is
+  `168 - (int)(24 * sin(-pi/2 + RandomMap / 128 + RealTime / 200))`, with the
+  `/ 128` an integer division (9 phases), and it modulates the water texture. So
+  the water is darker than our flat 1.0 was (about 0.57 to 0.75) and pulses with a period of about 1.26 s, out of
+  step from cell to cell. `c2_core::area::water_light` / `Area::water_phase`. On PC and VR the
+  phase rides in the terrain cells' top byte. The 3DS keeps
+  `127 sin(theta)` and `127 cos(theta)` in the water vertices' light bytes, and the draw's light
+  selector carries `cos t` and `sin t` (the sum of angles), so its static
+  buffers shimmer at no cost per frame. On the Wii U, the water vertices mark their
+  light `-(phase + 1)` and `terrain.vert` works it out with `uZoom.y` (the time,
+  `c2_water_time`). The original's water alpha (by depth and view angle, plus
+  `2 * wdelta`) is not taken: ours keeps the water type's transparency.
+
 ## 2026-11-01 — Wii U: Ice Age and APK games get installs of their own
 
 The launcher named the Wii U install of the base game `carnivores2` /
@@ -2627,8 +2656,8 @@ does it: `BrightenTexture` maps every texel to `(G/8, G, G/8)`, i.e. night
 vision. The sun/moon is drawn additively (the original's black quad corners
 are invisible in-game).
 
-**Known approximations** (to check against the retail game): `sfTransparent`
-faces blend at 50%; object quarter-turn direction is unverified; sun is not
+**Known approximations** (to check against the retail game): (`sfTransparent`
+and object turns: settled 2026-11-01); sun is not
 occluded by terrain (`SkyTraceK` = 1). (`RandomMap`, per-vertex ground light
 and distant sprites: done, 2026-10-23.)
 

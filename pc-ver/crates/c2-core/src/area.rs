@@ -92,6 +92,16 @@ pub struct Area {
     pub random_map: Vec<i32>,
 }
 
+/// A water vertex's light (`Hunt2.cpp`): `168 - (int)(wdelta * 24)` with
+/// `wdelta = sin(-pi/2 + RandomMap / 128 + RealTime / 200)`, `phase` the
+/// integer `RandomMap / 128` ([`Area::water_phase`]). 0..1, the vertex
+/// colour the water texture is modulated by.
+pub fn water_light(phase: u8, real_time_ms: f32) -> f32 {
+    let wdelta =
+        libm::sinf(-core::f32::consts::FRAC_PI_2 + f32::from(phase) + real_time_ms / 200.0);
+    (168.0 - (wdelta * 24.0) as i32 as f32) / 255.0
+}
+
 /// `Resources.cpp`: `RandomMap[y][x] = rand() * 1024 / RAND_MAX`.
 fn random_map() -> Vec<i32> {
     let mut r = crate::rng::MsRand::new(1);
@@ -103,6 +113,17 @@ pub(crate) fn idx(x: usize, y: usize) -> usize {
 }
 
 impl Area {
+    /// The water shimmer's phase at map vertex (x, z): `RandomMap[z & 31][x & 31] / 128`
+    /// (0..8), for [`water_light`].
+    pub fn water_phase(&self, x: usize, z: usize) -> u8 {
+        let r = self
+            .random_map
+            .get((z & 31) * 32 + (x & 31))
+            .copied()
+            .unwrap_or(0);
+        (r / 128).clamp(0, 8) as u8
+    }
+
     pub fn new(mut map: Map, rsc: Rsc, time: TimeOfDay) -> Self {
         let mut landings = Vec::new();
         let mut bad = 0;

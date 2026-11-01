@@ -62,6 +62,7 @@ extern void c2_hunt_finish(void *, void *, uint32_t);
 extern void c2_set_clock(void *, int32_t, int32_t, int32_t, int32_t, int32_t);
 extern uint32_t c2_death_active(void *);
 extern float c2_hunt_zoom(void *);
+extern float c2_water_time(void *);
 extern int32_t c2_actor_atlas(void *, uint8_t *, uint32_t);
 extern uint32_t c2_actor_vertices(void *, float *, float *, uint32_t, uint32_t);
 extern int32_t c2_sound_clip(void *, uint32_t, uint32_t, const uint8_t **, uint32_t *);
@@ -465,6 +466,8 @@ static int32_t load_file(const char *name, uint8_t **data, uint32_t *len) {
 typedef struct { WHBGfxShaderGroup group; GX2UniformVar *eye, *angles, *fog, *zoom; uint32_t sampler; } WorldShader;
 /* The scope's zoom this frame (c2_hunt_zoom), for the world draws only. */
 static float world_zoom = 1.0f;
+/* The water shimmer's time this frame (c2_water_time). */
+static float world_water_t = 0.0f;
 static void world_shader_load(WorldShader *w, const unsigned char *gsh) {
     if (!WHBGfxLoadGFDShaderGroup(&w->group, 0, gsh)
         || !WHBGfxInitShaderAttribute(&w->group, "aPosition", 0, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32)
@@ -482,7 +485,7 @@ static void world_shader_use(const WorldShader *w, const float fog[3], float mod
     GX2SetFetchShader(&w->group.fetchShader); GX2SetVertexShader(w->group.vertexShader); GX2SetPixelShader(w->group.pixelShader);
     const float f[4] = {fog[0], fog[1], fog[2], mode};
     GX2SetVertexUniformReg(w->fog->offset, 4, f);
-    const float z[4] = {mode < 0.0f ? world_zoom : 1.0f, 0.0f, 0.0f, 0.0f};
+    const float z[4] = {mode < 0.0f ? world_zoom : 1.0f, world_water_t, 0.0f, 0.0f};
     GX2SetVertexUniformReg(w->zoom->offset, 4, z);
 }
 static void world_camera(const WorldShader *w, void *sim) {
@@ -1267,6 +1270,7 @@ end_load:
             perf.tiled_atlases = atlas_mode; perf.vsync = vsync; perf.static_cache_enabled = static_cache_enabled;
             int death_active = c2_death_active(sim);
             world_zoom = c2_hunt_zoom(sim);
+            world_water_t = c2_water_time(sim);
             int show_map[2] = {map_view_visible(death_active, 0, gamepad_game, 0),
                               map_view_visible(death_active, 0, gamepad_game, 1)};
             int world_visible = !show_map[0] || !show_map[1];

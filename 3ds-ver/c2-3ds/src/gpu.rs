@@ -465,6 +465,15 @@ impl Gpu {
         self.unif_vec(self.u_lsel, s);
     }
 
+    /// Light `base` plus the vertex's light bytes weighted by `sel` (already
+    /// divided by their scale): the water's shimmer.
+    pub fn set_light_vec(&mut self, base: f32, sel: [f32; 4]) {
+        self.light = [base, 0.0, 0.0, 0.0];
+        self.lsel = sel;
+        self.unif_vec(self.u_light, self.light);
+        self.unif_vec(self.u_lsel, sel);
+    }
+
     /// Linear fog from `start` to `end` (world units from the eye) to
     /// `rgb`. The GPU's own fog table works on depth-buffer values, which
     /// are too non-linear at this view distance, so the shader computes it.

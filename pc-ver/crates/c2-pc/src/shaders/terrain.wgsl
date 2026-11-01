@@ -14,7 +14,7 @@ struct Params {
     _pad: vec2<u32>,
 };
 
-// cells[i].x = height | light << 8 | water << 16
+// cells[i].x = height | light << 8 | water << 16 | water phase << 24
 // cells[i].y = texture1 | flags << 16
 @group(1) @binding(0) var<storage, read> cells: array<vec2<u32>>;
 // waters[i] = (level * 64, texture index, transparency, 0)
@@ -145,7 +145,11 @@ fn vs_water(@builtin(vertex_index) vid: u32) -> VOut {
     var o: VOut;
     o.clip = g.view_proj * vec4<f32>(p, 1.0);
     o.uv = mix(vec2<f32>(TC_MIN), vec2<f32>(TC_MAX), vec2<f32>(d));
-    o.light = 1.0;
+    // Hunt2.cpp: Light = 168 - (int)(wdelta * 24), wdelta = sin(-pi/2 +
+    // RandomMap / 128 + RealTime / 200) per map vertex (c2_core::area::water_light).
+    let phase = f32(cell_at(v.x, v.y).x >> 24u);
+    let wdelta = sin(-1.5707964 + phase + f32(params.time_ms) / 200.0);
+    o.light = (168.0 - trunc(wdelta * 24.0)) / 255.0;
     o.layer = min(u32(wt.y), params.layers - 1u);
     o.dist = distance(p, g.cam_pos.xyz);
     o.alpha = wt.z;

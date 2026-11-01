@@ -461,7 +461,7 @@ impl ResidentTerrain {
             let p = [(x + ox) as f32 * 256.0, level, (z + oz) as f32 * 256.0, 1.0];
             let u = ((tex % 16) as f32 * 128.0 + 0.9465 + ox as f32 * 126.107) / 2048.0;
             let v = ((tex / 16) as f32 * 128.0 + 0.9465 + oz as f32 * 126.107) / 2048.0;
-            let a = [u, v, 1.0, 0.0];
+            let a = [u, v, water_marker(area, x + ox, z + oz), 0.0];
             core::ptr::copy_nonoverlapping(p.as_ptr(), wp.add(n * 4), 4);
             core::ptr::copy_nonoverlapping(a.as_ptr(), wa.add(n * 4), 4);
         }
@@ -515,6 +515,12 @@ fn push_range(out: &mut [DrawRange], n: &mut usize, range: DrawRange) {
         out[*n] = range;
         *n += 1;
     }
+}
+
+/// A water vertex's light slot: `-(phase + 1)`, the shader's mark for the
+/// shimmer (`c2_core::area::water_light`), worked out with the time there.
+pub fn water_marker(area: &c2_core::area::Area, x: i32, z: i32) -> f32 {
+    -(f32::from(area.water_phase(x as usize, z as usize)) + 1.0)
 }
 
 // Water level and atlas texture for a cell whose four corners are all water.
