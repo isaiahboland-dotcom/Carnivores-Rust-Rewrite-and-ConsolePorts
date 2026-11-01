@@ -28,6 +28,7 @@ use crate::hud::{load_tga, Hud, Sprite};
 use crate::hunt_kit::{Buttons, HuntKit};
 use crate::input::Input;
 use crate::keys;
+use crate::menu::kit::{GOLD, LIGHT};
 use crate::scene::Scene;
 use crate::sounds::{get, SoundBank};
 use crate::weapons::{load_weapons, WeaponAssets};
@@ -653,6 +654,41 @@ impl HuntView {
         }
     }
 
+    /// A kill of the first huntable animal (screenshots): its notice, or
+    /// its trophy's plaque in stand 0.
+    pub fn show_kill(&mut self, plaque: bool) {
+        let Some((ctype, s)) = self
+            .hunt
+            .herd
+            .species
+            .iter()
+            .enumerate()
+            .find(|(_, s)| s.info.ai >= 10)
+        else {
+            return;
+        };
+        if !plaque {
+            self.kill = Some((s.info.name.clone(), 25, 84.0, false, 60.0));
+            return;
+        }
+        let (y, mo, d, h, mi) = self.hunt.clock;
+        if let Some(b) = self.hunt.room.bodies.first_mut() {
+            *b = c2_formats::sav::TrophyItem {
+                ctype: ctype as i32,
+                scale: 1.0,
+                weapon: self.hunt.weapons.current as i32,
+                score: 25,
+                time: (h << 10) + mi,
+                date: (y << 20) + (mo << 10) + d,
+                range: 84.0,
+                ..Default::default()
+            };
+            self.hunt.room.bodies[0].set_area(self.hunt.area_no);
+            self.hunt.trophy_time = 60 * 1000;
+            self.hunt.trophy_body = Some(0);
+        }
+    }
+
     /// Opens the map right away (screenshots).
     pub fn open_map(&mut self) {
         let input = HuntInput {
@@ -1059,7 +1095,8 @@ impl HuntView {
         }
     }
 
-    fn plaque_text(&self, slot: usize, x0: f32, y0: f32, scale: f32) -> Vec<Sprite> {
+    /// A trophy's plaque: its lines of label and value.
+    fn plaque_lines(&self, slot: usize) -> Vec<Vec<(&'static str, String)>> {
         let Some(b) = self.hunt.room.bodies.get(slot) else {
             return Vec::new();
         };
@@ -1100,16 +1137,20 @@ impl HuntView {
         let time = format!("{}:{:02}", (time >> 10) & 255, time & 255);
         let lock = if b.locked() { "  (locked)" } else { "" };
         let area = crate::save::area_title(&self.setup.game_dir, b.area());
-        let lines: [&[(&str, String)]; 5] = [
-            &[("Name: ", name + lock)],
-            &[("Weight: ", weight + " "), ("Length: ", len)],
-            &[
+        vec![
+            vec![("Name: ", name + lock)],
+            vec![("Weight: ", weight + " "), ("Length: ", len)],
+            vec![
                 ("Weapon: ", format!("{weapon}    ")),
                 ("Score: ", b.score.to_string()),
             ],
-            &[("Range: ", range + "  "), ("Area: ", area)],
-            &[("Date: ", date + "   "), ("Time: ", time)],
-        ];
+            vec![("Range: ", range + "  "), ("Area: ", area)],
+            vec![("Date: ", date + "   "), ("Time: ", time)],
+        ]
+    }
+
+    fn plaque_text(&self, slot: usize, x0: f32, y0: f32, scale: f32) -> Vec<Sprite> {
+        let lines = self.plaque_lines(slot);
         let (grey, yellow) = ([0.75, 0.75, 0.75, 1.0], [0.75, 0.75, 0.0, 1.0]);
         let px = 8.0 * scale;
         let mut out = Vec::new();
@@ -1487,26 +1528,35 @@ impl Scene for HuntView {
                     "Killed".to_string()
                 },
             ];
-            let px = 8.0 * scale;
-            let w = lines
-                .iter()
-                .map(|l| self.hud.label_width(px, l))
-                .fold(0.0, f32::max)
-                + 16.0 * scale;
-            let h = (lines.len() as f32 * 12.0 + 12.0) * scale;
-            let (x, y) = (
-                screen.0 as f32 - w - 12.0 * scale,
-                screen.1 as f32 - h - 12.0 * scale,
-            );
-            sprites.extend(self.hud.rect(x, y, w, h, [0.0, 0.0, 0.0, 0.7]));
-            for (i, l) in lines.iter().enumerate() {
-                let c = if i == 1 {
-                    [0.95, 0.85, 0.2, 1.0]
-                } else {
-                    [0.9, 0.9, 0.9, 1.0]
-                };
-                let ly = y + (6.0 + 12.0 * i as f32) * scale;
-                sprites.extend(self.hud.label(x + 8.0 * scale, ly, px, c, l));
+            if let Some(k) = &self.kit {
+                let lines: Vec<_> = lines
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, l)| (l, if i == 1 { GOLD } else { LIGHT }))
+                    .collect();
+                k.kill_notice(&self.hud, screen, &lines, &mut sprites);
+            } else {
+                let px = 8.0 * scale;
+                let w = lines
+                    .iter()
+                    .map(|l| self.hud.label_width(px, l))
+                    .fold(0.0, f32::max)
+                    + 16.0 * scale;
+                let h = (lines.len() as f32 * 12.0 + 12.0) * scale;
+                let (x, y) = (
+                    screen.0 as f32 - w - 12.0 * scale,
+                    screen.1 as f32 - h - 12.0 * scale,
+                );
+                sprites.extend(self.hud.rect(x, y, w, h, [0.0, 0.0, 0.0, 0.7]));
+                for (i, l) in lines.iter().enumerate() {
+                    let c = if i == 1 {
+                        [0.95, 0.85, 0.2, 1.0]
+                    } else {
+                        [0.9, 0.9, 0.9, 1.0]
+                    };
+                    let ly = y + (6.0 + 12.0 * i as f32) * scale;
+                    sprites.extend(self.hud.label(x + 8.0 * scale, ly, px, c, l));
+                }
             }
         }
         // A survival: the wave and kills (top left), and its messages.
@@ -1808,6 +1858,15 @@ impl Scene for HuntView {
                 };
                 sprites.push(Sprite::new(id, x, y, scale));
                 sprites.extend(self.plaque_text(slot, x, y, scale));
+            } else if let Some(k) = &self.kit {
+                let lines = self.plaque_lines(slot);
+                k.plaque(
+                    &self.hud,
+                    screen,
+                    self.hunt.opts.trophy,
+                    &lines,
+                    &mut sprites,
+                );
             }
         }
         if let Some(k) = &self.kit {

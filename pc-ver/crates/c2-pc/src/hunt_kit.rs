@@ -25,6 +25,9 @@ pub struct HuntKit {
     call_button: Option<usize>,
     notify: Option<usize>,
     popup: Option<usize>,
+    /// The kill notice's panel (a quarter) and the trophy plaque's.
+    stats: Option<usize>,
+    plaque: Option<usize>,
 }
 
 const BLACK: [f32; 4] = [0.04, 0.04, 0.04, 1.0];
@@ -59,6 +62,8 @@ impl HuntKit {
             call_button: img("game_call"),
             notify: img("notification_bar"),
             popup: img("base_popup_background"),
+            stats: img("game_stats_window"),
+            plaque: img("trophy_info_window"),
             kit,
         })
     }
@@ -233,24 +238,7 @@ impl HuntKit {
         let (w, h) = (sh * 0.7, sh * 0.7 * 176.0 / 280.0);
         let (x, y) = ((sw - w) / 2.0, (sh - h) / 2.0);
         // The picture is the panel's top left quarter.
-        match Self::size(hud, self.popup) {
-            Some((id, _, _)) => {
-                let (hw, hh) = (w / 2.0, h / 2.0);
-                for (dx, dy, uv) in [
-                    (0.0, 0.0, [0.0, 0.0, 1.0, 1.0]),
-                    (hw, 0.0, [1.0, 0.0, 0.0, 1.0]),
-                    (0.0, hh, [0.0, 1.0, 1.0, 0.0]),
-                    (hw, hh, [1.0, 1.0, 0.0, 0.0]),
-                ] {
-                    out.push(Sprite {
-                        uv,
-                        size: Some([hw, hh]),
-                        ..Sprite::new(id, x + dx, y + dy, 1.0)
-                    });
-                }
-            }
-            None => out.extend(hud.rect(x, y, w, h, [0.0, 0.0, 0.0, 0.8])),
-        }
+        Self::quarters(hud, self.popup, (x, y, w, h), [0.0, 0.0, 0.0, 0.8], out);
         if let Some(f) = self.kit.title.as_ref().or(self.kit.body.as_ref()) {
             let px = (sh / 16.0).round();
             let tw = f.width(px, heading);
@@ -267,6 +255,103 @@ impl HuntKit {
             f.sprites(out, o, at, px, GOLD, heading);
         }
         y + h
+    }
+
+    /// A panel whose picture is its top left quarter, mirrored into the
+    /// other three; `fill` without the picture.
+    fn quarters(
+        hud: &Hud,
+        id: Option<usize>,
+        (x, y, w, h): (f32, f32, f32, f32),
+        fill: [f32; 4],
+        out: &mut Vec<Sprite>,
+    ) {
+        let Some((id, _, _)) = Self::size(hud, id) else {
+            out.extend(hud.rect(x, y, w, h, fill));
+            return;
+        };
+        let (hw, hh) = (w / 2.0, h / 2.0);
+        for (dx, dy, uv) in [
+            (0.0, 0.0, [0.0, 0.0, 1.0, 1.0]),
+            (hw, 0.0, [1.0, 0.0, 0.0, 1.0]),
+            (0.0, hh, [0.0, 1.0, 1.0, 0.0]),
+            (hw, hh, [1.0, 1.0, 0.0, 0.0]),
+        ] {
+            out.push(Sprite {
+                uv,
+                size: Some([hw, hh]),
+                ..Sprite::new(id, x + dx, y + dy, 1.0)
+            });
+        }
+    }
+
+    /// The last kill, on the phone's stats panel left of the buttons:
+    /// lines of text, each with its colour.
+    pub fn kill_notice(
+        &self,
+        hud: &Hud,
+        screen: (u32, u32),
+        lines: &[(String, [f32; 4])],
+        out: &mut Vec<Sprite>,
+    ) {
+        let Some(f) = &self.kit.body else { return };
+        let (sw, sh) = (screen.0 as f32, screen.1 as f32);
+        let px = (sh / 30.0).round();
+        let pad = px * 1.2;
+        let tw = lines
+            .iter()
+            .map(|(l, _)| f.width(px, l))
+            .fold(0.0, f32::max);
+        let (w, h) = (tw + pad * 2.0, px * 1.3 * lines.len() as f32 + pad * 1.6);
+        // Clear of the round buttons' column (`buttons`).
+        let button = sh / 9.0;
+        let (x, y) = (sw - button * 1.3 - w - button * 0.3, sh - h - sh / 12.0);
+        Self::quarters(hud, self.stats, (x, y, w, h), [0.0, 0.0, 0.0, 0.7], out);
+        for (i, (l, c)) in lines.iter().enumerate() {
+            let ly = y + pad * 0.8 + px * 1.3 * i as f32;
+            f.sprites(out, (1.0, 0.0, 0.0), (x + pad, ly), px, *c, l);
+        }
+    }
+
+    /// A trophy's record on the phone's plaque, along the bottom (to the
+    /// right in the trophy room): lines of label and value.
+    pub fn plaque(
+        &self,
+        hud: &Hud,
+        screen: (u32, u32),
+        right: bool,
+        lines: &[Vec<(&str, String)>],
+        out: &mut Vec<Sprite>,
+    ) {
+        let (sw, sh) = (screen.0 as f32, screen.1 as f32);
+        let w = (sh * 0.75).min(sw * 0.9);
+        let h = w * 176.0 / 336.0;
+        let m = sh / 40.0;
+        let x = if right { sw - w - m } else { (sw - w) / 2.0 };
+        let y = sh - h - m;
+        match Self::size(hud, self.plaque) {
+            Some((id, _, _)) => out.push(Sprite {
+                size: Some([w, h]),
+                color: [1.0, 1.0, 1.0, 0.8],
+                ..Sprite::new(id, x, y, 1.0)
+            }),
+            None => out.extend(hud.rect(x, y, w, h, [0.0, 0.0, 0.0, 0.8])),
+        }
+        let Some(f) = &self.kit.body else { return };
+        let n = lines.len().max(1) as f32;
+        let step = h * 0.8 / n;
+        let px = (step * 0.7).round();
+        let o = (1.0, 0.0, 0.0);
+        for (i, parts) in lines.iter().enumerate() {
+            let ly = y + h * 0.1 + step * i as f32 + (step - px) / 2.0;
+            let mut lx = x + w * 0.06;
+            for (label, value) in parts {
+                for (t, c) in [(*label, LIGHT), (value.as_str(), GOLD)] {
+                    f.sprites(out, o, (lx, ly), px, c, t);
+                    lx += f.width(px, t);
+                }
+            }
+        }
     }
 }
 
