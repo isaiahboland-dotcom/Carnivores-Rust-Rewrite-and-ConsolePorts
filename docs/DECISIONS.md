@@ -2,6 +2,21 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-01 — Wii U: Ice Age and APK games get installs of their own
+
+The launcher named the Wii U install of the base game `carnivores2` /
+"Carnivores 2" whatever the base was, so an Ice Age or APK game would have
+landed over a Carnivores 2 install. The base now names it
+(`config::base_install`): `carnivores-ice-age` "Carnivores: Ice Age",
+`carnivores-ice-age-mobile` "Carnivores: Ice Age (phone)",
+`carnivores-dinosaur-hunter` "Carnivores: Dinosaur Hunter", else
+`carnivores2`. The add-ons install takes the same name with `-addons` /
+" Add-ons". Nothing changes for Carnivores 2 installs that already exist. The Wii U app needs no
+change: `c2-cook --target wiiu` writes `_RES.TXT` from the layered files,
+so Ice Age's rules reach it already turned into the shared form, as on the 3DS. Checked
+headless: the Ice Age APK cooks to a 199 MiB install (5 areas, the trophy room, survival).
+Not yet checked in Cemu or on the console.
+
 ## 2026-11-01 — Ice Age's APK as a game: its own animals on Ice Age's AIs, the rest from Ice Age donors
 
 A game built from the Ice Age APK had only its 6 animals that aren't in Ice

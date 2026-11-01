@@ -1090,6 +1090,7 @@ impl Launcher {
         let survival = self.cook_extras();
         let addons = self.cfg.enabled_addons();
         let modded = !addons.is_empty() || !self.cfg.overlays.is_empty();
+        let (folder, title) = crate::config::base_install(&base);
         let mut v = Vec::new();
         if w.original {
             let mut a = game(&base);
@@ -1097,7 +1098,7 @@ impl Launcher {
             if !modded {
                 a.extend(self.balance_args());
             }
-            v.push(("carnivores2".to_string(), "Carnivores 2".to_string(), a));
+            v.push((folder.to_string(), title.to_string(), a));
         }
         if let Some(r) = self
             .active_recipe()
@@ -1126,11 +1127,7 @@ impl Launcher {
             }
             a.extend(self.balance_args());
             a.extend(survival.clone());
-            v.push((
-                "carnivores2-addons".to_string(),
-                "Carnivores 2 Add-ons".to_string(),
-                a,
-            ));
+            v.push((format!("{folder}-addons"), format!("{title} Add-ons"), a));
         }
         if w.standalones {
             for s in self.cfg.enabled_standalones() {

@@ -46,6 +46,7 @@ bannertool (*)
 
 # --- Local roadmap / status (owner's working list) ---
 /TODO.md
+/testing-needed.md
 
 # Personal launcher instances (recipes kept out of the repo)
 /recipes/instances/testing/

@@ -533,6 +533,18 @@ pub fn describe_game(dir: &Path) -> Option<&'static str> {
     })
 }
 
+/// The Wii U install of a base game: (folder, title). Ice Age and the
+/// games built from an APK get their own, so they sit beside Carnivores 2
+/// instead of over it.
+pub fn base_install(dir: &Path) -> (&'static str, &'static str) {
+    match (c2_mods::ice_age::is_ice_age_dir(dir), is_phone_game(dir)) {
+        (true, true) => ("carnivores-ice-age-mobile", "Carnivores: Ice Age (phone)"),
+        (true, false) => ("carnivores-ice-age", "Carnivores: Ice Age"),
+        (false, true) => ("carnivores-dinosaur-hunter", "Carnivores: Dinosaur Hunter"),
+        (false, false) => ("carnivores2", "Carnivores 2"),
+    }
+}
+
 /// A folder name for the 3DS install: letters, digits, `-` and `_`.
 pub fn install_name(s: &str) -> String {
     let n: String = s
