@@ -964,12 +964,11 @@ pub fn build(apk: &Path, out: &Path) -> Result<Built, ModError> {
     };
     let chars = mobile_chars::characters(&lib, &balance)?;
     let ice_age = zip.0.files().iter().any(|f| f.ends_with("/libiceAge.so"));
-    // English names; Ice Age's own strings over the shared ones.
+    // English names; Ice Age's own strings over the shared ones (a
+    // Dinosaur Hunter APK carries them too, with Ice Age's areas).
     let mut strings = BTreeMap::new();
-    for f in [
-        "assets/localizations/strings.csv",
-        "assets/localizations/strings_ia.csv",
-    ] {
+    let ia = ice_age.then_some("assets/localizations/strings_ia.csv");
+    for f in std::iter::once("assets/localizations/strings.csv").chain(ia) {
         if let Some(d) = zip.get(f) {
             strings.extend(mobile_chars::strings(&d));
         }
