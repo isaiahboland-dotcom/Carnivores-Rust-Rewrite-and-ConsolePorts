@@ -427,6 +427,8 @@ pub struct Menu {
     choice: Choice,
     /// Options: the action waiting for a key, and the slider being dragged.
     binding: Option<usize>,
+    /// The phone-style options' tab: game, controls, video.
+    opt_tab: usize,
     drag: Option<Opt>,
     /// Hunt to start after the loading picture has been shown.
     launch: Option<HuntSetup>,
@@ -1003,6 +1005,7 @@ impl Menu {
                 ..Default::default()
             },
             binding: None,
+            opt_tab: 0,
             drag: None,
             launch: None,
             shown_loading: false,
@@ -1711,6 +1714,10 @@ impl Menu {
             }
             return;
         }
+        if self.kit.is_some() {
+            self.update_kit_options(input);
+            return;
+        }
         if input.pressed(KeyCode::Escape) || (input.clicked && region == 4) {
             self.store_me();
             self.pc.store();
@@ -2186,6 +2193,10 @@ impl Menu {
 
     fn draw_options(&self, out: &mut Vec<Sprite>, region: u8) {
         self.board(out, &self.options, &[region]);
+        if self.kit.is_some() {
+            self.draw_kit_options(out);
+            return;
+        }
         let Some(s) = self.me() else { return };
         let mut copy = s.clone();
         for (o, r) in self.option_rows() {

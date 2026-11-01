@@ -851,3 +851,356 @@ impl Menu {
         self.kit_line(out, Face::Body, (CW / 2.0, 517.0), 26.0, color, &acc, 0.5);
     }
 }
+
+/// The phone's options list: labels at the left, values centred at the
+/// right, the dotted sliders between brackets; ours in three tabs (the
+/// phone's has 11 rows, ours some 30).
+const OPT_TABS: [&str; 3] = ["GAME", "CONTROLS", "VIDEO"];
+const OPT_LABEL_X: f32 = 76.0;
+const OPT_VALUE_X: f32 = 574.0;
+/// The slider's brackets, outer edges.
+const OPT_SLIDER: (f32, f32) = (433.0, 715.0);
+const OPT_RESET: Rect = (520.0, 505.0, 270.0, 40.0);
+
+/// A row of the phone-style options.
+#[derive(Clone, Copy)]
+enum KitRow {
+    Opt(Opt),
+    /// A key binding (`ACTIONS`).
+    Key(usize),
+}
+
+impl Menu {
+    /// The tab's rows with their rectangles, and the words' size.
+    fn kit_rows(&self) -> (Vec<(KitRow, Rect)>, f32) {
+        let rows: Vec<KitRow> = match self.opt_tab {
+            0 => GAME_OPTS.iter().map(|&o| KitRow::Opt(o)).collect(),
+            1 => MOUSE_OPTS
+                .iter()
+                .map(|&o| KitRow::Opt(o))
+                .chain((0..ACTIONS.len()).map(KitRow::Key))
+                .collect(),
+            _ => VIDEO_OPTS.iter().map(|&o| KitRow::Opt(o)).collect(),
+        };
+        // The phone's spacing; the keys in two columns.
+        let per = if rows.len() <= 11 {
+            11
+        } else {
+            rows.len().div_ceil(2)
+        };
+        let (y0, step) = (60.0, 42.0);
+        let out = rows
+            .into_iter()
+            .enumerate()
+            .map(|(i, r)| {
+                let rect = if per == 11 {
+                    (40.0, y0 + i as f32 * step, 720.0, step)
+                } else {
+                    let (c, k) = ((i / per) as f32, (i % per) as f32);
+                    (30.0 + c * 380.0, y0 + k * step, 360.0, step)
+                };
+                (r, rect)
+            })
+            .collect();
+        (out, 30.0)
+    }
+
+    /// The tab headings' rectangles.
+    fn kit_tabs() -> [Rect; 3] {
+        [0.0, 1.0, 2.0].map(|i| (120.0 + i * 200.0, 6.0, 160.0, 40.0))
+    }
+
+    /// Where a row's value goes (its middle), and its slider's brackets.
+    fn kit_value_at(r: Rect) -> (f32, (f32, f32)) {
+        if r.2 > 500.0 {
+            (OPT_VALUE_X, OPT_SLIDER)
+        } else {
+            (r.0 + 280.0, (r.0 + 180.0, r.0 + r.2))
+        }
+    }
+
+    /// A slider's value (0..255) for canvas `x` on row `r`.
+    fn kit_slider_value(&self, r: Rect) -> Option<i32> {
+        let (x, _) = self.cursor?;
+        let span = Self::kit_value_at(r).1;
+        let (a, b) = (span.0 + 18.0, span.1 - 18.0);
+        Some((((x - a) / (b - a)) * 255.0).clamp(0.0, 255.0) as i32)
+    }
+
+    pub(super) fn update_kit_options(&mut self, input: &Input) {
+        if input.pressed(KeyCode::Escape) || (input.clicked && inside(self.cursor, KIT_BACK)) {
+            self.store_me();
+            self.pc.store();
+            self.screen = Screen::Main;
+            return;
+        }
+        if !input.mouse_down {
+            self.drag = None;
+        }
+        let (rows, _) = self.kit_rows();
+        if input.clicked {
+            if let Some(t) = Self::kit_tabs()
+                .iter()
+                .position(|&r| inside(self.cursor, r))
+            {
+                self.opt_tab = t;
+                self.clear_armed = false;
+                return;
+            }
+            if inside(self.cursor, OPT_RESET) {
+                self.kit_reset(&rows);
+                return;
+            }
+            let on_clear = rows.iter().any(|(o, r)| {
+                matches!(o, KitRow::Opt(Opt::ClearTrophies)) && inside(self.cursor, *r)
+            });
+            if on_clear {
+                if self.clear_armed {
+                    if let Some(s) = self.me_mut() {
+                        c2_core::profile::clear_unlocked(s);
+                    }
+                    self.store_me();
+                }
+                self.clear_armed = !self.clear_armed;
+                return;
+            }
+            self.clear_armed = false;
+            for (o, r) in &rows {
+                if !inside(self.cursor, *r) {
+                    continue;
+                }
+                match *o {
+                    KitRow::Key(i) => self.binding = Some(i),
+                    KitRow::Opt(o @ (Opt::Slider(..) | Opt::PcSlider(..))) => self.drag = Some(o),
+                    KitRow::Opt(Opt::Toggle(_, _, f)) => {
+                        if let Some(s) = self.me_mut() {
+                            let v = f(s);
+                            *v = i32::from(*v == 0);
+                        }
+                    }
+                    KitRow::Opt(Opt::PcToggle(_, f)) => {
+                        let v = f(&mut self.pc);
+                        *v = i32::from(*v == 0);
+                        self.offer_animals();
+                    }
+                    KitRow::Opt(Opt::ClearTrophies) => {}
+                }
+            }
+        }
+        // The dragged slider's row.
+        let name = match self.drag {
+            Some(Opt::PcSlider(n, _) | Opt::Slider(n, _)) => Some(n),
+            _ => None,
+        };
+        let r = rows.iter().find_map(|(o, r)| match o {
+            KitRow::Opt(Opt::PcSlider(n, _) | Opt::Slider(n, _)) if Some(*n) == name => Some(*r),
+            _ => None,
+        });
+        let v = r.and_then(|r| self.kit_slider_value(r));
+        match (self.drag, v) {
+            (Some(Opt::PcSlider(_, f)), Some(v)) => *f(&mut self.pc) = v,
+            (Some(Opt::Slider(_, f)), Some(v)) => {
+                if let Some(s) = self.me_mut() {
+                    *f(s) = v;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The tab's settings back to a new hunter's (keys too).
+    fn kit_reset(&mut self, rows: &[(KitRow, Rect)]) {
+        let mut pc_default = PcSettings::default();
+        if let Some(s) = self.me_mut() {
+            let mut d = s.clone();
+            d.options = c2_core::profile::default_options();
+            for (r, _) in rows {
+                match *r {
+                    KitRow::Opt(Opt::Slider(_, f) | Opt::Toggle(_, _, f)) => *f(s) = *f(&mut d),
+                    KitRow::Key(i) => {
+                        let f = ACTIONS[i].1;
+                        *f(&mut s.options.keys) = *f(&mut d.options.keys);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        for (r, _) in rows {
+            if let KitRow::Opt(Opt::PcSlider(_, f) | Opt::PcToggle(_, f)) = *r {
+                *f(&mut self.pc) = *f(&mut pc_default);
+            }
+        }
+        self.offer_animals();
+    }
+
+    pub(super) fn draw_kit_options(&self, out: &mut Vec<Sprite>) {
+        use super::kit::{PALE, RED, STONE};
+        let Some(s) = self.me() else { return };
+        let mut copy = s.clone();
+        let mut pc = self.pc;
+        let dim = [0.55, 0.55, 0.53, 1.0];
+        for (i, (r, name)) in Self::kit_tabs().iter().zip(OPT_TABS).enumerate() {
+            let on = i == self.opt_tab;
+            let c = if on || inside(self.cursor, *r) {
+                PALE
+            } else {
+                dim
+            };
+            let mid = r.0 + r.2 / 2.0;
+            let w = self.kit_line(out, Face::Body, (mid, r.1 + 6.0), 26.0, c, name, 0.5);
+            if on {
+                self.fill(out, (mid - w / 2.0, r.1 + 34.0, w, 3.0), RED);
+            }
+        }
+        let (rows, px) = self.kit_rows();
+        for (row, r) in rows {
+            let hover = inside(self.cursor, r);
+            let lc = if hover { PALE } else { STONE };
+            let ty = r.1 + (r.3 - px) / 2.0;
+            let (vx, span) = Self::kit_value_at(r);
+            let lx = if r.2 > 500.0 { OPT_LABEL_X } else { r.0 + 10.0 };
+            // Smaller when it would run into its value (a narrow column).
+            let room = span.0 - lx - 10.0;
+            let label = |out: &mut Vec<Sprite>, t: &str| {
+                let t = t.to_uppercase();
+                let w = self
+                    .kit
+                    .as_ref()
+                    .and_then(|k| k.body.as_ref())
+                    .map_or(0.0, |f| f.width(px, &t));
+                let lp = if w > room { px * room / w } else { px };
+                let y = ty + (px - lp) / 2.0;
+                self.kit_line(out, Face::Body, (lx, y), lp, lc, &t, 0.0);
+            };
+            let value = |out: &mut Vec<Sprite>, t: &str, c: [f32; 4]| {
+                self.kit_line(out, Face::Body, (vx, ty), px, c, &t.to_uppercase(), 0.5);
+            };
+            let slider = |out: &mut Vec<Sprite>, v: i32| {
+                let (a, b) = span;
+                self.kit_line(
+                    out,
+                    Face::Body,
+                    (a, ty - px * 0.1),
+                    px * 1.1,
+                    STONE,
+                    "[",
+                    0.0,
+                );
+                self.kit_line(
+                    out,
+                    Face::Body,
+                    (b, ty - px * 0.1),
+                    px * 1.1,
+                    STONE,
+                    "]",
+                    1.0,
+                );
+                let (a, b) = (a + 18.0, b - 18.0);
+                let cy = r.1 + r.3 / 2.0;
+                let d = (px * 0.11).max(2.0);
+                let n = if b - a > 200.0 { 18 } else { 9 };
+                for k in 0..n {
+                    let x = a + (b - a) * k as f32 / (n - 1) as f32;
+                    self.fill(out, (x - d / 2.0, cy - d / 2.0, d, d), STONE);
+                }
+                // The knob: grey in a red frame.
+                let x = a + (b - a) * v.clamp(0, 255) as f32 / 255.0;
+                let (kw, kh) = (px * 0.6, px * 1.15);
+                self.fill(out, (x - kw / 2.0, cy - kh / 2.0, kw, kh), RED);
+                let t = 2.0;
+                self.fill(
+                    out,
+                    (
+                        x - kw / 2.0 + t,
+                        cy - kh / 2.0 + t,
+                        kw - 2.0 * t,
+                        kh - 2.0 * t,
+                    ),
+                    [0.12, 0.12, 0.12, 1.0],
+                );
+                self.fill(
+                    out,
+                    (x - 1.5, cy - kh / 2.0 + t + 1.0, 3.0, kh - 2.0 * t - 2.0),
+                    STONE,
+                );
+            };
+            match row {
+                KitRow::Opt(Opt::Slider(n, f)) => {
+                    label(out, n);
+                    slider(out, *f(&mut copy));
+                }
+                KitRow::Opt(Opt::PcSlider(n, f)) => {
+                    label(out, n);
+                    slider(out, *f(&mut pc));
+                }
+                KitRow::Opt(Opt::Toggle(n, labels, f)) => {
+                    label(out, n);
+                    value(out, labels[usize::from(*f(&mut copy) != 0)], PALE);
+                }
+                KitRow::Opt(Opt::PcToggle(n, f)) => {
+                    label(out, n);
+                    value(out, ["Off", "On"][usize::from(*f(&mut pc) != 0)], PALE);
+                }
+                KitRow::Opt(Opt::ClearTrophies) => {
+                    label(out, "Remove unlocked trophies");
+                    if self.clear_armed {
+                        let n = copy
+                            .bodies
+                            .iter()
+                            .filter(|b| b.ctype != 0 && !b.locked())
+                            .count();
+                        value(out, &format!("Click again: remove {n}"), RED);
+                    }
+                }
+                KitRow::Key(i) => {
+                    let (n, f) = ACTIONS[i];
+                    label(out, n);
+                    if self.binding == Some(i) {
+                        value(out, "Press a key...", RED);
+                    } else {
+                        value(out, &keys::name(*f(&mut copy.options.keys)), PALE);
+                    }
+                }
+            }
+        }
+        // Back, and the tab's defaults.
+        let hover = inside(self.cursor, KIT_BACK);
+        if let Some(id) = self
+            .mobile
+            .as_ref()
+            .and_then(|m| m.kit.as_ref())
+            .and_then(|k| k.plank)
+        {
+            let tint = if hover {
+                [1.3, 1.3, 1.25, 1.0]
+            } else {
+                [1.0; 4]
+            };
+            self.tinted(out, id, KIT_BACK, [0.0, 0.0, 1.0, 1.0], tint);
+        }
+        let r = KIT_BACK;
+        self.kit_line(
+            out,
+            Face::Title,
+            (r.0 + r.2 / 2.0, r.1 + (r.3 - 28.0) / 2.0),
+            28.0,
+            STONE,
+            "BACK",
+            0.5,
+        );
+        let c = if inside(self.cursor, OPT_RESET) {
+            PALE
+        } else {
+            STONE
+        };
+        self.kit_line(
+            out,
+            Face::Body,
+            (KIT_RIGHT, OPT_RESET.1 + 6.0),
+            26.0,
+            c,
+            "[RESET TO DEFAULTS]",
+            1.0,
+        );
+    }
+}

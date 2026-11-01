@@ -2,6 +2,17 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-01 — APK base: the options as the phone's list, in three tabs
+
+From the owner's options screenshots (a game built from the APK, PC): the
+phone's single list (labels at the left, values centred at the right,
+sliders as dots between brackets with a red-framed knob, BACK, "[RESET TO
+DEFAULTS]") on the options picture. Ours has some 30 settings to the
+phone's 11, so they keep the PC's grouping as tabs (GAME, CONTROLS, VIDEO);
+CONTROLS' 20 rows (mouse and keys) in two columns. RESET TO DEFAULTS puts
+back a new hunter's values for the tab shown only (its keys too), saved
+with the rest on BACK. The PC original's options are unchanged.
+
 ## 2026-11-01 — APK base: the hunt screen as the owner's phone screenshots; pick keys tap or hold
 
 From the owner's in-hunt screenshots, for a game built from the APK (PC):

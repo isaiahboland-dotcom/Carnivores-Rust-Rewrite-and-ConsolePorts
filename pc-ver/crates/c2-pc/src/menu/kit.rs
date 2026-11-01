@@ -229,8 +229,6 @@ pub(super) enum Part<'a> {
     Panel(Rect),
     /// A button: its region, rectangle, sprite and word.
     Button(u8, Rect, &'a str, &'a str),
-    /// A clickable area with no art of its own (a panel's header).
-    Region(u8, Rect),
     /// Words (heading size when `true`), placed at `x`, `y`.
     Words(f32, f32, &'a str, bool),
 }
@@ -279,7 +277,6 @@ impl Kit {
                         centred: true,
                     });
                 }
-                Part::Region(id, r) => mark(&mut hit, id, r),
                 Part::Words(x, y, text, title) => labels.push(Label {
                     rect: (x, y, 0.0, 0.0),
                     text: text.to_string(),
@@ -505,25 +502,9 @@ impl Kit {
                 Button(2, (402.0, 494.0, 206.0, 38.0), "button_small_01", "DECLINE"),
             ]),
         );
-        // Options: the phone's options picture, three panels on the PC's
-        // places (the settings are drawn in them), back at the bottom.
-        let options = self.board(
-            hud,
-            gpu,
-            &[
-                Back("menu_options_background"),
-                Panel((40.0, 20.0, 340.0, 254.0)),
-                Region(1, (0.0, 0.0, 384.0, 72.0)),
-                Words(56.0, 30.0, "GAME", true),
-                Panel((424.0, 20.0, 336.0, 524.0)),
-                Region(2, (384.0, 0.0, 416.0, 72.0)),
-                Words(440.0, 30.0, "CONTROLS", true),
-                Panel((40.0, 290.0, 340.0, 254.0)),
-                Region(3, (0.0, 268.0, 384.0, 74.0)),
-                Words(56.0, 300.0, "VIDEO", true),
-                Button(4, (8.0, 552.0, 140.0, 40.0), "button_small_01", "BACK"),
-            ],
-        );
+        // Options: the phone's options picture; its list is drawn over it
+        // (`mobile::draw_kit_options`).
+        let options = self.board(hud, gpu, &[Back("menu_options_background")]);
         let credits = self.board(
             hud,
             gpu,
