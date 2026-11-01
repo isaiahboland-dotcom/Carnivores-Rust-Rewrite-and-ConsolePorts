@@ -49,6 +49,8 @@ pub struct PackInfo {
     /// `AREA1`.. and `TROPHY`, as packed.
     pub areas: Vec<String>,
     pub view: u32,
+    /// Ground at full detail this far (`view` in packs from before it).
+    pub detail: u32,
     pub object_view: u32,
     /// Sample rate of the pack's sounds.
     pub sound_rate: u32,
@@ -85,6 +87,7 @@ impl PackInfo {
                 .map(str::to_string)
                 .collect(),
             view: num("view", 42),
+            detail: num("detail", num("view", 42)),
             object_view: num("object_view", 28),
             sound_rate: num("sound_rate", c2_core::sound::SAMPLE_RATE),
             linear_kb: num("linear_kb", 16 * 1024) as usize,
@@ -135,6 +138,7 @@ impl PackInfo {
             tile: num("terrain_tile", 64),
             cols: num("atlas_cols", 16),
             view: self.view,
+            detail: self.detail.min(self.view),
             object_view: self.object_view,
             terrain_count: num("terrain_count", 1),
         }
@@ -172,10 +176,11 @@ pub struct Setup {
     /// Settings: blood, and the death camera.
     pub blood: bool,
     pub death_anim: bool,
-    /// Hunt options: how far animals notice the hunter (1; "3DS friendly"
-    /// less), stealth crouch (ZL toggles; crouched: gyro aim, half as
-    /// visible and loud), and 4 random ambient species (modded games).
-    pub notice_k: f32,
+    /// Hunt options: "3DS friendly" (animals notice and chase the hunter
+    /// from a shorter range), stealth crouch (ZL toggles; crouched: gyro
+    /// aim, half as visible and loud), and 4 random ambient species
+    /// (modded games).
+    pub friendly: bool,
     pub stealth: bool,
     /// Settings: the map as the mobile game draws it; teleporting by the
     /// map.
@@ -202,6 +207,10 @@ const SNOW_MAX: usize = 300;
 
 /// The most animals in a survival wave on the 3DS.
 pub const SURVIVAL_MAX: usize = 6;
+
+/// The phone's `ctViewR` (`Game::Process`: 19 456 units, fixed): how far
+/// animals notice, chase and give up on the hunter with "3DS friendly" off.
+pub const MOBILE_VIEW_R: i32 = 76;
 
 impl Setup {
     pub fn trophy(&self) -> bool {
@@ -475,9 +484,15 @@ fn new_hunt(
         radar: o.radar != 0,
         opt_agres: o.agres,
         opt_sens: o.sens,
-        // ctViewR at the lowest view-range option (42 cells); 60 in the
-        // trophy room.
-        view_r: if trophy { 60 } else { 42 },
+        // ctViewR: the phone's fixed 76 cells; "3DS friendly", the PC's
+        // lowest view-range option (42 cells); 60 in the trophy room.
+        view_r: if trophy {
+            60
+        } else if setup.friendly {
+            42
+        } else {
+            MOBILE_VIEW_R
+        },
         render_r: 0,
         camo: o.camo != 0,
         scent: o.scent != 0,
@@ -489,7 +504,11 @@ fn new_hunt(
         blood: setup.blood,
         death_anim: setup.death_anim,
         afraid_every: 2,
-        notice_k: setup.notice_k,
+        notice_k: if setup.friendly {
+            crate::settings::FRIENDLY_NOTICE
+        } else {
+            1.0
+        },
         stealth: setup.stealth,
         teleport: setup.teleport,
         distant_ai: false,
@@ -645,6 +664,9 @@ impl Game {
             seed,
             room,
         );
+        // Shots carry and animals out of sight are re-placed past what is
+        // drawn, which can be farther than `view_r`.
+        hunt.opts.render_r = info.view as i32;
         hunt.area_no = c2_formats::mee::area_of(&setup.area).map_or(0, |n| n as i32);
         hunt.clock = clock();
         // Snow of the area's own (the phone's Ice Age areas).

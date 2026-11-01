@@ -2,6 +2,44 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-01 — 3DS: the phone's 76-cell range unless "3DS friendly"; frustum-culled, coarse far ground
+
+**Gameplay range (owner's call).** With "3DS friendly" off (the default),
+a 3DS hunt's `view_r` is the phone's fixed 76 cells (`MOBILE_VIEW_R`, from
+`Game::Process`), so animals notice, chase and give up as on the phone. On,
+it stays as before: 42 cells (the PC's lowest view-range option) and 60%
+noticing, since a far animal on the 400x240 screen is a few pixels to aim
+at. The setup carries `friendly` instead of `notice_k`. The hunt's
+`render_r` is now the pack's drawn `view`, so shots carry and animals out
+of sight are re-placed past what is drawn. The map's view circle and dots
+follow `view_r`, as `DrawHMap` follows `ctViewR`.
+
+**Drawing farther.** The chunk test was a radius plus "not behind the
+camera", which kept over half the disc. Each chunk now has a box (ground and
+water heights, its objects' tops and reach, worked out at load) tested
+against the frustum's four sides, which keeps about a quarter. Past a
+pack's new `detail` radius, chunks are built a quad per 2x2 cells, as the
+original's far ground (`RenderGround` / `ProcessMap2` past `ctViewR1`: the
+cell's texture and direction over the quad, never the reversed diagonal),
+with skirts down to the lowest full-detail corner along each side to cover
+the cracks. A chunk not built yet at its detail is drawn at the other one if
+cached. The phone builds its quadtree on a worker thread; here chunks are
+still built on the main thread, a coarse one costing a quarter of the
+per-frame budget. **Deviation:** `ProcessMap2` uses the far texture layer
+(`TMap2`); the 3DS frees that layer to save memory (`hunt::trim`), so the
+near one is stretched instead.
+
+Cooker profiles: New 3DS `view` 76, `detail` 42; Old 3DS `view` 56,
+`detail` 34 (the full-detail radii are the old view distances, so up close
+nothing changes; the Old 3DS's 56 is a guess until measured). The memory
+estimate for chunk buffers is now the disc the renderer keeps (chunks whose
+middle is within `view` + 16) with coarse chunks at 3/8, not the full
+square. Packs from before have no `detail` and draw exactly as before.
+Copies of the culling run on the PC count ground vertices a frame: 46k at 42
+cells before, ~39k at 76 now looking level, 6k looking down. Not measured:
+sprites (objects past `SPRITE_CELLS` go out to the drawn view, now farther)
+and the frame rate on hardware.
+
 ## 2026-11-01 — APK games' home-menu art; survival waves never give up (the mobile Survive mode)
 
 **Home-menu art for a game built from the player's APK.** Such a game has

@@ -65,6 +65,9 @@ struct Profile {
     model_tex: usize,
     /// View distance in cells.
     view: u32,
+    /// Ground at full detail up to this many cells; past it, a quad per
+    /// 2x2 cells (the original past `ctViewR1`, `renderd3d.cpp`).
+    detail: u32,
     /// Objects are drawn up to this many cells away.
     object_view: u32,
     /// Main memory (heap) the app may use while loading, KiB.
@@ -82,7 +85,10 @@ const N3DS: Profile = Profile {
     name: "n3ds",
     terrain_tile: 64,
     model_tex: 128,
-    view: 42,
+    // The phone's 76 cells (`Game::Process`), drawn by the 3DS's frustum
+    // culled chunks; full detail to the 42 drawn before.
+    view: 76,
+    detail: 42,
     object_view: 28,
     // ~124 MiB for the app: 24 MiB linear (`c2-3ds` sets it), code, slack.
     heap_kb: 96 * 1024,
@@ -96,7 +102,10 @@ const O3DS: Profile = Profile {
     terrain_tile: 32,
     model_tex: 64,
     // The owner's Old 3DS ran 26 / 18 at 60 fps with time to spare.
-    view: 34,
+    // Farther than the 34 drawn before (full detail to there): a guess
+    // until measured on hardware.
+    view: 56,
+    detail: 34,
     object_view: 24,
     // 64 MiB for the app: 24 MiB linear, code, slack.
     heap_kb: 34 * 1024,
@@ -1089,10 +1098,13 @@ fn main() -> Result<()> {
     }
     c.picture("C2RS/FONT.TX", &font(), 128, 64);
     // Framebuffers, depth buffer, command buffer; terrain chunks around the
-    // hunter (6 corners per cell, 24 bytes each).
+    // hunter, those with their middle within the view and a chunk (6
+    // corners per cell, 24 bytes each; past `detail`, a quarter of the cells
+    // and their skirts, 3/8 of the corners in all).
     c.count("screens", 3 << 20);
-    let side = (2 * profile.view + 32) as usize;
-    c.count("vertex buffers", side * side * 6 * 24);
+    let disc = |r: u32| (std::f64::consts::PI * f64::from(r + 16).powi(2)) as usize;
+    let (near, all) = (disc(profile.detail), disc(profile.view.max(profile.detail)));
+    c.count("vertex buffers", (near + (all - near) * 3 / 8) * 6 * 24);
 
     // The menu: pictures of areas, animals, weapons, accessories, and the
     // descriptions (MENU/TXT).
@@ -1289,12 +1301,13 @@ fn main() -> Result<()> {
     // What each piece costs, for the 3DS menu to check a hunt fits:
     // linear memory (`cost.`) and main memory (`heap.`), KiB.
     let mut info = format!(
-        "pack = 4\ntarget = {}\ndialect = {}\nareas = {}\nview = {}\nobject_view = {}\n\
-         sound_rate = {}\nlinear_kb = {}\nheap_kb = {}\n",
+        "pack = 4\ntarget = {}\ndialect = {}\nareas = {}\nview = {}\ndetail = {}\n\
+         object_view = {}\nsound_rate = {}\nlinear_kb = {}\nheap_kb = {}\n",
         profile.name,
         u8::from(rules.dialect),
         areas.join(","),
         profile.view,
+        profile.detail,
         profile.object_view,
         profile.sound_rate,
         profile.linear_kb,

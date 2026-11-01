@@ -159,12 +159,15 @@ More: [docs/MODDING.md](docs/MODDING.md) (mods, recipes, balance files, standalo
 Aiming and moving on a 3DS can feel awkward when a fast predator is on you, so the 3DS version has some
 optional settings to make it easier (Settings on the title screen):
 
-- **3DS friendly**: animals notice you from a shorter distance (60% of the original's). Off by default.
+- **3DS friendly**: animals notice and chase you from a shorter distance (60% of the original's, within
+  42 cells), so a far-off animal isn't a few pixels you have to snipe. Off by default: animals use the
+  phone game's full 76 cells.
 - **Dinosaur run speed**: a slider from 50% to 100% that slows every species by the same amount, so the
   differences between them stay. 100% is the original speed.
 
-With both left at their defaults, the hunt plays as the original does. The one difference from PC is a
-shorter view distance.
+With both left at their defaults, the hunt plays as the original does at the mobile game's view range
+(76 cells). The New 3DS draws all of it; the Old 3DS draws 56 cells, so there an animal can notice you
+from just past the fog.
 
 ## Nintendo 3DS from the command line
 

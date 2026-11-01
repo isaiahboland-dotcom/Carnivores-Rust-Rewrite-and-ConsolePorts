@@ -17,8 +17,9 @@ pub struct Settings {
     pub blood: bool,
     /// The death camera; off: a black screen and the prompt.
     pub death_anim: bool,
-    /// Hunt options: "3DS friendly" (animals notice the hunter from a
-    /// shorter range), stealth crouch, random ambients (modded games).
+    /// Hunt options: "3DS friendly" (animals notice and chase the hunter
+    /// from a shorter range; off, the phone's 76 cells), stealth crouch,
+    /// random ambients (modded games).
     pub friendly: bool,
     pub stealth: bool,
     pub random_ambients: bool,

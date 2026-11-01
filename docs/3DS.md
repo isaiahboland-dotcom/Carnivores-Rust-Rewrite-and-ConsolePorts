@@ -61,8 +61,10 @@ and best wave go in the record.
   more than a handful in view caused lag on Old 3DS). Off: none, and
   they aren't loaded at all (less memory).
 - **3DS friendly** on/off (off by default): every animal, including modded
-  and mobile ones, notices the hunter at 60% of the original distance, for
-  the handheld's slower aiming and turning.
+  and mobile ones, notices the hunter at 60% of the original distance and
+  gives up the chase sooner (the PC's shortest view range, 42 cells), for
+  the handheld's slower aiming and turning. Off: the mobile game's fixed
+  76 cells for noticing, chasing and giving up.
 
 **Play** walks through three touch steps (A = Next, B = Back, START =
 back to the title); the top screen sums up the picks, the points left and
@@ -160,7 +162,11 @@ quit
   the target profile, so the 3DS uploads them as they are.
 - Terrain is meshed on the 3DS in 16x16-cell chunks around the hunter (same
   triangulation and texture rotation as `terrain.wgsl`), built as they come
-  into view and dropped two seconds after leaving it.
+  into view and dropped two seconds after leaving it. A chunk is drawn when
+  its box (ground, water and the tops of its objects) is inside the view's
+  frustum. Out to the pack's `view` (New 3DS 76 cells, Old 3DS 56); past
+  `detail` (42 / 34) a quad covers 2x2 cells, as the original's far ground,
+  with skirts hiding the cracks against full-detail chunks.
 - One vertex shader (`c2-3ds/shaders/world.v.pica`) for the world; light is
   per vertex (light map for terrain, `CalcLights` for objects). Fog is worked
   out in the shader from distance to the eye and blended in by the last

@@ -739,7 +739,7 @@ impl Menu {
             dino_run_k: 1.0,
             blood: true,
             death_anim: true,
-            notice_k: 1.0,
+            friendly: false,
             stealth: false,
             map_mobile: self.settings.map_mobile,
             teleport: false,
@@ -777,11 +777,7 @@ impl Menu {
             dino_run_k: self.settings.run_pct as f32 / 100.0,
             blood: self.settings.blood,
             death_anim: self.settings.death_anim,
-            notice_k: if self.settings.friendly {
-                crate::settings::FRIENDLY_NOTICE
-            } else {
-                1.0
-            },
+            friendly: self.settings.friendly,
             stealth: self.settings.stealth,
             map_mobile: self.settings.map_mobile,
             teleport: self.settings.teleport,
@@ -1379,7 +1375,7 @@ impl Menu {
                     self.focus = Some(if s.friendly {
                         "Animals notice you from closer".into()
                     } else {
-                        "Animals notice you as on PC".into()
+                        "Animals see you from the full 76 cells".into()
                     });
                 } else if inside(O_STEALTH, x, y) {
                     s.stealth = !s.stealth;
@@ -2084,7 +2080,8 @@ impl Menu {
             ("  original's game options (tap the bars)", WHITE),
             ("Hunt options (before each hunt)", TEXT),
             ("  Run speed, ambient animals, 3DS friendly", WHITE),
-            ("  (noticed from closer), stealth crouch", WHITE),
+            ("  (seen from closer; off: 76 cells, as the", WHITE),
+            ("  phone), stealth crouch", WHITE),
             ("  (crouch toggles, gyro aim, half as seen).", WHITE),
             ("", WHITE),
             ("Crouch: ZL (New 3DS); Hold L (tap L jumps);", TEXT),

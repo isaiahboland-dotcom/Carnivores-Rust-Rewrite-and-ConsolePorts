@@ -25,6 +25,11 @@ use crate::gpu::{Blend, FlatVertex, Gpu, LinearBuf, Lit, Texture, Vertex, TOP_H,
 
 const CHUNK: usize = 16;
 const CHUNKS: usize = MAP_SIZE / CHUNK;
+/// Ground past `DrawInfo::detail`: a quad per `FAR_STEP` x `FAR_STEP`
+/// cells (`RenderGround`: `ProcessMap2` past `ctViewR1`).
+const FAR_STEP: usize = 2;
+/// A chunk to draw: its column and row, and its cells per quad.
+type ChunkKey = (usize, usize, usize);
 /// `Characters`: model light (`RenderCharacter`, 210).
 const CHAR_LIGHT: f32 = 210.0 / 255.0;
 /// The cloud plane: quads per side, half its size, height above the eye
@@ -45,6 +50,8 @@ pub struct DrawInfo {
     pub tile: usize,
     pub cols: usize,
     pub view: u32,
+    /// Ground at full detail up to this many cells (`view` in older packs).
+    pub detail: u32,
     pub object_view: u32,
     /// Terrain textures in the atlas (the pack's RSC no longer has them).
     pub terrain_count: usize,
@@ -192,12 +199,68 @@ struct Chunk {
     used: u32,
 }
 
+/// A chunk's extent, for culling: its lowest and highest point (ground,
+/// water, the tops of its objects) and how far its objects reach past its
+/// sides.
+#[derive(Debug, Clone, Copy)]
+struct Bounds {
+    lo: f32,
+    hi: f32,
+    out: f32,
+}
+
+/// The sides of the view, for culling chunks: inward normals of the left,
+/// right, bottom and top planes through the eye.
+struct Frustum {
+    eye: Vec3,
+    sides: [Vec3; 4],
+}
+
+impl Frustum {
+    fn new(eye: Vec3, fwd: Vec3, fovy: f32) -> Self {
+        let fwd = fwd.normalize_or(Vec3::Z);
+        let right = fwd.cross(Vec3::Y).normalize_or(Vec3::X);
+        let up = right.cross(fwd);
+        // A little wider than the screen, so nothing at its edges pops.
+        let tv = (fovy / 2.0).tan() * 1.15;
+        let th = tv * TOP_W as f32 / TOP_H as f32;
+        Self {
+            eye,
+            sides: [
+                fwd * th + right,
+                fwd * th - right,
+                fwd * tv + up,
+                fwd * tv - up,
+            ],
+        }
+    }
+
+    /// Whether any of the box `lo..hi` is inside every side.
+    fn sees(&self, lo: Vec3, hi: Vec3) -> bool {
+        self.sides.iter().all(|n| {
+            let c = Vec3::select(n.cmpge(Vec3::ZERO), hi, lo);
+            n.dot(c - self.eye) >= 0.0
+        })
+    }
+}
+
+/// The chunk to draw for `k`: as asked, or at the other detail while that
+/// one is still to be built.
+fn drawn(chunks: &HashMap<ChunkKey, Chunk>, k: ChunkKey) -> ChunkKey {
+    if chunks.contains_key(&k) {
+        k
+    } else {
+        (k.0, k.1, if k.2 == 1 { FAR_STEP } else { 1 })
+    }
+}
+
 pub struct World {
     pub info: DrawInfo,
     terrain: Option<Texture>,
     atlas_size: (usize, usize),
     terrain_count: usize,
-    chunks: HashMap<(usize, usize), Chunk>,
+    chunks: HashMap<ChunkKey, Chunk>,
+    bounds: Vec<Bounds>,
     objects: Vec<Option<Model>>,
     /// Animated RSC objects: their prepared model and lights, by index.
     object_anims: Vec<Option<(PreparedModel, Vec<[f32; 4]>)>>,
@@ -241,6 +304,38 @@ fn rotate_uv(d: [f32; 2], dir: u16) -> [f32; 2] {
     }
 }
 
+/// The extent of chunk `(cx, cy)` with `objects` on it, given each object
+/// model's top and reach (`extents`).
+fn chunk_bounds<'a>(
+    area: &Area,
+    cx: usize,
+    cy: usize,
+    objects: impl Iterator<Item = &'a Placement>,
+    extents: &[(f32, f32)],
+) -> Bounds {
+    let m = &area.map;
+    let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+    for y in cy * CHUNK..=((cy + 1) * CHUNK).min(MAP_SIZE - 1) {
+        for x in cx * CHUNK..=((cx + 1) * CHUNK).min(MAP_SIZE - 1) {
+            let i = y * MAP_SIZE + x;
+            let h = f32::from(m.height[i]) * H_SCALE;
+            (lo, hi) = (lo.min(h), hi.max(h));
+            if let Some(w) = area.rsc.waters.get(usize::from(m.water[i])) {
+                let l = w.level as f32 * H_SCALE;
+                (lo, hi) = (lo.min(l), hi.max(l));
+            }
+        }
+    }
+    let mut out = 0.0f32;
+    for p in objects {
+        if let Some(&(top, reach)) = extents.get(usize::from(p.model)) {
+            hi = hi.max(p.pos[1] + top);
+            out = out.max(reach);
+        }
+    }
+    Bounds { lo, hi, out }
+}
+
 const NORMAL: [[usize; 2]; 6] = [[0, 0], [1, 0], [1, 1], [0, 0], [1, 1], [0, 1]];
 const REVERSE: [[usize; 2]; 6] = [[0, 0], [1, 0], [0, 1], [0, 1], [1, 0], [1, 1]];
 
@@ -262,6 +357,8 @@ impl World {
         let terrain = terrain.and_then(|t| Texture::new(&t));
         let sun = area.time.sun_pos();
         let mut object_anims = Vec::new();
+        // Each object's top and its reach from its origin, for culling.
+        let mut extents = Vec::new();
         let objects = area
             .rsc
             .objects
@@ -277,6 +374,9 @@ impl World {
                     vertex_lights(&o.model.mesh, sun)
                 };
                 let m = Model::new(&p, &vl, load_texture(vfs, &format!("{dir}/OBJ{k}.TX")));
+                extents.push(p.positions.iter().fold((0.0f32, 0.0f32), |(h, r), v| {
+                    (h.max(v[1]), r.max(v[0].hypot(v[2])))
+                }));
                 object_anims.push(o.animation.is_some().then_some((p, vl)));
                 m
             })
@@ -321,6 +421,12 @@ impl World {
             let sl = area.sprite_light(&p);
             placements[c].push((p, l, sl));
         }
+        let bounds = (0..CHUNKS * CHUNKS)
+            .map(|c| {
+                let objects = placements[c].iter().map(|(p, ..)| p);
+                chunk_bounds(area, c % CHUNKS, c / CHUNKS, objects, &extents)
+            })
+            .collect();
         let posed = |cars: &[Option<Car>], tex: &dyn Fn(usize) -> String| -> Vec<Option<Posed>> {
             cars.iter()
                 .enumerate()
@@ -350,6 +456,7 @@ impl World {
             atlas_size,
             terrain_count,
             chunks: HashMap::new(),
+            bounds,
             objects,
             object_anims,
             sky_tex,
@@ -400,52 +507,103 @@ impl World {
         [u, v]
     }
 
-    fn build_chunk(&self, area: &Area, cx: usize, cy: usize) -> Chunk {
+    /// Chunk `(cx, cy)`: its ground, a quad per `step` x `step` cells, and
+    /// its water. Coarse ones (`ProcessMap2`: no reversed diagonals, the
+    /// cell's texture over the quad) hang a skirt from their sides, over the
+    /// cracks where they meet full-detail ground.
+    fn build_chunk(&self, area: &Area, (cx, cy, step): ChunkKey) -> Chunk {
         let m = &area.map;
         let light = area.light_map();
-        let mut ground = Vec::with_capacity(CHUNK * CHUNK * 6);
+        let last = MAP_SIZE - 1;
+        let n = CHUNK / step;
+        let skirts = if step > 1 { 4 * n * 6 } else { 0 };
+        let mut ground = Vec::with_capacity(n * n * 6 + skirts);
         let mut water: Vec<(usize, [Vertex; 6])> = Vec::new();
         // (The RSC's texels are freed after loading; the count is kept.)
         let ntex = self.terrain_count.max(1);
-        for y in cy * CHUNK..((cy + 1) * CHUNK).min(MAP_SIZE - 1) {
-            for x in cx * CHUNK..((cx + 1) * CHUNK).min(MAP_SIZE - 1) {
+        let height = |vx: usize, vy: usize| f32::from(m.height[vy * MAP_SIZE + vx]) * H_SCALE;
+        let vertex = |vx: usize, vy: usize, h: f32, tex: usize, uv: [f32; 2]| Vertex {
+            pos: [vx as f32 * CELL, h, vy as f32 * CELL],
+            uv: self.atlas_uv(tex, uv),
+            lit: [light[vy * MAP_SIZE + vx], 0, 0, 0],
+        };
+        let (x0, y0) = (cx * CHUNK, cy * CHUNK);
+        let (x1, y1) = (((cx + 1) * CHUNK).min(last), ((cy + 1) * CHUNK).min(last));
+        for y in (y0..y1).step_by(step) {
+            for x in (x0..x1).step_by(step) {
                 let i = y * MAP_SIZE + x;
                 let flags = m.flags[i];
                 let tex = usize::from(m.texture1[i]).min(ntex - 1);
-                let order = if flags & cell_flags::REVERSE != 0 {
+                let order = if step == 1 && flags & cell_flags::REVERSE != 0 {
                     &REVERSE
                 } else {
                     &NORMAL
                 };
+                let corner =
+                    |d: [usize; 2]| ((x + d[0] * step).min(last), (y + d[1] * step).min(last));
                 for d in order {
-                    let (vx, vy) = (x + d[0], y + d[1]);
-                    let vi = vy * MAP_SIZE + vx;
+                    let (vx, vy) = corner(*d);
                     let uv =
                         rotate_uv([d[0] as f32, d[1] as f32], flags & cell_flags::TEX_DIR_MASK);
-                    ground.push(Vertex {
-                        pos: [
-                            vx as f32 * CELL,
-                            f32::from(m.height[vi]) * H_SCALE,
-                            vy as f32 * CELL,
-                        ],
-                        uv: self.atlas_uv(tex, uv),
-                        lit: [light[vi], 0, 0, 0],
-                    });
+                    ground.push(vertex(vx, vy, height(vx, vy), tex, uv));
                 }
                 // ProcessMapW: all four corners must be water.
                 let w = m.water[i];
-                let wet = |dx: usize, dy: usize| m.water[(y + dy) * MAP_SIZE + x + dx] != NO_WATER;
-                if w != NO_WATER && wet(1, 0) && wet(0, 1) && wet(1, 1) {
+                let wet = |d: [usize; 2]| {
+                    let (vx, vy) = corner(d);
+                    m.water[vy * MAP_SIZE + vx] != NO_WATER
+                };
+                if w != NO_WATER && wet([1, 0]) && wet([0, 1]) && wet([1, 1]) {
                     if let Some(wt) = area.rsc.waters.get(usize::from(w)) {
                         let level = wt.level as f32 * H_SCALE;
                         let tex = (wt.texture_index.max(0) as usize).min(ntex - 1);
-                        let quad = NORMAL.map(|d| Vertex {
-                            pos: [(x + d[0]) as f32 * CELL, level, (y + d[1]) as f32 * CELL],
-                            uv: self.atlas_uv(tex, [d[0] as f32, d[1] as f32]),
-                            lit: [255, 0, 0, 0],
+                        let quad = NORMAL.map(|d| {
+                            let (vx, vy) = corner(d);
+                            Vertex {
+                                pos: [vx as f32 * CELL, level, vy as f32 * CELL],
+                                uv: self.atlas_uv(tex, [d[0] as f32, d[1] as f32]),
+                                lit: [255, 0, 0, 0],
+                            }
                         });
                         water.push((usize::from(w), quad));
                     }
+                }
+            }
+        }
+        if step > 1 {
+            // Each side from its start, down to the lowest corner the
+            // full-detail ground has along it.
+            let sides = [
+                ((x0, y0), (1, 0), x1 - x0),
+                ((x0, y1), (1, 0), x1 - x0),
+                ((x0, y0), (0, 1), y1 - y0),
+                ((x1, y0), (0, 1), y1 - y0),
+            ];
+            for ((sx, sy), (dx, dy), len) in sides {
+                for k in (0..len).step_by(step) {
+                    let at = |j: usize| {
+                        let j = (k + j).min(len);
+                        (sx + dx * j, sy + dy * j)
+                    };
+                    let (a, b) = (at(0), at(step));
+                    let low = (0..=step)
+                        .map(|j| {
+                            let v = at(j);
+                            height(v.0, v.1)
+                        })
+                        .fold(f32::MAX, f32::min)
+                        - 8.0;
+                    let t = (a.1.min(last - 1)) * MAP_SIZE + a.0.min(last - 1);
+                    let tex = usize::from(m.texture1[t]).min(ntex - 1);
+                    let (ta, tb) = (
+                        vertex(a.0, a.1, height(a.0, a.1), tex, [0.0, 0.0]),
+                        vertex(b.0, b.1, height(b.0, b.1), tex, [1.0, 0.0]),
+                    );
+                    let (ba, bb) = (
+                        vertex(a.0, a.1, low, tex, [0.0, 1.0]),
+                        vertex(b.0, b.1, low, tex, [1.0, 1.0]),
+                    );
+                    ground.extend_from_slice(&[ta, tb, bb, ta, bb, ba]);
                 }
             }
         }
@@ -471,28 +629,41 @@ impl World {
         }
     }
 
-    /// Chunks within `radius` cells of `eye` and in front of the camera.
-    fn visible_chunks(&self, eye: Vec3, fwd: Vec3, radius: f32) -> Vec<(usize, usize)> {
-        let r = radius + CHUNK as f32;
+    /// Chunks within the view distance of `eye` and inside the view
+    /// (vertical FOV `fovy`), coarse past `detail` cells (a quadtree's
+    /// leaves culled against the frustum, as the mobile game's
+    /// `Terrain::CalculateQuadTree`).
+    fn visible_chunks(&self, eye: Vec3, fwd: Vec3, fovy: f32) -> Vec<ChunkKey> {
+        let r = self.info.view as f32 + CHUNK as f32;
+        let detail = self.info.detail as f32;
+        let coarse = self.info.detail < self.info.view;
+        let frustum = Frustum::new(eye, fwd, fovy);
         let (ex, ez) = (eye.x / CELL, eye.z / CELL);
         let lo = |e: f32| ((e - r).max(0.0) as usize) / CHUNK;
         let hi = |e: f32| (((e + r).max(0.0) as usize) / CHUNK).min(CHUNKS - 1);
-        let f2 = glam::Vec2::new(fwd.x, fwd.z).normalize_or_zero();
         let mut out = Vec::new();
         for cy in lo(ez)..=hi(ez) {
             for cx in lo(ex)..=hi(ex) {
-                let c = glam::Vec2::new(
-                    (cx * CHUNK) as f32 + CHUNK as f32 / 2.0 - ex,
-                    (cy * CHUNK) as f32 + CHUNK as f32 / 2.0 - ez,
-                );
+                let (x0, z0) = ((cx * CHUNK) as f32, (cy * CHUNK) as f32);
+                let (x1, z1) = (x0 + CHUNK as f32, z0 + CHUNK as f32);
+                let c = glam::Vec2::new((x0 + x1) / 2.0 - ex, (z0 + z1) / 2.0 - ez);
                 if c.length() > r {
                     continue;
                 }
-                // Behind the camera by more than a chunk's half-diagonal.
-                if c.dot(f2) < -(CHUNK as f32) * 0.75 {
+                let b = self.bounds[cy * CHUNKS + cx];
+                let min = Vec3::new(x0 * CELL - b.out, b.lo, z0 * CELL - b.out);
+                let max = Vec3::new(x1 * CELL + b.out, b.hi, z1 * CELL + b.out);
+                if !frustum.sees(min, max) {
                     continue;
                 }
-                out.push((cx, cy));
+                // The chunk's nearest point to the eye.
+                let near = glam::Vec2::new(ex.clamp(x0, x1) - ex, ez.clamp(z0, z1) - ez);
+                let step = if coarse && near.length() > detail {
+                    FAR_STEP
+                } else {
+                    1
+                };
+                out.push((cx, cy, step));
             }
         }
         out
@@ -522,14 +693,17 @@ impl World {
         gpu.set_fog(self.sky, radius * CELL * 0.6, radius * CELL);
         gpu.texenv(None);
 
-        // Terrain: build missing chunks (a few per frame once running).
-        let vis = self.visible_chunks(eye, fwd, radius);
-        let mut built = 0;
+        // Terrain: build missing chunks (a few per frame once running; a
+        // coarse one costs a quarter of a full-detail one).
+        let vis = self.visible_chunks(eye, fwd, fovy);
+        let first = self.chunks.is_empty();
+        let mut budget = 24;
         for &k in &vis {
-            if !self.chunks.contains_key(&k) && (built < 6 || self.chunks.is_empty()) {
-                let c = self.build_chunk(area, k.0, k.1);
+            let cost = (4 / (k.2 * k.2)).max(1);
+            if !self.chunks.contains_key(&k) && (first || budget >= cost) {
+                let c = self.build_chunk(area, k);
                 self.chunks.insert(k, c);
-                built += 1;
+                budget = budget.saturating_sub(cost);
             }
         }
         let frame = self.frame;
@@ -538,8 +712,8 @@ impl World {
         gpu.set_light(0.0, Some(0));
         if let Some(t) = &self.terrain {
             t.bind();
-            for k in &vis {
-                if let Some(c) = self.chunks.get_mut(k) {
+            for &k in &vis {
+                if let Some(c) = self.chunks.get_mut(&drawn(&self.chunks, k)) {
                     c.used = frame;
                     if let Some(g) = &c.ground {
                         gpu.draw(g, Lit::Unsigned, 0, g.len());
@@ -615,8 +789,8 @@ impl World {
         gpu.depth(false, false);
         if let Some(t) = &self.terrain {
             t.bind();
-            for k in &vis {
-                let Some(c) = self.chunks.get(k) else {
+            for &k in &vis {
+                let Some(c) = self.chunks.get(&drawn(&self.chunks, k)) else {
                     continue;
                 };
                 let Some(w) = &c.water else { continue };
