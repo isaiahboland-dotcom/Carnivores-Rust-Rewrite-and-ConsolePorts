@@ -103,6 +103,75 @@ impl Balance {
         Self::from_toml(&text)
     }
 
+    /// The phone game's values (`self`: an APK import's
+    /// `mobile-values.toml`) for the parts of its rules taken (a recipe's
+    /// `[settings.tuning]`, owner 2026-11-01): `shotgun`, every value of
+    /// the weapons named like a shotgun; `scoring`, kill scores, every
+    /// price and the starting points; `animals`, the animals' health.
+    pub fn phone_tuning(&self, shotgun: bool, scoring: bool, animals: bool) -> Balance {
+        let keep = |l: &[Item], f: &dyn Fn(&Item) -> Item| -> Vec<Item> {
+            l.iter().map(f).filter(Item::changes).collect()
+        };
+        let named = |i: &Item| Item {
+            name: i.name.clone(),
+            ..Default::default()
+        };
+        Balance {
+            start: self.start.filter(|_| scoring),
+            areas: keep(&self.areas, &|i| Item {
+                price: i.price.filter(|_| scoring),
+                ..named(i)
+            }),
+            animals: keep(&self.animals, &|i| Item {
+                price: i.price.filter(|_| scoring),
+                score: i.score.filter(|_| scoring),
+                health: i.health.filter(|_| animals),
+                ..named(i)
+            }),
+            weapons: keep(&self.weapons, &|i| {
+                if shotgun && i.name.to_ascii_lowercase().contains("shotgun") {
+                    i.clone()
+                } else {
+                    Item {
+                        price: i.price.filter(|_| scoring),
+                        ..named(i)
+                    }
+                }
+            }),
+        }
+    }
+
+    /// `self` with `top`'s values over it, field by field (an entry by its
+    /// name).
+    pub fn with(&self, top: &Balance) -> Balance {
+        fn merge(under: &[Item], over: &[Item]) -> Vec<Item> {
+            let mut out: Vec<Item> = under.to_vec();
+            for t in over {
+                match out.iter_mut().find(|u| u.name == t.name) {
+                    Some(u) => {
+                        let mut t2 = t.clone();
+                        u.price = t.price.or(u.price);
+                        u.score = t.score.or(u.score);
+                        for (f, _, _) in &STATS {
+                            let v = *f(&mut t2);
+                            if v.is_some() {
+                                *f(u) = v;
+                            }
+                        }
+                    }
+                    None => out.push(t.clone()),
+                }
+            }
+            out
+        }
+        Balance {
+            start: top.start.or(self.start),
+            areas: merge(&self.areas, &top.areas),
+            animals: merge(&self.animals, &top.animals),
+            weapons: merge(&self.weapons, &top.weapons),
+        }
+    }
+
     /// Whether it changes nothing.
     pub fn is_empty(&self) -> bool {
         self.start.is_none()
@@ -615,6 +684,54 @@ pub fn apply(vfs: &Vfs, b: &Balance) -> Result<MemBackend, ModError> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn phone_tuning_takes_only_its_parts_and_edits_win() {
+        let item = |name: &str, price, score, health, power| Item {
+            name: name.into(),
+            price,
+            score,
+            health,
+            power,
+            ..Default::default()
+        };
+        let phone = Balance {
+            start: Some(50),
+            areas: vec![item("Area", Some(40), None, None, None)],
+            animals: vec![item("Allo", Some(20), Some(4.0), Some(9.0), None)],
+            weapons: vec![
+                item("Shotgun", Some(40), None, None, Some(1.5)),
+                item("Rifle", Some(250), None, None, Some(4.0)),
+            ],
+        };
+        let shot = phone.phone_tuning(true, false, false);
+        assert_eq!(shot.start, None);
+        assert!(shot.areas.is_empty() && shot.animals.is_empty());
+        assert_eq!(shot.weapons, vec![phone.weapons[0].clone()]);
+        let beasts = phone.phone_tuning(false, false, true);
+        assert_eq!(
+            beasts.animals,
+            vec![item("Allo", None, None, Some(9.0), None)]
+        );
+        let score = phone.phone_tuning(false, true, false);
+        assert_eq!(score.start, Some(50));
+        assert_eq!(
+            score.animals,
+            vec![item("Allo", Some(20), Some(4.0), None, None)]
+        );
+        assert_eq!(score.weapons[1], item("Rifle", Some(250), None, None, None));
+        // The player's own edits over the phone's.
+        let mine = Balance {
+            animals: vec![item("Allo", None, Some(7.0), None, None)],
+            ..Default::default()
+        };
+        let both = score.with(&mine);
+        assert_eq!(
+            both.animals,
+            vec![item("Allo", Some(20), Some(7.0), None, None)]
+        );
+        assert!(phone.phone_tuning(false, false, false).is_empty());
+    }
+
     use super::*;
     use c2_vfs::Backend;
 

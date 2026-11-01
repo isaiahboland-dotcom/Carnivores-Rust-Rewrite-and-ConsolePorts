@@ -3,7 +3,9 @@
 //! trophy room) with the trophy's record, messages ("Trophy!", survival
 //! waves), a survival's wave and kills, the questions waiting for A / B,
 //! the original's map over the view (`DrawHMap`, R), the button hints and
-//! the scope's cross-hairs (`DrawOpticCross`).
+//! the scope's cross-hairs (`DrawOpticCross`), or the phone's scope mask
+//! when the install has it (`HUNTDAT/MOBILE/SCOPE.RGBA`, c2-cook's
+//! `--phone-pictures scope`).
 //! Drawn into regions of one small texture, each only when its text
 //! changes; C shows the visible ones as quads over the TV and GamePad view.
 use crate::menu::{Menu, PIC_MAP_FRAME, PIC_PLAQUE_HUNT, PIC_PLAQUE_ROOM};
@@ -18,20 +20,35 @@ pub const TEX_H: usize = 1024;
 const SCALE: f32 = 1.5;
 /// Quads C may be asked to draw (`REGIONS`), 6 vertices of 4 floats each for
 /// positions and as many for texture coordinates.
-pub const MAX_QUADS: usize = 9;
+pub const MAX_QUADS: usize = 13;
 pub const QUAD_FLOATS: usize = 24;
 
-const PLAQUE: usize = 0;
-const KILL: usize = 1;
-const MESSAGE: usize = 2;
-const PROMPT: usize = 3;
-const STATUS: usize = 4;
-const MAP: usize = 5;
-const HINTS: usize = 6;
-const CROSS_H: usize = 7;
-const CROSS_V: usize = 8;
+// The scope mask first, under everything else.
+const SCOPE_L: usize = 0;
+const SCOPE_R: usize = 1;
+const SIDE_L: usize = 2;
+const SIDE_R: usize = 3;
+const PLAQUE: usize = 4;
+const KILL: usize = 5;
+const MESSAGE: usize = 6;
+const PROMPT: usize = 7;
+const STATUS: usize = 8;
+const MAP: usize = 9;
+const HINTS: usize = 10;
+const CROSS_H: usize = 11;
+const CROSS_V: usize = 12;
+/// The scope mask's file: `C2SC`, width and height (u16 LE), RGBA8 rows;
+/// the mask's left half, 180x240 (`c2_mods::mobile::SCOPE`).
+pub const SCOPE_FILE: &str = "HUNTDAT/MOBILE/SCOPE.RGBA";
+const SCOPE_TEX: (usize, usize) = (180, 240);
 /// Each region's place in the texture (logical units at `SCALE`).
 const REGIONS: [Rect; MAX_QUADS] = [
+    // The scope's half mask at one texel a pixel (both halves read it),
+    // right of the map frame; a black patch each for the sides.
+    rect(200.0, 360.0, SCOPE_TEX.0 as f32 / SCALE, SCOPE_TEX.1 as f32 / SCALE),
+    rect(200.0, 360.0, SCOPE_TEX.0 as f32 / SCALE, SCOPE_TEX.1 as f32 / SCALE),
+    rect(24.0, 610.0, 8.0, 8.0),
+    rect(36.0, 610.0, 8.0, 8.0),
     rect(0.0, 0.0, 280.0, 142.0),
     rect(290.0, 0.0, 392.0, 142.0),
     rect(0.0, 148.0, 682.0, 64.0),
@@ -104,6 +121,20 @@ pub struct Overlay {
     shown: [Option<String>; MAX_QUADS],
     /// The frame with the area's overview painted in, made once.
     map_base: Option<Vec<Rgba>>,
+    /// The scope mask's pixels, read once.
+    scope: Option<Vec<Rgba>>,
+}
+
+/// The scope mask from the install, at [`SCOPE_TEX`].
+fn scope_pixels(menu: &Menu) -> Option<Vec<Rgba>> {
+    let d = menu.install.as_ref()?.vfs.read(SCOPE_FILE).ok()?;
+    let head = d.get(..8)?;
+    let w = usize::from(u16::from_le_bytes([head[4], head[5]]));
+    let h = usize::from(u16::from_le_bytes([head[6], head[7]]));
+    if &head[..4] != b"C2SC" || (w, h) != SCOPE_TEX {
+        return None;
+    }
+    Some(d.get(8..8 + w * h * 4)?.chunks_exact(4).map(|p| [p[0], p[1], p[2], p[3]]).collect())
 }
 
 /// The hunt state the overlay reads.
@@ -122,6 +153,8 @@ pub struct View<'a> {
     pub night: bool,
     /// Where the scope's cross-hairs go (NDC), while looking through one.
     pub cross: Option<[f32; 2]>,
+    /// Looking through a scope with the phone's mask in the install.
+    pub masked: bool,
 }
 
 impl Overlay {
@@ -179,8 +212,10 @@ impl Overlay {
                 })]
             }
             HINTS => alloc::vec![hints(v)?],
-            // The PC's rule: only near the middle of the view.
-            CROSS_H | CROSS_V => {
+            SCOPE_L | SCOPE_R | SIDE_L | SIDE_R if v.masked => alloc::vec![String::new()],
+            // The PC's rule: only near the middle of the view; the mask has
+            // its own.
+            CROSS_H | CROSS_V if !v.masked => {
                 let [x, y] = v.cross?;
                 if x.abs() > 1.0 || y.abs() > 0.5 {
                     return None;
@@ -207,6 +242,15 @@ impl Overlay {
         let font = menu.font();
         match region {
             CROSS_H | CROSS_V => c.fill(r, CROSS),
+            SIDE_L | SIDE_R => c.fill(r, SHADOW),
+            SCOPE_L | SCOPE_R => {
+                if self.scope.is_none() {
+                    self.scope = scope_pixels(menu);
+                }
+                if let Some(px) = &self.scope {
+                    c.blit_px((r.x * SCALE) as usize, (r.y * SCALE) as usize, SCOPE_TEX.0, px);
+                }
+            }
             MAP => {
                 let base = self.map_base.get_or_insert_with(|| map_base(menu, v.area));
                 let (x0, y0) = ((r.x * SCALE) as usize, (r.y * SCALE) as usize);
@@ -324,6 +368,24 @@ impl Overlay {
                 (r, rect((WIDTH - w) * 0.5, HEIGHT * 0.5 - (FRAME.1 as f32 * 0.5 + 6.0) * 2.0 / SCALE, w, h))
             }
             HINTS => (r, rect((WIDTH - r.w) * 0.5, HEIGHT - r.h - 4.0, r.w, r.h)),
+            // As tall as the screen, the right half mirrored (a source
+            // read right to left); half a texel in from the edges, which
+            // border cleared texels.
+            SCOPE_L | SCOPE_R => {
+                let e = 0.5 / SCALE;
+                let src = rect(r.x + e, r.y + e, r.w - 2.0 * e, r.h - 2.0 * e);
+                let half = HEIGHT * r.w / r.h;
+                if region == SCOPE_L {
+                    (src, rect(WIDTH * 0.5 - half, 0.0, half, HEIGHT))
+                } else {
+                    (rect(src.x + src.w, src.y, -src.w, src.h), rect(WIDTH * 0.5, 0.0, half, HEIGHT))
+                }
+            }
+            SIDE_L | SIDE_R => {
+                let side = (WIDTH * 0.5 - HEIGHT * SCOPE_TEX.0 as f32 / SCOPE_TEX.1 as f32).max(0.0) + 1.0;
+                let src = rect(r.x + 2.0, r.y + 2.0, 4.0, 4.0);
+                (src, rect(if region == SIDE_L { 0.0 } else { WIDTH - side }, 0.0, side, HEIGHT))
+            }
             CROSS_H | CROSS_V => {
                 // The patch's middle (no blending with its cleared edge);
                 // bars a twelfth of the width each way, one pixel thick.

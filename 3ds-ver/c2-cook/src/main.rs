@@ -31,6 +31,7 @@ const USAGE: &str = "usage:
   c2-cook --game <GAME_DIR> [--overlay DIR]... [--mod MOD]...
           [--recipe RECIPE.toml --mods DIR...] [--balance FILE] [--areas N,N]
           [--mobile-survival FILE] [--survival-modes classic,modded,ours]
+          [--phone-game DIR --phone-pictures weapons,animals,scope]
           [--target n3ds|o3ds] [--force] --out <PACK.c2pk>
 
   c2-cook --game <GAME_DIR> ... --target wiiu [--title NAME] --out <DIR>
@@ -49,6 +50,10 @@ const USAGE: &str = "usage:
   --mobile-survival  the mobile game's Survive mode (mobile-survival.txt from an
              APK import); --survival-modes which survivals are offered (default
              classic,modded: the mobile one, the dialect game's own; ours is benched)
+  --phone-game  a game built from your APK (`c2-pc mobile-base`): with
+             --phone-pictures, its weapon pictures, animal pictures (and call
+             icons from them) and scope mask replace the game's own, matched
+             by model file
   --areas    only these areas (default: all, plus the trophy room)
   --target   n3ds (New 3DS, default) or o3ds (Old 3DS / 2DS: smaller textures, shorter view)
   --force    write the pack even if it is over the target's memory budget
@@ -250,6 +255,9 @@ struct Args {
     target: Option<String>,
     /// The game's name on the Wii U's title screen.
     title: Option<String>,
+    /// A game built from the APK, and which of its pictures to use.
+    phone_game: Option<PathBuf>,
+    phone_pictures: Option<String>,
     force: bool,
     out: Option<PathBuf>,
 }
@@ -279,6 +287,8 @@ fn parse_args() -> Result<Args> {
             "--areas" => a.areas = Some(val()?),
             "--target" => a.target = Some(val()?),
             "--title" => a.title = Some(val()?),
+            "--phone-game" => a.phone_game = Some(val()?.into()),
+            "--phone-pictures" => a.phone_pictures = Some(val()?),
             "--out" => a.out = Some(val()?.into()),
             "--force" => a.force = true,
             "-h" | "--help" => {
@@ -303,7 +313,89 @@ fn merged(a: &Args, game: &Path) -> Result<Vfs> {
             .with_context(|| format!("applying {}", f.display()))?;
         vfs.push("balance", Box::new(layer));
     }
+    if let (Some(dir), Some(want)) = (&a.phone_game, &a.phone_pictures) {
+        let layer = phone_pictures(&vfs, dir, want)
+            .with_context(|| format!("taking pictures from {}", dir.display()))?;
+        vfs.push("phone pictures", Box::new(layer));
+    }
     Ok(vfs)
+}
+
+/// `--phone-pictures`: the phone game's pictures in place of the game's
+/// own (owner, 2026-11-01): weapons (`MENU/PICS/WEAPONn.TGA`) and animals
+/// (`DINOn.TGA`) where both games have the model, matched by its file
+/// (the names differ: "Moshops", "Moschops"); the call icons from the
+/// animals' pictures (the phone has none); the scope's mask
+/// (`c2_mods::mobile::SCOPE`).
+fn phone_pictures(vfs: &Vfs, dir: &Path, want: &str) -> Result<MemBackend> {
+    let phone = c2_mods::vanilla(&[dir.to_path_buf()])?;
+    let want = |k: &str| want.split(',').any(|w| w.trim().eq_ignore_ascii_case(k));
+    let same = |a: &str, b: &str| a.trim().eq_ignore_ascii_case(b.trim());
+    let pics = "HUNTDAT/MENU/PICS";
+    let mut layer = MemBackend::new();
+    let (mine, theirs) = (rules(vfs)?, rules(&phone)?);
+    if want("weapons") {
+        let files = |r: &Rules| -> Vec<String> {
+            r.res
+                .weapons
+                .iter()
+                .map(|w| WeaponInfo::from_def(w).file)
+                .collect()
+        };
+        let theirs = files(&theirs);
+        for (i, f) in files(&mine).iter().enumerate() {
+            let Some(j) = theirs.iter().position(|g| same(f, g)) else {
+                continue;
+            };
+            if let Ok(d) = phone.read(&format!("{pics}/WEAPON{}.TGA", j + 1)) {
+                layer.insert(&format!("{pics}/WEAPON{}.TGA", i + 1), d);
+            }
+        }
+    }
+    if want("animals") {
+        for (k, f) in &mine.slot_files {
+            let Some((m, _)) = theirs.slot_files.iter().find(|(_, g)| same(f, g)) else {
+                continue;
+            };
+            let Ok(d) = phone.read(&format!("{pics}/DINO{}.TGA", m + 1)) else {
+                continue;
+            };
+            if let Some(icon) = square_middle(&d) {
+                layer.insert(&format!("{pics}/CALL{}.TGA", k + 1), icon);
+            }
+            layer.insert(&format!("{pics}/DINO{}.TGA", k + 1), d);
+        }
+    }
+    if want("scope") {
+        if let Some(m) = c2_mods::mobile::scope_mask(&phone) {
+            layer.insert(c2_mods::mobile::SCOPE, m);
+        }
+    }
+    Ok(layer)
+}
+
+/// A menu picture's middle square, as a `.TGA` (a call icon).
+fn square_middle(tga: &[u8]) -> Option<Vec<u8>> {
+    let p = c2_formats::tga::parse(tga).ok()?;
+    let side = p.width.min(p.height);
+    let x0 = (p.width - side) / 2;
+    let pixels = (0..side)
+        .flat_map(|y| {
+            let i = y * p.width + x0;
+            p.pixels
+                .get(i..i + side)
+                .unwrap_or_default()
+                .iter()
+                .copied()
+        })
+        .collect::<Vec<u16>>();
+    (pixels.len() == side * side).then(|| {
+        c2_formats::tga::write(&c2_formats::tga::Picture {
+            width: side,
+            height: side,
+            pixels,
+        })
+    })
 }
 
 fn merged_game(a: &Args, game: &Path) -> Result<Vfs> {
@@ -1007,6 +1099,26 @@ fn main() -> Result<()> {
                 &PreparedModel::from_mesh(&m.mesh).texture_rgba,
             );
         }
+    }
+    // The phone's scope mask (`--phone-pictures scope`): its left half on a
+    // 256x256 canvas. One-bit alpha: the faint cross-hairs (alpha ~70)
+    // and the ring's soft edge kept by a low cut, in black.
+    if let Some((w, h, px)) = vfs
+        .read(c2_mods::mobile::SCOPE)
+        .ok()
+        .as_deref()
+        .and_then(c2_mods::mobile::parse_scope)
+    {
+        let mut canvas = vec![0u8; 256 * 256 * 4];
+        for y in 0..h.min(256) {
+            for x in 0..w.min(256) {
+                let a = px[(y * w + x) * 4 + 3];
+                let d = (y * 256 + x) * 4;
+                canvas[d + 3] = if a >= 32 { 255 } else { 0 };
+            }
+        }
+        c.scope = "hunt".into();
+        c.picture("C2RS/SCOPE.TX", &canvas, 256, 256);
     }
     // Character models by file (`model_key`): texture `C2RS/M/{key}.TX`,
     // sounds `C2RS/SND/M/{key}/{k}.PCM`.

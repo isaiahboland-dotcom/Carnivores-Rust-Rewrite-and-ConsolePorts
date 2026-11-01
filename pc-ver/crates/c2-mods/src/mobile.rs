@@ -15,6 +15,7 @@
 //!   for the donor's menu slot, so the animal is added in a slot of its own
 //!   next to it.
 
+use std::collections::BTreeMap;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
@@ -420,6 +421,76 @@ pub fn decode_png(data: &[u8]) -> Option<(usize, usize, Vec<u8>)> {
         });
     }
     Some((w, h, out))
+}
+
+/// The scope's mask for the consoles (`--phone-pictures scope`), from a
+/// game built from the APK: the phone's `optic_sight` (the mask's left
+/// half, the right drawn mirrored) at [`SCOPE_W`] x [`SCOPE_H`], the 3DS top
+/// screen's height. The file: `C2SC`, width and height (u16 LE), RGBA8 rows.
+pub const SCOPE: &str = "HUNTDAT/MOBILE/SCOPE.RGBA";
+pub const SCOPE_W: usize = 180;
+pub const SCOPE_H: usize = 240;
+
+/// [`SCOPE`]'s bytes from the phone game's interface art, if it has it.
+pub fn scope_mask(phone: &Vfs) -> Option<Vec<u8>> {
+    let mut sprites = BTreeMap::new();
+    let cfg = phone.read("HUNTDAT/MOBILE/SPRITES.CFG").ok()?;
+    c2_formats::mobile_ui::parse(&String::from_utf8_lossy(&cfg), &mut sprites);
+    let s = sprites.get("optic_sight")?;
+    let atlas = phone
+        .read(&format!(
+            "HUNTDAT/MOBILE/{}.PNG",
+            s.texture.to_ascii_uppercase()
+        ))
+        .ok()?;
+    let (aw, ah, px) = decode_png(&atlas)?;
+    let (x0, y0) = (s.x.round() as usize, s.y.round() as usize);
+    let (w, h) = (s.w.round() as usize, s.h.round() as usize);
+    if w == 0 || h == 0 || x0 + w > aw || y0 + h > ah {
+        return None;
+    }
+    let mut out = Vec::with_capacity(8 + SCOPE_W * SCOPE_H * 4);
+    out.extend_from_slice(b"C2SC");
+    out.extend_from_slice(&(SCOPE_W as u16).to_le_bytes());
+    out.extend_from_slice(&(SCOPE_H as u16).to_le_bytes());
+    // Area average down to the console size.
+    for y in 0..SCOPE_H {
+        let (sy0, sy1) = (
+            y * h / SCOPE_H,
+            ((y + 1) * h / SCOPE_H).max(y * h / SCOPE_H + 1),
+        );
+        for x in 0..SCOPE_W {
+            let (sx0, sx1) = (
+                x * w / SCOPE_W,
+                ((x + 1) * w / SCOPE_W).max(x * w / SCOPE_W + 1),
+            );
+            let (mut sum, mut n) = ([0u32; 4], 0u32);
+            for sy in sy0..sy1 {
+                for sx in sx0..sx1 {
+                    let i = ((y0 + sy) * aw + x0 + sx) * 4;
+                    if let Some(p) = px.get(i..i + 4) {
+                        for k in 0..4 {
+                            sum[k] += u32::from(p[k]);
+                        }
+                        n += 1;
+                    }
+                }
+            }
+            out.extend(sum.map(|v| (v / n.max(1)) as u8));
+        }
+    }
+    Some(out)
+}
+
+/// [`SCOPE`]'s size and pixels.
+pub fn parse_scope(d: &[u8]) -> Option<(usize, usize, &[u8])> {
+    let head = d.get(..8)?;
+    if &head[..4] != b"C2SC" {
+        return None;
+    }
+    let w = usize::from(u16::from_le_bytes([head[4], head[5]]));
+    let h = usize::from(u16::from_le_bytes([head[6], head[7]]));
+    Some((w, h, d.get(8..8 + w * h * 4)?))
 }
 
 /// A menu picture (357x208, as the PC menus' `DINOn.TGA`) with the image

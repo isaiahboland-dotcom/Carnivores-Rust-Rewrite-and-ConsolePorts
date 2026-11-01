@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use c2_mods::recipe::Settings;
+use c2_mods::recipe::{Pictures, Settings, Tuning};
 use serde::{Deserialize, Serialize};
 
 /// The data folder `c2-pc` uses (`c2-pc/src/save.rs`: `data_dir`).
@@ -299,6 +299,12 @@ pub struct Config {
     /// was last given; empty: `source/`, `source/mods`, `addons/` and
     /// `mods/` beside the recipes folder, those that exist.
     pub mod_dirs: Vec<PathBuf>,
+    /// The 3DS and Wii U hunt pictures: the phone's (from a game built
+    /// from the APK) or the game's own, each.
+    pub pictures: Pictures,
+    /// The phone game's rules (shotgun, scoring, animals' health) over a PC
+    /// game, each (`c2_mods::balance::Balance::phone_tuning`).
+    pub tuning: Tuning,
 }
 
 /// A recipe and the folder given for each of its entries; while `on`, play
@@ -347,6 +353,28 @@ impl RecipeUse {
 
 fn path() -> PathBuf {
     data_dir().join("launcher.toml")
+}
+
+/// Games built from the player's APKs (`apk-base/<apk>/` from the Game
+/// tab, `builds/apk-base/<id>/` from a recipe), which have the phone's
+/// interface art (`HUNTDAT/MOBILE`).
+pub fn phone_games() -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> = [
+        data_dir().join("apk-base"),
+        data_dir().join("builds/apk-base"),
+    ]
+    .iter()
+    .filter_map(|d| std::fs::read_dir(d).ok())
+    .flat_map(|rd| rd.flatten().map(|e| e.path()))
+    .filter(|p| is_phone_game(p))
+    .collect();
+    v.sort();
+    v
+}
+
+/// A game folder built from an APK.
+pub fn is_phone_game(dir: &Path) -> bool {
+    find_ci(dir, "HUNTDAT").is_some_and(|h| find_ci(&h, "MOBILE").is_some())
 }
 
 /// The recipes folder (instances, any folder deep): beside the launcher,
@@ -440,6 +468,12 @@ impl Config {
         if let Some(t) = s.ice_age_title {
             self.three_ds.ice_age_title = t;
         }
+        if !s.pictures.is_auto() {
+            self.pictures = s.pictures;
+        }
+        if !s.tuning.is_auto() {
+            self.tuning = s.tuning;
+        }
     }
 
     /// The choices to save in a recipe: the launcher's, over `old` (a
@@ -457,6 +491,8 @@ impl Config {
             ),
             three_ds_target: self.three_ds.target.arg().into(),
             ice_age_title: Some(self.three_ds.ice_age_title),
+            pictures: self.pictures,
+            tuning: self.tuning,
             ..old.clone()
         }
     }

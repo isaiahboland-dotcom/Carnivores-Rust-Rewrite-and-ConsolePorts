@@ -38,9 +38,9 @@ extern void c2_menu_draw(void *, uint8_t *, uint32_t, uint32_t, uint32_t);
 extern void c2_menu_drawn(void *);
 extern void c2_menu_load_profile(void *, uint32_t, const uint8_t *, uint32_t);
 extern uint32_t c2_menu_profile(void *, uint32_t, uint8_t *, uint32_t);
-/* The hunt overlay: 1024x1024 texture, up to 7 quads of 6 vertices; flags
+/* The hunt overlay: 1024x1024 texture, up to 13 quads of 6 vertices; flags
  * bit 0 shows the map (R). */
-enum { OVERLAY_QUADS = 9, OVERLAY_MAP = 1 };
+enum { OVERLAY_QUADS = 13, OVERLAY_MAP = 1 };
 extern uint32_t c2_overlay_draw(void *, void *, uint8_t *, uint32_t, float *, float *, uint32_t);
 /* A tap on the GamePad map: teleport there (world units), if it's on. */
 extern uint32_t c2_teleport(void *, float, float);

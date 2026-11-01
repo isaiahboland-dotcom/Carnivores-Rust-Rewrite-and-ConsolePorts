@@ -532,12 +532,93 @@ impl Launcher {
         }
     }
 
-    /// `--balance FILE` if the balance editor changed anything.
+    /// `--balance FILE`: the balance editor's changes, over the phone
+    /// game's rules where they are taken (`balance-tuned.toml` in the data
+    /// folder then).
     fn balance_args(&self) -> Vec<String> {
-        match self.balance.file() {
+        let edits = self.balance.file().map(|f| (f, self.balance.edits.clone()));
+        let tuned = self.phone_rules().map(|b| match &edits {
+            Some((_, e)) => b.with(e),
+            None => b,
+        });
+        let file = match tuned {
+            Some(b) if !b.is_empty() => {
+                let f = crate::config::data_dir().join("balance-tuned.toml");
+                std::fs::write(&f, b.to_toml()).ok().map(|()| f)
+            }
+            _ => edits.map(|(f, _)| f),
+        };
+        match file {
             Some(f) => vec!["--balance".into(), f.display().to_string()],
             None => Vec::new(),
         }
+    }
+
+    /// The phone game's rules chosen for a PC game (`cfg.tuning`), from
+    /// the APK import's values; `None` on a game built from the APK (its
+    /// rules are the phone's already) or with none chosen.
+    fn phone_rules(&self) -> Option<c2_mods::balance::Balance> {
+        let t = self.cfg.tuning;
+        let (s, c, a) = (
+            t.shotgun.mobile(false),
+            t.scoring.mobile(false),
+            t.animals.mobile(false),
+        );
+        if !(s || c || a) || self.game_is_phone() {
+            return None;
+        }
+        Some(self.balance.mobile.as_ref()?.phone_tuning(s, c, a))
+    }
+
+    /// The game is one built from the APK (the recipe's or the Game tab's).
+    fn game_is_phone(&self) -> bool {
+        match self.active_recipe() {
+            Some(r) => self
+                .recipe_game(r)
+                .first()
+                .is_some_and(|g| crate::config::is_phone_game(g)),
+            None => self
+                .cfg
+                .base
+                .as_deref()
+                .is_some_and(crate::config::is_phone_game),
+        }
+    }
+
+    /// PC or phone rules (shotgun, scoring, animals' health).
+    fn tuning_ui(&mut self, ui: &mut egui::Ui) -> bool {
+        use c2_mods::recipe::Source;
+        let phone = self.game_is_phone();
+        let have = self.balance.mobile.is_some() && !phone;
+        let mut changed = false;
+        let t = &mut self.cfg.tuning;
+        ui.label(RichText::new("PC or phone rules").color(GOLD));
+        for (name, s) in [
+            ("Shotguns", &mut t.shotgun),
+            ("Scores and prices", &mut t.scoring),
+            ("Animals' health", &mut t.animals),
+        ] {
+            ui.horizontal(|ui| {
+                ui.label(format!("{name}:"));
+                ui.add_enabled_ui(have, |ui| {
+                    changed |= ui.radio_value(s, Source::Auto, "Auto (PC)").changed();
+                    changed |= ui.radio_value(s, Source::Pc, "PC").changed();
+                    changed |= ui.radio_value(s, Source::Mobile, "Phone").changed();
+                });
+            });
+        }
+        help(
+            ui,
+            if phone {
+                "This game is built from the APK: its rules are the phone's already."
+            } else if have {
+                "The phone's values, from your APK import, under any changes you make below. \
+                 Applies to playing on PC, the 3DS and the Wii U."
+            } else {
+                "The phone's rules come with importing your APK (Add-ons tab)."
+            },
+        );
+        changed
     }
 
     /// `--survival-modes ..`, and `--mobile-survival FILE` once an APK
@@ -548,6 +629,94 @@ impl Launcher {
             v.extend(["--mobile-survival".into(), f.display().to_string()]);
         }
         v
+    }
+
+    /// `c2-cook`'s survival arguments, and the phone's pictures where
+    /// chosen (`--phone-game`, `--phone-pictures`; the 3DS and Wii U).
+    fn cook_extras(&self) -> Vec<String> {
+        let mut v = self.survival_args();
+        let Some(phone) = self.phone_game() else {
+            return v;
+        };
+        let p = self.cfg.pictures;
+        let want: Vec<&str> = [
+            ("weapons", p.weapons),
+            ("animals", p.animals),
+            ("scope", p.scope),
+        ]
+        .iter()
+        .filter(|(_, s)| s.mobile(true))
+        .map(|(k, _)| *k)
+        .collect();
+        if !want.is_empty() {
+            v.extend([
+                "--phone-game".to_string(),
+                phone.display().to_string(),
+                "--phone-pictures".into(),
+                want.join(","),
+            ]);
+        }
+        v
+    }
+
+    /// The game built from the player's APK whose pictures the consoles
+    /// can take: the recipe's or the Game tab's own game if it is one, else
+    /// one built before (Ice Age's for an Ice Age game, else Dinosaur
+    /// Hunter's).
+    fn phone_game(&self) -> Option<PathBuf> {
+        let own = self
+            .active_recipe()
+            .and_then(|r| r.game.clone())
+            .into_iter()
+            .chain(self.cfg.base.clone());
+        let built = crate::config::phone_games();
+        let ice = |p: &PathBuf| p.to_string_lossy().to_ascii_lowercase().contains("ice");
+        let wants_ice = self
+            .cfg
+            .base
+            .as_deref()
+            .is_some_and(c2_mods::ice_age::is_ice_age_dir);
+        own.into_iter()
+            .find(|g| crate::config::is_phone_game(g))
+            .or_else(|| built.iter().find(|g| ice(g) == wants_ice).cloned())
+            .or_else(|| built.first().cloned())
+    }
+
+    /// The 3DS and Wii U hunt pictures: the phone's or the game's own.
+    fn pictures_ui(&mut self, ui: &mut egui::Ui) -> bool {
+        use c2_mods::recipe::Source;
+        let mut changed = false;
+        let phone = self.phone_game();
+        let p = &mut self.cfg.pictures;
+        for (name, s) in [
+            ("Weapon pictures", &mut p.weapons),
+            ("Animal pictures and call icons", &mut p.animals),
+            ("Sniper scope", &mut p.scope),
+        ] {
+            ui.horizontal(|ui| {
+                ui.label(format!("{name}:"));
+                ui.add_enabled_ui(phone.is_some(), |ui| {
+                    changed |= ui.radio_value(s, Source::Auto, "Auto (phone)").changed();
+                    changed |= ui.radio_value(s, Source::Mobile, "Phone").changed();
+                });
+                changed |= ui.radio_value(s, Source::Pc, "PC").changed();
+            });
+        }
+        help(
+            ui,
+            &match &phone {
+                Some(g) => format!(
+                    "The phone's pictures come from {} (matched by model: animals and weapons \
+                     both games have). The ammo counter stays as it is. On a game built from the \
+                     APK, its pictures are the phone's already.",
+                    g.display()
+                ),
+                None => "The phone's pictures need a game built from your APK (\"Use my APK as \
+                         the game...\" on the Game tab, or an Android recipe)."
+                    .into(),
+            },
+        );
+        changed
     }
 
     /// Survival choice (PC and 3DS alike).
@@ -751,7 +920,7 @@ impl Launcher {
         let dir = out.join("3ds").join(&name);
         let mut steps = Vec::new();
         let title_art = t.ice_age_title.then(|| self.cfg.ice_age.clone()).flatten();
-        let survival = self.survival_args();
+        let survival = self.cook_extras();
         let cook_args = |extra: Vec<String>, pack: &str| -> Vec<String> {
             let mut a = vec!["--game".to_string(), base.display().to_string()];
             a.extend(extra);
@@ -918,7 +1087,7 @@ impl Launcher {
         };
         let w = &self.cfg.wiiu;
         let game = |root: &std::path::Path| vec!["--game".to_string(), root.display().to_string()];
-        let survival = self.survival_args();
+        let survival = self.cook_extras();
         let addons = self.cfg.enabled_addons();
         let modded = !addons.is_empty() || !self.cfg.overlays.is_empty();
         let mut v = Vec::new();
@@ -1406,6 +1575,10 @@ impl Launcher {
              the original game pack when there are no add-ons).",
         );
         ui.add_space(6.0);
+        if panel(ui, |ui| self.tuning_ui(ui)) {
+            self.save();
+        }
+        ui.add_space(6.0);
         let (bases, mods) = self.game_folders();
         if let Some(e) = self.balance.ui(ui, &bases, &mods) {
             self.note = Some((e, RED));
@@ -1537,7 +1710,9 @@ impl Launcher {
                 "The app asks which pack at start; each keeps its own save.",
             );
         });
-        changed |= panel(ui, |ui| self.menu_style_ui(ui, true) | self.survival_ui(ui));
+        changed |= panel(ui, |ui| {
+            self.menu_style_ui(ui, true) | self.survival_ui(ui) | self.pictures_ui(ui)
+        });
         ui.add_space(8.0);
         changed |= self.cia_panel(ui);
         if changed {
@@ -1629,6 +1804,8 @@ impl Launcher {
             );
             soon(ui, "Animals and weapons from the mobile game (APK)");
             help(ui, "The balance file goes with the add-ons install (or the original game without add-ons).");
+            ui.add_space(4.0);
+            changed |= self.pictures_ui(ui);
             let names: Vec<String> = self
                 .wiiu_installs()
                 .into_iter()

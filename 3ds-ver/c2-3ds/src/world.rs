@@ -289,6 +289,9 @@ pub struct World {
     /// Camera-space position of the view model's last vertex: the scope's
     /// aim point (`DrawOpticCross(VCount-1)`).
     pub aim_point: Option<[f32; 3]>,
+    /// The phone's scope mask in the pack: the weapon model isn't drawn
+    /// while it covers the view (`crate::ui::masked`).
+    pub hide_scoped: bool,
     frame: u32,
     pub sky: [u8; 3],
     water_alpha: Vec<u8>,
@@ -488,6 +491,7 @@ impl World {
             char_bufs: Vec::new(),
             weapon_buf: None,
             aim_point: None,
+            hide_scoped: vfs.resolve("C2RS/SCOPE.TX").is_some(),
             frame: 0,
             sky,
             water_alpha,
@@ -1091,7 +1095,7 @@ impl World {
     fn draw_weapon(&mut self, gpu: &mut Gpu, area: &Area, hunt: &Hunt, poser: &Poser<'_>) {
         let w = &hunt.weapons;
         self.aim_point = None;
-        if hunt.death.is_some() {
+        if hunt.death.is_some() || (self.hide_scoped && crate::ui::masked(hunt)) {
             return;
         }
         // The binocular and scope frames are made for 4:3; widen them.

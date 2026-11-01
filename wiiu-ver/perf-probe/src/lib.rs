@@ -147,6 +147,8 @@ struct Simulation {
     /// The view model's last vertex on screen (NDC), where the scope's
     /// cross-hairs go (`DrawOpticCross`); set as the gun is posed.
     aim: core::cell::Cell<Option<[f32; 2]>>,
+    /// The install has the phone's scope mask (`overlay::SCOPE_FILE`).
+    scope_mask: bool,
 }
 
 /// Input bits beyond the movement ones (main.c): the exit prompt (PLUS) and
@@ -297,6 +299,12 @@ pub extern "C" fn c2_hunt_finish(ptr: *mut core::ffi::c_void, ui: *mut core::ffi
     }
 }
 
+/// Looking through a scope with the phone's mask: drawn over the view, and
+/// the weapon model under it not drawn (as the PC's phone layout).
+fn masked(sim: &Simulation) -> bool {
+    sim.scope_mask && sim.hunt.weapons.optic_mode && sim.hunt.scope_cross()
+}
+
 /// Loads the hunt the menu picked from the install (its area, animals,
 /// weapons, calls and sounds) into a new simulation in `result`. Returns
 /// 0, or `hunt_setup::load`'s error.
@@ -374,6 +382,7 @@ pub extern "C" fn c2_hunt_load(ui: *mut core::ffi::c_void, seed: u32, result: *m
         saved_room: room,
         restart: false,
         aim: core::cell::Cell::new(None),
+        scope_mask: m.install.as_ref().is_some_and(|i| i.vfs.resolve(overlay::SCOPE_FILE).is_some()),
     };
     unsafe {
         *result = Box::into_raw(Box::new(sim)).cast();
@@ -822,7 +831,7 @@ pub extern "C" fn c2_actor_vertices(ptr: *mut core::ffi::c_void, positions: *mut
             let (s, c) = (libm::sinf(angle), libm::cosf(angle));
             emit(model, &posed, id, &|v| [ch.pos[0] + v[0]*c + v[2]*s, ch.pos[1] + v[1], ch.pos[2] - v[0]*s + v[2]*c, 1.0]);
         }
-    } else if let Some((slot, ftime)) = sim.hunt.weapons.pose() {
+    } else if let Some((slot, ftime)) = sim.hunt.weapons.pose().filter(|_| !masked(sim)) {
         let current = sim.hunt.weapons.current;
         if let Some(&model_slot) = sim.weapon_slot.get(current) {
         let (Some(car),Some(model)) = (sim.weapon_cars.get(current),sim.actor_models.get(model_slot)) else { return 0; };
@@ -1343,6 +1352,7 @@ pub extern "C" fn c2_overlay_draw(ui: *mut core::ffi::c_void, ptr: *mut core::ff
         units_us: m.choice.units_us != 0,
         night: sim.choice.time == 2,
         cross: if sim.hunt.scope_cross() { sim.aim.get() } else { None },
+        masked: masked(sim),
     };
     let (quads, changed) = sim.overlay.draw(m, &view, &mut overlay::canvas(px, pitch as usize), pos, uv);
     quads as u32 | if changed { 256 } else { 0 }

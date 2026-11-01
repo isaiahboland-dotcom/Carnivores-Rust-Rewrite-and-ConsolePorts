@@ -2,6 +2,53 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-01 — The phone's pictures and rules on any game: `--phone-pictures`, PC or phone rules
+
+The owner wants the consoles' hunt screen layout to stay as it is: the
+3DS's picker and its ammo counter, nothing over the top screen or the TV.
+Only the pictures change, to the phone's.
+
+**c2-cook `--phone-game DIR --phone-pictures weapons,animals,scope`.**
+`DIR` is a game built from the APK. Its pictures replace the game's in the
+merged game, so the 3DS pack and the Wii U install both get them:
+- `MENU/PICS/WEAPONn.TGA` and `DINOn.TGA`, wherever both games have the
+  model. They're matched by model file, because the names differ
+  ("Moshops" vs "Moschops").
+- `CALLn.TGA`, made from the middle square of the animal's picture, since
+  the phone has no call icons.
+- The scope mask, `HUNTDAT/MOBILE/SCOPE.RGBA`: the phone's `optic_sight`
+  (the left half, which is drawn mirrored), at 180x240.
+
+`VIEWFINDER.PNG` is the photo mode's frame, not the scope, and the white
+"placeholder" in the old TODO note was a misreading.
+
+How each console draws the scope:
+- **3DS:** the mask is cooked as `C2RS/SCOPE.TX`, with a one-bit alpha cut
+  at 32, so the faint cross-hairs (alpha about 70) survive. It's drawn as
+  tall as the top screen, mirrored, with black beyond.
+- **Wii U:** four new overlay quads: the mask's two halves, and black sides.
+  `OVERLAY_QUADS` goes from 9 to 13.
+- **Both:** the weapon model isn't drawn under the mask, as on the PC's
+  phone layout, and the PC-style cross-hairs give way to the mask's own.
+
+**The launcher.**
+- **Picture choices** are on the 3DS and Wii U tabs: weapons, animals and
+  scope, each Auto (phone), Phone or PC. Auto takes the phone's whenever a
+  game built from an APK exists. That game is the recipe's or the Game
+  tab's own if it was built from an APK, else one built before: Ice Age's
+  for an Ice Age game, otherwise Dinosaur Hunter's.
+- **Bullets:** the consoles keep their ammo counter, so `bullets` isn't
+  offered there.
+- **"PC or phone rules"** is on the Balance tab: shotguns, scores and
+  prices, and animals' health. Auto is the PC's. On a game built from the
+  APK, the rules are already the phone's. Otherwise a choice of Phone takes
+  the APK import's values (`Balance::phone_tuning`) under the player's own
+  edits (`Balance::with`), written to `balance-tuned.toml` and passed as
+  `--balance`. That covers PC play, the 3DS and the Wii U.
+- **Not yet possible:** "PC" on a game built from the APK alone, because
+  there are no PC values to take. The phone's shotgun is its values only:
+  how its pellets behave isn't modelled.
+
 ## 2026-11-01 — Recipes are whole instances: `[settings]`, the launcher's Instances tab
 
 The owner wants the launcher to work like a Minecraft instance manager such

@@ -95,6 +95,15 @@ pub struct Ui {
     /// The trophy room: area names (map n at n - 1) and weapon names, for
     /// the plaque.
     trophy_names: Option<(Vec<String>, Vec<String>)>,
+    /// The phone's scope mask (`C2RS/SCOPE.TX`, the cook's
+    /// `--phone-pictures scope`): its left half, drawn mirrored.
+    scope: Option<Texture>,
+}
+
+/// Whether the phone's scope mask covers the view (the weapon model hidden
+/// under it, as the PC's phone layout does).
+pub fn masked(hunt: &Hunt) -> bool {
+    hunt.weapons.optic_mode && hunt.scope_cross()
 }
 
 pub fn load(vfs: &Vfs, path: &str) -> Option<Texture> {
@@ -147,6 +156,7 @@ impl Ui {
             teleport: game.hunt.can_teleport(),
             teleport_pick: None,
             trophy_names,
+            scope: load(vfs, "C2RS/SCOPE.TX"),
         }
     }
 
@@ -501,9 +511,22 @@ impl Ui {
             let t = format!("Teleporting in {}", (ms + 999) / 1000);
             c.text_c(gpu, cx, 40.0, 2.0, YELLOW, &t);
         }
-        // Scope cross-hairs at the view model's aim point (`DrawOpticCross`),
-        // projected like the world (camera space, vertical field `fovy`).
-        if let Some((p, fovy)) = scope.filter(|_| hunt.scope_cross()) {
+        // The phone's scope: the mask as tall as the screen, black beyond,
+        // its own cross-hairs in the middle.
+        if let Some(t) = self.scope.as_ref().filter(|_| masked(hunt)) {
+            // `c2_mods::mobile::SCOPE_W` x `SCOPE_H`.
+            let (hw, h) = (180.0, 240.0);
+            let (u, v) = (hw / 256.0, h / 256.0);
+            c.image(gpu, t, [cx - hw, 0.0, hw, h], [0.0, 0.0, u, v], WHITE);
+            c.image(gpu, t, [cx, 0.0, hw, h], [u, 0.0, 0.0, v], WHITE);
+            let side = (cx - hw).max(0.0);
+            c.rect([0.0, 0.0, side, h], [0, 0, 0, 255]);
+            c.rect([cx + hw, 0.0, side, h], [0, 0, 0, 255]);
+            c.flush(gpu);
+        } else if let Some((p, fovy)) = scope.filter(|_| hunt.scope_cross()) {
+            // Scope cross-hairs at the view model's aim point
+            // (`DrawOpticCross`), projected like the world (camera space,
+            // vertical field `fovy`).
             let cy = TOP_H as f32 / 2.0;
             let f = 1.0 / (fovy / 2.0).tan();
             if p[2] < 0.0 {
