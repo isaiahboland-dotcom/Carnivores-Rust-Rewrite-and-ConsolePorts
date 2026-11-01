@@ -2,6 +2,37 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-01 — APK base: the hunt screen as the owner's phone screenshots; pick keys tap or hold
+
+From the owner's in-hunt screenshots, for a game built from the APK (PC):
+
+- **Controls.** The call and the weapon at the top right, the compass
+  ("AREA MAP") and the binoculars at the top left, each side on the kit's
+  translucent back (`game_buttons_back`); a "menu" tab at the top (Esc).
+  The phone's compass is a 3D model (`compas.3dn`); ours is its face
+  (`compas.crt`, the black around it cleared from the edges by the
+  conversion) seen flat, a drawn needle where the hunter looks.
+- **Binoculars.** The sight is the goggles' ends: set at the screen's sides,
+  its inner edge stretched to the middle, as the phone's.
+- **Map.** The phone's painted maps (`textures/maps/areaN_{dawn,day,night}_map`,
+  grid and letters painted in) are kept as `MOBILE/MAPS/AREAn_TIME.PNG`; the
+  map sits on a dark panel titled "AREA MAP" and the area's name, a pale
+  circle round the hunter, the hunted animals yellow, RELOCATE under it
+  when teleporting is on (Enter, as before: the mouse only moves the
+  marker).
+- **Esc menu.** The phone's hexagons along the top: RESTART, RESUME (in the
+  phone's OPTIONS place: no options mid-hunt yet) and ESCAPE!, each with its
+  key; HELP left out.
+- **Pickers.** Weapons and calls in the phone's hexagons near the top, the
+  one taken ringed yellow; a changed call shows its animal's hexagon.
+- **Tap or hold (owner, all PC games).** The mouse looks, so the pick keys
+  do both: a tap of the weapon key takes the next carried weapon (its
+  hexagon flashes in the phone's look), a tap of the call key changes the
+  call as the original's; holding either for 0.35 s pauses the hunt on its
+  picker (wheel, arrows or 1-9 move) and letting go takes the one ringed.
+  The 3DS and Wii U keep the original's switching on their second screens
+  (owner).
+
 ## 2026-11-01 — APK base: the menus laid out as the owner's phone screenshots
 
 The owner sent four screenshots of the phone game (main menu, maps,

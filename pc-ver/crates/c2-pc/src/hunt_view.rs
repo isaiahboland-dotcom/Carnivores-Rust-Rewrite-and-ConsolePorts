@@ -144,6 +144,8 @@ pub struct HuntView {
     map_cursor: Option<(f32, f32)>,
     teleport_pick: Option<(f32, f32)>,
     call_imgs: Vec<Option<usize>>,
+    /// The phone kit's call pictures (its animals'), by call id 10..
+    call_pics: Vec<Option<usize>>,
     /// The trophy plaque (`TROPHY.TGA` in the room, `TROPHY_G.TGA` after a
     /// kill) and the room's "Esc to exit" banner (`TROPHY_E.TGA`).
     plaque_img: Option<usize>,
@@ -172,6 +174,14 @@ pub struct HuntView {
     /// The weapon-pick screen (PC only): open with the highlighted row.
     /// The hunt doesn't tick while it's up.
     picker: Option<usize>,
+    /// What the picker picks, and whether it was opened by holding its key
+    /// (letting go then picks).
+    picker_kind: Pick,
+    picker_held: bool,
+    /// A pick key held down: which, and for how long (seconds).
+    held_pick: Option<(Pick, f32)>,
+    /// Seconds left of the new weapon's hexagon (the phone's look).
+    weapon_flash: f32,
     seed: u32,
     /// The hunt is over (saved if left alive).
     done: bool,
@@ -208,6 +218,17 @@ fn menu_pic(hud: &mut Hud, gpu: &Gpu, huntdat: &Path, name: &str) -> Option<usiz
     let (w, h, rgba) = load_tga(&p).ok()?;
     Some(hud.add_image(gpu, w, h, &rgba))
 }
+
+/// What a pick key picks: a weapon, or a call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pick {
+    Weapon,
+    Call,
+}
+
+/// Seconds a pick key is held before its picker opens (a shorter press
+/// takes the next one).
+const HOLD_TO_PICK: f32 = 0.35;
 
 impl HuntView {
     pub fn load(gpu: &Gpu, setup: HuntSetup) -> Result<Self> {
@@ -252,7 +273,26 @@ impl HuntView {
         let (weapon_infos, weapon_anims, mut weapons) =
             load_weapons(gpu, view.globals(), &mut hud, &huntdat, &res.weapons);
         // A game built from an APK: the hunt screen as the phone game's.
-        let kit = HuntKit::load(&huntdat, &mut hud, gpu, res.weapons.len());
+        // Its painted map: the area's at the hunt's time of day.
+        let kit_map = setup
+            .map
+            .file_stem()
+            .and_then(|s| c2_formats::mee::area_of(&s.to_string_lossy()))
+            .map(|n| {
+                let t = match setup.time {
+                    TimeOfDay::Dusk => "DAWN",
+                    TimeOfDay::Day => "DAY",
+                    TimeOfDay::Night => "NIGHT",
+                };
+                format!("AREA{n}_{t}")
+            });
+        let kit = HuntKit::load(
+            &huntdat,
+            &mut hud,
+            gpu,
+            res.weapons.len(),
+            kit_map.as_deref(),
+        );
         weapons.hide_scoped = kit.is_some();
         let exit_img = menu_pic(&mut hud, gpu, &huntdat, "EXIT.TGA");
         let plaque_img = menu_pic(
@@ -288,6 +328,9 @@ impl HuntView {
         // drawn around it.
         let (map_img, map_at) = match map_img {
             Some(i) => (Some(i), (11.0, 23.0)),
+            None if kit.as_ref().is_some_and(|k| k.map.is_some()) => {
+                (kit.as_ref().and_then(|k| k.map), (0.0, 0.0))
+            }
             None if kit.is_some() => {
                 let rgba = c2_core::color::image_to_rgba8(&Hunt::map_image(view.area()), false);
                 (Some(hud.add_image(gpu, 256, 256, &rgba)), (0.0, 0.0))
@@ -307,6 +350,19 @@ impl HuntView {
                 Some(hud.add_image(gpu, w, h, &rgba))
             })
             .collect();
+        // The phone shows a call as its animal's picture (`DINOn.TGA`).
+        let call_pics: Vec<Option<usize>> = match &kit {
+            Some(_) => (1..=c2_core::game::MAX_CALL - 10)
+                .map(|n| {
+                    if !setup.targets.has(n as usize + 9) {
+                        return None;
+                    }
+                    let k = kit.as_ref()?;
+                    k.image(&format!("button_dino_active_{n}"), &mut hud, gpu)
+                })
+                .collect(),
+            None => Vec::new(),
+        };
         let dinos = DinoAssets::new(gpu, view.globals(), cars, load_ship(&huntdat));
         let species_cars: Vec<Option<&Car>> = dinos
             .cars
@@ -357,6 +413,7 @@ impl HuntView {
             map_cursor: None,
             teleport_pick: None,
             call_imgs,
+            call_pics,
             plaque_img,
             pause_img,
             trophy_exit_img,
@@ -372,6 +429,10 @@ impl HuntView {
             kill: None,
             ask: None,
             picker: None,
+            picker_kind: Pick::Weapon,
+            picker_held: false,
+            held_pick: None,
+            weapon_flash: 0.0,
             seed,
             done: false,
             audio: Audio::new(),
@@ -633,14 +694,19 @@ impl HuntView {
     /// The animal the picked call is for: the species of that AI, or (the
     /// dialect) the one answering its slot.
     fn call_name(&self) -> Option<String> {
+        self.call_name_of(self.hunt.target_call)
+    }
+
+    /// The animal call `call` (10..) calls.
+    fn call_name_of(&self, call: i32) -> Option<String> {
         let h = &self.hunt;
-        let slot = h.target_call - 10;
+        let slot = call - 10;
         h.herd
             .species
             .iter()
             .find(|s| match &s.mee {
                 Some(m) => m.call_no == slot,
-                None => s.info.ai == h.target_call,
+                None => s.info.ai == call,
             })
             .map(|s| s.info.name.clone())
     }
@@ -686,6 +752,71 @@ impl HuntView {
             self.hunt.room.bodies[0].set_area(self.hunt.area_no);
             self.hunt.trophy_time = 60 * 1000;
             self.hunt.trophy_body = Some(0);
+        }
+    }
+
+    /// Opens the weapon picker, or changes the call (screenshots).
+    pub fn open_picker(&mut self, call: bool) {
+        if call {
+            let input = HuntInput {
+                change_call: true,
+                ..Default::default()
+            };
+            self.step(&input);
+        } else {
+            self.open_pick(Pick::Weapon, false);
+        }
+    }
+
+    /// The calls of the hunted animals (ids 10..).
+    fn call_list(&self) -> Vec<i32> {
+        let t = self.hunt.opts.targets;
+        (10..c2_core::game::MAX_CALL)
+            .filter(|&c| usize::try_from(c).is_ok_and(|c| t.has(c)))
+            .collect()
+    }
+
+    /// What `kind`'s picker lists: weapons by index, calls by id.
+    fn pick_list(&self, kind: Pick) -> Vec<usize> {
+        match kind {
+            Pick::Weapon => self.carried(),
+            Pick::Call => self.call_list().iter().map(|&c| c as usize).collect(),
+        }
+    }
+
+    /// Opens `kind`'s picker on the one in use (the hunt waits).
+    fn open_pick(&mut self, kind: Pick, held: bool) {
+        let cur = match kind {
+            Pick::Weapon => self.hunt.weapons.current,
+            Pick::Call => self.hunt.target_call.max(0) as usize,
+        };
+        let list = self.pick_list(kind);
+        if list.is_empty() {
+            return;
+        }
+        self.picker = Some(list.iter().position(|&i| i == cur).unwrap_or(0));
+        self.picker_kind = kind;
+        self.picker_held = held;
+        self.acc_ms = 0.0;
+    }
+
+    /// The key that picks `kind` is down.
+    fn pick_held(&self, input: &Input, kind: Pick) -> bool {
+        match kind {
+            Pick::Weapon => input.held(self.pick_key()),
+            Pick::Call => keys::held(input, self.hunt.room.options.keys.change_call),
+        }
+    }
+
+    /// The next carried weapon, its hexagon shown a moment.
+    fn next_weapon(&mut self) {
+        let carried = self.carried();
+        let cur = self.hunt.weapons.target;
+        let at = carried.iter().position(|&w| w == cur);
+        let next = at.map_or(0, |i| (i + 1) % carried.len().max(1));
+        if let Some(&w) = carried.get(next) {
+            self.pending.select_weapon = Some(w);
+            self.weapon_flash = 1.2;
         }
     }
 
@@ -791,11 +922,17 @@ impl HuntView {
     }
 
     /// Input while the pick screen is up: arrows/W/S or the wheel move,
-    /// 1-9 jump, Enter/click picks, the key again or Esc closes.
+    /// 1-9 jump, Enter/click picks, the key again or Esc closes; opened by
+    /// holding the key, letting it go picks.
     fn update_picker(&mut self, input: &Input, row: usize) {
-        let list = self.carried();
+        let kind = self.picker_kind;
+        let list = self.pick_list(kind);
         let n = list.len();
-        if n == 0 || input.pressed(KeyCode::Escape) || input.pressed(self.pick_key()) {
+        let key_again = match kind {
+            Pick::Weapon => input.pressed(self.pick_key()),
+            Pick::Call => keys::pressed(input, self.hunt.room.options.keys.change_call),
+        };
+        if n == 0 || input.pressed(KeyCode::Escape) || (key_again && !self.picker_held) {
             self.picker = None;
             return;
         }
@@ -828,13 +965,24 @@ impl HuntView {
         if let Some(d) = digit {
             row = d;
         }
-        if digit.is_some() || input.pressed(KeyCode::Enter) {
-            let w = &self.hunt.weapons;
+        let let_go = self.picker_held && !self.pick_held(input, kind);
+        if digit.is_some() || input.pressed(KeyCode::Enter) || let_go {
             let pick = list.get(row).copied();
-            // Picking the weapon in hand leaves it there (selecting it
-            // would put it away).
-            if !(pick == Some(w.current) && w.pose().is_some()) {
-                self.pending.select_weapon = pick;
+            match kind {
+                Pick::Weapon => {
+                    let w = &self.hunt.weapons;
+                    // Picking the weapon in hand leaves it there
+                    // (selecting it would put it away).
+                    if !(pick == Some(w.current) && w.pose().is_some()) {
+                        self.pending.select_weapon = pick;
+                    }
+                }
+                Pick::Call => {
+                    if let Some(c) = pick {
+                        self.hunt.target_call = c as i32;
+                        self.hunt.call_icon_time = 2048;
+                    }
+                }
             }
             self.picker = None;
             return;
@@ -842,9 +990,50 @@ impl HuntView {
         self.picker = Some(row);
     }
 
+    /// The call-pick screen: as the weapons', the hunted animals' names.
+    fn call_picker_sprites(&self, row: usize, screen: (u32, u32), scale: f32) -> Vec<Sprite> {
+        let mut out = Vec::new();
+        let (sw, sh) = (screen.0 as f32, screen.1 as f32);
+        out.extend(self.hud.rect(0.0, 0.0, sw, sh, [0.0, 0.0, 0.0, 0.45]));
+        let list = self.call_list();
+        let (px, lh, bw) = (8.0 * scale, 14.0 * scale, 300.0 * scale);
+        let shown = list.len().min(12);
+        let bh = (shown as f32 + 2.0) * lh + 8.0 * scale;
+        let (x, y) = ((sw - bw) / 2.0, (sh - bh) / 2.0);
+        out.extend(self.hud.rect(x, y, bw, bh, [0.05, 0.05, 0.05, 0.85]));
+        let white = [0.9, 0.9, 0.9, 1.0];
+        out.extend(
+            self.hud
+                .label(x + 8.0 * scale, y + 6.0 * scale, px, white, "Choose a call"),
+        );
+        let first = row.saturating_sub(11);
+        for (k, &c) in list.iter().enumerate().skip(first).take(12) {
+            let ry = y + 6.0 * scale + (k - first + 1) as f32 * lh + 4.0 * scale;
+            if k == row {
+                let hl = [0.2, 0.45, 0.2, 0.9];
+                out.extend(self.hud.rect(
+                    x + 4.0 * scale,
+                    ry - 3.0 * scale,
+                    bw - 8.0 * scale,
+                    lh,
+                    hl,
+                ));
+            }
+            let name = self
+                .call_name_of(c)
+                .unwrap_or_else(|| format!("Call {}", c - 9));
+            let t = format!("{}. {name}", k + 1);
+            out.extend(self.hud.label(x + 10.0 * scale, ry, px, white, &t));
+        }
+        out
+    }
+
     /// The weapon-pick screen: a dimmed world and a list of the carried
     /// weapons with their ammo, scrolled to keep `row` in view.
     fn picker_sprites(&self, row: usize, screen: (u32, u32), scale: f32) -> Vec<Sprite> {
+        if self.picker_kind == Pick::Call {
+            return self.call_picker_sprites(row, screen, scale);
+        }
         let mut out = Vec::new();
         let (sw, sh) = (screen.0 as f32, screen.1 as f32);
         out.extend(self.hud.rect(0.0, 0.0, sw, sh, [0.0, 0.0, 0.0, 0.45]));
@@ -906,7 +1095,7 @@ impl HuntView {
                     .label(x + bw - aw - 12.0 * scale, ry, px, color, &ammo),
             );
         }
-        let hint = "Up/Down or 1-9, Enter to take, Esc to close";
+        let hint = "Up/Down or 1-9, Enter (or let go) to take, Esc";
         let hy = y + bh - lh;
         out.extend(self.hud.label(x + 8.0 * scale, hy, px, grey, hint));
         out
@@ -1220,16 +1409,34 @@ impl Scene for HuntView {
         }
         let k = self.hunt.room.options.keys;
         let pressed = |vk| keys::pressed(input, vk);
-        if input.pressed(self.pick_key())
-            && !self.hunt.paused
+        self.weapon_flash = (self.weapon_flash - dt).max(0.0);
+        // The pick keys (the mouse only looks): a short press takes the
+        // next weapon or call, holding one opens its picker.
+        let can_pick = !self.hunt.paused
+            && !self.hunt.show_exit()
             && self.hunt.death.is_none()
-            && !self.hunt.opts.trophy
-            && !self.hunt.opts.observer
-        {
-            let cur = self.hunt.weapons.current;
-            self.picker = Some(self.carried().iter().position(|&i| i == cur).unwrap_or(0));
-            self.acc_ms = 0.0;
-            return;
+            && !self.hunt.opts.trophy;
+        if can_pick && !self.hunt.opts.observer && input.pressed(self.pick_key()) {
+            self.held_pick = Some((Pick::Weapon, 0.0));
+        }
+        if can_pick && pressed(k.change_call) && !self.call_list().is_empty() {
+            self.held_pick = Some((Pick::Call, 0.0));
+        }
+        if let Some((kind, t)) = self.held_pick {
+            let t = t + dt;
+            if !self.pick_held(input, kind) {
+                self.held_pick = None;
+                match kind {
+                    Pick::Weapon => self.next_weapon(),
+                    Pick::Call => self.pending.change_call = true,
+                }
+            } else if t >= HOLD_TO_PICK {
+                self.held_pick = None;
+                self.open_pick(kind, true);
+                return;
+            } else {
+                self.held_pick = Some((kind, t));
+            }
         }
         use c2_pad::Action as Pad;
         let pad = &input.pad;
@@ -1334,7 +1541,7 @@ impl Scene for HuntView {
         if pressed(k.call) || pad.pressed(Pad::Call) {
             self.pending.call = true;
         }
-        if pressed(k.change_call) || (pad.pressed(Pad::NextCall) && !map_pick) {
+        if pad.pressed(Pad::NextCall) && !map_pick {
             self.pending.change_call = true;
         }
         let mut hin = HuntInput {
@@ -1642,9 +1849,15 @@ impl Scene for HuntView {
         }
         // Map (`DrawHMap`): view range circle, the hunter, radar blips.
         if self.hunt.map_mode {
-            // The phone's map fills most of the screen's height.
-            let scale = match self.kit {
-                Some(_) => screen.1 as f32 * 0.75 / 256.0,
+            // The phone's map: on its panel, filling most of the screen's
+            // height.
+            let kit_map = self.kit.as_ref().map(|k| {
+                let area = crate::save::area_title(&self.setup.game_dir, self.hunt.area_no);
+                let relocate = self.hunt.can_teleport();
+                k.map_panel(&self.hud, screen, &area, relocate, &mut sprites)
+            });
+            let scale = match kit_map {
+                Some((_, _, side)) => side / 256.0,
                 None => scale,
             };
             if let Some((id, mw, mh)) = self
@@ -1652,10 +1865,15 @@ impl Scene for HuntView {
                 .and_then(|i| self.hud.image(i).map(|im| (i, im.w as f32, im.h as f32)))
             {
                 let (cx, cy) = (screen.0 as f32 / 2.0, screen.1 as f32 / 2.0);
-                let (fx, fy) = (cx - mw * scale / 2.0, cy - (mh / 2.0 + 6.0) * scale);
-                sprites.push(Sprite::new(id, fx, fy, scale));
+                let (fx, fy) = match kit_map {
+                    Some((x, y, _)) => (x, y),
+                    None => (cx - mw * scale / 2.0, cy - (mh / 2.0 + 6.0) * scale),
+                };
+                let s = 256.0 * scale / mw.max(1.0);
+                let s = if kit_map.is_some() { s } else { scale };
+                sprites.push(Sprite::new(id, fx, fy, s));
                 let (ox, oy) = (fx + self.map_at.0 * scale, fy + self.map_at.1 * scale);
-                if let Some(k) = &self.kit {
+                if let (Some(k), None) = (&self.kit, kit_map) {
                     k.map_frame(&self.hud, (ox, oy, 256.0 * scale), &mut sprites);
                 }
                 let p = &self.hunt.player;
@@ -1668,7 +1886,7 @@ impl Scene for HuntView {
                 };
                 let r = self.hunt.opts.view_r as f32 / 4.0;
                 let yellow = [1.0, 0.85, 0.1, 1.0];
-                if self.map_mobile {
+                if self.map_mobile && kit_map.is_none() {
                     // The mobile game's: a yellow frame, and a yellow cone
                     // for what the hunter sees (77 degrees, as the
                     // original's camera; out to the view range).
@@ -1697,7 +1915,10 @@ impl Scene for HuntView {
                     ));
                 }
                 // The view range circle (yellow in the mobile look).
-                let (ring, shade) = if self.map_mobile {
+                let (ring, shade) = if kit_map.is_some() {
+                    // The phone's: a pale circle.
+                    ([0.95, 0.92, 0.88, 0.8], [0.0, 0.0, 0.0, 0.3])
+                } else if self.map_mobile {
                     (yellow, [0.3, 0.25, 0.0, 1.0])
                 } else {
                     ([0.0, 0.56, 0.0, 1.0], [0.0, 0.12, 0.0, 1.0])
@@ -1767,11 +1988,23 @@ impl Scene for HuntView {
                         (None, _, Some(_)) => "Enter: teleport to the circle".into(),
                         _ => "Click a spot to teleport to".into(),
                     };
-                    let px = 8.0 * scale.max(1.0).round();
-                    sprites.extend(
-                        self.hud
-                            .label(ox, oy + 262.0 * scale, px, [1.0; 4], &status),
-                    );
+                    match &self.kit {
+                        // Over the map's foot, clear of its titles.
+                        Some(k) => {
+                            let y = screen.1 as f32 * 0.72;
+                            k.notify_at(&self.hud, screen, &status, y, &mut sprites);
+                        }
+                        None => {
+                            let px = 8.0 * scale.max(1.0).round();
+                            sprites.extend(self.hud.label(
+                                ox,
+                                oy + 262.0 * scale,
+                                px,
+                                [1.0; 4],
+                                &status,
+                            ));
+                        }
+                    }
                 }
                 // Where he looks: a short line of dots, as on the 3DS map.
                 if self.map_heading {
@@ -1795,7 +2028,9 @@ impl Scene for HuntView {
                         if c.health <= 0 {
                             continue;
                         }
-                        let color = if self.hunt.is_target(c) {
+                        let color = if self.hunt.is_target(c) && kit_map.is_some() {
+                            yellow
+                        } else if self.hunt.is_target(c) {
                             [0.0, 0.97, 0.0, 1.0]
                         } else if self.hunt.is_huntable(c) {
                             [0.2, 0.55, 1.0, 1.0]
@@ -1886,11 +2121,25 @@ impl Scene for HuntView {
                     }),
                     binoculars: h.bin_mode,
                     calls: h.call_icon_time > 0,
+                    heading: h.player.alpha,
                 };
                 k.buttons(&self.hud, screen, st, &mut sprites);
             }
-            // A message, else the call just picked (no call pictures).
-            let call = (h.call_icon_time > 0)
+            // The call just picked: its animal in a hexagon, as the
+            // phone's (its name when there's no picture).
+            let pic = (h.call_icon_time > 0)
+                .then(|| {
+                    let i = (h.target_call - 10).max(0) as usize;
+                    self.call_pics.get(i).copied().flatten()
+                })
+                .flatten();
+            if pic.is_some() && !quiet {
+                k.hexes(&self.hud, screen, &[(pic, true)], &mut sprites);
+            } else if self.weapon_flash > 0.0 && !quiet {
+                let w = k.weapon_picture(h.weapons.target);
+                k.hexes(&self.hud, screen, &[(w, true)], &mut sprites);
+            }
+            let call = (h.call_icon_time > 0 && pic.is_none())
                 .then(|| self.call_name())
                 .flatten()
                 .map(|n| format!("Call: {n}"));
@@ -1903,7 +2152,27 @@ impl Scene for HuntView {
             }
         }
         if let Some(row) = self.picker {
-            sprites.extend(self.picker_sprites(row, screen, scale));
+            match &self.kit {
+                // The phone's: the carried weapons' pictures in hexagons.
+                Some(k) => {
+                    let items: Vec<_> = self
+                        .pick_list(self.picker_kind)
+                        .iter()
+                        .enumerate()
+                        .map(|(n, &i)| {
+                            let pic = match self.picker_kind {
+                                Pick::Weapon => k.weapon_picture(i),
+                                Pick::Call => {
+                                    self.call_pics.get(i.saturating_sub(10)).copied().flatten()
+                                }
+                            };
+                            (pic, n == row)
+                        })
+                        .collect();
+                    k.hexes(&self.hud, screen, &items, &mut sprites);
+                }
+                None => sprites.extend(self.picker_sprites(row, screen, scale)),
+            }
         }
         // The trophy room's question, or its hint.
         if self.hunt.opts.trophy {
@@ -1963,14 +2232,29 @@ impl Scene for HuntView {
                 sprites.push(Sprite::new(id, x, y, scale));
                 below = y + h as f32 * scale;
             } else if let Some(k) = &self.kit {
-                below = k.popup(&self.hud, screen, "Leave the hunt?", &mut sprites);
+                // The phone's menu: hexagons along the top, each with its
+                // key.
+                let keys = if self.pad_last {
+                    ["Y", "B", "A"]
+                } else {
+                    ["R", "N", "Y"]
+                };
+                let items = [
+                    ("RESTART", keys[0]),
+                    ("RESUME", keys[1]),
+                    ("ESCAPE!", keys[2]),
+                ];
+                k.menu(&self.hud, screen, &items, &mut sprites);
+                below = f32::NAN;
             }
             let hint: &[(&str, &str)] = if self.pad_last {
                 &[("A", "Leave"), ("Y", "Restart"), ("B", "Resume")]
             } else {
                 &[("Y", "Leave"), ("R", "Restart"), ("N", "Resume")]
             };
-            self.hint_bar(&mut sprites, screen, scale, below + 8.0 * scale, true, hint);
+            if !below.is_nan() {
+                self.hint_bar(&mut sprites, screen, scale, below + 8.0 * scale, true, hint);
+            }
         } else if self.hunt.paused {
             let below = pause_below.unwrap_or_else(|| {
                 self.pause_img
@@ -2009,7 +2293,8 @@ impl Scene for HuntView {
             let keyboard = [
                 ("Tab".to_string(), "Map"),
                 (keys::name(k.binoculars), "Binoculars"),
-                (pick, "Switch gun"),
+                (pick, "Next gun (hold: choose)"),
+                (keys::name(k.change_call), "Next call (hold: choose)"),
                 (keys::name(k.jump), "Jump"),
                 (keys::name(k.crouch), "Crouch"),
             ];
@@ -2017,6 +2302,7 @@ impl Scene for HuntView {
                 ("R".to_string(), "Map"),
                 ("L".to_string(), "Binoculars"),
                 ("Y".to_string(), "Switch gun"),
+                ("D-pad down".to_string(), "Next call"),
                 ("A".to_string(), "Jump"),
                 ("D-pad up".to_string(), "Crouch"),
             ];

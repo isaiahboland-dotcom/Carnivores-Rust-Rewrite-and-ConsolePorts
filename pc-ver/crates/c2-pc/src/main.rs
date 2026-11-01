@@ -51,7 +51,7 @@ const USAGE: &str = "usage:
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
   c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--models] [--shot out.png]
   c2-pc hunt  <AREA.MAP|TROPHY.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all]
-              [--weapon N] [--bino] [--pause] [--exit] [--message TEXT] [--kill] [--plaque] [--observer] [--player N] [--survival normal|hardcore|custom|mobile]\n              [--mobile-survival FILE]\n              [--shot out.png]
+              [--weapon N] [--bino] [--pause] [--exit] [--message TEXT] [--kill] [--plaque] [--pick] [--call] [--observer] [--player N] [--survival normal|hardcore|custom|mobile]\n              [--mobile-survival FILE]\n              [--shot out.png]
 
 model: drag to orbit, wheel zoom, [ ] next/prev file, N/P next/prev animation, Space pause
 area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distance
@@ -351,6 +351,7 @@ fn main() -> Result<()> {
             let (pause, exit) = (o.has("pause"), o.has("exit"));
             let message = o.value("message").map(str::to_owned);
             let (kill, plaque) = (o.has("kill"), o.has("plaque"));
+            let (pick, call) = (o.has("pick"), o.has("call"));
             let map = o.has("map");
             let fire = o
                 .value("fire")
@@ -437,6 +438,10 @@ fn main() -> Result<()> {
                 // --kill, --plaque: a made-up kill's notice or plaque.
                 if kill || plaque {
                     h.show_kill(plaque);
+                }
+                // --pick, --call: the weapon picker, the next call.
+                if pick || call {
+                    h.open_picker(call);
                 }
                 if map {
                     h.open_map();

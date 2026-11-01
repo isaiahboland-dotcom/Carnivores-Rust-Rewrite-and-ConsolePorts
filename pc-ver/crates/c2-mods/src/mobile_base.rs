@@ -291,6 +291,38 @@ impl Kit {
     }
 }
 
+/// Makes the dark (or faint) pixels joined to the picture's edges
+/// transparent.
+fn clear_surround(img: &mut Rgba) {
+    let (w, h) = (img.width, img.height);
+    let dark = |p: &[u8]| p[3] < 128 || u32::from(p[0]) + u32::from(p[1]) + u32::from(p[2]) < 40;
+    let mut seen = vec![false; w * h];
+    let mut todo: Vec<usize> = (0..w)
+        .flat_map(|x| [x, (h.saturating_sub(1)) * w + x])
+        .chain((0..h).flat_map(|y| [y * w, y * w + w.saturating_sub(1)]))
+        .collect();
+    while let Some(i) = todo.pop() {
+        if i >= w * h || seen[i] || !dark(&img.pixels[i * 4..i * 4 + 4]) {
+            continue;
+        }
+        seen[i] = true;
+        img.pixels[i * 4 + 3] = 0;
+        let (x, y) = (i % w, i / w);
+        if x > 0 {
+            todo.push(i - 1);
+        }
+        if x + 1 < w {
+            todo.push(i + 1);
+        }
+        if y > 0 {
+            todo.push(i - w);
+        }
+        if y + 1 < h {
+            todo.push(i + w);
+        }
+    }
+}
+
 /// RGBA as a PNG.
 fn png(img: &Rgba) -> Vec<u8> {
     let mut out = Vec::new();
@@ -812,6 +844,37 @@ impl Game<'_> {
             let text = text.replace(&format!("\"{}\"", font.page), &format!("\"{atlas}.PNG\""));
             write(&dir.join(format!("{stem}.FNT")), text.as_bytes())?;
         }
+        // The hunt's area maps (each area at each time of day, the grid
+        // painted in) and the compass's face.
+        let maps = dir.join("MAPS");
+        std::fs::create_dir_all(&maps).map_err(io(&maps))?;
+        for f in self.apk.0.files() {
+            let l = f.to_ascii_lowercase();
+            let Some(name) = l.strip_prefix("assets/textures/") else {
+                continue;
+            };
+            let stem = name.rsplit('/').next().and_then(|n| n.split_once('.'));
+            let out = match stem {
+                Some((n, _)) if name.starts_with("maps/") && n.ends_with("_map") => maps.join(
+                    format!("{}.PNG", n.trim_end_matches("_map").to_ascii_uppercase()),
+                ),
+                Some(("compas", _)) => dir.join("COMPAS.PNG"),
+                _ => continue,
+            };
+            if let Some(mut img) = self
+                .apk
+                .get(&f)
+                .and_then(|d| c2_formats::mobile::decode_texture(&f, &d).ok())
+            {
+                // The compass's face is cut out by its model; the black
+                // around it goes (filled in from the edges, so its marks
+                // stay).
+                if out.ends_with("COMPAS.PNG") {
+                    clear_surround(&mut img);
+                }
+                write(&out, &png(&img))?;
+            }
+        }
         let title = if self.ice_age {
             "Carnivores: Ice Age"
         } else {
@@ -1010,6 +1073,29 @@ mod tests {
             frames: 0,
             data: Vec::new(),
         }
+    }
+
+    #[test]
+    fn surround_cleared_marks_kept() {
+        // 5x5: black all round, a lit middle with a black mark in it.
+        let mut px = vec![0u8; 5 * 5 * 4];
+        for (i, p) in px.chunks_exact_mut(4).enumerate() {
+            let (x, y) = (i % 5, i / 5);
+            let lit = (1..4).contains(&x) && (1..4).contains(&y) && (x, y) != (2, 2);
+            p.copy_from_slice(&if lit {
+                [200, 100, 50, 255]
+            } else {
+                [0, 0, 0, 255]
+            });
+        }
+        let mut img = Rgba {
+            width: 5,
+            height: 5,
+            pixels: px,
+        };
+        clear_surround(&mut img);
+        let a = |x: usize, y: usize| img.pixels[(y * 5 + x) * 4 + 3];
+        assert_eq!((a(0, 0), a(4, 2), a(1, 1), a(2, 2)), (0, 0, 255, 255));
     }
 
     #[test]

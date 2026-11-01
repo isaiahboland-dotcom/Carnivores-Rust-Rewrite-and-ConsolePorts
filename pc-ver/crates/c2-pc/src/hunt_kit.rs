@@ -21,6 +21,8 @@ pub struct HuntKit {
     /// The round buttons: per weapon (by `_RES.TXT` index), binoculars,
     /// call.
     weapons: Vec<Option<usize>>,
+    /// The weapons' pictures (the picker's), as the menu's.
+    pictures: Vec<Option<usize>>,
     bin_button: Option<usize>,
     call_button: Option<usize>,
     notify: Option<usize>,
@@ -28,23 +30,45 @@ pub struct HuntKit {
     /// The kill notice's panel (a quarter) and the trophy plaque's.
     stats: Option<usize>,
     plaque: Option<usize>,
+    /// The translucent backs of the buttons at the screen's sides.
+    backs: Option<usize>,
+    /// The hexagons: the hunt menu's, the pickers' and the picked one's
+    /// ring.
+    menu_cell: Option<usize>,
+    cell: Option<usize>,
+    active: Option<usize>,
+    relocate: Option<usize>,
+    /// The compass's face, and the area's painted map (grid and all).
+    compass: Option<usize>,
+    pub map: Option<usize>,
 }
+
+/// The phone's yellow (the hunt's words, buttons, rings).
+const YELLOW: [f32; 4] = [0.95, 0.86, 0.25, 1.0];
 
 const BLACK: [f32; 4] = [0.04, 0.04, 0.04, 1.0];
 
 impl HuntKit {
-    pub fn load(huntdat: &Path, hud: &mut Hud, gpu: &Gpu, weapons: usize) -> Option<Self> {
+    /// `map`: the area's painted map (`AREA1_DAY`), when it has one.
+    pub fn load(
+        huntdat: &Path,
+        hud: &mut Hud,
+        gpu: &Gpu,
+        weapons: usize,
+        map: Option<&str>,
+    ) -> Option<Self> {
         let kit = Kit::load(huntdat, hud, gpu)?;
+        let compass = kit.picture("COMPAS.PNG", hud, gpu);
+        let map = map.and_then(|m| kit.picture(&format!("MAPS/{m}.PNG"), hud, gpu));
         let mut img = |n: &str| kit.image(n, hud, gpu);
         // The kit's weapon pictures: the PC's six, the camera, the revolver
         // (the `_RES.TXT` the conversion writes has the revolver 7th).
+        let number = |i: usize| if i < 6 { i + 1 } else { i + 2 };
+        let pictures = (0..weapons)
+            .map(|i| img(&format!("button_weapon_active_{}", number(i))))
+            .collect();
         let weapons = (0..weapons)
-            .map(|i| {
-                img(&format!(
-                    "game_weapon_button_{}",
-                    if i < 6 { i + 1 } else { i + 2 }
-                ))
-            })
+            .map(|i| img(&format!("game_weapon_button_{}", number(i))))
             .collect();
         Some(Self {
             binoculars: img("binoculars_sight"),
@@ -58,12 +82,20 @@ impl HuntKit {
             ],
             me: img("player_on_map"),
             weapons,
+            pictures,
             bin_button: img("game_binoculars"),
             call_button: img("game_call"),
             notify: img("notification_bar"),
             popup: img("base_popup_background"),
             stats: img("game_stats_window"),
             plaque: img("trophy_info_window"),
+            backs: img("game_buttons_back"),
+            menu_cell: img("game_menu_cell"),
+            cell: img("game_cell"),
+            active: img("game_active_cell"),
+            relocate: img("button_game_relocate"),
+            compass,
+            map,
             kit,
         })
     }
@@ -74,14 +106,40 @@ impl HuntKit {
     }
 
     /// A half mask drawn and mirrored across the screen's middle, as tall
-    /// as the screen; black beyond it on a wider screen.
-    fn mask(hud: &Hud, id: Option<usize>, screen: (u32, u32), out: &mut Vec<Sprite>) -> f32 {
+    /// as the screen; black beyond it on a wider screen. `ends`: the
+    /// picture is the mask's ends (the binoculars' goggles), set at the
+    /// screen's sides with its inner edge stretched to the middle.
+    fn mask(
+        hud: &Hud,
+        id: Option<usize>,
+        screen: (u32, u32),
+        ends: bool,
+        out: &mut Vec<Sprite>,
+    ) -> f32 {
         let (sw, sh) = (screen.0 as f32, screen.1 as f32);
         let Some((id, w, h)) = Self::size(hud, id) else {
             return 1.0;
         };
         let k = sh / h;
-        let (half, cx) = (w * k, sw / 2.0);
+        let cx = sw / 2.0;
+        if ends {
+            let end = (w * k).min(cx);
+            let (e0, e1) = ((w - 2.0) / w, (w - 1.0) / w);
+            for (x, ww, uv) in [
+                (0.0, end, [0.0, 0.0, 1.0, 1.0]),
+                (end - 0.5, cx - end + 1.0, [e0, 0.0, e1, 1.0]),
+                (cx - 0.5, cx - end + 1.0, [e1, 0.0, e0, 1.0]),
+                (sw - end, end, [1.0, 0.0, 0.0, 1.0]),
+            ] {
+                out.push(Sprite {
+                    uv,
+                    size: Some([ww, sh]),
+                    ..Sprite::new(id, x, 0.0, 1.0)
+                });
+            }
+            return k;
+        }
+        let half = w * k;
         for (x, uv) in [
             (cx - half, [0.0, 0.0, 1.0, 1.0]),
             (cx, [1.0, 0.0, 0.0, 1.0]),
@@ -109,7 +167,7 @@ impl HuntKit {
 
     /// Looking through the binoculars.
     pub fn binoculars(&self, hud: &Hud, screen: (u32, u32), out: &mut Vec<Sprite>) {
-        let k = Self::mask(hud, self.binoculars, screen, out);
+        let k = Self::mask(hud, self.binoculars, screen, true, out);
         if let Some((id, w, h)) = Self::size(hud, self.cross) {
             let (x, y) = (
                 (screen.0 as f32 - w * k) / 2.0,
@@ -121,7 +179,7 @@ impl HuntKit {
 
     /// Looking through a scope.
     pub fn scope(&self, hud: &Hud, screen: (u32, u32), out: &mut Vec<Sprite>) {
-        Self::mask(hud, self.scope, screen, out);
+        Self::mask(hud, self.scope, screen, false, out);
     }
 
     /// The map's frame around the `side`-pixel area picture at `x`, `y`.
@@ -157,55 +215,289 @@ impl HuntKit {
         true
     }
 
-    /// The round buttons down the right: binoculars, call, the weapon in
-    /// hand (lit when in use).
+    /// The phone's controls: the call and the weapon in hand at the top
+    /// right, the compass ("AREA MAP") and the binoculars at the top left,
+    /// each side on its translucent back; the menu tab at the top.
     pub fn buttons(&self, hud: &Hud, screen: (u32, u32), st: Buttons, out: &mut Vec<Sprite>) {
-        let px = screen.1 as f32 / 9.0;
-        let gap = px * 0.15;
-        let x = screen.0 as f32 - px - gap * 2.0;
-        let mut y = screen.1 as f32 - px - screen.1 as f32 / 12.0;
+        let (sw, sh) = (screen.0 as f32, screen.1 as f32);
+        if let Some((id, _, _)) = Self::size(hud, self.backs) {
+            let (bw, bh) = (sh * 0.39, sh * 0.5);
+            for (x, uv) in [(sw - bw, [0.0, 0.0, 1.0, 1.0]), (0.0, [1.0, 0.0, 0.0, 1.0])] {
+                out.push(Sprite {
+                    uv,
+                    size: Some([bw, bh]),
+                    color: [1.0, 1.0, 1.0, 0.35],
+                    ..Sprite::new(id, x, 0.0, 1.0)
+                });
+            }
+        }
+        let d = sh * 0.135;
         let weapon = st
             .weapon
             .and_then(|i| self.weapons.get(i).copied().flatten());
-        if let (Some(f), Some(n), true) = (&self.kit.body, &st.ammo, weapon.is_some()) {
-            let tpx = (px * 0.4).round();
-            let at = (x - f.width(tpx, n) - gap, y + (px - tpx) / 2.0);
-            let o = (1.0, 0.0, 0.0);
-            f.sprites(
-                out,
-                o,
-                (at.0 + 1.0, at.1 + 1.0),
-                tpx,
-                [0.0, 0.0, 0.0, 0.8],
-                n,
-            );
-            f.sprites(out, o, at, tpx, LIGHT, n);
-        }
-        for (id, on) in [
-            (weapon, st.weapon_out),
-            (self.call_button, st.calls),
-            (self.bin_button, st.binoculars),
+        let at = |x: f32, y: f32| (x - d / 2.0, y - d / 2.0);
+        let (wx, wy) = at(sw - sh * 0.293, sh * 0.337);
+        for (id, on, (x, y)) in [
+            (self.call_button, st.calls, at(sw - sh * 0.326, sh * 0.125)),
+            (weapon, st.weapon_out, (wx, wy)),
+            (self.bin_button, st.binoculars, at(sh * 0.29, sh * 0.331)),
         ] {
             let Some((id, _, _)) = Self::size(hud, id) else {
                 continue;
             };
-            let a = if on { 1.0 } else { 0.55 };
+            let a = if on { 0.95 } else { 0.6 };
             out.push(Sprite {
-                size: Some([px, px]),
+                size: Some([d, d]),
                 color: [a, a, a, a],
                 ..Sprite::new(id, x, y, 1.0)
             });
-            y -= px + gap;
         }
+        // Rounds left, beside the weapon (the phone has no bullets).
+        if let (Some(f), Some(n), true) = (&self.kit.body, &st.ammo, weapon.is_some()) {
+            let tpx = (d * 0.35).round();
+            let at = (wx - f.width(tpx, n) - d * 0.15, wy + (d - tpx) / 2.0);
+            let o = (1.0, 0.0, 0.0);
+            let shadow = [0.0, 0.0, 0.0, 0.8];
+            f.sprites(out, o, (at.0 + 1.0, at.1 + 1.0), tpx, shadow, n);
+            f.sprites(out, o, at, tpx, LIGHT, n);
+        }
+        // The compass: its face seen from above the hunter, the needle
+        // where he looks.
+        let (cx, cy) = (sh * 0.331, sh * 0.12);
+        let (rw, rh) = (sh * 0.22, sh * 0.13);
+        if let Some((id, _, _)) = Self::size(hud, self.compass) {
+            out.push(Sprite {
+                uv: [0.0, 0.0, 1.0, 0.86],
+                size: Some([rw, rh]),
+                ..Sprite::new(id, cx - rw / 2.0, cy - rh / 2.0, 1.0)
+            });
+            let (s, c) = st.heading.sin_cos();
+            let dot = (sh * 0.011).max(2.0);
+            for (grow, color) in [(1.6, [0.05, 0.1, 0.2, 1.0]), (1.0, [0.2, 0.85, 1.0, 1.0])] {
+                for i in 0..10 {
+                    let t = i as f32 / 9.0 * 0.42;
+                    let (x, y) = (cx + s * rw * t, cy - c * rh * t);
+                    let r = dot * grow * (1.0 - t);
+                    out.extend(hud.rect(x - r / 2.0, y - r / 2.0, r, r, color));
+                }
+            }
+        }
+        if let Some(f) = &self.kit.heading {
+            let px = (sh * 0.035).round();
+            let t = "AREA MAP";
+            Self::outlined(
+                f,
+                out,
+                (cx - f.width(px, t) / 2.0, sh * 0.008),
+                px,
+                YELLOW,
+                t,
+            );
+            // The menu tab (Esc).
+            let (tw, th) = (sh * 0.15, sh * 0.046);
+            out.extend(hud.rect((sw - tw) / 2.0, 0.0, tw, th, [0.12, 0.14, 0.17, 0.6]));
+            let t = "menu";
+            let px = (th * 0.62).round();
+            Self::outlined(
+                f,
+                out,
+                ((sw - f.width(px, t)) / 2.0, (th - px) / 2.0),
+                px,
+                YELLOW,
+                t,
+            );
+        }
+    }
+
+    /// A kit sprite as a HUD image.
+    pub fn image(&self, name: &str, hud: &mut Hud, gpu: &Gpu) -> Option<usize> {
+        self.kit.image(name, hud, gpu)
+    }
+
+    /// Weapon `i`'s picture (`_RES.TXT` order).
+    pub fn weapon_picture(&self, i: usize) -> Option<usize> {
+        self.pictures.get(i).copied().flatten()
+    }
+
+    /// Words with a dark edge, as the phone's yellow ones.
+    fn outlined(
+        f: &crate::menu::kit::KitFont,
+        out: &mut Vec<Sprite>,
+        (x, y): (f32, f32),
+        px: f32,
+        color: [f32; 4],
+        text: &str,
+    ) {
+        let o = (1.0, 0.0, 0.0);
+        let dark = [0.1, 0.08, 0.0, color[3]];
+        for (dx, dy) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0), (1.0, 1.0)] {
+            f.sprites(out, o, (x + dx, y + dy), px, dark, text);
+        }
+        f.sprites(out, o, (x, y), px, color, text);
+    }
+
+    /// Hexagons in rows near the top (the weapon and call pickers): each
+    /// picture, the picked one ringed.
+    pub fn hexes(
+        &self,
+        hud: &Hud,
+        screen: (u32, u32),
+        items: &[(Option<usize>, bool)],
+        out: &mut Vec<Sprite>,
+    ) {
+        let (sw, sh) = (screen.0 as f32, screen.1 as f32);
+        let n = items.len();
+        if n == 0 {
+            return;
+        }
+        let (w, h) = (sh * 0.223, sh * 0.25);
+        let (sx, sy) = (sh * 0.247, sh * 0.212);
+        let per = n.div_ceil(2).max(2).min(n);
+        let rows = n.div_ceil(per);
+        let span = (per - 1) as f32 * sx + w + if rows > 1 { sx / 2.0 } else { 0.0 };
+        let x0 = (sw - span) / 2.0;
+        for (i, &(pic, on)) in items.iter().enumerate() {
+            let (r, c) = (i / per, i % per);
+            let x = x0 + c as f32 * sx + if r % 2 == 1 { sx / 2.0 } else { 0.0 };
+            let y = sh * 0.098 + r as f32 * sy;
+            if let Some((id, _, _)) = Self::size(hud, self.cell) {
+                out.push(Sprite {
+                    size: Some([w, h]),
+                    color: [1.0, 1.0, 1.0, 0.35],
+                    ..Sprite::new(id, x, y, 1.0)
+                });
+            }
+            if let Some((id, iw, ih)) = Self::size(hud, pic) {
+                let k = (w * 0.86 / iw).min(h * 0.8 / ih);
+                let (dw, dh) = (iw * k, ih * k);
+                out.push(Sprite {
+                    size: Some([dw, dh]),
+                    ..Sprite::new(id, x + (w - dw) / 2.0, y + (h - dh) / 2.0, 1.0)
+                });
+            }
+            if on {
+                if let Some((id, _, _)) = Self::size(hud, self.active) {
+                    out.push(Sprite {
+                        size: Some([w, h]),
+                        ..Sprite::new(id, x, y, 1.0)
+                    });
+                }
+            }
+        }
+    }
+
+    /// The hunt's menu (Esc): hexagons along the top, each a choice and
+    /// its key.
+    pub fn menu(
+        &self,
+        hud: &Hud,
+        screen: (u32, u32),
+        items: &[(&str, &str)],
+        out: &mut Vec<Sprite>,
+    ) {
+        let (sw, sh) = (screen.0 as f32, screen.1 as f32);
+        let (w, h) = (sh * 0.2, sh * 0.174);
+        // The phone's places: three along the top, the way out between and
+        // under them.
+        let places = [(-0.174, 0.056), (0.17, 0.056), (0.0, 0.168), (0.514, 0.056)];
+        for (&(label, key), (dx, y)) in items.iter().zip(places) {
+            let (x, y) = (sw / 2.0 + dx * sh - w / 2.0, y * sh - h / 2.0);
+            if let Some((id, _, _)) = Self::size(hud, self.menu_cell) {
+                out.push(Sprite {
+                    size: Some([w, h]),
+                    color: [1.0, 1.0, 1.0, 0.45],
+                    ..Sprite::new(id, x, y, 1.0)
+                });
+            }
+            let Some(f) = &self.kit.heading else { continue };
+            let px = (sh * 0.034).round();
+            let ty = y + (h - px) / 2.0 + if y < 0.0 { -y / 2.0 } else { 0.0 };
+            Self::outlined(
+                f,
+                out,
+                (x + (w - f.width(px, label)) / 2.0, ty),
+                px,
+                YELLOW,
+                label,
+            );
+            if let Some(b) = &self.kit.body {
+                let kp = (px * 0.6).round();
+                let at = (x + (w - b.width(kp, key)) / 2.0, ty + px * 1.1);
+                b.sprites(out, (1.0, 0.0, 0.0), at, kp, LIGHT, key);
+            }
+        }
+    }
+
+    /// The map's panel: dark, "AREA MAP" and the area's name over the map,
+    /// RELOCATE under it when the hunter can move (Enter); the map's
+    /// square (x, y, side).
+    pub fn map_panel(
+        &self,
+        hud: &Hud,
+        screen: (u32, u32),
+        area: &str,
+        relocate: bool,
+        out: &mut Vec<Sprite>,
+    ) -> (f32, f32, f32) {
+        let (sw, sh) = (screen.0 as f32, screen.1 as f32);
+        let p = sh * 0.8;
+        let (px0, py0) = ((sw - p) / 2.0, sh * 0.03);
+        match Self::size(hud, self.plaque) {
+            Some((id, _, _)) => out.push(Sprite {
+                size: Some([p, p]),
+                color: [1.0, 1.0, 1.0, 0.7],
+                ..Sprite::new(id, px0, py0, 1.0)
+            }),
+            None => out.extend(hud.rect(px0, py0, p, p, [0.0, 0.0, 0.0, 0.7])),
+        }
+        let side = sh * 0.74;
+        let (mx, my) = ((sw - side) / 2.0, py0 + sh * 0.043);
+        if let Some(f) = &self.kit.heading {
+            let px = (sh * 0.03).round();
+            let y = py0 + sh * 0.01;
+            Self::outlined(f, out, (mx + sh * 0.01, y), px, YELLOW, "AREA MAP");
+            let name = area.to_uppercase();
+            let x = mx + side - sh * 0.01 - f.width(px, &name);
+            Self::outlined(f, out, (x, y), px, YELLOW, &name);
+        }
+        if relocate {
+            let (bw, bh) = (sh * 0.36, sh * 0.1);
+            let r = ((sw - bw) / 2.0, py0 + p - bh * 0.15, bw, bh);
+            if let Some((id, _, _)) = Self::size(hud, self.relocate) {
+                out.push(Sprite {
+                    size: Some([bw, bh]),
+                    color: [1.0, 1.0, 1.0, 0.85],
+                    ..Sprite::new(id, r.0, r.1, 1.0)
+                });
+            }
+            if let Some(f) = self.kit.body.as_ref() {
+                let px = (bh * 0.55).round();
+                let at = (r.0 + bw * 0.33, r.1 + (bh - px) / 2.0);
+                Self::outlined(f, out, at, px, [0.85, 0.75, 0.2, 1.0], "RELOCATE");
+            }
+        }
+        (mx, my, side)
     }
 
     /// A message on the phone's notification bar, centred near the top.
     pub fn notify(&self, hud: &Hud, screen: (u32, u32), text: &str, out: &mut Vec<Sprite>) {
+        self.notify_at(hud, screen, text, screen.1 as f32 * 0.08, out);
+    }
+
+    /// The notification bar with its top at `y`.
+    pub fn notify_at(
+        &self,
+        hud: &Hud,
+        screen: (u32, u32),
+        text: &str,
+        y: f32,
+        out: &mut Vec<Sprite>,
+    ) {
         let Some(f) = &self.kit.body else { return };
         let px = (screen.1 as f32 / 28.0).round();
         let tw = f.width(px, text);
         let (w, h) = (tw + px * 3.0, px * 2.2);
-        let (x, y) = ((screen.0 as f32 - w) / 2.0, screen.1 as f32 * 0.08);
+        let x = (screen.0 as f32 - w) / 2.0;
         match Self::size(hud, self.notify) {
             Some((id, _, _)) => out.push(Sprite {
                 size: Some([w, h]),
@@ -364,4 +656,6 @@ pub struct Buttons {
     pub ammo: Option<String>,
     pub binoculars: bool,
     pub calls: bool,
+    /// Where the hunter looks (radians, 0 north), for the compass.
+    pub heading: f32,
 }

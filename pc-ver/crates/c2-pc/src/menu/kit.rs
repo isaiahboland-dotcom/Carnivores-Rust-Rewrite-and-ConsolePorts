@@ -123,6 +123,17 @@ impl Kit {
         Some(Pic { w, h, px })
     }
 
+    /// A picture of its own in `MOBILE` (`MAPS/AREA1_DAY.PNG`,
+    /// `COMPAS.PNG`), as a HUD image.
+    pub(crate) fn picture(&self, rel: &str, hud: &mut Hud, gpu: &Gpu) -> Option<usize> {
+        let mut p = self.dir.clone();
+        for part in rel.split('/') {
+            p = find_file(&p, part)?;
+        }
+        let pic = decode_png(&std::fs::read(p).ok()?)?;
+        Some(hud.add_image_filtered(gpu, pic.w as u32, pic.h as u32, &pic.px, true))
+    }
+
     /// A sprite as a HUD image.
     pub(crate) fn image(&self, name: &str, hud: &mut Hud, gpu: &Gpu) -> Option<usize> {
         let p = self.sprite(name)?;
