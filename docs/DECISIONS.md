@@ -17,7 +17,17 @@ trophy mode (`Area::set_trophy_spots`, `Area::trophy_start`), so the PC, the
 3DS (the cooker packs the file; `c2-cook --check`: 24 of 24 stands in
 cells 135..174) and the Wii U all use it; a dialect game's own start still
 comes first. Without the file nothing changes. `c2-pc hunt --fill` fills
-the stands in memory for screenshots.
+the stands in memory for screenshots. The hunter starts at the south end
+of the west walk, looking north along the west row (he starts facing
+north). The PC's area loader reads its files itself, so it reads `.SPOT`
+(and `.SNOW`) beside the map as `c2_core::load` does.
+
+**Snow (the Ice Age APK).** Each area's `snow_density` (0.04 to 1 in its
+`.rst`) becomes `AREAn.SNOW` (`density D`); the engine snows as Ice Age's
+(the Modder's Edition's flakes) at D times its density, on every platform
+(the 3DS and Wii U at their own flake caps). The Ice Age APK's stereo
+sounds (IMA ADPCM and PCM) are now decoded and mixed to mono: the
+conversion had stopped on one.
 
 ## 2026-11-01 — APK base: the launcher builds the game from the player's APK
 

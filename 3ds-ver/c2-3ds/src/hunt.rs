@@ -647,6 +647,10 @@ impl Game {
         );
         hunt.area_no = c2_formats::mee::area_of(&setup.area).map_or(0, |n| n as i32);
         hunt.clock = clock();
+        // Snow of the area's own (the phone's Ice Age areas).
+        if let (None, Some(s)) = (&hunt.effects.snow, area.snow) {
+            hunt.effects.snow = Some(c2_core::effects::Snowfall::new(s, SNOW_MAX));
+        }
         // Snow by the area's `.c2map` (Ice Age's areas beside C2's).
         if hunt.effects.snow.is_none()
             && info

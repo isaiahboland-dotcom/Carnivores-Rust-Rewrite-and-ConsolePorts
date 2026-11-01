@@ -134,8 +134,22 @@ impl AreaView {
         let trophy = map_path
             .file_stem()
             .is_some_and(|s| s.to_string_lossy().to_ascii_lowercase().contains("trophy"));
+        // Ours beside the map (the phone game's areas), as `c2_core::load`
+        // reads them: its snow, a trophy room's own stands.
+        let text = |ext: &str| {
+            let p = sibling(map_path, ext).ok()?;
+            std::fs::read(p)
+                .ok()
+                .map(|d| String::from_utf8_lossy(&d).into_owned())
+        };
+        if let Some(t) = text("snow") {
+            area.set_snow(&t);
+        }
         if trophy {
             area.set_trophy_mode();
+            if let Some(t) = text("spot") {
+                area.set_trophy_spots(&t);
+            }
         }
         if area.bad_object_cells > 0 {
             tracing::warn!(

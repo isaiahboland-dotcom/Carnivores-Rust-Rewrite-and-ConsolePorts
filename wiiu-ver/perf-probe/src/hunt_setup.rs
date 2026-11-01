@@ -285,6 +285,10 @@ pub fn load(install: Option<&Install>, choice: &HuntChoice, room: &Save, seed: u
     }
     let mut hunt = new_hunt(&area, species, infos, anims, choice, rules.tables.as_ref(), targets, &roamers, room, seed)?;
     hunt.area_no = c2_formats::mee::area_of(&area_file).map_or(0, |n| n as i32);
+    // Snow of the area's own (the phone's Ice Age areas).
+    if let (None, Some(s), false) = (&hunt.effects.snow, area.snow, trophy) {
+        hunt.effects.snow = Some(c2_core::effects::Snowfall::new(s, SNOW_MAX));
+    }
     // Snow by the area's `.c2map` (Ice Age's areas beside C2's).
     if hunt.effects.snow.is_none() && !trophy && install.info.snow.iter().any(|s| s.eq_ignore_ascii_case(&area_file)) {
         hunt.effects.snow = Some(c2_core::effects::Snowfall::new(c2_formats::mee::Snow::ICE_AGE, SNOW_MAX));

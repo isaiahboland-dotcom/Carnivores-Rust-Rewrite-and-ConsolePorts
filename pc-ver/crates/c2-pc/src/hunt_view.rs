@@ -531,13 +531,18 @@ impl HuntView {
         } else {
             setup.pc.render_cells(opts.view_r)
         };
+        let own_snow = area.snow;
         let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
         // The area's snow (Ice Age).
         hunt.effects.snow = mee
             .and_then(|t| t.snow)
+            .or(own_snow)
             .or_else(|| c2map_snow(&setup.map))
             .filter(|_| !trophy)
             .map(|s| c2_core::effects::Snowfall::new(s, 2000));
+        if let Some(s) = &hunt.effects.snow {
+            tracing::info!("snow: {} flakes", s.kind.dens);
+        }
         // The dialect game's own survival: its roster from the area's box.
         let modded = mee
             .filter(|_| setup.survival == Some(SurvivalKind::Mee))

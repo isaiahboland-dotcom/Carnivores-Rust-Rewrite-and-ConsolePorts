@@ -603,10 +603,13 @@ impl Cooker {
 fn cook_area(c: &mut Cooker, vfs: &Vfs, name: &str) -> Result<()> {
     c.scope = name.to_string();
     c.copy(vfs, &format!("HUNTDAT/AREAS/{name}.MAP"))?;
-    // A trophy room's own layout (the phone game's, ours), when it has one.
-    let spot = format!("HUNTDAT/AREAS/{name}.SPOT");
-    if vfs.resolve(&spot).is_some() {
-        c.copy(vfs, &spot)?;
+    // A trophy room's own layout, an area's own snow (the phone game's,
+    // ours), when it has them.
+    for ext in ["SPOT", "SNOW"] {
+        let f = format!("HUNTDAT/AREAS/{name}.{ext}");
+        if vfs.resolve(&f).is_some() {
+            c.copy(vfs, &f)?;
+        }
     }
     let area = c2_core::load::area(vfs, name, TimeOfDay::Day)?;
     let profile = c.profile;

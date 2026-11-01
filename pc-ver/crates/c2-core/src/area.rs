@@ -81,6 +81,9 @@ pub struct Area {
     /// Where the hunter starts in a trophy room laid out by its `.SPOT`
     /// file (`None`: the original's door).
     pub trophy_start: Option<(u16, u16)>,
+    /// Snow of its own (`.SNOW`, ours: the phone's Ice Age areas), as Ice
+    /// Age's at the area's density.
+    pub snow: Option<c2_formats::mee::Snow>,
     /// Collision data per RSC object, in world units.
     pub shapes: Vec<crate::collide::ObjectShape>,
     /// `RandomMap[32][32]` (0..1023): darkens objects a little per cell.
@@ -118,8 +121,24 @@ impl Area {
             landings,
             bad_object_cells: bad,
             trophy_start: None,
+            snow: None,
             random_map: random_map(),
         }
+    }
+
+    /// An area's snow from its `.SNOW` text (`density D`: the phone's
+    /// `snow_density`, 1 as Ice Age's on PC); nothing for none or 0.
+    pub fn set_snow(&mut self, text: &str) {
+        let d = text.lines().find_map(|l| {
+            let mut w = l.split_whitespace();
+            (w.next()? == "density").then_some(())?;
+            w.next()?.parse::<f32>().ok()
+        });
+        let ice = c2_formats::mee::Snow::ICE_AGE;
+        self.snow = d.filter(|&d| d > 0.0).map(|d| c2_formats::mee::Snow {
+            dens: (ice.dens as f32 * d.min(4.0) + 0.5) as i32,
+            ..ice
+        });
     }
 
     /// A trophy room's own layout (ours: the phone game's room, written by
@@ -450,6 +469,11 @@ mod tests {
         );
         assert_eq!(a.trophy_start, Some((154, 167)));
         assert_eq!(a.landings, vec![(140, 135), (146, 135)]);
+        let mut c = Area::flat(10);
+        c.set_snow("density 0.1\n");
+        assert_eq!(c.snow.map(|s| s.dens), Some(200));
+        c.set_snow("density 0");
+        assert!(c.snow.is_none());
         // Nothing readable: the original's ring stays.
         let mut b = Area::flat(10);
         b.set_trophy_mode();

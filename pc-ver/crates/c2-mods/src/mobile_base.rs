@@ -48,7 +48,19 @@ fn write(path: &Path, data: &[u8]) -> Result<(), ModError> {
 fn area(apk: &Apk, name: &str, dir: &Path, stem: &str) -> Result<PathBuf, ModError> {
     let man = apk.0.read(&format!("assets/areas/{name}.man"))?;
     let rst = apk.0.read(&format!("assets/areas/{name}.rst"))?;
-    let rst = mobile_area::parse_rst(&String::from_utf8_lossy(&rst))?;
+    let text = String::from_utf8_lossy(&rst);
+    // Its snow (Ice Age's areas), as the engine reads it (`Area::set_snow`).
+    let snow = text.lines().find_map(|l| {
+        let (k, v) = l.split_once('=')?;
+        (k.trim() == "snow_density").then(|| v.trim().parse::<f32>().ok())?
+    });
+    if let Some(d) = snow.filter(|&d| d > 0.0) {
+        write(
+            &dir.join(format!("{stem}.SNOW")),
+            format!("density {d}\n").as_bytes(),
+        )?;
+    }
+    let rst = mobile_area::parse_rst(&text)?;
     let map = mobile_area::parse_man(&man)?;
     let rsc = mobile_area::rsc_from(&rst, apk)?;
     let path = dir.join(format!("{stem}.MAP"));
@@ -296,7 +308,8 @@ impl Kit {
 /// (`Area::set_trophy_mode`) lies outside it. Ours: six stands a side, four
 /// cells in from the walls and facing in, in the ring's order (north west
 /// to east, east north to south, south east to west, west south to north);
-/// the hunter starts on the south side's walk, facing the middle. The
+/// the hunter starts at the south end of the west walk (facing north, as he
+/// starts: down the west row to the north one). The
 /// engine reads it as `TROPHY.SPOT` (`Area::set_trophy_spots`).
 fn trophy_spots(rst: &str) -> Option<String> {
     let bound = |k: &str| {
@@ -313,7 +326,7 @@ fn trophy_spots(rst: &str) -> Option<String> {
     let along = |a: i32, b: i32| (0..6).map(move |i| a + (b - a) * i / 5);
     let (x0, x1, z0, z1) = (w + 9, e - 9, n + 9, s - 9);
     let mut out = String::from("# c2rs: the phone game's trophy room (its walls), our stands\n");
-    out += &format!("start {} {}\n", (w + e) / 2, s - 11);
+    out += &format!("start {} {}\n", w + 12, s - 10);
     let sides = [
         along(x0, x1).map(|x| (x, n + 4)).collect::<Vec<_>>(),
         along(z0, z1).map(|z| (e - 4, z)).collect(),
@@ -1141,7 +1154,7 @@ mod tests {
                 .collect()
         };
         let stands = cells("stand");
-        assert_eq!(cells("start"), vec![(154, 167)]);
+        assert_eq!(cells("start"), vec![(143, 168)]);
         assert_eq!(stands.len(), 24);
         assert_eq!((stands[0], stands[5]), ((140, 135), (169, 135)));
         assert_eq!((stands[6], stands[23]), ((174, 140), (135, 140)));

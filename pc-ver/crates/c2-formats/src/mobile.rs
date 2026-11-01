@@ -426,55 +426,102 @@ pub fn decode_wav(data: &[u8]) -> Result<(Vec<u8>, u32), FormatError> {
     let Some(f) = wav.format else {
         return Ok((wav.pcm, 22050));
     };
-    if f.tag != 0x11 {
-        return Ok((wav.pcm, f.sample_rate));
-    }
-    if f.channels != 1 {
+    let ch = usize::from(f.channels);
+    if !(1..=2).contains(&ch) {
         return Err(FormatError {
             offset: 0,
             context: "wav.channels".into(),
             kind: FormatErrorKind::BadCount(i64::from(f.channels)),
         });
     }
+    if f.tag != 0x11 {
+        // 16-bit stereo (the Ice Age APK's music): mixed to mono, as the
+        // game's sounds are.
+        let pcm = if ch == 2 && f.bits == 16 {
+            mono(
+                &wav.pcm
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|&b| i16::from_le_bytes(b))
+                    .collect::<Vec<_>>(),
+            )
+        } else {
+            wav.pcm
+        };
+        return Ok((pcm, f.sample_rate));
+    }
     // Block size from the `fmt ` chunk (offset 32 of the usual layout).
     let align = data
         .get(32..34)
         .map(|b| usize::from(u16::from_le_bytes([b[0], b[1]])))
-        .filter(|&a| a > 4)
-        .unwrap_or(512);
-    let mut out = Vec::with_capacity(wav.pcm.len() * 4);
+        .filter(|&a| a > 4 * ch)
+        .unwrap_or(512 * ch);
+    // IMA ADPCM: per block a header per channel (first sample, step
+    // index), then each channel's nibbles four bytes at a time in turn.
+    let mut out: Vec<i16> = Vec::with_capacity(wav.pcm.len() * 2);
     for block in wav.pcm.chunks(align) {
-        if block.len() < 4 {
+        if block.len() < 4 * ch {
             break;
         }
-        let mut pred = i32::from(i16::from_le_bytes([block[0], block[1]]));
-        let mut index = i32::from(block[2]).clamp(0, 88);
-        out.extend_from_slice(&(pred as i16).to_le_bytes());
-        for &byte in &block[4..] {
-            for nib in [byte & 15, byte >> 4] {
-                let step = IMA_STEP[index as usize];
-                let mut diff = step >> 3;
-                if nib & 4 != 0 {
-                    diff += step;
+        let mut pred = [0i32; 2];
+        let mut index = [0i32; 2];
+        let mut chans: [Vec<i16>; 2] = Default::default();
+        for c in 0..ch {
+            let h = &block[c * 4..c * 4 + 4];
+            pred[c] = i32::from(i16::from_le_bytes([h[0], h[1]]));
+            index[c] = i32::from(h[2]).clamp(0, 88);
+            chans[c].push(pred[c] as i16);
+        }
+        for (k, group) in block[4 * ch..].chunks(4).enumerate() {
+            let c = k % ch;
+            for &byte in group {
+                for nib in [byte & 15, byte >> 4] {
+                    let step = IMA_STEP[index[c] as usize];
+                    let mut diff = step >> 3;
+                    if nib & 4 != 0 {
+                        diff += step;
+                    }
+                    if nib & 2 != 0 {
+                        diff += step >> 1;
+                    }
+                    if nib & 1 != 0 {
+                        diff += step >> 2;
+                    }
+                    pred[c] = if nib & 8 != 0 {
+                        pred[c] - diff
+                    } else {
+                        pred[c] + diff
+                    }
+                    .clamp(-32768, 32767);
+                    index[c] = (index[c] + IMA_INDEX[usize::from(nib & 7)]).clamp(0, 88);
+                    chans[c].push(pred[c] as i16);
                 }
-                if nib & 2 != 0 {
-                    diff += step >> 1;
-                }
-                if nib & 1 != 0 {
-                    diff += step >> 2;
-                }
-                pred = if nib & 8 != 0 {
-                    pred - diff
-                } else {
-                    pred + diff
-                }
-                .clamp(-32768, 32767);
-                index = (index + IMA_INDEX[usize::from(nib & 7)]).clamp(0, 88);
-                out.extend_from_slice(&(pred as i16).to_le_bytes());
             }
         }
+        if ch == 1 {
+            out.extend_from_slice(&chans[0]);
+        } else {
+            let n = chans[0].len().min(chans[1].len());
+            out.extend((0..n).flat_map(|i| [chans[0][i], chans[1][i]]));
+        }
     }
-    Ok((out, f.sample_rate))
+    let pcm = if ch == 2 {
+        mono(&out)
+    } else {
+        out.iter().flat_map(|v| v.to_le_bytes()).collect()
+    };
+    Ok((pcm, f.sample_rate))
+}
+
+/// Interleaved stereo samples, averaged to mono (16-bit LE bytes).
+fn mono(stereo: &[i16]) -> Vec<u8> {
+    stereo
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .flat_map(|p| (((i32::from(p[0]) + i32::from(p[1])) / 2) as i16).to_le_bytes())
+        .collect()
 }
 
 /// Faces drawn mostly on see-through texels (the mobile games blend a
@@ -698,5 +745,32 @@ sound_id 1\r\n\tfile = \"b\"\r\n";
             .collect();
         assert_eq!(s[0], 100);
         assert!(s.windows(2).all(|w| w[1] > w[0]));
+    }
+
+    #[test]
+    fn stereo_ima_adpcm_is_mixed_to_mono() {
+        let mut d = b"RIFF\0\0\0\0WAVEfmt ".to_vec();
+        d.extend_from_slice(&20u32.to_le_bytes());
+        for v in [0x11u16, 2] {
+            d.extend_from_slice(&v.to_le_bytes());
+        }
+        d.extend_from_slice(&22050u32.to_le_bytes());
+        d.extend_from_slice(&22050u32.to_le_bytes());
+        d.extend_from_slice(&16u16.to_le_bytes()); // block align
+        d.extend_from_slice(&4u16.to_le_bytes());
+        d.extend_from_slice(&[2, 0, 13, 0]);
+        d.extend_from_slice(b"data");
+        d.extend_from_slice(&16u32.to_le_bytes());
+        // Left starts at 100, right at 300; then four bytes each: the left
+        // stays (nibble 0 adds a little), the right too.
+        d.extend_from_slice(&[100, 0, 0, 0, 44, 1, 0, 0]);
+        d.extend_from_slice(&[0; 8]);
+        let (pcm, _) = decode_wav(&d).unwrap_or_default();
+        let s: Vec<i16> = pcm
+            .chunks(2)
+            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+            .collect();
+        assert_eq!(s.len(), 9);
+        assert_eq!(s[0], 200);
     }
 }

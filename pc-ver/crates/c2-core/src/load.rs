@@ -160,6 +160,10 @@ pub fn area_with(vfs: &Vfs, name: &str, time: TimeOfDay, lean: bool) -> Result<A
     })?;
     let r = parse(vfs, &format!("HUNTDAT/AREAS/{name}.RSC"), rsc::parse)?;
     let mut a = Area::new(m, r, time);
+    // Snow of its own (the phone's Ice Age areas).
+    if let Ok(d) = vfs.read(&format!("HUNTDAT/AREAS/{name}.SNOW")) {
+        a.set_snow(&String::from_utf8_lossy(&d));
+    }
     if name.to_ascii_lowercase().contains("trophy") {
         a.set_trophy_mode();
         // A room of its own layout (the phone game's).
