@@ -32,6 +32,8 @@ pub struct Launcher {
     balance: crate::balance::Editor,
     /// An APK import running: where it writes its add-ons.
     importing: Option<PathBuf>,
+    /// A game being built from the player's APK, to become the base.
+    apk_base: Option<PathBuf>,
 }
 
 fn style(ctx: &egui::Context) {
@@ -112,6 +114,7 @@ impl Launcher {
                 b
             },
             importing: None,
+            apk_base: None,
         }
     }
 
@@ -176,6 +179,54 @@ impl Launcher {
         }));
         self.importing = Some(out);
         self.job = Some(Job::start("Importing from Carnivores: Ice Age", vec![step]));
+    }
+
+    /// Rebuilds the mobile game from the player's APK as a game folder in
+    /// the data folder (`apk-base/<apk>/`, `c2_mods::mobile_base`), for
+    /// those with only the phone game; `apk_base_done` makes it the base.
+    fn base_from_apk(&mut self, apk: PathBuf) {
+        let stem = apk
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "mobile".into());
+        let out = crate::config::data_dir().join("apk-base").join(&stem);
+        let to = out.clone();
+        let step = Step::Task(Box::new(move |job| {
+            job.log(format!("Reading {}", apk.display()));
+            // A rebuild starts clean (our own folder in the data folder).
+            if to.is_dir() {
+                std::fs::remove_dir_all(&to).map_err(|e| format!("{}: {e}", to.display()))?;
+            }
+            let b = c2_mods::mobile_base::build(&apk, &to).map_err(|e| e.to_string())?;
+            job.log(format!(
+                "{} areas, {} animals, {} weapons",
+                b.areas.len(),
+                b.animals.len(),
+                b.weapons.len()
+            ));
+            for n in b.notes {
+                job.log(format!("  {n}"));
+            }
+            Ok(())
+        }));
+        self.apk_base = Some(out);
+        self.job = Some(Job::start("Building the game from your APK", vec![step]));
+    }
+
+    /// After building from an APK: the game is the base.
+    fn apk_base_done(&mut self) {
+        let Some(out) = self.apk_base.clone() else {
+            return;
+        };
+        match self.job.as_ref().and_then(Job::result) {
+            None => return,
+            Some(true) => {
+                self.set_base(out.clone());
+                self.base_text = out.display().to_string();
+            }
+            Some(false) => {}
+        }
+        self.apk_base = None;
     }
 
     /// After an import: its folders become add-ons, its values go to the
@@ -792,6 +843,28 @@ impl Launcher {
                 if let Some(p) = rfd::FileDialog::new().pick_folder() {
                     self.cfg.overlays.push(p);
                     self.save();
+                }
+            }
+        });
+        ui.add_space(8.0);
+        panel(ui, |ui| {
+            ui.label(RichText::new("Only have the phone game?").color(GOLD));
+            help(
+                ui,
+                "Carnivores: Dinosaur Hunter or Ice Age for Android: pick your APK and the game \
+                 is built from it (its areas, animals, weapons, sounds and the phone's menus) \
+                 and set as the base game. It all stays on this computer.",
+            );
+            let busy = self.busy();
+            if ui
+                .add_enabled(!busy, egui::Button::new("Use my APK as the game..."))
+                .clicked()
+            {
+                if let Some(p) = rfd::FileDialog::new()
+                    .add_filter("Android app", &["apk"])
+                    .pick_file()
+                {
+                    self.base_from_apk(p);
                 }
             }
         });
@@ -1557,6 +1630,14 @@ impl Launcher {
         // A game folder dropped on the game tab (or anywhere while there is
         // none) is the base; everything else is an add-on.
         let first = files[0].clone();
+        // An APK with no game set (or on the game tab): the game from it.
+        let apk = first
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("apk"));
+        if apk && (self.tab == Tab::Game || self.cfg.base.is_none()) && !self.busy() {
+            self.base_from_apk(first);
+            return;
+        }
         let is_game = describe_game(&first).is_some();
         if is_game && (self.tab == Tab::Game || self.cfg.base.is_none()) {
             self.set_base(first);
@@ -1602,6 +1683,7 @@ impl eframe::App for Launcher {
         });
         self.dropped(dropped);
         self.import_done();
+        self.apk_base_done();
         if self.busy() {
             ctx.request_repaint_after(std::time::Duration::from_millis(200));
         }

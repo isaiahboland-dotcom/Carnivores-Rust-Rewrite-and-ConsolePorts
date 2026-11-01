@@ -2,6 +2,17 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-01 — APK base: the launcher builds the game from the player's APK
+
+The game tab has "Use my APK as the game..." (and an APK dropped on the
+window with no game set, or on the game tab, does the same): the launcher
+runs `c2_mods::mobile_base::build` into the data folder
+(`apk-base/<apk name>/`, rebuilt clean each time) and makes it the base
+game, which the PC game, the 3DS builder and the Wii U installer then use
+as any other. The game tab calls it "the mobile game, built from your APK"
+(a `HUNTDAT/MOBILE` folder). The APK's classic survival isn't offered from
+it yet (the add-on import's `mobile-survival` file).
+
 ## 2026-11-01 — APK base: the options as the phone's list, in three tabs
 
 From the owner's options screenshots (a game built from the APK, PC): the

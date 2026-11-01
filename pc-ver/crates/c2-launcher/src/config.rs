@@ -321,7 +321,9 @@ pub fn find_ci(dir: &Path, name: &str) -> Option<PathBuf> {
 /// `HUNTDAT`.
 pub fn describe_game(dir: &Path) -> Option<&'static str> {
     let huntdat = find_ci(dir, "HUNTDAT")?;
-    Some(if c2_mods::ice_age::is_ice_age_dir(dir) {
+    Some(if find_ci(&huntdat, "MOBILE").is_some() {
+        "the mobile game, built from your APK"
+    } else if c2_mods::ice_age::is_ice_age_dir(dir) {
         "Carnivores: Ice Age"
     } else if find_ci(&huntdat, "_MENU.TXT").is_some() {
         "Modder's Edition style game"
@@ -353,6 +355,16 @@ pub fn install_name(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_game_built_from_an_apk_is_named_so() {
+        let dir = std::env::temp_dir().join(format!("c2rs-apk-game-{}", std::process::id()));
+        let mobile = dir.join("HUNTDAT").join("MOBILE");
+        std::fs::create_dir_all(&mobile).unwrap_or_else(|e| panic!("{e}"));
+        let kind = describe_game(&dir);
+        std::fs::remove_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(kind, Some("the mobile game, built from your APK"));
+    }
 
     #[test]
     fn install_names_are_folder_safe() {
