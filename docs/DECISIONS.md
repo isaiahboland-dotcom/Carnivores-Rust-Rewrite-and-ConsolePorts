@@ -2,6 +2,23 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-01 — APK base: the phone's trophy room gets stands of its own (`TROPHY.SPOT`)
+
+The PC places trophies on a fixed ring (`Area::set_trophy_mode`, cells
+66..87) and starts the hunter at its door (76, 70). The phone's room is
+elsewhere: a walled pit (its `.rst` bounds, cells 131..178) with a raised
+block in the middle, so our trophies stood outside it on the plain. Where
+the phone stands its trophies is in its code, not its data; until the
+owner's screenshot of it, ours: the conversion writes `TROPHY.SPOT` beside
+the map (our text: `start X Z`, then 24 `stand X Z` in the ring's order,
+six a side four cells in from the walls, facing in as the ring does; the
+hunter on the south walk facing the middle). `c2_core::load` reads it in
+trophy mode (`Area::set_trophy_spots`, `Area::trophy_start`), so the PC, the
+3DS (the cooker packs the file; `c2-cook --check`: 24 of 24 stands in
+cells 135..174) and the Wii U all use it; a dialect game's own start still
+comes first. Without the file nothing changes. `c2-pc hunt --fill` fills
+the stands in memory for screenshots.
+
 ## 2026-11-01 — APK base: the launcher builds the game from the player's APK
 
 The game tab has "Use my APK as the game..." (and an APK dropped on the

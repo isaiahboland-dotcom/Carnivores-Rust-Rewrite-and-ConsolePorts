@@ -291,6 +291,41 @@ impl Kit {
     }
 }
 
+/// The phone's trophy room is a walled square (`bound_west` .. in its
+/// `.rst`, cells) round a raised middle; the PC's ring of stands
+/// (`Area::set_trophy_mode`) lies outside it. Ours: six stands a side, four
+/// cells in from the walls and facing in, in the ring's order (north west
+/// to east, east north to south, south east to west, west south to north);
+/// the hunter starts on the south side's walk, facing the middle. The
+/// engine reads it as `TROPHY.SPOT` (`Area::set_trophy_spots`).
+fn trophy_spots(rst: &str) -> Option<String> {
+    let bound = |k: &str| {
+        rst.lines().find_map(|l| {
+            let (key, v) = l.split_once('=')?;
+            (key.trim() == k).then(|| v.trim().parse::<i32>().ok())?
+        })
+    };
+    let (w, e) = (bound("bound_west")?, bound("bound_east")?);
+    let (n, s) = (bound("bound_north")?, bound("bound_south")?);
+    if e - w < 24 || s - n < 24 || !(0..1024).contains(&w) || !(0..1024).contains(&e) {
+        return None;
+    }
+    let along = |a: i32, b: i32| (0..6).map(move |i| a + (b - a) * i / 5);
+    let (x0, x1, z0, z1) = (w + 9, e - 9, n + 9, s - 9);
+    let mut out = String::from("# c2rs: the phone game's trophy room (its walls), our stands\n");
+    out += &format!("start {} {}\n", (w + e) / 2, s - 11);
+    let sides = [
+        along(x0, x1).map(|x| (x, n + 4)).collect::<Vec<_>>(),
+        along(z0, z1).map(|z| (e - 4, z)).collect(),
+        along(x1, x0).map(|x| (x, s - 4)).collect(),
+        along(z1, z0).map(|z| (w + 4, z)).collect(),
+    ];
+    for (x, z) in sides.concat() {
+        out += &format!("stand {x} {z}\n");
+    }
+    Some(out)
+}
+
 /// Makes the dark (or faint) pixels joined to the picture's edges
 /// transparent.
 fn clear_surround(img: &mut Rgba) {
@@ -1018,6 +1053,17 @@ pub fn build(apk: &Path, out: &Path) -> Result<Built, ModError> {
     }
     if zip.get("assets/areas/trophy.man").is_some() {
         built.areas.push(area(&zip, "trophy", &dir, "TROPHY")?);
+        // Its walls aren't the PC room's: our layout of its stands.
+        let rst = zip.get("assets/areas/trophy.rst").unwrap_or_default();
+        match trophy_spots(&String::from_utf8_lossy(&rst)) {
+            Some(t) => {
+                let p = dir.join("TROPHY.SPOT");
+                write(&p, t.as_bytes())?;
+            }
+            None => built
+                .notes
+                .push("trophy room: no bounds in trophy.rst, the PC's ring kept".into()),
+        }
     }
     let Some((lib, balance)) = library(&zip) else {
         built
@@ -1078,6 +1124,31 @@ mod tests {
             frames: 0,
             data: Vec::new(),
         }
+    }
+
+    #[test]
+    fn trophy_room_stands_inside_its_walls() {
+        let rst =
+            "[general]\nbound_west = 131\nbound_east = 178\nbound_north = 131\nbound_south = 178\n";
+        let t = trophy_spots(rst).unwrap_or_default();
+        let cells = |k: &str| -> Vec<(i32, i32)> {
+            t.lines()
+                .filter_map(|l| {
+                    let mut w = l.split_whitespace();
+                    (w.next()? == k).then_some(())?;
+                    Some((w.next()?.parse().ok()?, w.next()?.parse().ok()?))
+                })
+                .collect()
+        };
+        let stands = cells("stand");
+        assert_eq!(cells("start"), vec![(154, 167)]);
+        assert_eq!(stands.len(), 24);
+        assert_eq!((stands[0], stands[5]), ((140, 135), (169, 135)));
+        assert_eq!((stands[6], stands[23]), ((174, 140), (135, 140)));
+        assert!(stands
+            .iter()
+            .all(|&(x, z)| (131..=178).contains(&x) && (131..=178).contains(&z)));
+        assert!(trophy_spots("bound_west = 1").is_none());
     }
 
     #[test]

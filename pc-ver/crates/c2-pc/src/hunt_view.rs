@@ -459,7 +459,12 @@ impl HuntView {
         let trophy = setup.trophy();
         let mut rng = MsRand::new(seed);
         let player = if trophy {
-            Player::new(area, mee.and_then(|t| t.trophy_start).unwrap_or((76, 70)))
+            Player::new(
+                area,
+                mee.and_then(|t| t.trophy_start)
+                    .or(area.trophy_start)
+                    .unwrap_or((76, 70)),
+            )
         } else {
             let cell = area.landings[seed as usize % area.landings.len().max(1)];
             Player::new(area, cell)
@@ -753,6 +758,36 @@ impl HuntView {
             self.hunt.trophy_time = 60 * 1000;
             self.hunt.trophy_body = Some(0);
         }
+    }
+
+    /// The trophy room with every stand taken, the huntable animals in
+    /// turn (screenshots: in memory, the save untouched unless left).
+    pub fn fill_trophies(&mut self) {
+        let kinds: Vec<usize> = self
+            .hunt
+            .herd
+            .species
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.info.ai >= 10 && !s.ani_time.is_empty())
+            .map(|(i, _)| i)
+            .collect();
+        if kinds.is_empty() || !self.hunt.opts.trophy {
+            return;
+        }
+        for (i, b) in self.hunt.room.bodies.iter_mut().enumerate().take(24) {
+            *b = c2_formats::sav::TrophyItem {
+                ctype: kinds[i % kinds.len()] as i32,
+                scale: 1.0,
+                score: 10,
+                ..Default::default()
+            };
+        }
+        let room = self.hunt.room.clone();
+        let area = self.view.area();
+        self.hunt
+            .herd
+            .place_trophies(area, &room, &mut self.hunt.rng);
     }
 
     /// Opens the weapon picker, or changes the call (screenshots).

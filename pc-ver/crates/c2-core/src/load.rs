@@ -162,6 +162,10 @@ pub fn area_with(vfs: &Vfs, name: &str, time: TimeOfDay, lean: bool) -> Result<A
     let mut a = Area::new(m, r, time);
     if name.to_ascii_lowercase().contains("trophy") {
         a.set_trophy_mode();
+        // A room of its own layout (the phone game's).
+        if let Ok(d) = vfs.read(&format!("HUNTDAT/AREAS/{name}.SPOT")) {
+            a.set_trophy_spots(&String::from_utf8_lossy(&d));
+        }
     }
     Ok(a)
 }

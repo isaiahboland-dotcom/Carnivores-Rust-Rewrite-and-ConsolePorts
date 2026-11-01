@@ -78,6 +78,9 @@ pub struct Area {
     pub marked_landings: Vec<(u16, u16)>,
     /// `OMap` entries naming a model the RSC doesn't have (the original halts).
     pub bad_object_cells: usize,
+    /// Where the hunter starts in a trophy room laid out by its `.SPOT`
+    /// file (`None`: the original's door).
+    pub trophy_start: Option<(u16, u16)>,
     /// Collision data per RSC object, in world units.
     pub shapes: Vec<crate::collide::ObjectShape>,
     /// `RandomMap[32][32]` (0..1023): darkens objects a little per cell.
@@ -114,7 +117,38 @@ impl Area {
             marked_landings: landings.clone(),
             landings,
             bad_object_cells: bad,
+            trophy_start: None,
             random_map: random_map(),
+        }
+    }
+
+    /// A trophy room's own layout (ours: the phone game's room, written by
+    /// the APK conversion), from its `.SPOT` text: `start X Z`, then a
+    /// `stand X Z` per trophy (cells) in the original ring's order (six a
+    /// side: north west to east, east north to south, south east to west,
+    /// west south to north; each side faces inwards as the ring's do).
+    /// Lines it can't read are skipped; no stands keeps the ring.
+    pub fn set_trophy_spots(&mut self, text: &str) {
+        let mut stands = Vec::new();
+        for line in text.lines() {
+            let mut w = line.split_whitespace();
+            let (Some(k), Some(x), Some(z)) = (w.next(), w.next(), w.next()) else {
+                continue;
+            };
+            let (Ok(x), Ok(z)) = (x.parse::<u16>(), z.parse::<u16>()) else {
+                continue;
+            };
+            if usize::from(x) >= MAP_SIZE || usize::from(z) >= MAP_SIZE {
+                continue;
+            }
+            match k {
+                "start" => self.trophy_start = Some((x, z)),
+                "stand" => stands.push((x, z)),
+                _ => {}
+            }
+        }
+        if !stands.is_empty() {
+            self.landings = stands;
         }
     }
 
@@ -406,6 +440,22 @@ fn create_tmap(map: &mut Map, rsc: &Rsc, landings: &mut Vec<(u16, u16)>, bad: &m
 mod tests {
     use super::*;
     use c2_formats::map::{CELLS, HALF_CELLS};
+
+    #[test]
+    fn a_trophy_room_of_its_own_layout() {
+        let mut a = Area::flat(10);
+        a.set_trophy_mode();
+        a.set_trophy_spots(
+            "# ours\nstart 154 167\nstand 140 135\nstand 9999 1\nstand x 2\nstand 146 135\n",
+        );
+        assert_eq!(a.trophy_start, Some((154, 167)));
+        assert_eq!(a.landings, vec![(140, 135), (146, 135)]);
+        // Nothing readable: the original's ring stays.
+        let mut b = Area::flat(10);
+        b.set_trophy_mode();
+        b.set_trophy_spots("start 1 2");
+        assert_eq!(b.landings.len(), 24);
+    }
 
     fn flat_map(h: u8) -> Map {
         Map {

@@ -328,7 +328,7 @@ fn trophy_room(vfs: &Vfs, info: &str) -> Result<bool> {
     };
     let mut hunt = Hunt::new(
         &area,
-        Player::new(&area, (76, 70)),
+        Player::new(&area, area.trophy_start.unwrap_or((76, 70))),
         herd,
         Weapons::new(vec![], vec![], Bits::NONE, false),
         rng,
