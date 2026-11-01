@@ -193,43 +193,129 @@ pub fn is_ice_age(res: &ResTxt) -> bool {
         })
 }
 
-fn character(b: &Block, slot: &mut usize) -> String {
+/// An animal of Ice Age's APK that Ice Age hasn't (`iaDonor`: the Ice Age
+/// AI it runs as; `roles`: its clips'): the donor's entry made its own
+/// (`crate::mobile::make_entry`: the donor's speeds and kill, its own
+/// animations), with its own numbers from `b`.
+fn from_donor(b: &Block, all: &[Block]) -> Option<String> {
+    use c2_formats::res_txt::c_atoi;
+    let ia = b.get(&["iaDonor"]).map(c_atoi)?;
+    let roles: Vec<Option<&str>> = b
+        .get(&["roles"])?
+        .trim_matches('\'')
+        .split(',')
+        .map(|r| Some(r.trim()).filter(|r| *r != "-" && !r.is_empty()))
+        .collect();
+    let src = all
+        .iter()
+        .find(|x| x.get(&["ai"]).map(c_atoi) == Some(ia) && x.get(&["iaDonor"]).is_none())?;
+    let text = format!("characters {{\n{}}}\n", character(src, &mut 0, &[]));
+    let donor = ResTxt::parse(&text)
+        .ok()?
+        .section("characters")?
+        .blocks
+        .first()?
+        .clone();
+    let name = b.get(&["name"])?.trim_matches('\'');
+    let file = b.get(&["file"])?.trim_matches('\'');
+    let mut e = crate::mobile::make_entry(&donor, name, file, &roles, false);
+    // Its own numbers; the slot's conditions as Ice Age's (`character`).
+    e.entries.retain(|x| {
+        !["callno", "dogsmell", "collectrad", "blor", "blog", "blob"]
+            .contains(&x.key.to_ascii_lowercase().as_str())
+            && !x.key.to_ascii_lowercase().starts_with("cam")
+    });
+    e.subs.retain(|x| {
+        let n = x.name.trim().to_ascii_lowercase();
+        n != "spawninfo" && !n.starts_with("overwrite")
+    });
+    for k in [
+        "health",
+        "mass",
+        "length",
+        "radius",
+        "basescore",
+        "smell",
+        "hear",
+        "look",
+        "shipdelta",
+        "scale0",
+        "scaleA",
+    ] {
+        if let Some(v) = b.get(&[k]) {
+            e.entries.retain(|x| !x.key.eq_ignore_ascii_case(key(k)));
+            e.entries.push(c2_formats::res_txt::Entry {
+                key: key(k).into(),
+                value: v.into(),
+            });
+        }
+    }
+    // The animations' groups after every entry (some dropped above).
+    for x in &mut e.subs {
+        x.at = e.entries.len();
+    }
+    let w = c2_formats::res_txt::write_block(&e).replace("\r\n", "\n");
+    Some(w.strip_suffix("}\n").unwrap_or(&w).to_string())
+}
+
+fn character(b: &Block, slot: &mut usize, all: &[Block]) -> String {
     let ia = b.get(&["ai"]).map_or(0, c2_formats::res_txt::c_atoi);
-    let rule = RULES.iter().find(|r| r.ia == ia);
+    if let Some(body) = from_donor(b, all) {
+        let mut t = body;
+        t += &menu_animal(b, slot);
+        return t + "bloR = 112\nbloG = 0\nbloB = 0\n}\n";
+    }
+    // A game built from the Ice Age APK: its animals Ice Age hasn't run as
+    // a Carnivores 2 kind (`runsAs`, clips in that kind's order), which
+    // the dialect numbers alike; picked and spawned as Ice Age's.
+    let runs_as = b
+        .get(&["runsAs"])
+        .map(c2_formats::res_txt::c_atoi)
+        .filter(|a| (10..=18).contains(a));
+    let rule = RULES
+        .iter()
+        .find(|r| r.ia == ia)
+        .filter(|_| runs_as.is_none());
     let mut t = String::from("{\n");
     for e in &b.entries {
         let k = e.key.as_str();
         match k.to_ascii_lowercase().as_str() {
-            "ai" => t += &format!("ai = {}\n", rule.map_or(ia, |r| r.ai)),
+            "ai" => t += &format!("ai = {}\n", runs_as.or(rule.map(|r| r.ai)).unwrap_or(ia)),
+            "runsas" => {}
             // `danger` is the menu's word; the dialect's AIs know.
             "danger" => {}
             _ => t += &format!("{} = {}\n", key(k), e.value),
         }
     }
-    if let Some(r) = rule {
+    if rule.is_some() || runs_as.is_some() {
         if ia >= 10 {
-            // A menu animal: its call and slot; picked, it shows on the
-            // radar and comes in numbers (group 2), else one of the roster.
-            t += &format!(
-                "callNo = {slot}\noverwrite char{slot} {{\nradar = TRUE\nradR = 0\nradG = 240\nradB = 0\n\
-                 spawninfo{{\nspawngroup = 2\nspawnratio = 1\n}}\n}}\n\
-                 spawninfo{{\nspawngroup = 1\nspawnratio = 1\n}}\ndogSmell = TRUE\n"
-            );
-            if let Some(r) = b.get(&["radius"]) {
-                t += &format!("collectRad = {r}\n");
-            }
-            t += CAM;
-            *slot += 1;
+            t += &menu_animal(b, slot);
         } else {
             t += &format!(
                 "spawninfo{{\nspawngroup = 0\nspawnratio = {}\n}}\n",
                 if ia == 1 { 2 } else { 1 }
             );
         }
-        t += r.lines;
+        t += rule.map_or("", |r| r.lines);
         t += "bloR = 112\nbloG = 0\nbloB = 0\n";
     }
     t + "}\n"
+}
+
+/// A menu animal's call and slot: picked, it shows on the radar and comes
+/// in numbers (group 2), else one of the roster.
+fn menu_animal(b: &Block, slot: &mut usize) -> String {
+    let mut t = format!(
+        "callNo = {slot}\noverwrite char{slot} {{\nradar = TRUE\nradR = 0\nradG = 240\nradB = 0\n\
+         spawninfo{{\nspawngroup = 2\nspawnratio = 1\n}}\n}}\n\
+         spawninfo{{\nspawngroup = 1\nspawnratio = 1\n}}\ndogSmell = TRUE\n"
+    );
+    if let Some(r) = b.get(&["radius"]) {
+        t += &format!("collectRad = {r}\n");
+    }
+    t += CAM;
+    *slot += 1;
+    t
 }
 
 /// Ice Age's `_RES.TXT` in the dialect (its weapons and prices as they
@@ -248,7 +334,7 @@ pub fn to_dialect(res: &ResTxt) -> String {
         if s.name.eq_ignore_ascii_case("characters") {
             t += "characters {\n";
             for b in &s.blocks {
-                t += &character(b, &mut slot);
+                t += &character(b, &mut slot, &s.blocks);
                 t += "\n";
             }
             t += "}\n\n";
@@ -602,6 +688,35 @@ mod tests {
         {\n name = 'Wolf'\n file = 'wolf.car'\n ai = 12\n health = 7\n smell = 0.85\n radius = 418\n danger = TRUE\n}\n\
         {\n name = 'Mammoth'\n file = 'mamm.car'\n ai = 17\n health = 16\n}\n}\n\
         prices {\n start = 100\n dino = 10\n dino = 15\n}\n";
+
+    #[test]
+    fn an_apk_animal_takes_its_ice_age_donors_entry() {
+        let res = ResTxt::parse(
+            "characters {\n{\n name = 'Wolf'\n file = 'wolf.car'\n ai = 12\n health = 3\n}\n\
+             {\n name = 'Mammoth'\n file = 'mamm.car'\n ai = 17\n}\n\
+             {\n name = 'Hyaenodon'\n file = 'hyaenodon.car'\n ai = 21\n health = 7\n smell = 0.5\n\
+             iaDonor = 12\n roles = 'walk,run,idle,die,sleep,-,jump'\n}\n}\n.\n",
+        )
+        .unwrap();
+        let d = ResTxt::parse(&to_dialect(&res)).unwrap();
+        let h = &d.section("characters").unwrap().blocks[2];
+        // The Wolf's AI, speeds and kill; its own clips and numbers; the
+        // next slot.
+        assert_eq!(h.get(&["ai"]), Some("22"));
+        assert_eq!(h.get(&["runspd"]), Some("2.048"));
+        assert_eq!(h.get(&["walkAnim"]), Some("0"));
+        assert_eq!(h.get(&["runAnim"]), Some("1"));
+        assert_eq!(h.get(&["jumpAnim"]), Some("6"));
+        assert_eq!(h.get(&["health"]), Some("7"));
+        assert_eq!(h.get(&["smellK"]), Some("0.5"));
+        assert_eq!(h.get(&["callNo"]), Some("2"));
+        let death = h.subs_named("deathtype").next().unwrap();
+        assert_eq!(death.get(&["dieAnim"]), Some("3"));
+        assert_eq!(death.get(&["sleepAnim"]), Some("4"));
+        let kill = h.subs_named("killtype").next().unwrap();
+        assert_eq!(kill.get(&["hunterAnim"]), Some("5"));
+        assert!(h.get(&["iaDonor"]).is_none() && h.get(&["roles"]).is_none());
+    }
 
     #[test]
     fn ice_age_rules_become_the_dialect() {

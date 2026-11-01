@@ -106,6 +106,41 @@ const AMBIENTS: [(i32, &str); 6] = [
     (12, "brachi1"),
 ];
 
+/// Ice Age's own animals by model, with their AI numbers in Ice Age's
+/// `_RES.TXT`. Its APK's models have the PC Ice Age models' clips in the
+/// same order (checked: counts and roles, the hunter's 13 kills too), so
+/// they are written as Ice Age writes them and `crate::ice_age::layer`
+/// runs them on the Modder's Edition's Ice Age AIs, as Ice Age itself.
+const ICE_AGE_AI: [(&str, i32); 12] = [
+    ("pig1", 1),
+    ("archeo", 2),
+    ("bronto", 10),
+    ("hog", 11),
+    ("wolf", 12),
+    ("rhino", 13),
+    ("diatr", 14),
+    ("deer", 15),
+    ("smilo", 16),
+    ("mamm", 17),
+    ("bear", 18),
+    ("bigfoot", 19),
+];
+
+/// Ice Age's huntable AIs by its animals' names (the donors in `DONORS`
+/// on its APK).
+const ICE_AGE_NAMES: [(&str, i32); 10] = [
+    ("Brontoteriy", 10),
+    ("Wild boar", 11),
+    ("Wolf", 12),
+    ("Wooly rhinoceros", 13),
+    ("Diatryma", 14),
+    ("Giant deer", 15),
+    ("Smilodon", 16),
+    ("Mammoth", 17),
+    ("Bear", 18),
+    ("Yeti", 19),
+];
+
 /// The PC's huntable AIs by animal name (the donors in `DONORS`).
 const PC_AI: [(&str, i32); 9] = [
     ("Parasaurolophus", 10),
@@ -549,14 +584,27 @@ impl Game<'_> {
         // from 19 (a slot of its own; `runsAs` its kind's AI), as a patched
         // exe's extra slots.
         let pc = |i: i32| matches!(i, 7..=12 | 16..=24);
+        // Ice Age's own (its APK): by its AI number, first (its menu order).
+        let ice_age = |i: i32| {
+            let stem = self.chars.files.get(&i)?;
+            ICE_AGE_AI
+                .iter()
+                .find(|(s, _)| s.eq_ignore_ascii_case(stem))
+                .map(|(_, ai)| *ai)
+                .filter(|_| self.ice_age)
+        };
         let mut list: Vec<(i32, Stored)> = self
             .chars
             .params
             .iter()
             .map(|(i, s)| (*i, s.clone()))
             .collect();
-        list.sort_by_key(|(i, _)| (!pc(*i), *i));
-        let mut extra_ai = 19;
+        list.sort_by_key(|(i, _)| match ice_age(*i) {
+            Some(ai) => (0, ai),
+            None => (1 + i32::from(!pc(*i)), *i),
+        });
+        // Past Ice Age's own (its Yeti is 19) on its APK.
+        let mut extra_ai = if self.ice_age { 20 } else { 19 };
         let mut prices = Vec::new();
         for (index, s) in list {
             let stem = AMBIENTS
@@ -571,9 +619,35 @@ impl Game<'_> {
             };
             let car = car_from_in(&c, self.apk, "characters")?;
             let name = self.name(&s, &stem);
-            let (ai, car) = if pc(index) {
+            // On Ice Age's APK, its other animals take an Ice Age kind
+            // (`DONORS`): the clips as they are, by role; `ice_age::layer`
+            // makes the entry from the donor's.
+            let ia_donor = || {
+                let ia = DONORS
+                    .iter()
+                    .find(|(d, _)| *d == stem)?
+                    .1
+                    .iter()
+                    .find_map(|n| {
+                        ICE_AGE_NAMES
+                            .iter()
+                            .find(|(p, _)| p.eq_ignore_ascii_case(n))
+                            .map(|(_, ai)| *ai)
+                    })?;
+                let r = roles(&c, &stem, &car).filter(|r| r.contains(&Some("die")))?;
+                Some((ia, r))
+            };
+            let mut extra = String::new();
+            let (ai, car) = if let Some(ai) = ice_age(index) {
+                ((ai, None), car)
+            } else if pc(index) {
                 // The PC's own: the same clips in the same order.
                 ((index - 6, None), car)
+            } else if let Some((ia, r)) = ia_donor().filter(|_| self.ice_age) {
+                let list: Vec<&str> = r.iter().map(|x| x.unwrap_or("-")).collect();
+                extra = format!(" iaDonor = {ia}\n roles = '{}'\n", list.join(","));
+                extra_ai += 1;
+                ((extra_ai - 1, None), car)
             } else {
                 let donor = DONORS
                     .iter()
@@ -584,9 +658,9 @@ impl Game<'_> {
                             .find_map(|n| PC_AI.iter().find(|(p, _)| p == n).map(|(_, ai)| *ai))
                     });
                 let Some(ai) = donor else {
-                    self.built
-                        .notes
-                        .push(format!("{name}: no PC kind to run it as (left out)"));
+                    self.built.notes.push(format!(
+                        "{name} ({stem}, #{index}): no PC kind to run it as (left out)"
+                    ));
                     continue;
                 };
                 // Checked: the clip in the death's place falls.
@@ -605,7 +679,11 @@ impl Game<'_> {
             };
             let file = format!("{stem}.car");
             self.write_car(&file.to_ascii_uppercase(), &car)?;
-            self.res.push_str(&self.animal_block(&name, &file, ai, &s));
+            let mut block = self.animal_block(&name, &file, ai, &s);
+            if let Some(body) = block.strip_suffix("}\n").filter(|_| !extra.is_empty()) {
+                block = format!("{body}{extra}}}\n");
+            }
+            self.res.push_str(&block);
             let (ai, runs_as) = ai;
             self.built.animals.push(match runs_as {
                 Some(r) => format!("{name} ({file}, AI {ai} as {r})"),
