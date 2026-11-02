@@ -39,15 +39,16 @@ the 3DS's PICA200 GPU and the Wii U's PowerPC CPU.
 
 | Platform | State | Notes |
 |---|---|---|
-| **PC** (Linux; Windows untested) | Playable, feature-rich | The full original game, plus add-ons, Modder's Edition games, standalone games, Carnivores: Ice Age, animals from the mobile games, survival mode and a balance editor. Bugs mostly show up when a lot of mods and add-ons are used at once. |
+| **PC** (Linux; Windows untested) | Playable, feature-rich | The full original game, plus add-ons, Modder's Edition games, standalone games, Carnivores: Ice Age, animals from the mobile games, survival mode and a balance editor. Bugs mostly show up when a lot of mods and add-ons are used at once. Working on smaller bugs and optional quality of life features |
 | **Nintendo 3DS** (homebrew) | Nearly complete | Full hunts, touch menus, bottom-screen map, sound, saves, trophy room, add-on and standalone packs, `.cia` installs. Tested on real 3DS and 2DS hardware. Optional settings help with the handheld controls (see [below](#3ds-settings-for-handheld-play)). Like PC, bugs mostly come from packing in too many add-ons or mods. |
-| **Wii U** (homebrew) | Demo, being optimized | Stock Carnivores 2 only: an HD menu (TV and GamePad) with dawn/day/night and all the original gear and options, all five maps, the nine animals, six weapons, calls, radar, GamePad map. Runs on a real Wii U under Aroma (`.wuhb`) and exits to the HOME menu cleanly. A steady 30 FPS in open areas; 20-25 FPS in thick jungle, where the GPU is the limit ([results](wiiu-ver/perf-probe/hardware-logs/2026-10-30-menu-partial-results.md)). New and not yet tested on the console: survival, the trophy room, saved trophies and score (the PC's save format), the PC's kill notice and trophy plaque, the hunter record, and an exit prompt and pause. New: any game as its own Wii U Menu entry: add-ons, the Modder's Edition and standalone games such as Triassic and Mandibles (tested in Cemu, not yet on the console). |
+| **Wii U** (homebrew) | Demo, being optimized | Stock Carnivores 2 only: an HD menu (TV and GamePad) with dawn/day/night and all the original gear and options, all five maps, the nine animals, six weapons, calls, radar, GamePad map. Runs on a real Wii U under Aroma (`.wuhb`) and exits to the HOME menu cleanly. A steady 30 FPS in open areas; 20-25 FPS in thick jungle, where the GPU is the limit ([results](wiiu-ver/perf-probe/hardware-logs/2026-10-30-menu-partial-results.md)). New and not yet tested on the console: survival, the trophy room, saved trophies and score (the PC's save format), the PC's kill notice and trophy plaque, the hunter record, and an exit prompt and pause. New: any game as its own Wii U Menu entry: add-ons, the Modder's Edition and standalone games such as Triassic and Mandibles. |
 | **PC VR** (OpenXR) | Early first draft | Menus and the hunt setup on a panel, walking the areas, animals that hunt you. No weapons yet. Tested with a PS VR2 on Linux through Monado. |
-| **PS5 / PS VR2** | Not started | Research notes only (`psvr2-ver/gameplan.md`). |
+| **PS5 / PS VR2** | Not started | Research notes only (`psvr2-ver/gameplan.md`). Mainly looking at an optimized PSVR2 setup since the PS5 CFW community is already working on translation layers for PC games to run |
 
 **Planned:** the mobile games' Android APKs as base games. Today an APK only adds its animals (and the
 Dinosaur Hunter's classic survival) to a PC Carnivores 2 or Ice Age install. Later, your own APK will be
-enough on its own to play, with add-ons on top, as the PC games are now.
+enough on its own to play, with add-ons on top, as the PC games are now. 
+Recipe files for some of the more popular mods
 
 ---
 
@@ -79,7 +80,7 @@ command line.
 git clone https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts.git c2rs
 cd c2rs/pc-ver
 cargo build --release          # builds c2-pc, the launchers and c2-vr into pc-ver/target/release/
-cargo run --release -p c2-launcher
+cargo run --release -p c2-launcher --bin c2-launcher   # or ./target/release/c2-launcher
 ```
 
 Three builds of the same app:
@@ -88,7 +89,7 @@ Three builds of the same app:
 |---|---|
 | `c2-launcher` | everything: play on PC, plus the 3DS and Wii U sections if you turn them on (it asks the first time) |
 | `c2-3ds-builder` | 3DS installs only (`cargo run --release -p c2-launcher --bin c2-3ds-builder`) |
-| `c2-wiiu-builder` | Wii U installs only (`--bin c2-wiiu-builder`) |
+| `c2-wiiu-builder` | Wii U installs only (`cargo run --release -p c2-launcher --bin c2-wiiu-builder`) |
 
 The tabs:
 
@@ -205,7 +206,7 @@ are **not part of this project**; download them yourself:
 - **bannertool**: <https://github.com/Steveice10/bannertool/releases>
 
 Put them beside the launcher or in its tools folder (on Linux and macOS, `chmod +x makerom bannertool`),
-then use the 3DS tab, or:
+then use the 3DS tab, or (from `pc-ver/target/release/`):
 
 ```sh
 c2-3ds-builder --cia NAME --tools DIR --out SD_DIR [--target o3ds|n3ds] [--icon PNG] [--banner PNG] [--sound WAV]

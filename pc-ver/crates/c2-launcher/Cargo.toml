@@ -1,6 +1,7 @@
 [package]
 name = "c2-launcher"
 description = "Launchers: play on PC with add-ons, and build 3DS installs (GUI)"
+default-run = "c2-launcher"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
