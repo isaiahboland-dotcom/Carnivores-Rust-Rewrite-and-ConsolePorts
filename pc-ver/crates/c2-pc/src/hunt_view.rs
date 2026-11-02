@@ -2019,8 +2019,7 @@ impl Scene for HuntView {
             // height.
             let kit_map = self.kit.as_ref().map(|k| {
                 let area = crate::save::area_title(&self.setup.game_dir, self.hunt.area_no);
-                let relocate = self.hunt.can_teleport();
-                k.map_panel(&self.hud, screen, &area, relocate, &mut sprites)
+                k.map_panel(&self.hud, screen, &area, &mut sprites)
             });
             let scale = match kit_map {
                 Some((_, _, side)) => side / 256.0,
@@ -2154,23 +2153,11 @@ impl Scene for HuntView {
                         (None, _, Some(_)) => "Enter: teleport to the circle".into(),
                         _ => "Click a spot to teleport to".into(),
                     };
-                    match &self.kit {
-                        // Over the map's foot, clear of its titles.
-                        Some(k) => {
-                            let y = screen.1 as f32 * 0.72;
-                            k.notify_at(&self.hud, screen, &status, y, &mut sprites);
-                        }
-                        None => {
-                            let px = 8.0 * scale.max(1.0).round();
-                            sprites.extend(self.hud.label(
-                                ox,
-                                oy + 262.0 * scale,
-                                px,
-                                [1.0; 4],
-                                &status,
-                            ));
-                        }
-                    }
+                    let px = 8.0 * (screen.1 as f32 / 480.0).max(1.0).round();
+                    sprites.extend(
+                        self.hud
+                            .label(ox, oy + 262.0 * scale, px, [1.0; 4], &status),
+                    );
                 }
                 // Where he looks: a short line of dots, as on the 3DS map.
                 if self.map_heading {
@@ -2312,11 +2299,11 @@ impl Scene for HuntView {
                 .flatten()
                 .map(|n| format!("Call: {n}"));
             let note = match (&self.message, &h.survival) {
-                (Some((m, _)), None) => Some(m.clone()),
-                _ => call,
+                (Some((m, _)), None) => Some(m.as_str()),
+                _ => call.as_deref(),
             };
             if let Some(m) = note {
-                k.notify(&self.hud, screen, &m, &mut sprites);
+                k.notify(&self.hud, screen, m, &mut sprites);
             }
         }
         if let Some(row) = self.picker {

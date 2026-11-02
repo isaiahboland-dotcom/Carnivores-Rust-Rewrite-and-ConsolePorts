@@ -1171,7 +1171,7 @@ impl World {
         let Some(verts) = pose_car(anim, car.mesh.vertices.len(), t) else {
             return;
         };
-        let (da, db) = w.sway(hunt.real_time);
+        let (da, db) = hunt.weapon_sway();
         let (sa, ca) = (-da).sin_cos();
         let (sb, cb) = (-db).sin_cos();
         let wx = if w.optic_mode { widen } else { 1.0 };

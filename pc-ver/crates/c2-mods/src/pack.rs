@@ -743,9 +743,46 @@ fn merge_hunters(
                     base.animations.len()
                 ));
             }
-            crate::hunter::Outcome::Incompatible(why) => notes.push(format!(
-                "`{id}`: its hunter model is left out ({why}); its kills may show the wrong animation"
-            )),
+            crate::hunter::Outcome::Incompatible(why) => {
+                // A different mesh needs its own body, just like standalone
+                // games. Keep its animation indices local to that model.
+                let own = format!("MODS/{id}/hunter.car");
+                let entry = |key: &str, value: String| c2_formats::res_txt::Entry {
+                    key: key.into(),
+                    value,
+                };
+                for change in &mut m.res_changes {
+                    let (section, block) = match change {
+                        Change::Add { section, block } | Change::Modify { section, block, .. } => {
+                            (section, block)
+                        }
+                        Change::Entry { .. } => continue,
+                    };
+                    if section.eq_ignore_ascii_case("characters")
+                        && block
+                            .subs
+                            .iter()
+                            .any(|s| s.name.to_ascii_lowercase().contains("killtype"))
+                    {
+                        block.entries.push(entry("hunterFile", format!("'{own}'")));
+                    }
+                }
+                m.res_changes.push(Change::Add {
+                    section: "characters".into(),
+                    block: Block {
+                        entries: vec![
+                            entry("name", format!("'Hunter ({id})'")),
+                            entry("ai", "0".into()),
+                            entry("file", format!("'{own}'")),
+                        ],
+                        ..Default::default()
+                    },
+                });
+                let mut mem = MemBackend::new();
+                mem.insert(&format!("HUNTDAT/{own}"), data);
+                vfs.push(format!("({id} hunter)"), Box::new(mem));
+                notes.push(format!("`{id}`: its hunter has another body ({why}); kept as `{own}` for its animals' kills"));
+            }
         }
     }
     Ok(Some((path, c2_formats::car::write(&base))))

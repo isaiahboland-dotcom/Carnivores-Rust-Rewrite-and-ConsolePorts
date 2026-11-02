@@ -21,7 +21,9 @@ fn write(root: &Path, files: &[(&str, &[u8])]) {
 }
 
 fn tmp(name: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("c2-mods-loose-{}-{name}", std::process::id()));
+    let d = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../(testing)")
+        .join(format!("c2-mods-loose-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     d
 }
@@ -98,6 +100,57 @@ fn an_add_on_hunter_entry_keeps_the_merged_model() {
     let _ = std::fs::remove_dir_all(&a);
     assert_eq!(file.as_deref(), Some("'hunter.car'"));
     assert_eq!(merged.animations.len(), 3);
+}
+
+#[test]
+fn incompatible_addon_hunter_is_kept_for_its_killer() {
+    let base = tmp("own-base");
+    let addon = tmp("own-addon");
+    write(
+        &base,
+        &[
+            ("HUNTDAT/_RES.TXT", RES.as_bytes()),
+            ("HUNTDAT/hunter.car", &model(&[0, 1])),
+        ],
+    );
+    let mut body = car::parse(&model(&[0, 1, 7])).expect("model");
+    body.mesh.vertices.push(body.mesh.vertices[0]);
+    for a in &mut body.animations {
+        a.data.extend_from_within(..);
+    }
+    write(&addon, &[("beast.car", &model(&[0])), ("HUNTER1.CAR", &car::write(&body)), ("RES_ENTRY.txt", b"{\n name = 'Beast'\n file = 'beast.car'\n ai = 18\n killtype {\n hunterAnim = 2\n eatAnim = 0\n }\n}\n")]);
+    let bases = [base.clone()];
+    let v = vanilla(&bases).expect("base");
+    let m = load_mod(&v, &addon).expect("addon");
+    let pack = build(&bases, vec![m]).expect("pack");
+    let data = pack.vfs.read("HUNTDAT/_RES.TXT").expect("res");
+    let res = c2_formats::res_txt::ResTxt::parse(&String::from_utf8_lossy(&data)).expect("parse");
+    let chars = &res.section("characters").expect("characters").blocks;
+    let beast = chars
+        .iter()
+        .find(|b| b.get(&["name"]) == Some("'Beast'"))
+        .expect("beast");
+    let file = beast.get(&["hunterFile"]).expect("own body");
+    assert!(chars
+        .iter()
+        .any(|b| b.get(&["file"]) == Some(file) && b.get(&["ai"]) == Some("0")));
+    let bytes = pack
+        .vfs
+        .read(&format!("HUNTDAT/{}", file.trim_matches('\'')))
+        .expect("body");
+    assert_eq!(car::parse(&bytes).expect("car").mesh.vertices.len(), 2);
+    assert_eq!(
+        beast
+            .subs
+            .iter()
+            .find(|s| s.name == "killtype")
+            .expect("kill")
+            .block
+            .get(&["hunterAnim"]),
+        Some("2")
+    );
+    std::fs::remove_dir_all(base).expect("cleanup");
+    std::fs::remove_dir_all(addon).expect("cleanup");
 }
 
 /// ARK Yutyrannus ships `MENU.txt` (its `_MENU.TXT` lines) beside its

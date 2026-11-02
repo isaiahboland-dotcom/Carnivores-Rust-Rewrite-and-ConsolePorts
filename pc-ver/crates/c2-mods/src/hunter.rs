@@ -16,7 +16,7 @@ use crate::res_merge::Change;
 pub enum Outcome {
     /// Its animation `i` is now `map[i]`.
     Merged { map: Vec<usize> },
-    /// Not the same body as the base hunter: left out.
+    /// Cannot merge into the base hunter; the caller can preserve a separate model.
     Incompatible(String),
 }
 
@@ -33,6 +33,11 @@ pub fn merge(base: &mut Car, extras: &[Car]) -> Vec<Outcome> {
                     base.mesh.vertices.len()
                 ));
             }
+            // Roll back only appended data if this model exceeds the limit.
+            // Preserve the base without cloning its potentially large frame buffers.
+            let animation_count = base.animations.len();
+            let sound_count = base.sounds.len();
+            let anim_sounds = base.anim_sounds;
             let mut map = Vec::with_capacity(e.animations.len());
             for (i, a) in e.animations.iter().enumerate() {
                 if let Some(j) = base
@@ -44,6 +49,9 @@ pub fn merge(base: &mut Car, extras: &[Car]) -> Vec<Outcome> {
                     continue;
                 }
                 if base.animations.len() >= ANIFX_SLOTS {
+                    base.animations.truncate(animation_count);
+                    base.sounds.truncate(sound_count);
+                    base.anim_sounds = anim_sounds;
                     return Outcome::Incompatible(format!(
                         "more than {ANIFX_SLOTS} hunter animations in all"
                     ));
@@ -53,7 +61,8 @@ pub fn merge(base: &mut Car, extras: &[Car]) -> Vec<Outcome> {
                 // Its sound: the same one if the base has it, else added.
                 let fx = e
                     .anim_sounds
-                    .and_then(|t| usize::try_from(t[i]).ok())
+                    .and_then(|t| t.get(i).copied())
+                    .and_then(|s| usize::try_from(s).ok())
                     .and_then(|s| e.sounds.get(s))
                     .map(|s| match base.sounds.iter().position(|b| b.pcm == s.pcm) {
                         Some(k) => k,
@@ -161,6 +170,25 @@ mod tests {
         assert!(matches!(
             merge(&mut base, &[bad])[0],
             Outcome::Incompatible(_)
+        ));
+    }
+
+    #[test]
+    fn rejected_merge_leaves_base_unchanged() {
+        let tags: Vec<_> = (0..(ANIFX_SLOTS - 1) as i16).collect();
+        let mut base = car(&tags);
+        let before = c2_formats::car::write(&base);
+        let mut extra = car(&[100, 101]);
+        extra.sounds[0].pcm = vec![3, 4];
+        extra.anim_sounds = Some([0; ANIFX_SLOTS]);
+        assert!(matches!(
+            merge(&mut base, &[extra])[0],
+            Outcome::Incompatible(_)
+        ));
+        assert_eq!(c2_formats::car::write(&base), before);
+        assert!(matches!(
+            merge(&mut base, &[car(&[102])])[0],
+            Outcome::Merged { .. }
         ));
     }
 

@@ -1695,7 +1695,7 @@ impl Hunt {
     fn process_shoot(&mut self, area: &Area, cars: &[Option<&Car>], out: &mut Vec<GameEvent>) {
         let cur = self.weapons.current;
         let chambers = self.weapons.info.get(cur).is_some_and(WeaponInfo::chambers);
-        let mee = self.weapons.mee().cloned();
+        let mee = self.weapons.mee();
         if !chambers {
             // The original fires whenever ready while the trigger is held,
             // a dialect weapon without the ammo model once per pull.
@@ -1703,7 +1703,7 @@ impl Hunt {
                 return;
             }
         }
-        let harpoon = mee.as_ref().is_some_and(|m| m.harpoon);
+        let harpoon = mee.is_some_and(|m| m.harpoon);
         if self.player.underwater && !harpoon {
             self.hide_weapon(out);
             return;
@@ -1721,7 +1721,7 @@ impl Hunt {
             if self.fire_held && self.weapons.fire_mode[cur] == 0 {
                 return;
             }
-        } else if self.fire_held && mee.is_some() && !mee.as_ref().is_some_and(|m| m.full_auto) {
+        } else if self.fire_held && mee.is_some() && !mee.is_some_and(|m| m.full_auto) {
             return;
         }
         self.weapons.ftime = 1;
@@ -1731,7 +1731,7 @@ impl Hunt {
 
         let info = self.weapons.info[cur].clone();
         let under = self.player.underwater;
-        let (da, db) = self.weapons.sway(self.real_time);
+        let (da, db) = self.weapon_sway();
         let p = &self.player;
         let origin = [p.x, p.y + p.head_y, p.z];
         let (alpha, beta) = (p.alpha, p.beta);
@@ -2876,14 +2876,28 @@ impl Hunt {
         }
     }
 
+    /// Crouching steadies both the view model and the shot direction.
+    pub fn weapon_sway(&self) -> (f32, f32) {
+        if self.player.head_y < crate::player::HEAD_STAND {
+            (0.0, 0.0)
+        } else {
+            self.weapons.sway(self.real_time)
+        }
+    }
+
     /// `ScanLifeForms`: the nearest visible animal close to the view centre.
     /// Whether `c` is one of the hunted species: in Modder's Edition data,
-    /// marked `radar = TRUE` for this hunt, else picked in the menu by its
-    /// slot (`callNo`); in the original's, picked by AI (`TargetDino`).
+    /// picked by its resolved menu identity. Legacy tables without explicit
+    /// identity retain their radar/call rules; original data uses AI (`TargetDino`).
     pub fn is_target(&self, c: &crate::dino::Character) -> bool {
         let Some(sp) = self.herd.species.get(c.ctype) else {
             return false;
         };
+        if sp.tuning.menu_slot.is_some() {
+            return self
+                .call_bit(c)
+                .is_some_and(|b| self.opts.targets.has(b as usize));
+        }
         sp.tuning.radar.unwrap_or_else(|| {
             self.call_bit(c)
                 .is_some_and(|b| self.opts.targets.has(b as usize))
@@ -3313,6 +3327,32 @@ mod tests {
         let opts = HuntOptions::default();
         let hunt = Hunt::new(&area, player, herd, weapons, rng, opts, blank_save());
         (area, hunt, car)
+    }
+
+    #[test]
+    fn crouching_steadies_aim_and_standing_restores_sway() {
+        let (_, mut h, _) = setup(false);
+        h.weapons.shakel = 4.0;
+        h.player.head_y = crate::player::HEAD_STAND;
+        assert_ne!(h.weapon_sway(), (0.0, 0.0));
+        h.player.head_y = 110.0;
+        assert_eq!(h.weapon_sway(), (0.0, 0.0));
+        h.player.head_y = crate::player::HEAD_STAND;
+        assert_ne!(h.weapon_sway(), (0.0, 0.0));
+    }
+
+    #[test]
+    fn explicit_menu_identity_overrides_authored_roaming_radar() {
+        let (_, mut h, _) = setup(false);
+        let c = h.herd.chars[0].clone();
+        h.opts.targets = Bits::bit(30);
+        h.herd.species[c.ctype].tuning.radar = Some(true);
+        h.herd.species[c.ctype].tuning.menu_slot = Some(-1);
+        assert!(!h.is_target(&c));
+        h.herd.species[c.ctype].tuning.menu_slot = Some(21);
+        assert!(!h.is_target(&c));
+        h.herd.species[c.ctype].tuning.menu_slot = Some(20);
+        assert!(h.is_target(&c));
     }
 
     #[test]

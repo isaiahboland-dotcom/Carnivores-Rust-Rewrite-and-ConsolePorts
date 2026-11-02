@@ -78,7 +78,8 @@ pub struct KillType {
     pub hunter_carry_anim: Option<i32>,
     /// Body distance ahead of the killer, before scaling (`hunterOffset`).
     pub offset: f32,
-    /// The killer's logical phase while eating (`eatAnim`).
+    /// The killer's logical phase while eating (`eatAnim`), or `usize::MAX`
+    /// when the script provides no eating animation.
     pub anim: usize,
     /// Match the killer's pose and animation clock (`hunterSync`).
     pub hunter_sync: bool,

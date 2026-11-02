@@ -2,6 +2,39 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-02 — Runtime borrowing and hunter merge review
+
+Weapon fire eligibility borrows dialect settings instead of cloning them on each
+trigger-held update. PC HUD notifications borrow existing message text instead of
+allocating a copy every frame. Ownership copies needed across mutable shot/hit
+processing remain explicit; no shared ownership or new dependencies were added.
+
+Hunter merging rolls back appended animations, sounds and sound mappings when
+an add-on exceeds the animation limit. A rejected add-on must not consume slots
+or alter subsequent merges. Rollback truncates append-only buffers and restores
+the small mapping table rather than cloning the base model. Sound mapping lookup
+is bounds checked. A synthetic regression checks byte-for-byte preservation and
+successful merging of the next compatible add-on. These are structural allocation
+improvements; no frame-time improvement has been measured.
+
+## 2026-11-02 — Follow-up mixed-pack playtest
+
+Resolved hunt tables now record menu identity for every character, including
+unslotted roamers. An authored radar flag cannot make a different animal a
+selected target. This distinguishes selected targets from blue roaming blips.
+A missing `eatAnim` has no eating phase instead of aliasing the first logical
+animation; imported Diatryma therefore moves while running. Survival navigation
+waypoints cannot trigger predator attack jumps, just as they cannot kill the hunter.
+
+Loose add-ons with incompatible hunter meshes keep a separate, namespaced model
+and AI-0 hunter entry, linked with `hunterFile`, as standalone games already do.
+This preserves Saurophaganax's supplied 1003-vertex body and local kill indices.
+Map selection uses the actual map count instead of the old 32-item bitmask limit.
+
+At the owner's request, crouching suppresses weapon sway in both shot direction
+and rendering on all three platforms. The PC mobile-style map no longer draws a
+touch teleport button; its keyboard instructions use a small ordinary HUD label.
+
 ## 2026-11-02 — Console rebuilds from saved instances
 
 The PC launcher's Wii U tab is always visible. Instances expose explicit PC,

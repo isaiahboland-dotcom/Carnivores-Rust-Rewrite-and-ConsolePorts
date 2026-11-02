@@ -172,6 +172,7 @@ pub fn animate(
                 }
             }
             if a.jumper
+                && c.lure.is_none()
                 && !on_water
                 && pdist < 1324.0 * c.scale
                 && pdist > 900.0 * c.scale
@@ -494,7 +495,7 @@ pub(super) fn kill_now(
         return;
     }
     let (kind, scream) = match m.kill(c.kill_type) {
-        Some(k) if !on_water => {
+        Some(k) if !on_water && k.anim != usize::MAX => {
             c.vspeed /= 8.0;
             c.state = 1;
             c.phase = k.anim;
@@ -857,6 +858,52 @@ mod tests {
         let c = &herd.chars[i];
         assert_eq!((c.state, c.phase), (1, RUN));
         assert!(dist(c, &h) > 3000.0, "{}", dist(c, &h));
+    }
+
+    #[test]
+    fn omitted_eating_clip_does_not_stop_running() {
+        let area = Area::flat(10);
+        let h = hunter();
+        let res = c2_formats::res_txt::ResTxt::parse("characters {\n{\n ai = 15\n runAnim = 0\n walkAnim = 1\n jumpAnim = 2\n runspd = 1.2\n wlkspd = 0.3\n killtype {\n hunterAnim = 0\n }\n}\n}\n").unwrap_or_else(|e| panic!("{e}"));
+        let b = &res
+            .section("characters")
+            .unwrap_or_else(|| panic!("characters"))
+            .blocks[0];
+        let m = crate::mee::info(b, ai::VELO);
+        assert_eq!(m.kill(0).map(|k| k.anim), Some(usize::MAX));
+        let mut herd = Herd {
+            species: vec![species(m)],
+            ..Default::default()
+        };
+        let i = add(&mut herd, 0, &area, h.x - 5000.0, h.z);
+        let start = herd.chars[i].pos;
+        herd.chars[i].state = 1;
+        herd.chars[i].aware_hunter = true;
+        run(&mut herd, &area, h, 1000);
+        assert!(herd.chars[i].pos[0] > start[0] + 100.0);
+    }
+
+    #[test]
+    fn navigation_waypoints_do_not_trigger_attack_jumps() {
+        for waypoint in [true, false] {
+            let area = Area::flat(10);
+            let h = hunter();
+            let mut herd = Herd {
+                species: vec![species(info(ai::ALLO))],
+                ..Default::default()
+            };
+            let i = add(&mut herd, 0, &area, h.x - 1200.0, h.z);
+            let c = &mut herd.chars[i];
+            c.scale = 1.0;
+            c.alpha = 0.0;
+            c.lookx = 1.0;
+            c.lookz = 0.0;
+            c.state = 1;
+            c.aware_hunter = true;
+            c.lure = waypoint.then_some((h.x, h.z));
+            run(&mut herd, &area, h, 10);
+            assert_eq!(herd.chars[i].phase == JUMP, !waypoint);
+        }
     }
 
     #[test]

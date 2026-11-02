@@ -142,6 +142,18 @@ pub fn spawn_picked_anywhere(res: &ResTxt, h: &Hunt, tables: &mut Tables, extra:
         })
         .map(|(i, _)| i)
         .collect();
+    // Resolve identity for every animal, including unselected roamers whose
+    // authored radar flag means visible, not selected by the player.
+    for (i, c) in tables.characters.iter_mut().enumerate() {
+        let identity = slot(i, &c.block).map_or(-1, |s| s as i32);
+        c.block
+            .entries
+            .retain(|e| !e.key.eq_ignore_ascii_case("menuSlot"));
+        c.block.entries.push(Entry {
+            key: "menuSlot".into(),
+            value: identity.to_string(),
+        });
+    }
     let mut fallback = None;
     for &i in &selected {
         let c = &tables.characters[i];
@@ -441,7 +453,10 @@ fn info_sub(m: &mut MeeInfo, name: &str, b: &Block) {
             .map(|e| (e.key.to_ascii_lowercase(), &e.value))
     };
     if name.contains("killtype") {
-        let mut k = KillType::default();
+        let mut k = KillType {
+            anim: usize::MAX,
+            ..Default::default()
+        };
         for (key, v) in lines() {
             match key.as_str() {
                 "hunteranim" => k.hunter_anim = c_atoi(v),

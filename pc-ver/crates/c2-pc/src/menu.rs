@@ -1560,6 +1560,7 @@ impl Menu {
     fn pick(&mut self, col: usize, r: usize) {
         // Picks are bit masks; animals go to the hunt as bits 10 and up.
         let max = match col {
+            0 => self.areas.len(),
             1 => Bits::LEN - 10,
             2 => 128,
             _ => 32,

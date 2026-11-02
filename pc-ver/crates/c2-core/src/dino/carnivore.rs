@@ -267,6 +267,7 @@ pub fn animate(
                 }
 
                 if p.jump != NONE
+                    && c.lure.is_none()
                     && c.state_f & CS_ON_WATER == 0
                     && pdist < 1324.0 * c.scale
                     && pdist > 900.0 * c.scale

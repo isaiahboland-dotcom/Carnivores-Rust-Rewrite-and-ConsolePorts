@@ -847,7 +847,7 @@ pub extern "C" fn c2_actor_vertices(ptr: *mut core::ffi::c_void, positions: *mut
         if let Some(anim) = car.animations.get(slot) {
             let duration = c2_core::model::car_anim_duration_ms(anim).max(1);
             if let Some(posed) = c2_core::model::pose_car(anim, car.mesh.vertices.len(), (ftime.max(0) as u32).min(duration - 1)) {
-                let (da, db) = sim.hunt.weapons.sway(sim.hunt.real_time);
+                let (da, db) = sim.hunt.weapon_sway();
                 let (sa, ca, sb, cb) = (libm::sinf(-da), libm::cosf(-da), libm::sinf(-db), libm::cosf(-db));
                 // Through a scope the view model zooms with the world (the
                 // original's `CameraW` x3); its frame, made for 4:3, is

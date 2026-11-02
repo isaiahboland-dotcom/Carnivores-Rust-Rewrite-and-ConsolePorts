@@ -30,7 +30,6 @@ pub struct HuntKit {
     menu_cell: Option<usize>,
     cell: Option<usize>,
     active: Option<usize>,
-    relocate: Option<usize>,
     /// The compass's face, and the area's painted map (grid and all).
     compass: Option<usize>,
     pub map: Option<usize>,
@@ -79,7 +78,6 @@ impl HuntKit {
             menu_cell: img("game_menu_cell"),
             cell: img("game_cell"),
             active: img("game_active_cell"),
-            relocate: img("button_game_relocate"),
             compass,
             map,
             kit,
@@ -380,7 +378,6 @@ impl HuntKit {
         hud: &Hud,
         screen: (u32, u32),
         area: &str,
-        relocate: bool,
         out: &mut Vec<Sprite>,
     ) -> (f32, f32, f32) {
         let (sw, sh) = (screen.0 as f32, screen.1 as f32);
@@ -403,22 +400,6 @@ impl HuntKit {
             let name = area.to_uppercase();
             let x = mx + side - sh * 0.01 - f.width(px, &name);
             Self::outlined(f, out, (x, y), px, YELLOW, &name);
-        }
-        if relocate {
-            let (bw, bh) = (sh * 0.36, sh * 0.1);
-            let r = ((sw - bw) / 2.0, py0 + p - bh * 0.15, bw, bh);
-            if let Some((id, _, _)) = Self::size(hud, self.relocate) {
-                out.push(Sprite {
-                    size: Some([bw, bh]),
-                    color: [1.0, 1.0, 1.0, 0.85],
-                    ..Sprite::new(id, r.0, r.1, 1.0)
-                });
-            }
-            if let Some(f) = self.kit.body.as_ref() {
-                let px = (bh * 0.55).round();
-                let at = (r.0 + bw * 0.33, r.1 + (bh - px) / 2.0);
-                Self::outlined(f, out, at, px, [0.85, 0.75, 0.2, 1.0], "RELOCATE");
-            }
         }
         (mx, my, side)
     }
