@@ -157,7 +157,7 @@ mod tests {
             Path::new("sd"),
             Path::new("w"),
         );
-        let dir = Path::new("sd/wiiu/apps/triassic");
+        let dir = Path::new("sd").join("wiiu").join("apps").join("triassic");
         let Step::Run { args, .. } = &steps[1] else {
             panic!("cook first")
         };
