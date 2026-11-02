@@ -71,6 +71,49 @@ fn heading(ui: &mut egui::Ui, text: &str) {
     ui.label(RichText::new(text).size(20.0).color(SAND).strong());
 }
 
+/// A row picking the user's own picture (a PNG of `size`): the file, a
+/// warning if it is another size, Browse and Clear. Whether it changed.
+fn art_picker(
+    ui: &mut egui::Ui,
+    label: &str,
+    size: (u32, u32),
+    slot: &mut Option<std::path::PathBuf>,
+) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.label(format!("{label} ({}x{} PNG):", size.0, size.1));
+        match slot.as_ref() {
+            Some(p) => {
+                ui.label(RichText::new(p.display().to_string()).color(SAND));
+                match crate::cia::png_size(p) {
+                    Some(s) if s == size => {}
+                    Some((w, h)) => {
+                        ui.label(RichText::new(format!("is {w}x{h}")).color(RED));
+                    }
+                    None => {
+                        ui.label(RichText::new("not a PNG").color(RED));
+                    }
+                }
+            }
+            None => help(ui, "from the game's menu picture"),
+        }
+        if ui.button("Browse...").clicked() {
+            if let Some(p) = rfd::FileDialog::new()
+                .add_filter(label, &["png"])
+                .pick_file()
+            {
+                *slot = Some(p);
+                changed = true;
+            }
+        }
+        if slot.is_some() && ui.small_button("Clear").clicked() {
+            *slot = None;
+            changed = true;
+        }
+    });
+    changed
+}
+
 pub(crate) fn help(ui: &mut egui::Ui, text: &str) {
     ui.label(RichText::new(text).color(DIM));
 }
@@ -1186,12 +1229,14 @@ impl Launcher {
         let mut steps = Vec::new();
         for (name, title, cook_args) in self.wiiu_installs() {
             let art = crate::wiiu::art_source(&cook_args);
+            let own = self.cfg.wiiu.art.get(&name).cloned().unwrap_or_default();
             steps.extend(crate::wiiu::steps(
                 &crate::wiiu::Install {
                     name: &name,
                     title: &title,
                     cook_args,
                     art_from: art.as_deref(),
+                    own_art: [own.icon.as_deref(), own.tv.as_deref(), own.drc.as_deref()],
                 },
                 &crate::wiiu::Tools {
                     cook: &cook,
@@ -1813,6 +1858,8 @@ impl Launcher {
             }
         });
         ui.add_space(8.0);
+        changed |= panel(ui, |ui| self.wiiu_art_ui(ui));
+        ui.add_space(8.0);
         panel(ui, |ui| {
             ui.label(RichText::new("The app").color(GOLD));
             match find_tool(crate::wiiu::APP, self.cfg.tools.as_deref()) {
@@ -1875,6 +1922,35 @@ impl Launcher {
         if big_button(ui, "BUILD", ready && !self.busy()) {
             self.build_wiiu();
         }
+    }
+
+    /// Each Wii U install's own art (owner, 2026-11-01): icon, and the TV's
+    /// and GamePad's start screens (shown while it loads); any not picked
+    /// is cut from the game's menu picture.
+    fn wiiu_art_ui(&mut self, ui: &mut egui::Ui) -> bool {
+        use crate::cia::{WIIU_DRC, WIIU_ICON, WIIU_TV};
+        let mut changed = false;
+        ui.label(RichText::new("Wii U Menu art (your own)").color(GOLD));
+        help(
+            ui,
+            "Per install: the icon, and the start screens on the TV and the GamePad while it              loads. Not picked: cut from the game's own menu picture.",
+        );
+        for (name, title, _) in self.wiiu_installs() {
+            let art = self.cfg.wiiu.art.entry(name.clone()).or_default();
+            egui::CollapsingHeader::new(format!("{title} ({name})"))
+                .id_salt(format!("wiiu-art-{name}"))
+                .show(ui, |ui| {
+                    for (label, size, slot) in [
+                        ("Icon", WIIU_ICON, &mut art.icon),
+                        ("TV start screen", WIIU_TV, &mut art.tv),
+                        ("GamePad start screen", WIIU_DRC, &mut art.drc),
+                    ] {
+                        changed |= art_picker(ui, label, size, slot);
+                    }
+                });
+        }
+        self.cfg.wiiu.art.retain(|_, a| !a.is_empty());
+        changed
     }
 
     /// The `.cia` options: the tools (with where to get them) and the

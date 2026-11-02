@@ -31,6 +31,9 @@ pub struct Install<'a> {
     pub cook_args: Vec<String>,
     /// The game folder whose menu picture the home-menu art is cut from.
     pub art_from: Option<&'a Path>,
+    /// The user's own icon, TV and GamePad start screens (PNGs), each used
+    /// instead of the cut one.
+    pub own_art: [Option<&'a Path>; 3],
 }
 
 /// The tools an install is built with.
@@ -102,12 +105,19 @@ pub fn steps(i: &Install, t: &Tools, sd: &Path, work: &Path) -> Vec<Step> {
         "--author=Carnivores Rust Rewrite".into(),
         format!("--content={}", content.display()),
     ];
-    if let Some(art) = i.art_from.and_then(crate::cia::wiiu_art) {
-        for (bytes, (file, flag)) in art.into_iter().zip([
-            ("icon.png", "--icon"),
-            ("tv.png", "--tv-image"),
-            ("drc.png", "--drc-image"),
-        ]) {
+    let cut = i.art_from.and_then(crate::cia::wiiu_art);
+    let cut: [Option<Vec<u8>>; 3] = match cut {
+        Some([a, b, c]) => [Some(a), Some(b), Some(c)],
+        None => [None, None, None],
+    };
+    for ((made, own), (file, flag)) in cut.into_iter().zip(i.own_art).zip([
+        ("icon.png", "--icon"),
+        ("tv.png", "--tv-image"),
+        ("drc.png", "--drc-image"),
+    ]) {
+        if let Some(p) = own {
+            args.push(format!("{flag}={}", p.display()));
+        } else if let Some(bytes) = made {
             let path = work.join(file);
             args.push(format!("{flag}={}", path.display()));
             steps.push(Step::Write { path, bytes });
@@ -139,6 +149,7 @@ mod tests {
             title: "Carnivores Triassic",
             cook_args: vec!["--game".into(), "T".into()],
             art_from: None,
+            own_art: [None, None, None],
         };
         let steps = steps(
             &i,
@@ -178,6 +189,7 @@ mod tests {
             title: "T",
             cook_args: Vec::new(),
             art_from: None,
+            own_art: [None, None, None],
         };
         let steps = steps(&i, &tools(None), Path::new("sd"), Path::new("w"));
         let Step::Copy { to, .. } = steps.last().unwrap() else {
@@ -189,6 +201,34 @@ mod tests {
                 .join(SD_FOLDER)
                 .join(format!("{SD_FOLDER}.rpx"))
         );
+    }
+
+    #[test]
+    fn the_users_own_art_is_used_as_picked() {
+        let i = Install {
+            name: "triassic",
+            title: "T",
+            cook_args: Vec::new(),
+            art_from: None,
+            own_art: [
+                Some(Path::new("my-icon.png")),
+                None,
+                Some(Path::new("pad.png")),
+            ],
+        };
+        let steps = steps(
+            &i,
+            &tools(Some(Path::new("wuhbtool"))),
+            Path::new("sd"),
+            Path::new("w"),
+        );
+        let Step::Run { args, .. } = steps.last().unwrap() else {
+            panic!("wuhbtool last")
+        };
+        assert!(args.contains(&"--icon=my-icon.png".to_string()));
+        assert!(args.contains(&"--drc-image=pad.png".to_string()));
+        // No game picture to cut the TV's from: none given.
+        assert!(!args.iter().any(|a| a.starts_with("--tv-image")));
     }
 
     #[test]

@@ -147,7 +147,8 @@ pub fn cia_cli(args: &[String]) -> Result<std::path::PathBuf, String> {
 }
 
 /// `c2-wiiu-builder --install NAME --title TITLE --sd DIR [--tools DIR]
-/// [--rpx] [--art-from GAME] -- COOK_ARGS...`: one Wii U install without
+/// [--rpx] [--art-from GAME] [--icon PNG] [--tv-image PNG] [--drc-image PNG]
+/// -- COOK_ARGS...`: one Wii U install without
 /// the window: `c2-cook --target wiiu` with `COOK_ARGS` (`--game`,
 /// `--overlay`, `--mod`, `--recipe`...) into `SD/wiiu/apps/NAME/`, and
 /// `NAME.wuhb` (its own Wii U Menu entry; `--rpx`: the Homebrew Launcher's
@@ -179,12 +180,17 @@ pub fn wiiu_cli(args: &[String]) -> Result<std::path::PathBuf, String> {
         .map(PathBuf::from)
         .or_else(|| wiiu::art_source(cook_args));
     let work = config::data_dir().join("wiiu").join(&name);
+    let own: Vec<Option<PathBuf>> = ["--icon", "--tv-image", "--drc-image"]
+        .iter()
+        .map(|k| get(k).map(PathBuf::from))
+        .collect();
     let steps = wiiu::steps(
         &wiiu::Install {
             name: &name,
             title: &title,
             cook_args: cook_args.to_vec(),
             art_from: art.as_deref(),
+            own_art: [own[0].as_deref(), own[1].as_deref(), own[2].as_deref()],
         },
         &wiiu::Tools {
             cook: &cook,

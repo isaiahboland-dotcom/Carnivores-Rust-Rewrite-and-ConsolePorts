@@ -398,6 +398,30 @@ fn square_middle(tga: &[u8]) -> Option<Vec<u8>> {
     })
 }
 
+/// Whether the game has add-ons: given here (`--mod`, a recipe's mods), or
+/// built in by `c2-pc` (`MERGE_REPORT.md` lists layers past the base's).
+/// The 3DS offers "random ambients" only then (owner, 2026-11-01).
+fn has_addons(a: &Args, game: &Path) -> bool {
+    if !a.mods.is_empty() {
+        return true;
+    }
+    if let Some(r) = &a.recipe {
+        if c2_mods::recipe::Recipe::load(r).is_ok_and(|r| !r.mods.is_empty()) {
+            return true;
+        }
+    }
+    let report = std::fs::read_to_string(game.join("MERGE_REPORT.md")).unwrap_or_default();
+    report
+        .split("## ")
+        .find(|s| s.starts_with("Load order"))
+        .is_some_and(|s| {
+            s.lines().any(|l| {
+                l.split_once(". ")
+                    .is_some_and(|(n, _)| n.parse::<u32>().is_ok_and(|n| n > 0))
+            })
+        })
+}
+
 fn merged_game(a: &Args, game: &Path) -> Result<Vfs> {
     let mut bases: Vec<PathBuf> = std::iter::once(game.to_path_buf())
         .chain(a.overlays.iter().cloned())
@@ -574,6 +598,36 @@ fn to_mono16(pcm: &[u8], rate0: u32, channels: u16, bits: u16, rate: u32) -> Vec
     out
 }
 
+/// An area's ambient loop at most this long on the 3DS. The originals'
+/// are seconds long; one standalone (Fallen Kings) loops minutes of music,
+/// 13 MiB of the 22 MiB of video memory a hunt has, so that no hunt on
+/// those areas fit ("Too much for this console", owner 2026-11-01).
+const MAX_AMBIENT_SECS: u32 = 45;
+
+/// A 16-bit mono loop of `rate` Hz cut to `secs`, its first half second
+/// cross-faded from what followed the cut, so the loop runs on without a
+/// click. Shorter ones as they are.
+fn loop_cut(pcm: &[u8], rate: u32, secs: u32) -> Vec<u8> {
+    let s: Vec<i16> = pcm
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|b| i16::from_le_bytes(*b))
+        .collect();
+    let len = (rate * secs) as usize;
+    let fade = (rate / 2) as usize;
+    if s.len() <= len + fade {
+        return pcm.to_vec();
+    }
+    let mut out: Vec<i16> = s[..len].to_vec();
+    for (i, o) in out.iter_mut().take(fade).enumerate() {
+        // At the seam the loop goes from s[len - 1] to out[0] = s[len].
+        let a = i as f32 / fade as f32;
+        *o = (f32::from(s[i]) * a + f32::from(s[len + i]) * (1.0 - a)) as i16;
+    }
+    out.iter().flat_map(|v| v.to_le_bytes()).collect()
+}
+
 struct Cooker {
     profile: &'static Profile,
     entries: Vec<(String, Vec<u8>)>,
@@ -727,7 +781,26 @@ impl Cooker {
 /// three skies, the overview map and its sounds, under `C2RS/{name}/`.
 fn cook_area(c: &mut Cooker, vfs: &Vfs, name: &str) -> Result<()> {
     c.scope = name.to_string();
-    c.copy(vfs, &format!("HUNTDAT/AREAS/{name}.MAP"))?;
+    let map_path = format!("HUNTDAT/AREAS/{name}.MAP");
+    // Forests denser than the original's densest are thinned, the same for
+    // everyone with this pack (`thin_objects`): over the square the 3DS
+    // draws objects in, as many faces at most as the original's 48 cells.
+    let rsc_only = c2_core::load::area(vfs, name, TimeOfDay::Day)?.rsc;
+    let mut raw = c2_formats::map::parse(&vfs.read(&map_path)?)
+        .with_context(|| format!("parsing {map_path}"))?;
+    let window = 2 * c.profile.object_view as usize;
+    let budget = c2_core::area::ORIGINAL_FACES_48 * (window * window) as u64 / (48 * 48);
+    let thinned = c2_core::area::thin_objects(&mut raw, &rsc_only, window, budget);
+    drop(rsc_only);
+    if thinned > 0 {
+        eprintln!(
+            "  {name}: {thinned} trees and plants thinned (a forest denser than the original's)"
+        );
+        c.add(&map_path, c2_formats::map::write(&raw));
+    } else {
+        c.copy(vfs, &map_path)?;
+    }
+    drop(raw);
     // A trophy room's own layout, an area's own snow (the phone game's,
     // ours), when it has them.
     for ext in ["SPOT", "SNOW"] {
@@ -806,7 +879,7 @@ fn cook_area(c: &mut Cooker, vfs: &Vfs, name: &str) -> Result<()> {
         c.sound(&format!("{name}/R{k}"), &pcm, SAMPLE_RATE, 1, 16);
     }
     for (k, amb) in rsc.ambients.iter_mut().enumerate() {
-        let pcm = std::mem::take(&mut amb.pcm);
+        let pcm = loop_cut(&std::mem::take(&mut amb.pcm), SAMPLE_RATE, MAX_AMBIENT_SECS);
         c.sound(&format!("{name}/A{k}"), &pcm, SAMPLE_RATE, 1, 16);
     }
     c.add(
@@ -1032,6 +1105,7 @@ fn main() -> Result<()> {
         t => bail!("unknown target {t:?} (n3ds, o3ds or wiiu)"),
     };
     let vfs = merged(&a, &game)?;
+    let addons = has_addons(&a, &game);
     let rules = rules(&vfs)?;
     let res = &rules.res;
     let mut c = Cooker {
@@ -1436,6 +1510,7 @@ fn main() -> Result<()> {
     for (area, kb) in &base_heap {
         info += &format!("heap.{area} = {kb}\n");
     }
+    info += &format!("addons = {}\n", u8::from(addons));
     let snowy = snowy(&vfs, &areas);
     if !snowy.is_empty() {
         info += &format!("snow = {}\n", snowy.join(","));
@@ -1486,5 +1561,20 @@ mod tests {
         assert_eq!(downscale(&px, 2, 2, 1, 1), vec![255, 0, 0, 255]);
         let clear = [0, 0, 0, 0, 0, 0, 0, 0, 9, 9, 9, 255, 0, 0, 0, 0];
         assert_eq!(downscale(&clear, 2, 2, 1, 1)[3], 0);
+    }
+
+    #[test]
+    fn long_loops_are_cut_without_a_seam() {
+        let pcm = |v: &[i16]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
+        // 10 Hz, 3 s cap, half a second (5 samples) of fade.
+        let short: Vec<i16> = (0..35).collect();
+        assert_eq!(loop_cut(&pcm(&short), 10, 3), pcm(&short));
+        let long: Vec<i16> = (0..100).map(|i| i * 10).collect();
+        let out = loop_cut(&pcm(&long), 10, 3);
+        assert_eq!(out.len(), 30 * 2);
+        let first = i16::from_le_bytes([out[0], out[1]]);
+        // The loop's first sample follows its last as the source did.
+        assert_eq!(first, long[30]);
+        assert_eq!(&out[10..], &pcm(&long[5..30])[..]);
     }
 }

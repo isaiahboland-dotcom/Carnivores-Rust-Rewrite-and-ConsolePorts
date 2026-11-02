@@ -70,6 +70,8 @@ pub struct PackInfo {
     /// Where each roaming add-on (character index) spawns, as the cooker
     /// worked it out (`roam.N = AREA3,AREA7`); `None` in older packs.
     pub roam_areas: Option<HashMap<usize, Vec<String>>>,
+    /// Whether the game has add-ons (`None` in older packs).
+    pub addons: Option<bool>,
 }
 
 impl PackInfo {
@@ -103,6 +105,7 @@ impl PackInfo {
                     })
                     .collect()
             }),
+            addons: m.get("addons").map(|v| v.trim() != "0"),
             snow: get("snow")
                 .split(',')
                 .map(str::trim)
@@ -141,6 +144,7 @@ impl PackInfo {
             detail: self.detail.min(self.view),
             object_view: self.object_view,
             terrain_count: num("terrain_count", 1),
+            all_sprites: false,
         }
     }
 }
@@ -189,6 +193,8 @@ pub struct Setup {
     /// Settings: the controls along the bottom of the top screen.
     pub hints: bool,
     pub random_ambients: bool,
+    /// Hunt option: trees and plants drawn as their sprites, near too.
+    pub tree_sprites: bool,
     /// The crouch button (setting).
     pub crouch_key: crate::settings::CrouchKey,
     /// Gyro aim: view degrees per console degree (setting).
@@ -666,6 +672,13 @@ impl Game {
             seed,
             room,
         );
+        // A dialect game's tables can place a dozen ambients or more:
+        // the setting's cap, as the original's placement has.
+        if rules.tables.is_some() && !setup.trophy() {
+            let max = usize::try_from(setup.max_ambient).unwrap_or(0);
+            hunt.herd
+                .cap_placed(max, |ct| rules.roles.get(ct) == Some(&Role::Ambient));
+        }
         // Shots carry and animals out of sight are re-placed past what is
         // drawn, which can be farther than `view_r`.
         hunt.opts.render_r = info.view as i32;
@@ -698,7 +711,10 @@ impl Game {
         let setup_stealth = setup.stealth;
         Ok(Self {
             prev_cam: hunt.camera().0,
-            draw: info.draw_info(vfs, &setup.area),
+            draw: DrawInfo {
+                all_sprites: setup.tree_sprites,
+                ..info.draw_info(vfs, &setup.area)
+            },
             info,
             setup,
             area,

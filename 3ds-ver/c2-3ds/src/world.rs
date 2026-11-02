@@ -55,6 +55,9 @@ pub struct DrawInfo {
     pub object_view: u32,
     /// Terrain textures in the atlas (the pack's RSC no longer has them).
     pub terrain_count: usize,
+    /// Hunt option "Trees as sprites": every object with a far sprite drawn
+    /// as it, near ones too (performance, for dense standalones).
+    pub all_sprites: bool,
 }
 
 fn load_texture(vfs: &Vfs, path: &str) -> Option<Texture> {
@@ -745,7 +748,11 @@ impl World {
         // `SPRITE_CELLS` (or that distance, if nearer) as sprites, out to
         // the ground's view (`_RenderObject`).
         let ov = self.info.object_view as f32 * CELL;
-        let sprite_from = SPRITE_CELLS.min(self.info.object_view as f32) * CELL;
+        let sprite_from = if self.info.all_sprites {
+            0.0
+        } else {
+            SPRITE_CELLS.min(self.info.object_view as f32) * CELL
+        };
         let mut by_model: Vec<Vec<(Placement, f32)>> = vec![Vec::new(); self.objects.len()];
         let mut by_sprite: Vec<Vec<(Placement, f32)>> = vec![Vec::new(); self.sprites.len()];
         for k in &vis {

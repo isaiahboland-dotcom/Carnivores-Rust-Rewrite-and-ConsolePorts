@@ -2,6 +2,60 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-01 — Fixes from the owner's play test: phone ground, phone calls, points, memory, forests, survival ways
+
+- **Phone areas' ground tiles are transposed**: the APKs' terrain atlas keeps
+  each tile with x and y swapped from the PC's. Checked on every patterned tile
+  of both APKs' first areas against the PC games' own (the maps are the same
+  cell for cell, rotations too): 62 of 62 (Ice Age) and 57 of 57 (Dinosaur
+  Hunter) match only transposed. Untransposed, the edge tiles between snow and
+  ice pointed the wrong way: white squares along the edges (3DS, Wii U, PC).
+  `mobile_area::tiles` transposes. Games built from an APK need rebuilding.
+- **Ice Age APK calls**: its call sets go by character index too, but its
+  huntables are #116-#130 (the Dinosaur Hunter's start at #16): `call1`-`call9`
+  are the PC Ice Age's own (same lengths, within hundredths of a second) for
+  #116-#124 in its AI order. Every Ice Age animal now has a call (and so a call
+  button on the consoles).
+- **A new hunter's points**: a save under a new hunter's points is lifted to
+  them (was: only under the cheapest hunt, which is 0 where some area, animal and
+  weapon cost nothing, as in the all-in-one: a hunter at 0 stayed at 0). Points
+  are needed, not spent, and kills only add, so a lower score is a save made
+  under a lower start. PC and 3DS. The all-in-one recipe starts at 200
+  (`[settings.balance] start`). 3DS Settings "Test": unlimited points for
+  testing, the save's score untouched.
+- **Long ambient loops** (3DS): an area's ambient loop is cut to 45 s by the
+  cooker, its first half second cross-faded from what followed the cut. Fallen
+  Kings loops ~5 minutes of music (13 MiB) on four areas, so no hunt there fit
+  the 22 MiB of video memory ("Too much for this console"); now 8-16 MiB.
+  Deviation: the loop is shorter than the game's.
+- **Forests denser than the original's** (3DS packs): `c2_core::area::thin_objects`.
+  No 48 x 48 cell window of the original's areas holds objects of more than
+  36 888 faces; some standalones' reach 3-6 times that (Anachronous 142k,
+  Mandibles 223k). Where the square the 3DS draws objects in (twice
+  `object_view`) holds more than the original's budget (40 000 faces per 48
+  cells, scaled), each tree or plant is kept with the chance budget / density,
+  decided by a hash of its cell: the same for every player with that pack, and a
+  removed tree is gone (collision too), as the owner asked ("as if half don't
+  exist", not invisible). Landing spots and objects without a far sprite
+  (buildings, bridges) stay. The original's areas are never thinned. Deviation
+  from those games' scenery, on the 3DS only.
+- **Ambient cap for dialect games** (3DS): the setting's cap (now 5, owner) also
+  applies to a dialect game's spawn tables (`Herd::cap_placed`; packs are never
+  split). Anachronous placed ~30 animals besides the picks.
+- **"Trees as sprites"** (3DS hunt option, off by default): every object with a
+  far sprite is drawn as it, near ones too. "Random ambients" is offered only
+  for games with add-ons (the pack's `addons` flag from `c2-cook`).
+- **Survival ways**: the straight line is taken only when it is a way (no cell
+  on it farther from the hunter than where the animal stands); else the flow
+  field's way, now from 3 cells out (was 12, where waves went straight up ravine
+  sides). An animal on ground with no way (a slope too steep) is led down to the
+  nearest that has one. Ways keep to 80% of the steepest slope an animal can
+  climb. A lure is never nearer the hunter than 3 cells (the AIs measure their
+  kill distance to it).
+- **Wii U art**: the launcher's Wii U tab takes the user's own icon and TV and
+  GamePad start screens per install (`c2-wiiu-builder --icon --tv-image
+  --drc-image`); those not picked are cut from the menu picture as before.
+
 ## 2026-11-01 — The Modder's Edition's weapons: chambered rounds, reloads and racking, harpoons, retrieving, rounds and flashes drawn
 
 A weapon with the dialect's keys now follows the Modder's Edition's ammo model

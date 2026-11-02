@@ -26,6 +26,12 @@ name = "Carnivores 2: everything in one game"
 version = "0.1"
 base = "c2-vanilla"
 
+# A new hunter's points: 200 (owner, 2026-11-01; the default is 100). The launcher's
+# Instances page applies this; for c2-cook, save it as a balance file (start = 200)
+# and pass --balance FILE.
+[settings.balance]
+start = 200
+
 [[mods]]
 id = "achillobator"
 credit = "RiverSticks (ModDB uploader; the add-on credits \"I / Me / Myself\")"

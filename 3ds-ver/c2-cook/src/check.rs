@@ -47,6 +47,12 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
         .filter(|a| a.starts_with("AREA"))
         .collect();
     let rules = Rules::load(&vfs)?;
+    // The pack's view, as the 3DS hunts with it (`view` in older packs: 42).
+    let view: i32 = info
+        .lines()
+        .find_map(|l| l.strip_prefix("view = "))
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(42);
     let first = areas.first().context("no areas")?;
     let neutral = rules.hunt(first, TimeOfDay::Day, Bits::ALL);
     println!(
@@ -166,8 +172,8 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
             }
             let opts = HuntOptions {
                 targets: *targets,
-                view_r: 34,
-                render_r: 34,
+                view_r: view,
+                render_r: view,
                 ..Default::default()
             };
             let room = c2_core::profile::new_player("check", 0, 0);
@@ -198,7 +204,16 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
             let mut parts = [0f32; c2_core::prof::SECTIONS.len()];
             let mut worst = 0f64;
             let t_all = clock_ms();
-            for _ in 0..3000 {
+            // Picked animals' places half way: one that hasn't moved since
+            // stands still (owner, 2026-11-01: JPHL's T-Rex on the 3DS).
+            let mut half: Vec<(usize, [f32; 3])> = Vec::new();
+            for step in 0..3000 {
+                if step == 1500 {
+                    half = (hunt.herd.chars.iter().enumerate())
+                        .filter(|(_, c)| wanted.contains(&c.ctype) && c.health > 0)
+                        .map(|(i, c)| (i, c.pos))
+                        .collect();
+                }
                 let t = clock_ms();
                 hunt.tick(&area, &car_refs, &HuntInput::default(), 20, &mut out);
                 worst = worst.max(clock_ms() - t);
@@ -208,6 +223,31 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
                 }
             }
             let mean = (clock_ms() - t_all) / 3000.0;
+            let still = half
+                .iter()
+                .filter(|(i, p)| {
+                    hunt.herd.chars.get(*i).is_some_and(|c| {
+                        c.health > 0 && (c.pos[0] - p[0]).hypot(c.pos[2] - p[2]) < 64.0
+                    })
+                })
+                .inspect(|(i, _)| {
+                    if std::env::var_os("C2CHECK_DEBUG").is_some() {
+                        let c = &hunt.herd.chars[*i];
+                        eprintln!(
+                            "    still #{i}: ctype {} ai {} state {} phase {} pos {:?} health {}",
+                            c.ctype, c.ai, c.state, c.phase, c.pos, c.health
+                        );
+                    }
+                })
+                .count();
+            let still = if still > 0 {
+                format!(
+                    "  STILL: {still} of {} picked didn't move in 30 s",
+                    half.len()
+                )
+            } else {
+                String::new()
+            };
             let placed = hunt
                 .herd
                 .chars
@@ -225,7 +265,7 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
                 .map(|(n, p)| format!("{n} {p:.2}"))
                 .collect();
             println!(
-                "  {name:<32} {placed:>2} placed ({total} animals in all), tick {mean:.3} ms (worst {worst:.2}) {}{}",
+                "  {name:<32} {placed:>2} placed ({total} animals in all), tick {mean:.3} ms (worst {worst:.2}) {}{still}{}",
                 slow.join(" "),
                 if missing.is_empty() {
                     String::new()

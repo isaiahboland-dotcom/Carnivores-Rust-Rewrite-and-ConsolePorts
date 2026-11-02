@@ -420,11 +420,13 @@ fn find_path(base: &Path, path: &str) -> Option<PathBuf> {
         .try_fold(base.to_path_buf(), |d, c| find_ci(&d, c))
 }
 
-/// `c2-parity mee-sim <GAME_DIR> [AREA] [seconds]`: a Modder's Edition hunt
-/// placed as the game would (day, nothing picked), run headlessly with the
-/// hunter standing at the first landing; checks positions stay finite and
-/// reports each species' phase and distance, and the slowest step.
-fn mee_sim(game: &Path, area_n: u32, seconds: u32) -> Result<()> {
+/// `c2-parity mee-sim <GAME_DIR> [AREA] [seconds] [picked]`: a Modder's
+/// Edition hunt placed as the game would (day; `picked`: menu slots,
+/// comma-separated, or `all`; else nothing), run headlessly with the hunter
+/// standing at the first landing; checks positions stay finite and reports
+/// each species' phase and distance (and per 10 s, to see an animal that
+/// stops), and the slowest step.
+fn mee_sim(game: &Path, area_n: u32, seconds: u32, picked: &str) -> Result<()> {
     use c2_core::area::{Area, TimeOfDay};
     use c2_core::dino::{Ctx, DinoInfo, Herd, HunterView, Species};
     use c2_core::rng::MsRand;
@@ -432,10 +434,20 @@ fn mee_sim(game: &Path, area_n: u32, seconds: u32) -> Result<()> {
     let huntdat = find_ci(game, "HUNTDAT").context("no HUNTDAT")?;
     let res_path = find_ci(&huntdat, "_RES.TXT").context("no _RES.TXT")?;
     let res = ResTxt::parse(&String::from_utf8_lossy(&std::fs::read(res_path)?))?;
+    let mut picked_bits = c2_formats::bits::Bits::NONE;
+    for p in picked.split(',').filter(|p| !p.is_empty()) {
+        if p == "all" {
+            for b in 10..c2_formats::bits::Bits::LEN {
+                picked_bits.set(b);
+            }
+        } else {
+            picked_bits.set(10 + p.parse::<usize>().context("picked: menu slots")?);
+        }
+    }
     let h = Hunt {
         area: Some(area_n),
         time: 1,
-        picked: c2_formats::bits::Bits::NONE,
+        picked: picked_bits,
     };
     let m = c2_core::mee::read(&res, &h);
     let areas = find_ci(&huntdat, "AREAS").context("no AREAS")?;
@@ -511,7 +523,23 @@ fn mee_sim(game: &Path, area_n: u32, seconds: u32) -> Result<()> {
     };
     let mut events = Vec::new();
     let mut slowest = std::time::Duration::ZERO;
+    // Per species, distance moved in each 10 s window (all of its kind).
+    let mut windows: std::collections::BTreeMap<usize, Vec<f32>> = Default::default();
+    let mut last: Vec<[f32; 3]> = start.clone();
     for t in 0..seconds * 100 {
+        if t % 1000 == 0 && t > 0 {
+            for (i, c) in herd.chars.iter().enumerate() {
+                let Some(l) = last.get_mut(i) else { continue };
+                let d = ((c.pos[0] - l[0]).powi(2) + (c.pos[2] - l[2]).powi(2)).sqrt();
+                let w = windows.entry(c.ctype).or_default();
+                let k = (t / 1000 - 1) as usize;
+                if w.len() <= k {
+                    w.resize(k + 1, 0.0);
+                }
+                w[k] += d;
+                *l = c.pos;
+            }
+        }
         let mut ctx = Ctx {
             area: &area,
             rng: &mut rng,
@@ -555,6 +583,10 @@ fn mee_sim(game: &Path, area_n: u32, seconds: u32) -> Result<()> {
             d / n as f32,
             phases
         );
+        if let Some(w) = windows.get(&ct) {
+            let w: Vec<String> = w.iter().map(|d| format!("{:.0}", d / n as f32)).collect();
+            println!("      per 10 s: {}", w.join(" "));
+        }
     }
     println!(
         "{} events, slowest step {:.2} ms",
@@ -789,12 +821,13 @@ fn main() -> Result<()> {
         );
     }
     if args.first().map(String::as_str) == Some("mee-sim") {
-        let usage = "usage: c2-parity mee-sim <GAME_DIR> [AREA] [seconds]";
+        let usage = "usage: c2-parity mee-sim <GAME_DIR> [AREA] [seconds] [picked slots|all]";
         let dir = args.get(1).context(usage)?;
         let num = |i: usize, d: u32| -> Result<u32> {
             Ok(args.get(i).map(|s| s.parse()).transpose()?.unwrap_or(d))
         };
-        return mee_sim(Path::new(dir), num(2, 1)?, num(3, 60)?);
+        let picked = args.get(4).map_or("", String::as_str);
+        return mee_sim(Path::new(dir), num(2, 1)?, num(3, 60)?, picked);
     }
     if args.first().map(String::as_str) == Some("tick-bench") {
         let dir = args

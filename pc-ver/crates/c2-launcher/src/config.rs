@@ -235,6 +235,25 @@ pub struct WiiU {
     pub addons: bool,
     /// One install per standalone game.
     pub standalones: bool,
+    /// The user's own Wii U Menu art, by install name (its SD folder); any
+    /// not picked is cut from the game's menu picture.
+    pub art: std::collections::BTreeMap<String, WiiUArt>,
+}
+
+/// A Wii U install's own art: icon (128x128), and the start screens shown
+/// while it loads, the TV's (1280x720) and the GamePad's (854x480); PNGs.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct WiiUArt {
+    pub icon: Option<PathBuf>,
+    pub tv: Option<PathBuf>,
+    pub drc: Option<PathBuf>,
+}
+
+impl WiiUArt {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 impl Default for WiiU {
@@ -245,6 +264,7 @@ impl Default for WiiU {
             original: true,
             addons: true,
             standalones: true,
+            art: Default::default(),
         }
     }
 }

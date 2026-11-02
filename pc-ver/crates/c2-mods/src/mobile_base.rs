@@ -686,8 +686,8 @@ impl Game<'_> {
             self.res.push_str(&block);
             let (ai, runs_as) = ai;
             self.built.animals.push(match runs_as {
-                Some(r) => format!("{name} ({file}, AI {ai} as {r})"),
-                None => format!("{name} ({file}, AI {ai})"),
+                Some(r) => format!("{name} ({file}, #{index}, AI {ai} as {r})"),
+                None => format!("{name} ({file}, #{index}, AI {ai})"),
             });
             if ai >= 10 {
                 self.menu.push(MenuAnimal {
@@ -795,7 +795,11 @@ impl Game<'_> {
             // Its calls: the `callN` set holding its call or growl; else
             // the set its index gives (`call1` is index 16's, the
             // Parasaurolophus: the sets go by index, checked on the four
-            // whose calls are named).
+            // whose calls are named). Ice Age's huntables are #116-#130:
+            // `call1`-`call9` are the PC Ice Age's own (same lengths) for
+            // #116-#124 in its AI order, so there `call1` is #116's; with
+            // the Dinosaur Hunter's offset none was found (owner, 2026-11-01:
+            // no call icons on the 3DS and Wii U).
             let snd = |f: &str| self.apk.get(&format!("assets/sounds/characters/{f}.wav"));
             let mine: Vec<Vec<u8>> = a
                 .cat
@@ -806,7 +810,7 @@ impl Game<'_> {
                 .chain(snd(&format!("{}_call", a.stem)))
                 .collect();
             let by_index = || {
-                let k = a.index - 15;
+                let k = a.index - if self.ice_age { 115 } else { 15 };
                 let set: Vec<Vec<u8>> = ['a', 'b', 'c']
                     .iter()
                     .filter_map(|l| {

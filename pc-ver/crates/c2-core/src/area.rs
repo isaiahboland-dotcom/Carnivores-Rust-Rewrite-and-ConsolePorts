@@ -476,6 +476,73 @@ fn create_tmap(map: &mut Map, rsc: &Rsc, landings: &mut Vec<(u16, u16)>, bad: &m
     }
 }
 
+/// The original's densest scenery: no 48 x 48 cell window of its areas
+/// holds objects of more faces than this (36 888, AREA5). Consoles thin
+/// what is denser ([`thin_objects`]).
+pub const ORIGINAL_FACES_48: u64 = 40_000;
+
+/// Thins the trees and plants (objects with a far sprite) where a
+/// `window`-cell square around them holds objects of more than `budget`
+/// faces: each is kept with the chance `budget` / that, decided by its
+/// cell alone, so the same map thins the same way for every player and a
+/// removed tree is gone, collision too. For the consoles, where some
+/// standalones' forests are 3-6 times the original's densest (owner,
+/// 2026-11-01). Landing spots and objects without a sprite (buildings,
+/// bridges) stay. How many were removed.
+pub fn thin_objects(map: &mut Map, rsc: &Rsc, window: usize, budget: u64) -> usize {
+    let n = MAP_SIZE;
+    let faces = |o: u8| -> u64 {
+        rsc.objects
+            .get(usize::from(o))
+            .map_or(0, |ob| ob.model.mesh.faces.len() as u64)
+    };
+    let thinnable = |o: u8| {
+        rsc.objects
+            .get(usize::from(o))
+            .is_some_and(|ob| ob.info.flags & object_flags::NO_BMP == 0)
+    };
+    // Summed-area table of the faces.
+    let w1 = n + 1;
+    let mut sat = vec![0u64; w1 * w1];
+    for y in 0..n {
+        for x in 0..n {
+            let f = faces(map.objects[idx(x, y)]);
+            sat[(y + 1) * w1 + x + 1] =
+                f + sat[y * w1 + x + 1] + sat[(y + 1) * w1 + x] - sat[y * w1 + x];
+        }
+    }
+    let half = window / 2;
+    let around = |x: usize, y: usize| {
+        let (x0, y0) = (x.saturating_sub(half), y.saturating_sub(half));
+        let (x1, y1) = ((x + half).min(n), (y + half).min(n));
+        sat[y1 * w1 + x1] + sat[y0 * w1 + x0] - sat[y0 * w1 + x1] - sat[y1 * w1 + x0]
+    };
+    let mut removed = 0;
+    for y in 0..n {
+        for x in 0..n {
+            let i = idx(x, y);
+            let o = map.objects[i];
+            if !thinnable(o) {
+                continue;
+            }
+            let d = around(x, y);
+            if d <= budget {
+                continue;
+            }
+            // A fixed number per cell in 0..1 (a 32-bit integer hash).
+            let mut h = (x as u32).wrapping_mul(0x9E37_79B1) ^ (y as u32).wrapping_mul(0x85EB_CA77);
+            h ^= h >> 15;
+            h = h.wrapping_mul(0x2C1B_3C6D);
+            h ^= h >> 12;
+            if f64::from(h) / f64::from(u32::MAX) >= budget as f64 / d as f64 {
+                map.objects[i] = NO_OBJECT;
+                removed += 1;
+            }
+        }
+    }
+    removed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -548,6 +615,75 @@ mod tests {
             "shore gets water2"
         );
         assert_eq!(m.water[idx(50, 50)], NO_WATER);
+    }
+
+    #[test]
+    fn dense_forests_thin_the_same_way_every_time() {
+        let face = c2_formats::model::Face {
+            v: [0; 3],
+            tu: [0; 3],
+            tv: [0; 3],
+            flags: 0,
+            dmask: 0,
+            distant: 0,
+            next: 0,
+            group: 0,
+            reserved: [0; 12],
+        };
+        let object = |flags: i32| c2_formats::rsc::Object {
+            info: c2_formats::rsc::ObjectInfo {
+                radius: 0,
+                y_lo: 0,
+                y_hi: 0,
+                line_length: 0,
+                line_intensity: 0,
+                circle_radius: 0,
+                circle_intensity: 0,
+                flags,
+                grass_radius: 0,
+                default_light: 0,
+                last_ani_time: 0,
+                bound_r: 0.0,
+                reserved: [0; 16],
+            },
+            model: c2_formats::model::StaticModel {
+                mesh: c2_formats::model::Mesh {
+                    faces: vec![face; 100],
+                    ..Default::default()
+                },
+                bones: vec![],
+            },
+            sprite: vec![],
+            animation: None,
+        };
+        let mut rsc = empty_rsc();
+        rsc.objects = vec![object(0), object(object_flags::NO_BMP)];
+        // A tree on every cell of a 100 x 100 forest: 1 000 000 faces in a
+        // 100-cell window, ten times a budget of 100 000; a hut in it.
+        let mut m = flat_map(10);
+        for y in 400..500 {
+            for x in 400..500 {
+                m.objects[idx(x, y)] = 0;
+            }
+        }
+        m.objects[idx(450, 450)] = 1;
+        m.objects[idx(451, 450)] = LANDING;
+        let mut again = m.clone();
+        let removed = thin_objects(&mut m, &rsc, 100, 100_000);
+        assert_eq!(removed, thin_objects(&mut again, &rsc, 100, 100_000));
+        assert_eq!(m.objects, again.objects);
+        let left = (400..500)
+            .flat_map(|y| (400..500).map(move |x| (x, y)))
+            .filter(|&(x, y)| m.objects[idx(x, y)] == 0)
+            .count();
+        // About a tenth in the middle, more at the edges (less around them).
+        assert!((1000..3500).contains(&left), "{left}");
+        assert_eq!(m.objects[idx(450, 450)], 1);
+        assert_eq!(m.objects[idx(451, 450)], LANDING);
+        // A sparse wood is left as it is.
+        let mut sparse = flat_map(10);
+        sparse.objects[idx(10, 10)] = 0;
+        assert_eq!(thin_objects(&mut sparse, &rsc, 100, 100_000), 0);
     }
 
     fn empty_rsc() -> Rsc {

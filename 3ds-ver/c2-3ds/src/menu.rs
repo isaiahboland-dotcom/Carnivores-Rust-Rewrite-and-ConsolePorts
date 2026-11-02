@@ -129,6 +129,10 @@ const MAP_STYLE: [f32; 4] = [16.0, 176.0, 140.0, 28.0];
 const TELEPORT: [f32; 4] = [164.0, 176.0, 140.0, 28.0];
 /// Settings: the controls shown in a hunt (beside Back).
 const HINTS: [f32; 4] = [164.0, 210.0, 140.0, 26.0];
+/// Settings: unlimited points for testing (beside Back).
+const TEST_PTS: [f32; 4] = [84.0, 210.0, 76.0, 26.0];
+/// Hunt options: every tree and plant as its sprite (performance).
+const O_SPRITES: [f32; 4] = [40.0, 168.0, 240.0, 24.0];
 
 const BAR_Y: f32 = 212.0;
 const BACK: [f32; 4] = [4.0, BAR_Y, 76.0, 24.0];
@@ -237,14 +241,19 @@ fn grid(n: usize, cols: usize, r: f32, top: f32) -> Vec<Cell> {
         .collect()
 }
 
-/// A hunter with fewer points than any hunt costs could never hunt
-/// (points are needed, not spent): lifted to a new hunter's.
+/// A hunter with fewer points than a new hunter starts with is lifted to
+/// them: points are needed, not spent, and kills only add, so a lower
+/// score is a save made under an older (lower) start, or one that could
+/// never hunt. Before, only a score under the cheapest hunt was lifted, and
+/// in a game where some area, animal and weapon cost nothing that is 0: a
+/// hunter at 0 stayed at 0 (owner, the all-in-one, 2026-11-01).
 fn unstick(mut save: Save, menu: &c2_formats::menu_txt::MenuData) -> Save {
-    if save.score < menu.cheapest_hunt() {
-        save.score = menu.start_points();
-    }
+    save.score = save.score.max(menu.start_points());
     save
 }
+
+/// Settings > "Test points": what the picks are paid from.
+const TEST_POINTS: i32 = 1_000_000;
 
 /// Where `paged` puts the items not on the page shown (radius 0: not
 /// drawn, never hit).
@@ -615,10 +624,26 @@ impl Menu {
             .sum()
     }
 
+    /// "Random ambients" is offered for games with add-ons (a dialect
+    /// game's in packs from before they said).
+    fn random_ambients_offered(&self) -> bool {
+        self.info.addons.unwrap_or_else(|| self.rules.dialect())
+    }
+
+    /// The points the picks are paid from: the hunter's score, or plenty
+    /// with Settings > "Test points" (the save keeps its own score).
+    fn points(&self) -> i32 {
+        if self.settings.test_points {
+            TEST_POINTS
+        } else {
+            self.save.score
+        }
+    }
+
     /// Points left after paying for the picks (none needed to observe).
     fn remaining(&self) -> i32 {
         if self.observer || self.trophy() || self.survival.is_some() {
-            return self.save.score;
+            return self.points();
         }
         let area = self.areas.get(self.area).map_or(0, |a| a.1.price);
         let dinos: i32 = self
@@ -628,7 +653,7 @@ impl Menu {
             .filter(|(i, _)| self.picked_dinos.has(*i))
             .map(|(_, d)| d.1.price)
             .sum();
-        self.save.score
+        self.points()
             - area
             - dinos
             - Self::sum(&self.weapons, self.picked_weapons)
@@ -745,6 +770,7 @@ impl Menu {
             teleport: false,
             hints: self.settings.hints,
             random_ambients: false,
+            tree_sprites: false,
             crouch_key: self.settings.crouch_key,
             gyro_k: 0.0,
             survival: None,
@@ -782,7 +808,8 @@ impl Menu {
             map_mobile: self.settings.map_mobile,
             teleport: self.settings.teleport,
             hints: self.settings.hints,
-            random_ambients: self.settings.random_ambients && self.rules.dialect(),
+            random_ambients: self.settings.random_ambients && self.random_ambients_offered(),
+            tree_sprites: self.settings.tree_sprites,
             crouch_key: self.settings.crouch_key,
             gyro_k: self.settings.gyro_pct as f32 / 100.0,
             survival: self.survival.filter(|_| !self.observer),
@@ -1333,6 +1360,13 @@ impl Menu {
                     self.focus = Some("Tap the map in a hunt; 5 s, then a minute".into());
                 } else if inside(HINTS, x, y) {
                     s.hints = !s.hints;
+                } else if inside(TEST_PTS, x, y) {
+                    s.test_points = !s.test_points;
+                    self.focus = Some(if s.test_points {
+                        "Test: unlimited points (save keeps its own)".into()
+                    } else {
+                        "Points: the hunter's score".into()
+                    });
                 } else if inside(ALL_HUNTABLE, x, y) {
                     s.all_huntable = !s.all_huntable;
                     self.focus = Some(if s.all_huntable {
@@ -1357,7 +1391,7 @@ impl Menu {
                 }
             }
             Step::Options => {
-                let dialect = self.rules.dialect();
+                let offered = self.random_ambients_offered();
                 let s = &mut self.settings;
                 if inside(O_SPEED_DOWN, x, y) {
                     s.run_pct = (s.run_pct - 5).max(50);
@@ -1368,7 +1402,7 @@ impl Menu {
                     s.run_pct = (50 + (f * 50.0 / 5.0).round() as i32 * 5).clamp(50, 100);
                 } else if inside(O_AMBIENT, x, y) {
                     s.ambient = !s.ambient;
-                } else if inside(O_RANDOM, x, y) && dialect {
+                } else if inside(O_RANDOM, x, y) && offered {
                     s.random_ambients = !s.random_ambients;
                 } else if inside(O_FRIENDLY, x, y) {
                     s.friendly = !s.friendly;
@@ -1376,6 +1410,13 @@ impl Menu {
                         "Animals notice you from closer".into()
                     } else {
                         "Animals see you from the full 76 cells".into()
+                    });
+                } else if inside(O_SPRITES, x, y) {
+                    s.tree_sprites = !s.tree_sprites;
+                    self.focus = Some(if s.tree_sprites {
+                        "Trees as flat sprites: faster forests".into()
+                    } else {
+                        "Trees as models near you".into()
                     });
                 } else if inside(O_STEALTH, x, y) {
                     s.stealth = !s.stealth;
@@ -1767,7 +1808,7 @@ impl Menu {
             Step::Area => {
                 for (i, cell) in self.area_cells().into_iter().enumerate() {
                     let it = &self.areas[i].1;
-                    let afford = it.price <= self.save.score;
+                    let afford = it.price <= self.points();
                     Self::draw_hex_item(&mut c, gpu, cell, it, i == self.area, afford);
                 }
                 for (i, cell) in Self::time_cells().into_iter().enumerate() {
@@ -1954,6 +1995,7 @@ impl Menu {
             (TELEPORT, s.teleport, "Teleport"),
             (HINTS, s.hints, "Hints"),
             (ALL_HUNTABLE, s.all_huntable, "All dinos"),
+            (TEST_PTS, s.test_points, "Test"),
         ];
         for (r, on, _) in toggles {
             c.rect(r, if on { [60, 110, 60, 255] } else { PANEL });
@@ -2002,7 +2044,14 @@ impl Menu {
         }
         for (r, on, name) in toggles {
             let t = format!("{name}: {}", if on { "ON" } else { "OFF" });
-            c.text_c(gpu, r[0] + r[2] / 2.0, r[1] + r[3] / 2.0 - 4.0, 1.0, WHITE, &t);
+            c.text_c(
+                gpu,
+                r[0] + r[2] / 2.0,
+                r[1] + r[3] / 2.0 - 4.0,
+                1.0,
+                WHITE,
+                &t,
+            );
         }
         c.text_c(
             gpu,
@@ -2017,7 +2066,6 @@ impl Menu {
     /// The hunt options (bottom; the bar is drawn after).
     fn draw_options(&self, c: &mut Canvas, gpu: &mut Gpu) {
         let s = self.settings;
-        let dialect = self.rules.dialect();
         c.rect(O_SPEED_BAR, PANEL);
         let f = (s.run_pct - 50) as f32 / 50.0;
         c.rect(
@@ -2033,11 +2081,12 @@ impl Menu {
             c.rect(r, PANEL);
         }
         let mut toggles = vec![(O_AMBIENT, s.ambient, "Ambient animals")];
-        if dialect {
+        if self.random_ambients_offered() {
             toggles.push((O_RANDOM, s.random_ambients, "Random ambients (4)"));
         }
         toggles.push((O_FRIENDLY, s.friendly, "3DS friendly"));
         toggles.push((O_STEALTH, s.stealth, "Stealth crouch"));
+        toggles.push((O_SPRITES, s.tree_sprites, "Trees as sprites"));
         for (r, on, _) in &toggles {
             c.rect(*r, if *on { [60, 110, 60, 255] } else { PANEL });
         }
@@ -2164,7 +2213,11 @@ impl Menu {
             .get(self.save.rank.clamp(0, 2) as usize)
             .unwrap_or(&"");
         c.text(gpu, 8.0, 6.0, 1.0, TEXT, &format!("{name} ({rank})"));
-        let pts = format!("Points: {} / {}", self.remaining(), self.save.score);
+        let pts = if self.settings.test_points {
+            "Points: test (unlimited)".to_string()
+        } else {
+            format!("Points: {} / {}", self.remaining(), self.save.score)
+        };
         c.text(
             gpu,
             TOP_W as f32 - 8.0 - pts.len() as f32 * 8.0,

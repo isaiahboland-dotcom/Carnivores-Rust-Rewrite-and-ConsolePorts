@@ -207,9 +207,21 @@ const FLOW_W: i32 = 192;
 /// a few cells of steep slope), when a spot like that is found.
 const SPAWN_RISE: f32 = 1536.0;
 /// Closer than this (cells), wave animals go straight for the hunter.
-const LURE_NEAR: u16 = 12;
+/// Farther, they do too when the straight line is a way (no ridge or
+/// ravine wall across it); else along the way.
+const LURE_NEAR: u16 = 3;
 /// How far along the way a lure is (cells).
 const LURE_AHEAD: usize = 8;
+/// A lure is never nearer the hunter than this (cells): the AIs measure
+/// their kill distance to it.
+const LURE_GAP: u16 = 3;
+/// How far (cells) an animal that stands where there is no way (a slope
+/// too steep, up a mountain side) looks for ground that has one.
+const LURE_RESCUE: i32 = 10;
+/// The slopes a way takes: this share of the steepest an animal can climb
+/// (`slope_too_steep`), so the way keeps off ground it barely holds on
+/// (owner, 2026-11-01: waves climbed the ravine's sides and stuck).
+const FLOW_SLOPE: f32 = 0.8;
 const AROUND: [(i32, i32); 8] = [
     (1, 0),
     (-1, 0),
@@ -272,7 +284,7 @@ impl Flow {
                 // 100 up per 64 across, as `slope_too_steep`; the start
                 // (the hunter's cell) may be anything.
                 let run = if dx != 0 && dz != 0 { 362.0 } else { 256.0 };
-                let steep = d > 0 && (h[j] - hh).abs() > run * 100.0 / 64.0;
+                let steep = d > 0 && (h[j] - hh).abs() > run * 100.0 / 64.0 * FLOW_SLOPE;
                 if dist[j] == u16::MAX && !h[j].is_nan() && !steep {
                     dist[j] = d + 1;
                     queue.push_back((nx, nz));
@@ -302,11 +314,50 @@ impl Flow {
         }
     }
 
+    /// Whether the straight line from cell (`x`, `z`) to the hunter is a
+    /// way: every cell on it has one, none farther than where it starts
+    /// (a cell across a ridge or a ravine wall is, or has none).
+    fn straight(&self, x: i32, z: i32) -> bool {
+        let d0 = self.get(x, z);
+        let (tx, tz) = self.from;
+        let n = (tx - x).abs().max((tz - z).abs());
+        (1..n).all(|k| {
+            let f = k as f32 / n as f32;
+            let cx = x + ((tx - x) as f32 * f).round() as i32;
+            let cz = z + ((tz - z) as f32 * f).round() as i32;
+            self.get(cx, cz) <= d0
+        })
+    }
+
     /// Where an animal at cell (`x`, `z`) should head: [`LURE_AHEAD`] cells
-    /// along the way, or `None` (near, or no way known: straight on).
+    /// along the way; off any way (on a slope too steep, outside the
+    /// fence), the nearest ground with one; `None` (near, a straight way,
+    /// or nothing known: straight on).
     fn lure(&self, mut x: i32, mut z: i32) -> Option<(f32, f32)> {
+        let centre = |x: i32, z: i32| (x as f32 * 256.0 + 128.0, z as f32 * 256.0 + 128.0);
         let d = self.get(x, z);
-        if d == u16::MAX || d <= LURE_NEAR {
+        if d == u16::MAX {
+            if !self.covers(x, z) {
+                return None;
+            }
+            // Down to the nearest cell with a way (the closest to the
+            // hunter's of those as near).
+            let near = (1..=LURE_RESCUE).find_map(|r| {
+                (-r..=r)
+                    .flat_map(|i| {
+                        [
+                            (x + i, z - r),
+                            (x + i, z + r),
+                            (x - r, z + i),
+                            (x + r, z + i),
+                        ]
+                    })
+                    .filter(|&(cx, cz)| self.get(cx, cz) != u16::MAX)
+                    .min_by_key(|&(cx, cz)| self.get(cx, cz))
+            })?;
+            return Some(centre(near.0, near.1));
+        }
+        if d <= LURE_NEAR || self.straight(x, z) {
             return None;
         }
         for _ in 0..LURE_AHEAD {
@@ -315,12 +366,13 @@ impl Flow {
                 .into_iter()
                 .map(|(dx, dz)| (x + dx, z + dz))
                 .min_by_key(|&(nx, nz)| self.get(nx, nz))?;
-            if self.get(next.0, next.1) >= here {
+            let nd = self.get(next.0, next.1);
+            if nd >= here || nd < LURE_GAP {
                 break;
             }
             (x, z) = next;
         }
-        Some((x as f32 * 256.0 + 128.0, z as f32 * 256.0 + 128.0))
+        Some(centre(x, z))
     }
 }
 
@@ -831,5 +883,41 @@ impl Hunt {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod flow_tests {
+    use super::*;
+
+    /// A flat area with a wall (cells x 500..=504, z below 560) between
+    /// the hunter (480, 500) and the animals east of it.
+    fn walled() -> Area {
+        let mut a = Area::flat(10);
+        for z in 0..560 {
+            for x in 500..=504 {
+                a.map.height[crate::area::idx(x, z)] = 250;
+            }
+        }
+        a
+    }
+
+    #[test]
+    fn open_ground_is_straight_on() {
+        let f = Flow::new(&Area::flat(10), (480, 500), None);
+        assert_eq!(f.lure(530, 500), None);
+    }
+
+    #[test]
+    fn a_wall_is_walked_round() {
+        let f = Flow::new(&walled(), (480, 500), None);
+        let (lx, lz) = f.lure(530, 500).expect("a way round the wall");
+        // Towards the wall's end (z 560), not into it.
+        assert!(lz > 500.0 * 256.0, "{lx} {lz}");
+        // The wall itself has no way: an animal stuck on it comes down.
+        assert_eq!(f.get(502, 500), u16::MAX);
+        let (dx, _) = f.lure(502, 500).expect("down off the wall");
+        let cell = (dx / 256.0) as i32;
+        assert!(!(500..=504).contains(&cell), "{cell}");
     }
 }

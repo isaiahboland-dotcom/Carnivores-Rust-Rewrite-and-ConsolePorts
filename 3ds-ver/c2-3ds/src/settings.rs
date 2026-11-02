@@ -4,8 +4,9 @@
 use crate::dir;
 
 /// Small ambient animals around the hunter at most, when on: more than a
-/// handful in view costs frames on an Old 3DS.
-pub const AMBIENT_CAP: i32 = 4;
+/// handful in view costs frames on an Old 3DS. 5 (owner, 2026-11-01), for
+/// dialect games' spawn tables too.
+pub const AMBIENT_CAP: i32 = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Settings {
@@ -40,6 +41,12 @@ pub struct Settings {
     /// too, which their makers left out of it to be come across on their
     /// own maps; off, they only roam there.
     pub all_huntable: bool,
+    /// Testing: hunts never run short of points (the save's score is kept
+    /// as it is; owner, 2026-11-01).
+    pub test_points: bool,
+    /// Performance: every tree and plant drawn as its far sprite, near ones
+    /// too (for the standalones whose forests are slow on a 3DS).
+    pub tree_sprites: bool,
 }
 
 /// How the hunter crouches.
@@ -122,6 +129,8 @@ impl Default for Settings {
             teleport: false,
             hints: false,
             all_huntable: false,
+            test_points: false,
+            tree_sprites: false,
         }
     }
 }
@@ -154,6 +163,8 @@ impl Settings {
                 ("teleport", v) => s.teleport = v != "0",
                 ("button_hints", v) => s.hints = v != "0",
                 ("all_huntable", v) => s.all_huntable = v != "0",
+                ("test_points", v) => s.test_points = v != "0",
+                ("tree_sprites", v) => s.tree_sprites = v != "0",
                 ("gyro_aim", v) => {
                     if let Ok(n) = v.parse::<i32>() {
                         s.gyro_pct = n.clamp(GYRO_STEPS[0], 100);
@@ -178,7 +189,8 @@ impl Settings {
             format!(
                 "run_speed = {}\nambient = {}\nblood = {}\ndeath_animation = {}\n\
                  friendly = {}\nstealth_crouch = {}\nrandom_ambients = {}\ncrouch_button = {}\ngyro_aim = {}\n\
-                 hunter = {}\nmap_mobile = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\n",
+                 hunter = {}\nmap_mobile = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\n\
+                 test_points = {}\ntree_sprites = {}\n",
                 self.run_pct,
                 i32::from(self.ambient),
                 i32::from(self.blood),
@@ -192,7 +204,9 @@ impl Settings {
                 i32::from(self.map_mobile),
                 i32::from(self.teleport),
                 i32::from(self.hints),
-                i32::from(self.all_huntable)
+                i32::from(self.all_huntable),
+                i32::from(self.test_points),
+                i32::from(self.tree_sprites)
             ),
         )
     }

@@ -313,7 +313,12 @@ fn texture(assets: &dyn Assets, dir: &str, stem: &str) -> Option<Result<Rgba, Fo
     })
 }
 
-/// The terrain atlas's tiles (row by row), each scaled to the PC's 128.
+/// The terrain atlas's tiles (row by row), each scaled to the PC's 128 and
+/// transposed: the atlas keeps each tile with x and y swapped from the
+/// PC's (checked on every patterned tile of both APKs' first areas against
+/// the PC games' own, which share their maps cell for cell; untransposed,
+/// the edge tiles between snow and ice pointed the wrong way, as squares
+/// along the edges, owner 2026-11-01).
 fn tiles(rst: &Rst, assets: &dyn Assets) -> Result<Vec<Vec<u16>>, FormatError> {
     let t = rst
         .section("tiles")
@@ -326,17 +331,21 @@ fn tiles(rst: &Rst, assets: &dyn Assets) -> Result<Vec<Vec<u16>>, FormatError> {
     let mut out = Vec::with_capacity(cols * rows);
     for ty in 0..rows {
         for tx in 0..cols {
-            out.push(crop_scaled(
-                &img,
-                tx * tw,
-                ty * th,
-                tw,
-                th,
-                TERRAIN_TEX_SIZE,
-            ));
+            let t = crop_scaled(&img, tx * tw, ty * th, tw, th, TERRAIN_TEX_SIZE);
+            out.push(transposed(&t, TERRAIN_TEX_SIZE));
         }
     }
     Ok(out)
+}
+
+/// A `size` square texture with x and y swapped.
+fn transposed(t: &[u16], size: usize) -> Vec<u16> {
+    (0..size * size)
+        .map(|i| {
+            let (x, y) = (i % size, i / size);
+            t.get(x * size + y).copied().unwrap_or(0)
+        })
+        .collect()
 }
 
 /// The PC's object flags and lighting from an `[objects]` item.

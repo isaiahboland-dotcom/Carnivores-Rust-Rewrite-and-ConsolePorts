@@ -108,6 +108,30 @@ impl Herd {
         Some(i)
     }
 
+    /// At most `max` of the characters `counted` picks (by species), the
+    /// rest removed: the ones placed last go, then the ones in a pack only
+    /// with their whole pack kept intact (they are never split). For the
+    /// consoles: a dialect game's spawn tables can put a dozen or more
+    /// ambient animals about the hunter (owner, 2026-11-01: Anachronous at
+    /// 20 fps on a 3DS). Right after placing (packs' leaders renumbered).
+    pub fn cap_placed(&mut self, max: usize, counted: impl Fn(usize) -> bool) {
+        let alone: Vec<usize> = (0..self.chars.len())
+            .filter(|&i| counted(self.chars[i].ctype) && self.chars[i].pack.is_none())
+            .collect();
+        let in_packs = (0..self.chars.len())
+            .filter(|&i| counted(self.chars[i].ctype) && self.chars[i].pack.is_some())
+            .count();
+        let keep = max.saturating_sub(in_packs);
+        for &i in alone.iter().skip(keep).rev() {
+            self.chars.remove(i);
+            for p in &mut self.packs {
+                if p.leader > i {
+                    p.leader -= 1;
+                }
+            }
+        }
+    }
+
     /// Places ambient animals near the hunter, brachiosaurs in shallow water
     /// and the main huntable population around the map centre.
     pub fn place(&mut self, area: &Area, hunter: (f32, f32), rng: &mut MsRand, o: PlaceOptions) {

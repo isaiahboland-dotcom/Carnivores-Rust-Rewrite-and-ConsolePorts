@@ -940,11 +940,13 @@ impl Menu {
         );
 
         let mut players = save::players(&game_dir);
-        // A hunter with fewer points than any hunt costs could never hunt.
+        // A hunter with fewer points than a new one starts with is lifted to
+        // them: points are needed, not spent, and kills only add, so it is a
+        // save made under a lower start (or one that could never hunt; under
+        // the cheapest hunt alone missed games where some picks cost 0).
+        let start = menu.start_points();
         for p in &mut players {
-            if p.score < menu.cheapest_hunt() {
-                p.score = menu.start_points();
-            }
+            p.score = p.score.max(start);
         }
         let signed_in = player.and_then(|r| players.iter().position(|p| p.reg_number == r));
         let mobile = (MOBILE_MENU.get().copied().unwrap_or(false) || kit.is_some()).then(|| {

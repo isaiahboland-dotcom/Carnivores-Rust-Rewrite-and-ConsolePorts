@@ -3416,15 +3416,10 @@ mod tests {
         let c = wave[0];
         assert_eq!(c.ctype, 2);
         assert!((c.pos[2] - 110_000.0).abs() <= 500.0 && (c.pos[0] - 100_000.0).abs() <= 500.0);
-        // 39 cells off, the Chasmosaurus still comes (not away), by a
-        // way 8 cells ahead.
-        let (lx, lz) = c.lure.expect("a lure while far off");
-        assert!(
-            (lz - c.pos[2]).abs() <= 9.0 * 256.0 && lz < c.pos[2],
-            "{lz} {}",
-            c.pos[2]
-        );
-        assert!((c.tgz - lz).abs() < 1.0 && (c.tgx - lx).abs() < 1.0);
+        // 39 cells off on open ground, the Chasmosaurus comes straight on
+        // (no lure: the straight line is a way; walls: `flow_tests`).
+        assert_eq!(c.lure, None);
+        assert!((c.tgz - hunt.player.z).abs() < 1.0 && (c.tgx - hunt.player.x).abs() < 1.0);
         // Then the next wave in turn, 2 s after this one falls.
         hunt.debug_bag(
             &area,

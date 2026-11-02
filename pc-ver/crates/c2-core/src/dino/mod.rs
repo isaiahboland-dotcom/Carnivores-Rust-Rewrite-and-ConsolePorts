@@ -1841,6 +1841,11 @@ mod tests {
         let count = |h: &Herd, ct: usize| h.chars.iter().filter(|c| c.ctype == ct).count();
         // Three solo parasaurs; two packs of three raptors.
         assert_eq!((count(&herd, 1), count(&herd, 2)), (3, 6));
+        // Capped: packs are never split (6 raptors count against 7, so
+        // one parasaur stays); the packs' leaders still point at raptors.
+        herd.cap_placed(7, |ct| ct >= 1);
+        assert_eq!((count(&herd, 1), count(&herd, 2)), (1, 6));
+        assert!(herd.packs.iter().all(|p| herd.chars[p.leader].ctype == 2));
         for c in &herd.chars {
             assert!(
                 c.pos[0] > 300.0 * 256.0 && c.pos[0] < 900.0 * 256.0,
