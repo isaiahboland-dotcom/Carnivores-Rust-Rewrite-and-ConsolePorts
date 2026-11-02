@@ -1,18 +1,12 @@
 # Wii U port gameplan
 
-**Current status, 2026-10-29:** the stock Carnivores 2 WUHB demo has booted,
-shown its menu, and played a hunt on physical Wii U hardware under Aroma.
-The display handoff fix is confirmed. Hardware gameplay is reported below
-30 FPS and has weapon-selection, gun-occlusion, scope and menu-resolution
-issues. See the [hardware review and optimization worklist](WIIU-HARDWARE-REVIEW.md)
-for preserved logs, source findings, and the performance measurement plan.
-The existing SD startup log contains no hunt frame timings.
+The native Wii U frontend has run on physical hardware under Aroma. See the
+[sanitized hardware findings](WIIU-HARDWARE-FINDINGS.md) for measured behavior
+and limitations, and the [port overview](../wiiu-ver/README.md) for current
+build entry points. Users supply their own game and mod files.
 
-The remainder is the original research and repository assessment from
-2026-10-28, retained as the architectural plan rather than current completion
-status. The target is native Wii U homebrew, with selectable RPX/WUHB output.
-Ice Age and MEE support remain future frontend work. Users supply their own
-game and mod files.
+The architectural assessment below records the original research, rather than
+current completion status.
 
 ## Starting point
 

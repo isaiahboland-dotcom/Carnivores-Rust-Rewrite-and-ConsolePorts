@@ -29,5 +29,5 @@ are not supplied by a fresh clone. Earlier source remains in Git history.
 Hardware captures remain locally in `perf-probe/hardware-logs/`, ignored by
 Git. Store future capture CSVs, startup/lifecycle traces, and session notes
 there, or under `(testing)/`. Keep reusable technical conclusions in maintained
-documentation. The [hardware review](../docs/WIIU-HARDWARE-REVIEW.md) records
-historical findings; its original captures are local only.
+documentation. The [sanitized hardware findings](../docs/WIIU-HARDWARE-FINDINGS.md) record
+technical conclusions without raw captures or session metadata.
