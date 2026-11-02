@@ -469,7 +469,7 @@ pub(super) fn try_kill(
     pdist: f32,
     on_water: bool,
 ) {
-    if m.kill_dist <= 0 || pdist >= m.kill_dist as f32 {
+    if c.lure.is_some() || !ctx.hunter.alive || m.kill_dist <= 0 || pdist >= m.kill_dist as f32 {
         return;
     }
     let kill_alt = m.water_level.max(256) as f32;
@@ -488,6 +488,11 @@ pub(super) fn kill_now(
     ctx: &mut Ctx<'_>,
     on_water: bool,
 ) {
+    // Survival substitutes a navigation waypoint for the hunter while
+    // steering around obstacles. Reaching that waypoint is never a kill.
+    if c.lure.is_some() || !ctx.hunter.alive {
+        return;
+    }
     let (kind, scream) = match m.kill(c.kill_type) {
         Some(k) if !on_water => {
             c.vspeed /= 8.0;
@@ -828,6 +833,38 @@ mod tests {
         let c = &herd.chars[i];
         assert_eq!((c.state, c.phase), (1, RUN));
         assert!(dist(c, &h) > 3000.0, "{}", dist(c, &h));
+    }
+
+    #[test]
+    fn a_dialect_survival_waypoint_is_not_a_hunter() {
+        let area = Area::flat(10);
+        let h = hunter();
+        let mut m = info(mee_ai::WOLF);
+        m.aggress = 160;
+        m.kill_dist = 1000;
+        m.kill_types = vec![KillType {
+            anim: EAT,
+            hunter_anim: 3,
+            ..Default::default()
+        }];
+        let mut herd = Herd {
+            species: vec![species(m)],
+            ..Default::default()
+        };
+        let i = add(&mut herd, 0, &area, h.x + 10_000.0, h.z);
+        let c = &mut herd.chars[i];
+        (c.state, c.wave, c.afraid_time, c.aware_hunter) = (1, 1, 60_000, true);
+        c.lure = Some((c.pos[0] + 200.0, c.pos[2]));
+        let ev = run(&mut herd, &area, h, 100);
+        assert!(!ev.iter().any(|e| matches!(e, DinoEvent::KillHunter { .. })));
+        assert_ne!(herd.chars[i].phase, EAT);
+        // Once navigation hands control back to the real player position,
+        // the same animal can still kill at close range.
+        let c = &mut herd.chars[i];
+        c.lure = None;
+        c.pos = [h.x + 200.0, h.y, h.z];
+        let ev = run(&mut herd, &area, h, 10);
+        assert!(ev.iter().any(|e| matches!(e, DinoEvent::KillHunter { .. })));
     }
 
     #[test]

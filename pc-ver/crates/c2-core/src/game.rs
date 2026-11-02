@@ -825,6 +825,8 @@ impl Wind {
 pub struct DeathCam {
     /// Character index of the hunter's body.
     pub body: usize,
+    /// The animal whose kill animation may synchronize the hunter body.
+    pub killer: Option<usize>,
     /// 1 = flying in, then ms since it started circling (+2).
     pub time: i32,
     pub pos: [f32; 3],
@@ -1104,18 +1106,16 @@ impl Hunt {
         } else {
             if self.opts.trophy {
                 let sp = &self.herd.species;
-                self.player.obstacles = self
-                    .herd
-                    .chars
-                    .iter()
-                    .map(|c| {
+                self.player.obstacles.clear();
+                self.player
+                    .obstacles
+                    .extend(self.herd.chars.iter().map(|c| {
                         [
                             c.pos[0],
                             c.pos[2],
                             sp.get(c.ctype).map_or(0.0, |s| s.info.radius),
                         ]
-                    })
-                    .collect();
+                    }));
             }
             let mut pev = Vec::new();
             // Hunt2.cpp: running only with the weapon away (the dialect's
@@ -1240,6 +1240,7 @@ impl Hunt {
             }
             out.push(GameEvent::Dino(e));
         }
+        self.sync_killed_body(area);
         self.prof.mark(3);
         // AnimateProcesses: now and then, bubbles rise in deep water ahead.
         if self.takt & 63 == 0 {
@@ -1332,6 +1333,13 @@ impl Hunt {
             if d.body > index {
                 d.body -= 1;
             }
+            d.killer = d.killer.and_then(|k| {
+                if k == index {
+                    None
+                } else {
+                    Some(k - usize::from(k > index))
+                }
+            });
         }
     }
 
@@ -2360,6 +2368,7 @@ impl Hunt {
         );
         self.death = Some(DeathCam {
             body: index,
+            killer: by,
             time: 1,
             pos: cam,
             alpha,
@@ -2367,7 +2376,51 @@ impl Hunt {
             base,
             lift,
         });
+        self.sync_killed_body(area);
         out.push(GameEvent::HunterDied { kind, scream });
+    }
+
+    /// MEE `AnimateHuntDead`: a synchronized kill uses the killer's origin,
+    /// heading, size and animation clock. The hunter clip already contains
+    /// the relative motion (for example the Diabloceratops toss).
+    fn sync_killed_body(&mut self, area: &Area) {
+        let Some(d) = self.death else { return };
+        let Some(killer) = d.killer.and_then(|i| self.herd.chars.get(i)) else {
+            return;
+        };
+        let Some(m) = self
+            .herd
+            .species
+            .get(killer.ctype)
+            .and_then(|s| s.mee.as_ref())
+        else {
+            return;
+        };
+        let Some(k) = m.kill(killer.kill_type) else {
+            return;
+        };
+        let water = area.land_up_h(killer.pos[0], killer.pos[2])
+            - area.land_height(killer.pos[0], killer.pos[2])
+            > m.water_level as f32 * killer.scale;
+        if (water && !crate::dino::mee::is_fish(m.ai))
+            || !(k.carry_corpse || (k.hunter_sync && killer.phase == k.anim))
+        {
+            return;
+        }
+        let pose = (
+            killer.pos,
+            killer.alpha,
+            killer.beta,
+            killer.gamma,
+            killer.scale,
+            killer.ftime,
+        );
+        if let Some(body) = self.herd.chars.get_mut(d.body) {
+            (
+                body.pos, body.alpha, body.beta, body.gamma, body.scale, body.ftime,
+            ) = pose;
+            (body.lookx, body.lookz) = (body.alpha.cos(), body.alpha.sin());
+        }
     }
 
     /// `ProcessDemoMovement`: fly to the body, then circle it.
@@ -2596,10 +2649,7 @@ impl Hunt {
                 }
                 // By its species' AI: a patched exe's extra slot runs as
                 // another (`Species::stock_ai`).
-                None => (
-                    self.herd.species.get(c.ctype).map(|s| s.info.ai) == Some(self.target_call),
-                    d < range,
-                ),
+                None => (self.call_bit(c) == Some(self.target_call), d < range),
             };
             let c = &self.herd.chars[i];
             if !answers || c.health == 0 || c.afraid_time != 0 || c.state != 0 {
@@ -2820,6 +2870,9 @@ impl Hunt {
     /// the first menu animal (green on the radar when that one is hunted).
     pub fn call_bit(&self, c: &crate::dino::Character) -> Option<i32> {
         let sp = self.herd.species.get(c.ctype)?;
+        if let Some(slot) = sp.tuning.menu_slot {
+            return (slot >= 0).then_some(10 + slot);
+        }
         match &sp.mee {
             Some(m) if (10..=29).contains(&m.ai) => Some(10 + m.call_no),
             Some(_) => None,
@@ -3237,6 +3290,64 @@ mod tests {
     }
 
     #[test]
+    fn original_ai_in_a_mixed_pack_uses_its_menu_slot() {
+        let (_, mut hunt, _) = setup(false);
+        let original_ai = hunt.herd.species[1].info.ai;
+        let res = c2_formats::res_txt::ResTxt::parse(&format!(
+            "characters {{\n{{\n ai = {original_ai}\n nativeAI = TRUE\n menuSlot = 71\n}}\n}}\n"
+        ))
+        .expect("script");
+        let tables = c2_formats::mee::Tables::read(
+            &res,
+            &c2_formats::mee::Hunt {
+                area: Some(1),
+                time: 1,
+                picked: Bits::bit(71),
+            },
+        );
+        crate::mee::tune(&mut hunt.herd.species[1..2], &tables);
+        assert!(
+            hunt.herd.species[1].mee.is_none(),
+            "retains stock animation layout"
+        );
+        assert_eq!(hunt.herd.species[1].info.ai, original_ai);
+        assert_eq!(hunt.call_bit(&hunt.herd.chars[0]), Some(81));
+    }
+
+    #[test]
+    fn synchronized_kill_keeps_the_body_on_the_killers_animation() {
+        let (area, mut hunt, _) = setup(false);
+        let res = c2_formats::res_txt::ResTxt::parse("characters {\n{\n ai = 18\n killtype {\n hunterSync = TRUE\n eatAnim = 0\n hunterAnim = 0\n }\n}\n}\n").expect("script");
+        let m = crate::mee::info(&res.sections[0].blocks[0], ai::CHASM);
+        assert!(m.kill_types[0].hunter_sync);
+        hunt.herd.species[1].mee = Some(Box::new(m));
+        let killer = &mut hunt.herd.chars[0];
+        (
+            killer.phase,
+            killer.alpha,
+            killer.beta,
+            killer.gamma,
+            killer.scale,
+            killer.ftime,
+        ) = (0, 1.2, 0.1, -0.2, 1.7, 123);
+        let mut out = Vec::new();
+        hunt.kill_hunter(&area, Some(0), 0, false, &mut out);
+        let body = hunt.death.as_ref().map(|d| d.body).expect("body");
+        for time in [123, 456] {
+            hunt.herd.chars[0].ftime = time;
+            hunt.sync_killed_body(&area);
+            let (b, k) = (&hunt.herd.chars[body], &hunt.herd.chars[0]);
+            assert_eq!(
+                (b.pos, b.alpha, b.beta, b.gamma, b.scale, b.ftime),
+                (k.pos, k.alpha, k.beta, k.gamma, k.scale, k.ftime)
+            );
+        }
+        hunt.remove_character(0);
+        assert_eq!(hunt.death.as_ref().and_then(|d| d.killer), None);
+        assert_eq!(hunt.death.as_ref().map(|d| d.body), Some(body - 1));
+    }
+
+    #[test]
     fn a_killer_naming_its_hunter_lays_that_body() {
         let (area, mut hunt, car) = setup(false);
         let own = DinoInfo {
@@ -3267,6 +3378,7 @@ mod tests {
         let (_, mut hunt, _) = setup(false);
         hunt.death = Some(DeathCam {
             body: 0,
+            killer: None,
             time: 1,
             pos: [0.0; 3],
             alpha: 0.0,

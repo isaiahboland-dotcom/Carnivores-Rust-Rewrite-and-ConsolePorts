@@ -34,6 +34,18 @@ use c2_formats::bits::Bits;
 const CW: f32 = 800.0;
 const CH: f32 = 600.0;
 
+/// Filtering never changes an entry's hunt bit or picture number.
+fn animal_order(names: &[String], first: usize, all: bool) -> Vec<usize> {
+    let mut seen = std::collections::HashSet::new();
+    names
+        .iter()
+        .enumerate()
+        .filter_map(|(i, name)| {
+            ((all || i < first) && seen.insert(name.trim().to_ascii_lowercase())).then_some(i)
+        })
+        .collect()
+}
+
 type Rect = (f32, f32, f32, f32);
 
 /// The hunt lists: `_MENU.TXT` if the game has one (Modder's Edition
@@ -104,7 +116,11 @@ fn hunt_homes(huntdat: &Path, menu: &MenuData, maps: &[PathBuf]) -> Option<Vec<V
     if !c2_formats::mee::is_dialect(&res) {
         return None;
     }
-    let mut homes = vec![Vec::new(); menu.huntables.len()];
+    Some(spawn_homes(&res, menu.huntables.len(), maps))
+}
+
+fn spawn_homes(res: &ResTxt, slots: usize, maps: &[PathBuf]) -> Vec<Vec<usize>> {
+    let mut homes = vec![Vec::new(); slots];
     for (a, map) in maps.iter().enumerate() {
         let stem = map
             .file_stem()
@@ -115,24 +131,20 @@ fn hunt_homes(huntdat: &Path, menu: &MenuData, maps: &[PathBuf]) -> Option<Vec<V
             time: 1,
             picked: Bits::ALL,
         };
-        let t = c2_formats::mee::Tables::read(&res, &h);
+        let t = c2_formats::mee::Tables::read(res, &h);
         for c in &t.characters {
             if c.spawn.is_empty() && c.packs.is_empty() {
                 continue;
             }
-            let slot = c
-                .block
-                .get(&["callNo"])
-                .map(c2_formats::res_txt::c_atoi)
-                .filter(|&n| n >= 0);
-            if let Some(v) = slot.and_then(|n| homes.get_mut(n as usize)) {
+            let slot = c2_formats::mee::menu_slot(None, &c.block);
+            if let Some(v) = slot.and_then(|n| homes.get_mut(n)) {
                 if !v.contains(&a) {
                     v.push(a);
                 }
             }
         }
     }
-    Some(homes)
+    homes
 }
 
 fn inside(p: Option<(f32, f32)>, r: Rect) -> bool {
@@ -691,19 +703,33 @@ impl Menu {
         // A dialect game's roaming add-ons (no menu slot of their own) are
         // picked as its animals are, in the slots after them; priced as the
         // menu animal with their AI (listed with "All dinos huntable" on).
-        if let Some(res) = dialect_res(&huntdat) {
+        let dialect = dialect_res(&huntdat);
+        if let Some(res) = &dialect {
             let first = menu.huntables.len();
-            for (i, _) in c2_core::mee::roamers(&res, first) {
-                let b = res.section("characters").and_then(|s| s.blocks.get(i));
+            let roamers = c2_core::mee::roamers(res, first);
+            let h = c2_formats::mee::Hunt {
+                area: None,
+                time: 1,
+                picked: Bits::ALL,
+            };
+            let extras: Vec<_> = roamers.iter().map(|&(i, _)| i).collect();
+            let resolved = c2_core::mee::read_picked_anywhere(res, &h, &extras);
+            for (i, _) in roamers {
+                let b = resolved.tables.characters.get(i).map(|c| &c.block);
                 let get = |k: &str| b.and_then(|b| b.get(&[k]));
                 let ai = get("ai").map_or(0, c2_formats::res_txt::c_atoi);
                 let price = menu.huntables[..first]
                     .iter()
                     .find(|h| h.ai == ai)
                     .map_or(0, |h| h.price);
-                drawn.push(get("file").and_then(|f| {
-                    model_picture(&mut hud, gpu, &huntdat, f.trim().trim_matches('\''))
-                }));
+                drawn.push(
+                    resolved
+                        .res
+                        .characters
+                        .get(i)
+                        .and_then(|c| c.file.as_deref())
+                        .and_then(|f| model_picture(&mut hud, gpu, &huntdat, f)),
+                );
                 menu.huntables.push(c2_formats::menu_txt::MenuItem {
                     name: get("name")
                         .map_or_else(String::new, |n| n.trim().trim_matches('\'').to_string()),
@@ -878,6 +904,28 @@ impl Menu {
             texts: etexts.clone(),
             texts_us: etexts,
         });
+        // Slotted add-ons can omit their menu art too. Render a portrait
+        // from the same resolved model the hunt loads in that case.
+        if let Some(res) = &dialect {
+            let h = c2_formats::mee::Hunt {
+                area: None,
+                time: 1,
+                picked: Bits::ALL,
+            };
+            let resolved = c2_core::mee::read_picked_anywhere(res, &h, &[]);
+            if let Some(c) = cols.get_mut(1) {
+                for (i, pic) in c.pics.iter_mut().enumerate().filter(|(_, p)| p.is_none()) {
+                    let def = resolved.res.characters.iter().find(|d| {
+                        d.name
+                            .as_deref()
+                            .is_some_and(|n| n.eq_ignore_ascii_case(&c.names[i]))
+                    });
+                    *pic = def
+                        .and_then(|d| d.file.as_deref())
+                        .and_then(|f| model_picture(&mut hud, gpu, &huntdat, f));
+                }
+            }
+        }
         // Each huntable's points, from its `_RES.TXT` entry as when picked
         // (descriptions differ between games; this is what the hunt scores).
         let scores = hunt_scores(&huntdat, &menu);
@@ -1063,10 +1111,21 @@ impl Menu {
         let all = self.pc.all_huntable != 0;
         let first = self.menu_animals;
         if let Some(c) = self.columns.get_mut(1) {
-            c.order = (0..c.names.len()).filter(|&i| all || i < first).collect();
+            c.order = animal_order(&c.names, first, all);
             c.order
                 .sort_by_key(|&i| c.prices.get(i).copied().unwrap_or(0));
             c.scroll = c.scroll.min(c.order.len().saturating_sub(c.visible()));
+            let picked = self.choice.dinos;
+            for i in picked.iter() {
+                if !c.order.contains(&i) {
+                    self.choice.dinos.clear(i);
+                }
+            }
+        }
+        if self.choice.focus.is_some_and(|(col, i)| {
+            col == 1 && self.columns.get(1).is_none_or(|c| !c.order.contains(&i))
+        }) {
+            self.choice.focus = None;
         }
         if !all {
             for i in first..Bits::LEN {
@@ -2446,4 +2505,37 @@ fn game_title(huntdat: &Path) -> String {
         .map(|t| t.trim().to_string())
         .filter(|t| !t.is_empty())
         .unwrap_or_else(|| "the mobile game".into())
+}
+
+#[cfg(test)]
+mod roster_tests {
+    use super::{animal_order, spawn_homes};
+    use c2_formats::res_txt::ResTxt;
+
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn spawn_locations_follow_menu_identity_instead_of_source_calls() {
+        let res = ResTxt::parse(
+            "characters {\n{\n ai = 13\n callNo = 0\n menuSlot = 2\n spawninfo {\n spawngroup = 0\n }\n}\n{\n ai = 13\n callNo = 1\n menuSlot = -1\n spawninfo {\n spawngroup = 0\n }\n}\n}\n.\n",
+        )
+        .expect("synthetic roster");
+        let homes = spawn_homes(&res, 3, &["AREA1.MAP".into(), "AREA2.MAP".into()]);
+        assert_eq!(homes, [vec![], vec![], vec![0, 1]]);
+    }
+
+    #[test]
+    fn filtering_and_duplicate_names_keep_the_original_slot_numbers() {
+        let names: Vec<_> = [
+            "Parasaurolophus",
+            "Mobile animal",
+            " parasaurolophus ",
+            "Suchomimus",
+            "Atrociraptor",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+        assert_eq!(animal_order(&names, 3, false), [0, 1]);
+        assert_eq!(animal_order(&names, 3, true), [0, 1, 3, 4]);
+    }
 }

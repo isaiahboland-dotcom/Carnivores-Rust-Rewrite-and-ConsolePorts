@@ -304,7 +304,7 @@ pub fn animate(
                     c.bend = 0.0;
                 }
             }
-            if m.kill_dist > 0 && pdist < m.kill_dist as f32 * c.scale {
+            if c.lure.is_none() && m.kill_dist > 0 && pdist < m.kill_dist as f32 * c.scale {
                 let mut kill_alt = c.spc_depth.max(256.0);
                 if a.jumper && c.phase == m.jump {
                     kill_alt += 80.0;

@@ -175,6 +175,14 @@ fn radar_slots(b: &Block, out: &mut Vec<usize>) {
 /// `callNo = -5` (they answer no call). `None` for one no slot picks (it
 /// roams).
 pub fn menu_slot(raw: Option<&Block>, resolved: &Block) -> Option<usize> {
+    // Combined packs record menu identity separately from source-engine
+    // call numbers. -1 explicitly marks an unslotted roaming add-on.
+    if let Some(n) = raw
+        .and_then(|b| b.get(&["menuSlot"]))
+        .or_else(|| resolved.get(&["menuSlot"]))
+    {
+        return usize::try_from(c_atoi(n)).ok();
+    }
     let huntable = resolved
         .get(&["ai"])
         .map(c_atoi)
@@ -529,15 +537,20 @@ pub fn area_of(map_stem: &str) -> Option<u32> {
     Some(digits.parse().unwrap_or(0))
 }
 
-/// Whether `_RES.TXT` uses the dialect (any of its tables, or nested
-/// blocks in a character).
+/// Whether `_RES.TXT` uses the dialect (any of its tables, character
+/// animation keys, or nested blocks in a character).
 pub fn is_dialect(res: &ResTxt) -> bool {
     res.sections.iter().any(|s| {
         let n = s.name.to_ascii_lowercase();
         n.contains("spawntable") || n.contains("packtable") || n.contains("areatable")
-    }) || res
-        .section("characters")
-        .is_some_and(|s| s.blocks.iter().any(|b| !b.subs.is_empty()))
+    }) || res.section("characters").is_some_and(|s| {
+        s.blocks.iter().any(|b| {
+            !b.subs.is_empty()
+                || b.entries
+                    .iter()
+                    .any(|e| e.key.to_ascii_lowercase().ends_with("anim"))
+        })
+    })
 }
 
 /// `readBool`: `TRUE` sets, `FALSE` clears, anything else leaves it.

@@ -78,6 +78,8 @@ pub struct KillType {
     pub offset: f32,
     /// The killer's logical phase while eating (`eatAnim`).
     pub anim: usize,
+    /// Match the killer's pose and animation clock (`hunterSync`).
+    pub hunter_sync: bool,
     pub carry_corpse: bool,
     /// Play `anim` once, then walk off (`dontloop`).
     pub dont_loop: bool,

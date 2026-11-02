@@ -353,6 +353,7 @@ pub fn read_only(dir: &Path, base: &Vfs, keep: &dyn Fn(&Path) -> bool) -> Result
     let root = root.map(Path::to_path_buf);
     let mut texts = Vec::new();
     let mut menu_slot_n = None;
+    let mut call_slot_n = None;
     let mut weapon_slot_n = None;
     for f in &files {
         let name = lower_name(f);
@@ -382,6 +383,9 @@ pub fn read_only(dir: &Path, base: &Vfs, keep: &dyn Fn(&Path) -> bool) -> Result
                     }
                     if kind == "weapon" && key(&p).contains("/menu/") {
                         weapon_slot_n = Some(n);
+                    }
+                    if kind == "call" && e == "wav" {
+                        call_slot_n = Some(n);
                     }
                 }
                 out.files.push((p, f.clone()));
@@ -487,9 +491,13 @@ pub fn read_only(dir: &Path, base: &Vfs, keep: &dyn Fn(&Path) -> bool) -> Result
             .map(|s| s.blocks.as_slice())
             .unwrap_or_default();
         let named = blocks.iter().position(|x| block_id(x) == id);
+        // Mobile imports can have calls but no menu picture. Their donor
+        // slot still needs moving, or they overwrite a base animal's calls
+        // and disappear when "All dinos huntable" is off.
+        let animal_slot = menu_slot_n.or(call_slot_n);
         let slot = match section.as_str() {
             "characters" if b.get(&["ai"]).map(c_atoi).is_some_and(|a| a >= 10) => {
-                menu_slot_n.and_then(|n| menu_slot(base, &res, n))
+                animal_slot.and_then(|n| menu_slot(base, &res, n))
             }
             "weapons" => weapon_slot_n
                 .and_then(|n| n.checked_sub(1))
@@ -549,14 +557,19 @@ pub fn read_only(dir: &Path, base: &Vfs, keep: &dyn Fn(&Path) -> bool) -> Result
                     }
                 }
                 let num = if section == "characters" {
-                    menu_slot_n
+                    animal_slot
                 } else {
                     weapon_slot_n
                 };
                 // The original engine places animals by AI number, so on its
                 // data an animal can only take over a slot; weapons and the
                 // Modder's Edition's animals get a slot of their own.
-                if section == "characters" && !dialect {
+                let has_motion = b.entries.iter().any(|e| {
+                    ["runAnim", "walkAnim", "flyAnim", "swimAnim"]
+                        .iter()
+                        .any(|k| e.key.eq_ignore_ascii_case(k))
+                });
+                if section == "characters" && !dialect && !has_motion {
                     out.notes.push(format!(
                         "takes over {section} slot {i} ('{}'), as its menu files say (the original game has no room for another)",
                         was.clone().unwrap_or_default()

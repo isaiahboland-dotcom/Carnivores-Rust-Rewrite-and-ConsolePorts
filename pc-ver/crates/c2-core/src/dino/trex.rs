@@ -85,7 +85,7 @@ pub fn animate(c: &mut Character, index: usize, sp: &Species, ctx: &mut Ctx<'_>)
                     c.state = 1;
                     c.rspeed = 0.0;
                 }
-                if pdist < 380.0 && (ctx.hunter.y - c.pos[1]).abs() < 256.0 {
+                if c.lure.is_none() && pdist < 380.0 && (ctx.hunter.y - c.pos[1]).abs() < 256.0 {
                     c.vspeed /= 8.0;
                     c.state = 1;
                     c.phase = EAT;

@@ -134,6 +134,9 @@ impl DinoInfo {
 /// `None` keeps the family's.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Tuning {
+    /// A combined pack's selection slot, independent of source AI/calls.
+    /// Negative means a roamer that has not been offered a slot yet.
+    pub menu_slot: Option<i32>,
     pub run: Option<usize>,
     pub walk: Option<usize>,
     pub swim: Option<usize>,
@@ -1921,6 +1924,35 @@ mod tests {
             )),
             "no kill in {events:?}"
         );
+    }
+
+    #[test]
+    fn survival_waypoints_cannot_kill_the_hunter() {
+        let area = Area::flat(10);
+        let hunter = HunterView {
+            x: 512.0 * 256.0,
+            z: 512.0 * 256.0,
+            y: area.land_height(512.0 * 256.0, 512.0 * 256.0),
+            head_y: 220.0,
+            alive: true,
+            ..Default::default()
+        };
+        for kind in [ai::ALLO, ai::TREX, ai::CHASM] {
+            let mut herd = herd_with(&area, kind, 12, [hunter.x + 10_000.0, hunter.y, hunter.z]);
+            let c = &mut herd.chars[0];
+            c.wave = 1;
+            c.state = 1;
+            c.afraid_time = 60_000;
+            c.lure = Some((c.pos[0] + 200.0, c.pos[2]));
+            let events = run(&mut herd, &area, hunter, 100);
+            assert!(
+                !events
+                    .iter()
+                    .any(|e| matches!(e, DinoEvent::KillHunter { .. })),
+                "AI {kind} killed at its waypoint"
+            );
+            assert!(herd.chars[0].pos[0] > hunter.x + 9000.0);
+        }
     }
 
     #[test]

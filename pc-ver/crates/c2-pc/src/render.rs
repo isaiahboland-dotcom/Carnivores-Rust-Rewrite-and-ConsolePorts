@@ -367,6 +367,8 @@ pub struct ModelRenderer {
     tex_layout: wgpu::BindGroupLayout,
     textures: wgpu::BindGroup,
     instances: wgpu::Buffer,
+    /// CPU staging storage retained between frames, like the GPU buffer.
+    instance_data: Vec<Instance>,
     capacity: usize,
 }
 
@@ -506,6 +508,7 @@ impl ModelRenderer {
             tex_layout,
             textures: group,
             instances,
+            instance_data: Vec::new(),
             capacity,
         }
     }
@@ -536,12 +539,15 @@ impl ModelRenderer {
             self.capacity = total.next_power_of_two();
             self.instances = Self::instance_buffer(gpu, self.capacity);
         }
-        let all: Vec<Instance> = batches
-            .iter()
-            .flat_map(|(_, i)| i.iter().copied())
-            .collect();
-        gpu.queue
-            .write_buffer(&self.instances, 0, bytemuck::cast_slice(&all));
+        self.instance_data.clear();
+        self.instance_data.reserve(total);
+        self.instance_data
+            .extend(batches.iter().flat_map(|(_, i)| i.iter().copied()));
+        gpu.queue.write_buffer(
+            &self.instances,
+            0,
+            bytemuck::cast_slice(&self.instance_data),
+        );
         pass.set_bind_group(0, &globals.group, &[]);
         pass.set_bind_group(1, &self.textures, &[]);
         pass.set_vertex_buffer(1, self.instances.slice(..));

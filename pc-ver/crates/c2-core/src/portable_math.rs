@@ -9,6 +9,7 @@ pub(crate) trait FloatMath {
     fn atan(self) -> f32;
     fn atan2(self, other: f32) -> f32;
     fn trunc(self) -> f32;
+    fn round(self) -> f32;
     fn powi(self, exponent: i32) -> f32;
 }
 impl FloatMath for f32 {
@@ -32,6 +33,9 @@ impl FloatMath for f32 {
     }
     fn trunc(self) -> f32 {
         libm::truncf(self)
+    }
+    fn round(self) -> f32 {
+        libm::roundf(self)
     }
     fn powi(self, exponent: i32) -> f32 {
         if exponent == 2 {

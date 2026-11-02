@@ -805,7 +805,10 @@ impl HuntView {
             .iter()
             .find(|s| match &s.mee {
                 Some(m) => m.call_no == slot,
-                None => s.info.ai == call,
+                None => s
+                    .tuning
+                    .menu_slot
+                    .map_or(s.info.ai == call, |k| k >= 0 && k == slot),
             })
             .map(|s| s.info.name.clone())
     }

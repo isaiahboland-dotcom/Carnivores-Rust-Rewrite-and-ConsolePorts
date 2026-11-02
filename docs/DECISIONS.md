@@ -2,6 +2,81 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-02 — Allocation and ownership review
+
+Reviewed the hunt tick, particle updates, PC animal rendering and menu setup,
+and merged-pack roster binding. Keep the existing data layout and safe Rust;
+these improvements need no new dependencies or shared mutable ownership.
+
+- Particle landings borrow the ring and burst buffers separately, appending
+  rings directly. This removes the temporary landing vector and the repeated
+  height query. New rings still age in the same tick and preserve their order.
+- Trophy-room collision obstacles and the renderer's CPU instance staging
+  buffer retain their allocation between updates (`clear` plus `extend`).
+  Contents are rebuilt each time, including after animal removal.
+- Menu filtering copies the small, fixed-size `Bits` value before clearing
+  hidden selections; it no longer allocates a vector to end an iterator borrow.
+- Pack roster binding indexes normalized menu names once. The first duplicate
+  still owns the slot, preserving the old linear search's behavior.
+- The PC menu's spawn-location helper now uses the common `menu_slot` resolver
+  instead of `callNo`, so location hints follow combined-pack selection identity.
+
+A release-mode host microbenchmark of a set-bit-only iterator showed a large
+gain for sparse selections but a regression with all 512 slots selected. Keep
+the current iterator until representative workload profiling justifies a
+tradeoff. No frame-rate improvement is claimed from these local changes.
+
+Further performance work should measure per-animal pose generation and upload
+(`dino::pose::pose`, `GpuModel::set_pose`) and the temporary drawing batches in
+`Dinos::draw`. These still allocate during rendering. Reusing pose storage
+would affect shared APIs and needs animation equivalence tests and PC/console
+measurements. Likewise, the hunt tick's temporary event vectors are candidates
+only if allocation profiles show material cost; persistent scratch buffers
+would add state and borrowing complexity. This review does not certify all
+platform backends or establish that the engine has no remaining bottlenecks.
+
+Validation: workspace tests pass with one existing ignored test; all-targets
+workspace Clippy with warnings denied, formatting, the core's no_std
+`portable-load` check, and PC/launcher release builds pass. Synthetic regressions
+cover same-tick ring aging and menu-slot-based spawn hints. GPU rendering and
+console hardware have not been exercised in this review.
+
+## 2026-11-02 — Mixed-pack selection slots, survival waypoints and synchronized kills
+
+**A menu slot belongs to a menu entry, independently of character order or AI.**
+Pack builds preserve a separate `_MENU.TXT` even when the base used `_RES.TXT`
+for its menu. Replacements update the entry in its existing slot; roaming
+add-ons do not consume numbered menu pictures or prices. Combined characters
+record `menuSlot` (our key), with -1 for an unslotted loose add-on. A source
+game's `callNo` can name somebody else's menu slot in the combined pack, so it
+cannot establish that add-on's selection identity. Selected roamers receive
+their temporary menu slot in the resolved hunt tables. Original-engine
+characters in a mixed pack record `nativeAI = TRUE` and keep their fixed
+animation layout and original AI; adding Android animals must not reinterpret
+the base animals as MEE animations. Mobile imports drop these inherited keys.
+
+Numbered call files can establish an add-on's donor slot when it supplies no
+menu picture. Art references and nested call numbers follow a moved slot;
+file renames are applied together so one destination cannot be renamed again.
+PC menus suppress repeated animal names without compacting slot numbers, clear
+hidden selections when the huntable filter changes, and render missing animal
+pictures from the resolved model. Existing materialized packs need rebuilding
+for the new selection metadata and preserved menu list.
+
+**Survival pathfinding waypoints cannot kill.** While a wave animal's AI is
+steered toward a waypoint in place of the player, its contact attack cannot
+start an eating animation or emit a hunter kill. This applies to stock and
+MEE AIs. The normal attack resumes when pathfinding returns to the player.
+
+**`hunterSync` is implemented.** The reference MEE
+`Game/CharacterAnimation/AnimateHuntDead.cpp` synchronizes the body to the
+killer during the configured eating phase (or while carrying a corpse),
+including position, heading, pitch, roll, scale and animation time. This is
+active even though the corresponding block in `AddDeadBody` is commented out.
+Ignoring it left the Diabloceratops hunter clip displaced beside the animal.
+The death state now retains the killer index, corrected when characters are
+removed, and applies that synchronization after animation each tick.
+
 ## 2026-11-02 — Recipes edited in the launcher; a loose add-on's `_RES` entry over its menu lines; animals without models left out
 
 **Edit and Clone (owner: "an edit option in the gui and also a clone option").** The Instances list has

@@ -194,6 +194,7 @@ pub fn animate(
         }
 
         if p.defensive
+            && c.lure.is_none()
             && ctx.hunter.alive
             && pdist < 300.0
             && (ctx.hunter.y - c.pos[1] - 160.0).abs() < 256.0

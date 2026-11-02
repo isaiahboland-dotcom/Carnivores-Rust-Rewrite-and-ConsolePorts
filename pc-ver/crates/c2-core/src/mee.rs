@@ -282,6 +282,13 @@ pub fn pick_roamers(h: &Hunt, tables: &mut Tables, roamers: &[(usize, usize)]) {
                 key: "callNo".into(),
                 value: slot.to_string(),
             });
+            c.block
+                .entries
+                .retain(|e| !e.key.eq_ignore_ascii_case("menuSlot"));
+            c.block.entries.push(Entry {
+                key: "menuSlot".into(),
+                value: slot.to_string(),
+            });
         }
     }
 }
@@ -301,6 +308,7 @@ pub fn tuning(b: &Block) -> Tuning {
     let lo = b.get(&["mindepth"]).map(c_atoi);
     let hi = b.get(&["maxdepth"]).map(c_atoi);
     Tuning {
+        menu_slot: b.get(&["menuSlot"]).map(c_atoi),
         run: index(b, "runAnim"),
         walk: index(b, "walkAnim"),
         swim: index(b, "swimAnim"),
@@ -437,6 +445,7 @@ fn info_sub(m: &mut MeeInfo, name: &str, b: &Block) {
                 "hunteranim" => k.hunter_anim = c_atoi(v),
                 "hunteroffset" => k.offset = c_atoi(v) as f32,
                 "eatanim" => k.anim = m.add_anim(c_atoi(v)),
+                "huntersync" => k.hunter_sync = truthy(v),
                 "carrycorpse" => k.carry_corpse = truthy(v),
                 "dontloop" => k.dont_loop = truthy(v),
                 "scream" => k.scream = truthy(v),
@@ -504,6 +513,9 @@ pub fn tune(species: &mut [Species], tables: &Tables) {
         if let Some(v) = c.block.get(&["basescore"]) {
             s.info.base_score = c_atof(v);
         }
+        if flag(&c.block, "nativeAI") == Some(true) {
+            continue;
+        }
         let mee_ai = s.tuning.mee_ai.unwrap_or(s.info.ai);
         // The dialect has AIs past 18 of its own.
         s.stock_ai = None;
@@ -567,7 +579,7 @@ mod tests {
             "characters {\n{\n name = 'Hunter'\n ai = 0\n}\n\
              {\n name = 'Raptor'\n ai = 12\n callNo = 0\n}\n\
              {\n name = 'Pig'\n ai = 1\n}\n\
-             {\n name = 'Roamer'\n ai = 14\n}\n}\n.\n",
+             {\n name = 'Roamer'\n ai = 14\n callNo = 0\n menuSlot = -1\n}\n}\n.\n",
         )
         .unwrap_or_else(|e| panic!("{e}"));
         let roamers = roamers(&res, 1);
@@ -580,13 +592,15 @@ mod tests {
         let mut t = Tables::read(&res, &h);
         pick_roamers(&h, &mut t, &roamers);
         assert_eq!(t.characters[3].block.get(&["callNo"]), Some("1"));
+        assert_eq!(tuning(&t.characters[3].block).menu_slot, Some(1));
         let unpicked = Hunt {
             picked: c2_formats::bits::Bits::bit(0),
             ..h
         };
         let mut t = Tables::read(&res, &unpicked);
         pick_roamers(&unpicked, &mut t, &roamers);
-        assert_eq!(t.characters[3].block.get(&["callNo"]), None);
+        assert_eq!(t.characters[3].block.get(&["callNo"]), Some("0"));
+        assert_eq!(tuning(&t.characters[3].block).menu_slot, Some(-1));
     }
 
     #[test]

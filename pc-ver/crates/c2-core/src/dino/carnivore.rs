@@ -275,7 +275,10 @@ pub fn animate(
                     c.phase = p.jump;
                 }
 
-                if pdist < p.eat_dist && (ctx.hunter.y - c.pos[1] - p.eat_dy).abs() < 256.0 {
+                if c.lure.is_none()
+                    && pdist < p.eat_dist
+                    && (ctx.hunter.y - c.pos[1] - p.eat_dy).abs() < 256.0
+                {
                     if c.state_f & CS_ON_WATER == 0 {
                         c.vspeed /= 8.0;
                         c.state = 1;

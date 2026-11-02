@@ -284,7 +284,16 @@ pub(crate) fn make_entry(
     let mut b = donor.clone();
     let drop_key = |k: &str| {
         let k = k.to_ascii_lowercase();
-        k.ends_with("anim") || ["name", "file", "callno", "survivalindex"].contains(&k.as_str())
+        k.ends_with("anim")
+            || [
+                "name",
+                "file",
+                "callno",
+                "survivalindex",
+                "menuslot",
+                "nativeai",
+            ]
+            .contains(&k.as_str())
     };
     b.entries.retain(|e| !drop_key(&e.key));
     let killtype = b

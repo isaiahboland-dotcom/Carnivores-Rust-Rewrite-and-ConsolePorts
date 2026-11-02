@@ -321,7 +321,9 @@ impl Effects {
     /// `AnimateElements` plus the ring and blood-trail timers.
     pub fn step(&mut self, area: &Area, dt: i32, takt: u32) {
         let dtf = dt as f32;
-        let mut new_rings = Vec::new();
+        // Borrow the fields separately so landings append directly to the
+        // retained ring buffer instead of allocating a temporary each tick.
+        let rings = &mut self.rings;
         self.bursts.retain_mut(|b| {
             let fade = |c: &mut [u8; 4], by: i32| c[0] = (i32::from(c[0]) - by).max(0) as u8;
             match b.kind {
@@ -360,7 +362,11 @@ impl Effects {
                 };
                 if landed {
                     if on_water || b.kind == Part::Bubble {
-                        new_rings.push((p.pos[0], p.pos[2]));
+                        rings.push(Ring {
+                            pos: [p.pos[0], h, p.pos[2]],
+                            ftime: 0,
+                            scale: 0.6,
+                        });
                     }
                     b.done += 1;
                     p.landed = true;
@@ -374,9 +380,6 @@ impl Effects {
             }
             true
         });
-        for (x, z) in new_rings {
-            self.ring(area, x, z, 0.6);
-        }
         self.blood.retain_mut(|d| {
             d.life -= dt;
             d.life > 0
@@ -419,6 +422,35 @@ mod tests {
             fx.step(&area, 10, t);
         }
         assert!(fx.bursts.is_empty(), "faded out");
+    }
+
+    #[test]
+    fn bubble_landings_create_rings_once_and_age_them_on_the_same_tick() {
+        let area = Area::flat(10);
+        let mut fx = Effects::default();
+        let mut rng = MsRand::new(1);
+        fx.add(
+            &area,
+            &mut rng,
+            [1000.0, 639.0, 1000.0],
+            Part::Bubble,
+            3,
+            0.0,
+        );
+        for p in &mut fx.bursts[0].parts {
+            p.speed = [0.0, 1000.0, 0.0];
+        }
+        fx.step(&area, 10, 0);
+        assert_eq!(fx.rings.len(), 3);
+        for ring in &fx.rings {
+            assert_eq!(ring.pos, [1000.0, 640.0, 1000.0]);
+            assert_eq!(ring.ftime, 30);
+            assert_eq!(ring.scale, 0.6);
+        }
+        fx.step(&area, 10, 1);
+        assert_eq!(fx.rings.len(), 3);
+        assert!(fx.rings.iter().all(|r| r.ftime == 60));
+        assert!(fx.bursts.is_empty());
     }
 
     #[test]

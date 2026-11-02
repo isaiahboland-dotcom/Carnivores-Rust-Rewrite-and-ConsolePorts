@@ -494,3 +494,161 @@ fn recipes_pin_loose_add_ons() {
         let _ = std::fs::remove_dir_all(d);
     }
 }
+
+#[test]
+fn implicit_menu_stays_aligned_when_a_roamer_precedes_a_slotted_add_on() {
+    let base = tmp("implicit-base");
+    let roamer = tmp("implicit-roamer");
+    let slotted = tmp("implicit-slotted");
+    write(
+        &base,
+        &[
+            ("HUNTDAT/_RES.TXT", MEE_RES.as_bytes()),
+            ("HUNTDAT/MENU/PICS/DINO1.TGA", b"spino"),
+        ],
+    );
+    // Its source game's call 0 belongs to Spinosaurus here. Without menu
+    // files, this animal must remain a separately picked roamer.
+    write(&roamer, &[("roamer.car", b"roamer"), ("entry.txt", b"{\n name = 'Suchomimus'\n file = 'roamer.car'\n ai = 13\n callNo = 0\n runAnim = 0\n}\n")]);
+    write(
+        &slotted,
+        &[
+            ("diablo.car", b"diablo"),
+            ("DINO1.TGA", b"diablo picture"),
+            (
+                "entry.txt",
+                b"{\n name = 'Diabloceratops'\n file = 'diablo.car'\n pic = 'DINO1.TGA'\n ai = 18\n runAnim = 0\n overwrite char0 {\n callNo = 0\n }\n}\n",
+            ),
+        ],
+    );
+    let bases = [base.clone()];
+    let v = vanilla(&bases).expect("base");
+    let mods = [&roamer, &slotted]
+        .into_iter()
+        .map(|d| load_mod(&v, d).expect("mod"))
+        .collect();
+    let pack = build(&bases, mods).expect("pack");
+    let parse = |p: &str| {
+        c2_formats::res_txt::ResTxt::parse(&String::from_utf8_lossy(
+            &pack.vfs.read(p).expect("file"),
+        ))
+        .expect("parse")
+    };
+    let menu = c2_formats::menu_txt::MenuData::from_res(&parse("HUNTDAT/_MENU.TXT"));
+    assert_eq!(
+        menu.huntables
+            .iter()
+            .map(|h| h.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Spinosaurus", "Diabloceratops"]
+    );
+    assert_eq!(
+        pack.vfs.read("HUNTDAT/MENU/PICS/DINO2.TGA").expect("pic"),
+        b"diablo picture"
+    );
+    assert_eq!(menu.huntables[1].pic.as_deref(), Some("DINO2.TGA"));
+    let res = parse("HUNTDAT/_RES.TXT");
+    let chars = &res.section("characters").expect("chars").blocks;
+    let find = |name: &str| {
+        chars
+            .iter()
+            .find(|b| b.get(&["name"]) == Some(name))
+            .expect("character")
+    };
+    let such = find("'Suchomimus'");
+    assert_eq!(c2_formats::mee::menu_slot(Some(such), such), None);
+    let diablo = find("'Diabloceratops'");
+    assert_eq!(c2_formats::mee::menu_slot(Some(diablo), diablo), Some(1));
+    for d in [base, roamer, slotted] {
+        let _ = std::fs::remove_dir_all(d);
+    }
+}
+
+#[test]
+fn mobile_style_add_on_beside_original_data_preserves_the_base_menu_and_ai() {
+    let base = tmp("mixed-base");
+    let addon = tmp("mixed-addon");
+    write(
+        &base,
+        &[
+            ("HUNTDAT/_RES.TXT", RES.as_bytes()),
+            ("HUNTDAT/MENU/PICS/DINO1.TGA", b"para"),
+        ],
+    );
+    write(&addon, &[("mobile.car", b"mobile"), ("DINO1.TGA", b"mobile picture"), ("entry.txt", b"{\n name = 'Mobile animal'\n file = 'mobile.car'\n ai = 10\n runAnim = 0\n walkAnim = 1\n}\n")]);
+    let bases = [base.clone()];
+    let v = vanilla(&bases).expect("base");
+    let pack = build(&bases, vec![load_mod(&v, &addon).expect("mod")]).expect("pack");
+    let parse = |p: &str| {
+        c2_formats::res_txt::ResTxt::parse(&String::from_utf8_lossy(
+            &pack.vfs.read(p).expect("file"),
+        ))
+        .expect("parse")
+    };
+    let menu = c2_formats::menu_txt::MenuData::from_res(&parse("HUNTDAT/_MENU.TXT"));
+    assert_eq!(
+        menu.huntables
+            .iter()
+            .map(|h| h.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Parasaurolophus", "Spinosaurus", "Mobile animal"]
+    );
+    let res = parse("HUNTDAT/_RES.TXT");
+    let para = &res.section("characters").expect("chars").blocks[1];
+    assert_eq!(para.get(&["nativeAI"]), Some("TRUE"));
+    assert_eq!(para.get(&["menuSlot"]), Some("0"));
+    assert!(res.section("spawntable").is_some());
+    assert_eq!(
+        pack.vfs.read("HUNTDAT/MENU/PICS/DINO3.TGA").expect("pic"),
+        b"mobile picture"
+    );
+    for d in [base, addon] {
+        let _ = std::fs::remove_dir_all(d);
+    }
+}
+
+#[test]
+fn an_import_without_a_picture_keeps_its_menu_entry_and_own_calls() {
+    let base = tmp("calls-base");
+    let addon = tmp("calls-addon");
+    write(
+        &base,
+        &[
+            ("HUNTDAT/_RES.TXT", MEE_RES.as_bytes()),
+            ("HUNTDAT/SOUNDFX/CALLS/CALL1_A.WAV", b"base call"),
+        ],
+    );
+    write(
+        &addon,
+        &[
+            ("dilo.car", b"dilo"),
+            ("CALL1_A.WAV", b"dilo call"),
+            (
+                "entry.txt",
+                b"{\n name = 'Dilophosaurus'\n file = 'dilo.car'\n ai = 13\n runAnim = 0\n}\n",
+            ),
+        ],
+    );
+    let bases = [base.clone()];
+    let v = vanilla(&bases).expect("base");
+    let pack = build(&bases, vec![load_mod(&v, &addon).expect("mod")]).expect("pack");
+    let data = pack.vfs.read("HUNTDAT/_MENU.TXT").expect("menu");
+    let res = c2_formats::res_txt::ResTxt::parse(&String::from_utf8_lossy(&data)).expect("parse");
+    let menu = c2_formats::menu_txt::MenuData::from_res(&res);
+    assert_eq!(menu.huntables[1].name, "Dilophosaurus");
+    assert_eq!(
+        pack.vfs
+            .read("HUNTDAT/SOUNDFX/CALLS/CALL1_A.WAV")
+            .expect("base call"),
+        b"base call"
+    );
+    assert_eq!(
+        pack.vfs
+            .read("HUNTDAT/SOUNDFX/CALLS/CALL2_A.WAV")
+            .expect("new call"),
+        b"dilo call"
+    );
+    for d in [base, addon] {
+        let _ = std::fs::remove_dir_all(d);
+    }
+}

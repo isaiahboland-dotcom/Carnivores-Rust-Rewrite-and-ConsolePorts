@@ -455,6 +455,31 @@ fn retarget_conditions(b: &mut Block, from: usize, to: usize) {
     }
 }
 
+fn retarget_character_art(b: &mut Block, from: usize, to: usize) {
+    for e in &mut b.entries {
+        if e.key.eq_ignore_ascii_case("pic") {
+            let path = e.value.trim().trim_matches('\'').replace('\\', "/");
+            let (dir, name) = path
+                .rsplit_once('/')
+                .map_or(("", path.as_str()), |(d, n)| (d, n));
+            if let Some(name) = renumber(name, &["dino"], from, to) {
+                e.value = if dir.is_empty() {
+                    format!("'{name}'")
+                } else {
+                    format!("'{dir}/{name}'")
+                };
+            }
+        } else if e.key.eq_ignore_ascii_case("callNo")
+            && c2_formats::res_txt::c_atoi(&e.value) == from as i32 - 1
+        {
+            e.value = (to - 1).to_string();
+        }
+    }
+    for s in &mut b.subs {
+        retarget_character_art(&mut s.block, from, to);
+    }
+}
+
 /// Gives loose add-on entries made for a menu slot (`loose::SlotAdd`) a
 /// slot of their own, the next free one in load order: their menu files
 /// (`DINO7.TGA`, `CALL7_A.WAV`, `WEAPON1.TXT`, `BULLET1.TGA`) are renumbered,
@@ -482,6 +507,7 @@ fn assign_slots(
     let mut out = Vec::new();
     for m in mods.iter_mut() {
         let mut mc = Vec::new();
+        let mut file_moves = std::collections::HashMap::new();
         for s in m.slots.clone() {
             let chars = s.section == "characters";
             // No entry to add: no slot (its number would go to nothing).
@@ -549,13 +575,12 @@ fn assign_slots(
             } else {
                 &["weapon", "bullet"]
             };
-            for (p, _) in &mut m.map {
+            for (p, _) in &m.map {
                 let (dir, name) = p.rsplit_once('/').unwrap_or(("", p.as_str()));
                 if let Some(new) = renumber(name, prefixes, s.from, n) {
-                    *p = format!("{dir}/{new}");
+                    file_moves.insert(p.clone(), format!("{dir}/{new}"));
                 }
             }
-            m.files = m.map.iter().map(|(p, _)| p.clone()).collect();
             let slot_price = if chars {
                 menu.huntables.get(s.from - 1).map(|i| i.price)
             } else {
@@ -574,6 +599,7 @@ fn assign_slots(
             };
             if chars {
                 retarget_conditions(block, s.from - 1, n - 1);
+                retarget_character_art(block, s.from, n);
                 // It answers its own slot's call (`callNo`; an entry for the
                 // original game has none, and would answer slot 0's).
                 if block.get(&["callNo"]).is_none() {
@@ -607,10 +633,12 @@ fn assign_slots(
                 n: n - 1,
                 value: price.to_string(),
             };
-            if menu_res.is_some() {
+            {
                 // The menu's own list: the entry's name and menu stats.
                 let keep: &[&str] = if chars {
-                    &["name", "ai", "smell", "hear", "look", "pic"]
+                    &[
+                        "name", "ai", "smell", "hear", "look", "pic", "mass", "length",
+                    ]
                 } else {
                     &["name", "power", "prec", "loud", "rate"]
                 };
@@ -627,8 +655,9 @@ fn assign_slots(
                     section: s.section.clone(),
                     block: entry,
                 });
-                mc.push(price);
-            } else {
+                mc.push(price.clone());
+            }
+            if menu_res.is_none() {
                 m.res_changes.push(price);
             }
             notes.push(format!(
@@ -639,6 +668,16 @@ fn assign_slots(
                 s.alongside,
                 s.from
             ));
+        }
+        // Apply once: a destination number can itself be another entry's
+        // source number in the same add-on.
+        for (p, _) in &mut m.map {
+            if let Some(new) = file_moves.get(p) {
+                *p = new.clone();
+            }
+        }
+        if !m.map.is_empty() {
+            m.files = m.map.iter().map(|(p, _)| p.clone()).collect();
         }
         out.push((m.manifest.info.id.clone(), mc));
     }
@@ -863,26 +902,123 @@ pub fn build_with(
             }
         }
     }
-    let merged = merge(&vanilla_res, &changes);
-    if menu_changes.iter().any(|(_, c)| !c.is_empty()) {
-        if let Some(r) = vfs.resolve(MENU_TXT) {
-            let path = r.path.clone();
-            let menu = read_res(&vfs.read(&path)?)?;
-            let m = merge(&menu, &menu_changes);
-            let mut mem = MemBackend::new();
-            mem.insert(&path, m.res.write().into_bytes());
-            vfs.push("(merged _MENU.TXT)", Box::new(mem));
+    let mut merged = merge(&vanilla_res, &changes);
+    // Freeze the menu independently of the simulation roster. Roaming
+    // add-ons belong after its slots, even when the base has no _MENU.TXT.
+    // Rebuilding a menu from the merged character order shifts pictures,
+    // prices and hunt bits as soon as a roamer precedes a slotted add-on.
+    if c2_formats::mee::is_dialect(&merged.res) || vfs.resolve(MENU_TXT).is_some() {
+        let path = vfs
+            .resolve(MENU_TXT)
+            .map_or_else(|| "HUNTDAT/_MENU.TXT".to_string(), |r| r.path.clone());
+        let mut menu = match vfs.resolve(MENU_TXT) {
+            Some(r) => read_res(&vfs.read(&r.path)?)?,
+            None => vanilla_res.clone(),
+        };
+        // A replacement keeps its original menu slot, but its name
+        // and stats must follow the replacement too.
+        for section in ["characters", "weapons"] {
+            let Some(original) = vanilla_res.section(section) else {
+                continue;
+            };
+            let Some(final_res) = merged.res.section(section) else {
+                continue;
+            };
+            let Some(items) = menu
+                .sections
+                .iter_mut()
+                .find(|s| s.name.eq_ignore_ascii_case(section))
+            else {
+                continue;
+            };
+            for (old, new) in original.blocks.iter().zip(&final_res.blocks) {
+                if old == new {
+                    continue;
+                }
+                let Some(id) = block_id(old) else { continue };
+                for item in &mut items.blocks {
+                    if block_id(item).as_deref() == Some(&id) {
+                        // Retain explicit menu art if the replacement did
+                        // not provide a different one.
+                        let pic = item.get(&["pic"]).map(str::to_string);
+                        *item = new.clone();
+                        if item.get(&["pic"]).is_none() {
+                            if let Some(value) = &pic {
+                                item.entries.push(c2_formats::res_txt::Entry {
+                                    key: "pic".into(),
+                                    value: value.clone(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
         }
+        let m = merge(&menu, &menu_changes);
+        let roster = c2_formats::menu_txt::MenuData::from_res(&m.res);
+        let mut menu_slots = std::collections::HashMap::new();
+        for (slot, h) in roster.huntables.iter().enumerate() {
+            // Match the first duplicate, as the visible menu does. Normalize
+            // once rather than allocating a name for every character lookup.
+            menu_slots
+                .entry(h.name.trim().to_ascii_lowercase())
+                .or_insert(slot);
+        }
+        let loose_additions: std::collections::HashSet<_> = mods
+            .iter()
+            .filter(|m| m.is_loose())
+            .flat_map(|m| m.res_changes.iter())
+            .filter_map(|c| match c {
+                Change::Add { section, block } if section == "characters" => block_id(block),
+                _ => None,
+            })
+            .collect();
+        let native_base = !c2_formats::mee::is_dialect(&vanilla_res);
+        if let Some(s) = merged
+            .res
+            .sections
+            .iter_mut()
+            .find(|s| s.name.eq_ignore_ascii_case("characters"))
+        {
+            for b in &mut s.blocks {
+                let id = block_id(b);
+                let slot = id.as_ref().and_then(|id| menu_slots.get(id)).copied();
+                // The menu owns selection identity; callNo in a loose
+                // add-on may still name a slot in its source game.
+                if slot.is_some() || id.as_ref().is_some_and(|id| loose_additions.contains(id)) {
+                    b.entries
+                        .retain(|e| !e.key.eq_ignore_ascii_case("menuSlot"));
+                    b.entries.push(c2_formats::res_txt::Entry {
+                        key: "menuSlot".into(),
+                        value: slot.map_or_else(|| "-1".into(), |n| n.to_string()),
+                    });
+                }
+                // Original-engine characters in a mixed pack retain
+                // their original AI and fixed animation layout.
+                if native_base && !crate::loose::has_anims(b) {
+                    b.entries.push(c2_formats::res_txt::Entry {
+                        key: "nativeAI".into(),
+                        value: "TRUE".into(),
+                    });
+                }
+            }
+        }
+        let mut mem = MemBackend::new();
+        mem.insert(&path, m.res.write().into_bytes());
+        vfs.push("(merged _MENU.TXT)", Box::new(mem));
     }
     if let Some((path, data)) = hunter {
         let mut mem = MemBackend::new();
         mem.insert(&path, data);
         vfs.push("(merged hunter)", Box::new(mem));
     }
-    if changes.iter().any(|(_, c)| !c.is_empty()) {
+    if merged.res != vanilla_res {
         let mut mem = MemBackend::new();
         mem.insert("HUNTDAT/_RES.TXT", merged.res.write().into_bytes());
         vfs.push("(merged _RES.TXT)", Box::new(mem));
+    }
+    if let Some(l) = crate::standalone::spawn_layer(&vfs)? {
+        vfs.push(crate::standalone::SPAWN_LAYER, Box::new(l));
     }
     for (target, name, diff) in &opts.patches {
         let path = if key(target).starts_with("huntdat/") {
