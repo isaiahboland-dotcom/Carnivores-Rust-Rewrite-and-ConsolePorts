@@ -652,7 +652,23 @@ impl Tables {
     /// The tables for hunt `h`.
     pub fn read(res: &ResTxt, h: &Hunt) -> Self {
         let mut t = Tables::default();
-        for sec in &res.sections {
+        // Global groups must exist before any inline groups are appended.
+        // Merged files may put these sections after `characters`.
+        let priority = |name: &str| {
+            let name = name.to_ascii_lowercase();
+            if name.contains("spawntable") {
+                0
+            } else if name.contains("packtable") {
+                1
+            } else {
+                2
+            }
+        };
+        for sec in (0..3).flat_map(|rank| {
+            res.sections
+                .iter()
+                .filter(move |s| priority(&s.name) == rank)
+        }) {
             let name = sec.name.to_ascii_lowercase();
             if name.contains("common") {
                 let get = |k: &str| {
@@ -735,6 +751,21 @@ impl Tables {
                 }
             }
         }
+        // Some older dialect games keep the hunter outside `characters`.
+        // Append it so existing character/trophy indices remain stable.
+        if !t.characters.iter().any(|c| int(&c.block, "ai") == Some(0)) {
+            if let Some(hunters) = res.section("hunterinfo") {
+                for b in &hunters.blocks {
+                    let block = resolve(b, h);
+                    if int(&block, "ai") == Some(0) {
+                        t.characters.push(Character {
+                            block,
+                            ..Default::default()
+                        });
+                    }
+                }
+            }
+        }
         // Groups without a region spawn anywhere (`LoadResourcesScript`).
         for g in &mut t.spawn_groups {
             if g.regions.is_empty() {
@@ -753,6 +784,52 @@ impl Tables {
 #[cfg(test)]
 mod trophy_tests {
     use super::*;
+
+    #[test]
+    fn global_tables_after_characters_do_not_replace_inline_groups() {
+        let characters = "characters {\n{\n ai = 18\n spawngroup {\n spawnmin = 2\n spawnmax = 2\n }\n packgroup {\n packmin = 1\n packmax = 1\n spawngroup {\n spawnmax = 3\n }\n }\n}\n}\n";
+        let globals = "spawntable {\n spawngroup {\n spawnmax = 12\n }\n}\npacktable {\n packgroup {\n packmin = 1\n packmax = 1\n }\n}\n";
+        let hunt = Hunt {
+            area: Some(1),
+            time: 1,
+            picked: crate::bits::Bits::ALL,
+        };
+        let read = |text: &str| {
+            Tables::read(
+                &ResTxt::parse(text).unwrap_or_else(|e| panic!("{e}")),
+                &hunt,
+            )
+        };
+        let before = read(&alloc::format!("{globals}{characters}"));
+        let after = read(&alloc::format!("{characters}{globals}"));
+        assert_eq!(before.spawn_groups, after.spawn_groups);
+        assert_eq!(before.characters[0].spawn, after.characters[0].spawn);
+        assert_eq!(before.characters[0].packs, after.characters[0].packs);
+        assert_eq!(after.characters[0].spawn[0].group, 1);
+        assert_eq!(after.spawn_groups[1].min, 2);
+        assert_eq!(after.characters[0].packs[0].group, 1);
+    }
+
+    #[test]
+    fn separate_hunter_is_appended_without_shifting_animals() {
+        let raw = ResTxt::parse("hunterinfo {\n{\nname = 'Body'\nai = 0\nfile = 'body.car'\n}\n}\ncharacters {\n{\nname = 'Animal'\nai = 10\n}\n}\n")
+            .unwrap_or_else(|e| panic!("{e}"));
+        let hunt = Hunt {
+            area: Some(1),
+            time: 1,
+            picked: crate::bits::Bits::NONE,
+        };
+        let t = Tables::read(&raw, &hunt);
+        assert_eq!(t.characters.len(), 2);
+        assert_eq!(int(&t.characters[0].block, "ai"), Some(10));
+        assert_eq!(t.characters[1].block.get(&["file"]), Some("'body.car'"));
+        assert!(t.characters[1].spawn.is_empty());
+        let mut with_hunter = raw.clone();
+        with_hunter.sections[1]
+            .blocks
+            .push(raw.sections[0].blocks[0].clone());
+        assert_eq!(Tables::read(&with_hunter, &hunt).characters.len(), 2);
+    }
 
     #[test]
     fn trophy_start_from_common() {

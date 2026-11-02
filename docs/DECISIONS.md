@@ -2,6 +2,113 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-02 — Mixed-pack spawning and APK play-test fixes
+
+Global MEE spawn/pack tables now load before characters, regardless of section
+order. Previously a trailing global table discarded inline groups and reused
+their indices for unrelated populations (Manospondylus replacing selected
+Indoraptor, among others). Each group's failed-placement budget is independent;
+an impossible region cannot prevent later target groups from being placed.
+
+Selected animals retain their authored selected spawns when active on this map.
+Otherwise they join an explicit whole-map target group, sized like the default
+MEE hunt (at least one place per selected animal), instead of inferring the
+largest resident group. Passive roaming spawns remain. Selected animals always
+receive radar visibility. This implements the owner's cross-map hunting rule;
+it deliberately overrides source mods' map restrictions for selected targets.
+PC hunt-start logs now include selected species, model, slot and placed count.
+
+The permissive script reader recovers at recognized top-level section headers
+when a preceding section lacks a closing brace, and emits a warning. The local
+Dangergrounds script's unbalanced pack table had swallowed its weapons and
+characters; recovery restores 58 animals, its hunter and nine weapons. Nested
+conditional blocks still parse normally. Standalone imports also use the same
+engine compatibility layers as individually launched games.
+
+`hunterCarryAnim` is preserved at runtime, and synchronized carried bodies
+switch to it when the killer leaves its eating phase, following MEE's
+`AnimateHuntDead` carry behavior. This fixes the repeated kill clip while
+Manospondylus walks away.
+
+Survival's route field rejects locally steep terrain using movement's slope
+probes, disallows diagonal corner cutting, and only skips waypoints across
+traversable segments. Spawn retries may relax height preference, but never
+reachability; a failed spawn box falls back to reachable ring placement instead
+of an unchecked final position. These address confirmed routing weaknesses;
+full live play remains necessary to assess all terrain/AI combinations.
+
+APK conversion excludes the unused free-to-play shop sprite config: its stale
+Ice Age GUI_03 extent incorrectly halved sprite scaling. Dino button sprites
+are remapped from original character IDs into the converted roster's order.
+The PC More screen now uses the displayed board for both click detection and
+hover highlighting.
+
+Nibelungen uses `use_second_lod` with an empty primary terrain grid. Conversion
+now reads its 512-square tile/rotation grids, subdivides each tile into four PC
+cell textures, and preserves the original atlas indices for water. Other maps
+retain their primary grids. Synthetic tests cover all four rotations and
+preservation of non-texture flags.
+
+Validation includes focused regressions for the above, workspace tests, strict
+Clippy, portable-core compilation, and PC release builds. Local placement
+probes checked the reported targets across the combined pack's 36 maps (216
+species/map combinations, none missing), plus 15 each in MEE-addons and
+C2+APK-addons. These probes use real maps, scripts and model-file existence,
+with synthetic animation durations; they do not claim animation/gameplay parity.
+Offscreen images confirm Nibelungen's terrain, all Ice Age portraits/indicators,
+and More -> Options/Credits. Game assets and probe outputs remain untracked.
+
+## 2026-11-02 — Standalone engine layouts, death cameras and desktop APK HUD
+
+The original Triassic release is an Ice Age-layout executable with a T-Rex
+at AI 19, despite using dinosaur names and files. Its Megalosaurus (AI 18)
+has the bear's eight clips; its AI 2 is a flyer, not the C2 ground ambient.
+A compatibility layer recognizes the joint Lystrosaurus/Peteinosaurus/
+Megalosaurus/Gojirasaurus roster and original AI numbers, and skips already
+scripted MEE games. It reuses our Ice Age rules through AI 18, adds the
+Gojirasaurus T-Rex mapping, hunter clip 12 and camera settings, and preserves
+model files, prices and menu order. These layouts were checked against the
+locally supplied models; the Gojirasaurus settings match the local MEE
+edition. This is an explicit compatibility approximation of the patched
+executable, not a claim of exact parity with that unavailable engine source.
+Hash verification reads base files before compatibility layers so our own
+rewrites do not make a correctly pinned game appear modified.
+
+Dialect loading appends a `hunterinfo` body only when `characters` has no
+AI 0, retaining all animal indices. JPHL previously fell back to character
+zero (Parasaurolophus) when the hunter died. A death type without `sleepAnim`
+now disables sleeping: phase zero cannot stand in for an absent clip. This
+intentionally tolerates incomplete older scripts instead of reproducing the
+zero-initialized reference engine's running/dead phase alias.
+
+The death camera restores MEE's minimum height at the watched demo point.
+Additional framing changes requested after gameplay testing: scripted camera
+distance/height grow with animals larger than scale 1; the view yaw faces the
+actual watched position while the orbit position eases into place; movement
+speed accounts for the orbit radius, since a fixed step cannot catch a large
+circle moving at radius/1224 units per millisecond. Regression tests cover
+view direction, height, settled radius and scale. Local offscreen rendering
+confirmed the JPHL hunter model/clip and Gojirasaurus clip 12. Triassic's
+supplied hunter clip 12 itself stays near ground level throughout its 38
+frames; synchronization cannot turn it into a carried-body animation.
+
+The reported Dinosaur Hunter session used an unmatched base plus a desktop
+MEE overlay (also evidenced by Ice Age save storage and snow in its log).
+APK recipe builds now require the recorded APK identity. The recipe page can
+find the matching converted base, includes the launcher's `apk-base` folder
+in its search, and refuses readiness for a mismatched APK. APK recipes do
+not inherit unrelated Game-tab overlays. Explicit recipe overlays remain
+supported. A local Dinosaur Hunter APK conversion and recipe build passed;
+an Ice Age APK base was rejected before materializing the wrong pack.
+
+On PC, the APK hunt HUD retains a smaller upper-left map compass and a
+numeric ammunition count, removing the persistent weapon, binocular and
+call touch icons and their backgrounds. When an APK binocular mask is
+available, it replaces the PC frame; missing masks retain the PC fallback.
+Offscreen images verified the normal HUD and single binocular overlay.
+JPHL's reported jitter on nonfatal shots still needs a live reproduction;
+we have not changed its reference-engine damage reaction speculatively.
+
 ## 2026-11-02 — Reusable animation poses and direct upload staging
 
 The shared core adds `dino::pose::pose_into` and `model::pose_car_into`.

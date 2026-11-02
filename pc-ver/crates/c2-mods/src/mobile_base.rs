@@ -61,8 +61,7 @@ fn area(apk: &Apk, name: &str, dir: &Path, stem: &str) -> Result<PathBuf, ModErr
         )?;
     }
     let rst = mobile_area::parse_rst(&text)?;
-    let map = mobile_area::parse_man(&man)?;
-    let rsc = mobile_area::rsc_from(&rst, apk)?;
+    let (map, rsc) = mobile_area::area_from(&man, &rst, apk)?;
     let path = dir.join(format!("{stem}.MAP"));
     write(&path, &c2_formats::map::write(&map))?;
     write(
@@ -271,10 +270,12 @@ impl Kit {
         let skip = if ice_age { "dinhunter" } else { "iceage" };
         let mut raw = BTreeMap::new();
         let files = apk.0.files();
-        for f in files
-            .iter()
-            .filter(|f| f.starts_with("assets/ui/") && f.ends_with(".cfg") && !f.contains(skip))
-        {
+        for f in files.iter().filter(|f| {
+            f.starts_with("assets/ui/")
+                && f.ends_with(".cfg")
+                && !f.contains(skip)
+                && !f.contains("free_to_play_shop")
+        }) {
             if let Some(d) = apk.get(f) {
                 c2_formats::mobile_ui::parse(&String::from_utf8_lossy(&d), &mut raw);
             }
@@ -1025,9 +1026,23 @@ impl Game<'_> {
         if let Some((_, d)) = icon {
             write(&dir.join("ICON.PNG"), &d)?;
         }
+        // Runtime order differs from the phone's character IDs (notably
+        // Ice Age's bonus animals). Keep sprite identity through sorting.
+        let mut sprites = kit.sprites.clone();
+        for (slot, animal) in self.menu.iter().enumerate() {
+            let number = animal.index - if self.ice_age { 115 } else { 15 };
+            for state in ["active", "inactive"] {
+                let target = format!("button_dino_{state}_{}", slot + 1);
+                if let Some(sprite) = kit.sprites.get(&format!("button_dino_{state}_{number}")) {
+                    sprites.insert(target, sprite.clone());
+                } else {
+                    sprites.remove(&target);
+                }
+            }
+        }
         write(
             &dir.join("SPRITES.CFG"),
-            c2_formats::mobile_ui::write(&kit.sprites).as_bytes(),
+            c2_formats::mobile_ui::write(&sprites).as_bytes(),
         )?;
         Ok(())
     }

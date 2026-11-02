@@ -298,7 +298,6 @@ impl Herd {
                 }
             }
         }
-        let mut tr = 0;
         // Packs whose leader isn't loaded (the 3DS loads only the picked
         // animals) can't spawn; leaving them out gives their share to the
         // others. With everything loaded, as on PC, nothing changes.
@@ -311,6 +310,9 @@ impl Herd {
             l.retain(|&(p, _)| packs[p].members.first().is_some_and(|m| loaded(m.0)));
         }
         for (sg, group) in t.spawn_groups.iter().enumerate() {
+            // An impossible region for one group must not exhaust the
+            // placement budget for every later group (including targets).
+            let mut tr = 0;
             let link = &links[sg];
             if link.is_empty() {
                 continue;

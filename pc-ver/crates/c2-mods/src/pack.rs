@@ -286,7 +286,7 @@ pub(crate) fn load_loose(
 /// release shipped as changed files only, such as the Modder's Edition,
 /// copied over the original game). A later layer's file wins, `_RES.TXT`
 /// included.
-pub fn vanilla(bases: &[PathBuf]) -> Result<Vfs, ModError> {
+pub fn vanilla_files(bases: &[PathBuf]) -> Result<Vfs, ModError> {
     let mut v = Vfs::new();
     for (i, base) in bases.iter().enumerate() {
         let root = find_root(base).ok_or_else(|| ModError::NoHuntdat(base.to_path_buf()))?;
@@ -304,9 +304,19 @@ pub fn vanilla(bases: &[PathBuf]) -> Result<Vfs, ModError> {
         };
         v.push(name, Box::new(Subset { dir, keep }));
     }
+    Ok(v)
+}
+
+/// Base files with the engine's compatibility rules applied. Hash checks
+/// use [`vanilla_files`] so generated rules do not change game identity.
+pub fn vanilla(bases: &[PathBuf]) -> Result<Vfs, ModError> {
+    let mut v = vanilla_files(bases)?;
     // Carnivores: Ice Age plays as a dialect game (its rules rewritten).
     if let Some(l) = crate::ice_age::layer(&v)? {
         v.push(crate::ice_age::LAYER, Box::new(l));
+    }
+    if let Some(l) = crate::triassic::layer(&v)? {
+        v.push("Triassic compatibility rules", Box::new(l));
     }
     // A dialect game without spawn tables (an engine placing by its own
     // rules): the Modder's Edition's default ones, so its animals come.

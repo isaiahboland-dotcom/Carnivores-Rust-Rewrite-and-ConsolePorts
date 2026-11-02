@@ -1790,6 +1790,32 @@ mod tests {
     }
 
     #[test]
+    fn impossible_spawn_group_does_not_starve_later_targets() {
+        let raw = c2_formats::res_txt::ResTxt::parse("spawntable {\nspawngroup {\nspawnmin = 1\nspawnmax = 1\nregion {\nxmin = 49\nxmax = 51\nymin = 49\nymax = 51\n}\n}\nspawngroup {\nspawnmin = 3\nspawnmax = 3\n}\n}\ncharacters {\n{\nai = 10\nspawninfo {\nspawngroup = 0\nspawnratio = 1\n}\n}\n{\nai = 13\nspawninfo {\nspawngroup = 1\nspawnratio = 1\n}\n}\n}\n").unwrap_or_else(|e| panic!("{e}"));
+        let tables = c2_formats::mee::Tables::read(
+            &raw,
+            &c2_formats::mee::Hunt {
+                area: Some(1),
+                time: 1,
+                picked: Default::default(),
+            },
+        );
+        let mut herd = Herd {
+            species: vec![species(ai::PARA, 8), species(ai::VELO, 8)],
+            ..Default::default()
+        };
+        herd.place_mee(
+            &Area::flat(10),
+            (50.0 * 256.0, 50.0 * 256.0),
+            &mut MsRand::new(7),
+            &tables,
+            128,
+        );
+        assert_eq!(herd.chars.len(), 3);
+        assert!(herd.chars.iter().all(|c| c.ctype == 1));
+    }
+
+    #[test]
     fn mee_placement_follows_groups_and_packs() {
         use c2_formats::mee::{
             Character as MeeChar, PackGroup, PackLink, Region, SpawnGroup, SpawnLink, Tables,

@@ -244,6 +244,8 @@ struct Flow {
     z0: i32,
     from: (i32, i32),
     dist: Vec<u16>,
+    /// Local terrain height; NaN marks ground rejected by the movement slope probes.
+    heights: Vec<f32>,
 }
 
 impl Flow {
@@ -262,8 +264,18 @@ impl Flow {
                     & crate::area::cell_flags::WATER
                     != 0;
                 if !wet && fence.is_none_or(|f| f.allows(x, z)) {
-                    h[at(x, z)] =
-                        area.land_height(x as f32 * 256.0 + 128.0, z as f32 * 256.0 + 128.0);
+                    let (wx, wz) = (x as f32 * 256.0 + 128.0, z as f32 * 256.0 + 128.0);
+                    let y = area.land_height(wx, wz);
+                    // Match movement's local slope probes. An average across
+                    // neighbouring cell centres can hide a steep triangle.
+                    let safe = [(-64.0, -64.0), (64.0, -64.0), (-64.0, 64.0), (64.0, 64.0)]
+                        .into_iter()
+                        .all(|(dx, dz)| {
+                            (area.land_height(wx + dx, wz + dz) - y).abs() <= 100.0 * FLOW_SLOPE
+                        });
+                    if safe {
+                        h[at(x, z)] = y;
+                    }
                 }
             }
         }
@@ -285,7 +297,8 @@ impl Flow {
                 // (the hunter's cell) may be anything.
                 let run = if dx != 0 && dz != 0 { 362.0 } else { 256.0 };
                 let steep = d > 0 && (h[j] - hh).abs() > run * 100.0 / 64.0 * FLOW_SLOPE;
-                if dist[j] == u16::MAX && !h[j].is_nan() && !steep {
+                let corner = dx != 0 && dz != 0 && (h[at(nx, z)].is_nan() || h[at(x, nz)].is_nan());
+                if dist[j] == u16::MAX && !h[j].is_nan() && !steep && !corner {
                     dist[j] = d + 1;
                     queue.push_back((nx, nz));
                 }
@@ -296,6 +309,7 @@ impl Flow {
             z0,
             from: (hx, hz),
             dist,
+            heights: h,
         }
     }
 
@@ -318,15 +332,43 @@ impl Flow {
     /// way: every cell on it has one, none farther than where it starts
     /// (a cell across a ridge or a ravine wall is, or has none).
     fn straight(&self, x: i32, z: i32) -> bool {
-        let d0 = self.get(x, z);
-        let (tx, tz) = self.from;
+        self.segment((x, z), self.from)
+    }
+
+    /// Only skip waypoints when the whole segment is traversable. Merely
+    /// knowing both endpoints reach the hunter can cut through a cliff.
+    fn segment(&self, (x, z): (i32, i32), (tx, tz): (i32, i32)) -> bool {
+        let height = |x, z| {
+            if self.covers(x, z) {
+                self.heights[((z - self.z0) * FLOW_W + x - self.x0) as usize]
+            } else {
+                f32::NAN
+            }
+        };
         let n = (tx - x).abs().max((tz - z).abs());
-        (1..n).all(|k| {
+        let mut prev = (x, z);
+        for k in 1..=n {
             let f = k as f32 / n as f32;
-            let cx = x + ((tx - x) as f32 * f).round() as i32;
-            let cz = z + ((tz - z) as f32 * f).round() as i32;
-            self.get(cx, cz) <= d0
-        })
+            let next = (
+                x + ((tx - x) as f32 * f).round() as i32,
+                z + ((tz - z) as f32 * f).round() as i32,
+            );
+            if self.get(next.0, next.1) == u16::MAX {
+                return false;
+            }
+            let diagonal = next.0 != prev.0 && next.1 != prev.1;
+            let rise = (height(next.0, next.1) - height(prev.0, prev.1)).abs();
+            let run = if diagonal { 362.0 } else { 256.0 };
+            if !rise.is_finite()
+                || rise > run * 100.0 / 64.0 * FLOW_SLOPE
+                || (diagonal
+                    && (height(prev.0, next.1).is_nan() || height(next.0, prev.1).is_nan()))
+            {
+                return false;
+            }
+            prev = next;
+        }
+        true
     }
 
     /// Where an animal at cell (`x`, `z`) should head: [`LURE_AHEAD`] cells
@@ -360,14 +402,16 @@ impl Flow {
         if d <= LURE_NEAR || self.straight(x, z) {
             return None;
         }
+        let start = (x, z);
         for _ in 0..LURE_AHEAD {
             let here = self.get(x, z);
             let next = AROUND
                 .into_iter()
                 .map(|(dx, dz)| (x + dx, z + dz))
+                .filter(|&next| self.segment((x, z), next))
                 .min_by_key(|&(nx, nz)| self.get(nx, nz))?;
             let nd = self.get(next.0, next.1);
-            if nd >= here || nd < LURE_GAP {
+            if nd >= here || nd < LURE_GAP || !self.segment(start, next) {
                 break;
             }
             (x, z) = next;
@@ -779,19 +823,17 @@ impl Hunt {
     /// his height, first.
     fn spawn_in_box(&mut self, area: &Area, ctype: usize, n: u32, b: [f32; 4]) {
         let flow = self.wave_flow(area);
-        let mut at = (b[0], b[1]);
         for strict in [true, false] {
             for _ in 0..32 {
                 let r = |rng: &mut MsRand, h: f32| (rng.r_rand(20000) as f32 / 10000.0 - 1.0) * h;
                 let (x, z) = (b[0] + r(&mut self.rng, b[2]), b[1] + r(&mut self.rng, b[3]));
-                at = (x, z);
-                if self.spawn_spot(area, (x, z), strict.then_some(&flow)) {
-                    self.add_wave_animal(area, ctype, n, at);
+                if self.spawn_spot(area, (x, z), &flow, strict) {
+                    self.add_wave_animal(area, ctype, n, (x, z));
                     return;
                 }
             }
         }
-        self.add_wave_animal(area, ctype, n, at);
+        self.spawn_wave_animal(area, ctype, n);
     }
 
     /// The flow field for where the hunter stands (kept for the wave).
@@ -816,24 +858,27 @@ impl Hunt {
         }
     }
 
-    /// Whether a wave animal may start at (`x`, `z`): dry and free; with
-    /// `flow`, also with a walkable way to the hunter (where the field
-    /// reaches) and not more than [`SPAWN_RISE`] above or below him.
-    fn spawn_spot(&self, area: &Area, (x, z): (f32, f32), flow: Option<&Flow>) -> bool {
+    /// Whether a wave animal may start at (`x`, `z`): dry and free;
+    /// a walkable way to the hunter is required even on fallback attempts.
+    /// `near_height` additionally limits elevation to [`SPAWN_RISE`].
+    fn spawn_spot(&self, area: &Area, (x, z): (f32, f32), flow: &Flow, near_height: bool) -> bool {
         let y = area.land_height(x, z);
         if area.land_up_h(x, z) - y > 32.0 {
             return false;
         }
-        if let Some(f) = flow {
+        {
+            let f = flow;
             let (cx, cz) = ((x / 256.0) as i32, (z / 256.0) as i32);
             let fence = self.survival.as_ref().and_then(|s| s.fence.as_ref());
             if fence.is_some_and(|fe| !fe.allows(cx, cz)) {
                 return false;
             }
-            if f.covers(cx, cz) && f.get(cx, cz) == u16::MAX {
+            if f.get(cx, cz) == u16::MAX {
                 return false;
             }
-            if (y - area.land_height(self.player.x, self.player.z)).abs() > SPAWN_RISE {
+            if near_height
+                && (y - area.land_height(self.player.x, self.player.z)).abs() > SPAWN_RISE
+            {
                 return false;
             }
         }
@@ -877,7 +922,7 @@ impl Hunt {
                 if !(4096.0..size - 4096.0).contains(&x) || !(4096.0..size - 4096.0).contains(&z) {
                     continue;
                 }
-                if self.spawn_spot(area, (x, z), strict.then_some(&flow)) {
+                if self.spawn_spot(area, (x, z), &flow, strict) {
                     self.add_wave_animal(area, ctype, n, (x, z));
                     return;
                 }
@@ -906,6 +951,31 @@ mod flow_tests {
     fn open_ground_is_straight_on() {
         let f = Flow::new(&Area::flat(10), (480, 500), None);
         assert_eq!(f.lure(530, 500), None);
+    }
+
+    #[test]
+    fn waypoints_near_a_ridge_do_not_cut_across_it() {
+        let f = Flow::new(&walled(), (480, 500), None);
+        for x in 505..514 {
+            for z in 552..564 {
+                if f.get(x, z) == u16::MAX {
+                    continue;
+                }
+                if let Some((wx, wz)) = f.lure(x, z) {
+                    assert!(f.segment((x, z), ((wx / 256.0) as i32, (wz / 256.0) as i32)));
+                } else {
+                    assert!(f.straight(x, z));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_steep_triangle_is_not_hidden_by_cell_average_height() {
+        let mut area = Area::flat(10);
+        area.map.height[crate::area::idx(510, 510)] = 30;
+        let f = Flow::new(&area, (500, 500), None);
+        assert!(f.heights[((510 - f.z0) * FLOW_W + 510 - f.x0) as usize].is_nan());
     }
 
     #[test]

@@ -143,11 +143,32 @@ impl Node {
 /// Reads a body after its `{`. Returns it and whether its `}` was found
 /// (`false`: the file ended first, or a `.` line ended it).
 fn parse_node<'a>(
-    lines: &mut impl Iterator<Item = (usize, &'a str)>,
+    lines: &mut core::iter::Peekable<impl Iterator<Item = (usize, &'a str)>>,
     warnings: &mut Vec<String>,
 ) -> (Node, bool) {
     let mut node = Node::default();
-    while let Some((ln, raw)) = lines.next() {
+    while let Some(&(_, raw)) = lines.peek() {
+        let header = strip_comment(raw).trim().strip_suffix('{').map(str::trim);
+        if header.is_some_and(|h| {
+            matches!(
+                h.to_ascii_lowercase().as_str(),
+                "common"
+                    | "areatable"
+                    | "spawntable"
+                    | "packtable"
+                    | "trophytable"
+                    | "weapons"
+                    | "characters"
+                    | "hunterinfo"
+                    | "prices"
+                    | "accessories"
+            )
+        }) {
+            // These are never nested blocks. A missing closing brace in a
+            // mod must not consume every later section as a child.
+            return (node, false);
+        }
+        let Some((ln, raw)) = lines.next() else { break };
         if raw.starts_with('.') {
             return (node, false);
         }
@@ -180,7 +201,7 @@ fn parse_node<'a>(
 impl ResTxt {
     pub fn parse(text: &str) -> Result<Self, FormatError> {
         let mut out = ResTxt::default();
-        let mut lines = text.lines().enumerate();
+        let mut lines = text.lines().enumerate().peekable();
         while let Some((ln, raw)) = lines.next() {
             if raw.starts_with('.') {
                 break;
@@ -227,7 +248,7 @@ impl ResTxt {
             }
             if !closed {
                 out.warnings.push(format!(
-                    "section {:?} not closed before end of file",
+                    "section {:?} not closed before next section or end of file",
                     section.name
                 ));
             }
@@ -533,4 +554,24 @@ pub struct ResData {
     pub weapons: Vec<WeaponDef>,
     pub characters: Vec<CharacterDef>,
     pub prices: Option<Prices>,
+}
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+
+    #[test]
+    fn missing_table_brace_does_not_swallow_characters_and_weapons() {
+        let text = "packtable {\n packgroup {\n packmin = 2\n }\nweapons {\n{\n name = 'Gun'\n}\n}\ncharacters {\n{\n name = 'Visitor'\n ai = 13\n overwrite char0 {\n radar = TRUE\n }\n}\n}\n";
+        let res = ResTxt::parse(text).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(res.sections.len(), 3);
+        assert_eq!(res.sections[0].subs.len(), 1);
+        assert_eq!(res.sections[1].blocks.len(), 1);
+        assert_eq!(res.sections[2].blocks[0].get(&["ai"]), Some("13"));
+        assert_eq!(res.sections[2].blocks[0].subs[0].name, "overwrite char0");
+        assert_eq!(res.warnings.len(), 1);
+        let roundtrip = ResTxt::parse(&res.write()).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(roundtrip.sections, res.sections);
+        assert!(roundtrip.warnings.is_empty());
+    }
 }

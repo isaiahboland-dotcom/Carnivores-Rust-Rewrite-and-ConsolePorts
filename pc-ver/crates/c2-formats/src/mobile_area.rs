@@ -66,17 +66,21 @@ fn rle(r: &mut Reader<'_>, cells: usize, ctx: &str) -> Result<Vec<u8>, FormatErr
 /// A `.man` as a PC map. The second texture is the first (the PC draws
 /// neither from it); the flags' high byte is clear.
 pub fn parse_man(data: &[u8]) -> Result<Map, FormatError> {
+    read_man(data).map(|(map, _, _)| map)
+}
+
+fn read_man(data: &[u8]) -> Result<(Map, Vec<u8>, Vec<u8>), FormatError> {
     let mut r = Reader::new(data);
     let mut raw = |ctx: &str| r.bytes(CELLS, ctx).map(<[u8]>::to_vec);
     let height = raw("man.height")?;
     let light = [raw("man.light0")?, raw("man.light1")?, raw("man.light2")?];
     let flags = raw("man.flags")?;
-    r.bytes(HALF_CELLS, "man.extra")?;
+    let lod_flags = r.bytes(HALF_CELLS, "man.lod_flags")?.to_vec();
     let texture1: Vec<u16> = rle(&mut r, CELLS, "man.texture")?
         .into_iter()
         .map(u16::from)
         .collect();
-    rle(&mut r, HALF_CELLS, "man.extra2")?;
+    let lod_tiles = rle(&mut r, HALF_CELLS, "man.lod_tiles")?;
     let objects = rle(&mut r, CELLS, "man.objects")?;
     let object_height = rle(&mut r, CELLS, "man.object_height")?;
     let water = rle(&mut r, CELLS, "man.water")?;
@@ -85,18 +89,83 @@ pub fn parse_man(data: &[u8]) -> Result<Map, FormatError> {
     if r.remaining() != 0 {
         return Err(r.err("man", FormatErrorKind::TrailingData(r.remaining())));
     }
-    Ok(Map {
-        height,
-        texture2: texture1.clone(),
-        texture1,
-        objects,
-        flags: flags.into_iter().map(u16::from).collect(),
-        light,
-        water,
-        object_height,
-        fogs,
-        ambient,
-    })
+    Ok((
+        Map {
+            height,
+            texture2: texture1.clone(),
+            texture1,
+            objects,
+            flags: flags.into_iter().map(u16::from).collect(),
+            light,
+            water,
+            object_height,
+            fogs,
+            ambient,
+        },
+        lod_flags,
+        lod_tiles,
+    ))
+}
+
+/// Convert both area files together: second-LOD maps use one tile across
+/// four PC cells, with rotations from the separate half-resolution grid.
+pub fn area_from(data: &[u8], rst: &Rst, assets: &dyn Assets) -> Result<(Map, Rsc), FormatError> {
+    let (mut map, flags, tiles) = read_man(data)?;
+    let mut rsc = rsc_from(rst, assets)?;
+    if rst
+        .section("general")
+        .is_some_and(|g| g.flag("use_second_lod"))
+    {
+        expand_second_lod(&mut map, &mut rsc, &flags, &tiles)?;
+    }
+    Ok((map, rsc))
+}
+
+fn expand_second_lod(
+    map: &mut Map,
+    rsc: &mut Rsc,
+    flags: &[u8],
+    tiles: &[u8],
+) -> Result<(), FormatError> {
+    let base = rsc.textures.len();
+    // Leave original tiles in place: water definitions still reference them.
+    for index in 0..base {
+        for qy in 0..2 {
+            for qx in 0..2 {
+                let mut tile = Vec::with_capacity(TERRAIN_TEX_SIZE * TERRAIN_TEX_SIZE);
+                for y in 0..TERRAIN_TEX_SIZE {
+                    for x in 0..TERRAIN_TEX_SIZE {
+                        let sx = qx * TERRAIN_TEX_SIZE / 2 + x / 2;
+                        let sy = qy * TERRAIN_TEX_SIZE / 2 + y / 2;
+                        tile.push(rsc.textures[index][sy * TERRAIN_TEX_SIZE + sx]);
+                    }
+                }
+                rsc.textures.push(tile);
+            }
+        }
+    }
+    for y in 0..1024 {
+        for x in 0..1024 {
+            let i = y * 1024 + x;
+            let li = (y / 2) * 512 + x / 2;
+            let tile = usize::from(tiles[li]);
+            if tile >= base {
+                return Err(syntax("second LOD tile outside atlas"));
+            }
+            let dir = u16::from(flags[li] & 3);
+            let (qx, qy) = (x % 2, y % 2);
+            let (qx, qy) = match dir {
+                1 => (qy, 1 - qx),
+                2 => (1 - qx, 1 - qy),
+                3 => (1 - qy, qx),
+                _ => (qx, qy),
+            };
+            map.texture1[i] = (base + tile * 4 + qy * 2 + qx) as u16;
+            map.texture2[i] = map.texture1[i];
+            map.flags[i] = (map.flags[i] & !3) | dir;
+        }
+    }
+    Ok(())
 }
 
 /// A `key = value` line's value: quotes dropped.
@@ -604,6 +673,46 @@ random_sound_index = 7\r\n\tvolume = 0.5\r\n[fog]\r\ncount = 1\r\nfog_id 0\r\n\t
         assert_eq!(idx, [Some(3), Some(7)]);
         let f = &r.items("fog")[0];
         assert_eq!(f.rgb("color").map(bgr), Some(0x00384D4F));
+    }
+
+    #[test]
+    fn second_lod_preserves_quadrants_rotations_and_water_tiles() {
+        let mut map = crate::map::parse(&alloc::vec![0; crate::map::FILE_SIZE])
+            .unwrap_or_else(|e| panic!("{e}"));
+        map.flags.fill(0x30);
+        let tile: Vec<u16> = (0..128 * 128)
+            .map(|i| (i / 128 / 64 * 2 + i % 128 / 64) as u16)
+            .collect();
+        let mut rsc = Rsc {
+            fade_rgb: [[0; 3]; 3],
+            trans_rgb: [[0; 3]; 3],
+            textures: alloc::vec![tile.clone()],
+            objects: Vec::new(),
+            skies: Default::default(),
+            sky_map: Vec::new(),
+            fogs: Vec::new(),
+            random_sounds: Vec::new(),
+            ambients: Vec::new(),
+            waters: Vec::new(),
+        };
+        let mut flags = alloc::vec![0; HALF_CELLS];
+        flags[..4].copy_from_slice(&[0, 1, 2, 3]);
+        expand_second_lod(&mut map, &mut rsc, &flags, &alloc::vec![0; HALF_CELLS])
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(rsc.textures[0], tile, "water's original tile stays intact");
+        for q in 0..4 {
+            assert!(rsc.textures[1 + q].iter().all(|&v| v == q as u16));
+        }
+        for (dir, quadrants) in [[0, 1, 2, 3], [2, 0, 3, 1], [3, 2, 1, 0], [1, 3, 0, 2]]
+            .iter()
+            .enumerate()
+        {
+            for (q, &expected) in quadrants.iter().enumerate() {
+                let i = q / 2 * 1024 + dir * 2 + q % 2;
+                assert_eq!(map.texture1[i], 1 + expected);
+                assert_eq!(map.flags[i], 0x30 | dir as u16);
+            }
+        }
     }
 
     #[test]

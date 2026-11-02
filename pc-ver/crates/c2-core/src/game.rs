@@ -865,7 +865,8 @@ pub fn death_cam_view(
             (m.cam_base, m.cam_y)
         };
         if b.is_some() || y.is_some() {
-            return (b.unwrap_or(824.0), y.unwrap_or(256.0));
+            let scale = c.scale.max(1.0);
+            return (b.unwrap_or(824.0) * scale, y.unwrap_or(256.0) * scale);
         }
     }
     let reach = sp.size * c.scale.max(0.1);
@@ -1072,7 +1073,18 @@ impl Hunt {
     /// Camera position and angles for rendering.
     pub fn camera(&self) -> ([f32; 3], f32, f32) {
         match &self.death {
-            Some(d) => (d.pos, d.alpha, d.beta),
+            Some(d) => {
+                // The orbit position eases toward its circle. Its orbit
+                // angle is not the actual direction to the watched body.
+                let alpha = self
+                    .herd
+                    .demo_index
+                    .and_then(|i| self.herd.chars.get(i))
+                    .map_or(d.alpha, |c| {
+                        (c.pos[0] - d.pos[0]).atan2(d.pos[2] - c.pos[2])
+                    });
+                (d.pos, alpha, d.beta)
+            }
             None => {
                 let (a, b) = self.player.camera_angles();
                 (self.player.eye(), a, b)
@@ -2415,7 +2427,14 @@ impl Hunt {
             killer.scale,
             killer.ftime,
         );
+        let carry_anim = (killer.phase != k.anim && k.carry_corpse)
+            .then_some(k.hunter_carry_anim)
+            .flatten();
         if let Some(body) = self.herd.chars.get_mut(d.body) {
+            if let Some(phase) = carry_anim.and_then(|a| usize::try_from(a).ok()) {
+                body.phase = phase;
+                body.prev_phase = phase;
+            }
             (
                 body.pos, body.alpha, body.beta, body.gamma, body.scale, body.ftime,
             ) = pose;
@@ -2452,8 +2471,12 @@ impl Hunt {
             d.time += dt;
             d.alpha += dtf / 1224.0;
             let (sa, ca) = d.alpha.sin_cos();
-            delta_func(&mut d.pos[0], target[0] - sa * base, dtf);
-            delta_func(&mut d.pos[2], target[2] + ca * base, dtf);
+            // The circle moves at base / 1224 units per millisecond.
+            // A fixed 1-unit step cannot catch it for large modded kills,
+            // pulling the camera inside its intended radius.
+            let step = dtf * (1.0 + base / 1224.0);
+            delta_func(&mut d.pos[0], target[0] - sa * base, step);
+            delta_func(&mut d.pos[2], target[2] + ca * base, step);
         }
         let horiz = ((target[0] - d.pos[0]).powi(2) + (target[2] - d.pos[2]).powi(2)).sqrt();
         let mut b = find_vector_alpha(horiz, target[1] - d.pos[1] - 400.0);
@@ -2466,6 +2489,9 @@ impl Hunt {
         if d.pos[1] < h + 80.0 {
             d.pos[1] = h + 80.0;
         }
+        // `ProcessDemoMovement` keeps the camera at least as high as
+        // its demo point; without this a large killer fills the sky.
+        d.pos[1] = d.pos[1].max(target[1]);
         self.death = Some(d);
     }
 
@@ -3312,6 +3338,77 @@ mod tests {
         );
         assert_eq!(hunt.herd.species[1].info.ai, original_ai);
         assert_eq!(hunt.call_bit(&hunt.herd.chars[0]), Some(81));
+    }
+
+    #[test]
+    fn death_camera_faces_the_body_while_the_orbit_catches_up() {
+        let (area, mut hunt, _) = setup(false);
+        let mut out = Vec::new();
+        hunt.kill_hunter(&area, Some(0), 0, false, &mut out);
+        let mut d = hunt.death.expect("death camera");
+        let body = hunt.herd.chars[d.body].pos;
+        d.pos = [body[0] - 1200.0, body[1], body[2] + 600.0];
+        d.alpha = 2.5;
+        d.base = 2400.0;
+        hunt.death_cam(&area, d, 16);
+        let d = hunt.death.expect("death camera");
+        assert!(d.pos[1] >= body[1] + d.lift);
+        let (pos, yaw, _) = hunt.camera();
+        let (dx, dz) = (body[0] - pos[0], body[2] - pos[2]);
+        let distance = dx.hypot(dz);
+        assert!((yaw.sin() - dx / distance).abs() < 1e-5);
+        assert!((-yaw.cos() - dz / distance).abs() < 1e-5);
+        for _ in 0..200 {
+            let d = hunt.death.expect("death camera");
+            hunt.death_cam(&area, d, 16);
+        }
+        let d = hunt.death.expect("death camera");
+        let radius = (body[0] - d.pos[0]).hypot(body[2] - d.pos[2]);
+        assert!(
+            (radius - d.base).abs() < 1.0,
+            "orbit radius {radius}, expected {}",
+            d.base
+        );
+    }
+
+    #[test]
+    fn scripted_death_camera_scales_with_a_large_killer() {
+        let (_, mut hunt, _) = setup(false);
+        let mut m = crate::dino::mee::MeeInfo::new(ai::TREX);
+        m.cam_base = Some(1424.0);
+        m.cam_y = Some(768.0);
+        hunt.herd.species[1].mee = Some(Box::new(m));
+        hunt.herd.chars[0].scale = 1.5;
+        assert_eq!(
+            death_cam_view(
+                Some((&hunt.herd.chars[0], &hunt.herd.species[1])),
+                false,
+                false
+            ),
+            (2136.0, 1152.0)
+        );
+    }
+
+    #[test]
+    fn carried_hunter_switches_clip_when_killer_walks_away() {
+        let (area, mut hunt, _) = setup(false);
+        let res = c2_formats::res_txt::ResTxt::parse("characters {\n{\n ai = 18\n walkAnim = 0\n killtype {\n hunterSync = TRUE\n carryCorpse = TRUE\n eatAnim = 1\n hunterAnim = 0\n hunterCarryAnim = 2\n }\n}\n}\n").expect("script");
+        let m = crate::mee::info(&res.sections[0].blocks[0], ai::TREX);
+        let eating = m.kill_types[0].anim;
+        let walking = m.walk;
+        hunt.herd.species[1].mee = Some(Box::new(m));
+        hunt.herd.chars[0].phase = eating;
+        let mut out = Vec::new();
+        hunt.kill_hunter(&area, Some(0), 0, false, &mut out);
+        let body = hunt.death.expect("death camera").body;
+        assert_eq!(hunt.herd.chars[body].phase, 0);
+        hunt.herd.chars[0].phase = walking;
+        hunt.herd.chars[0].ftime = 321;
+        hunt.herd.chars[0].pos[0] += 600.0;
+        hunt.sync_killed_body(&area);
+        assert_eq!(hunt.herd.chars[body].phase, 2);
+        assert_eq!(hunt.herd.chars[body].ftime, 321);
+        assert_eq!(hunt.herd.chars[body].pos, hunt.herd.chars[0].pos);
     }
 
     #[test]

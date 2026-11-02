@@ -16,6 +16,7 @@ pub mod recipe;
 pub mod res_merge;
 pub mod resolve;
 pub mod standalone;
+mod triassic;
 
 use std::path::PathBuf;
 

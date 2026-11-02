@@ -119,70 +119,72 @@ pub fn read(res: &ResTxt, h: &Hunt) -> MeeHunt {
     }
 }
 
-/// Picked animals come on any map (owner's rule; the dialect spawns them
-/// only where their tables say, so an animal from another game, or a
-/// roaming add-on, picked for this map wouldn't come). A picked character
-/// (its `callNo` slot in `h.picked`, or in `extra` by index) not in the
-/// area's target group (the spawn group this map's own menu animals use)
-/// joins it; its own spawns stay. Ambient animals (AI under 10) keep to
-/// their tables.
+/// Picked animals come on any map (owner's rule). Keep authored selected
+/// spawns when active here; otherwise add a map-wide selected group, keeping
+/// passive roaming spawns. Never infer target groups from unrelated residents.
 pub fn spawn_picked_anywhere(res: &ResTxt, h: &Hunt, tables: &mut Tables, extra: &[usize]) {
     let raw = res.section("characters").map_or(&[][..], |s| &s.blocks);
     let slot = |i: usize, b: &Block| c2_formats::mee::menu_slot(raw.get(i), b);
-    let all = Tables::read(
+    let unpicked = Tables::read(
         res,
         &Hunt {
-            picked: c2_formats::bits::Bits::ALL,
+            picked: c2_formats::bits::Bits::NONE,
             ..*h
         },
     );
-    let mut uses = vec![0usize; all.spawn_groups.len()];
-    for (_, c) in all
+    let selected: Vec<usize> = tables
         .characters
         .iter()
         .enumerate()
-        .filter(|(i, c)| slot(*i, &c.block).is_some())
-    {
-        for l in &c.spawn {
-            if let Some(n) = uses.get_mut(l.group) {
-                *n += 1;
-            }
-        }
-    }
-    let Some(target) = (0..uses.len())
-        .filter(|&g| uses[g] > 0)
-        .max_by_key(|&g| uses[g])
-    else {
-        return;
-    };
-    let packs_in: Vec<bool> = tables
-        .pack_groups
-        .iter()
-        .map(|p| p.spawn.iter().any(|l| l.group == target))
+        .filter(|(i, c)| {
+            c.block.get(&["ai"]).map(c_atoi).is_some_and(|a| a >= 10)
+                && (slot(*i, &c.block).is_some_and(|k| h.picked.has(k)) || extra.contains(i))
+        })
+        .map(|(i, _)| i)
         .collect();
-    for (i, c) in tables.characters.iter_mut().enumerate() {
-        let ambient = c.block.get(&["ai"]).map(c_atoi).is_some_and(|a| a < 10);
-        let by_slot = slot(i, &c.block).is_some_and(|k| h.picked.has(k));
-        let picked = by_slot || extra.contains(&i);
-        // Already among the targets (alone or in a pack)?
-        let in_target = c.spawn.iter().any(|l| l.group == target)
-            || c.packs
-                .iter()
-                .any(|l| packs_in.get(l.group).copied().unwrap_or(false));
-        if picked && !ambient && !in_target {
-            c.spawn.push(c2_formats::mee::SpawnLink {
-                group: target,
-                ratio: 1.0,
-            });
-            // Its "when picked" block may be tied to its own game's maps
-            // (a combined game's): still a target on the radar here.
-            if by_slot && c.block.get(&["radar"]).is_none() {
-                c.block.entries.push(Entry {
-                    key: "radar".into(),
-                    value: "TRUE".into(),
+    let mut fallback = None;
+    for &i in &selected {
+        let c = &tables.characters[i];
+        let off = unpicked.characters.get(i);
+        // An authored "when selected" spawn on this map takes priority.
+        // Passive roaming groups cannot guarantee a place for the target.
+        let in_target = c.spawn.iter().any(|l| {
+            tables.spawn_groups.get(l.group).is_some_and(|g| g.max > 0)
+                && off.is_none_or(|c| !c.spawn.contains(l))
+        }) || c.packs.iter().any(|l| {
+            tables.pack_groups.get(l.group).is_some_and(|p| {
+                p.spawn
+                    .iter()
+                    .any(|s| tables.spawn_groups.get(s.group).is_some_and(|g| g.max > 0))
+            }) && off.is_none_or(|c| !c.packs.contains(l))
+        });
+        if !in_target {
+            let group = *fallback.get_or_insert_with(|| {
+                let index = tables.spawn_groups.len();
+                let count = selected.len().max(12) as i32;
+                tables.spawn_groups.push(c2_formats::mee::SpawnGroup {
+                    min: count,
+                    max: count + 1,
+                    rate: 0.5,
+                    density_multi: 4,
+                    regions: vec![c2_formats::mee::Region {
+                        xmin: 12,
+                        xmax: 988,
+                        ymin: 12,
+                        ymax: 988,
+                    }],
+                    ..Default::default()
                 });
-            }
+                index
+            });
+            tables.characters[i]
+                .spawn
+                .push(c2_formats::mee::SpawnLink { group, ratio: 1.0 });
         }
+        tables.characters[i].block.entries.push(Entry {
+            key: "radar".into(),
+            value: "TRUE".into(),
+        });
     }
 }
 
@@ -443,6 +445,7 @@ fn info_sub(m: &mut MeeInfo, name: &str, b: &Block) {
         for (key, v) in lines() {
             match key.as_str() {
                 "hunteranim" => k.hunter_anim = c_atoi(v),
+                "huntercarryanim" => k.hunter_carry_anim = Some(c_atoi(v)),
                 "hunteroffset" => k.offset = c_atoi(v) as f32,
                 "eatanim" => k.anim = m.add_anim(c_atoi(v)),
                 "huntersync" => k.hunter_sync = truthy(v),
@@ -454,13 +457,18 @@ fn info_sub(m: &mut MeeInfo, name: &str, b: &Block) {
         }
         m.kill_types.push(k);
     } else if name.contains("deathtype") {
-        let mut d = DeathType::default();
+        // An omitted sleep clip must not alias logical phase zero (often
+        // running), or a shot animal is treated as already dead/asleep.
+        let mut d = DeathType {
+            no_sleep: b.get(&["sleepAnim"]).is_none(),
+            ..Default::default()
+        };
         for (key, v) in lines() {
             match key.as_str() {
                 "dieanim" => d.die = m.add_anim(c_atoi(v)),
                 "sleepanim" => d.sleep = m.add_anim(c_atoi(v)),
                 "fallanim" => d.fall = m.add_anim(c_atoi(v)),
-                "nosleep" => d.no_sleep = truthy(v),
+                "nosleep" => d.no_sleep = truthy(v) || b.get(&["sleepAnim"]).is_none(),
                 _ => {}
             }
         }
@@ -538,6 +546,35 @@ mod tests {
  deathtype {\n  dieAnim = 5\n  sleepAnim = 6\n }\n\
  idlegroup {\n  startChance = 0.5\n  anim = 2\n  anim = 4\n }\n\
  jumpAnim = 8\n}\n}\n.\n";
+
+    #[test]
+    fn selected_animal_spawns_when_map_disables_all_groups() {
+        let res = ResTxt::parse("characters {\n{\n name = 'Visitor'\n ai = 14\n menuSlot = 0\n radar = FALSE\n spawngroup {\n spawnmin = 0\n spawnmax = 0\n }\n}\n}\n").unwrap_or_else(|e| panic!("{e}"));
+        let h = Hunt {
+            area: Some(30),
+            time: 1,
+            picked: c2_formats::bits::Bits::bit(0),
+        };
+        let m = read_picked_anywhere(&res, &h, &[]);
+        let c = &m.tables.characters[0];
+        assert!(c
+            .spawn
+            .iter()
+            .any(|l| m.tables.spawn_groups[l.group].min > 0));
+        assert_eq!(c.block.get(&["radar"]), Some("TRUE"));
+        let off = read_picked_anywhere(
+            &res,
+            &Hunt {
+                picked: c2_formats::bits::Bits::NONE,
+                ..h
+            },
+            &[],
+        );
+        assert!(!off.tables.characters[0]
+            .spawn
+            .iter()
+            .any(|l| off.tables.spawn_groups[l.group].min > 0));
+    }
 
     #[test]
     fn an_animal_picked_by_its_overwrite_comes_on_another_games_map() {

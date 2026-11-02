@@ -74,6 +74,8 @@ pub struct DeathType {
 pub struct KillType {
     /// The hunter body's animation (`hunterAnim`, a `HUNT_*` model index).
     pub hunter_anim: i32,
+    /// Body clip once the killer leaves its eating phase (`hunterCarryAnim`).
+    pub hunter_carry_anim: Option<i32>,
     /// Body distance ahead of the killer, before scaling (`hunterOffset`).
     pub offset: f32,
     /// The killer's logical phase while eating (`eatAnim`).

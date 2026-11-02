@@ -819,6 +819,30 @@ mod tests {
     }
 
     #[test]
+    fn missing_sleep_clip_does_not_freeze_a_running_corpse() {
+        let raw = c2_formats::res_txt::ResTxt::parse(
+            "characters {\n{\nrunAnim = 0\nwalkAnim = 1\ndeathtype {\ndieAnim = 6\n}\n}\n}\n",
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        let m = crate::mee::info(&raw.sections[0].blocks[0], ai::TREX);
+        let die = m.death(0).die;
+        assert!(m.death(0).no_sleep);
+        let area = Area::flat(10);
+        let h = hunter();
+        let mut herd = Herd {
+            species: vec![species(m)],
+            ..Default::default()
+        };
+        let i = add(&mut herd, 0, &area, h.x + 800.0, h.z);
+        herd.chars[i].health = 0;
+        run(&mut herd, &area, h, 200);
+        assert_eq!(herd.chars[i].phase, die);
+        assert!(herd.chars[i].ftime > 0);
+        run(&mut herd, &area, h, 2000);
+        assert_eq!(herd.chars[i].ftime, herd.species[0].time(die) - 1);
+    }
+
+    #[test]
     fn alarmed_herbivore_runs_away() {
         let area = Area::flat(10);
         let h = hunter();

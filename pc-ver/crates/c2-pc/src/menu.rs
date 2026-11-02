@@ -2033,14 +2033,18 @@ impl Menu {
             .map_or(0.0, |d| (d.as_millis() % 100_000) as f32 / 1000.0)
     }
 
-    fn draw_main(&self, out: &mut Vec<Sprite>, region: u8) {
-        let b = if self.stats {
+    fn main_board(&self) -> &Board {
+        if self.stats {
             &self.stats_board
         } else if self.more {
             &self.more_board
         } else {
             &self.main
-        };
+        }
+    }
+
+    fn draw_main(&self, out: &mut Vec<Sprite>, region: u8) {
+        let b = self.main_board();
         let mut lit = vec![region];
         if self.stats {
             lit.push(6);
@@ -2408,7 +2412,7 @@ impl Scene for Menu {
                 self.update_delete(input, r);
             }
             Screen::Main => {
-                let r = self.main.region(p);
+                let r = self.main_board().region(p);
                 self.update_main(input, r);
             }
             Screen::Quit => {
@@ -2460,7 +2464,7 @@ impl Scene for Menu {
                     self.text(&mut out, x, 388.0, 14.0, BLUE, &t);
                 }
             }
-            Screen::Main => self.draw_main(&mut out, self.main.region(p)),
+            Screen::Main => self.draw_main(&mut out, self.main_board().region(p)),
             Screen::Quit => {
                 let r = self.quit_board.region(p);
                 self.board(&mut out, &self.quit_board, &[r]);

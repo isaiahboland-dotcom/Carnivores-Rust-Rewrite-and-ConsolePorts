@@ -94,7 +94,7 @@ fn is_base(base: &Base, dir: &Path) -> bool {
     if base.files.is_empty() || c2_mods::pack::find_root(dir).is_none() {
         return false;
     }
-    let Ok(v) = c2_mods::vanilla(&[dir.to_path_buf()]) else {
+    let Ok(v) = c2_mods::pack::vanilla_files(&[dir.to_path_buf()]) else {
         return false;
     };
     base.files.iter().all(|(path, want)| {
@@ -178,7 +178,8 @@ impl Page {
 
     /// Every entry has its folder, matching.
     pub fn ready(&self) -> bool {
-        self.rows.iter().all(|r| matches!(r.status, Status::Ok(_)))
+        (!self.is_apk_base() || matches!(self.base_status, Status::Ok(_)))
+            && self.rows.iter().all(|r| matches!(r.status, Status::Ok(_)))
     }
 
     pub fn to_use(&self) -> RecipeUse {
@@ -238,8 +239,21 @@ impl Page {
         std::thread::spawn(move || {
             let s = match recipe::check_apk(&base, &first) {
                 Some(true) => Status::Ok("built from that APK".into()),
-                Some(false) => Status::Bad("not built from that APK".into()),
-                None => match c2_mods::vanilla(&dirs) {
+                Some(false) => {
+                    if let Some(g) = others
+                        .iter()
+                        .flat_map(|d| recipe::dir_and_subs(d, false))
+                        .find(|g| recipe::check_apk(&base, g) == Some(true))
+                    {
+                        let _ = tx.send(Msg::Found(g, Status::Ok("built from that APK".into())));
+                        return;
+                    }
+                    Status::Bad(
+                        "Select or build this recipe's APK base; the current game is different"
+                            .into(),
+                    )
+                }
+                None => match c2_mods::pack::vanilla_files(&dirs) {
                     Err(e) => Status::Bad(e.to_string()),
                     Ok(v) => {
                         let (missing, bad) = recipe::check_base(&base, &v);
@@ -607,6 +621,46 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         panic!("checks never finished");
+    }
+
+    #[test]
+    fn apk_recipe_finds_its_own_base_and_rejects_a_wrong_selected_game() {
+        let dir = std::env::temp_dir().join(format!("c2rs-apk-recipe-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("bases")).unwrap_or_else(|e| panic!("{e}"));
+        let correct = dir.join("converted");
+        std::fs::create_dir_all(&correct).unwrap_or_else(|e| panic!("{e}"));
+        std::fs::write(
+            correct.join(c2_mods::mobile_base::SOURCE_APK),
+            "sha256:synthetic",
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        std::fs::write(
+            dir.join("bases/phone.toml"),
+            "[base]\nid = 'phone'\napk = 'sha256:synthetic'\n",
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        let path = dir.join("phone.toml");
+        std::fs::write(&path, "[recipe]\nid = 'phone'\nbase = 'phone'\n")
+            .unwrap_or_else(|e| panic!("{e}"));
+        let wrong = dir.join("wrong");
+        let mut p =
+            Page::open(&path, None, vec![wrong.clone()], vec![]).unwrap_or_else(|e| panic!("{e}"));
+        settle(&mut p);
+        assert!(!p.ready());
+        p.candidates.push(correct.clone());
+        p.check_base(vec![wrong.clone()]);
+        settle(&mut p);
+        assert_eq!(p.game, Some(correct));
+        assert!(p.ready());
+        p.game = Some(wrong.clone());
+        p.check_base(vec![wrong.clone()]);
+        settle(&mut p);
+        assert_eq!(p.game, Some(wrong));
+        assert!(
+            !p.ready(),
+            "an explicit wrong selection must not silently switch"
+        );
+        std::fs::remove_dir_all(dir).unwrap_or_else(|e| panic!("{e}"));
     }
 
     #[test]

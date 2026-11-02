@@ -50,3 +50,6 @@ bannertool (*)
 
 # Personal launcher instances (recipes kept out of the repo)
 /recipes/instances/testing/
+
+# Local screenshots, test packs, probes and temporary investigation files
+/pc-ver/(testing)/

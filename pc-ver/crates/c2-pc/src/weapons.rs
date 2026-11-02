@@ -40,6 +40,8 @@ pub struct WeaponAssets {
     /// Not drawn while scoped: the phone kit's scope covers the view
     /// instead (an APK-built game's sniper has no scope model).
     pub hide_scoped: bool,
+    /// A loaded APK mask replaces the PC binocular frame.
+    pub hide_binoculars: bool,
 }
 
 /// The most bullet icons drawn in a row; more rounds show as one and a
@@ -171,6 +173,7 @@ pub fn load_weapons(
             round_models: Vec::new(),
             aim_point: None,
             hide_scoped: false,
+            hide_binoculars: false,
         },
     )
 }
@@ -334,6 +337,9 @@ impl WeaponAssets {
         let inv = view.inverse();
         // Binoculars (`RenderNearModel(Binocular, 0, 0, 2*(216-72*power), 192)`).
         if hunt.bin_mode {
+            if self.hide_binoculars {
+                return;
+            }
             if let Some((p, m)) = &self.binoculars {
                 let z0 = 2.0 * (216.0 - 72.0 * hunt.bin_power);
                 let world: Vec<[f32; 3]> = p

@@ -781,9 +781,11 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
         while !slugs.insert(slug.clone()) {
             slug.push('2');
         }
-        let res_path = find_ci(&root, "_RES.TXT")
-            .ok_or_else(|| fail(format!("{}: no _RES.TXT", root.display())))?;
-        let mut g_res = read_res(&res_path)?;
+        // Apply the same engine compatibility rules as when this game is
+        // played alone (including original Triassic's Ice Age AI layouts).
+        let game_vfs = crate::pack::vanilla(core::slice::from_ref(dir))?;
+        let data = game_vfs.read("HUNTDAT/_RES.TXT")?;
+        let mut g_res = ResTxt::parse(&String::from_utf8_lossy(&data))?;
         // Made for the original engine (or another without spawn tables:
         // nothing of it would be placed).
         let spawns = g_res

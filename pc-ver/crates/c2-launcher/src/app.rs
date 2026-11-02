@@ -438,10 +438,14 @@ impl Launcher {
     /// Edition; the recipe page only finds the base game). Reads the recipe.
     fn recipe_game_with_overlays(&self, r: &RecipeUse) -> Vec<PathBuf> {
         let mut g = self.recipe_game(r);
-        if r.game.is_some() {
-            let wants = c2_mods::recipe::Recipe::load(&r.path)
-                .is_ok_and(|rc| !rc.standalones.is_empty() && rc.overlays.is_empty());
-            if wants {
+        if let Ok(rc) = c2_mods::recipe::Recipe::load(&r.path) {
+            let apk = c2_mods::recipe::load_base(&r.path, &rc)
+                .is_some_and(|base| !base.base.apk.is_empty());
+            if apk {
+                // A phone game's own converted rules must not be replaced
+                // by an unrelated desktop overlay from the Game tab.
+                g.truncate(1);
+            } else if r.game.is_some() && !rc.standalones.is_empty() && rc.overlays.is_empty() {
                 g.extend(self.cfg.overlays.iter().cloned());
             }
         }
@@ -455,6 +459,7 @@ impl Launcher {
         let mut out: Vec<PathBuf> = self.cfg.enabled_standalones();
         out.extend(self.cfg.standalones.iter().map(|a| a.path.clone()));
         out.extend(self.cfg.search_dirs());
+        out.push(crate::config::data_dir().join("apk-base"));
         let mut seen = std::collections::HashSet::new();
         out.retain(|p| seen.insert(p.clone()));
         out

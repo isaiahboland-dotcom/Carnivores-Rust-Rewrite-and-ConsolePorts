@@ -358,6 +358,11 @@ pub fn is_ice_age_dir(dir: &std::path::Path) -> bool {
     crate::vanilla(&[dir.to_path_buf()]).is_ok_and(|v| v.layers().iter().any(|l| l.name == LAYER))
 }
 
+/// Original Ice Age layouts, also used by compatible patched games.
+pub(crate) fn ai_rule(ai: i32) -> Option<(i32, &'static str)> {
+    RULES.iter().find(|r| r.ia == ai).map(|r| (r.ai, r.lines))
+}
+
 /// The name of the layer [`layer`] makes (in [`crate::vanilla`]).
 pub const LAYER: &str = "ice age rules";
 

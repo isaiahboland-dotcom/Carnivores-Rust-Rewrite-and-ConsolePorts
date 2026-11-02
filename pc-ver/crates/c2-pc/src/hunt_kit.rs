@@ -1,7 +1,7 @@
 //! The hunt's screen as the phone game's, for a game built from the player's
 //! APK (`HUNTDAT/MOBILE`, see `menu::kit`): its binocular and scope masks
-//! (half pictures, mirrored), the map's borders and dots, the round weapon,
-//! binocular and call buttons, the notification bar and the pop-up panel for
+//! (half pictures, mirrored), the map's borders and dots, the compass,
+//! the notification bar and the pop-up panel for
 //! the pause and exit questions, in the game's lettering. A PC game folder
 //! has no `MOBILE` and keeps the original's pictures.
 
@@ -18,20 +18,13 @@ pub struct HuntKit {
     /// Left, right, upper, lower.
     borders: [Option<usize>; 4],
     me: Option<usize>,
-    /// The round buttons: per weapon (by `_RES.TXT` index), binoculars,
-    /// call.
-    weapons: Vec<Option<usize>>,
     /// The weapons' pictures (the picker's), as the menu's.
     pictures: Vec<Option<usize>>,
-    bin_button: Option<usize>,
-    call_button: Option<usize>,
     notify: Option<usize>,
     popup: Option<usize>,
     /// The kill notice's panel (a quarter) and the trophy plaque's.
     stats: Option<usize>,
     plaque: Option<usize>,
-    /// The translucent backs of the buttons at the screen's sides.
-    backs: Option<usize>,
     /// The hexagons: the hunt menu's, the pickers' and the picked one's
     /// ring.
     menu_cell: Option<usize>,
@@ -67,9 +60,6 @@ impl HuntKit {
         let pictures = (0..weapons)
             .map(|i| img(&format!("button_weapon_active_{}", number(i))))
             .collect();
-        let weapons = (0..weapons)
-            .map(|i| img(&format!("game_weapon_button_{}", number(i))))
-            .collect();
         Some(Self {
             binoculars: img("binoculars_sight"),
             cross: img("binoculars_crosshair"),
@@ -81,15 +71,11 @@ impl HuntKit {
                 img("map_lower_border"),
             ],
             me: img("player_on_map"),
-            weapons,
             pictures,
-            bin_button: img("game_binoculars"),
-            call_button: img("game_call"),
             notify: img("notification_bar"),
             popup: img("base_popup_background"),
             stats: img("game_stats_window"),
             plaque: img("trophy_info_window"),
-            backs: img("game_buttons_back"),
             menu_cell: img("game_menu_cell"),
             cell: img("game_cell"),
             active: img("game_active_cell"),
@@ -165,6 +151,10 @@ impl HuntKit {
         k
     }
 
+    pub fn has_binocular_mask(&self) -> bool {
+        self.binoculars.is_some()
+    }
+
     /// Looking through the binoculars.
     pub fn binoculars(&self, hud: &Hud, screen: (u32, u32), out: &mut Vec<Sprite>) {
         let k = Self::mask(hud, self.binoculars, screen, true, out);
@@ -215,56 +205,17 @@ impl HuntKit {
         true
     }
 
-    /// The phone's controls: the call and the weapon in hand at the top
-    /// right, the compass ("AREA MAP") and the binoculars at the top left,
-    /// each side on its translucent back; the menu tab at the top.
+    /// Compact map compass and ammunition count for keyboard/controller play.
     pub fn buttons(&self, hud: &Hud, screen: (u32, u32), st: Buttons, out: &mut Vec<Sprite>) {
         let (sw, sh) = (screen.0 as f32, screen.1 as f32);
-        if let Some((id, _, _)) = Self::size(hud, self.backs) {
-            let (bw, bh) = (sh * 0.39, sh * 0.5);
-            for (x, uv) in [(sw - bw, [0.0, 0.0, 1.0, 1.0]), (0.0, [1.0, 0.0, 0.0, 1.0])] {
-                out.push(Sprite {
-                    uv,
-                    size: Some([bw, bh]),
-                    color: [1.0, 1.0, 1.0, 0.35],
-                    ..Sprite::new(id, x, 0.0, 1.0)
-                });
-            }
-        }
-        let d = sh * 0.135;
-        let weapon = st
-            .weapon
-            .and_then(|i| self.weapons.get(i).copied().flatten());
-        let at = |x: f32, y: f32| (x - d / 2.0, y - d / 2.0);
-        let (wx, wy) = at(sw - sh * 0.293, sh * 0.337);
-        for (id, on, (x, y)) in [
-            (self.call_button, st.calls, at(sw - sh * 0.326, sh * 0.125)),
-            (weapon, st.weapon_out, (wx, wy)),
-            (self.bin_button, st.binoculars, at(sh * 0.29, sh * 0.331)),
-        ] {
-            let Some((id, _, _)) = Self::size(hud, id) else {
-                continue;
-            };
-            let a = if on { 0.95 } else { 0.6 };
-            out.push(Sprite {
-                size: Some([d, d]),
-                color: [a, a, a, a],
-                ..Sprite::new(id, x, y, 1.0)
-            });
-        }
-        // Rounds left, beside the weapon (the phone has no bullets).
-        if let (Some(f), Some(n), true) = (&self.kit.body, &st.ammo, weapon.is_some()) {
-            let tpx = (d * 0.35).round();
-            let at = (wx - f.width(tpx, n) - d * 0.15, wy + (d - tpx) / 2.0);
-            let o = (1.0, 0.0, 0.0);
-            let shadow = [0.0, 0.0, 0.0, 0.8];
-            f.sprites(out, o, (at.0 + 1.0, at.1 + 1.0), tpx, shadow, n);
-            f.sprites(out, o, at, tpx, LIGHT, n);
+        if let (Some(f), Some(n)) = (&self.kit.body, &st.ammo) {
+            let px = (sh * 0.035).round();
+            Self::outlined(f, out, (sw - f.width(px, n) - 12.0, 12.0), px, LIGHT, n);
         }
         // The compass: its face seen from above the hunter, the needle
         // where he looks.
-        let (cx, cy) = (sh * 0.331, sh * 0.12);
-        let (rw, rh) = (sh * 0.22, sh * 0.13);
+        let (rw, rh) = (sh * 0.16, sh * 0.095);
+        let (cx, cy) = (12.0 + rw / 2.0, 12.0 + sh * 0.03 + rh / 2.0);
         if let Some((id, _, _)) = Self::size(hud, self.compass) {
             out.push(Sprite {
                 uv: [0.0, 0.0, 1.0, 0.86],
@@ -272,7 +223,7 @@ impl HuntKit {
                 ..Sprite::new(id, cx - rw / 2.0, cy - rh / 2.0, 1.0)
             });
             let (s, c) = st.heading.sin_cos();
-            let dot = (sh * 0.011).max(2.0);
+            let dot = (sh * 0.008).max(2.0);
             for (grow, color) in [(1.6, [0.05, 0.1, 0.2, 1.0]), (1.0, [0.2, 0.85, 1.0, 1.0])] {
                 for i in 0..10 {
                     let t = i as f32 / 9.0 * 0.42;
@@ -283,16 +234,9 @@ impl HuntKit {
             }
         }
         if let Some(f) = &self.kit.heading {
-            let px = (sh * 0.035).round();
+            let px = (sh * 0.025).round();
             let t = "AREA MAP";
-            Self::outlined(
-                f,
-                out,
-                (cx - f.width(px, t) / 2.0, sh * 0.008),
-                px,
-                YELLOW,
-                t,
-            );
+            Self::outlined(f, out, (cx - f.width(px, t) / 2.0, 12.0), px, YELLOW, t);
             // The menu tab (Esc).
             let (tw, th) = (sh * 0.15, sh * 0.046);
             out.extend(hud.rect((sw - tw) / 2.0, 0.0, tw, th, [0.12, 0.14, 0.17, 0.6]));
@@ -647,15 +591,11 @@ impl HuntKit {
     }
 }
 
-/// What the round buttons show.
+/// Desktop hunt status.
 #[derive(Clone)]
 pub struct Buttons {
-    pub weapon: Option<usize>,
-    pub weapon_out: bool,
-    /// Rounds left, beside the weapon (the phone has no bullet pictures).
+    /// Rounds left (the APK has no bullet pictures).
     pub ammo: Option<String>,
-    pub binoculars: bool,
-    pub calls: bool,
     /// Where the hunter looks (radians, 0 north), for the compass.
     pub heading: f32,
 }

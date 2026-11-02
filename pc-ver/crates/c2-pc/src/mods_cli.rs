@@ -197,7 +197,7 @@ fn verify(
     mods_dirs: &[PathBuf],
 ) -> Result<Verified> {
     use c2_mods::recipe::{check_apk, check_base, load_base, locate};
-    let v = vanilla(bases)?;
+    let v = c2_mods::pack::vanilla_files(bases)?;
     println!(
         "recipe {} — {} {}",
         r.recipe.id, r.recipe.name, r.recipe.version
@@ -313,6 +313,14 @@ pub fn build_recipe(
 ) -> Result<()> {
     let r = c2_mods::recipe::Recipe::load(recipe_path)?;
     let found = verify(recipe_path, &r, bases, mods_dirs)?;
+    if let Some(base) = c2_mods::recipe::load_base(recipe_path, &r) {
+        anyhow::ensure!(
+            bases.first().and_then(|g| c2_mods::recipe::check_apk(&base, g)) != Some(false),
+            "Recipe '{}' needs its own converted APK base. Select or build that APK on the recipe page; the current game is not the APK recorded by this recipe.",
+            r.recipe.id
+        );
+    }
+
     // The recipe's own overlays, when it lists them, over the given game.
     let bases: Vec<PathBuf> = if r.overlays.is_empty() {
         bases.to_vec()

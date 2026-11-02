@@ -294,6 +294,7 @@ impl HuntView {
             kit_map.as_deref(),
         );
         weapons.hide_scoped = kit.is_some();
+        weapons.hide_binoculars = kit.as_ref().is_some_and(HuntKit::has_binocular_mask);
         let exit_img = menu_pic(&mut hud, gpu, &huntdat, "EXIT.TGA");
         let plaque_img = menu_pic(
             &mut hud,
@@ -497,6 +498,28 @@ impl HuntView {
             herd.place(area, (player.x, player.z), &mut rng, opts);
         }
         tracing::info!("placed {} characters", herd.chars.len());
+        if !trophy {
+            for (i, sp) in herd.species.iter().enumerate() {
+                let slot = sp
+                    .tuning
+                    .menu_slot
+                    .or_else(|| {
+                        sp.mee
+                            .as_ref()
+                            .filter(|m| (10..30).contains(&m.ai))
+                            .map(|m| m.call_no)
+                    })
+                    .unwrap_or(sp.info.ai - 10);
+                if slot < 0 || !setup.targets.has(10 + slot as usize) {
+                    continue;
+                }
+                let count = herd.chars.iter().filter(|c| c.ctype == i).count();
+                tracing::info!(species = %sp.info.name, model = %sp.info.file, slot, count, "hunt target placement");
+                if count == 0 {
+                    tracing::warn!(species = %sp.info.name, "selected target has no placed animals on this map");
+                }
+            }
+        }
         let carried = if trophy {
             c2_formats::bits::Bits::NONE
         } else {
@@ -2252,8 +2275,6 @@ impl Scene for HuntView {
             let quiet = h.paused || h.show_exit() || h.map_mode || self.picker.is_some();
             if h.death.is_none() && !h.opts.trophy && !quiet {
                 let st = Buttons {
-                    weapon: Some(h.weapons.current).filter(|&i| h.weapons.carried(i)),
-                    weapon_out: h.weapons.pose().is_some() && !h.bin_mode,
                     ammo: h.weapons.pose().map(|_| {
                         let w = &h.weapons;
                         let cur = w.current;
@@ -2268,8 +2289,6 @@ impl Scene for HuntView {
                             }
                         }
                     }),
-                    binoculars: h.bin_mode,
-                    calls: h.call_icon_time > 0,
                     heading: h.player.alpha,
                 };
                 k.buttons(&self.hud, screen, st, &mut sprites);

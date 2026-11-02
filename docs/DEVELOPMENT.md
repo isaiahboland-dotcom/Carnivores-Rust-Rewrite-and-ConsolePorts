@@ -322,3 +322,9 @@ number:
 - Small, reviewable commits; one milestone sub-task per commit where practical.
 - Ask before: adding heavy dependencies, changing the crate layout, or deviating from original gameplay behavior.
 - When unsure what the original does, read `source/c2-source/` and cite file/function in a code comment.
+
+### Local investigation artifacts
+
+Keep screenshots, temporary probes, test packs and investigation logs under
+`pc-ver/(testing)/` (gitignored). Cargo compilation output remains in `target/`.
+Synthetic regression tests belong in their crate's test suite; never commit game assets.
