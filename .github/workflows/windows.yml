@@ -1,0 +1,35 @@
+name: Windows
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: pc-ver
+    env:
+      CARGO_TERM_COLOR: always
+      # Portable engine builds do not require a separate MSVC runtime install.
+      RUSTFLAGS: -C target-feature=+crt-static
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: pc-ver
+      - run: cargo test --locked --target x86_64-pc-windows-msvc -p c2-launcher -p c2-pc -p c2-mods -p c2-vfs
+      - run: cargo build --locked --release --target x86_64-pc-windows-msvc -p c2-pc -p c2-launcher
+      - uses: actions/upload-artifact@v7
+        with:
+          name: c2rs-windows-x64
+          if-no-files-found: error
+          path: |
+            pc-ver/target/x86_64-pc-windows-msvc/release/c2-pc.exe
+            pc-ver/target/x86_64-pc-windows-msvc/release/c2-launcher.exe
+            pc-ver/target/x86_64-pc-windows-msvc/release/c2-3ds-builder.exe
+            pc-ver/target/x86_64-pc-windows-msvc/release/c2-wiiu-builder.exe
+            docs/WINDOWS.md
+            LICENSE

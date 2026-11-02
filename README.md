@@ -39,7 +39,7 @@ the 3DS's PICA200 GPU and the Wii U's PowerPC CPU.
 
 | Platform | State | Notes |
 |---|---|---|
-| **PC** (Linux; Windows untested) | Playable, feature-rich | The full original game, plus add-ons, Modder's Edition games, standalone games, Carnivores: Ice Age, animals from the mobile games, survival mode and a balance editor. Bugs mostly show up when a lot of mods and add-ons are used at once. Working on smaller bugs and optional quality of life features |
+| **PC** (Linux; Windows experimental) | Playable, feature-rich | The full original game, plus add-ons, Modder's Edition games, standalone games, Carnivores: Ice Age, animals from the mobile games, survival mode and a balance editor. Bugs mostly show up when a lot of mods and add-ons are used at once. Working on smaller bugs and optional quality of life features |
 | **Nintendo 3DS** (homebrew) | Nearly complete | Full hunts, touch menus, bottom-screen map, sound, saves, trophy room, add-on and standalone packs, `.cia` installs. Tested on real 3DS and 2DS hardware. Optional settings help with the handheld controls (see [below](#3ds-settings-for-handheld-play)). Like PC, bugs mostly come from packing in too many add-ons or mods. |
 | **Wii U** (homebrew) | Demo, being optimized | Stock Carnivores 2 only: an HD menu (TV and GamePad) with dawn/day/night and all the original gear and options, all five maps, the nine animals, six weapons, calls, radar, GamePad map. Runs on a real Wii U under Aroma (`.wuhb`) and exits to the HOME menu cleanly. A steady 30 FPS in open areas; 20-25 FPS in thick jungle, where the GPU is the limit ([results](wiiu-ver/perf-probe/hardware-logs/2026-10-30-menu-partial-results.md)). New and not yet tested on the console: survival, the trophy room, saved trophies and score (the PC's save format), the PC's kill notice and trophy plaque, the hunter record, and an exit prompt and pause. New: any game as its own Wii U Menu entry: add-ons, the Modder's Edition and standalone games such as Triassic and Mandibles. |
 | **PC VR** (OpenXR) | Early first draft | Menus and the hunt setup on a panel, walking the areas, animals that hunt you. No weapons yet. Tested with a PS VR2 on Linux through Monado. |
@@ -87,7 +87,7 @@ Three builds of the same app:
 
 | | |
 |---|---|
-| `c2-launcher` | play on PC and build Wii U installs, plus an optional 3DS section (it asks the first time) |
+| `c2-launcher` | play on PC and package Windows instances, with optional 3DS and Wii U sections |
 | `c2-3ds-builder` | 3DS installs only (`cargo run --release -p c2-launcher --bin c2-3ds-builder`) |
 | `c2-wiiu-builder` | Wii U installs only (`cargo run --release -p c2-launcher --bin c2-wiiu-builder`) |
 
@@ -99,7 +99,7 @@ The tabs:
 - **Add-ons**: add mod folders or archives (`.zip`, `.rar`, `.7z`), switch each on or off, and change their
   order. **Standalone games** (whole games made from Carnivores 2) go here too, and are combined beside
   the base game. You can also import animals from Ice Age or from the mobile games' APKs.
-- **Instances**: save a setup as a recipe, then choose **Play**, **Build 3DS…** or **Build Wii U…**
+- **Instances**: save a setup as a recipe, then choose **Play**, **Build Windows…**, **Build 3DS…** or **Build Wii U…**
   beside it. Missing downloads are listed before opening the builder. Choose an output folder and press
   **BUILD**; output, packaging and artwork choices are remembered separately for each instance.
   Combined recipes are merged again before cooking, so rebuilding uses the current conversion tools.
@@ -109,6 +109,10 @@ The tabs:
   use. Your changes are kept as a balance file over the game, never written into it.
 - **Play**: **PLAY** builds the combined game (cached until something changes) and starts it.
   **PLAY IN VR** starts the same game in a headset.
+- **Windows (experimental)**: package a saved instance with a Windows `c2-pc.exe` and copied game data.
+  Native Windows builds and gameplay have not yet been verified. Graphics, audio, input and
+  packaging may have platform-specific issues; successful Linux tests do not establish Windows compatibility.
+  See [Windows builds and packaging](docs/WINDOWS.md) for binaries, setup and testing status.
 - **3DS**: choose Old or New 3DS, an install name and your SD card (or a folder). **Build for 3DS** cooks
   the packs (one for the original game or the base with its add-ons, and one per standalone game that's
   on) and copies the app into `3ds/<name>/`. It can also make a `.cia` with your own home-menu icon and
@@ -119,7 +123,7 @@ The tabs:
   the game's menu picture (`wuhbtool` from devkitPro `wut-tools` is required). An `.rpx` for the Homebrew
   Launcher is also possible, but only as the one default install (`wiiu/apps/carnivores-probe/`).
 - **Settings**: the tools folder (where `c2-pc`, `c2-cook`, the 3DS and Wii U apps, `wuhbtool`, `makerom` and `bannertool`
-  are found), showing the 3DS section, and engine options.
+  are found), independently showing or hiding the 3DS and Wii U sections, and engine options.
 
 The launcher runs the other programs for you. It finds them beside itself, in the tools folder, or in this
 source tree's build folders. So for the 3DS and Wii U tabs, build those apps first (below).

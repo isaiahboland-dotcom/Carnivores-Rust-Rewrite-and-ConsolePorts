@@ -2,6 +2,23 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-02 — Windows instance packaging and optional console UI
+
+The full launcher packages saved instances for Windows using the current host merger
+and a supplied x64 PE executable, matching the console builders' prebuilt-binary
+workflow. Windows CI builds/tests native MSVC binaries and uploads asset-free engine
+artifacts, with a static C runtime. Native gameplay remains unverified until tested
+on Windows; Linux checks are not a claim of Windows runtime support.
+
+Exports copy merged files (including dereferencing file symlinks), runtime overrides
+and menu art into a staged portable directory. Only marked generated packages can
+be replaced, after copying succeeds. No-argument executable startup uses its adjacent
+portable config; explicit CLI arguments preserve the caller's working directory.
+Per-instance output preferences remain local, outside shareable recipes.
+
+3DS and Wii U visibility settings independently gate tabs, instance build actions
+and tool diagnostics in the full launcher. Dedicated builders retain their controls.
+
 ## 2026-11-02 — Runtime borrowing and hunter merge review
 
 Weapon fire eligibility borrows dialect settings instead of cloning them on each

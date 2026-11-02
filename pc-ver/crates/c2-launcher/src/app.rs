@@ -17,6 +17,7 @@ enum Tab {
     AddOns,
     Balance,
     Play,
+    Windows,
     ThreeDs,
     WiiU,
     Settings,
@@ -332,7 +333,7 @@ impl Launcher {
     }
 
     fn shows_wiiu(&self) -> bool {
-        matches!(self.mode, Mode::Full | Mode::WiiU)
+        self.mode == Mode::WiiU || (self.mode == Mode::Full && self.cfg.show_wiiu != Some(false))
     }
 
     fn save(&mut self) {
@@ -2283,6 +2284,94 @@ impl Launcher {
         changed
     }
 
+    fn windows_tab(&mut self, ui: &mut egui::Ui) {
+        heading(ui, "Windows package");
+        help(ui, "Build a saved instance as a portable folder with c2-pc.exe and its game data. Select Build Windows on Instances first. Supply the Windows release c2-pc.exe in the tools folder (Settings); on Linux, c2-pc is also needed to merge the instance.");
+        ui.label(self.cfg.windows_out.as_ref().map_or_else(
+            || "Output folder: not set".into(),
+            |p| p.display().to_string(),
+        ));
+        if ui.button("Choose output folder…").clicked() {
+            if let Some(p) = rfd::FileDialog::new().pick_folder() {
+                self.cfg.windows_out = Some(p);
+                self.save();
+            }
+        }
+        let ready =
+            !self.busy() && self.active_recipe().is_some() && self.cfg.windows_out.is_some();
+        if ui
+            .add_enabled(ready, egui::Button::new("Build Windows package"))
+            .clicked()
+        {
+            self.build_windows();
+        }
+        help(ui, "The output contains a folder named after the instance. Rebuilding replaces that generated folder, so keep personal files elsewhere. Copy the entire folder to Windows and double-click c2-pc.exe. Game data is supplied by you, separately from the engine download.");
+    }
+
+    fn build_windows(&mut self) {
+        let result = (|| -> Result<Vec<Step>, String> {
+            let r = self
+                .active_recipe()
+                .ok_or("Choose a saved instance first.")?;
+            let pc = find_tool("c2-pc", self.cfg.tools.as_deref())
+                .ok_or("c2-pc not found in the tools folder.")?;
+            let exe = find_tool("c2-pc.exe", self.cfg.tools.as_deref()).ok_or("Windows c2-pc.exe not found. Download a Windows engine build or build it on Windows, then set the tools folder in Settings.")?;
+            let games = self.recipe_game_with_overlays(r);
+            let base = games.first().ok_or("Set the instance's base game first.")?;
+            let work = crate::config::data_dir()
+                .join("windows")
+                .join(install_name(&r.id()));
+            let mut args = vec![
+                "recipe".into(),
+                "build".into(),
+                r.path.display().to_string(),
+                "--base".into(),
+                base.display().to_string(),
+            ];
+            for overlay in games.iter().skip(1) {
+                args.extend(["--overlay".into(), overlay.display().to_string()]);
+            }
+            args.extend(r.mods_args());
+            args.extend(["--out".into(), work.display().to_string()]);
+            let out = self
+                .cfg
+                .windows_out
+                .as_ref()
+                .ok_or("Choose an output folder.")?
+                .join(install_name(&r.id()));
+            let mut launch = self.balance_args();
+            launch.extend(self.survival_args());
+            match self.cfg.menu_style {
+                MenuStyle::Mobile => launch.push("--mobile-menu".into()),
+                MenuStyle::Original | MenuStyle::IceAge => {
+                    let art = if self.cfg.menu_style == MenuStyle::IceAge {
+                        &self.cfg.ice_age
+                    } else {
+                        &self.cfg.base
+                    };
+                    if let Some(p) = art {
+                        launch.extend(["--menu-art".into(), p.display().to_string()]);
+                    }
+                }
+                MenuStyle::Mod => {}
+            }
+            crate::windows::validate_exe(&exe)?;
+            Ok(vec![
+                Step::Run { program: pc, args },
+                Step::Task(Box::new(move |job| {
+                    crate::windows::package(&work, &exe, &out, launch)
+                        .map_err(|e| e.to_string())?;
+                    job.log(format!("Windows package ready: {}", out.display()));
+                    Ok(())
+                })),
+            ])
+        })();
+        match result {
+            Ok(steps) => self.job = Some(Job::start("Building Windows package", steps)),
+            Err(e) => self.note = Some((e, RED)),
+        }
+    }
+
     fn settings_tab(&mut self, ui: &mut egui::Ui) {
         heading(ui, "Settings");
         panel(ui, |ui| {
@@ -2368,6 +2457,12 @@ impl Launcher {
                 "bannertool",
                 crate::wiiu::APP,
             ] {
+                if (["c2-3ds.3dsx", "c2-3ds.elf", "makerom", "bannertool"].contains(&tool)
+                    && !self.shows_3ds())
+                    || (tool == crate::wiiu::APP && !self.shows_wiiu())
+                {
+                    continue;
+                }
                 let found = find_tool(tool, self.cfg.tools.as_deref());
                 let (text, col) = match &found {
                     Some(p) => (format!("{tool}: {}", p.display()), TEXT),
@@ -2381,6 +2476,11 @@ impl Launcher {
         if self.mode == Mode::Full {
             ui.add_space(8.0);
             panel(ui, |ui| {
+                let mut wiiu = self.cfg.show_wiiu != Some(false);
+                if ui.checkbox(&mut wiiu, "Show the Wii U section").changed() {
+                    self.cfg.show_wiiu = Some(wiiu);
+                    self.save();
+                }
                 let mut on = self.cfg.show_3ds == Some(true);
                 if ui.checkbox(&mut on, "Show the 3DS section").changed() {
                     self.cfg.show_3ds = Some(on);
@@ -2561,6 +2661,7 @@ impl eframe::App for Launcher {
             self.use_recipe(destination == crate::instances::Destination::Play);
             match destination {
                 crate::instances::Destination::Play => {}
+                crate::instances::Destination::Windows => self.tab = Tab::Windows,
                 crate::instances::Destination::ThreeDs => {
                     self.cfg.show_3ds = Some(true);
                     self.tab = Tab::ThreeDs;
@@ -2595,6 +2696,7 @@ impl eframe::App for Launcher {
                     }
                     if self.mode == Mode::Full {
                         tabs.push((Tab::Play, "Play"));
+                        tabs.push((Tab::Windows, "Windows"));
                     }
                     if self.shows_3ds() {
                         tabs.push((Tab::ThreeDs, "3DS"));
@@ -2637,6 +2739,7 @@ impl eframe::App for Launcher {
                 Tab::Play => self.play_tab(ui),
                 Tab::ThreeDs => self.three_ds_tab(ui),
                 Tab::WiiU => self.wiiu_tab(ui),
+                Tab::Windows => self.windows_tab(ui),
                 Tab::Settings => self.settings_tab(ui),
             });
         });

@@ -291,6 +291,9 @@ pub struct Config {
     pub standalones: Vec<AddOn>,
     /// Full launcher: the 3DS section shown (asked on first launch).
     pub show_3ds: Option<bool>,
+    /// None preserves the previously visible Wii U section.
+    pub show_wiiu: Option<bool>,
+    pub windows_out: Option<PathBuf>,
     pub three_ds: ThreeDs,
     pub wiiu: WiiU,
     /// Where `c2-pc`, `c2-cook` and `c2-3ds.3dsx` are, if not beside the
@@ -313,7 +316,7 @@ pub struct Config {
     /// without being set up again.
     pub remembered: Vec<RecipeUse>,
     /// Local output paths and packaging choices, separate from shareable recipes.
-    pub instance_builds: BTreeMap<PathBuf, ConsoleBuilds>,
+    pub instance_builds: BTreeMap<PathBuf, InstanceBuilds>,
     /// Where an instance's downloads are looked for, besides the ones it
     /// was last given; empty: `source/`, `source/mods`, `addons/` and
     /// `mods/` beside the recipes folder, those that exist.
@@ -326,10 +329,11 @@ pub struct Config {
     pub tuning: Tuning,
 }
 
-/// Console output choices last used for one saved instance.
+/// Platform output choices last used for one saved instance.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(default)]
-pub struct ConsoleBuilds {
+pub struct InstanceBuilds {
+    pub windows_out: Option<PathBuf>,
     pub three_ds: ThreeDs,
     pub wiiu: WiiU,
 }
@@ -476,7 +480,8 @@ impl Config {
         if let Some(r) = self.recipe.as_ref().filter(|r| r.on) {
             self.instance_builds.insert(
                 r.path.clone(),
-                ConsoleBuilds {
+                InstanceBuilds {
+                    windows_out: self.windows_out.clone(),
                     three_ds: self.three_ds.clone(),
                     wiiu: self.wiiu.clone(),
                 },
@@ -491,7 +496,8 @@ impl Config {
             .instance_builds
             .get(path)
             .cloned()
-            .unwrap_or_else(|| ConsoleBuilds {
+            .unwrap_or_else(|| InstanceBuilds {
+                windows_out: self.windows_out.clone(),
                 three_ds: ThreeDs {
                     name: install_name(id),
                     out: self.three_ds.out.clone(),
@@ -512,6 +518,7 @@ impl Config {
                     ..Default::default()
                 },
             });
+        self.windows_out = saved.windows_out;
         self.three_ds = saved.three_ds;
         self.wiiu = saved.wiiu;
     }
@@ -652,6 +659,7 @@ mod tests {
         c.three_ds.out = Some("first sd".into());
         c.three_ds.cia = true;
         c.wiiu.out = Some("wii u sd".into());
+        c.windows_out = Some("windows output".into());
         c.remember_builds();
         let expected = c.instance_builds[&first].clone();
         c.restore_builds(&second, "second");
@@ -667,6 +675,7 @@ mod tests {
         back.restore_builds(&first, "First Pack");
         assert_eq!(back.three_ds, expected.three_ds);
         assert_eq!(back.wiiu, expected.wiiu);
+        assert_eq!(back.windows_out, expected.windows_out);
         back.restore_builds(&second, "second");
         assert_eq!(back.three_ds.out, Some("second sd".into()));
         let legacy: Config = toml::from_str("show_wiiu = false").expect("legacy config");
@@ -740,6 +749,7 @@ mod tests {
                 enabled: false,
             }],
             show_3ds: Some(true),
+            show_wiiu: Some(false),
             ..Default::default()
         };
         let t = toml::to_string_pretty(&c).unwrap_or_default();

@@ -17,6 +17,7 @@ mod model_view;
 mod mods_cli;
 mod pad_cursor;
 mod png;
+mod portable;
 mod render;
 mod save;
 mod scene;
@@ -200,7 +201,12 @@ fn main() -> Result<()> {
                 .unwrap_or_else(|_| "info,wgpu_core=warn,wgpu_hal=warn,naga=warn".into()),
         )
         .init();
-    let mut args = std::env::args().skip(1);
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    let (arguments, root) = portable::arguments(arguments, &std::env::current_exe()?)?;
+    if let Some(root) = root {
+        std::env::set_current_dir(root)?;
+    }
+    let mut args = arguments.into_iter();
     let cmd = args.next().unwrap_or_default();
     let o = Opts::parse(args);
     if cmd == "balance" {

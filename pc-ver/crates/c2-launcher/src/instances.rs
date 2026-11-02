@@ -29,15 +29,26 @@ pub struct Item {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Destination {
     Play,
+    Windows,
     ThreeDs,
     WiiU,
 }
 
 impl Destination {
+    fn visible(self, mode: crate::Mode, cfg: &Config) -> bool {
+        mode != crate::Mode::Full
+            || match self {
+                Self::ThreeDs => cfg.show_3ds == Some(true),
+                Self::WiiU => cfg.show_wiiu != Some(false),
+                _ => true,
+            }
+    }
+
     pub fn offered(mode: crate::Mode) -> &'static [(Self, &'static str)] {
         match mode {
             crate::Mode::Full => &[
                 (Self::Play, "Play"),
+                (Self::Windows, "Build Windows…"),
                 (Self::ThreeDs, "Build 3DS…"),
                 (Self::WiiU, "Build Wii U…"),
             ],
@@ -170,6 +181,9 @@ impl List {
                         .on_hover_text("Its folders were given before: it plays straight away.");
                         ui.horizontal(|ui| {
                             for &(destination, label) in Destination::offered(mode) {
+                                if !destination.visible(mode, cfg) {
+                                    continue;
+                                }
                                 if ui
                                     .add_enabled(!busy, egui::Button::new(label).fill(GREEN))
                                     .clicked()
@@ -336,6 +350,23 @@ pub fn id_from(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hiding_consoles_keeps_pc_actions_and_dedicated_builders() {
+        let cfg = Config {
+            show_3ds: Some(false),
+            show_wiiu: Some(false),
+            ..Default::default()
+        };
+        let offered: Vec<_> = Destination::offered(crate::Mode::Full)
+            .iter()
+            .filter(|(d, _)| d.visible(crate::Mode::Full, &cfg))
+            .map(|(d, _)| *d)
+            .collect();
+        assert_eq!(offered, [Destination::Play, Destination::Windows]);
+        assert!(Destination::ThreeDs.visible(crate::Mode::ThreeDs, &cfg));
+        assert!(Destination::WiiU.visible(crate::Mode::WiiU, &cfg));
+    }
 
     #[test]
     fn ids_from_file_names() {
