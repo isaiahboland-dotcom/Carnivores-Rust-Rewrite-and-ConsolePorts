@@ -46,6 +46,28 @@ fn sample(data: &[i16], f0: usize, frames_vc: (usize, usize), k2: f32, v: usize)
 /// Model-space vertices (before the `pi/2 - alpha` turn and translation).
 /// `anims` maps phases to the model's animations (`Species::anims`).
 pub fn pose(c: &Character, car: &Car, anims: &[usize]) -> Option<Vec<[f32; 3]>> {
+    Some(vertices(c, car, anims)?.collect())
+}
+
+/// Writes a character pose into reusable storage, retaining its capacity.
+/// Invalid clips return `None` and leave `out` empty. The returned slice
+/// borrows `out`, so it must be consumed before the next pose overwrites it.
+pub fn pose_into<'a>(
+    c: &Character,
+    car: &Car,
+    anims: &[usize],
+    out: &'a mut Vec<[f32; 3]>,
+) -> Option<&'a [[f32; 3]]> {
+    out.clear();
+    out.extend(vertices(c, car, anims)?);
+    Some(out)
+}
+
+fn vertices<'a>(
+    c: &Character,
+    car: &'a Car,
+    anims: &[usize],
+) -> Option<impl ExactSizeIterator<Item = [f32; 3]> + 'a> {
     let vc = car.mesh.vertices.len();
     let (phase, prev_phase) = (anim(anims, c.phase), anim(anims, c.prev_phase));
     let (data, f0, k2) = frame(car, phase, c.ftime)?;
@@ -60,38 +82,35 @@ pub fn pose(c: &Character, car: &Car, anims: &[usize]) -> Option<Vec<[f32; 3]>> 
     let pmk2 = 1.0 - pmk1;
 
     let scale = c.scale;
+    let bend = c.bend;
     let (sb, cb) = (c.beta.sin() * scale, c.beta.cos() * scale);
     let (sg, cg) = c.gamma.sin_cos();
-    Some(
-        (0..vc)
-            .map(|v| {
-                let [mut x, mut y, mut z] = sample(data, f0, (frames, vc), k2, v);
-                if let Some(((pd, pf0, pk2), pframes)) = prev {
-                    let [px, py, pz] = sample(pd, pf0, (pframes, vc), pk2, v);
-                    x = x * pmk1 + px * pmk2;
-                    y = y * pmk1 + py * pmk2;
-                    z = z * pmk1 + pz * pmk2;
-                }
-                // Roll (gamma) around the body axis.
-                let mut zz = z;
-                let mut xx = cg * x - sg * y;
-                let yy = cg * y + sg * x;
-                // Bend: the head end (z > 0) and tail end bend in proportion.
-                let fi = if z > 0.0 {
-                    (z / 240.0).min(1.0)
-                } else {
-                    (z / 380.0).max(-1.0)
-                } * c.bend;
-                let (bs, bc) = fi.sin_cos();
-                let bx = bc * xx - bs * zz;
-                let bz = bc * zz + bs * xx;
-                zz = bz;
-                xx = bx;
-                // Pitch (beta) and scale.
-                [xx * scale, cb * yy - sb * zz, cb * zz + sb * yy]
-            })
-            .collect(),
-    )
+    Some((0..vc).map(move |v| {
+        let [mut x, mut y, mut z] = sample(data, f0, (frames, vc), k2, v);
+        if let Some(((pd, pf0, pk2), pframes)) = prev {
+            let [px, py, pz] = sample(pd, pf0, (pframes, vc), pk2, v);
+            x = x * pmk1 + px * pmk2;
+            y = y * pmk1 + py * pmk2;
+            z = z * pmk1 + pz * pmk2;
+        }
+        // Roll (gamma) around the body axis.
+        let mut zz = z;
+        let mut xx = cg * x - sg * y;
+        let yy = cg * y + sg * x;
+        // Bend: the head end (z > 0) and tail end bend in proportion.
+        let fi = if z > 0.0 {
+            (z / 240.0).min(1.0)
+        } else {
+            (z / 380.0).max(-1.0)
+        } * bend;
+        let (bs, bc) = fi.sin_cos();
+        let bx = bc * xx - bs * zz;
+        let bz = bc * zz + bs * xx;
+        zz = bz;
+        xx = bx;
+        // Pitch (beta) and scale.
+        [xx * scale, cb * yy - sb * zz, cb * zz + sb * yy]
+    }))
 }
 
 /// Rotation for the renderer, in quarter turns (`-alpha + pi/2`).

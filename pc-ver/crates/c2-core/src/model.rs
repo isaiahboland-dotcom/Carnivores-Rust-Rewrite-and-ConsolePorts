@@ -226,6 +226,24 @@ pub fn pose_car(a: &Animation, vcount: usize, time_ms: u32) -> Option<Vec<[f32; 
     pose(&a.data, a.frames, vcount, car_anim_duration_ms(a), time_ms)
 }
 
+/// Interpolates a `.CAR` clip into reusable storage, retaining its capacity.
+/// Invalid clips return `None` and leave `out` empty.
+pub fn pose_car_into<'a>(
+    a: &Animation,
+    vcount: usize,
+    time_ms: u32,
+    out: &'a mut Vec<[f32; 3]>,
+) -> Option<&'a [[f32; 3]]> {
+    pose_into(
+        &a.data,
+        a.frames,
+        vcount,
+        car_anim_duration_ms(a),
+        time_ms,
+        out,
+    )
+}
+
 /// `CreateMorphedObject`: RSC object animations store `frames + 1` keyframes.
 pub fn pose_object(a: &ObjectAnimation, time_ms: u32) -> Option<Vec<[f32; 3]>> {
     let frames = a.frames_stored + 1;
@@ -244,6 +262,20 @@ fn pose(
     duration: u32,
     time_ms: u32,
 ) -> Option<Vec<[f32; 3]>> {
+    let mut out = Vec::new();
+    pose_into(data, frames, vcount, duration, time_ms, &mut out)?;
+    Some(out)
+}
+
+fn pose_into<'a>(
+    data: &[i16],
+    frames: usize,
+    vcount: usize,
+    duration: u32,
+    time_ms: u32,
+    out: &'a mut Vec<[f32; 3]>,
+) -> Option<&'a [[f32; 3]]> {
+    out.clear();
     if frames == 0 || vcount == 0 || data.len() < frames * vcount * 3 {
         return None;
     }
@@ -264,15 +296,12 @@ fn pose(
     let (k1, k2) = ((1.0 - k2) / 8.0, k2 / 8.0);
     let a = &data[f0 * vcount * 3..];
     let b = &data[f1 * vcount * 3..];
-    Some(
-        (0..vcount)
-            .map(|v| {
-                let i = v * 3;
-                let m = |k: usize| f32::from(a[i + k]) * k1 + f32::from(b[i + k]) * k2;
-                [m(0), m(1), -m(2)]
-            })
-            .collect(),
-    )
+    out.extend((0..vcount).map(|v| {
+        let i = v * 3;
+        let m = |k: usize| f32::from(a[i + k]) * k1 + f32::from(b[i + k]) * k2;
+        [m(0), m(1), -m(2)]
+    }));
+    Some(out)
 }
 
 fn sqrt(value: f32) -> f32 {

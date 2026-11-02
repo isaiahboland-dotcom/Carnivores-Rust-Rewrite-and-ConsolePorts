@@ -311,7 +311,7 @@ impl GpuModel {
                 uvs.push(f.uv[k]);
             }
         }
-        let verts = Self::vertices(&order, &uvs, &vlights, &m.positions);
+        let verts: Vec<_> = Self::vertices(&order, &uvs, &vlights, &m.positions).collect();
         let empty = [0u8; std::mem::size_of::<ModelVertex>()];
         let vbuf = gpu
             .device
@@ -334,30 +334,54 @@ impl GpuModel {
         }
     }
 
-    fn vertices(
+    fn vertices<'a>(
+        order: &'a [u32],
+        uvs: &'a [[f32; 2]],
+        vlights: &'a [[f32; 4]],
+        positions: &'a [[f32; 3]],
+    ) -> impl Iterator<Item = ModelVertex> + 'a {
+        order.iter().zip(uvs).map(move |(&i, &uv)| ModelVertex {
+            pos: positions.get(i as usize).copied().unwrap_or_default(),
+            uv,
+            vlight: vlights.get(i as usize).copied().unwrap_or_default(),
+        })
+    }
+
+    fn write_vertices(
         order: &[u32],
         uvs: &[[f32; 2]],
         vlights: &[[f32; 4]],
         positions: &[[f32; 3]],
-    ) -> Vec<ModelVertex> {
-        order
-            .iter()
-            .zip(uvs)
-            .map(|(&i, &uv)| ModelVertex {
-                pos: positions.get(i as usize).copied().unwrap_or_default(),
-                uv,
-                vlight: vlights.get(i as usize).copied().unwrap_or_default(),
-            })
-            .collect()
+        mut dst: wgpu::WriteOnly<'_, [u8]>,
+    ) {
+        let size = std::mem::size_of::<ModelVertex>();
+        for (i, vertex) in Self::vertices(order, uvs, vlights, positions).enumerate() {
+            // Staging memory need not have ModelVertex's alignment. Copy
+            // bytes rather than casting the destination to a vertex slice.
+            dst.slice(i * size..(i + 1) * size)
+                .copy_from_slice(bytemuck::bytes_of(&vertex));
+        }
     }
 
     /// Uploads a new pose (same vertex count as the rest pose).
     pub fn set_pose(&self, gpu: &Gpu, positions: &[[f32; 3]]) {
-        let v = Self::vertices(&self.order, &self.uvs, &self.vlights, positions);
-        if !v.is_empty() {
-            gpu.queue
-                .write_buffer(&self.vbuf, 0, bytemuck::cast_slice(&v));
-        }
+        let Some(size) =
+            wgpu::BufferSize::new((self.order.len() * std::mem::size_of::<ModelVertex>()) as u64)
+        else {
+            return;
+        };
+        let Some(mut dst) = gpu.queue.write_buffer_with(&self.vbuf, 0, size) else {
+            return;
+        };
+        // Expand into upload staging directly, avoiding a temporary vertex
+        // vector and its copy into wgpu's staging allocation.
+        Self::write_vertices(
+            &self.order,
+            &self.uvs,
+            &self.vlights,
+            positions,
+            dst.slice(..),
+        );
     }
 }
 
@@ -370,6 +394,107 @@ pub struct ModelRenderer {
     /// CPU staging storage retained between frames, like the GPU buffer.
     instance_data: Vec<Instance>,
     capacity: usize,
+}
+
+#[cfg(test)]
+mod pose_upload_tests {
+    use super::{GpuModel, ModelVertex};
+
+    #[test]
+    #[ignore = "requires an available wgpu adapter"]
+    fn staged_pose_reaches_gpu_with_expected_bytes() -> anyhow::Result<()> {
+        let (gpu, _) = crate::gpu::Gpu::offscreen((1, 1))?;
+        let expected = [
+            ModelVertex {
+                pos: [4.0, 5.0, 6.0],
+                uv: [0.1, 0.2],
+                vlight: [0.0; 4],
+            },
+            ModelVertex {
+                pos: [1.0, 2.0, 3.0],
+                uv: [0.3, 0.4],
+                vlight: [0.0; 4],
+            },
+        ];
+        let size = std::mem::size_of_val(&expected) as u64;
+        let model = GpuModel {
+            vbuf: gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("pose upload test"),
+                size,
+                usage: wgpu::BufferUsages::VERTEX
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            }),
+            order: vec![1, 0],
+            uvs: vec![[0.1, 0.2], [0.3, 0.4]],
+            vlights: vec![],
+            opaque: 2,
+            total: 2,
+        };
+        model.set_pose(&gpu, &[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]);
+        let readback = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("pose readback test"),
+            size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        encoder.copy_buffer_to_buffer(&model.vbuf, 0, &readback, 0, size);
+        gpu.queue.submit([encoder.finish()]);
+        let slice = readback.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        gpu.device.poll(wgpu::PollType::wait_indefinitely())?;
+        rx.recv()??;
+        let bytes = slice
+            .get_mapped_range()
+            .map_err(|e| anyhow::anyhow!("readback: {e:?}"))?;
+        assert_eq!(&*bytes, bytemuck::cast_slice::<_, u8>(&expected));
+        Ok(())
+    }
+
+    #[test]
+    fn staging_bytes_preserve_face_order_uvs_lights_and_missing_vertex_defaults() {
+        let expected = [
+            ModelVertex {
+                pos: [7.0, 8.0, 9.0],
+                uv: [0.1, 0.2],
+                vlight: [3.0; 4],
+            },
+            ModelVertex {
+                pos: [1.0, 2.0, 3.0],
+                uv: [0.3, 0.4],
+                vlight: [1.0; 4],
+            },
+            ModelVertex {
+                pos: [7.0, 8.0, 9.0],
+                uv: [0.5, 0.6],
+                vlight: [3.0; 4],
+            },
+            ModelVertex {
+                pos: [0.0; 3],
+                uv: [0.7, 0.8],
+                vlight: [0.0; 4],
+            },
+        ];
+        let expected_bytes = bytemuck::cast_slice::<_, u8>(&expected);
+        // Offset the destination to exercise byte writes without assuming
+        // staging storage has the alignment of ModelVertex.
+        let mut storage = vec![0xAB; expected_bytes.len() + 2];
+        GpuModel::write_vertices(
+            &[2, 0, 2, 99],
+            &[[0.1, 0.2], [0.3, 0.4], [0.5, 0.6], [0.7, 0.8]],
+            &[[1.0; 4], [2.0; 4], [3.0; 4]],
+            &[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
+            wgpu::WriteOnly::from_mut(&mut storage[1..expected_bytes.len() + 1]),
+        );
+        assert_eq!(&storage[1..expected_bytes.len() + 1], expected_bytes);
+        assert_eq!(storage[0], 0xAB);
+        assert_eq!(storage[storage.len() - 1], 0xAB);
+    }
 }
 
 fn model_buffers() -> [Option<wgpu::VertexBufferLayout<'static>>; 2] {

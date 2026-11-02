@@ -2,6 +2,53 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-02 — Reusable animation poses and direct upload staging
+
+The shared core adds `dino::pose::pose_into` and `model::pose_car_into`.
+Callers own the output vector and receive a slice borrowing it; subsequent
+poses reuse its capacity. Invalid clips clear previous output and return
+`None`. Existing APIs that return owned vectors remain available, including
+for console backends and collision tracing. Character interpolation and
+transforms come from one private iterator used by both output forms.
+
+PC animal rendering keeps one position scratch vector for all successive
+animal and pickup-ship poses, rather than one retained vector per character.
+`GpuModel::set_pose` expands face vertices directly into
+`Queue::write_buffer_with` staging. The write-only view is dropped at the end
+of each upload, so the shared position buffer can immediately be reused.
+The destination receives byte copies through wgpu's `WriteOnly` API; no
+alignment assumption or unsafe cast is needed. This removes our temporary
+expanded-vertex vector and its copy into staging. wgpu still allocates its
+own staging memory; this is not an allocation-free renderer.
+
+Before refactoring, synthetic known-position tests established interpolation,
+phase mapping, morphing, scale and rotation behavior. A temporary differential
+audit matched the committed implementation exactly across 756 combinations
+of phase mappings, previous/current phases, times and morph durations. Retained
+tests cover known positions, front/tail bends, invalid clips, buffer reuse,
+frame wrapping and zero playback rate. Upload tests verify face order, UVs,
+lights and missing-vertex defaults using an unaligned byte destination, and
+an opt-in GPU test successfully reads back the expected bytes:
+
+```sh
+cd pc-ver
+cargo test -p c2-pc staged_pose_reaches_gpu -- --ignored
+cargo run --release -p c2-core --example pose_bench
+```
+
+The synthetic CPU benchmark alternates allocating/reused paths after warmup
+and reports five-run medians for 5,000 poses. One local release run measured
+7.26/7.16 ms at 64 vertices, 58.31/56.54 ms at 512, and 226.54/226.38 ms at
+2,048. Buffer reuse alone is approximately equal to slightly faster in this
+workload. These are CPU-only timings, not GPU upload timings or frame rates.
+PC gameplay and console hardware still need separate validation. Drawing
+batches and per-tick event vectors remain profiling candidates.
+
+Validation: workspace tests, all-targets workspace Clippy with warnings denied,
+formatting, the core's no_std `portable-load` check, and PC/launcher release
+builds pass. The GPU test is ignored by default so CPU-only environments can
+run the suite; it was also run explicitly and passed during this follow-up.
+
 ## 2026-11-02 — Allocation and ownership review
 
 Reviewed the hunt tick, particle updates, PC animal rendering and menu setup,

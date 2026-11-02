@@ -27,6 +27,8 @@ pub struct DinoAssets {
     /// One GPU model per character (each has its own pose), with the
     /// species it was built for (indices shift when characters are removed).
     models: Vec<Option<(usize, GpuModel)>>,
+    /// Shared by successive animal/ship uploads; no pose is retained after upload.
+    pose: Vec<[f32; 3]>,
 }
 
 /// Reads `HUNTDAT/_RES.TXT`.
@@ -124,6 +126,7 @@ impl DinoAssets {
             ship,
             renderer,
             models: Vec::new(),
+            pose: Vec::new(),
         }
     }
 
@@ -184,8 +187,8 @@ impl DinoAssets {
                 continue;
             };
             let anims = herd.species.get(c.ctype).map_or(&[][..], |s| s.anims());
-            if let Some(v) = pose::pose(c, car, anims) {
-                m.set_pose(gpu, &v);
+            if let Some(v) = pose::pose_into(c, car, anims, &mut self.pose) {
+                m.set_pose(gpu, v);
             }
             insts.push([instance(c)]);
             models.push(m);
@@ -194,9 +197,14 @@ impl DinoAssets {
         if let Some(((car, _), m)) = &self.ship {
             if ship.state != -1 && near(ship.pos) {
                 if let Some(v) = car.animations.first().and_then(|a| {
-                    c2_core::model::pose_car(a, car.mesh.vertices.len(), ship.ftime.max(0) as u32)
+                    c2_core::model::pose_car_into(
+                        a,
+                        car.mesh.vertices.len(),
+                        ship.ftime.max(0) as u32,
+                        &mut self.pose,
+                    )
                 }) {
-                    m.set_pose(gpu, &v);
+                    m.set_pose(gpu, v);
                 }
                 insts.push([Instance {
                     offset: ship.pos,
