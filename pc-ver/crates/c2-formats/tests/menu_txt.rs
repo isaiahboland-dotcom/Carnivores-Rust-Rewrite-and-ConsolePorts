@@ -56,3 +56,27 @@ fn a_start_too_small_for_any_hunt_is_the_originals_100() {
     assert_eq!(m(5).start_points(), 100);
     assert_eq!(m(40).start_points(), 40);
 }
+
+#[test]
+fn a_blank_description_is_made_from_the_entry() {
+    let text = "characters {\n{\n name = 'Tyrannosaurus'\n ai = 18\n mass = 6\n length = 12\n}\n\
+{\n name = 'Yeti'\n ai = 19\n}\n}\n.\n";
+    let m = MenuData::from_res(&ResTxt::parse(text).expect("parse"));
+    // Genesis Redux's DINOn.TXM is just line breaks.
+    assert!(c2_formats::menu_txt::is_blank(&["".into(), "  ".into()]));
+    assert!(!c2_formats::menu_txt::is_blank(&["Name : Yeti".into()]));
+    assert_eq!(
+        m.huntables[0].fallback_text(false),
+        [
+            "Name   : Tyrannosaurus",
+            "Length : about 12.0 m",
+            "Weight : about 6.0 t"
+        ]
+    );
+    assert_eq!(
+        m.huntables[0].fallback_text(true)[1..],
+        ["Length : about 39 ft", "Weight : about 13228 lbs"]
+    );
+    // Without mass or length, just the name.
+    assert_eq!(m.huntables[1].fallback_text(false), ["Name   : Yeti"]);
+}

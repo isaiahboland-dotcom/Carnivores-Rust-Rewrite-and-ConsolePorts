@@ -1,7 +1,7 @@
 //! The launcher window: a tab per job (game folders, add-ons, balance,
 //! play, 3DS, Wii U, settings), the job log at the bottom.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, Color32, RichText};
 
@@ -39,6 +39,8 @@ pub struct Launcher {
     apk_for_recipe: bool,
     /// A recipe being set up (Add-ons or Instances tab).
     recipe_page: Option<crate::recipe_page::Page>,
+    /// A recipe being edited (Instances tab).
+    recipe_edit: Option<crate::recipe_edit::Editor>,
     instances: crate::instances::List,
     /// "Save as instance" making a recipe from the setup.
     saving: Option<std::sync::mpsc::Receiver<crate::instances::Saved>>,
@@ -168,6 +170,7 @@ impl Launcher {
             apk_base: None,
             apk_for_recipe: false,
             recipe_page: None,
+            recipe_edit: None,
             instances: Default::default(),
             saving: None,
         }
@@ -429,12 +432,41 @@ impl Launcher {
         }
     }
 
+    /// [`Self::recipe_game`] to play or build with: a recipe with its own
+    /// game that combines standalones and names no overlay of its own takes
+    /// the Game tab's overlays over that game (combining needs the Modder's
+    /// Edition; the recipe page only finds the base game). Reads the recipe.
+    fn recipe_game_with_overlays(&self, r: &RecipeUse) -> Vec<PathBuf> {
+        let mut g = self.recipe_game(r);
+        if r.game.is_some() {
+            let wants = c2_mods::recipe::Recipe::load(&r.path)
+                .is_ok_and(|rc| !rc.standalones.is_empty() && rc.overlays.is_empty());
+            if wants {
+                g.extend(self.cfg.overlays.iter().cloned());
+            }
+        }
+        g
+    }
+
+    /// Where a recipe's base may be, when it is not the Game tab's: the
+    /// Standalones tab's games (those on first), then the search folders
+    /// (looked through off the UI thread, `c2_mods::recipe::dir_and_subs`).
+    fn base_candidates(&self) -> Vec<PathBuf> {
+        let mut out: Vec<PathBuf> = self.cfg.enabled_standalones();
+        out.extend(self.cfg.standalones.iter().map(|a| a.path.clone()));
+        out.extend(self.cfg.search_dirs());
+        let mut seen = std::collections::HashSet::new();
+        out.retain(|p| seen.insert(p.clone()));
+        out
+    }
+
     /// The recipe page for `path` (a dropped or opened `.toml`, or an
     /// instance): the folders it was last given, the rest looked for in
     /// the search folders.
     fn open_recipe(&mut self, path: PathBuf) {
         let dirs = self.game_folders().0;
-        match crate::recipe_page::Page::open(&path, self.cfg.remembered(&path), dirs) {
+        let candidates = self.base_candidates();
+        match crate::recipe_page::Page::open(&path, self.cfg.remembered(&path), dirs, candidates) {
             Ok(mut p) => {
                 p.scan(self.cfg.search_dirs());
                 self.recipe_page = Some(p);
@@ -556,6 +588,10 @@ impl Launcher {
     /// The Instances tab: the recipe page while one is open, else the list.
     fn instances_tab(&mut self, ui: &mut egui::Ui) {
         heading(ui, "Instances");
+        if self.recipe_edit.is_some() {
+            self.recipe_edit_ui(ui);
+            return;
+        }
         if self.recipe_page.is_some() {
             self.recipe_ui(ui);
             return;
@@ -571,7 +607,107 @@ impl Launcher {
                     page.play_when_ready = true;
                 }
             }
+            crate::instances::Ask::Edit(p) => self.edit_recipe(&p),
+            crate::instances::Ask::Clone(p) => self.clone_recipe(&p),
             crate::instances::Ask::Save => self.save_instance(),
+        }
+    }
+
+    fn edit_recipe(&mut self, path: &Path) {
+        match crate::recipe_edit::Editor::open(path) {
+            Ok(e) => self.recipe_edit = Some(e),
+            Err(e) => self.note = Some((format!("Not a recipe: {e}"), RED)),
+        }
+    }
+
+    /// "Clone...": the recipe saved under a new name (with the folders
+    /// given for it), then opened to edit.
+    fn clone_recipe(&mut self, from: &Path) {
+        let Some(to) = crate::recipe_edit::pick_copy_path(from) else {
+            return;
+        };
+        let made = c2_mods::recipe::Recipe::load(from)
+            .map_err(|e| e.to_string())
+            .and_then(|r| {
+                let c = crate::recipe_edit::renamed_for(&r, &to);
+                if let Some(p) = crate::recipe_edit::save_problem(&c, from, &to) {
+                    return Err(p);
+                }
+                let old = std::fs::read_to_string(from).unwrap_or_default();
+                std::fs::write(&to, crate::recipe_edit::with_header(&old, &c.to_toml()))
+                    .map_err(|e| e.to_string())
+            });
+        match made {
+            Ok(()) => {
+                self.recipe_saved(from, &to, &[]);
+                self.note = Some((format!("Cloned to {}", to.display()), TEXT));
+                self.edit_recipe(&to);
+            }
+            Err(e) => self.note = Some((format!("Not cloned: {e}"), RED)),
+        }
+    }
+
+    /// A recipe written to `to` from the one at `from` (the same path when
+    /// saved over it): the folders given for it (and `added`) are kept for
+    /// `to`, and the list shows it.
+    fn recipe_saved(&mut self, from: &Path, to: &Path, added: &[(String, PathBuf)]) {
+        let mut u = self.cfg.remembered(from).cloned().unwrap_or(RecipeUse {
+            path: to.to_path_buf(),
+            game: None,
+            folders: Default::default(),
+            on: false,
+        });
+        u.path = to.to_path_buf();
+        // Only entries the recipe still has.
+        if let Ok(r) = c2_mods::recipe::Recipe::load(to) {
+            let ids: std::collections::HashSet<String> = c2_mods::recipe::entries(&r)
+                .map(|(_, m, _)| m.id.clone())
+                .collect();
+            u.folders.retain(|id, _| ids.contains(id));
+            for (id, dir) in added {
+                if ids.contains(id) {
+                    u.folders.insert(id.clone(), dir.clone());
+                }
+            }
+        }
+        if let Some(cur) = &mut self.cfg.recipe {
+            if cur.path == to {
+                cur.folders = u.folders.clone();
+            }
+        }
+        u.on = false;
+        self.cfg.remember(&u);
+        self.save();
+        self.instances.refresh(&self.cfg);
+    }
+
+    /// The recipe editor; add-ons added there are read against the
+    /// recipe's game (as last given), else the Game tab's.
+    fn recipe_edit_ui(&mut self, ui: &mut egui::Ui) {
+        let Some(e) = &self.recipe_edit else {
+            return;
+        };
+        let game = match self.cfg.remembered(&e.path) {
+            Some(u) => self.recipe_game_with_overlays(&u.clone()),
+            None => self.game_folders().0,
+        };
+        let Some(e) = &mut self.recipe_edit else {
+            return;
+        };
+        e.poll();
+        if e.working() {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(150));
+        }
+        let mut ask = crate::recipe_edit::Ask::Nothing;
+        panel(ui, |ui| ask = e.ui(ui, &game));
+        match ask {
+            crate::recipe_edit::Ask::Nothing => {}
+            crate::recipe_edit::Ask::Close => self.recipe_edit = None,
+            crate::recipe_edit::Ask::Saved { from, to } => {
+                let added = std::mem::take(&mut e.added);
+                self.recipe_saved(&from, &to, &added);
+            }
         }
     }
 
@@ -801,7 +937,7 @@ impl Launcher {
     fn play_args(&self) -> Vec<String> {
         let mut args = vec!["play".to_string()];
         if let Some(r) = self.active_recipe() {
-            let game = self.recipe_game(r);
+            let game = self.recipe_game_with_overlays(r);
             args.extend(game.first().map(|g| g.display().to_string()));
             for o in game.iter().skip(1) {
                 args.extend(["--overlay".to_string(), o.display().to_string()]);
@@ -949,7 +1085,7 @@ impl Launcher {
             return;
         };
         let recipe = self.active_recipe().cloned();
-        let recipe_game = recipe.as_ref().map(|r| self.recipe_game(r));
+        let recipe_game = recipe.as_ref().map(|r| self.recipe_game_with_overlays(r));
         let base = match &recipe_game {
             Some(g) => g.first().cloned(),
             None => self.cfg.base.clone(),
@@ -2213,7 +2349,7 @@ impl Launcher {
             help(
                 ui,
                 "Where an instance's downloads are looked for (each folder and the folders \
-                 and .zips right inside it). With none added: source, source/mods, addons and \
+                 and .zips in it, up to 4 folders down). With none added: source, source/mods, addons and \
                  mods beside the recipes folder.",
             );
             let mut remove = None;

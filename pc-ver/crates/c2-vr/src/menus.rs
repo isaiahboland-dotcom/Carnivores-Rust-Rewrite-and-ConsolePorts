@@ -364,7 +364,14 @@ impl Menus {
                 name: d.name.clone(),
                 price: d.price,
                 pic: pic(&format!("DINO{}.TGA", k + 1)),
-                text: wrap(read_text(txt.as_deref(), &format!("DINO{}.TXM", k + 1))),
+                text: wrap({
+                    let t = read_text(txt.as_deref(), &format!("DINO{}.TXM", k + 1));
+                    if c2_formats::menu_txt::is_blank(&t) {
+                        d.fallback_text(false)
+                    } else {
+                        t
+                    }
+                }),
             })
             .collect();
         let plain = |name: &str, price: i32| Item {

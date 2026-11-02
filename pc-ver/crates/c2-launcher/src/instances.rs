@@ -30,6 +30,8 @@ pub enum Ask {
     Nothing,
     Open(PathBuf),
     Play(PathBuf),
+    Edit(PathBuf),
+    Clone(PathBuf),
     Save,
 }
 
@@ -160,6 +162,24 @@ impl List {
                                 .clicked()
                             {
                                 ask = Ask::Open(it.path.clone());
+                            }
+                            if ui
+                                .add_enabled(!busy, egui::Button::new("Edit"))
+                                .on_hover_text(
+                                    "Its name, base and entries: remove, reorder or add some.",
+                                )
+                                .clicked()
+                            {
+                                ask = Ask::Edit(it.path.clone());
+                            }
+                            if ui
+                                .add_enabled(!busy, egui::Button::new("Clone..."))
+                                .on_hover_text(
+                                    "A copy to tweak, under a new name; its folders go with it.",
+                                )
+                                .clicked()
+                            {
+                                ask = Ask::Clone(it.path.clone());
                             }
                         });
                         ui.end_row();

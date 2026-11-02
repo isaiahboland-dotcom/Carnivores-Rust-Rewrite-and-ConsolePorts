@@ -474,18 +474,76 @@ fn assign_slots(
     };
     let menu = c2_formats::menu_txt::MenuData::from_res(menu_res.as_ref().unwrap_or(res));
     let (mut dinos, mut weapons) = (menu.huntables.len(), menu.weapons.len());
+    // An entry another add-on added before (two add-ons of the same
+    // animal): the merge keeps one, the later, in the earlier's place, so it
+    // takes the earlier's number, or every slot after would show the next
+    // one's picture and text.
+    let mut given: Vec<((String, String), usize)> = Vec::new();
     let mut out = Vec::new();
     for m in mods.iter_mut() {
         let mut mc = Vec::new();
         for s in m.slots.clone() {
             let chars = s.section == "characters";
-            let n = if chars {
-                dinos += 1;
-                dinos
-            } else {
-                weapons += 1;
-                weapons
+            // No entry to add: no slot (its number would go to nothing).
+            let entry_ai = m.res_changes.iter().find_map(|c| match c {
+                Change::Add { section, block }
+                    if *section == s.section && block_id(block).as_deref() == Some(&s.id) =>
+                {
+                    Some(block.get(&["ai"]).map_or(0, c2_formats::res_txt::c_atoi))
+                }
+                _ => None,
+            });
+            let Some(entry_ai) = entry_ai else {
+                continue;
             };
+            // An animal the menu does not list (an ambient AI, under 10):
+            // no slot, and its menu files are left out rather than put over
+            // the slot it was made for.
+            if chars && entry_ai < 10 {
+                // Another of its entries made for that slot takes the files.
+                let shared = m.slots.iter().any(|o| {
+                    o.id != s.id
+                        && o.section == s.section
+                        && o.from == s.from
+                        && m.res_changes.iter().any(|c| {
+                            matches!(c, Change::Add { section, block }
+                                if *section == o.section
+                                    && block_id(block).as_deref() == Some(&o.id)
+                                    && block.get(&["ai"]).map_or(0, c2_formats::res_txt::c_atoi) >= 10)
+                        })
+                });
+                m.map.retain(|(p, _)| {
+                    if shared {
+                        return true;
+                    }
+                    let name = p.rsplit_once('/').map_or(p.as_str(), |(_, n)| n);
+                    !crate::loose::numbered(name).is_some_and(|(pre, k)| {
+                        k == s.from && ["dino", "call"].contains(&pre.to_ascii_lowercase().as_str())
+                    })
+                });
+                m.files = m.map.iter().map(|(p, _)| p.clone()).collect();
+                notes.push(format!(
+                    "`{}`: '{}' is not huntable (AI {entry_ai}): no menu slot; its slot {} menu files left out",
+                    m.manifest.info.id, s.id, s.from
+                ));
+                continue;
+            }
+            let key = (s.section.to_ascii_lowercase(), s.id.to_ascii_lowercase());
+            let again = given.iter().find(|(k, _)| *k == key).map(|&(_, n)| n);
+            let n = match again {
+                Some(n) => n,
+                None if chars => {
+                    dinos += 1;
+                    dinos
+                }
+                None => {
+                    weapons += 1;
+                    weapons
+                }
+            };
+            if again.is_none() {
+                given.push((key, n));
+            }
             let prefixes: &[&str] = if chars {
                 &["dino", "call"]
             } else {
@@ -620,6 +678,14 @@ fn merge_hunters(
         })?;
         let extra = c2_formats::car::parse(&data)?;
         let id = &m.manifest.info.id;
+        // Its hunter entry names its own model, which is merged into the
+        // base one (or left out), never copied: the entry keeps the base's,
+        // or the hunter has no model and its body is not drawn.
+        if keep_hunter_file(&mut m.res_changes, &file) {
+            notes.push(format!(
+                "`{id}`: its hunter entry keeps the model `{file}` (its own is merged into it)"
+            ));
+        }
         match crate::hunter::merge(&mut base, std::slice::from_ref(&extra)).remove(0) {
             crate::hunter::Outcome::Merged { map } => {
                 crate::hunter::remap(&mut m.res_changes, &map);
@@ -634,6 +700,39 @@ fn merge_hunters(
         }
     }
     Ok(Some((path, c2_formats::car::write(&base))))
+}
+
+/// Sets `file` of the hunter entry (characters #0) in `changes` back to
+/// `file`; whether one named another.
+fn keep_hunter_file(changes: &mut [Change], file: &str) -> bool {
+    let mut changed = false;
+    for c in changes {
+        let Change::Modify {
+            section,
+            index: 0,
+            block,
+            ..
+        } = c
+        else {
+            continue;
+        };
+        if !section.eq_ignore_ascii_case("characters") {
+            continue;
+        }
+        for e in &mut block.entries {
+            let same = e
+                .value
+                .trim()
+                .trim_matches('\'')
+                .replace('\\', "/")
+                .eq_ignore_ascii_case(file);
+            if e.key.eq_ignore_ascii_case("file") && !same {
+                e.value = format!("'{file}'");
+                changed = true;
+            }
+        }
+    }
+    changed
 }
 
 /// Layers the mods (in dependency order) over vanilla and merges `_RES.TXT`.

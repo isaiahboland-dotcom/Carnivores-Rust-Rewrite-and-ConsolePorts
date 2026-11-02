@@ -693,6 +693,91 @@ impl HuntView {
         self.prev_cam = self.hunt.camera().0;
     }
 
+    /// `--die AI,MS` (screenshots of the death camera): an animal of `ai_id`
+    /// is put beside the hunter and set hunting; the hunt runs until it kills
+    /// (at most 30 s), then `ms` more.
+    pub fn die_by(&mut self, ai_id: i32, ms: u32, name: Option<&str>) {
+        let (x, y, z) = (self.hunt.player.x, self.hunt.player.y, self.hunt.player.z);
+        let alpha = self.hunt.player.alpha;
+        let species = &self.hunt.herd.species;
+        let named = |c: &c2_core::dino::Character| {
+            name.is_none_or(|n| {
+                species
+                    .get(c.ctype)
+                    .is_some_and(|s| s.info.name.eq_ignore_ascii_case(n))
+            })
+        };
+        let Some(k) = self
+            .hunt
+            .herd
+            .chars
+            .iter()
+            .position(|c| c.ai == ai_id && c.health > 0 && named(c))
+        else {
+            tracing::warn!("--die: no living animal of AI {ai_id} {name:?}");
+            return;
+        };
+        // The others of that AI out of the way, so this one kills.
+        for (i, c) in self.hunt.herd.chars.iter_mut().enumerate() {
+            if i != k && c.ai == ai_id {
+                c.pos[0] += 40_000.0;
+            }
+        }
+        let c = &mut self.hunt.herd.chars[k];
+        c.pos = [x + alpha.sin() * 600.0, y, z - alpha.cos() * 600.0];
+        c.state = 1;
+        c.afraid_time = 20_000;
+        c.aware_hunter = true;
+        let mut waited = 0;
+        while self.hunt.death.is_none() && waited < 30_000 {
+            self.step(&HuntInput::default());
+            waited += TICK_MS;
+        }
+        let killer = self.hunt.herd.chars.get(k).map(|c| (c.ctype, c.scale));
+        tracing::info!(
+            "--die: dead after {waited} ms: {}",
+            self.hunt.death.is_some()
+        );
+        for _ in 0..ms / TICK_MS {
+            self.step(&HuntInput::default());
+        }
+        if let (Some(d), Some((ctype, scale))) = (self.hunt.death, killer) {
+            let body = self.hunt.herd.chars.get(d.body);
+            let name = self
+                .hunt
+                .herd
+                .species
+                .get(ctype)
+                .map(|s| s.info.name.clone());
+            tracing::info!(
+                "--die: killer {name:?} scale {scale:.2} size {:?}; camera {:?} base {} lift {}; body {:?} phase {:?} ftime {:?}",
+                self.hunt.herd.species.get(ctype).map(|s| s.size),
+                d.pos,
+                d.base,
+                d.lift,
+                body.map(|b| b.pos),
+                body.map(|b| b.phase),
+                body.map(|b| b.ftime),
+            );
+        }
+        if let Some(b) = self
+            .hunt
+            .death
+            .and_then(|d| self.hunt.herd.chars.get(d.body))
+        {
+            let sp = self.hunt.herd.species.get(b.ctype);
+            tracing::info!(
+                "--die: body species {} {:?} file {:?}, {:?} animations; watched {:?}",
+                b.ctype,
+                sp.map(|s| s.info.name.clone()),
+                sp.map(|s| s.info.file.clone()),
+                sp.map(|s| s.ani_time.len()),
+                self.hunt.herd.demo_index,
+            );
+        }
+        self.prev_cam = self.hunt.camera().0;
+    }
+
     /// Fires once, then runs `ms` (screenshots).
     pub fn fire_and_wait(&mut self, ms: u32) {
         self.step(&HuntInput {

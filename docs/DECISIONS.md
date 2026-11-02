@@ -2,6 +2,87 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-02 — Recipes edited in the launcher; a loose add-on's `_RES` entry over its menu lines; animals without models left out
+
+**Edit and Clone (owner: "an edit option in the gui and also a clone option").** The Instances list has
+Edit and Clone... beside Play/Open. The editor changes what a recipe's own fields hold (name, id,
+version, base profile, each entry's credit and download page, how standalones' ambients are combined),
+removes entries (with their load-order line and the resolutions they win), moves add-ons in the load
+order (the `mods` list kept in the same order), and adds an entry from a folder, pinned off the UI
+thread as "Save as instance" pins (`pin_game`, or `load_mod` + `new_recipe` against the recipe's game).
+Clone is a save-as: id and name from the new file name, the folders given for the original remembered
+for the copy, then opened in the editor. A recipe with patches must stay in its folder (they are found
+beside it). The file is written by `Recipe::to_toml`, so only the comment block that opens the file is
+kept (that is where every repository recipe has its instructions); a test checks every repository recipe
+writes out unchanged. `[settings]` are not edited here: "Save as instance" takes them from the other tabs.
+
+**A `_RES` entry wins over a `_MENU.TXT` one of the same name.** ARK Yutyrannus, Giganotosaurus 1.0.4
+and Carcharodontosaurus V1 ship their `_MENU.TXT` lines (`MENU.txt`, `MENU_ ENTRY.txt`, `MENURES.txt`)
+beside the `_RES` entry; the first text read gave the entry, which then had no model and took the
+T-Rex's animation keys. Of two blocks with one name, the one with `file` is taken.
+
+**An animal whose model is nowhere is left out.** Tany is made for Carnivores Cordelia: its `_RES.TXT`
+is that game's whole file. TROPHY-MOSA's readme entries name another setup's models. Such an entry
+(its `file`, or one an `overwrite` gives it, in neither the game nor the add-on, after the near-name
+match) would be an animal with no model; it is left out, with a note. The hunter's entry is exempt (its
+model is merged, not placed).
+
+**Blank descriptions.** Genesis Redux ships `DINOn.TXM/TXU` with blank lines only. The menus make a
+missing or blank description from the `_MENU.TXT` entry: name, then length (m / ft) and weight
+(t / lbs) when the entry gives `length` and `mass`.
+
+## 2026-11-02 — Death camera distance; one hunter model; one menu slot per animal
+
+**Death camera.** The original circles every killer at 824 (1424 over a
+T-Rex carrying the body). The Modder's Edition replaces this with values
+from the killer's entry: `CamBaseLand`/`CamBaseWater` and
+`CamYLand`/`CamYWater`, defaulting to 824 and 256, with the water pair used
+when the killer stood deeper than its `waterLevel`. We now read and use
+them. For killers that give none, we go further than both engines: the
+camera stands back by the model's reach times its scale ×1.4, and lifts by
+0.6 of it. The factor keeps the original's animals at the original's numbers
+(the C2 T-Rex reaches about 1000, so 1401 is under 1424), so only bigger
+add-ons move the camera. Without this, a big add-on fills the screen and
+hides the body.
+
+**Hunter entries in add-ons.** Some add-ons' `_RES` text includes their own
+Hunter entry, naming the hunter model they ship
+(`hunter1_gigano_mee.car`), as their readme says to "replace the hunter".
+We merge that model's kill animations into the base hunter model rather than
+copying it, so the entry keeps the base's `file`. Otherwise the last such
+add-on names a model that isn't there, and the hunter's body is never drawn.
+
+**Menu slots.** A menu slot is given only to an entry the menu lists
+(`ai >= 10`). A second add-on of the same animal takes the first one's slot:
+the merge keeps one entry, the later, in the first's place. Before this, both
+cases took a number, and every later animal showed the next one's picture and
+text. An add-on with a copy per game (`CARNIVORES (MEE 1.1.1)`,
+`ICE AGE (MEE 1.1.1)`) has only the base game's copy read.
+
+## 2026-11-02 — A folder checked for a recipe entry is also read from above its wrapper folders
+
+Recipes pinned from an unpacked download list a standalone's files with the
+download's folders in front (`bilewaters here/HUNTDAT/...`,
+`Carnivores Enchanted (0.1.3)/Game/HUNTDAT/...`), but the launcher remembers
+the game folder itself, so checking that folder found nothing. `check_folder`
+now also reads the folder from k levels up, where k is the most of its last
+folder names that any listed path starts with (a download can hold several
+games, so not every path has to share the prefix). The entry's root is still
+the folder as found. The search (`locate`) already had this view, through
+the download folder.
+
+APK imports (`c2-pc mobile`) are pinned by hash like any mod, so a recipe
+pinned before an importer change no longer matches a fresh import. Such
+recipes are re-pinned; the committed ones already match today's importer.
+
+The same view applies to `--mods ID=FOLDER`, which is how the launcher passes
+remembered folders to `play` and the builds. A recipe whose base the recipe
+page found away from the Game tab (its own `game`) used to lose the Game
+tab's overlays. When it combines standalones and lists no `[[overlays]]`, it
+now keeps them, since combining needs the Modder's Edition and the page only
+looks for the base game. Recipes with a standalone game as their base (no
+standalones to combine) still play that game alone.
+
 ## 2026-11-01 — Fixes from the owner's play test: phone ground, phone calls, points, memory, forests, survival ways
 
 - **Phone areas' ground tiles are transposed**: the APKs' terrain atlas keeps

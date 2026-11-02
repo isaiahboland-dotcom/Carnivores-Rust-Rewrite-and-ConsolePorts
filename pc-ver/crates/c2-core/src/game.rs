@@ -830,6 +830,45 @@ pub struct DeathCam {
     pub pos: [f32; 3],
     pub alpha: f32,
     pub beta: f32,
+    /// How far it circles, and how high above the watched body it looks
+    /// (the original: 824 and 256; 1424 and 768 over a T-Rex carrying the
+    /// body; the killer's own in the dialect, `CamBaseLand`, `CamYLand`).
+    pub base: f32,
+    pub lift: f32,
+}
+
+/// The death camera's distance and height over `killer`'s kill (`None`:
+/// no killer, drowned or the like). The dialect's entry gives its own
+/// (`camBase`, `camDemoPoint`, the water ones for a kill in the water);
+/// otherwise the original's, and further back from a killer whose model is
+/// bigger than those numbers were made for (ours: the original keeps every
+/// animal at 824, so a big add-on fills the screen and hides the body).
+pub fn death_cam_view(
+    killer: Option<(&Character, &crate::dino::Species)>,
+    in_water: bool,
+    carried: bool,
+) -> (f32, f32) {
+    let (base, lift) = if carried {
+        (1424.0, 768.0)
+    } else {
+        (824.0, 256.0)
+    };
+    let Some((c, sp)) = killer else {
+        return (base, lift);
+    };
+    if let Some(m) = &sp.mee {
+        let (b, y) = if in_water {
+            (m.cam_base_water, m.cam_y_water)
+        } else {
+            (m.cam_base, m.cam_y)
+        };
+        if b.is_some() || y.is_some() {
+            return (b.unwrap_or(824.0), y.unwrap_or(256.0));
+        }
+    }
+    let reach = sp.size * c.scale.max(0.1);
+    // 1.4: the original T-Rex (reach about 1000) stays at its 1424.
+    (base.max(reach * 1.4), lift.max(reach * 0.6))
 }
 
 pub struct Hunt {
@@ -2254,6 +2293,14 @@ impl Hunt {
         body.health = 0;
         body.pos = [self.player.x, self.player.y, self.player.z];
         let killer = by.and_then(|i| self.herd.chars.get(i).map(|c| (i, c.clone())));
+        // The dialect's `killedwater`: the killer stood in water deeper than
+        // it wades.
+        let killer_view = killer.as_ref().and_then(|(k, c)| {
+            let sp = self.herd.species.get(c.ctype)?;
+            let level = sp.mee.as_ref().map_or(0, |m| m.water_level) as f32;
+            let depth = area.land_up_h(c.pos[0], c.pos[2]) - area.land_height(c.pos[0], c.pos[2]);
+            Some((*k, depth > level * c.scale))
+        });
         if let Some((_, c)) = &killer {
             let mee = self.herd.species.get(c.ctype).and_then(|s| s.mee.as_ref());
             let pl = match (mee, c.ai) {
@@ -2301,12 +2348,24 @@ impl Hunt {
                 self.herd.demo_index = Some(k);
             }
         }
+        let carried = self.herd.demo_index != Some(index);
+        let view = killer_view.map(|(k, in_water)| {
+            let c = &self.herd.chars[k];
+            (c, &self.herd.species[c.ctype], in_water)
+        });
+        let (base, lift) = death_cam_view(
+            view.map(|(c, s, _)| (c, s)),
+            view.is_some_and(|v| v.2),
+            carried,
+        );
         self.death = Some(DeathCam {
             body: index,
             time: 1,
             pos: cam,
             alpha,
             beta,
+            base,
+            lift,
         });
         out.push(GameEvent::HunterDied { kind, scream });
     }
@@ -2317,10 +2376,9 @@ impl Hunt {
         let Some(watched) = self.herd.demo_index.and_then(|i| self.herd.chars.get(i)) else {
             return;
         };
-        let trex = watched.ai == ai::TREX;
         let mut target = watched.pos;
-        target[1] += if trex { 256.0 + 512.0 } else { 256.0 };
-        let base = if trex { 1424.0 } else { 824.0 };
+        target[1] += d.lift;
+        let base = d.base;
         let l = ((target[0] - d.pos[0]).powi(2) + (target[2] - d.pos[2]).powi(2)).sqrt();
         if d.time == 1 && l < base {
             d.time = 2;
@@ -3213,6 +3271,8 @@ mod tests {
             pos: [0.0; 3],
             alpha: 0.0,
             beta: 0.0,
+            base: 824.0,
+            lift: 256.0,
         });
         assert!(!hunt.show_exit());
         hunt.opts.death_anim = false;

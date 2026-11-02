@@ -13,6 +13,7 @@ mod config;
 mod instances;
 mod jobs;
 mod options;
+mod recipe_edit;
 mod recipe_page;
 mod wiiu;
 

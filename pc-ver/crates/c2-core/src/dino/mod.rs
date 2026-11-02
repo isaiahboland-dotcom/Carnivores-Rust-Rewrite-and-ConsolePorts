@@ -225,6 +225,9 @@ pub struct Species {
     /// The original AI an AI number the engine lacks runs as ([`stock_ai`]);
     /// `info.ai` stays its identity (menu slot, call, radar).
     pub stock_ai: Option<i32>,
+    /// The model's reach from its origin, in world units (vertices `* 2`):
+    /// how far the death camera stands back from a big killer.
+    pub size: f32,
 }
 
 impl Species {
@@ -237,6 +240,12 @@ impl Species {
         let frames = car.animations.iter().map(|a| a.frames).collect();
         let anifx = car.anim_sounds.map_or_else(|| vec![-1; 64], |t| t.to_vec());
         let stock_ai = stock_ai(&info, car);
+        let size = car
+            .mesh
+            .vertices
+            .iter()
+            .map(|v| 2.0 * (v.x * v.x + v.y * v.y + v.z * v.z).sqrt())
+            .fold(0.0, f32::max);
         Self {
             info,
             tuning: Tuning::default(),
@@ -245,6 +254,7 @@ impl Species {
             frames,
             anifx,
             stock_ai,
+            size,
         }
     }
 

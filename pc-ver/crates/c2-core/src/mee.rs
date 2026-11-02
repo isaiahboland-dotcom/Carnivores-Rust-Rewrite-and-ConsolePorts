@@ -340,6 +340,11 @@ fn info_line(m: &mut MeeInfo, key: &str, v: &str) {
     let k = key.to_ascii_lowercase();
     let anim = c_atoi(v);
     match k.as_str() {
+        // The engine reads these four as decimals (`atof`).
+        "camyland" => m.cam_y = Some(c_atof(v)),
+        "camywater" => m.cam_y_water = Some(c_atof(v)),
+        "cambaseland" => m.cam_base = Some(c_atof(v)),
+        "cambasewater" => m.cam_base_water = Some(c_atof(v)),
         "runanim" => m.run = m.add_anim(anim),
         "walkanim" => m.walk = m.add_anim(anim),
         "swimanim" => m.swim = m.add_anim(anim),

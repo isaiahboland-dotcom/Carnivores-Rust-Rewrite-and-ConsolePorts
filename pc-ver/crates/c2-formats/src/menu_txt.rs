@@ -19,7 +19,7 @@
 //! Which areas exist is for the caller to check (it knows the files).
 
 use crate::res_txt::{c_atof, c_atoi, Block, ResTxt};
-use alloc::{format, string::String, string::ToString, vec::Vec};
+use alloc::{format, string::String, string::ToString, vec, vec::Vec};
 
 /// A weapon or huntable as the menu lists it.
 #[derive(Debug, Clone, PartialEq)]
@@ -31,6 +31,40 @@ pub struct MenuItem {
     pub ai: i32,
     /// An explicit picture path (`pic = '...'`), if given.
     pub pic: Option<String>,
+    /// For characters, `mass` (tonnes, as the trophy room shows it) and
+    /// `length` (metres); 0 when not given.
+    pub mass: f32,
+    pub length: f32,
+}
+
+impl MenuItem {
+    /// A description for a huntable whose `DINOn.TXM`/`.TXU` is missing or
+    /// blank (Genesis Redux ships them empty): its name and, when the entry
+    /// gives them, its length and weight, in the files' layout. `us` = the
+    /// `.TXU` units (feet, pounds).
+    pub fn fallback_text(&self, us: bool) -> Vec<String> {
+        let mut out = vec![format!("Name   : {}", self.name)];
+        if self.length > 0.0 {
+            out.push(if us {
+                format!("Length : about {:.0} ft", self.length * 3.281)
+            } else {
+                format!("Length : about {:.1} m", self.length)
+            });
+        }
+        if self.mass > 0.0 {
+            out.push(if us {
+                format!("Weight : about {:.0} lbs", self.mass * 2204.6)
+            } else {
+                format!("Weight : about {:.1} t", self.mass)
+            });
+        }
+        out
+    }
+}
+
+/// Whether description text has nothing in it but blank lines.
+pub fn is_blank(lines: &[String]) -> bool {
+    lines.iter().all(|l| l.trim().is_empty())
 }
 
 /// An area the menu offers.
@@ -79,6 +113,8 @@ fn item(b: &Block) -> MenuItem {
         price: b.get(&["price"]).map_or(0, c_atoi),
         ai: b.get(&["ai"]).map_or(0, c_atoi),
         pic: b.get(&["pic"]).map(text).filter(|p| !p.is_empty()),
+        mass: b.get(&["mass"]).map_or(0.0, c_atof),
+        length: b.get(&["length"]).map_or(0.0, c_atof),
     }
 }
 

@@ -155,6 +155,15 @@ struct Board {
     dim: bool,
 }
 
+/// A menu picture drawn from the model at `file` (from `huntdat`), for
+/// an animal with none (`c2_formats::portrait`).
+fn model_picture(hud: &mut Hud, gpu: &Gpu, huntdat: &Path, file: &str) -> Option<usize> {
+    let car = c2_formats::car::parse(&std::fs::read(find_file(huntdat, file)?).ok()?).ok()?;
+    let (w, h) = (357, 208);
+    let rgba = c2_formats::portrait::render(&car.mesh, w, h, 0.8)?;
+    Some(hud.add_image_filtered(gpu, w as u32, h as u32, &rgba, true))
+}
+
 fn read_tga(dir: &Path, name: &str) -> Option<c2_formats::tga::Picture> {
     let p = find_file(dir, name)?;
     match c2_formats::tga::parse(&std::fs::read(&p).ok()?) {
@@ -462,6 +471,28 @@ fn read_text(dir: Option<&Path>, name: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// The huntables' descriptions by slot (`DINOn.TXM`, or `.TXU` for `us`);
+/// a missing or blank one is made from its `_MENU.TXT` entry.
+fn dino_texts(
+    huntables: &[c2_formats::menu_txt::MenuItem],
+    txt: Option<&Path>,
+    us: bool,
+) -> Vec<Vec<String>> {
+    let ext = if us { "TXU" } else { "TXM" };
+    huntables
+        .iter()
+        .enumerate()
+        .map(|(k, d)| {
+            let t = read_text(txt, &format!("DINO{}.{ext}", k + 1));
+            if c2_formats::menu_txt::is_blank(&t) {
+                d.fallback_text(us)
+            } else {
+                t
+            }
+        })
+        .collect()
+}
+
 /// Re-flows description text for a panel. The files are broken for a wider
 /// font: long lines are joined into paragraphs, short ones ("Name : ...",
 /// blank lines) kept, then everything is wrapped to `width`.
@@ -650,21 +681,13 @@ impl Menu {
 
         let pics_dir = find_file(&dir, "PICS");
         let txt = find_file(&dir, "TXT");
-        // A picture by name in `MENU/PICS`, or by a path from the game
-        // folder (`huntdat\\menu\\pics\\x.tga`, as data may give).
-        let mut view = |name: String| {
-            let t = if name.contains(['/', '\\']) {
-                c2_formats::tga::parse(&std::fs::read(find_file(&game_dir, &name)?).ok()?).ok()?
-            } else {
-                read_tga(pics_dir.as_deref()?, &name)?
-            };
-            let rgba = c2_core::color::image_to_rgba8(&t.pixels, false);
-            Some(hud.add_image_filtered(gpu, t.width as u32, t.height as u32, &rgba, true))
-        };
         // The hunt lists: `_MENU.TXT` if the game has one (Modder's Edition
         // Engine), else `_RES.TXT`; see `c2_formats::menu_txt`.
         let mut menu = menu_data(&huntdat)?;
         let menu_animals = menu.huntables.len();
+        // The roaming add-ons' pictures (by menu slot): drawn from their
+        // models, as they have none.
+        let mut drawn: Vec<Option<usize>> = vec![None; menu_animals];
         // A dialect game's roaming add-ons (no menu slot of their own) are
         // picked as its animals are, in the slots after them; priced as the
         // menu animal with their AI (listed with "All dinos huntable" on).
@@ -678,16 +701,32 @@ impl Menu {
                     .iter()
                     .find(|h| h.ai == ai)
                     .map_or(0, |h| h.price);
+                drawn.push(get("file").and_then(|f| {
+                    model_picture(&mut hud, gpu, &huntdat, f.trim().trim_matches('\''))
+                }));
                 menu.huntables.push(c2_formats::menu_txt::MenuItem {
                     name: get("name")
                         .map_or_else(String::new, |n| n.trim().trim_matches('\'').to_string()),
                     price,
                     ai,
                     pic: None,
+                    mass: get("mass").map_or(0.0, c2_formats::res_txt::c_atof),
+                    length: get("length").map_or(0.0, c2_formats::res_txt::c_atof),
                 });
             }
         }
 
+        // A picture by name in `MENU/PICS`, or by a path from the game
+        // folder (`huntdat\\menu\\pics\\x.tga`, as data may give).
+        let mut view = |name: String| {
+            let t = if name.contains(['/', '\\']) {
+                c2_formats::tga::parse(&std::fs::read(find_file(&game_dir, &name)?).ok()?).ok()?
+            } else {
+                read_tga(pics_dir.as_deref()?, &name)?
+            };
+            let rgba = c2_core::color::image_to_rgba8(&t.pixels, false);
+            Some(hud.add_image_filtered(gpu, t.width as u32, t.height as u32, &rgba, true))
+        };
         // Locations: the `prices` areas whose .MAP exists (slot 6 may be
         // `external.map`), then `.c2map` descriptors; without any `prices`
         // areas, AREA1.. as found.
@@ -798,15 +837,13 @@ impl Menu {
                 .enumerate()
                 .map(|(k, d)| match &d.pic {
                     Some(p) => view(p.clone()),
+                    // A roaming add-on has no picture: one drawn from its model.
+                    None if k >= menu_animals => drawn.get(k).copied().flatten(),
                     None => view(format!("DINO{}.TGA", k + 1)),
                 })
                 .collect(),
-            texts: (1..=dinos.len())
-                .map(|n| read_text(txt.as_deref(), &format!("DINO{n}.TXM")))
-                .collect(),
-            texts_us: (1..=dinos.len())
-                .map(|n| read_text(txt.as_deref(), &format!("DINO{n}.TXU")))
-                .collect(),
+            texts: dino_texts(&menu.huntables, txt.as_deref(), false),
+            texts_us: dino_texts(&menu.huntables, txt.as_deref(), true),
             names: dinos,
         });
         let weapons: Vec<String> = menu.weapons.iter().map(|w| w.name.clone()).collect();

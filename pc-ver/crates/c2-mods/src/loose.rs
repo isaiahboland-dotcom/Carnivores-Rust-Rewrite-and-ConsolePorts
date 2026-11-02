@@ -122,8 +122,16 @@ fn variant(name: &str) -> Variant {
     }
 }
 
-/// The files to consider, after dropping variant folders that don't fit.
-fn gather(dir: &Path, dialect: bool, notes: &mut Vec<String>, out: &mut Vec<PathBuf>) {
+/// A folder of a copy for Carnivores: Ice Age (`ICE AGE (MEE 1.1.1)`).
+fn for_ice_age(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    n.contains("ice age") || n.contains("iceage") || n.contains("ice_age")
+}
+
+/// The files to consider, after dropping variant folders that don't fit:
+/// the Modder's Edition's or the original's, and Ice Age's or Carnivores
+/// 2's (`ice`: the base is Ice Age) where both are given.
+fn gather(dir: &Path, dialect: bool, ice: bool, notes: &mut Vec<String>, out: &mut Vec<PathBuf>) {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return;
     };
@@ -132,6 +140,13 @@ fn gather(dir: &Path, dialect: bool, notes: &mut Vec<String>, out: &mut Vec<Path
     let subs: Vec<&PathBuf> = entries.iter().filter(|p| p.is_dir()).collect();
     let kinds: Vec<Variant> = subs.iter().map(|p| variant(&lower_name(p))).collect();
     let both = kinds.contains(&Variant::Mee) && kinds.contains(&Variant::Plain);
+    // A copy for each game (the ARK Yutyrannus: `CARNIVORES (MEE 1.1.1)`
+    // with its slot 9 files, `ICE AGE (MEE 1.1.1)` with slot 10's).
+    let games = subs.iter().any(|p| for_ice_age(&lower_name(p)))
+        && subs.iter().zip(&kinds).any(|(p, k)| {
+            let n = lower_name(p);
+            !for_ice_age(&n) && (*k != Variant::Other || n.contains("carnivores"))
+        });
     for p in &entries {
         if !p.is_dir() {
             out.push(p.clone());
@@ -147,7 +162,14 @@ fn gather(dir: &Path, dialect: bool, notes: &mut Vec<String>, out: &mut Vec<Path
             notes.push(format!("skipped `{}` (the other variant)", p.display()));
             continue;
         }
-        gather(p, dialect, notes, out);
+        if games
+            && for_ice_age(&name) != ice
+            && (for_ice_age(&name) || v != Variant::Other || name.contains("carnivores"))
+        {
+            notes.push(format!("skipped `{}` (for the other game)", p.display()));
+            continue;
+        }
+        gather(p, dialect, ice, notes, out);
     }
 }
 
@@ -310,7 +332,14 @@ pub fn read_only(dir: &Path, base: &Vfs, keep: &dyn Fn(&Path) -> bool) -> Result
     let dialect = c2_formats::mee::is_dialect(&res);
     let mut out = Loose::default();
     let mut files = Vec::new();
-    gather(dir, dialect, &mut out.notes, &mut files);
+    // Ice Age's mammoth: the base is Ice Age (either format).
+    let ice = res.section("characters").is_some_and(|s| {
+        s.blocks.iter().any(|b| {
+            b.get(&["file"])
+                .is_some_and(|f| f.trim().trim_matches('\'').eq_ignore_ascii_case("mamm.car"))
+        })
+    });
+    gather(dir, dialect, ice, &mut out.notes, &mut files);
     files.retain(|f| keep(f));
     // A folder holding the game's own folders stands for HUNTDAT.
     let root = files.iter().find_map(|f| {
@@ -378,8 +407,15 @@ pub fn read_only(dir: &Path, base: &Vfs, keep: &dyn Fn(&Path) -> bool) -> Result
             }
             let mee = before.to_ascii_lowercase().contains("modders edition");
             let id = block_id(&b);
+            // A `_MENU.TXT` entry (`MENU.txt`, `MENURES.txt` beside the
+            // `_RES.TXT` one: name, AI, senses) names no model: the
+            // `_RES.TXT` entry is the one to take.
+            let has_file = |b: &Block| b.get(&["file"]).is_some();
             match picked.iter_mut().find(|(_, p, _)| block_id(p) == id) {
-                Some(slot) if dialect && mee && !slot.2 => *slot = (section, b, mee),
+                Some(slot) if has_file(&b) && !has_file(&slot.1) => *slot = (section, b, mee),
+                Some(slot) if dialect && mee && !slot.2 && (has_file(&b) || !has_file(&slot.1)) => {
+                    *slot = (section, b, mee)
+                }
                 Some(_) => {}
                 None => picked.push((section, b, mee)),
             }
@@ -398,8 +434,52 @@ pub fn read_only(dir: &Path, base: &Vfs, keep: &dyn Fn(&Path) -> bool) -> Result
 
     // What each entry changes.
     for (section, mut b, _) in picked {
-        if section == "characters" {
-            fix_model(&mut b, base, &out.files, &mut out.notes);
+        // An animal whose model is in neither the game nor the add-on
+        // (entries for another game's files: Tany's `_RES.TXT` is
+        // Carnivores Cordelia's, `3D/AREA1/1F.car`...) would be loaded
+        // without one: left out.
+        // (The hunter's model is merged into the game's, not placed.)
+        let hunter_model = |b: &Block| {
+            let first = res
+                .section("characters")
+                .and_then(|s| s.blocks.first())
+                .and_then(block_id);
+            if first.is_some() && block_id(b) == first {
+                return true;
+            }
+            let file = b
+                .get(&["file"])
+                .map(|f| f.trim().trim_matches('\'').to_ascii_lowercase());
+            out.hunter
+                .as_ref()
+                .and_then(|h| h.file_name())
+                .is_some_and(|n| {
+                    file.as_deref().is_some_and(|f| {
+                        f.rsplit(['/', '\\']).next()
+                            == Some(&n.to_string_lossy().to_ascii_lowercase())
+                    })
+                })
+        };
+        if section == "characters" && !hunter_model(&b) {
+            let lost = if fix_model(&mut b, base, &out.files, &mut out.notes) {
+                // Models an `overwrite` gives it on some maps.
+                sub_models(&b)
+                    .into_iter()
+                    .find(|f| !model_found(f, base, &out.files))
+            } else {
+                Some(
+                    b.get(&["file"])
+                        .map_or("", |f| f.trim().trim_matches('\''))
+                        .to_string(),
+                )
+            };
+            if let Some(f) = lost {
+                out.notes.push(format!(
+                    "'{}' left out: its model `{f}` is in neither the game nor the add-on",
+                    block_id(&b).unwrap_or_default(),
+                ));
+                continue;
+            }
         }
         let id = block_id(&b);
         let blocks = res
@@ -596,19 +676,42 @@ pub(crate) fn has_spawns(b: &Block) -> bool {
         .any(|s| is_spawn_sub(&s.name) || has_spawns(&s.block))
 }
 
+/// Whether model `file` (from `HUNTDAT`) is in the game or the add-on.
+fn model_found(file: &str, base: &Vfs, placed: &[(String, PathBuf)]) -> bool {
+    let k = key(&format!("HUNTDAT/{}", file.replace('\\', "/")));
+    base.resolve(&k).is_some() || placed.iter().any(|(p, _)| key(p) == k)
+}
+
+/// The models `b`'s sub-blocks name (`overwrite area1 { file = ... }`).
+fn sub_models(b: &Block) -> Vec<String> {
+    let mut out = Vec::new();
+    for s in &b.subs {
+        if let Some(f) = s.block.get(&["file"]) {
+            out.push(f.trim().trim_matches('\'').to_string());
+        }
+        out.extend(sub_models(&s.block));
+    }
+    out
+}
+
 /// An entry naming a model that exists neither in the base nor in the
 /// add-on (`'indor.car'` beside `INDO.CAR`): use the add-on's model whose
-/// name shares the longest start with it.
-fn fix_model(b: &mut Block, base: &Vfs, placed: &[(String, PathBuf)], notes: &mut Vec<String>) {
+/// name shares the longest start with it. Whether the entry has a model
+/// then (or names none: it changes an animal the game has).
+fn fix_model(
+    b: &mut Block,
+    base: &Vfs,
+    placed: &[(String, PathBuf)],
+    notes: &mut Vec<String>,
+) -> bool {
     let Some(file) = b
         .get(&["file"])
         .map(|f| f.trim().trim_matches('\'').to_string())
     else {
-        return;
+        return true;
     };
-    let k = key(&format!("HUNTDAT/{}", file.replace('\\', "/")));
-    if base.resolve(&k).is_some() || placed.iter().any(|(p, _)| key(p) == k) {
-        return;
+    if model_found(&file, base, placed) {
+        return true;
     }
     let want = file.to_ascii_lowercase();
     let common = |n: &str| {
@@ -636,7 +739,9 @@ fn fix_model(b: &mut Block, base: &Vfs, placed: &[(String, PathBuf)], notes: &mu
             "'{}' names `{file}`, which it doesn't ship: uses its `{name}`",
             block_id(b).unwrap_or_default()
         ));
+        return true;
     }
+    false
 }
 
 fn dir_ci(dir: &Path, name: &str) -> bool {
@@ -683,6 +788,31 @@ impl Backend for MapBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The ARK Yutyrannus: a Modder's Edition copy for each game, its menu
+    /// files numbered for each game's slot. Only the base game's is taken.
+    #[test]
+    fn the_copy_for_the_other_game_is_left_out() {
+        let dir = std::env::temp_dir().join(format!("c2-mods-games-{}", std::process::id()));
+        for (d, f) in [
+            ("CARNIVORES (MEE 1.1.1)", "DINO9.tga"),
+            ("ICE AGE (MEE 1.1.1)", "DINO10.tga"),
+        ] {
+            std::fs::create_dir_all(dir.join(d)).unwrap_or_else(|e| panic!("{e}"));
+            std::fs::write(dir.join(d).join(f), b"x").unwrap_or_else(|e| panic!("{e}"));
+        }
+        let names = |ice: bool| {
+            let (mut notes, mut out) = (Vec::new(), Vec::new());
+            gather(&dir, true, ice, &mut notes, &mut out);
+            out.iter()
+                .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+                .collect::<Vec<_>>()
+        };
+        let (c2, ia) = (names(false), names(true));
+        std::fs::remove_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(c2, ["DINO9.tga"]);
+        assert_eq!(ia, ["DINO10.tga"]);
+    }
 
     #[test]
     fn finds_entries_after_prose() {

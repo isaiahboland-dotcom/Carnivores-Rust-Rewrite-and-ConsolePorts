@@ -49,6 +49,9 @@ enum Msg {
     /// A downloads folder looked through: how many entries it gave.
     Scanned(usize),
     Base(Status),
+    /// A game elsewhere (a standalone, or one in the search folders) that
+    /// matches the base the Game tab's does not: the recipe's game.
+    Found(PathBuf, Status),
 }
 
 /// What the page asks of the launcher.
@@ -77,8 +80,27 @@ pub struct Page {
     note: Option<String>,
     /// Play once every entry is found (an instance's Play).
     pub play_when_ready: bool,
+    /// Folders to look through (with the folders in them) when the Game
+    /// tab's game is not the recipe's base: a standalone recipe's game is
+    /// rarely the Game tab's.
+    candidates: Vec<PathBuf>,
     tx: Sender<Msg>,
     rx: Receiver<Msg>,
+}
+
+/// Whether the game in `dir` is `base`, every listed file as it pins it
+/// (stops at the first that is not, so other games are quick to pass).
+fn is_base(base: &Base, dir: &Path) -> bool {
+    if base.files.is_empty() || c2_mods::pack::find_root(dir).is_none() {
+        return false;
+    }
+    let Ok(v) = c2_mods::vanilla(&[dir.to_path_buf()]) else {
+        return false;
+    };
+    base.files.iter().all(|(path, want)| {
+        v.read(path)
+            .is_ok_and(|d| recipe::sha256(&d).eq_ignore_ascii_case(want))
+    })
 }
 
 /// Whether a recipe entry's checked folder has every listed file as the
@@ -99,11 +121,13 @@ fn status_of(l: &Located) -> Status {
 
 impl Page {
     /// The recipe at `path`, with the folders of `used` if it is the same
-    /// recipe; `game_dirs` is the Game tab's game and overlays.
+    /// recipe; `game_dirs` is the Game tab's game and overlays, and
+    /// `candidates` other folders to look through for the recipe's base.
     pub fn open(
         path: &Path,
         used: Option<&RecipeUse>,
         game_dirs: Vec<PathBuf>,
+        candidates: Vec<PathBuf>,
     ) -> Result<Self, String> {
         let r = Recipe::load(path).map_err(|e| e.to_string())?;
         let base = recipe::load_base(path, &r);
@@ -128,6 +152,7 @@ impl Page {
             scanning: 0,
             note: None,
             play_when_ready: false,
+            candidates,
             tx,
             rx,
         };
@@ -203,6 +228,13 @@ impl Page {
         };
         self.base_status = Status::Checking;
         let tx = self.tx.clone();
+        // Only the Game tab's game is looked past: a folder the player chose
+        // is theirs.
+        let others = if self.game.is_none() {
+            self.candidates.clone()
+        } else {
+            Vec::new()
+        };
         std::thread::spawn(move || {
             let s = match recipe::check_apk(&base, &first) {
                 Some(true) => Status::Ok("built from that APK".into()),
@@ -213,6 +245,16 @@ impl Page {
                         let (missing, bad) = recipe::check_base(&base, &v);
                         if missing.is_empty() && bad.is_empty() {
                             Status::Ok(format!("ok ({} files)", base.files.len()))
+                        } else if let Some(g) = others
+                            .iter()
+                            .flat_map(|d| recipe::dir_and_subs(d, false))
+                            .find(|g| !dirs.contains(g) && is_base(&base, g))
+                        {
+                            let _ = tx.send(Msg::Found(
+                                g.clone(),
+                                Status::Ok(format!("ok ({} files)", base.files.len())),
+                            ));
+                            return;
                         } else {
                             // As `c2-pc recipe verify`: a warning, not a stop.
                             Status::Bad(format!(
@@ -299,6 +341,10 @@ impl Page {
                     self.note = Some(format!("{n} found there; {left} still to find."));
                 }
                 Msg::Base(s) => self.base_status = s,
+                Msg::Found(g, s) => {
+                    self.game = Some(g);
+                    self.base_status = s;
+                }
             }
         }
     }
@@ -564,6 +610,44 @@ mod tests {
     }
 
     #[test]
+    fn standalone_base_found_past_the_game_tabs() {
+        let dir = std::env::temp_dir().join(format!("c2rs-recipe-base-{}", std::process::id()));
+        let game = |name: &str, data: &[u8]| {
+            let h = dir.join(name).join("HUNTDAT");
+            std::fs::create_dir_all(&h).unwrap_or_else(|e| panic!("{e}"));
+            std::fs::write(h.join("X.CAR"), data).unwrap_or_else(|e| panic!("{e}"));
+            dir.join(name)
+        };
+        let (vanilla, other, standalone) = (
+            game("vanilla", b"c2"),
+            game("other", b"zz"),
+            game("standalone", b"sa"),
+        );
+        std::fs::create_dir_all(dir.join("recipes/bases")).unwrap_or_else(|e| panic!("{e}"));
+        std::fs::write(
+            dir.join("recipes/bases/sa.toml"),
+            format!(
+                "[base]\nid = \"sa\"\n\n[files]\n\"HUNTDAT/X.CAR\" = \"{}\"\n",
+                recipe::sha256(b"sa")
+            ),
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        let path = dir.join("recipes/sa.toml");
+        std::fs::write(
+            &path,
+            "[recipe]\nid = \"sa\"\nname = \"SA\"\nbase = \"sa\"\n",
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        let mut p = Page::open(&path, None, vec![vanilla], vec![other, standalone.clone()])
+            .unwrap_or_else(|e| panic!("{e}"));
+        settle(&mut p);
+        let (got, status) = (p.game.clone(), p.base_status.clone());
+        std::fs::remove_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(got, Some(standalone));
+        assert!(matches!(status, Status::Ok(_)), "{status:?}");
+    }
+
+    #[test]
     fn entries_found_in_a_downloads_folder() {
         let dir = std::env::temp_dir().join(format!("c2rs-recipe-page-{}", std::process::id()));
         let huntdat = dir.join("downloads").join("Some Mod").join("HUNTDAT");
@@ -576,7 +660,8 @@ mod tests {
         );
         let path = dir.join("t.toml");
         std::fs::write(&path, r).unwrap_or_else(|e| panic!("{e}"));
-        let mut p = Page::open(&path, None, Vec::new()).unwrap_or_else(|e| panic!("{e}"));
+        let mut p =
+            Page::open(&path, None, Vec::new(), Vec::new()).unwrap_or_else(|e| panic!("{e}"));
         settle(&mut p);
         assert!(!p.ready());
         p.scan(vec![dir.join("downloads")]);

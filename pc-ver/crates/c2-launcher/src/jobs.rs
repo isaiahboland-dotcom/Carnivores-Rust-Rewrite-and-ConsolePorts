@@ -138,11 +138,31 @@ impl Job {
             }
             Step::Launch { program, args } => {
                 self.log(format!("> {} {}", program.display(), args.join(" ")));
-                Command::new(&program)
+                let mut child = Command::new(&program)
                     .args(&args)
+                    .stderr(Stdio::piped())
                     .spawn()
                     .map_err(|e| format!("{}: {e}", program.display()))?;
                 self.log("Started.");
+                // Its errors (a recipe entry not found, say) come to the log
+                // while it runs, and how it stopped if it failed: a game that
+                // quits at once otherwise looks started.
+                let err = child.stderr.take();
+                let j = self.clone();
+                std::thread::spawn(move || {
+                    if let Some(e) = err {
+                        for line in BufReader::new(e).lines().map_while(Result::ok) {
+                            if line.contains("Error") || line.contains("ERROR") {
+                                j.log(line);
+                            }
+                        }
+                    }
+                    if let Ok(s) = child.wait() {
+                        if !s.success() {
+                            j.log(format!("The game stopped ({s}): see the line above."));
+                        }
+                    }
+                });
                 Ok(())
             }
             Step::Copy { from, to } => {

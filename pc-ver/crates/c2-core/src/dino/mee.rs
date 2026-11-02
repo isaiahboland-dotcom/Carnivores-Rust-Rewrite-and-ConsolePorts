@@ -175,6 +175,13 @@ pub struct MeeInfo {
     pub call_no: i32,
     /// Slots whose calls scare it off (`fearCall = n`, `dontFear = n`).
     pub fear_calls: Vec<i32>,
+    /// The death camera over its kills: the height above the body
+    /// (`CamYLand`, `CamYWater`) and the distance it circles at
+    /// (`CamBaseLand`, `CamBaseWater`); `None` where the entry gives none.
+    pub cam_y: Option<f32>,
+    pub cam_y_water: Option<f32>,
+    pub cam_base: Option<f32>,
+    pub cam_base_water: Option<f32>,
 }
 
 impl MeeInfo {
@@ -234,6 +241,10 @@ impl MeeInfo {
             spacing_depth: 0,
             call_no: 0,
             fear_calls: Vec::new(),
+            cam_y: None,
+            cam_y_water: None,
+            cam_base: None,
+            cam_base_water: None,
         }
     }
 

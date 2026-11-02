@@ -401,10 +401,17 @@ fn dir_name(d: &Path) -> String {
     .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
 }
 
-/// `dir` and the folders (and `.zip`s, when `zips`) right inside it.
-fn dir_and_subs(dir: &Path, zips: bool) -> Vec<PathBuf> {
-    let mut dirs = vec![dir.to_path_buf()];
-    if let Ok(rd) = std::fs::read_dir(dir) {
+/// How many folders down a downloads folder is looked through.
+pub const SEARCH_DEPTH: usize = 4;
+
+/// `dir` and the folders (and `.zip`s, when `zips`) inside it, up to
+/// [`SEARCH_DEPTH`] folders down. A folder with a `HUNTDAT` in it is a game
+/// or mod: it is listed but not looked into (nor is `HUNTDAT` itself).
+pub fn dir_and_subs(dir: &Path, zips: bool) -> Vec<PathBuf> {
+    fn walk(dir: &Path, depth: usize, zips: bool, out: &mut Vec<PathBuf>) {
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
         let mut subs: Vec<PathBuf> = rd
             .flatten()
             .map(|e| e.path())
@@ -413,9 +420,33 @@ fn dir_and_subs(dir: &Path, zips: bool) -> Vec<PathBuf> {
             })
             .collect();
         subs.sort();
-        dirs.extend(subs);
+        for p in subs {
+            let huntdat = p
+                .file_name()
+                .is_some_and(|n| n.eq_ignore_ascii_case("huntdat"));
+            if huntdat {
+                continue;
+            }
+            out.push(p.clone());
+            if p.is_dir() && depth < SEARCH_DEPTH && !has_huntdat(&p) {
+                walk(&p, depth + 1, zips, out);
+            }
+        }
     }
-    dirs
+    let mut out = vec![dir.to_path_buf()];
+    if !has_huntdat(dir) {
+        walk(dir, 1, zips, &mut out);
+    }
+    out
+}
+
+/// A `HUNTDAT` folder right inside `dir`.
+fn has_huntdat(dir: &Path) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|rd| {
+        rd.flatten().any(|e| {
+            e.file_name().eq_ignore_ascii_case("huntdat") && e.file_type().is_ok_and(|t| t.is_dir())
+        })
+    })
 }
 
 /// `d` as a standalone or overlay game: its game folder, possibly a few
@@ -470,14 +501,27 @@ pub fn mods_arg(p: &Path) -> (Option<String>, PathBuf) {
 }
 
 /// The candidates from `--mods` values: an `ID=FOLDER` one is that folder
-/// alone, named `ID`; a plain folder is itself and the folders inside it.
-fn cands_from(dirs: &[PathBuf], zips: bool, add: fn(&Path, &mut Vec<Cand>)) -> Vec<Cand> {
+/// alone, named `ID`; a plain folder is itself and the folders in it
+/// ([`dir_and_subs`]).
+fn cands_from(
+    list: &[RecipeMod],
+    dirs: &[PathBuf],
+    zips: bool,
+    add: fn(&Path, &mut Vec<Cand>),
+) -> Vec<Cand> {
     let mut cands = Vec::new();
     for arg in dirs {
         match mods_arg(arg) {
             (Some(id), d) => {
                 let from = cands.len();
                 add(&d, &mut cands);
+                // The folder the launcher remembers for the entry is the
+                // game folder; its paths may start above it.
+                if let Some(m) = list.iter().find(|m| m.id == id) {
+                    let mut own = cands.split_off(from);
+                    above_view(m, &d, &mut own);
+                    cands.extend(own);
+                }
                 for c in &mut cands[from..] {
                     c.0 = id.clone();
                 }
@@ -492,8 +536,8 @@ fn cands_from(dirs: &[PathBuf], zips: bool, add: fn(&Path, &mut Vec<Cand>)) -> V
     cands
 }
 
-/// Finds each of `games` (standalones or overlays) in `dirs` or one folder
-/// down (see [`mods_arg`]), as [`locate`] does mods, its game folder
+/// Finds each of `games` (standalones or overlays) in `dirs` or up to
+/// [`SEARCH_DEPTH`] folders down (see [`mods_arg`]), as [`locate`] does mods, its game folder
 /// possibly a few folders down.
 pub fn locate_games(games: &[RecipeMod], dirs: &[PathBuf]) -> Vec<Located> {
     let add: fn(&Path, &mut Vec<Cand>) = |d, c| {
@@ -501,14 +545,14 @@ pub fn locate_games(games: &[RecipeMod], dirs: &[PathBuf]) -> Vec<Located> {
             game_cands(d, c);
         }
     };
-    locate_among(games, &cands_from(dirs, false, add))
+    locate_among(games, &cands_from(games, dirs, false, add))
 }
 
 /// Finds each recipe mod in `dirs` (downloads folders, mod folders, or
 /// `ID=FOLDER`: see [`mods_arg`]): the folder named by `folder` or like the
 /// id, else the folder where most listed files match their hashes.
 pub fn locate(r: &Recipe, dirs: &[PathBuf]) -> Vec<Located> {
-    locate_among(&r.mods, &cands_from(dirs, true, mod_cands))
+    locate_among(&r.mods, &cands_from(&r.mods, dirs, true, mod_cands))
 }
 
 /// One recipe entry checked against the one folder the player gave for it
@@ -520,6 +564,7 @@ pub fn check_folder(m: &RecipeMod, dir: &Path, game: bool) -> Located {
     } else {
         mod_cands(dir, &mut cands);
     }
+    above_view(m, dir, &mut cands);
     let l = locate_among(std::slice::from_ref(m), &cands)
         .pop()
         .unwrap_or_default();
@@ -533,6 +578,41 @@ pub fn check_folder(m: &RecipeMod, dir: &Path, game: bool) -> Located {
         };
     }
     l
+}
+
+/// When paths of `m` start with the last folder names of `dir` (a recipe
+/// pinned from the unpacked download, `dir` the game folder in it, as the
+/// launcher remembers it; a download can hold more than one game), `dir`
+/// seen from the folder above those, so those paths are found. Its root
+/// stays `dir`'s, as found.
+fn above_view(m: &RecipeMod, dir: &Path, cands: &mut Vec<Cand>) {
+    let names: Vec<String> = dir
+        .components()
+        .rev()
+        .take_while(|c| matches!(c, Component::Normal(_)))
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    // The most of `dir`'s last names any path starts with.
+    let k = m
+        .files
+        .keys()
+        .filter_map(|p| {
+            let parts: Vec<&str> = p.split('/').collect();
+            (1..parts.len().min(names.len() + 1))
+                .rev()
+                .find(|&k| (0..k).all(|i| names[k - 1 - i].eq_ignore_ascii_case(parts[i])))
+        })
+        .max();
+    let Some(above) = k.and_then(|k| dir.ancestors().nth(k)) else {
+        return;
+    };
+    let root = cands
+        .iter()
+        .find(|c| c.3 == m.loose)
+        .map_or_else(|| dir.to_path_buf(), |c| c.1.clone());
+    if let Ok(b) = DirBackend::new(above) {
+        cands.push((dir_name(dir), root, Box::new(b), m.loose));
+    }
 }
 
 /// Every entry of a recipe, its kind and whether it is a whole game
@@ -848,6 +928,47 @@ pub fn prepare(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn game_folder_checked_with_the_downloads_wrapper_in_its_paths() {
+        let dir = std::env::temp_dir().join(format!("c2rs-check-above-{}", std::process::id()));
+        let game = dir.join("Bilewaters_1.1/bilewaters here");
+        std::fs::create_dir_all(game.join("HUNTDAT")).unwrap_or_else(|e| panic!("{e}"));
+        std::fs::write(game.join("HUNTDAT/X.CAR"), b"bw").unwrap_or_else(|e| panic!("{e}"));
+        let m = RecipeMod {
+            id: "bilewaters-1-1".into(),
+            files: [("bilewaters here/HUNTDAT/X.CAR".to_string(), sha256(b"bw"))].into(),
+            ..Default::default()
+        };
+        let l = check_folder(&m, &game, true);
+        // As `--mods ID=FOLDER` (the launcher's play and builds).
+        let arg = PathBuf::from(format!("bilewaters-1-1={}", game.display()));
+        let g = locate_games(std::slice::from_ref(&m), &[arg]).pop();
+        std::fs::remove_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+        assert!(l.complete(), "{l:?}");
+        assert_eq!(l.root.as_deref(), Some(game.as_path()));
+        let g = g.unwrap_or_default();
+        assert!(g.complete(), "{g:?}");
+        assert_eq!(g.root.as_deref(), Some(game.as_path()));
+    }
+
+    #[test]
+    fn downloads_looked_through_four_folders_down() {
+        let dir = std::env::temp_dir().join(format!("c2rs-dir-and-subs-{}", std::process::id()));
+        let mk = |p: &str| {
+            std::fs::create_dir_all(dir.join(p)).unwrap_or_else(|e| panic!("{e}"));
+        };
+        mk("a/b/c/d/e/f");
+        mk("a/game/HUNTDAT/MODELS");
+        mk("a/game/inner");
+        let got = dir_and_subs(&dir, false);
+        let has = |p: &str| got.contains(&dir.join(p));
+        let all = (has("a/b/c/d"), has("a/b/c/d/e"), has("a/game"));
+        let skipped = (has("a/game/HUNTDAT"), has("a/game/inner"));
+        std::fs::remove_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(all, (true, false, true), "{got:?}");
+        assert_eq!(skipped, (false, false), "{got:?}");
+    }
 
     #[test]
     fn readme_recipe_parses() {

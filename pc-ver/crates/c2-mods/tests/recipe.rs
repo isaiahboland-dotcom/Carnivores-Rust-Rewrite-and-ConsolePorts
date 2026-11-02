@@ -245,3 +245,17 @@ fn recipes_found_in_subfolders_but_not_base_lists() {
     );
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// The launcher's editor saves a recipe by writing it out again: every
+/// recipe in the repository reads back the same.
+#[test]
+fn the_repository_recipes_write_out_unchanged() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../recipes");
+    let found = c2_mods::recipe::find_recipes(&dir);
+    assert!(!found.is_empty(), "no recipes under {}", dir.display());
+    for p in found {
+        let r = c2_mods::recipe::Recipe::load(&p).expect("loads");
+        let again = c2_mods::recipe::Recipe::parse(&r.to_toml()).expect("reparses");
+        assert_eq!(r, again, "{}", p.display());
+    }
+}

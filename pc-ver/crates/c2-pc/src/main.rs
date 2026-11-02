@@ -51,7 +51,7 @@ const USAGE: &str = "usage:
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
   c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--models] [--shot out.png]
   c2-pc hunt  <AREA.MAP|TROPHY.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all]
-              [--weapon N] [--bino] [--pause] [--exit] [--message TEXT] [--kill] [--plaque] [--pick] [--call] [--fill] [--observer] [--player N] [--survival normal|hardcore|custom|mobile]\n              [--mobile-survival FILE]\n              [--shot out.png]
+              [--weapon N] [--bino] [--pause] [--exit] [--message TEXT] [--kill] [--plaque] [--pick] [--call] [--fill] [--die AI,MS[,NAME]] [--observer] [--player N] [--survival normal|hardcore|custom|mobile]\n              [--mobile-survival FILE]\n              [--shot out.png]
 
 model: drag to orbit, wheel zoom, [ ] next/prev file, N/P next/prev animation, Space pause
 area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distance
@@ -76,6 +76,7 @@ const VALUE_FLAGS: &[&str] = &[
     "view",
     "sim",
     "ship",
+    "die",
     "weapon",
     "target",
     "fire",
@@ -387,6 +388,26 @@ fn main() -> Result<()> {
                 .context("--ship AI,MS[,DIST]")?;
             // --sim MS[,AI[,DIST[,AFTER]]]: fixed seed, run the AI, then watch an
             // animal; AFTER ms more pass with the camera fixed (screenshots).
+            // --die AI,MS[,NAME]: an animal of that AI (named NAME) kills the
+            // hunter; MS more pass.
+            let die: Option<(i32, u32, Option<String>)> = match o.value("die") {
+                None => None,
+                Some(v) => {
+                    let mut p = v.splitn(3, ',');
+                    let ai = p
+                        .next()
+                        .unwrap_or_default()
+                        .trim()
+                        .parse()
+                        .context("--die AI,MS")?;
+                    let ms = p
+                        .next()
+                        .map(|s| s.trim().parse())
+                        .transpose()
+                        .context("--die AI,MS")?;
+                    Some((ai, ms.unwrap_or(3000), p.next().map(str::to_string)))
+                }
+            };
             let sim: Option<Vec<f32>> = o
                 .value("sim")
                 .map(|v| v.split(',').map(str::parse).collect::<Result<_, _>>())
@@ -457,6 +478,9 @@ fn main() -> Result<()> {
                 }
                 if map {
                     h.open_map();
+                }
+                if let Some((ai, ms, name)) = &die {
+                    h.die_by(*ai, *ms, name.as_deref());
                 }
                 if let Some(ms) = fire {
                     h.fire_and_wait(ms);

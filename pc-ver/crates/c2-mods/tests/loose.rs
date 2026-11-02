@@ -57,6 +57,106 @@ fn model(tags: &[i16]) -> Vec<u8> {
     })
 }
 
+/// The Giganotosaurus add-on's way: its `_RES` text has a Hunter entry
+/// naming its own hunter model. That model is merged into the game's, not
+/// copied, so the entry must keep the game's model (or the hunter's body is
+/// not drawn when it dies).
+#[test]
+fn an_add_on_hunter_entry_keeps_the_merged_model() {
+    let base = tmp("keep-base");
+    write(
+        &base,
+        &[
+            ("HUNTDAT/_RES.TXT", RES.as_bytes()),
+            ("HUNTDAT/hunter.car", &model(&[0, 1])),
+        ],
+    );
+    let a = tmp("keep-a");
+    write(
+        &a,
+        &[
+            ("gigano.car", b"giga"),
+            ("HUNTER1_gigano_MEE.CAR", &model(&[0, 1, 7])),
+            (
+                "RES_ ENTRY.txt",
+                b"{\n name = 'Giganotosaurus'\n file = 'gigano.car'\n ai = 12\n killtype{\n  hunterAnim = 2\n }\n}\n\n{\n name    = 'Hunter'\n file    = 'hunter1_gigano_mee.car'\n ai = 0\n clone = 0\n}\n",
+            ),
+        ],
+    );
+    let bases = [base.clone()];
+    let v = vanilla(&bases).expect("vanilla");
+    let ma = load_mod(&v, &a).expect("a");
+    let pack = build(&bases, vec![ma]).expect("build");
+    let res = c2_formats::res_txt::ResTxt::parse(&String::from_utf8_lossy(
+        &pack.vfs.read("HUNTDAT/_RES.TXT").expect("res"),
+    ))
+    .expect("parse");
+    let hunter = &res.section("characters").expect("characters").blocks[0];
+    let file = hunter.get(&["file"]).map(str::to_string);
+    let merged = car::parse(&pack.vfs.read("HUNTDAT/hunter.car").expect("hunter")).expect("car");
+    let _ = std::fs::remove_dir_all(&base);
+    let _ = std::fs::remove_dir_all(&a);
+    assert_eq!(file.as_deref(), Some("'hunter.car'"));
+    assert_eq!(merged.animations.len(), 3);
+}
+
+/// ARK Yutyrannus ships `MENU.txt` (its `_MENU.TXT` lines) beside its
+/// `_RES.TXT` entry; Tany ships Carnivores Cordelia's whole `_RES.TXT`,
+/// its animals' models not with it.
+#[test]
+fn the_res_entry_is_taken_and_animals_without_models_left_out() {
+    let base = tmp("menu-base");
+    write(
+        &base,
+        &[
+            ("HUNTDAT/_RES.TXT", RES.as_bytes()),
+            ("HUNTDAT/hunter.car", &model(&[0, 1])),
+        ],
+    );
+    let a = tmp("menu-a");
+    write(
+        &a,
+        &[
+            ("YUTY.car", b"yuty"),
+            ("MENU.txt", b"{\n name = 'Yutyrannus'\n ai = 18\n smell = 0.85\n}\n"),
+            (
+                "RES CARNIVORES.txt",
+                b"{\n name = 'Yutyrannus'\n file = 'yuty.car'\n ai = 18\n health = 20\n}\n\n{\n name = 'Endoceras (F)'\n file = '3D/AREA1/1F.car'\n ai = 19\n}\n",
+            ),
+        ],
+    );
+    let bases = [base.clone()];
+    let v = vanilla(&bases).expect("vanilla");
+    let ma = load_mod(&v, &a).expect("a");
+    let notes = ma.notes.clone();
+    let pack = build(&bases, vec![ma]).expect("build");
+    let res = c2_formats::res_txt::ResTxt::parse(&String::from_utf8_lossy(
+        &pack.vfs.read("HUNTDAT/_RES.TXT").expect("res"),
+    ))
+    .expect("parse");
+    let chars = &res.section("characters").expect("characters").blocks;
+    let yuty = chars
+        .iter()
+        .find(|b| b.get(&["name"]) == Some("'Yutyrannus'"))
+        .map(|b| {
+            (
+                b.get(&["file"]).map(str::to_string),
+                b.get(&["health"]).map(str::to_string),
+            )
+        });
+    let endo = chars
+        .iter()
+        .any(|b| b.get(&["name"]) == Some("'Endoceras (F)'"));
+    let _ = std::fs::remove_dir_all(&base);
+    let _ = std::fs::remove_dir_all(&a);
+    assert_eq!(yuty, Some((Some("'yuty.car'".into()), Some("20".into()))));
+    assert!(!endo);
+    assert!(
+        notes.iter().any(|n| n.contains("'endoceras (f)' left out")),
+        "{notes:?}"
+    );
+}
+
 #[test]
 fn loose_add_ons_are_placed_merged_and_their_hunters_combined() {
     let base = tmp("base");
@@ -153,6 +253,80 @@ fn loose_add_ons_are_placed_merged_and_their_hunters_combined() {
 /// own `_MENU.TXT`.
 const MEE_RES: &str = "weapons {\n{\n name = 'Pistol'\n power = 1\n}\n}\ncharacters {\n{\n name = 'Hunter'\n file = 'hunter.car'\n ai = 0\n}\n{\n name = 'Spinosaurus'\n file = 'spino.car'\n ai = 16\n runspd = 1.6\n wlkspd = 0.7\n killdist = 300\n runAnim = 0\n walkAnim = 1\n deathtype {\n  dieAnim = 6\n }\n overwrite char0 {\n  spawninfo{\n   spawngroup = 2\n  }\n }\n spawninfo{\n  spawngroup = 1\n }\n}\n}\n.\n";
 const MEE_MENU: &str = "weapons {\n{\n name = 'Pistol'\n power = 1\n}\n}\ncharacters {\n{\n name = 'Spinosaurus'\n ai = 16\n}\n}\nprices {\n start = 100\n dino = 250\n weapon = 20\n}\n.\n";
+
+/// Two add-ons of the same animal, then another, and one not huntable: the
+/// merge keeps one entry for the first two, so they share its slot and the
+/// next animal's picture is its own (big packs showed the next one's).
+#[test]
+fn the_same_animal_twice_takes_one_slot() {
+    let base = tmp("twice-base");
+    write(
+        &base,
+        &[
+            ("HUNTDAT/_RES.TXT", MEE_RES.as_bytes()),
+            ("HUNTDAT/_MENU.TXT", MEE_MENU.as_bytes()),
+            ("HUNTDAT/hunter.car", &model(&[0, 1])),
+            ("HUNTDAT/MENU/PICS/DINO1.TGA", b"spino pic"),
+        ],
+    );
+    // Entries (name, ai) with the add-on's slot 1 picture: an add-on can
+    // bring a huntable and an ambient (the Dromeosaurus and Oviraptor one).
+    let add = |dir: &str, entries: &[(&str, i32)], pic: &[u8]| {
+        let d = tmp(&format!("twice-{dir}"));
+        let entry: String = entries
+            .iter()
+            .map(|(name, ai)| format!("{{\n name = '{name}'\n file = 'x.car'\n ai = {ai}\n}}\n\n"))
+            .collect();
+        write(
+            &d,
+            &[
+                ("x.car", b"x"),
+                ("DINO1.TGA", pic),
+                ("README.txt", entry.as_bytes()),
+            ],
+        );
+        d
+    };
+    let dirs = [
+        add("one", &[("Carcharodontosaurus", 16)], b"carcha one"),
+        add("two", &[("Carcharodontosaurus", 16)], b"carcha two!"),
+        add(
+            "three",
+            &[("Ovi", 2), ("Diabloceratops", 16)],
+            b"diablo pic",
+        ),
+    ];
+    let bases = [base.clone()];
+    let v = vanilla(&bases).expect("vanilla");
+    let mods = dirs.iter().map(|d| load_mod(&v, d).expect("mod")).collect();
+    let pack = build(&bases, mods).expect("build");
+    let read = |p: &str| pack.vfs.read(p).ok();
+    let menu = c2_formats::menu_txt::MenuData::from_res(
+        &c2_formats::res_txt::ResTxt::parse(&String::from_utf8_lossy(
+            &read("HUNTDAT/_MENU.TXT").expect("menu"),
+        ))
+        .expect("parse"),
+    );
+    let names: Vec<_> = menu.huntables.iter().map(|d| d.name.clone()).collect();
+    let pics = (
+        read("HUNTDAT/MENU/PICS/DINO1.TGA"),
+        read("HUNTDAT/MENU/PICS/DINO2.TGA"),
+        read("HUNTDAT/MENU/PICS/DINO3.TGA"),
+        read("HUNTDAT/MENU/PICS/DINO4.TGA"),
+    );
+    let _ = std::fs::remove_dir_all(&base);
+    for d in &dirs {
+        let _ = std::fs::remove_dir_all(d);
+    }
+    assert_eq!(
+        names,
+        ["Spinosaurus", "Carcharodontosaurus", "Diabloceratops"]
+    );
+    assert_eq!(pics.0.as_deref(), Some(&b"spino pic"[..]));
+    assert_eq!(pics.1.as_deref(), Some(&b"carcha two!"[..]));
+    assert_eq!(pics.2.as_deref(), Some(&b"diablo pic"[..]));
+    assert_eq!(pics.3, None);
+}
 
 #[test]
 fn on_a_modders_edition_base_slot_add_ons_get_their_own_slot() {
