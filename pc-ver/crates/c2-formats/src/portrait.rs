@@ -254,9 +254,7 @@ mod tests {
         let mut px: Vec<u16> = (0..w * h)
             .map(|i| if i % 7 == 0 { 0x0421 * 3 } else { 0x0421 * 2 })
             .collect();
-        for x in 0..w {
-            px[x] = 0x7FFF;
-        }
+        px[..w].fill(0x7FFF);
         assert!(blank_picture(&px, w, h));
         // An animal in the middle is not.
         px[10 * w + 20] = 0x7C00;
