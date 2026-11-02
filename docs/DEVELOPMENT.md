@@ -75,7 +75,7 @@ The original C++ source (made available on Assembla in 2013) is used **as a refe
 │       └── c2-parity/         # parity harness vs the original game/data
 ├── 3ds-ver/                   # 3DS port (separate nightly workspace, from M6):
 │                              #   c2-3ds backend + c2-cook, reusing pc-ver/crates/*
-├── wiiu-ver/                  # Wii U port: probes and the playable demo (perf-probe), C + Rust
+├── wiiu-ver/                  # Wii U port: playable demo (perf-probe), C + Rust; old probes archived locally
 ├── psvr2-ver/                 # PS VR2 plan (research only)
 ├── recipes/                   # recipes: credits, links and hashes (no mod content!)
 └── source/                    # GITIGNORED: your own local copies

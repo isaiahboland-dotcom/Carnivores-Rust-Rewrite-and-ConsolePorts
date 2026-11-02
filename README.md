@@ -41,7 +41,7 @@ the 3DS's PICA200 GPU and the Wii U's PowerPC CPU.
 |---|---|---|
 | **PC** (Linux; Windows experimental) | Playable, feature-rich | The full original game, plus add-ons, Modder's Edition games, standalone games, Carnivores: Ice Age, animals from the mobile games, survival mode and a balance editor. Bugs mostly show up when a lot of mods and add-ons are used at once. Working on smaller bugs and optional quality of life features |
 | **Nintendo 3DS** (homebrew) | Nearly complete | Full hunts, touch menus, bottom-screen map, sound, saves, trophy room, add-on and standalone packs, `.cia` installs. Tested on real 3DS and 2DS hardware. Optional settings help with the handheld controls (see [below](#3ds-settings-for-handheld-play)). Like PC, bugs mostly come from packing in too many add-ons or mods. |
-| **Wii U** (homebrew) | Demo, being optimized | Stock Carnivores 2 only: an HD menu (TV and GamePad) with dawn/day/night and all the original gear and options, all five maps, the nine animals, six weapons, calls, radar, GamePad map. Runs on a real Wii U under Aroma (`.wuhb`) and exits to the HOME menu cleanly. A steady 30 FPS in open areas; 20-25 FPS in thick jungle, where the GPU is the limit ([results](wiiu-ver/perf-probe/hardware-logs/2026-10-30-menu-partial-results.md)). New and not yet tested on the console: survival, the trophy room, saved trophies and score (the PC's save format), the PC's kill notice and trophy plaque, the hunter record, and an exit prompt and pause. New: any game as its own Wii U Menu entry: add-ons, the Modder's Edition and standalone games such as Triassic and Mandibles. |
+| **Wii U** (homebrew) | Demo, being optimized | Stock Carnivores 2 only: an HD menu (TV and GamePad) with dawn/day/night and all the original gear and options, all five maps, the nine animals, six weapons, calls, radar, GamePad map. Runs on a real Wii U under Aroma (`.wuhb`) and exits to the HOME menu cleanly. A steady 30 FPS in open areas; 20-25 FPS in thick jungle, where the GPU is the limit (owner hardware measurements). New and not yet tested on the console: survival, the trophy room, saved trophies and score (the PC's save format), the PC's kill notice and trophy plaque, the hunter record, and an exit prompt and pause. New: any game as its own Wii U Menu entry: add-ons, the Modder's Edition and standalone games such as Triassic and Mandibles. |
 | **PC VR** (OpenXR) | Early first draft | Menus and the hunt setup on a panel, walking the areas, animals that hunt you. No weapons yet. Tested with a PS VR2 on Linux through Monado. |
 | **PS5 / PS VR2** | Not started | Research notes only (`psvr2-ver/gameplan.md`). Mainly looking at an optimized PSVR2 setup since the PS5 CFW community is already working on translation layers for PC games to run |
 
@@ -260,8 +260,8 @@ cargo run --release --manifest-path pc-ver/Cargo.toml -p c2-launcher --bin c2-wi
 Everything after `--` goes to `c2-cook` (`--game`, `--overlay`, `--mods`, `--recipe`, `--balance`). Add
 `--rpx` for a Homebrew Launcher build instead of a `.wuhb` (it reads `wiiu/apps/carnivores-probe/`).
 To run it in Cemu, cook into Cemu's SD card (`c2-cook --target wiiu --out
-~/.local/share/Cemu/sdcard/wiiu/apps/carnivores-probe ...`) and start the `.rpx`. Hardware frame-time captures and their results are in
-[wiiu-ver/perf-probe/hardware-logs/](wiiu-ver/perf-probe/hardware-logs/). Controls and the current state: [wiiu-ver/perf-probe/README.md](wiiu-ver/perf-probe/README.md);
+~/.local/share/Cemu/sdcard/wiiu/apps/carnivores-probe ...`) and start the `.rpx`. Hardware frame-time captures and session results are kept locally in the ignored
+`wiiu-ver/perf-probe/hardware-logs/` directory. Controls and the current state: [wiiu-ver/perf-probe/README.md](wiiu-ver/perf-probe/README.md);
 the plan: [docs/WIIU.md](docs/WIIU.md) and [wiiu-ver/gameplan.md](wiiu-ver/gameplan.md).
 
 ---

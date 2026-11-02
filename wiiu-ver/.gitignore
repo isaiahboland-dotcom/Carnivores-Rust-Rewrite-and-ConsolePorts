@@ -8,3 +8,7 @@ tools/*
 # Screenshots of the game running (game imagery: docs/DEVELOPMENT.md §2).
 screenshots/
 build-*/
+
+# Local backups, historical experiments, and private hardware captures.
+/(testing)/
+**/hardware-logs/

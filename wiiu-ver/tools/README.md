@@ -16,4 +16,6 @@ git clone https://github.com/devkitPro/wut tools/devkitpro-wut
 git -C tools/devkitpro-wut checkout 937f0d6901f5e2a72672154a674ec47b63e2f417
 ```
 
-See `../runtime-investigation.md` for how they are used.
+See [the port overview](../README.md) and the repository build instructions.
+The original runtime investigation is archived locally under
+`../(testing)/historical-notes/runtime-investigation.md`.

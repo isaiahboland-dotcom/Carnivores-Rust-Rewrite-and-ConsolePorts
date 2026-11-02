@@ -38,7 +38,7 @@ game and mod files.
 - The Rust/WUT boot probe has been built with the devkitPro Docker image and
   its message was confirmed in Cemu. Real hardware and HOME exit are still
   unverified. See [the Wii U gameplan](../wiiu-ver/gameplan.md) and
-  [runtime investigation](../wiiu-ver/runtime-investigation.md).
+  [local investigation archive information](../wiiu-ver/README.md#local-archives-and-captures).
 
 ## Toolchain and platform research
 

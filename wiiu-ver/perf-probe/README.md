@@ -1,5 +1,10 @@
 ## Status: Wii U port
 
+Build and install: [repository instructions](../../README.md#wii-u-from-the-command-line-demo).
+The dated sections below record development experiments and their validation
+at the time; they are not a single current test report. Hardware captures
+referenced below are local, ignored files; see the [port overview](../README.md).
+
 ### First playable hardware result, 2026-10-29
 
 The owner confirmed the trace-v3 WUHB displays the blue TV/magenta GamePad
@@ -272,9 +277,9 @@ switches the GamePad between map and gameplay. Movement is left stick, look is
 right stick, A jumps, B toggles sprint, and D-pad up toggles crouch. This death-screen update
 has not yet been visually verified in Cemu or tested on hardware.
 
-Build with the same Rust and devkitPro procedure as the [fog probe](../fog-probe/README.md),
-substituting `perf-probe` for `fog-probe` in the paths. Shader and CMake changes
-must be rebuilt before testing.
+Build with the Rust and devkitPro procedure in the
+[repository README](../../README.md#wii-u-from-the-command-line-demo).
+Shader and CMake changes must be rebuilt before testing.
 
 The world's shaders: `terrain.vert` with `terrain.frag` (cut-out) and with
 `terrain_opaque.frag` (terrain and water). If editing them, run:
@@ -371,7 +376,7 @@ The SD's prior playable WUHB is archived as `build/hardware-playable-baseline.wu
 
 ### Map synchronization and hidden work experiment (schema 3)
 
-The [first range-upload hardware capture](hardware-logs/2026-10-29-range-upload-results.md)
+The first range-upload hardware capture (local capture)
 now provides physical-console evidence. The next candidate uses immutable map
 positions and separate six-vertex UV buffers for TV and DRC. Both UV buffers are
 written after the previous-frame completion wait and before either display
@@ -403,7 +408,7 @@ and repeated map toggles. Population, visibility range and resolution are unchan
 
 ### Tiled atlas A/B experiment (schema 4)
 
-The [map-stream hardware capture](hardware-logs/2026-10-29-map-streams-results.md)
+The map-stream hardware capture (local capture)
 separates live play (112.18 ms/frame) from death playback (130.79 ms/frame).
 The map wait is eliminated; PRESENT is now the largest CPU elapsed bucket.
 It still includes completion/presentation and is not a pure GPU timer.
@@ -434,7 +439,7 @@ Do not compare unrelated locations/seeds or interpret all PRESENT as GPU time.
 
 ### HOME lifecycle repair candidate and static-view work (schema 5)
 
-The [tiled-atlas A/B capture](hardware-logs/2026-10-29-tiled-atlas-ab-results.md)
+The tiled-atlas A/B capture (local capture)
 supports tiled textures as the default (83.94 ms tiled / 114.93 ms linear in
 one session). The owner also reported a forced-shutdown HOME-exit hang. Clean
 exit is not validated; fixing it takes priority over further performance tests.
@@ -534,7 +539,7 @@ Generated CAR/RSC/MAP data is not bundled with the tests.
 
 ### Resident scenery window candidate (schema 7)
 
-The [static-scene hardware capture](hardware-logs/2026-10-29-static-scene-results.md)
+The static-scene hardware capture (local capture)
 confirms working system-menu exit and an average 33.48 ms for unchanged views.
 Rebuilt views still average 77.22 ms, including 22.02 ms scenery generation/copy.
 The next candidate targets this rotation-dependent scenery cost.

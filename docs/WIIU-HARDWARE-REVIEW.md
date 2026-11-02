@@ -1,5 +1,9 @@
 # Wii U hardware review and optimization worklist
 
+Raw captures referenced in this historical review are local, ignored files.
+See the [port overview](../wiiu-ver/README.md#local-archives-and-captures)
+for their location and backup information.
+
 Recorded 2026-10-29 after the first confirmed playable hunt on a physical Wii U.
 This is an audit and work plan; the performance and gameplay fixes below have
 not been implemented by this review.
@@ -21,8 +25,8 @@ not been implemented by this review.
   estimate, not a captured frame-time measurement. Exact map, selected roster,
   TV output mode, GamePad view mode, and performance-overlay numbers were not
   recorded for this run.
-- Preserved raw evidence: [working startup v3](../wiiu-ver/perf-probe/hardware-logs/2026-10-29-playable-startup-v3.txt)
-  and [black-screen v2](../wiiu-ver/perf-probe/hardware-logs/2026-10-29-black-screen-v2.txt).
+- Preserved raw evidence: working startup v3 (local capture)
+  and black-screen v2 (local capture).
   The console clock dates on SD files are unreliable; these filenames use the
   workstation capture date.
 
@@ -215,7 +219,7 @@ preserved playable WUHB.
 
 The owner subsequently supplied a hardware overlay sample: **180.9 ms/frame
 (~5.53 FPS), WAIT 75.3 ms, SCENERY 68.2 ms, TERRAIN 18.2 ms**. The
-[full transcription and artifact identity](../wiiu-ver/perf-probe/hardware-logs/2026-10-29-performance-baseline-overlay.md)
+full transcription and artifact identity (local capture)
 are preserved. The reinserted SD still contained the original playable WUHB,
 so no CSV evidence was available. These measurements prioritize scenery/buffer
 work and explicit waits, without proving GPU saturation. The first candidate
@@ -223,7 +227,7 @@ reduces dynamic-stream cache maintenance to written vertex ranges and adds
 separate lock/cache subset timings. Explicit waits, workload and visibility
 remain unchanged; hardware before/after measurement is pending.
 
-The range-upload candidate now has a [physical-console capture and analysis](../wiiu-ver/perf-probe/hardware-logs/2026-10-29-range-upload-results.md).
+The range-upload candidate now has a physical-console capture and analysis (local capture).
 The reported overlay improved from 180.9 to 145 ms/frame with different vertex
 counts; this is not a controlled before/after result. The capture establishes
 1080p TV output, low stream lock/cache costs, substantial scenery generation and
@@ -234,7 +238,7 @@ hazard, skips geometry hidden on both displays and map work hidden on both,
 and records death playback separately. Required previous-frame/final completion
 is retained. New hardware results are pending.
 
-The map-stream build now has a [schema-3 hardware capture](../wiiu-ver/perf-probe/hardware-logs/2026-10-29-map-streams-results.md):
+The map-stream build now has a schema-3 hardware capture (local capture):
 555 live frames average 112.18 ms, 65 death-playback frames average 130.79 ms.
 Map wait is zero, and hidden-map work drops to zero during death playback.
 PRESENT is the largest elapsed bucket (52.72 ms live / 66.17 ms death), while
@@ -244,7 +248,7 @@ A/B candidate now tests memory layout without a quality reduction; both layouts
 are retained for same-session toggling and each conversion is roundtrip-checked
 at load time. Its hardware performance and appearance remain unverified.
 
-A [same-session tiled/linear capture](../wiiu-ver/perf-probe/hardware-logs/2026-10-29-tiled-atlas-ab-results.md)
+A same-session tiled/linear capture (local capture)
 now supports tiled sampling: gameplay averaged 83.94 ms tiled versus 114.93 ms
 linear; terrain/scenery workload is stable and PRESENT approximately halves.
 Actor/simulation work still differs, so this is not a perfectly fixed workload.
@@ -268,7 +272,7 @@ near-first scenery order independently. Host checks and release/RPX builds pass;
 performance, appearance during movement and successful HOME shutdown are still
 hardware-unverified. See the [combined candidate instructions](../wiiu-ver/perf-probe/README.md#combined-static-scene-optimization-candidate-schema-6).
 
-The [static-scene hardware result](../wiiu-ver/perf-probe/hardware-logs/2026-10-29-static-scene-results.md)
+The static-scene hardware result (local capture)
 now confirms working system-menu exit and 33.48 ms average on 428 reused-view
 frames. 185 rebuilt frames average 77.22 ms, including 13.59 ms terrain and
 22.02 ms scenery. Resume after HOME remains separate from confirmed exit.
