@@ -1892,6 +1892,20 @@ mod tests {
                 c.pos
             );
         }
+        // A strict secret cap includes packs and repairs a removed leader.
+        for (i, p) in herd.packs.iter_mut().enumerate() {
+            p.leader = herd.chars.iter().rposition(|c| c.pack == Some(i)).unwrap();
+        }
+        herd.cap_population(2, |ct| ct == 2);
+        assert_eq!((count(&herd, 1), count(&herd, 2)), (1, 2));
+        for c in &herd.chars {
+            if let Some(p) = c.pack {
+                assert_eq!(herd.chars[herd.packs[p].leader].pack, Some(p));
+            }
+        }
+        herd.cap_population(0, |ct| ct == 2);
+        assert_eq!((count(&herd, 1), count(&herd, 2)), (1, 0));
+        assert!(herd.packs.is_empty());
         // A family with no AI here yet is never placed.
         herd.species[1].info.ai = -1;
         herd.place_mee(&area, hunter, &mut rng, &t, 128);

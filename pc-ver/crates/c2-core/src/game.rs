@@ -3071,16 +3071,27 @@ impl Hunt {
         } else {
             self.herd.trophy_spots.len().min(self.room.bodies.len())
         };
+        if n < 2 || !matches!(dir, -1 | 1) || slot >= n {
+            return false;
+        }
+        // The phone room is a closed walk around four walls. Its last
+        // and first stands are neighbours at the northwest corner.
+        let wraps = area.trophy_start.is_some() && self.herd.trophy_spots.is_empty();
         let mut t = slot as i32;
-        let to = loop {
+        let mut to = None;
+        for _ in 1..n {
             t += dir;
-            if t < 0 || t >= n as i32 {
-                return false;
+            if wraps {
+                t = t.rem_euclid(n as i32);
+            } else if t < 0 || t >= n as i32 {
+                break;
             }
             if self.room.bodies[t as usize].ctype == 0 {
-                break t as usize;
+                to = Some(t as usize);
+                break;
             }
-        };
+        }
+        let Some(to) = to else { return false };
         self.room.bodies.swap(slot, to);
         let room = self.room.clone();
         self.herd.place_trophies(area, &room, &mut self.rng);
@@ -4526,6 +4537,21 @@ mod tests {
         assert!(h.herd.chars.iter().any(|c| c.state == 1));
         assert!(h.move_current_trophy(&area, -1));
         assert!(!h.move_current_trophy(&area, -1));
+        // The mobile room is a ring: the last stand is left of stand 0.
+        let mut mobile_area = Area::flat(10);
+        mobile_area.set_trophy_mode();
+        mobile_area.trophy_start = Some((76, 70));
+        assert!(h.move_current_trophy(&mobile_area, -1));
+        assert_eq!(h.trophy_body, Some(23));
+        let mount = h.herd.chars.iter().find(|c| c.state == 23).unwrap();
+        let (x, z) = mobile_area.landings[23];
+        assert_eq!(
+            (mount.pos[0], mount.pos[2]),
+            (f32::from(x) * 256.0, f32::from(z) * 256.0)
+        );
+        assert!(h.move_current_trophy(&mobile_area, 1));
+        assert_eq!(h.trophy_body, Some(0));
+        h.herd.place_trophies(&area, &h.room, &mut h.rng);
         h.tick(&area, &[], &HuntInput::default(), 10, &mut ev);
         assert_eq!(h.trophy_body, Some(0));
         h.remove_current_trophy();

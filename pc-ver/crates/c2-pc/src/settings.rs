@@ -40,6 +40,8 @@ pub struct PcSettings {
     /// roaming add-ons too, which their makers left out of the menu to be
     /// come across on their own maps; off, they only roam there.
     pub all_huntable: i32,
+    /// Unselected huntable animals per map; zero disables them.
+    pub secret_dinos: i32,
 }
 
 impl Default for PcSettings {
@@ -55,6 +57,7 @@ impl Default for PcSettings {
             teleport: 0,
             hints: 0,
             all_huntable: 0,
+            secret_dinos: 10,
         }
     }
 }
@@ -86,6 +89,7 @@ impl PcSettings {
                 "map_mobile" => s.map_mobile = i32::from(v != 0),
                 "teleport" => s.teleport = i32::from(v != 0),
                 "button_hints" => s.hints = i32::from(v != 0),
+                "secret_dinos" => s.secret_dinos = v.clamp(0, 255),
                 "all_huntable" => s.all_huntable = i32::from(v != 0),
                 _ => {}
             }
@@ -96,7 +100,7 @@ impl PcSettings {
     pub fn store(&self) {
         let text = format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nfar_sprites = {}\n\
-             map_heading = {}\nmap_mobile = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\n",
+             map_heading = {}\nmap_mobile = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\n",
             self.render,
             self.fog,
             self.blood,
@@ -106,7 +110,8 @@ impl PcSettings {
             self.map_mobile,
             self.teleport,
             self.hints,
-            self.all_huntable
+            self.all_huntable,
+            self.secret_dinos
         );
         if let Some(dir) = path().parent() {
             let _ = std::fs::create_dir_all(dir);

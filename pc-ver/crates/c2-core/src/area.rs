@@ -187,6 +187,36 @@ impl Area {
                 _ => {}
             }
         }
+        // Older APK imports generated evenly spaced stands away from the
+        // floor markings. Migrate that specific generated layout on load,
+        // so existing installs do not need to be imported again.
+        if stands.len() == 24
+            && text.starts_with("# c2rs: the phone game's trophy room (its walls), our stands")
+            && !text.contains("# floor-centres-v2")
+        {
+            let (w, e, n, s) = (
+                i32::from(stands[18].0) - 4,
+                i32::from(stands[6].0) + 4,
+                i32::from(stands[0].1) - 4,
+                i32::from(stands[12].1) + 4,
+            );
+            if w >= 0
+                && n >= 0
+                && e < MAP_SIZE as i32
+                && s < MAP_SIZE as i32
+                && e - w >= 24
+                && s - n >= 24
+            {
+                for i in 0..6 {
+                    let x = w + 8 + (e - 9 - (w + 8)) * i as i32 / 5;
+                    let z = n + 8 + (s - 9 - (n + 8)) * i as i32 / 5;
+                    stands[i] = (x as u16, (n + 2) as u16);
+                    stands[6 + i] = ((e - 3) as u16, z as u16);
+                    stands[17 - i] = (x as u16, (s - 3) as u16);
+                    stands[23 - i] = ((w + 2) as u16, z as u16);
+                }
+            }
+        }
         if !stands.is_empty() {
             self.landings = stands;
         }
@@ -567,6 +597,45 @@ mod tests {
         b.set_trophy_mode();
         b.set_trophy_spots("start 1 2");
         assert_eq!(b.landings.len(), 24);
+    }
+
+    #[test]
+    fn old_mobile_stands_migrate_once_to_floor_centres() {
+        let mut text = String::from(
+            "# c2rs: the phone game's trophy room (its walls), our stands\nstart 143 168\n",
+        );
+        for side in 0..4 {
+            for i in 0..6 {
+                let forward = 140 + 29 * i / 5;
+                let reverse = 169 - 29 * i / 5;
+                let (x, z) = match side {
+                    0 => (forward, 135),
+                    1 => (174, forward),
+                    2 => (reverse, 174),
+                    _ => (135, reverse),
+                };
+                text += &format!("stand {x} {z}\n");
+            }
+        }
+        let mut area = Area::flat(10);
+        area.set_trophy_spots(&text);
+        assert_eq!(
+            (area.landings[0], area.landings[5]),
+            ((139, 133), (169, 133))
+        );
+        assert_eq!(
+            (area.landings[6], area.landings[23]),
+            ((175, 139), (133, 139))
+        );
+        let expected = area.landings.clone();
+        let mut modern = String::from(
+            "# c2rs: the phone game's trophy room (its walls), our stands\n# floor-centres-v2\n",
+        );
+        for (x, z) in &expected {
+            modern += &format!("stand {x} {z}\n");
+        }
+        area.set_trophy_spots(&modern);
+        assert_eq!(area.landings, expected);
     }
 
     fn flat_map(h: u8) -> Map {

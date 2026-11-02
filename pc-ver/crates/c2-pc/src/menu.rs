@@ -331,7 +331,7 @@ enum Opt {
     ClearTrophies,
 }
 
-const GAME_OPTS: [Opt; 8] = [
+const GAME_OPTS: [Opt; 9] = [
     Opt::Slider("Aggressiveness", |s| &mut s.options.agres),
     Opt::Slider("Density", |s| &mut s.options.dens),
     Opt::Slider("Sensitivity", |s| &mut s.options.sens),
@@ -339,6 +339,9 @@ const GAME_OPTS: [Opt; 8] = [
     Opt::PcToggle("Blood", |p| &mut p.blood),
     Opt::PcToggle("Death animation", |p| &mut p.death_anim),
     Opt::PcToggle("All dinos huntable", |p| &mut p.all_huntable),
+    Opt::PcSlider("Total number of secret dinos on map", |p| {
+        &mut p.secret_dinos
+    }),
     Opt::ClearTrophies,
 ];
 
@@ -1768,11 +1771,15 @@ impl Menu {
     fn option_rows(&self) -> Vec<(Opt, Rect)> {
         let mut out = Vec::new();
         for (panel, opts) in [(GAME_PANEL, &GAME_OPTS[..]), (VIDEO_PANEL, &VIDEO_OPTS[..])] {
-            for (i, o) in opts.iter().enumerate() {
-                out.push((
-                    *o,
-                    (panel.0, panel.1 + i as f32 * OPT_ROW, panel.2, OPT_ROW),
-                ));
+            let mut y = panel.1;
+            for o in opts {
+                let h = if matches!(o, Opt::PcSlider("Total number of secret dinos on map", _)) {
+                    38.0
+                } else {
+                    OPT_ROW
+                };
+                out.push((*o, (panel.0, y, panel.2, h)));
+                y += h;
             }
         }
         let y0 = KEYS_PANEL.1 + ACTIONS.len() as f32 * 20.0 + 12.0;
@@ -2315,12 +2322,29 @@ impl Menu {
                     self.image_native(out, self.knob, kx, r.1 + 5.0);
                 }
                 Opt::PcSlider(name, f) => {
-                    self.text(out, r.0, r.1 + 4.0, 12.0, color, name);
+                    let secret = name == "Total number of secret dinos on map";
+                    self.text(
+                        out,
+                        r.0,
+                        r.1 + 4.0,
+                        if secret { 10.0 } else { 12.0 },
+                        color,
+                        name,
+                    );
                     let v = *f(&mut self.pc.clone());
+                    let slider_y = r.1 + if secret { 20.0 } else { 4.0 };
+                    if secret {
+                        let value = if v == 0 {
+                            "Off (selected dinos only)".into()
+                        } else {
+                            v.to_string()
+                        };
+                        self.text(out, r.0, slider_y, 10.0, SAND, &value);
+                    }
                     let x0 = r.0 + r.2 - 128.0 - 8.0;
-                    self.image_native(out, self.slider, x0, r.1 + 4.0);
+                    self.image_native(out, self.slider, x0, slider_y);
                     let kx = x0 + 4.0 + v.clamp(0, 255) as f32 * 120.0 / 255.0 - 4.0;
-                    self.image_native(out, self.knob, kx, r.1 + 5.0);
+                    self.image_native(out, self.knob, kx, slider_y + 1.0);
                 }
                 Opt::Toggle(name, labels, f) => {
                     self.text(out, r.0, r.1 + 4.0, 12.0, color, name);

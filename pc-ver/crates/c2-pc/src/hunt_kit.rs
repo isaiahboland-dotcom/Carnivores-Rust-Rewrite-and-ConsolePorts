@@ -513,7 +513,7 @@ impl HuntKit {
     ) {
         let Some(f) = &self.kit.body else { return };
         let (sw, sh) = (screen.0 as f32, screen.1 as f32);
-        let px = (sh / 30.0).round();
+        let px = (sh / 48.0).round().max(10.0);
         let pad = px * 1.2;
         let tw = lines
             .iter()
@@ -541,7 +541,11 @@ impl HuntKit {
         out: &mut Vec<Sprite>,
     ) {
         let (sw, sh) = (screen.0 as f32, screen.1 as f32);
-        let w = (sh * 0.75).min(sw * 0.9);
+        let w = if right {
+            (sh * 0.75).min(sw * 0.9)
+        } else {
+            (sh * 0.42).min(sw * 0.45)
+        };
         let h = w * 176.0 / 336.0;
         let m = sh / 40.0;
         let x = if right { sw - w - m } else { (sw - w) / 2.0 };

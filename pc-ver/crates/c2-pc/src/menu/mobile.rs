@@ -1130,8 +1130,18 @@ impl Menu {
                     slider(out, *f(&mut copy));
                 }
                 KitRow::Opt(Opt::PcSlider(n, f)) => {
-                    label(out, n);
-                    slider(out, *f(&mut pc));
+                    let v = *f(&mut pc);
+                    if n == "Total number of secret dinos on map" {
+                        let count = if v == 0 {
+                            "Off (selected dinos only)".into()
+                        } else {
+                            v.to_string()
+                        };
+                        label(out, &format!("{n}: {count}"));
+                    } else {
+                        label(out, n);
+                    }
+                    slider(out, v);
                 }
                 KitRow::Opt(Opt::Toggle(n, labels, f)) => {
                     label(out, n);

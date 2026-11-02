@@ -341,7 +341,7 @@ impl Kit {
 
 /// The phone's trophy room is a walled square (`bound_west` .. in its
 /// `.rst`, cells) round a raised middle; the PC's ring of stands
-/// (`Area::set_trophy_mode`) lies outside it. Ours: six stands a side, four
+/// (`Area::set_trophy_mode`) lies outside it. Ours: six stands a side, two
 /// cells in from the walls and facing in, in the ring's order (north west
 /// to east, east north to south, south east to west, west south to north);
 /// the hunter starts at the south end of the west walk (facing north, as he
@@ -360,14 +360,19 @@ fn trophy_spots(rst: &str) -> Option<String> {
         return None;
     }
     let along = |a: i32, b: i32| (0..6).map(move |i| a + (b - a) * i / 5);
-    let (x0, x1, z0, z1) = (w + 9, e - 9, n + 9, s - 9);
-    let mut out = String::from("# c2rs: the phone game's trophy room (its walls), our stands\n");
+    // The floor markings repeat every six cells, beginning eight cells
+    // from the bounds. Keep the stands on those centres rather than
+    // interpolating between arbitrary margins (which shifts each stand).
+    let (x0, x1, z0, z1) = (w + 8, e - 9, n + 8, s - 9);
+    let mut out = String::from(
+        "# c2rs: the phone game's trophy room (its walls), our stands\n# floor-centres-v2\n",
+    );
     out += &format!("start {} {}\n", w + 12, s - 10);
     let sides = [
-        along(x0, x1).map(|x| (x, n + 4)).collect::<Vec<_>>(),
-        along(z0, z1).map(|z| (e - 4, z)).collect(),
-        along(x1, x0).map(|x| (x, s - 4)).collect(),
-        along(z1, z0).map(|z| (w + 4, z)).collect(),
+        along(x0, x1).map(|x| (x, n + 2)).collect::<Vec<_>>(),
+        along(z0, z1).map(|z| (e - 3, z)).collect(),
+        along(x1, x0).map(|x| (x, s - 3)).collect(),
+        along(z1, z0).map(|z| (w + 2, z)).collect(),
     ];
     for (x, z) in sides.concat() {
         out += &format!("stand {x} {z}\n");
@@ -1274,8 +1279,8 @@ mod tests {
         let stands = cells("stand");
         assert_eq!(cells("start"), vec![(143, 168)]);
         assert_eq!(stands.len(), 24);
-        assert_eq!((stands[0], stands[5]), ((140, 135), (169, 135)));
-        assert_eq!((stands[6], stands[23]), ((174, 140), (135, 140)));
+        assert_eq!((stands[0], stands[5]), ((139, 133), (169, 133)));
+        assert_eq!((stands[6], stands[23]), ((175, 139), (133, 139)));
         assert!(stands
             .iter()
             .all(|&(x, z)| (131..=178).contains(&x) && (131..=178).contains(&z)));

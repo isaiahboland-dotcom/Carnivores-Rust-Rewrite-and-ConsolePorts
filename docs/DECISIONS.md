@@ -3244,3 +3244,19 @@ compiles just the loader functions with modern GCC remains an option if a
 field's *meaning* (rather than layout) needs confirming.
 
 **License:** superseded — MIT, see the entry above.
+
+
+### 2026-11-02 — PC secret population and mobile trophy room
+
+PC Options adds “Total number of secret dinos on map” (0–255, default 10),
+stored as `secret_dinos` in `c2rs.cfg`. Normal hunts cap unselected huntable
+animals after placement, including dialect packs; retained packs get valid
+leader/member indices. Zero removes all unselected animals, including ambient
+animals, so only selected species remain. Survival waves keep their own roster.
+
+The APK room's generated stands now follow the six-cell floor markings rather
+than interpolation between arbitrary margins; their two-cell tiles are centred
+on cell boundaries. Old generated `.SPOT` files migrate on load. Mobile trophy
+movement wraps between the first and last stand of the closed room. The PC
+mobile kill notice and post-kill plaque use smaller sizing; trophy-room plaque
+sizing is retained. Visual confirmation in gameplay is still required.

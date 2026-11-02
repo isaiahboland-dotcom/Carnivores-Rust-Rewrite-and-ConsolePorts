@@ -560,6 +560,20 @@ impl HuntView {
         };
         let own_snow = area.snow;
         let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
+        if !trophy && setup.survival.is_none() {
+            let secret: Vec<bool> = (0..hunt.herd.species.len())
+                .map(|ctype| {
+                    let c = c2_core::dino::Character {
+                        ctype,
+                        ai: hunt.herd.species[ctype].runs_as(),
+                        ..Default::default()
+                    };
+                    (setup.pc.secret_dinos == 0 || hunt.is_huntable(&c)) && !hunt.is_target(&c)
+                })
+                .collect();
+            hunt.herd
+                .cap_population(setup.pc.secret_dinos.max(0) as usize, |ct| secret[ct]);
+        }
         // The area's snow (Ice Age).
         hunt.effects.snow = mee
             .and_then(|t| t.snow)

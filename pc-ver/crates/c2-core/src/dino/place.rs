@@ -132,6 +132,53 @@ impl Herd {
         }
     }
 
+    /// Strict population cap, including pack members. Rebuild pack references
+    /// after removing animals, electing a retained member if its leader went.
+    pub fn cap_population(&mut self, max: usize, counted: impl Fn(usize) -> bool) {
+        let mut remaining = max;
+        let mut indices = vec![None; self.chars.len()];
+        let mut old = 0;
+        let mut next = 0;
+        self.chars.retain(|c| {
+            let keep = if counted(c.ctype) {
+                if remaining == 0 {
+                    false
+                } else {
+                    remaining -= 1;
+                    true
+                }
+            } else {
+                true
+            };
+            if keep {
+                indices[old] = Some(next);
+                next += 1;
+            }
+            old += 1;
+            keep
+        });
+        let mut packs = vec![None; self.packs.len()];
+        let mut old_pack = 0;
+        let mut next_pack = 0;
+        self.packs.retain_mut(|p| {
+            let leader = indices
+                .get(p.leader)
+                .copied()
+                .flatten()
+                .or_else(|| self.chars.iter().position(|c| c.pack == Some(old_pack)));
+            if let Some(leader) = leader {
+                p.leader = leader;
+                packs[old_pack] = Some(next_pack);
+                next_pack += 1;
+            }
+            old_pack += 1;
+            leader.is_some()
+        });
+        for c in &mut self.chars {
+            c.pack = c.pack.and_then(|p| packs.get(p).copied().flatten());
+        }
+    }
+
     /// Places ambient animals near the hunter, brachiosaurs in shallow water
     /// and the main huntable population around the map centre.
     pub fn place(&mut self, area: &Area, hunter: (f32, f32), rng: &mut MsRand, o: PlaceOptions) {
@@ -593,7 +640,17 @@ impl Herd {
                 12..18 => PI * 3.0 / 2.0,
                 _ => 0.0,
             };
-            let (x, z) = (f32::from(cx) * 256.0 + 128.0, f32::from(cz) * 256.0 + 128.0);
+            // Mobile floor markings cover two cells; their centre lies on
+            // a cell boundary. The original ring uses single-cell centres.
+            let offset = if area.trophy_start.is_some() {
+                0.0
+            } else {
+                128.0
+            };
+            let (x, z) = (
+                f32::from(cx) * 256.0 + offset,
+                f32::from(cz) * 256.0 + offset,
+            );
             let mut c = Character {
                 ctype,
                 alpha,
