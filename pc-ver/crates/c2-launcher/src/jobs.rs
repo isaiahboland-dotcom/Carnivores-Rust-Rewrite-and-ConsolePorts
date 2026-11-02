@@ -95,7 +95,7 @@ impl Job {
         self.state.lock().ok().and_then(|s| s.ok)
     }
 
-    fn run(&self, step: Step) -> Result<(), String> {
+    pub(crate) fn run(&self, step: Step) -> Result<(), String> {
         match step {
             Step::Run { program, args } => {
                 self.log(format!("> {} {}", program.display(), args.join(" ")));

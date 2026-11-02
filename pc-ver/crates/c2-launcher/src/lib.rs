@@ -1,7 +1,6 @@
 //! The launchers (README M10): set up the game from its folders, manage
 //! add-ons, play on PC, and build 3DS and Wii U installs. Three builds of
-//! one app: `c2-launcher` (PC, with the 3DS and Wii U sections if the user
-//! wants them), `c2-3ds-builder` (3DS only) and `c2-wiiu-builder` (Wii U
+//! one app: `c2-launcher` (PC and Wii U, with an optional 3DS section), `c2-3ds-builder` (3DS only) and `c2-wiiu-builder` (Wii U
 //! only). The work is done by `c2-pc` and `c2-cook`,
 //! run as programs; this only gathers the choices (the balance editor reads
 //! the game's prices and scores itself, with `c2-mods`).
@@ -10,6 +9,7 @@ mod app;
 mod balance;
 mod cia;
 mod config;
+mod console;
 mod instances;
 mod jobs;
 mod options;
@@ -22,7 +22,7 @@ use std::path::PathBuf;
 /// Which build.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
-    /// Play on PC; the 3DS section if turned on.
+    /// Play on PC and build Wii U installs; the 3DS section if turned on.
     Full,
     /// Build 3DS installs only.
     ThreeDs,

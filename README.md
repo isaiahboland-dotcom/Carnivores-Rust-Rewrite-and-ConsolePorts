@@ -87,7 +87,7 @@ Three builds of the same app:
 
 | | |
 |---|---|
-| `c2-launcher` | everything: play on PC, plus the 3DS and Wii U sections if you turn them on (it asks the first time) |
+| `c2-launcher` | play on PC and build Wii U installs, plus an optional 3DS section (it asks the first time) |
 | `c2-3ds-builder` | 3DS installs only (`cargo run --release -p c2-launcher --bin c2-3ds-builder`) |
 | `c2-wiiu-builder` | Wii U installs only (`cargo run --release -p c2-launcher --bin c2-wiiu-builder`) |
 
@@ -99,6 +99,11 @@ The tabs:
 - **Add-ons**: add mod folders or archives (`.zip`, `.rar`, `.7z`), switch each on or off, and change their
   order. **Standalone games** (whole games made from Carnivores 2) go here too, and are combined beside
   the base game. You can also import animals from Ice Age or from the mobile games' APKs.
+- **Instances**: save a setup as a recipe, then choose **Play**, **Build 3DS…** or **Build Wii U…**
+  beside it. Missing downloads are listed before opening the builder. Choose an output folder and press
+  **BUILD**; output, packaging and artwork choices are remembered separately for each instance.
+  Combined recipes are merged again before cooking, so rebuilding uses the current conversion tools.
+  An active instance produces its combined recipe pack rather than separate standalone installs.
 - **Balance**: every area, animal and weapon with its price and score, plus the starting points. Edit them to
   taste, or to make several mods fit together. Where the PC and mobile versions differ, pick which one to
   use. Your changes are kept as a balance file over the game, never written into it.
@@ -114,10 +119,13 @@ The tabs:
   the game's menu picture (`wuhbtool` from devkitPro `wut-tools` is required). An `.rpx` for the Homebrew
   Launcher is also possible, but only as the one default install (`wiiu/apps/carnivores-probe/`).
 - **Settings**: the tools folder (where `c2-pc`, `c2-cook`, the 3DS and Wii U apps, `wuhbtool`, `makerom` and `bannertool`
-  are found), showing the 3DS / Wii U sections, and engine options.
+  are found), showing the 3DS section, and engine options.
 
 The launcher runs the other programs for you. It finds them beside itself, in the tools folder, or in this
 source tree's build folders. So for the 3DS and Wii U tabs, build those apps first (below).
+After an engine update, rebuild the tools and console app, then use the saved instance's build action
+to regenerate its packs and copy the updated app. The GUI packages existing binaries; it does not
+compile the Rust or devkitPro projects.
 
 ---
 

@@ -292,9 +292,6 @@ pub struct Config {
     /// Full launcher: the 3DS section shown (asked on first launch).
     pub show_3ds: Option<bool>,
     pub three_ds: ThreeDs,
-    /// Full launcher: the Wii U section shown (off until turned on in
-    /// Settings).
-    pub show_wiiu: bool,
     pub wiiu: WiiU,
     /// Where `c2-pc`, `c2-cook` and `c2-3ds.3dsx` are, if not beside the
     /// launcher.
@@ -315,6 +312,8 @@ pub struct Config {
     /// The folders each recipe was last given, so an instance plays again
     /// without being set up again.
     pub remembered: Vec<RecipeUse>,
+    /// Local output paths and packaging choices, separate from shareable recipes.
+    pub instance_builds: BTreeMap<PathBuf, ConsoleBuilds>,
     /// Where an instance's downloads are looked for, besides the ones it
     /// was last given; empty: `source/`, `source/mods`, `addons/` and
     /// `mods/` beside the recipes folder, those that exist.
@@ -327,6 +326,14 @@ pub struct Config {
     pub tuning: Tuning,
 }
 
+/// Console output choices last used for one saved instance.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct ConsoleBuilds {
+    pub three_ds: ThreeDs,
+    pub wiiu: WiiU,
+}
+
 /// A recipe and the folder given for each of its entries; while `on`, play
 /// and the builds go by it instead of the add-on and standalone lists.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -336,6 +343,9 @@ pub struct RecipeUse {
     /// Its own game folder (a standalone game, or one built from an APK);
     /// `None`: the Game tab's, with its overlays.
     pub game: Option<PathBuf>,
+    /// Base overlays resolved for this instance; None for older configs.
+    /// Recipe-pinned overlays are still loaded from their own entries.
+    pub overlays: Option<Vec<PathBuf>>,
     /// Entry id -> its folder.
     pub folders: BTreeMap<String, PathBuf>,
     pub on: bool,
@@ -362,12 +372,6 @@ impl RecipeUse {
                     .map(|s| s.to_string_lossy().into_owned())
             })
             .unwrap_or_else(|| "recipe".into())
-    }
-
-    /// Whether the recipe combines standalone games (built with `c2-pc`
-    /// first for the consoles).
-    pub fn has_standalones(&self) -> bool {
-        c2_mods::recipe::Recipe::load(&self.path).is_ok_and(|r| !r.standalones.is_empty())
     }
 }
 
@@ -466,6 +470,50 @@ impl Config {
     pub fn remember(&mut self, u: &RecipeUse) {
         self.remembered.retain(|r| r.path != u.path);
         self.remembered.push(u.clone());
+    }
+
+    pub fn remember_builds(&mut self) {
+        if let Some(r) = self.recipe.as_ref().filter(|r| r.on) {
+            self.instance_builds.insert(
+                r.path.clone(),
+                ConsoleBuilds {
+                    three_ds: self.three_ds.clone(),
+                    wiiu: self.wiiu.clone(),
+                },
+            );
+        }
+    }
+
+    /// Restore this instance's outputs; first builds get their own install
+    /// name and only the recipe pack, using the last chosen destination.
+    pub fn restore_builds(&mut self, path: &Path, id: &str) {
+        let saved = self
+            .instance_builds
+            .get(path)
+            .cloned()
+            .unwrap_or_else(|| ConsoleBuilds {
+                three_ds: ThreeDs {
+                    name: install_name(id),
+                    out: self.three_ds.out.clone(),
+                    target: self.three_ds.target,
+                    cia: self.three_ds.cia,
+                    ice_age_title: self.three_ds.ice_age_title,
+                    vanilla_pack: false,
+                    addons_pack: true,
+                    standalone_packs: false,
+                    ..Default::default()
+                },
+                wiiu: WiiU {
+                    out: self.wiiu.out.clone(),
+                    format: self.wiiu.format,
+                    original: false,
+                    addons: true,
+                    standalones: false,
+                    ..Default::default()
+                },
+            });
+        self.three_ds = saved.three_ds;
+        self.wiiu = saved.wiiu;
     }
 
     /// Takes in a recipe's choices: those it leaves unset stay as they are.
@@ -588,6 +636,42 @@ pub fn install_name(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn instance_outputs_survive_switching_and_reload() {
+        let mut c = Config::default();
+        let first = PathBuf::from("recipes/first.toml");
+        let second = PathBuf::from("recipes/second.toml");
+        c.restore_builds(&first, "First Pack");
+        assert_eq!(c.three_ds.name, "First-Pack");
+        c.recipe = Some(RecipeUse {
+            path: first.clone(),
+            on: true,
+            ..Default::default()
+        });
+        c.three_ds.out = Some("first sd".into());
+        c.three_ds.cia = true;
+        c.wiiu.out = Some("wii u sd".into());
+        c.remember_builds();
+        let expected = c.instance_builds[&first].clone();
+        c.restore_builds(&second, "second");
+        c.recipe = Some(RecipeUse {
+            path: second.clone(),
+            on: true,
+            ..Default::default()
+        });
+        c.three_ds.out = Some("second sd".into());
+        c.remember_builds();
+        let text = toml::to_string(&c).expect("serialize preferences");
+        let mut back: Config = toml::from_str(&text).expect("reload preferences");
+        back.restore_builds(&first, "First Pack");
+        assert_eq!(back.three_ds, expected.three_ds);
+        assert_eq!(back.wiiu, expected.wiiu);
+        back.restore_builds(&second, "second");
+        assert_eq!(back.three_ds.out, Some("second sd".into()));
+        let legacy: Config = toml::from_str("show_wiiu = false").expect("legacy config");
+        assert!(legacy.instance_builds.is_empty());
+    }
 
     #[test]
     fn a_game_built_from_an_apk_is_named_so() {

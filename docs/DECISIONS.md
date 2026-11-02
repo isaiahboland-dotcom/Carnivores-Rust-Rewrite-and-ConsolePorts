@@ -2,6 +2,24 @@
 
 Newest first. Each entry: what, why, and what it affects.
 
+## 2026-11-02 — Console rebuilds from saved instances
+
+The PC launcher's Wii U tab is always visible. Instances expose explicit PC,
+3DS and Wii U actions; console actions resolve the recipe's downloads before
+opening the builder. Output folders, packaging and artwork are stored per recipe
+path in local launcher settings, keeping machine-specific paths out of shared
+recipes. Resolved base folders and overlays are remembered with the instance.
+
+Both console builders use the same recipe-input preparation. Combined recipes
+always run `c2-pc recipe build` before cooking instead of reusing a stale merged
+folder or falling back to unrelated global add-ons. Wii U artwork preparation
+runs after that merge. Builds use the currently installed cooker and console
+binary; rebuilding the toolchains remains a separate development step.
+
+Validation: launcher regression tests cover recipe arguments (including spaces,
+overlays and explicit mod bindings), combined-game preparation and per-instance
+settings persistence. Console hardware validation remains separate.
+
 ## 2026-11-02 — Mixed-pack spawning and APK play-test fixes
 
 Global MEE spawn/pack tables now load before characters, regardless of section

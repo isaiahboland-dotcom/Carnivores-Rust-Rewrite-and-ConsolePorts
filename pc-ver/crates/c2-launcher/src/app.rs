@@ -332,10 +332,11 @@ impl Launcher {
     }
 
     fn shows_wiiu(&self) -> bool {
-        self.mode == Mode::WiiU || (self.mode == Mode::Full && self.cfg.show_wiiu)
+        matches!(self.mode, Mode::Full | Mode::WiiU)
     }
 
     fn save(&mut self) {
+        self.cfg.remember_builds();
         if let Err(e) = self.cfg.store() {
             self.note = Some((format!("Settings not saved: {e}"), RED));
         }
@@ -427,7 +428,9 @@ impl Launcher {
     /// overlays.
     fn recipe_game(&self, r: &RecipeUse) -> Vec<PathBuf> {
         match &r.game {
-            Some(g) => vec![g.clone()],
+            Some(g) => std::iter::once(g.clone())
+                .chain(r.overlays.clone().unwrap_or_default())
+                .collect(),
             None => self.game_folders().0,
         }
     }
@@ -445,7 +448,12 @@ impl Launcher {
                 // A phone game's own converted rules must not be replaced
                 // by an unrelated desktop overlay from the Game tab.
                 g.truncate(1);
-            } else if r.game.is_some() && !rc.standalones.is_empty() && rc.overlays.is_empty() {
+            } else if !rc.overlays.is_empty() {
+                g.truncate(1);
+            } else if r.overlays.is_none()
+                && r.game.is_some()
+                && (r.game == self.cfg.base || !rc.standalones.is_empty())
+            {
                 g.extend(self.cfg.overlays.iter().cloned());
             }
         }
@@ -488,13 +496,23 @@ impl Launcher {
         let Some(p) = self.recipe_page.take() else {
             return;
         };
-        let u = p.to_use();
+        let mut u = p.to_use();
+        // Freeze the resolved base/overlays before the Game tab changes.
+        u.overlays = self
+            .cfg
+            .remembered(&u.path)
+            .and_then(|r| r.overlays.clone());
+        let games = self.recipe_game_with_overlays(&u);
+        u.game = games.first().cloned();
+        u.overlays = Some(games.into_iter().skip(1).collect());
         let s = &p.recipe.settings;
+        self.cfg.remember_builds();
         self.cfg.apply(s);
-        if let Some(b) = &s.balance {
-            self.balance.edits = b.clone();
-            let _ = self.balance.store();
-        }
+        self.cfg.pictures = s.pictures;
+        self.cfg.tuning = s.tuning;
+        self.cfg.restore_builds(&u.path, &p.recipe.recipe.id);
+        self.balance.edits = s.balance.clone().unwrap_or_default();
+        let _ = self.balance.store();
         self.cfg.remember(&u);
         self.note = Some((
             format!("Recipe '{}' in use: play and the builds go by it.", u.id()),
@@ -563,7 +581,9 @@ impl Launcher {
         match std::fs::write(&u.path, r.to_toml()) {
             Ok(()) => {
                 self.note = Some((format!("Instance saved: {}", u.path.display()), TEXT));
+                self.cfg.remember_builds();
                 self.cfg.remember(&u);
+                self.cfg.restore_builds(&u.path, &r.recipe.id);
                 self.cfg.recipe = Some(u);
                 self.save();
                 self.instances.refresh(&self.cfg);
@@ -601,15 +621,14 @@ impl Launcher {
             self.recipe_ui(ui);
             return;
         }
-        let play = self.mode == Mode::Full;
         let busy = self.busy() || self.saving.is_some();
-        match self.instances.ui(ui, &self.cfg, play, busy) {
+        match self.instances.ui(ui, &self.cfg, self.mode, busy) {
             crate::instances::Ask::Nothing => {}
             crate::instances::Ask::Open(p) => self.open_recipe(p),
-            crate::instances::Ask::Play(p) => {
+            crate::instances::Ask::Start(p, destination) => {
                 self.open_recipe(p);
                 if let Some(page) = &mut self.recipe_page {
-                    page.play_when_ready = true;
+                    page.next = Some(destination);
                 }
             }
             crate::instances::Ask::Edit(p) => self.edit_recipe(&p),
@@ -659,6 +678,7 @@ impl Launcher {
         let mut u = self.cfg.remembered(from).cloned().unwrap_or(RecipeUse {
             path: to.to_path_buf(),
             game: None,
+            overlays: None,
             folders: Default::default(),
             on: false,
         });
@@ -1139,44 +1159,28 @@ impl Launcher {
             // The recipe's pack in place of the add-ons and standalone ones.
             if t.addons_pack {
                 let id = install_name(&r.id());
-                let mut extra = self.balance_args();
-                let mut from = base.clone();
-                if r.has_standalones() {
-                    // `c2-cook` takes a combined game built first.
-                    let Some(pc) = find_tool("c2-pc", tools.as_deref()) else {
-                        self.note = Some((
-                            "c2-pc not found (it combines the recipe's games): set the tools folder in Settings.".into(),
-                            RED,
-                        ));
+                let input = match crate::console::RecipeInput::new(
+                    r,
+                    game,
+                    &crate::config::data_dir().join("recipes"),
+                ) {
+                    Ok(input) => input,
+                    Err(e) => {
+                        self.note = Some((e, RED));
                         return;
-                    };
-                    let built = crate::config::data_dir().join("recipes").join(&id);
-                    let mut a = vec![
-                        "recipe".to_string(),
-                        "build".into(),
-                        r.path.display().to_string(),
-                        "--base".into(),
-                        base.display().to_string(),
-                    ];
-                    for o in game.iter().skip(1) {
-                        a.extend(["--overlay".to_string(), o.display().to_string()]);
                     }
-                    a.extend(r.mods_args());
-                    a.extend(["--out".to_string(), built.display().to_string()]);
-                    steps.push(Step::Run {
-                        program: pc,
-                        args: a,
-                    });
-                    from = built;
-                } else {
-                    for o in game.iter().skip(1) {
-                        extra.extend(["--overlay".to_string(), o.display().to_string()]);
+                };
+                match input.prepare(find_tool("c2-pc", tools.as_deref())) {
+                    Ok(prepare) => steps.extend(prepare),
+                    Err(e) => {
+                        self.note = Some((e, RED));
+                        return;
                     }
-                    extra.extend(["--recipe".to_string(), r.path.display().to_string()]);
-                    extra.extend(r.mods_args());
                 }
+                let mut extra = input.extra.clone();
+                extra.extend(self.balance_args());
                 let mut a = cook_args(extra, &format!("{id}.c2pk"));
-                a[1] = from.display().to_string();
+                a[1] = input.game.display().to_string();
                 steps.push(Step::Run {
                     program: cook.clone(),
                     args: a,
@@ -1266,6 +1270,26 @@ impl Launcher {
     /// The Wii U installs the tab's choices make: (folder, title, `c2-cook`
     /// arguments). An `.rpx` is one install only (the Homebrew Launcher's).
     fn wiiu_installs(&self) -> Vec<(String, String, Vec<String>)> {
+        if let Some(r) = self.active_recipe() {
+            if !self.cfg.wiiu.addons {
+                return Vec::new();
+            }
+            let games = self.recipe_game_with_overlays(r);
+            let Ok(input) = crate::console::RecipeInput::new(
+                r,
+                &games,
+                &crate::config::data_dir().join("recipes"),
+            ) else {
+                return Vec::new();
+            };
+            let mut args = input.cook_args();
+            args.extend(self.balance_args());
+            args.extend(self.cook_extras());
+            let title = c2_mods::recipe::Recipe::load(&r.path)
+                .map(|r| r.recipe.name)
+                .unwrap_or_else(|_| r.id());
+            return vec![(install_name(&r.id()), title, args)];
+        }
         let Some(base) = self.cfg.base.clone() else {
             return Vec::new();
         };
@@ -1284,24 +1308,7 @@ impl Launcher {
             }
             v.push((folder.to_string(), title.to_string(), a));
         }
-        if let Some(r) = self
-            .active_recipe()
-            .filter(|r| w.addons && !r.has_standalones())
-        {
-            let g = self.recipe_game(r);
-            let mut a = game(g.first().unwrap_or(&base));
-            for o in g.iter().skip(1) {
-                a.extend(["--overlay".to_string(), o.display().to_string()]);
-            }
-            a.extend(["--recipe".to_string(), r.path.display().to_string()]);
-            a.extend(r.mods_args());
-            a.extend(self.balance_args());
-            a.extend(survival.clone());
-            let name = c2_mods::recipe::Recipe::load(&r.path)
-                .map(|x| x.recipe.name)
-                .unwrap_or_default();
-            v.push((install_name(&r.id()), name, a));
-        } else if w.addons && modded {
+        if w.addons && modded {
             let mut a = game(&base);
             for o in &self.cfg.overlays {
                 a.extend(["--overlay".to_string(), o.display().to_string()]);
@@ -1315,9 +1322,6 @@ impl Launcher {
         }
         if w.standalones {
             for s in self.cfg.enabled_standalones() {
-                if self.active_recipe().is_some() {
-                    break;
-                }
                 let Some(root) = c2_mods::pack::find_game_root(&s) else {
                     continue;
                 };
@@ -1368,25 +1372,56 @@ impl Launcher {
             None
         };
         let mut steps = Vec::new();
+        if let Some(r) = self.active_recipe().filter(|_| self.cfg.wiiu.addons) {
+            let games = self.recipe_game_with_overlays(r);
+            let input = match crate::console::RecipeInput::new(
+                r,
+                &games,
+                &crate::config::data_dir().join("recipes"),
+            ) {
+                Ok(input) => input,
+                Err(e) => {
+                    self.note = Some((e, RED));
+                    return;
+                }
+            };
+            match input.prepare(find_tool("c2-pc", tools.as_deref())) {
+                Ok(prepare) => steps.extend(prepare),
+                Err(e) => {
+                    self.note = Some((e, RED));
+                    return;
+                }
+            }
+        }
         for (name, title, cook_args) in self.wiiu_installs() {
             let art = crate::wiiu::art_source(&cook_args);
             let own = self.cfg.wiiu.art.get(&name).cloned().unwrap_or_default();
-            steps.extend(crate::wiiu::steps(
-                &crate::wiiu::Install {
-                    name: &name,
-                    title: &title,
-                    cook_args,
-                    art_from: art.as_deref(),
-                    own_art: [own.icon.as_deref(), own.tv.as_deref(), own.drc.as_deref()],
-                },
-                &crate::wiiu::Tools {
-                    cook: &cook,
-                    app: &app,
-                    wuhbtool: wuhbtool.as_deref(),
-                },
-                &out,
-                &crate::config::data_dir().join("wiiu").join(&name),
-            ));
+            let cook = cook.clone();
+            let app = app.clone();
+            let wuhbtool = wuhbtool.clone();
+            let out = out.clone();
+            // Read generated menu art only after the recipe merge has finished.
+            steps.push(Step::Task(Box::new(move |job| {
+                for step in crate::wiiu::steps(
+                    &crate::wiiu::Install {
+                        name: &name,
+                        title: &title,
+                        cook_args,
+                        art_from: art.as_deref(),
+                        own_art: [own.icon.as_deref(), own.tv.as_deref(), own.drc.as_deref()],
+                    },
+                    &crate::wiiu::Tools {
+                        cook: &cook,
+                        app: &app,
+                        wuhbtool: wuhbtool.as_deref(),
+                    },
+                    &out,
+                    &crate::config::data_dir().join("wiiu").join(&name),
+                ) {
+                    job.run(step)?;
+                }
+                Ok(())
+            })));
         }
         self.job = Some(Job::start("Building the Wii U installs", steps));
     }
@@ -1818,8 +1853,20 @@ impl Launcher {
         );
     }
 
+    fn instance_build_heading(&mut self, ui: &mut egui::Ui) {
+        if let Some(r) = self.active_recipe() {
+            ui.label(RichText::new(format!("Instance: {}", r.id())).color(GOLD));
+            help(ui, "Rebuilds from the saved recipe using the current tools and app. Output choices are remembered for this instance.");
+        }
+        if ui.button("Choose a saved instance…").clicked() {
+            self.tab = Tab::Instances;
+            self.recipe_page = None;
+        }
+    }
+
     fn three_ds_tab(&mut self, ui: &mut egui::Ui) {
         heading(ui, "Build for 3DS");
+        self.instance_build_heading(ui);
         help(
             ui,
             "Makes an install for the SD card: the app and its packs in 3ds/<name>/. Several \
@@ -1909,7 +1956,9 @@ impl Launcher {
         };
         let ready = game.as_deref().is_some_and(|b| describe_game(b).is_some())
             && t.out.is_some()
-            && (t.vanilla_pack || t.addons_pack || t.standalone_packs);
+            && (t.vanilla_pack
+                || t.addons_pack
+                || (self.active_recipe().is_none() && t.standalone_packs));
         if big_button(ui, "BUILD", ready && !self.busy()) {
             self.build_3ds();
         }
@@ -1917,6 +1966,7 @@ impl Launcher {
 
     fn wiiu_tab(&mut self, ui: &mut egui::Ui) {
         heading(ui, "Build for Wii U");
+        self.instance_build_heading(ui);
         help(
             ui,
             "Puts each game on the SD card as its own Wii U Menu entry, in wiiu/apps/<name>/: the \
@@ -1926,13 +1976,12 @@ impl Launcher {
         );
         ui.add_space(6.0);
         let mut changed = false;
-        let kind = self.cfg.base.as_deref().and_then(describe_game);
-        let soon = |ui: &mut egui::Ui, text: &str| {
-            ui.horizontal(|ui| {
-                ui.add_enabled(false, egui::Checkbox::new(&mut false, text));
-                ui.label(RichText::new("not on the Wii U yet").color(DIM));
-            });
-        };
+        let recipe_id = self.active_recipe().map(|r| install_name(&r.id()));
+        let game = self
+            .active_recipe()
+            .and_then(|r| self.recipe_game(r).first().cloned())
+            .or_else(|| self.cfg.base.clone());
+        let kind = game.as_deref().and_then(describe_game);
         panel(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label("SD card (or a folder):");
@@ -1961,38 +2010,39 @@ impl Launcher {
             let overlays = self.cfg.overlays.len();
             let standalones = self.cfg.enabled_standalones().len();
             let w = &mut self.cfg.wiiu;
-            changed |= ui
-                .checkbox(&mut w.original, "The original game (carnivores2)")
-                .changed();
-            changed |= ui
-                .checkbox(
-                    &mut w.addons,
-                    format!(
-                        "The game with {} overlay{} and {on} add-on{} (carnivores2-addons)",
-                        overlays,
-                        if overlays == 1 { "" } else { "s" },
-                        if on == 1 { "" } else { "s" }
-                    ),
-                )
-                .changed();
-            changed |= ui
-                .checkbox(
-                    &mut w.standalones,
-                    format!("Each standalone game ({standalones} on)"),
-                )
-                .changed();
-            soon(
-                ui,
-                "Carnivores: Ice Age (as the base game, or beside Carnivores 2)",
-            );
-            soon(ui, "Animals and weapons from the mobile game (APK)");
+            if let Some(id) = &recipe_id {
+                changed |= ui
+                    .checkbox(&mut w.addons, format!("Saved instance ({id})"))
+                    .changed();
+            } else {
+                changed |= ui.checkbox(&mut w.original, "The original game").changed();
+                changed |= ui
+                    .checkbox(
+                        &mut w.addons,
+                        format!("The game with {overlays} overlays and {on} add-ons"),
+                    )
+                    .changed();
+                changed |= ui
+                    .checkbox(
+                        &mut w.standalones,
+                        format!("Each standalone game ({standalones} on)"),
+                    )
+                    .changed();
+            }
             help(ui, "The balance file goes with the add-ons install (or the original game without add-ons).");
             ui.add_space(4.0);
             changed |= self.pictures_ui(ui);
             let names: Vec<String> = self
                 .wiiu_installs()
                 .into_iter()
-                .map(|(n, t, _)| format!("{t} -> wiiu/apps/{n}/"))
+                .map(|(n, t, _)| {
+                    let folder = if self.cfg.wiiu.format == crate::config::WiiUFormat::Rpx {
+                        crate::wiiu::SD_FOLDER
+                    } else {
+                        &n
+                    };
+                    format!("{t} -> wiiu/apps/{folder}/")
+                })
                 .collect();
             for n in names {
                 ui.label(RichText::new(n).color(DIM));
@@ -2336,12 +2386,6 @@ impl Launcher {
                     self.cfg.show_3ds = Some(on);
                     self.save();
                 }
-                if ui
-                    .checkbox(&mut self.cfg.show_wiiu, "Show the Wii U section")
-                    .changed()
-                {
-                    self.save();
-                }
             });
         }
     }
@@ -2503,30 +2547,27 @@ impl eframe::App for Launcher {
         if self.saving.is_some() {
             ctx.request_repaint_after(std::time::Duration::from_millis(200));
         }
-        let mut play_now = false;
+        let mut next = None;
         let busy = self.busy();
         if let Some(p) = &mut self.recipe_page {
             p.poll();
             if p.working() {
                 ctx.request_repaint_after(std::time::Duration::from_millis(150));
-            } else if p.play_when_ready {
-                // An instance's Play: straight in once everything is found,
-                // else the page stays up with what is missing.
-                p.play_when_ready = false;
-                play_now = p.ready() && !busy;
-                if !p.ready() {
-                    self.note = Some((
-                        format!(
-                            "{} download(s) missing: their pages are listed.",
-                            p.missing().len()
-                        ),
-                        RED,
-                    ));
-                }
+            } else if p.ready() && !busy {
+                next = p.next.take();
             }
         }
-        if play_now {
-            self.use_recipe(true);
+        if let Some(destination) = next {
+            self.use_recipe(destination == crate::instances::Destination::Play);
+            match destination {
+                crate::instances::Destination::Play => {}
+                crate::instances::Destination::ThreeDs => {
+                    self.cfg.show_3ds = Some(true);
+                    self.tab = Tab::ThreeDs;
+                    self.save();
+                }
+                crate::instances::Destination::WiiU => self.tab = Tab::WiiU,
+            }
         }
         if self.busy() {
             ctx.request_repaint_after(std::time::Duration::from_millis(200));

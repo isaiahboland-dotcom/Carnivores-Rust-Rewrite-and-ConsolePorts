@@ -25,11 +25,33 @@ pub struct Item {
     pub known: bool,
 }
 
+/// Where to go once a saved instance's downloads have been checked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Destination {
+    Play,
+    ThreeDs,
+    WiiU,
+}
+
+impl Destination {
+    pub fn offered(mode: crate::Mode) -> &'static [(Self, &'static str)] {
+        match mode {
+            crate::Mode::Full => &[
+                (Self::Play, "Play"),
+                (Self::ThreeDs, "Build 3DS…"),
+                (Self::WiiU, "Build Wii U…"),
+            ],
+            crate::Mode::ThreeDs => &[(Self::ThreeDs, "Build 3DS…")],
+            crate::Mode::WiiU => &[(Self::WiiU, "Build Wii U…")],
+        }
+    }
+}
+
 /// What the list asks of the launcher.
 pub enum Ask {
     Nothing,
     Open(PathBuf),
-    Play(PathBuf),
+    Start(PathBuf, Destination),
     Edit(PathBuf),
     Clone(PathBuf),
     Save,
@@ -65,7 +87,7 @@ impl List {
         self.looked = true;
     }
 
-    pub fn ui(&mut self, ui: &mut egui::Ui, cfg: &Config, play: bool, busy: bool) -> Ask {
+    pub fn ui(&mut self, ui: &mut egui::Ui, cfg: &Config, mode: crate::Mode, busy: bool) -> Ask {
         if !self.looked {
             self.refresh(cfg);
         }
@@ -74,7 +96,7 @@ impl List {
             ui,
             "Each recipe is a whole game: its add-ons and standalone games (credits, download \
              pages and file hashes, never the files), the base game it needs and the choices \
-             made for it. Play finds the downloads in the search folders (Settings) and lists \
+             made for it. Play and the console builders find the downloads in the search folders (Settings) and list \
              any that are missing, with their download pages.",
         );
         ui.add_space(4.0);
@@ -147,15 +169,16 @@ impl List {
                         }))
                         .on_hover_text("Its folders were given before: it plays straight away.");
                         ui.horizontal(|ui| {
-                            if play
-                                && ui
-                                    .add_enabled(!busy, egui::Button::new("Play").fill(GREEN))
+                            for &(destination, label) in Destination::offered(mode) {
+                                if ui
+                                    .add_enabled(!busy, egui::Button::new(label).fill(GREEN))
                                     .clicked()
-                            {
-                                ask = Ask::Play(it.path.clone());
+                                {
+                                    ask = Ask::Start(it.path.clone(), destination);
+                                }
                             }
                             if ui
-                                .button(if play { "Open" } else { "Use..." })
+                                .add_enabled(!busy, egui::Button::new("Open"))
                                 .on_hover_text(
                                     "Its downloads, what's missing and their download pages.",
                                 )
@@ -244,7 +267,8 @@ pub fn from_setup(cfg: &Config, out: PathBuf, id: String) -> Receiver<Saved> {
             r.settings = settings;
             let u = RecipeUse {
                 path: out.clone(),
-                game: None,
+                game: Some(base),
+                overlays: Some(Vec::new()),
                 folders: folders.into_iter().collect(),
                 on: true,
             };
@@ -280,7 +304,7 @@ fn match_base(recipe_path: &Path, game: &Path) -> Option<String> {
     {
         return Some(b.base.id.clone());
     }
-    let v = c2_mods::vanilla(&[game.to_path_buf()]).ok()?;
+    let v = c2_mods::pack::vanilla_files(&[game.to_path_buf()]).ok()?;
     bases
         .iter()
         .filter(|b| b.base.apk.is_empty() && !b.files.is_empty())

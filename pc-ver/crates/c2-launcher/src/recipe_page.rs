@@ -78,8 +78,8 @@ pub struct Page {
     /// Downloads folders being looked through.
     scanning: usize,
     note: Option<String>,
-    /// Play once every entry is found (an instance's Play).
-    pub play_when_ready: bool,
+    /// Continue to Play or a console builder once the downloads are ready.
+    pub next: Option<crate::instances::Destination>,
     /// Folders to look through (with the folders in them) when the Game
     /// tab's game is not the recipe's base: a standalone recipe's game is
     /// rarely the Game tab's.
@@ -151,7 +151,7 @@ impl Page {
             base_status: Status::Unset,
             scanning: 0,
             note: None,
-            play_when_ready: false,
+            next: None,
             candidates,
             tx,
             rx,
@@ -186,6 +186,7 @@ impl Page {
         RecipeUse {
             path: self.path.clone(),
             game: self.game.clone(),
+            overlays: None,
             folders: self
                 .rows
                 .iter()
