@@ -249,6 +249,9 @@ impl Editor {
     /// is read against `game_dirs` (its `_RES.TXT` changes are what it
     /// pins with).
     fn add_from(&mut self, kind: Kind, dir: PathBuf, game_dirs: Vec<PathBuf>) {
+        if self.working() {
+            return;
+        }
         let (tx, rx) = channel();
         std::thread::spawn(move || {
             let made = (|| -> Added {

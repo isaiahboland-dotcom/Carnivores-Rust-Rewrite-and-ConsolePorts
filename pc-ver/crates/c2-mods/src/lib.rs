@@ -52,3 +52,54 @@ pub enum ModError {
     #[error("standalone games: {0}")]
     Standalone(String),
 }
+
+/// A path from mod metadata must stay inside the generated output directory.
+fn output_path(root: &std::path::Path, relative: &str) -> Result<PathBuf, ModError> {
+    if !c2_vfs::is_safe_relative_path(relative) {
+        return Err(ModError::Manifest {
+            path: root.to_path_buf(),
+            message: format!("unsafe generated path: {relative}"),
+        });
+    }
+    Ok(root.join(relative.replace('\\', "/")))
+}
+
+fn output_child(root: &std::path::Path, name: &str) -> Result<PathBuf, ModError> {
+    if name == "." || name.contains(['/', '\\']) {
+        return Err(ModError::Manifest {
+            path: root.to_path_buf(),
+            message: format!("unsafe import folder name: {name}"),
+        });
+    }
+    output_path(root, name)
+}
+
+#[cfg(test)]
+mod output_tests {
+    use super::*;
+    #[test]
+    fn metadata_cannot_escape_an_import_directory() {
+        let root = std::path::Path::new("output");
+        for name in [
+            "..",
+            "../old-install",
+            "/tmp/install",
+            "..\\old-install",
+            "C:install",
+            "",
+            "NUL",
+            ".",
+        ] {
+            assert!(output_child(root, name).is_err(), "{name}");
+        }
+        assert_eq!(
+            output_child(root, "Ice Age animal").ok(),
+            Some(root.join("Ice Age animal"))
+        );
+        assert!(output_path(root, "WEAPONS/../../outside").is_err());
+        assert_eq!(
+            output_path(root, "WEAPONS\\X.CAR").ok(),
+            Some(root.join("WEAPONS/X.CAR"))
+        );
+    }
+}

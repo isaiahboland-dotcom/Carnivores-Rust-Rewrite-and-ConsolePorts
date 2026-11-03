@@ -20,17 +20,31 @@ pub struct Buffer {
     pub buffer: vk::Buffer,
     memory: vk::DeviceMemory,
     ptr: *mut u8,
-    pub size: u64,
+    size: u64,
 }
 
 impl Buffer {
+    pub fn size(&self) -> u64 {
+        self.size
+    }
     /// Copies `bytes` in at `offset` (cut to the buffer's size).
     pub fn write(&self, offset: u64, bytes: &[u8]) {
-        let room = self.size.saturating_sub(offset) as usize;
-        let n = bytes.len().min(room);
-        // SAFETY: `ptr` maps the whole buffer and `offset + n <= size`.
+        if offset >= self.size || bytes.is_empty() {
+            return;
+        }
+        let Ok(offset) = usize::try_from(offset) else {
+            return;
+        };
+        let Ok(size) = usize::try_from(self.size) else {
+            return;
+        };
+        let n = bytes.len().min(size - offset);
+        // SAFETY: Buffer construction must establish a valid mapping of `size`
+        // bytes. offset < size and n <= size - offset. Source and destination
+        // must not overlap; safe callers cannot obtain the private mapped pointer.
+        // Caller scheduling must prevent concurrent CPU writes/GPU access.
         unsafe {
-            std::ptr::copy_nonoverlapping(bytes.as_ptr(), self.ptr.add(offset as usize), n);
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), self.ptr.add(offset), n);
         }
     }
 }
@@ -279,9 +293,16 @@ impl Gpu {
                 );
             }
         });
-        self.destroy_buffer(&staging);
+        // SAFETY: the private upload has completed (or failed); these resources
+        // are owned here and staging is never used again.
+        unsafe {
+            self.destroy_buffer(&staging);
+        }
         if let Err(e) = uploaded {
-            self.destroy_image(&image);
+            // SAFETY: the failed upload's image has no view or external owner.
+            unsafe {
+                self.destroy_image(&image);
+            }
             return Err(e);
         }
         // SAFETY: a view of the image just made.
@@ -328,7 +349,10 @@ impl Gpu {
         })
     }
 
-    pub fn destroy_buffer(&self, b: &Buffer) {
+    /// # Safety
+    /// `b` must belong to this device and must not have been destroyed. All GPU
+    /// uses must be complete. Never use `b` again after this call.
+    pub unsafe fn destroy_buffer(&self, b: &Buffer) {
         // SAFETY: called once, after the GPU is idle.
         unsafe {
             self.device.unmap_memory(b.memory);
@@ -337,11 +361,38 @@ impl Gpu {
         }
     }
 
-    pub fn destroy_image(&self, i: &Image) {
+    /// # Safety
+    /// `i` must belong to this device and must not have been destroyed. Destroy
+    /// dependent views and complete all GPU uses first; never use `i` again.
+    pub unsafe fn destroy_image(&self, i: &Image) {
         // SAFETY: called once, after the GPU is idle.
         unsafe {
             self.device.destroy_image(i.image, None);
             self.device.free_memory(i.memory, None);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mapped_writes_check_bounds_before_pointer_arithmetic() {
+        let mut storage = [0u8; 8];
+        let buffer = Buffer {
+            buffer: vk::Buffer::null(),
+            memory: vk::DeviceMemory::null(),
+            ptr: storage.as_mut_ptr(),
+            size: storage.len() as u64,
+        };
+        buffer.write(8, b"ignored");
+        buffer.write(u64::MAX, b"ignored");
+        buffer.write(0, b"");
+        assert_eq!(storage, [0; 8]);
+        buffer.write(6, b"abcd");
+        assert_eq!(storage, [0, 0, 0, 0, 0, 0, b'a', b'b']);
+        buffer.write(0, b"12345678");
+        assert_eq!(&storage, b"12345678");
     }
 }

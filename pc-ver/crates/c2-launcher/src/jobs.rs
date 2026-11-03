@@ -16,7 +16,7 @@ pub enum Step {
         program: PathBuf,
         args: Vec<String>,
     },
-    /// Start a program and don't wait (the game).
+    /// Start the game; keep its job active until exit to protect its inputs.
     Launch {
         program: PathBuf,
         args: Vec<String>,
@@ -144,27 +144,23 @@ impl Job {
                     .spawn()
                     .map_err(|e| format!("{}: {e}", program.display()))?;
                 self.log("Started.");
-                // Its errors (a recipe entry not found, say) come to the log
-                // while it runs, and how it stopped if it failed: a game that
-                // quits at once otherwise looks started.
-                let err = child.stderr.take();
-                let j = self.clone();
-                std::thread::spawn(move || {
-                    if let Some(e) = err {
-                        for line in BufReader::new(e).lines().map_while(Result::ok) {
-                            if line.contains("Error") || line.contains("ERROR") {
-                                j.log(line);
-                            }
+                // This worker waits; the UI stays responsive. Holding the job
+                // prevents an import/rebuild from replacing data the game uses.
+                if let Some(err) = child.stderr.take() {
+                    for line in BufReader::new(err).lines().map_while(Result::ok) {
+                        if line.contains("Error") || line.contains("ERROR") {
+                            self.log(line);
                         }
                     }
-                    if let Ok(s) = child.wait() {
-                        if !s.success() {
-                            j.log(format!("The game stopped ({s}): see the line above."));
-                        }
-                    }
-                });
-                Ok(())
+                }
+                let status = child.wait().map_err(|e| e.to_string())?;
+                if status.success() {
+                    Ok(())
+                } else {
+                    Err(format!("The game stopped ({status}): see the log above."))
+                }
             }
+
             Step::Copy { from, to } => {
                 if let Some(d) = to.parent() {
                     std::fs::create_dir_all(d).map_err(|e| format!("{}: {e}", d.display()))?;
@@ -185,7 +181,7 @@ impl Job {
             }
             Step::Unpack { archive, to } => {
                 self.log(format!("Unpacking {}", archive.display()));
-                unpack(&archive, &to)?;
+                unpack(&archive, &to, self)?;
                 self.log(format!("Unpacked to {}", to.display()));
                 Ok(())
             }
@@ -203,56 +199,195 @@ pub fn is_archive(p: &Path) -> bool {
     p.is_file() && matches!(ext(p).as_str(), "zip" | "rar" | "7z")
 }
 
-/// `.zip` here; `.rar` / `.7z` with `7z`, `unrar` or `bsdtar` if installed.
-fn unpack(archive: &Path, to: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(to).map_err(|e| format!("{}: {e}", to.display()))?;
-    if ext(archive) == "zip" {
-        let f = std::fs::File::open(archive).map_err(|e| e.to_string())?;
-        let mut z = zip::ZipArchive::new(f).map_err(|e| e.to_string())?;
-        for i in 0..z.len() {
-            let mut entry = z.by_index(i).map_err(|e| e.to_string())?;
-            // Names that would leave the folder are skipped.
-            let Some(rel) = entry.enclosed_name() else {
-                continue;
-            };
-            let out = to.join(rel);
-            if entry.is_dir() {
-                std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
-                continue;
-            }
-            if let Some(d) = out.parent() {
-                std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
-            }
-            let mut w = std::fs::File::create(&out).map_err(|e| e.to_string())?;
-            std::io::copy(&mut entry, &mut w).map_err(|e| e.to_string())?;
+// Desktop extraction policy. Actual output is counted independently of metadata.
+const ENTRY_BYTES: u64 = 512 * 1024 * 1024;
+const TOTAL_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+const ENTRY_COUNT: usize = 100_000;
+
+fn copy_bounded(
+    input: &mut impl Read,
+    output: &mut impl std::io::Write,
+    allowance: u64,
+) -> std::io::Result<u64> {
+    let mut copied = 0u64;
+    let mut buf = [0u8; 8192];
+    loop {
+        let remaining = allowance - copied;
+        let wanted = remaining.saturating_add(1).min(buf.len() as u64) as usize;
+        let n = match input.read(&mut buf[..wanted]) {
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            other => other?,
+        };
+        if n == 0 {
+            return Ok(copied);
         }
-        return Ok(());
+        if n as u64 > remaining {
+            return Err(std::io::Error::other("archive output budget exceeded"));
+        }
+        output.write_all(&buf[..n])?;
+        copied += n as u64;
     }
-    let out = to.display().to_string();
-    let a = archive.display().to_string();
-    let tries: [(&str, Vec<String>); 3] = [
-        (
-            "7z",
-            vec!["x".into(), "-y".into(), format!("-o{out}"), a.clone()],
-        ),
-        (
-            "unrar",
-            vec!["x".into(), "-o+".into(), a.clone(), format!("{out}/")],
-        ),
-        (
-            "bsdtar",
-            vec!["-xf".into(), a.clone(), "-C".into(), out.clone()],
-        ),
-    ];
-    for (tool, args) in tries {
-        if let Ok(s) = Command::new(tool).args(&args).output() {
-            if s.status.success() {
-                return Ok(());
+}
+
+fn unpack(archive: &Path, to: &Path, job: &Job) -> Result<(), String> {
+    if ext(archive) != "zip" {
+        return Err("Automatic RAR/7z extraction is disabled because external tools cannot enforce the launcher's output limits. Extract it separately and add the folder, or use ZIP.".into());
+    }
+    let stage = crate::publish::Staged::new(to)?;
+    if let Err(error) = unpack_zip(archive, &stage.path, ENTRY_BYTES, TOTAL_BYTES, ENTRY_COUNT) {
+        return Err(stage.abort(error));
+    }
+    if let Some(warning) = stage.publish()? {
+        // A published install is usable; preserve the recovery path in the log.
+        job.log(warning);
+    }
+    Ok(())
+}
+
+fn unpack_zip(
+    archive: &Path,
+    to: &Path,
+    per_entry: u64,
+    total: u64,
+    count: usize,
+) -> Result<(), String> {
+    let f = std::fs::File::open(archive).map_err(|e| e.to_string())?;
+    let mut z = zip::ZipArchive::new(f).map_err(|e| e.to_string())?;
+    if z.len() > count {
+        return Err("archive entry count budget exceeded".into());
+    }
+    let mut written = 0u64;
+    for i in 0..z.len() {
+        let mut entry = z.by_index(i).map_err(|e| e.to_string())?;
+        if entry.enclosed_name().is_none() {
+            return Err("archive contains an unsafe path".into());
+        }
+        // Treat Windows separators as separators on every host. Reject drive
+        // prefixes/ADS, parent traversal and Windows aliases before any writes.
+        let name = entry.name().map_err(|e| e.to_string())?.replace('\\', "/");
+        if !c2_vfs::is_safe_relative_path(&name) {
+            return Err(format!("unsafe archive path: {name}"));
+        }
+        if let Some(mode) = entry.unix_mode() {
+            let kind = mode & 0o170000;
+            if kind != 0 && kind != 0o100000 && kind != 0o040000 {
+                return Err("archive links and special files are unsupported".into());
             }
         }
+        let out = to.join(&name);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
+            continue;
+        }
+        let allowance = per_entry.min(total - written);
+        if entry.size() > allowance {
+            return Err("archive output budget exceeded".into());
+        }
+        if let Some(d) = out.parent() {
+            std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+        }
+        // Fresh stage, regular files only, no overwrites of duplicate entries.
+        let mut w = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&out)
+            .map_err(|e| e.to_string())?;
+        written += copy_bounded(&mut entry, &mut w, allowance).map_err(|e| e.to_string())?;
     }
-    Err(format!(
-        "can't unpack {}: install 7-Zip (7z), unrar or bsdtar, or unpack it yourself and add the folder",
-        archive.display()
-    ))
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+    use crate::publish::tests::Temp;
+    use std::io::Write;
+
+    fn archive(root: &Path, entries: &[(&str, &[u8])]) -> PathBuf {
+        let path = root.join("test.zip");
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+        for (name, bytes) in entries {
+            zip.start_file(*name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(bytes).unwrap();
+        }
+        zip.finish().unwrap();
+        path
+    }
+
+    #[test]
+    fn extraction_enforces_entry_total_and_count_limits() {
+        for (entry, total, count, ok) in [
+            (4, 8, 2, true),
+            (3, 8, 2, false),
+            (4, 7, 2, false),
+            (4, 8, 1, false),
+        ] {
+            let t = Temp::new();
+            let input = archive(&t.0, &[("a", b"1234"), ("b", b"5678")]);
+            let stage = crate::publish::Staged::new(&t.0.join("out")).unwrap();
+            assert_eq!(
+                unpack_zip(&input, &stage.path, entry, total, count).is_ok(),
+                ok
+            );
+            stage.abort("done".into());
+        }
+    }
+
+    #[test]
+    fn rejects_unsafe_names_and_duplicate_output() {
+        for names in [
+            vec!["../outside"],
+            vec!["..\\outside"],
+            vec!["C:outside"],
+            vec!["NUL.txt"],
+            vec!["dir/a", "dir//a"],
+        ] {
+            let t = Temp::new();
+            let entries: Vec<_> = names.iter().map(|s| (*s, &b"x"[..])).collect();
+            let input = archive(&t.0, &entries);
+            let out = t.0.join("out");
+            let stage = crate::publish::Staged::new(&out).unwrap();
+            assert!(unpack_zip(&input, &stage.path, 8, 8, 8).is_err());
+            stage.abort("rejected".into());
+            assert!(!out.exists());
+            assert!(!t.0.join("outside").exists());
+        }
+    }
+
+    #[test]
+    fn bounded_copy_probes_overflow_and_retries_interrupted_reads() {
+        struct Interrupted(bool);
+        impl Read for Interrupted {
+            fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+                if !self.0 {
+                    self.0 = true;
+                    return Err(std::io::ErrorKind::Interrupted.into());
+                }
+                (&b"12345"[..]).read(bytes)
+            }
+        }
+        let mut out = Vec::new();
+        assert!(copy_bounded(&mut Interrupted(false), &mut out, 4).is_err());
+        assert!(out.is_empty());
+        assert_eq!(copy_bounded(&mut &b"1234"[..], &mut out, 4).unwrap(), 4);
+        assert_eq!(out, b"1234");
+    }
+
+    #[test]
+    fn failed_zip_keeps_live_install_and_cleans_stage() {
+        let t = Temp::new();
+        let input = archive(&t.0, &[("safe", b"x"), ("../escape", b"bad")]);
+        let out = t.0.join("out");
+        std::fs::create_dir(&out).unwrap();
+        std::fs::write(out.join("old"), b"old").unwrap();
+        let job = Job {
+            title: "test".into(),
+            state: Arc::default(),
+        };
+        assert!(unpack(&input, &out, &job).is_err());
+        assert_eq!(std::fs::read(out.join("old")).unwrap(), b"old");
+        assert!(crate::publish::pending(&t.0).is_empty());
+    }
 }

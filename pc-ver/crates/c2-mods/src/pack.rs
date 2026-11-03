@@ -1232,6 +1232,15 @@ fn place(src: &Path, dst: &Path) -> Result<(), ModError> {
 /// layer, generated files written, plus the merge report. `out` must be
 /// empty, missing, or an earlier pack (which is replaced).
 pub fn materialize(pack: &Pack, out: &Path) -> Result<(), ModError> {
+    // Check every backend's original path before touching an existing pack.
+    for (_, file) in pack.vfs.files() {
+        if !c2_vfs::is_safe_relative_path(&file.path) {
+            return Err(ModError::Vfs(c2_vfs::VfsError::InvalidPack {
+                path: file.path.clone(),
+                reason: "unsafe output path".into(),
+            }));
+        }
+    }
     if out.exists() {
         let empty = std::fs::read_dir(out).map_err(io(out))?.next().is_none();
         if !empty && !out.join(PACK_MARKER).exists() {

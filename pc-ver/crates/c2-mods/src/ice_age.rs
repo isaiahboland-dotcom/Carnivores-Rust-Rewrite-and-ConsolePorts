@@ -494,10 +494,10 @@ pub fn import(ia: &std::path::Path, base: &Vfs, out: &std::path::Path) -> Result
             done.skipped.push(format!("{name}: no {file}"));
             continue;
         };
-        let dir = out.join(&name);
+        let dir = crate::output_child(out, &name)?;
         let t = slot % base_slots;
         let n = t + 1;
-        write(dir.join(&file), &car)?;
+        write(crate::output_path(&dir, &file)?, &car)?;
         let mut b = b.clone();
         // Ice Age's price for it (else the slot it is drawn for gives its own).
         if let Some(p) = dino_prices.get(slot as usize) {
@@ -601,8 +601,8 @@ pub fn import(ia: &std::path::Path, base: &Vfs, out: &std::path::Path) -> Result
             done.skipped.push(format!("{name}: no {file}"));
             continue;
         };
-        let dir = out.join(&name);
-        write(dir.join(&file), &car)?;
+        let dir = crate::output_child(out, &name)?;
+        write(crate::output_path(&dir, &file)?, &car)?;
         let mut b = b.clone();
         let spawn: Vec<String> = b
             .subs

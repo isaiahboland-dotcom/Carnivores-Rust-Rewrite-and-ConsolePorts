@@ -18,14 +18,15 @@ pub enum ResolveError {
 /// moved after everything it requires.
 pub fn order(mods: &[Manifest]) -> Result<Vec<usize>, ResolveError> {
     let ids: Vec<&str> = mods.iter().map(|m| m.info.id.as_str()).collect();
+    let mut indices = std::collections::HashMap::with_capacity(mods.len());
     for (i, id) in ids.iter().enumerate() {
-        if ids[..i].contains(id) {
+        if indices.insert(*id, i).is_some() {
             return Err(ResolveError::Duplicate { id: id.to_string() });
         }
     }
     for m in mods {
         for r in &m.deps.requires {
-            if !ids.contains(&r.as_str()) {
+            if !indices.contains_key(r.as_str()) {
                 return Err(ResolveError::Missing {
                     id: m.info.id.clone(),
                     missing: r.clone(),
@@ -33,7 +34,7 @@ pub fn order(mods: &[Manifest]) -> Result<Vec<usize>, ResolveError> {
             }
         }
         for c in &m.deps.conflicts {
-            if ids.contains(&c.as_str()) {
+            if indices.contains_key(c.as_str()) {
                 return Err(ResolveError::Conflict {
                     a: m.info.id.clone(),
                     b: c.clone(),
@@ -41,37 +42,44 @@ pub fn order(mods: &[Manifest]) -> Result<Vec<usize>, ResolveError> {
             }
         }
     }
-    // Depth-first, visiting in the given order.
     let mut out = Vec::new();
-    let mut state = vec![0u8; mods.len()]; // 0 new, 1 visiting, 2 done
-    fn visit(
-        i: usize,
-        mods: &[Manifest],
-        ids: &[&str],
-        state: &mut [u8],
-        out: &mut Vec<usize>,
-    ) -> Result<(), ResolveError> {
-        match state[i] {
-            2 => return Ok(()),
-            1 => {
-                return Err(ResolveError::Cycle {
+    let mut state = vec![0u8; mods.len()];
+    for root in 0..mods.len() {
+        if state[root] == 2 {
+            continue;
+        }
+        state[root] = 1;
+        let mut stack = vec![(root, 0usize)];
+        while let Some((node, next)) = stack.last_mut() {
+            let i = *node;
+            if *next == mods[i].deps.requires.len() {
+                state[i] = 2;
+                out.push(i);
+                stack.pop();
+                continue;
+            }
+            let required = &mods[i].deps.requires[*next];
+            *next += 1;
+            // Missing requirements were rejected above.
+            let Some(j) = indices.get(required.as_str()).copied() else {
+                return Err(ResolveError::Missing {
                     id: ids[i].to_string(),
-                })
+                    missing: required.clone(),
+                });
+            };
+            match state[j] {
+                2 => {}
+                1 => {
+                    return Err(ResolveError::Cycle {
+                        id: ids[j].to_string(),
+                    })
+                }
+                _ => {
+                    state[j] = 1;
+                    stack.push((j, 0));
+                }
             }
-            _ => {}
         }
-        state[i] = 1;
-        for r in &mods[i].deps.requires {
-            if let Some(j) = ids.iter().position(|id| id == r) {
-                visit(j, mods, ids, state, out)?;
-            }
-        }
-        state[i] = 2;
-        out.push(i);
-        Ok(())
-    }
-    for i in 0..mods.len() {
-        visit(i, mods, &ids, &mut state, &mut out)?;
     }
     Ok(out)
 }
@@ -86,6 +94,35 @@ mod tests {
         m.deps.requires = req.iter().map(|s| s.to_string()).collect();
         m.deps.conflicts = conf.iter().map(|s| s.to_string()).collect();
         m
+    }
+
+    #[test]
+    fn deep_chains_do_not_use_the_call_stack() {
+        let mut mods = Vec::new();
+        for i in 0..20_000 {
+            let mut item = m(&format!("m{i}"), &[], &[]);
+            if i + 1 < 20_000 {
+                item.deps.requires.push(format!("m{}", i + 1));
+            }
+            mods.push(item);
+        }
+        assert_eq!(order(&mods), Ok((0..20_000).rev().collect()));
+    }
+
+    #[test]
+    fn diamonds_and_cycles_preserve_traversal_order() {
+        let mods = [
+            m("a", &["b", "c"], &[]),
+            m("b", &["d"], &[]),
+            m("c", &["d"], &[]),
+            m("d", &[], &[]),
+            m("e", &[], &[]),
+        ];
+        assert_eq!(order(&mods), Ok(vec![3, 1, 2, 0, 4]));
+        assert_eq!(
+            order(&[m("a", &["b"], &[]), m("b", &["a"], &[])]),
+            Err(ResolveError::Cycle { id: "a".into() })
+        );
     }
 
     #[test]

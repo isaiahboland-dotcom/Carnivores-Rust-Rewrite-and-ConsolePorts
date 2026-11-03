@@ -132,12 +132,16 @@ impl Animals {
     /// `buf` big enough for `bytes`, remade if not (the slot's last frame
     /// is done with it).
     fn fit(gpu: &Gpu, buf: &mut Buffer, bytes: &[u8]) -> Result<()> {
-        if (bytes.len() as u64) > buf.size {
+        if (bytes.len() as u64) > buf.size() {
             let grown = gpu.buffer(
                 (bytes.len() as u64).next_power_of_two(),
                 vk::BufferUsageFlags::VERTEX_BUFFER,
             )?;
-            gpu.destroy_buffer(buf);
+            // SAFETY: this frame slot's fence was waited before prepare; the
+            // old allocation is replaced immediately and cannot be used again.
+            unsafe {
+                gpu.destroy_buffer(buf);
+            }
             *buf = grown;
         }
         buf.write(0, bytes);

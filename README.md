@@ -58,8 +58,8 @@ Recipe files for some of the more popular mods
   in it are ignored.
 - **Rust**: stable for PC (<https://rustup.rs>). The 3DS and Wii U builds also need nightly; see their
   sections.
-- Optional: mods you've downloaded, each in its own folder (or as a `.zip`; the launcher also takes `.rar`
-  and `.7z`). Carnivores: Ice Age and the mobile games' APKs can be imported too.
+- Optional: mods you've downloaded, each in its own folder (or as a `.zip`; extract `.rar` and `.7z` separately
+  before adding their folders). Carnivores: Ice Age and the mobile games' APKs can be imported too.
 
 On Linux, the PC build needs the ALSA and udev headers:
 
@@ -96,7 +96,7 @@ The tabs:
 - **The game**: drop in, browse to, or paste the path of your Carnivores 2 (or Carnivores: Ice Age) folder;
   it's checked for `HUNTDAT`. **Base overlays** go on top of it, such as the Modder's Edition release, which
   ships changed files only.
-- **Add-ons**: add mod folders or archives (`.zip`, `.rar`, `.7z`), switch each on or off, and change their
+- **Add-ons**: add mod folders or ZIP archives, switch each on or off, and change their
   order. **Standalone games** (whole games made from Carnivores 2) go here too, and are combined beside
   the base game. You can also import animals from Ice Age or from the mobile games' APKs.
 - **Instances**: save a setup as a recipe, then choose **Play**, **Build Windows…**, **Build 3DS…** or **Build Wii U…**
@@ -350,3 +350,6 @@ To make your own from mods you have (it pins every file they use):
 - The homebrew toolchains this builds on: **devkitPro** (devkitARM, devkitPPC, libctru, citro3d, WUT),
   the **rust3ds** project, **rust-wiiu**, and **Monado** for open-source VR on Linux.
 - Built with the help of **Claude** and **ChatGPT**
+
+Input limits, generated-install recovery and validation scope:
+[Security hardening notes](docs/SECURITY-HARDENING.md).

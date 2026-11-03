@@ -6,7 +6,49 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use crate::{key, Backend, VfsError};
+use crate::{is_safe_relative_path, Backend, VfsError};
+
+const MAX_ENTRY_BYTES: u64 = 512 * 1024 * 1024;
+
+fn read_bounded(
+    reader: &mut impl Read,
+    declared: u64,
+    limit: u64,
+    path: &str,
+) -> Result<Vec<u8>, VfsError> {
+    let too_large = || VfsError::EntryTooLarge {
+        path: path.into(),
+        limit,
+    };
+    if declared > limit {
+        return Err(too_large());
+    }
+    let mut out = Vec::new();
+    let mut chunk = [0u8; 8192];
+    loop {
+        // Probe one byte beyond the remaining allowance, even at the limit.
+        let remaining = limit.saturating_sub(out.len() as u64);
+        let wanted = remaining.saturating_add(1).min(chunk.len() as u64) as usize;
+        let n = match reader.read(&mut chunk[..wanted]) {
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            other => other.map_err(|source| VfsError::Io {
+                path: path.into(),
+                source,
+            })?,
+        };
+        if n == 0 {
+            return Ok(out);
+        }
+        if n as u64 > remaining {
+            return Err(too_large());
+        }
+        out.try_reserve_exact(n).map_err(|e| VfsError::Io {
+            path: path.into(),
+            source: std::io::Error::other(e.to_string()),
+        })?;
+        out.extend_from_slice(&chunk[..n]);
+    }
+}
 
 pub struct ZipBackend {
     path: PathBuf,
@@ -40,18 +82,30 @@ impl ZipBackend {
             source,
         })?;
         let archive = zip::ZipArchive::new(f).map_err(|e| err(&path, e))?;
+        if archive.len() > 100_000 {
+            return Err(VfsError::InvalidPack {
+                path: path.display().to_string(),
+                reason: "archive entry count exceeds 100000".into(),
+            });
+        }
         let prefix = match prefix.trim_matches('/') {
             "" => String::new(),
             p => format!("{p}/"),
         };
-        let pk = key(&prefix);
+        let pk = prefix.to_ascii_lowercase();
         let mut files = Vec::new();
         for i in 0..archive.len() {
             let Some(Ok(name)) = archive.name_for_index(i) else {
                 continue;
             };
             let name = name.replace('\\', "/");
-            if name.ends_with('/') || !key(&name).starts_with(&pk) {
+            if !is_safe_relative_path(&name) {
+                return Err(VfsError::InvalidPack {
+                    path: path.display().to_string(),
+                    reason: format!("unsafe archive path: {name}"),
+                });
+            }
+            if name.ends_with('/') || !name.to_ascii_lowercase().starts_with(&pk) {
                 continue;
             }
             files.push((name[prefix.len()..].to_string(), i));
@@ -74,6 +128,12 @@ impl ZipBackend {
             source,
         })?;
         let archive = zip::ZipArchive::new(f).map_err(|e| err(&path, e))?;
+        if archive.len() > 100_000 {
+            return Err(VfsError::InvalidPack {
+                path: path.display().to_string(),
+                reason: "archive entry count exceeds 100000".into(),
+            });
+        }
         let marker = marker.to_ascii_lowercase();
         let mut roots: Vec<String> = Vec::new();
         for n in names(&archive) {
@@ -123,17 +183,105 @@ impl Backend for ZipBackend {
             .lock()
             .map_err(|_| err(&self.path, "archive lock poisoned"))?;
         let mut f = a.by_index(i).map_err(|e| err(&self.path, e))?;
-        let mut out = Vec::with_capacity(usize::try_from(f.size()).unwrap_or(0));
-        f.read_to_end(&mut out).map_err(|e| err(&self.path, e))?;
-        Ok(out)
+        let declared = f.size();
+        read_bounded(&mut f, declared, MAX_ENTRY_BYTES, path)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
     use super::*;
     use std::io::Write;
 
+    #[test]
+    fn bounded_output_checks_metadata_and_actual_bytes() {
+        assert!(matches!(
+            read_bounded(&mut &b"x"[..], 4 * 1024 * 1024 * 1024, 8, "x"),
+            Err(VfsError::EntryTooLarge { .. })
+        ));
+        assert_eq!(
+            read_bounded(&mut &b"12345678"[..], 8, 8, "x").ok(),
+            Some(b"12345678".to_vec())
+        );
+        assert!(matches!(
+            read_bounded(&mut &b"123456789"[..], 1, 8, "x"),
+            Err(VfsError::EntryTooLarge { .. })
+        ));
+    }
+
+    #[test]
+    fn direct_zip_layers_reject_paths_that_escape_pack_output() {
+        let path =
+            std::env::temp_dir().join(format!("c2-vfs-traversal-{}.zip", std::process::id()));
+        for name in [
+            "HUNTDAT/../../outside",
+            "HUNTDAT/..\\..\\outside",
+            "/HUNTDAT/x",
+            "HUNTDAT/C:outside",
+        ] {
+            let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
+            writer
+                .start_file(name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(b"bad").unwrap();
+            writer.finish().unwrap();
+            assert!(ZipBackend::new(&path, "").is_err(), "{name}");
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+
+    fn synthetic_zip(bytes: &[u8]) -> Vec<u8> {
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "x",
+                zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Stored),
+            )
+            .unwrap();
+        writer.write_all(bytes).unwrap();
+        writer.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn forged_metadata_and_crc_fail_through_the_archive_backend() {
+        for corrupt_size in [false, true] {
+            let mut bytes = synthetic_zip(b"payload");
+            if corrupt_size {
+                // Central-directory uncompressed size. No large payload needed.
+                let central = bytes.windows(4).position(|b| b == b"PK\x01\x02").unwrap();
+                bytes[central + 24..central + 28].copy_from_slice(&u32::MAX.to_le_bytes());
+            } else {
+                let payload = bytes.windows(7).position(|b| b == b"payload").unwrap();
+                bytes[payload] ^= 1;
+            }
+            let path = std::env::temp_dir().join(format!(
+                "c2-vfs-forged-{}-{corrupt_size}.zip",
+                std::process::id()
+            ));
+            std::fs::write(&path, bytes).unwrap();
+            if let Ok(archive) = ZipBackend::new(&path, "") {
+                assert!(archive.read("x").is_err());
+            }
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn normalized_prefix_does_not_slice_unrelated_unicode_names() {
+        let path = std::env::temp_dir().join(format!("c2-vfs-prefix-{}.zip", std::process::id()));
+        let mut writer = zip::ZipWriter::new(File::create(&path).unwrap());
+        writer
+            .start_file("a/b/é", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(b"x").unwrap();
+        writer.finish().unwrap();
+        // Previously key() removed the duplicate separator, then slicing used
+        // the longer raw prefix and could split a UTF-8 code point.
+        assert!(ZipBackend::new(&path, "a//b").unwrap().files().is_empty());
+        std::fs::remove_file(path).unwrap();
+    }
     #[test]
     fn finds_the_game_folder_inside_a_zip() {
         let p = std::env::temp_dir().join(format!("c2-vfs-zip-{}.zip", std::process::id()));

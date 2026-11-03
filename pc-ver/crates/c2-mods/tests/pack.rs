@@ -103,3 +103,25 @@ fn full_copy_and_partial_mods_merge_with_a_report() {
         let _ = std::fs::remove_dir_all(d);
     }
 }
+
+#[test]
+fn malicious_backend_paths_are_rejected_before_replacing_output() {
+    let base = tmp("safe-base");
+    write(&base, &[("HUNTDAT/_RES.TXT", RES.as_bytes())]);
+    let mut pack = build(std::slice::from_ref(&base), vec![]).expect("synthetic pack");
+    let mut malicious = c2_vfs::MemBackend::new();
+    malicious.insert("HUNTDAT/../../outside.txt", b"bad".to_vec());
+    pack.vfs.push("malicious", Box::new(malicious));
+    let out = tmp("protected-output");
+    write(&out, &[("keep.txt", b"original")]);
+    assert!(matches!(
+        materialize(&pack, &out),
+        Err(c2_mods::ModError::Vfs(_))
+    ));
+    assert_eq!(
+        std::fs::read(out.join("keep.txt")).expect("preserved output"),
+        b"original"
+    );
+    std::fs::remove_dir_all(base).expect("remove fixture");
+    std::fs::remove_dir_all(out).expect("remove fixture");
+}

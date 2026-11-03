@@ -866,13 +866,13 @@ impl Weapon<'_> {
         };
         let car = c2_formats::mobile::car_from_in(cat, self.zip, "weapons")?;
         let car_file = format!("{}.CAR", stem.to_ascii_uppercase());
-        let dir = out.join(&name);
+        let dir = crate::output_child(out, &name)?;
         if dir.exists() {
             std::fs::remove_dir_all(&dir).map_err(io(&dir))?;
         }
         std::fs::create_dir_all(dir.join("WEAPONS")).map_err(io(&dir))?;
         let write = |file: &str, data: &[u8]| -> Result<(), ModError> {
-            let p = dir.join(file);
+            let p = crate::output_path(&dir, file)?;
             std::fs::write(&p, data).map_err(io(&p))
         };
         write(
@@ -1046,6 +1046,7 @@ pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Import, ModError> {
             .trim_end_matches(".3dn")
             .trim_end_matches("_model")
             .to_ascii_lowercase();
+        crate::output_child(out, &stem)?;
         // A weapon (its model in `weapons`): new when the game has no
         // weapon model of that name (the revolver).
         if zip
@@ -1153,13 +1154,13 @@ pub fn import(apk: &Path, base: &Vfs, out: &Path) -> Result<Import, ModError> {
             .or_else(|| Some(cat.title.clone()).filter(|t| !t.is_empty()))
             .unwrap_or_else(|| stem.clone());
         let car_file = format!("{}.car", stem.to_ascii_uppercase());
-        let dir = out.join(&name);
+        let dir = crate::output_child(out, &name)?;
         if dir.exists() {
             std::fs::remove_dir_all(&dir).map_err(io(&dir))?;
         }
         std::fs::create_dir_all(&dir).map_err(io(&dir))?;
         let write = |file: &str, data: &[u8]| -> Result<(), ModError> {
-            let p = dir.join(file);
+            let p = crate::output_path(&dir, file)?;
             std::fs::write(&p, data).map_err(io(&p))
         };
         write(&car_file, &c2_formats::car::write(&car))?;

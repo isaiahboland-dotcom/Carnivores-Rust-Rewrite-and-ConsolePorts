@@ -3260,3 +3260,28 @@ on cell boundaries. Old generated `.SPOT` files migrate on load. Mobile trophy
 movement wraps between the first and last stand of the closed room. The PC
 mobile kill notice and post-kill plaque use smaller sizing; trophy-room plaque
 sizing is retained. Visual confirmation in gameplay is still required.
+
+### 2026-11-02 — Bound untrusted archive output and preserve generated installs
+
+The security pass prompted by the local QC review implements ZIP decoded-byte
+limits, extraction budgets, path validation in both ZIP VFS and pack output,
+and metadata-name validation in mobile/Ice Age import. External RAR/7z extraction
+is disabled because its actual expanded output could not be bounded. Generated
+launcher installs use staged publication, restore the previous install when
+publication fails, and retain/report recovery paths when restoration or cleanup
+fails. A busy guard covers jobs and pending completion; PC game launch retains
+its job until exit to protect its input folders. Dependency traversal is iterative
+with stable ordering, and area-name parsing rejects invalid/overflowed numbers.
+
+VR scope reviewed here: `gpu.rs::Buffer::write`, its mapped size field and raw
+buffer/image destruction signatures; `animals.rs` capacity/destruction callers.
+Out-of-range writes no longer perform pointer arithmetic. Capacity is read-only,
+and destruction APIs explicitly require unsafe caller obligations. A synthetic
+allocation test checks bounds without a Vulkan device. This is not a completed
+VR ownership audit: constructor-failure cleanup and device/session/resource
+lifetimes across scene replacement, session loss and exit still need review and
+runtime diagnostics. No headset validation is claimed.
+
+Policy, recovery instructions, validation commands and remaining limits are in
+[SECURITY-HARDENING.md](SECURITY-HARDENING.md). Changes preserve gameplay rules;
+cosmetic refactors and performance experiments from the review remain separate.

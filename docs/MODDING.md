@@ -14,7 +14,8 @@ Put each mod in its own folder (for example under `source/mods/`). The folder
 must contain the mod's `HUNTDAT` folder, either directly or inside one
 subfolder. A `.zip` works too, laid out the same way inside, and needn't be
 unpacked (other archive types, such as `.rar` or `.7z`, must be extracted
-first). A mod shipped as a complete copy of the game is fine: files
+first). ZIP limits and generated-install recovery are documented in
+[Security hardening notes](SECURITY-HARDENING.md). A mod shipped as a complete copy of the game is fine: files
 identical to vanilla, executables, DLLs, logs and map-editor side files are
 ignored.
 

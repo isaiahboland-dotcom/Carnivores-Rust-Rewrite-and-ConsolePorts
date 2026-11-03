@@ -34,6 +34,7 @@ pub struct Launcher {
     balance: crate::balance::Editor,
     /// An APK import running: where it writes its add-ons.
     importing: Option<PathBuf>,
+    unpacking: Vec<PathBuf>,
     /// A game being built from the player's APK, to become the base.
     apk_base: Option<PathBuf>,
     /// ... the recipe page's game instead.
@@ -161,13 +162,17 @@ impl Launcher {
             cfg,
             job: None,
             base_text,
-            note: None,
+            note: {
+                let pending = crate::publish::pending(&crate::config::data_dir());
+                (!pending.is_empty()).then(|| (format!("Unfinished install transactions: {}. Inspect data (new output) and previous (backup); close other launchers before recovery.", pending.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", ")), RED))
+            },
             balance: {
                 let mut b = crate::balance::Editor::load();
                 b.mobile = mobile;
                 b
             },
             importing: None,
+            unpacking: Vec::new(),
             apk_base: None,
             apk_for_recipe: false,
             recipe_page: None,
@@ -181,6 +186,9 @@ impl Launcher {
     /// picked into the data folder (`mobile/<apk>/`); `import_done` adds
     /// them as add-ons.
     fn import_apk(&mut self, apk: PathBuf) {
+        if !self.can_start_operation() {
+            return;
+        }
         let (bases, _) = self.game_folders();
         if bases.is_empty() {
             self.note = Some(("Set the game folder first (The game tab).".into(), RED));
@@ -190,12 +198,27 @@ impl Launcher {
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "mobile".into());
-        let out = crate::config::data_dir().join("mobile").join(&stem);
+        let out = crate::config::data_dir()
+            .join("mobile")
+            .join(crate::config::install_name(&stem));
         let to = out.clone();
         let step = Step::Task(Box::new(move |job| {
             job.log(format!("Reading {}", apk.display()));
             let base = c2_mods::vanilla(&bases).map_err(|e| e.to_string())?;
-            let done = c2_mods::mobile::import(&apk, &base, &to).map_err(|e| e.to_string())?;
+            let stage = crate::publish::Staged::new(&to)?;
+            let done = match c2_mods::mobile::import(&apk, &base, &stage.path) {
+                Ok(done) => done,
+                Err(e) => return Err(stage.abort(e.to_string())),
+            };
+            if done.added.is_empty() {
+                return Err(stage.abort(
+                    "No compatible mobile add-ons were imported; previous install preserved."
+                        .into(),
+                ));
+            }
+            if let Some(warning) = stage.publish()? {
+                job.log(warning);
+            }
             for s in done.skipped {
                 job.log(format!("Not imported: {s}"));
             }
@@ -214,6 +237,9 @@ impl Launcher {
     /// Carnivores: Ice Age's animals and areas as add-ons beside C2's (the
     /// combined game, `c2_mods::ice_age::import`).
     fn import_ice_age(&mut self, ia: PathBuf) {
+        if !self.can_start_operation() {
+            return;
+        }
         let (bases, _) = self.game_folders();
         if bases.is_empty() {
             self.note = Some(("Set the game folder first (The game tab).".into(), RED));
@@ -226,12 +252,29 @@ impl Launcher {
         let step = Step::Task(Box::new(move |job| {
             job.log(format!("Reading {}", ia.display()));
             let base = c2_mods::vanilla(&bases).map_err(|e| e.to_string())?;
-            let _ = std::fs::remove_dir_all(&to);
-            let done = c2_mods::ice_age::import(&ia, &base, &to).map_err(|e| e.to_string())?;
+            let stage = crate::publish::Staged::new(&to)?;
+            let done = match c2_mods::ice_age::import(&ia, &base, &stage.path) {
+                Ok(done) => done,
+                Err(e) => return Err(stage.abort(e.to_string())),
+            };
+            if done.added.is_empty() {
+                return Err(stage.abort(
+                    "No compatible Ice Age add-ons were imported; previous install preserved."
+                        .into(),
+                ));
+            }
+            let added: Vec<_> = done
+                .added
+                .iter()
+                .filter_map(|p| p.strip_prefix(&stage.path).ok().map(|p| to.join(p)))
+                .collect();
+            if let Some(warning) = stage.publish()? {
+                job.log(warning);
+            }
             for s in done.skipped {
                 job.log(format!("Not imported: {s}"));
             }
-            for d in done.added {
+            for d in added {
                 job.log(d.display().to_string());
             }
             Ok(())
@@ -244,19 +287,30 @@ impl Launcher {
     /// the data folder (`apk-base/<apk>/`, `c2_mods::mobile_base`), for
     /// those with only the phone game; `apk_base_done` makes it the base.
     fn base_from_apk(&mut self, apk: PathBuf) {
+        if !self.can_start_operation() {
+            return;
+        }
         let stem = apk
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "mobile".into());
-        let out = crate::config::data_dir().join("apk-base").join(&stem);
+        let out = crate::config::data_dir()
+            .join("apk-base")
+            .join(crate::config::install_name(&stem));
         let to = out.clone();
         let step = Step::Task(Box::new(move |job| {
             job.log(format!("Reading {}", apk.display()));
-            // A rebuild starts clean (our own folder in the data folder).
-            if to.is_dir() {
-                std::fs::remove_dir_all(&to).map_err(|e| format!("{}: {e}", to.display()))?;
+            let stage = crate::publish::Staged::new(&to)?;
+            let b = match c2_mods::mobile_base::build(&apk, &stage.path) {
+                Ok(b) => b,
+                Err(e) => return Err(stage.abort(e.to_string())),
+            };
+            if !stage.path.join("HUNTDAT/_RES.TXT").is_file() {
+                return Err(stage.abort("Build did not produce HUNTDAT/_RES.TXT".into()));
             }
-            let b = c2_mods::mobile_base::build(&apk, &to).map_err(|e| e.to_string())?;
+            if let Some(warning) = stage.publish()? {
+                job.log(warning);
+            }
             job.log(format!(
                 "{} areas, {} animals, {} weapons",
                 b.areas.len(),
@@ -299,12 +353,14 @@ impl Launcher {
     /// After an import: its folders become add-ons, its values go to the
     /// balance editor.
     fn import_done(&mut self) {
-        let Some(out) = &self.importing else { return };
+        let Some(out) = self.importing.clone() else {
+            return;
+        };
         match self.job.as_ref().and_then(Job::result) {
             None => return,
             Some(false) => {}
             Some(true) => {
-                let mut dirs: Vec<PathBuf> = std::fs::read_dir(out)
+                let mut dirs: Vec<PathBuf> = std::fs::read_dir(&out)
                     .map(|rd| {
                         rd.flatten()
                             .map(|e| e.path())
@@ -321,6 +377,7 @@ impl Launcher {
                 }
                 self.balance.mobile = cfg_mobile(&self.cfg);
                 let n = dirs.len();
+                self.importing = None;
                 self.add_addons(dirs);
                 self.note = Some((format!("{n} imported add-ons added (Add-ons tab)."), TEXT));
             }
@@ -345,6 +402,21 @@ impl Launcher {
 
     fn busy(&self) -> bool {
         self.job.as_ref().is_some_and(|j| j.result().is_none())
+            || self.importing.is_some()
+            || !self.unpacking.is_empty()
+            || self.apk_base.is_some()
+            || self.saving.is_some()
+            || self.recipe_page.as_ref().is_some_and(|p| p.working())
+            || self.recipe_edit.as_ref().is_some_and(|e| e.working())
+    }
+
+    fn can_start_operation(&mut self) -> bool {
+        if self.busy() {
+            self.note = Some(("Wait for the current operation to finish.".into(), RED));
+            false
+        } else {
+            true
+        }
     }
 
     fn set_base(&mut self, p: PathBuf) {
@@ -370,19 +442,26 @@ impl Launcher {
     /// Folders are added as they are; archives are unpacked into the data
     /// folder first.
     fn add_addons(&mut self, paths: Vec<PathBuf>) {
+        if !self.can_start_operation() {
+            return;
+        }
         let mut unpack = Vec::new();
+        let mut unpacking = Vec::new();
         for p in paths {
             let dest = if is_archive(&p) {
                 let stem = p
                     .file_stem()
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "addon".into());
-                let to = crate::config::data_dir().join("addons").join(&stem);
+                let to = crate::config::data_dir()
+                    .join("addons")
+                    .join(crate::config::install_name(&stem));
                 unpack.push(Step::Unpack {
                     archive: p.clone(),
                     to: to.clone(),
                 });
-                to
+                unpacking.push(to);
+                continue;
             } else if p.is_dir() {
                 p
             } else {
@@ -403,9 +482,23 @@ impl Launcher {
             }
         }
         if !unpack.is_empty() {
+            self.unpacking = unpacking;
             self.job = Some(Job::start("Unpacking add-ons", unpack));
         }
         self.save();
+    }
+
+    fn unpack_done(&mut self) {
+        if self.unpacking.is_empty() {
+            return;
+        }
+        let Some(ok) = self.job.as_ref().and_then(Job::result) else {
+            return;
+        };
+        let paths = std::mem::take(&mut self.unpacking);
+        if ok {
+            self.add_addons(paths);
+        }
     }
 
     /// The base and its overlays, then the add-ons that are on.
@@ -478,6 +571,9 @@ impl Launcher {
     /// instance): the folders it was last given, the rest looked for in
     /// the search folders.
     fn open_recipe(&mut self, path: PathBuf) {
+        if !self.can_start_operation() {
+            return;
+        }
         let dirs = self.game_folders().0;
         let candidates = self.base_candidates();
         match crate::recipe_page::Page::open(&path, self.cfg.remembered(&path), dirs, candidates) {
@@ -494,6 +590,9 @@ impl Launcher {
 
     /// The recipe page's recipe in use (its choices taken in), and played.
     fn use_recipe(&mut self, play: bool) {
+        if !self.can_start_operation() {
+            return;
+        }
         let Some(p) = self.recipe_page.take() else {
             return;
         };
@@ -530,6 +629,9 @@ impl Launcher {
     /// the setup (game, add-ons, standalones) as a new recipe, saved under
     /// the recipes folder by default.
     fn save_instance(&mut self) {
+        if !self.can_start_operation() {
+            return;
+        }
         let dir = crate::config::recipes_dir();
         let _ = std::fs::create_dir_all(&dir);
         let current = self.active_recipe().cloned();
@@ -639,6 +741,9 @@ impl Launcher {
     }
 
     fn edit_recipe(&mut self, path: &Path) {
+        if !self.can_start_operation() {
+            return;
+        }
         match crate::recipe_edit::Editor::open(path) {
             Ok(e) => self.recipe_edit = Some(e),
             Err(e) => self.note = Some((format!("Not a recipe: {e}"), RED)),
@@ -648,6 +753,9 @@ impl Launcher {
     /// "Clone...": the recipe saved under a new name (with the folders
     /// given for it), then opened to edit.
     fn clone_recipe(&mut self, from: &Path) {
+        if !self.can_start_operation() {
+            return;
+        }
         let Some(to) = crate::recipe_edit::pick_copy_path(from) else {
             return;
         };
@@ -726,7 +834,15 @@ impl Launcher {
                 .request_repaint_after(std::time::Duration::from_millis(150));
         }
         let mut ask = crate::recipe_edit::Ask::Nothing;
-        panel(ui, |ui| ask = e.ui(ui, &game));
+        let other_busy = self.job.as_ref().is_some_and(|j| j.result().is_none())
+            || self.importing.is_some()
+            || !self.unpacking.is_empty()
+            || self.apk_base.is_some()
+            || self.saving.is_some()
+            || self.recipe_page.as_ref().is_some_and(|p| p.working());
+        panel(ui, |ui| {
+            ui.add_enabled_ui(!other_busy && !e.working(), |ui| ask = e.ui(ui, &game));
+        });
         match ask {
             crate::recipe_edit::Ask::Nothing => {}
             crate::recipe_edit::Ask::Close => self.recipe_edit = None,
@@ -1065,6 +1181,9 @@ impl Launcher {
     }
 
     fn play(&mut self) {
+        if !self.can_start_operation() {
+            return;
+        }
         let Some(pc) = find_tool("c2-pc", self.cfg.tools.as_deref()) else {
             self.note = Some((
                 "c2-pc not found: set the tools folder in Settings.".into(),
@@ -1084,6 +1203,9 @@ impl Launcher {
     /// it shows a test scene in the headset, not the game yet; run and
     /// waited for rather than launched, so its report lands in the log.
     fn play_vr(&mut self) {
+        if !self.can_start_operation() {
+            return;
+        }
         let Some(vr) = find_tool("c2-vr", self.cfg.tools.as_deref()) else {
             self.note = Some((
                 "c2-vr not found: set the tools folder in Settings.".into(),
@@ -1099,6 +1221,9 @@ impl Launcher {
     }
 
     fn build_3ds(&mut self) {
+        if !self.can_start_operation() {
+            return;
+        }
         let tools = self.cfg.tools.clone();
         let (Some(cook), Some(app)) = (
             find_tool("c2-cook", tools.as_deref()),
@@ -1341,6 +1466,9 @@ impl Launcher {
     }
 
     fn build_wiiu(&mut self) {
+        if !self.can_start_operation() {
+            return;
+        }
         let tools = self.cfg.tools.clone();
         let (Some(cook), Some(app)) = (
             find_tool("c2-cook", tools.as_deref()),
@@ -1656,7 +1784,9 @@ impl Launcher {
         if let Some(p) = &mut self.recipe_page {
             let mut ask = crate::recipe_page::Ask::Nothing;
             let play = self.mode == Mode::Full;
-            panel(ui, |ui| ask = p.ui(ui, &dirs, busy, play));
+            panel(ui, |ui| {
+                ui.add_enabled_ui(!busy, |ui| ask = p.ui(ui, &dirs, busy, play));
+            });
             match ask {
                 crate::recipe_page::Ask::Nothing => {}
                 crate::recipe_page::Ask::Use => self.use_recipe(false),
@@ -2309,6 +2439,9 @@ impl Launcher {
     }
 
     fn build_windows(&mut self) {
+        if !self.can_start_operation() {
+            return;
+        }
         let result = (|| -> Result<Vec<Step>, String> {
             let r = self
                 .active_recipe()
@@ -2562,7 +2695,7 @@ impl Launcher {
     }
 
     fn dropped(&mut self, files: Vec<PathBuf>) {
-        if files.is_empty() {
+        if files.is_empty() || !self.can_start_operation() {
             return;
         }
         // A game folder dropped on the game tab (or anywhere while there is
@@ -2640,10 +2773,11 @@ impl eframe::App for Launcher {
                 .map(|f| f.path().to_path_buf())
                 .collect()
         });
-        self.dropped(dropped);
+        self.unpack_done();
         self.import_done();
         self.apk_base_done();
         self.saving_done();
+        self.dropped(dropped);
         if self.saving.is_some() {
             ctx.request_repaint_after(std::time::Duration::from_millis(200));
         }
@@ -2760,4 +2894,62 @@ fn cfg_mobile(cfg: &Config) -> Option<c2_mods::balance::Balance> {
     cfg.mobile_values
         .as_deref()
         .and_then(|p| c2_mods::balance::Balance::load(p).ok())
+}
+
+#[cfg(test)]
+mod operation_tests {
+    use super::*;
+    fn launcher() -> Launcher {
+        Launcher {
+            mode: Mode::Full,
+            cfg: Config::default(),
+            tab: Tab::Instances,
+            job: None,
+            base_text: String::new(),
+            note: None,
+            balance: Default::default(),
+            importing: None,
+            unpacking: Vec::new(),
+            apk_base: None,
+            apk_for_recipe: false,
+            recipe_page: None,
+            recipe_edit: None,
+            instances: Default::default(),
+            saving: None,
+        }
+    }
+    #[test]
+    fn every_job_start_rejects_pending_completion() {
+        let mut app = launcher();
+        app.importing = Some(PathBuf::from("pending"));
+        app.import_apk("input.apk".into());
+        app.import_ice_age("input".into());
+        app.base_from_apk("input.apk".into());
+        app.add_addons(vec!["input.zip".into()]);
+        app.play();
+        app.play_vr();
+        app.build_3ds();
+        app.build_wiiu();
+        app.build_windows();
+        app.save_instance();
+        assert!(app.job.is_none());
+        assert!(app.apk_base.is_none());
+        assert!(app.saving.is_none());
+        assert_eq!(app.importing, Some(PathBuf::from("pending")));
+        assert!(app.note.is_some());
+    }
+    #[test]
+    fn all_completion_kinds_hold_the_busy_guard() {
+        let mut app = launcher();
+        assert!(app.can_start_operation());
+        app.apk_base = Some("pending".into());
+        assert!(!app.can_start_operation());
+        app.apk_base = None;
+        app.unpacking.push("pending".into());
+        assert!(!app.can_start_operation());
+        app.unpacking.clear();
+        let (_tx, rx) = std::sync::mpsc::channel();
+        app.saving = Some(rx);
+        assert!(!app.can_start_operation());
+    }
 }

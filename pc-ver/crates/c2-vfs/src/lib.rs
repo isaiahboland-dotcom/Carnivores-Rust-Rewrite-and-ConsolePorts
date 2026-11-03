@@ -33,6 +33,8 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, thiserror::Error)]
 pub enum VfsError {
+    #[error("{path}: entry exceeds the {limit}-byte limit")]
+    EntryTooLarge { path: String, limit: u64 },
     #[error("{path}: not found")]
     NotFound { path: String },
     #[cfg(feature = "std")]
@@ -46,6 +48,56 @@ pub enum VfsError {
     InvalidPack { path: String, reason: String },
     #[error("{path}: platform I/O error {code}")]
     PlatformIo { path: String, code: i32 },
+}
+
+/// Whether a VFS path can safely be joined to an output directory on either
+/// Windows or Unix. Validate the original spelling before key normalization.
+pub fn is_safe_relative_path(path: &str) -> bool {
+    let path = path.replace('\\', "/");
+    !path.is_empty()
+        && !path.starts_with('/')
+        && path.split('/').all(|part| {
+            if part.is_empty() || part == "." {
+                return true;
+            }
+            if part == ".."
+                || part.ends_with([' ', '.'])
+                || part
+                    .chars()
+                    .any(|c| c.is_control() || matches!(c, ':' | '<' | '>' | '"' | '|' | '?' | '*'))
+            {
+                return false;
+            }
+            !matches!(
+                part.split('.')
+                    .next()
+                    .unwrap_or("")
+                    .to_ascii_uppercase()
+                    .as_str(),
+                "CON"
+                    | "PRN"
+                    | "AUX"
+                    | "NUL"
+                    | "COM1"
+                    | "COM2"
+                    | "COM3"
+                    | "COM4"
+                    | "COM5"
+                    | "COM6"
+                    | "COM7"
+                    | "COM8"
+                    | "COM9"
+                    | "LPT1"
+                    | "LPT2"
+                    | "LPT3"
+                    | "LPT4"
+                    | "LPT5"
+                    | "LPT6"
+                    | "LPT7"
+                    | "LPT8"
+                    | "LPT9"
+            )
+        })
 }
 
 /// Normalised lookup key: `/` separators, lower case, no leading `./` or `/`.
@@ -123,6 +175,12 @@ impl Backend for DirBackend {
     }
 
     fn read(&self, path: &str) -> Result<Vec<u8>, VfsError> {
+        if !is_safe_relative_path(path) {
+            return Err(VfsError::InvalidPack {
+                path: path.into(),
+                reason: "unsafe directory path".into(),
+            });
+        }
         let p = self.root.join(path);
         std::fs::read(&p).map_err(|source| VfsError::Io {
             path: p.display().to_string(),
@@ -131,7 +189,7 @@ impl Backend for DirBackend {
     }
 
     fn disk_path(&self, path: &str) -> Option<PathBuf> {
-        Some(self.root.join(path))
+        is_safe_relative_path(path).then(|| self.root.join(path))
     }
 }
 

@@ -161,18 +161,28 @@ fn set(b: &mut Block, k: &str, v: String) {
     }
 }
 
+fn area_number(name: &str) -> Option<u32> {
+    let prefix = name.get(.."area".len())?;
+    if !prefix.eq_ignore_ascii_case("area") {
+        return None;
+    }
+    let rest = name.get("area".len()..)?;
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    digits.parse().ok()
+}
+
 /// `DINO7.TGA` with prefix `dino`, 7 -> n: renamed, keeping case and suffix.
 fn renumber(name: &str, prefix: &str, map: &dyn Fn(usize) -> Option<usize>) -> Option<String> {
     let lower = name.to_ascii_lowercase();
     if !lower.starts_with(prefix) {
         return None;
     }
-    let rest = &name[prefix.len()..];
+    let rest = name.get(prefix.len()..)?;
     let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
     let to = map(digits.parse().ok()?)?;
     Some(format!(
         "{}{to}{}",
-        &name[..prefix.len()],
+        name.get(..prefix.len())?,
         &rest[digits.len()..]
     ))
 }
@@ -915,18 +925,19 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
                 let ext = fname.rsplit('.').next().unwrap_or("").to_ascii_uppercase();
                 renumber(&fname, "area", &|n| area_map(n as u32).map(|g| g as usize))
                     .filter(|_| (ext == "MAP" || ext == "RSC") && !sub.contains('/'))
-                    .map(|_| {
-                        let n: String = fname[4..]
-                            .chars()
-                            .take_while(char::is_ascii_digit)
-                            .collect();
-                        let g = n.parse::<u32>().ok().and_then(area_map).unwrap_or(0);
-                        format!("HUNTDAT/AREAS/AREA{g}.{ext}")
+                    .and_then(|_| {
+                        let g = area_number(&fname).and_then(area_map)?;
+                        Some(format!("HUNTDAT/AREAS/AREA{g}.{ext}"))
                     })
             } else if k.starts_with("huntdat/menu/") {
                 let dir = rel.rsplit_once('/').map_or("MENU", |(d, _)| d);
-                let to =
-                    |n: usize| -> Option<usize> { slot_map(n as u32 - 1).map(|g| g as usize + 1) };
+                let to = |n: usize| -> Option<usize> {
+                    u32::try_from(n)
+                        .ok()
+                        .and_then(|n| n.checked_sub(1))
+                        .and_then(slot_map)
+                        .map(|g| g as usize + 1)
+                };
                 renumber(&fname, "dino", &to)
                     .or_else(|| renumber(&fname, "call", &to))
                     .or_else(|| renumber(&fname, "weapon", &|n| wslot(n).filter(|&j| j > w0)))
@@ -936,7 +947,11 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
                     .map(|f| format!("HUNTDAT/{dir}/{f}"))
             } else if k.starts_with("huntdat/soundfx/") {
                 renumber(&fname, "call", &|n| {
-                    slot_map(n as u32 - 1).map(|g| g as usize + 1)
+                    u32::try_from(n)
+                        .ok()
+                        .and_then(|n| n.checked_sub(1))
+                        .and_then(slot_map)
+                        .map(|g| g as usize + 1)
                 })
                 .filter(|_| k.contains("/calls/"))
                 .map(|f| format!("HUNTDAT/SOUNDFX/CALLS/{f}"))
@@ -1254,4 +1269,22 @@ fn write_out(vfs: &Vfs, out: &Path, report: &str) -> Result<()> {
     std::fs::write(out.join(REPORT_FILE), report).map_err(io(out))?;
     std::fs::write(out.join(crate::pack::PACK_MARKER), "built by c2rs\n").map_err(io(out))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod filename_tests {
+    use super::*;
+    #[test]
+    fn parses_only_numbered_area_names() {
+        for name in ["", "ar", "aréa2.map", "area.map", "area4294967296.map"] {
+            assert_eq!(area_number(name), None);
+        }
+        assert_eq!(area_number("AREA12.MAP"), Some(12));
+        assert_eq!(area_number("Area2.rsc"), Some(2));
+        assert_eq!(renumber("aréa2.map", "area", &Some), None);
+        assert_eq!(
+            renumber("ArEa2.rsc", "area", &|n| Some(n + 3)),
+            Some("ArEa5.rsc".into())
+        );
+    }
 }

@@ -595,6 +595,7 @@ dependencies = [
  "anyhow",
  "c2-formats",
  "c2-mods",
+ "c2-vfs",
  "eframe",
  "rfd",
  "serde",

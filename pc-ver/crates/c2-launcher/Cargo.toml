@@ -13,6 +13,7 @@ workspace = true
 [dependencies]
 anyhow.workspace = true
 c2-formats.workspace = true
+c2-vfs.workspace = true
 c2-mods.workspace = true
 eframe.workspace = true
 rfd.workspace = true

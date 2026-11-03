@@ -31,7 +31,9 @@ static void audio_shutdown(void) { assert(audio_initialized); audio_initialized 
 static void audio_resume(void *sim) { assert(sim && !audio_initialized); audio_initialized = 1; ++restores; }
 static void OSReport(const char *format, ...) { (void)format; }
 static uint64_t OSGetTime(void) { return 123; }
-static const char *WHBGetSdCardMountPath(void) { return "/sd"; }
+static int app_path(char *out, size_t n, const char *name) {
+    return snprintf(out, n, "/sd/wiiu/apps/test/%s", name) < (int)n;
+}
 static void FSInitCmdBlock(FSCmdBlock *cmd) { *cmd = 0; }
 static int FSOpenFile(int *c, int *cmd, const char *path, const char *mode, int *f, int flags) {
     (void)c; (void)cmd; (void)flags;
