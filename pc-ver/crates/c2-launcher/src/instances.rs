@@ -7,13 +7,12 @@
 //! setup as a recipe.
 
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{channel, Receiver};
 
-use c2_mods::recipe::{self, Base, Recipe, RecipeMod};
+use c2_mods::recipe::{self, Base, Recipe};
 use eframe::egui::{self, RichText};
 
 use crate::app::{help, panel};
-use crate::config::{describe_game, Config, RecipeUse};
+use crate::config::Config;
 use crate::theme::*;
 
 pub struct Item {
@@ -228,74 +227,9 @@ impl List {
 }
 
 /// What a running "Save as instance" sends back.
-pub type Saved = Result<(Recipe, RecipeUse), String>;
-
-/// The launcher's setup (no recipe in use) as a recipe, made off the UI
-/// thread (the game folders are hashed): every add-on, overlay and
-/// standalone pinned, the base matched to a profile in `recipes/bases/`.
-/// The folders come back with it so the instance plays straight away.
-pub fn from_setup(cfg: &Config, out: PathBuf, id: String) -> Receiver<Saved> {
-    let (tx, rx) = channel();
-    let base = cfg.base.clone();
-    let overlays = cfg.overlays.clone();
-    let addons = cfg.enabled_addons();
-    let standalones = cfg.enabled_standalones();
-    let settings = cfg.settings(&Default::default());
-    std::thread::spawn(move || {
-        let made = (|| -> Result<(Recipe, RecipeUse), String> {
-            let base = base
-                .filter(|b| describe_game(b).is_some())
-                .ok_or("no game folder on the Game tab")?;
-            let games: Vec<PathBuf> = std::iter::once(base.clone())
-                .chain(overlays.clone())
-                .collect();
-            let v = c2_mods::vanilla(&games).map_err(|e| e.to_string())?;
-            let sources = addons
-                .iter()
-                .map(|m| c2_mods::load_mod(&v, m).map_err(|e| format!("{}: {e}", m.display())))
-                .collect::<Result<Vec<_>, _>>()?;
-            let base_id = match_base(&out, &base).unwrap_or_default();
-            let mut r =
-                recipe::new_recipe(&id, &id, &base_id, &sources).map_err(|e| e.to_string())?;
-            let mut folders: Vec<(String, PathBuf)> = r
-                .mods
-                .iter()
-                .map(|m| m.id.clone())
-                .zip(addons.iter().cloned())
-                .collect();
-            for (list, dirs) in [
-                (&mut r.overlays, &overlays),
-                (&mut r.standalones, &standalones),
-            ] {
-                for d in dirs {
-                    let m: RecipeMod = recipe::pin_game(d).map_err(|e| e.to_string())?;
-                    folders.push((m.id.clone(), d.clone()));
-                    list.push(m);
-                }
-            }
-            if !r.standalones.is_empty() {
-                r.combine = Some(recipe::Combine {
-                    ambients: "tied".into(),
-                });
-            }
-            r.settings = settings;
-            let u = RecipeUse {
-                path: out.clone(),
-                game: Some(base),
-                overlays: Some(Vec::new()),
-                folders: folders.into_iter().collect(),
-                on: true,
-            };
-            Ok((r, u))
-        })();
-        let _ = tx.send(made);
-    });
-    rx
-}
-
 /// The id of the base profile (`bases/*.toml` near the recipe) that the
 /// game folder matches, if one does.
-fn match_base(recipe_path: &Path, game: &Path) -> Option<String> {
+pub(crate) fn match_base(recipe_path: &Path, game: &Path) -> Option<String> {
     let dir = recipe_path
         .ancestors()
         .skip(1)

@@ -38,8 +38,6 @@ pub struct Launcher {
     /// A recipe being edited (Instances tab).
     recipe_edit: Option<crate::recipe_edit::Editor>,
     instances: crate::instances::List,
-    /// "Save as instance" making a recipe from the setup.
-    saving: Option<std::sync::mpsc::Receiver<crate::instances::Saved>>,
 }
 
 fn style(ctx: &egui::Context) {
@@ -169,7 +167,6 @@ impl Launcher {
             recipe_page: None,
             recipe_edit: None,
             instances: Default::default(),
-            saving: None,
         }
     }
 
@@ -287,6 +284,10 @@ impl Launcher {
                 Ok(crate::jobs::Completion::ApkBase { out, for_recipe }) => {
                     self.apk_base_done(out, for_recipe)
                 }
+                Ok(crate::jobs::Completion::Saved(saved)) => {
+                    let (r, u) = *saved;
+                    self.saving_done(r, u);
+                }
                 Err(e) => self.note = Some((e, RED)),
             }
         }
@@ -316,7 +317,6 @@ impl Launcher {
     fn busy(&self) -> bool {
         self.job.busy()
             || !self.unpacking.is_empty()
-            || self.saving.is_some()
             || self.recipe_page.as_ref().is_some_and(|p| p.working())
             || self.recipe_edit.as_ref().is_some_and(|e| e.working())
     }
@@ -559,11 +559,14 @@ impl Launcher {
             .file_stem()
             .map_or(String::new(), |s| s.to_string_lossy().into_owned());
         let Some(u) = current else {
-            self.saving = Some(crate::instances::from_setup(
-                &self.cfg,
-                out,
-                crate::instances::id_from(&stem),
-            ));
+            let cfg = self.cfg.clone();
+            let id = crate::instances::id_from(&stem);
+            if let Err(e) = self.job.start_task("Saving instance", move |_| {
+                crate::jobs::saving::from_setup(cfg, out, id)
+            }) {
+                self.note = Some((e, RED));
+                return;
+            }
             self.note = Some(("Saving the instance (hashing its files)...".into(), TEXT));
             return;
         };
@@ -607,24 +610,11 @@ impl Launcher {
     }
 
     /// A "Save as instance" of the setup that finished.
-    fn saving_done(&mut self) {
-        let Some(rx) = &self.saving else {
-            return;
-        };
-        let Ok(made) = rx.try_recv() else {
-            return;
-        };
-        self.saving = None;
-        match made {
-            Ok((mut r, u)) => {
-                r.settings.balance = self.balance.file().map(|_| self.balance.edits.clone());
-                self.write_instance(r, u);
-            }
-            Err(e) => self.note = Some((format!("Not saved: {e}"), RED)),
-        }
+    fn saving_done(&mut self, mut r: c2_mods::recipe::Recipe, u: RecipeUse) {
+        r.settings.balance = self.balance.file().map(|_| self.balance.edits.clone());
+        self.write_instance(r, u);
     }
 
-    /// The Instances tab: the recipe page while one is open, else the list.
     fn instances_tab(&mut self, ui: &mut egui::Ui) {
         heading(ui, "Instances");
         if self.recipe_edit.is_some() {
@@ -635,7 +625,7 @@ impl Launcher {
             self.recipe_ui(ui);
             return;
         }
-        let busy = self.busy() || self.saving.is_some();
+        let busy = self.busy();
         match self.instances.ui(ui, &self.cfg, self.mode, busy) {
             crate::instances::Ask::Nothing => {}
             crate::instances::Ask::Open(p) => self.open_recipe(p),
@@ -747,7 +737,6 @@ impl Launcher {
         let mut ask = crate::recipe_edit::Ask::Nothing;
         let other_busy = self.job.busy()
             || !self.unpacking.is_empty()
-            || self.saving.is_some()
             || self.recipe_page.as_ref().is_some_and(|p| p.working());
         panel(ui, |ui| {
             ui.add_enabled_ui(!other_busy && !e.working(), |ui| ask = e.ui(ui, &game));
@@ -2679,11 +2668,7 @@ impl eframe::App for Launcher {
         });
         self.unpack_done();
         self.poll_job();
-        self.saving_done();
         self.dropped(dropped);
-        if self.saving.is_some() {
-            ctx.request_repaint_after(std::time::Duration::from_millis(200));
-        }
         let mut next = None;
         let busy = self.busy();
         if let Some(p) = &mut self.recipe_page {
