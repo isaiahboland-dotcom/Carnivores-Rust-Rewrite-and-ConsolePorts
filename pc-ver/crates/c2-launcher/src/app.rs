@@ -32,7 +32,6 @@ pub struct Launcher {
     base_text: String,
     note: Option<(String, Color32)>,
     balance: crate::balance::Editor,
-    unpacking: Vec<PathBuf>,
     /// A recipe being set up (Add-ons or Instances tab).
     recipe_page: Option<crate::recipe_page::Page>,
     /// A recipe being edited (Instances tab).
@@ -163,7 +162,6 @@ impl Launcher {
                 b.mobile = mobile;
                 b
             },
-            unpacking: Vec::new(),
             recipe_page: None,
             recipe_edit: None,
             instances: Default::default(),
@@ -284,6 +282,7 @@ impl Launcher {
                 Ok(crate::jobs::Completion::ApkBase { out, for_recipe }) => {
                     self.apk_base_done(out, for_recipe)
                 }
+                Ok(crate::jobs::Completion::Addons(paths)) => self.add_addons(paths),
                 Ok(crate::jobs::Completion::Saved(saved)) => {
                     let (r, u) = *saved;
                     self.saving_done(r, u);
@@ -316,7 +315,6 @@ impl Launcher {
 
     fn busy(&self) -> bool {
         self.job.busy()
-            || !self.unpacking.is_empty()
             || self.recipe_page.as_ref().is_some_and(|p| p.working())
             || self.recipe_edit.as_ref().is_some_and(|e| e.working())
     }
@@ -357,7 +355,6 @@ impl Launcher {
             return;
         }
         let mut unpack = Vec::new();
-        let mut unpacking = Vec::new();
         for p in paths {
             let dest = if is_archive(&p) {
                 let stem = p
@@ -367,11 +364,7 @@ impl Launcher {
                 let to = crate::config::data_dir()
                     .join("addons")
                     .join(crate::config::install_name(&stem));
-                unpack.push(Step::Unpack {
-                    archive: p.clone(),
-                    to: to.clone(),
-                });
-                unpacking.push(to);
+                unpack.push((p, to));
                 continue;
             } else if p.is_dir() {
                 p
@@ -393,26 +386,15 @@ impl Launcher {
             }
         }
         if !unpack.is_empty() {
-            self.unpacking = unpacking;
-            self.start_job("Unpacking add-ons", unpack);
+            if let Err(e) = self.job.start_task("Unpacking add-ons", move |job| {
+                crate::jobs::addons::unpack(job, unpack)
+            }) {
+                self.note = Some((e, RED));
+            }
         }
         self.save();
     }
 
-    fn unpack_done(&mut self) {
-        if self.unpacking.is_empty() {
-            return;
-        }
-        let Some(ok) = self.job.result() else {
-            return;
-        };
-        let paths = std::mem::take(&mut self.unpacking);
-        if ok {
-            self.add_addons(paths);
-        }
-    }
-
-    /// The base and its overlays, then the add-ons that are on.
     fn game_folders(&self) -> (Vec<PathBuf>, Vec<PathBuf>) {
         let bases = match &self.cfg.base {
             Some(b) if describe_game(b).is_some() => std::iter::once(b.clone())
@@ -735,9 +717,7 @@ impl Launcher {
                 .request_repaint_after(std::time::Duration::from_millis(150));
         }
         let mut ask = crate::recipe_edit::Ask::Nothing;
-        let other_busy = self.job.busy()
-            || !self.unpacking.is_empty()
-            || self.recipe_page.as_ref().is_some_and(|p| p.working());
+        let other_busy = self.job.busy() || self.recipe_page.as_ref().is_some_and(|p| p.working());
         panel(ui, |ui| {
             ui.add_enabled_ui(!other_busy && !e.working(), |ui| ask = e.ui(ui, &game));
         });
@@ -2666,7 +2646,6 @@ impl eframe::App for Launcher {
                 .map(|f| f.path().to_path_buf())
                 .collect()
         });
-        self.unpack_done();
         self.poll_job();
         self.dropped(dropped);
         let mut next = None;

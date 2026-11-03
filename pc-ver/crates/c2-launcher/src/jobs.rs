@@ -8,6 +8,7 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, Mutex};
 
+pub(crate) mod addons;
 pub(crate) mod apk_base;
 pub(crate) mod imports;
 pub(crate) mod saving;
@@ -15,6 +16,7 @@ pub(crate) mod saving;
 /// Successful work delivered exactly once to the UI.
 pub(crate) enum Completion {
     Imported(PathBuf),
+    Addons(Vec<PathBuf>),
     Saved(Box<(c2_mods::recipe::Recipe, crate::config::RecipeUse)>),
     ApkBase { out: PathBuf, for_recipe: bool },
 }
