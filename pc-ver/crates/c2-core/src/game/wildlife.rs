@@ -12,7 +12,7 @@ use crate::trace::trace_look;
 impl Hunt {
     /// `Characters_AddSecondaryOne`: replace a killed ambient animal.
     pub(super) fn add_secondary_one(&mut self, area: &Area, ctype: usize) {
-        if self.herd.chars.len() > 64 {
+        if self.survival.is_some() || self.herd.chars.len() > 64 {
             return;
         }
         let (px, pz) = (self.player.x, self.player.z);

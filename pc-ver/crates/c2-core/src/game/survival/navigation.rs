@@ -131,6 +131,8 @@ pub(super) struct Flow {
     x0: i32,
     z0: i32,
     pub(super) from: (i32, i32),
+    w: i32,
+    h: i32,
     dist: Vec<u16>,
     /// Local terrain height; NaN marks ground rejected by the movement slope probes.
     heights: Vec<f32>,
@@ -138,13 +140,18 @@ pub(super) struct Flow {
 
 impl Flow {
     pub(super) fn new(area: &Area, (hx, hz): (i32, i32), fence: Option<&Fence>) -> Self {
-        let (x0, z0) = (hx - FLOW_W / 2, hz - FLOW_W / 2);
-        let n = (FLOW_W * FLOW_W) as usize;
+        // Boxed survival needs the whole corridor, even when the box is
+        // outside the usual hunter-centred window. The fence bounds it.
+        let (x0, z0, w, height) = fence
+            .map_or((hx - FLOW_W / 2, hz - FLOW_W / 2, FLOW_W, FLOW_W), |f| {
+                (f.x0, f.z0, f.w, f.ok.len() as i32 / f.w)
+            });
+        let n = (w * height) as usize;
         let inside = |x: i32, z: i32| (4..1020).contains(&x) && (4..1020).contains(&z);
-        let at = |x: i32, z: i32| ((z - z0) * FLOW_W + (x - x0)) as usize;
+        let at = |x: i32, z: i32| ((z - z0) * w + (x - x0)) as usize;
         let mut h = vec![f32::NAN; n];
-        for z in z0..z0 + FLOW_W {
-            for x in x0..x0 + FLOW_W {
+        for z in z0..z0 + height {
+            for x in x0..x0 + w {
                 if !inside(x, z) {
                     continue;
                 }
@@ -169,7 +176,7 @@ impl Flow {
         }
         let mut dist = vec![u16::MAX; n];
         let mut queue = alloc::collections::VecDeque::new();
-        if inside(hx, hz) {
+        if inside(hx, hz) && (x0..x0 + w).contains(&hx) && (z0..z0 + height).contains(&hz) {
             dist[at(hx, hz)] = 0;
             queue.push_back((hx, hz));
         }
@@ -177,7 +184,7 @@ impl Flow {
             let (d, hh) = (dist[at(x, z)], h[at(x, z)]);
             for (dx, dz) in AROUND {
                 let (nx, nz) = (x + dx, z + dz);
-                if nx < x0 || nz < z0 || nx >= x0 + FLOW_W || nz >= z0 + FLOW_W {
+                if nx < x0 || nz < z0 || nx >= x0 + w || nz >= z0 + height {
                     continue;
                 }
                 let j = at(nx, nz);
@@ -196,6 +203,8 @@ impl Flow {
             x0,
             z0,
             from: (hx, hz),
+            w,
+            h: height,
             dist,
             heights: h,
         }
@@ -204,13 +213,13 @@ impl Flow {
     /// Whether cell (`x`, `z`) is in the window (else [`Flow::get`] knows
     /// nothing of it).
     fn covers(&self, x: i32, z: i32) -> bool {
-        (0..FLOW_W).contains(&(x - self.x0)) && (0..FLOW_W).contains(&(z - self.z0))
+        (0..self.w).contains(&(x - self.x0)) && (0..self.h).contains(&(z - self.z0))
     }
 
     pub(super) fn get(&self, x: i32, z: i32) -> u16 {
         let (i, j) = (x - self.x0, z - self.z0);
-        if (0..FLOW_W).contains(&i) && (0..FLOW_W).contains(&j) {
-            self.dist[(j * FLOW_W + i) as usize]
+        if (0..self.w).contains(&i) && (0..self.h).contains(&j) {
+            self.dist[(j * self.w + i) as usize]
         } else {
             u16::MAX
         }
@@ -228,7 +237,7 @@ impl Flow {
     fn segment(&self, (x, z): (i32, i32), (tx, tz): (i32, i32)) -> bool {
         let height = |x, z| {
             if self.covers(x, z) {
-                self.heights[((z - self.z0) * FLOW_W + x - self.x0) as usize]
+                self.heights[((z - self.z0) * self.w + x - self.x0) as usize]
             } else {
                 f32::NAN
             }

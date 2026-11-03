@@ -98,6 +98,7 @@ const VALUE_FLAGS: &[&str] = &[
     "ambients",
     "balance",
     "menu-art",
+    "save-instance",
     "survival",
     "survival-modes",
     "mobile-survival",
@@ -209,6 +210,18 @@ fn main() -> Result<()> {
     let mut args = arguments.into_iter();
     let cmd = args.next().unwrap_or_default();
     let o = Opts::parse(args);
+    let instance = o.value("save-instance").map(str::to_owned).or_else(|| {
+        o.value("recipe")
+            .and_then(|p| c2_mods::recipe::Recipe::load(std::path::Path::new(p)).ok())
+            .map(|r| r.recipe.id)
+    });
+    if let Some(id) = instance {
+        anyhow::ensure!(
+            !id.is_empty() && id.len() <= 100,
+            "Instance ID must be 1–100 bytes"
+        );
+        let _ = save::INSTANCE.set(id);
+    }
     if cmd == "balance" {
         let mods: Vec<PathBuf> = o
             .values("mod")

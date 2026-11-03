@@ -1,6 +1,6 @@
 //! Where the port keeps its own player saves (`trophy0N.sav`, one per
-//! registered hunter). The game folder is never written: on first run the
-//! original saves are copied as the starting point.
+//! registered hunter). Instances start with their own empty roster; direct
+//! launches retain the existing shared saves and first-run import.
 
 use std::path::{Path, PathBuf};
 
@@ -28,12 +28,23 @@ pub fn data_dir() -> PathBuf {
     base.unwrap_or_else(|| PathBuf::from(".")).join("c2rs")
 }
 
-/// Another game's own hunters (`ice-age`: Carnivores: Ice Age keeps its
-/// saves apart from Carnivores 2's), set once at start.
+/// Recipe identity, also retained in portable instance packages.
+pub static INSTANCE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Encode the full instance ID, so punctuation and path separators cannot alias
+/// another instance or escape the saves folder.
+fn instance_key(id: &str) -> String {
+    id.as_bytes().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Direct launches keep the historical separate Ice Age shared profile.
 pub static PROFILE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
 
 /// Where this game's saves are: the data dir, or its profile's folder in it.
 pub fn saves_dir() -> PathBuf {
+    if let Some(id) = INSTANCE.get() {
+        return data_dir().join("instances").join(instance_key(id));
+    }
     match PROFILE.get() {
         Some(p) => data_dir().join(p),
         None => data_dir(),
@@ -77,7 +88,7 @@ fn find_saves(dir: &Path) -> Vec<(i32, PathBuf)> {
 
 /// First run: copy the game's saves into our data dir.
 fn import(game_dir: &Path) {
-    if !find_saves(&saves_dir()).is_empty() {
+    if INSTANCE.get().is_some() || !find_saves(&saves_dir()).is_empty() {
         return;
     }
     for (reg, p) in find_saves(game_dir) {
@@ -182,4 +193,19 @@ pub fn area_title(game_dir: &Path, n: i32) -> String {
 pub fn delete(reg: i32) -> Result<()> {
     let p = slot_path(reg);
     std::fs::remove_file(&p).with_context(|| format!("deleting {}", p.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::instance_key;
+
+    #[test]
+    fn instance_ids_preserve_identity_without_path_components() {
+        assert_ne!(instance_key("a/b"), instance_key("a-b"));
+        assert_ne!(instance_key("one"), instance_key("two"));
+        assert!(instance_key("../日本")
+            .chars()
+            .all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(instance_key("one"), instance_key("one"));
+    }
 }

@@ -590,6 +590,30 @@ impl Kit {
         Some(hud.add_image_filtered(gpu, w as u32, h as u32, &c.px, true))
     }
 
+    /// Crop the circular indicator away from the phone's full checkbox
+    /// background. Mask its corners so the plank remains visible there.
+    fn lamp_image(&self, name: &str, hud: &mut Hud, gpu: &Gpu) -> Option<usize> {
+        let p = self.sprite(name)?;
+        let size = 52usize;
+        let mut px = vec![0; size * size * 4];
+        for y in 0..size {
+            for x in 0..size {
+                let dx = (x as f32 + 0.5) / size as f32 * 2.0 - 1.0;
+                let dy = (y as f32 + 0.5) / size as f32 * 2.0 - 1.0;
+                let alpha = ((1.0 - dx.hypot(dy)) * size as f32).clamp(0.0, 1.0);
+                let sx =
+                    ((14.0 + (x as f32 + 0.5) * 50.0 / size as f32) * p.w as f32 / 456.0) as usize;
+                let sy =
+                    ((8.0 + (y as f32 + 0.5) * 52.0 / size as f32) * p.h as f32 / 78.0) as usize;
+                let src = (sy.min(p.h - 1) * p.w + sx.min(p.w - 1)) * 4;
+                let dst = (y * size + x) * 4;
+                px[dst..dst + 4].copy_from_slice(&p.px[src..src + 4]);
+                px[dst + 3] = (f32::from(px[dst + 3]) * alpha) as u8;
+            }
+        }
+        Some(hud.add_image_filtered(gpu, size as u32, size as u32, &px, true))
+    }
+
     /// The hunt setup's art; `counts` the items on each page (maps,
     /// animals, weapons), numbered as the phone's sprites (the weapons'
     /// 7th is the photo camera, so the revolver is 8th).
@@ -598,8 +622,7 @@ impl Kit {
         let bg = img("menu_hunt_background");
         let cell = img("menu_hunt_cell_button");
         let selector = img("menu_hunt_cell_selector");
-        let lamp_off = img("button_checkbox_wide_off");
-        let lamp_on = img("button_checkbox_wide_on");
+
         let button = img("button_small_01");
         let plank = img("button_med_01");
         let empty = img("menu_hunt_cell_empty");
@@ -624,6 +647,8 @@ impl Kit {
                 ));
             }
         }
+        let lamp_off = self.lamp_image("button_checkbox_wide_off", hud, gpu);
+        let lamp_on = self.lamp_image("button_checkbox_wide_on", hud, gpu);
         KitArt {
             bg,
             cell,

@@ -260,8 +260,8 @@ impl Menu {
                     (named(0, "Camouflage"), c.equip & 1 != 0),
                 ];
                 if self.pc.dynamic_time != 0 {
-                    buttons.push((named(4, "Night vision"), c.equip & 16 != 0));
-                    buttons.push((named(5, "Flashlight"), c.equip & 32 != 0));
+                    buttons.push(("Night vision".into(), c.equip & 16 != 0));
+                    buttons.push(("Flash light".into(), c.equip & 32 != 0));
                 }
                 buttons
             }
@@ -507,8 +507,6 @@ const KIT_GRID: Rect = (9.0, 55.0, 620.0, 440.0);
 const KIT_BACK: Rect = (11.0, 505.0, 178.0, 52.0);
 const KIT_NEXT: Rect = (611.0, 505.0, 178.0, 52.0);
 const KIT_RIGHT: f32 = 787.0;
-/// The lamp's square in the toggles' art (`button_checkbox_wide_*`).
-const LAMP_UV: [f32; 4] = [14.0 / 456.0, 8.0 / 78.0, 64.0 / 456.0, 60.0 / 78.0];
 
 /// The honeycomb: corner-up cells `w` x `h`, `sx` apart in a row and `sy`
 /// between rows, every other row half a cell in; the first cell's top
@@ -695,24 +693,50 @@ impl Menu {
         }
         // The item shown at the right: the one pointed at, else the one
         // picked.
-        let shown = self
-            .choice
-            .focus
-            .filter(|f| f.0 == col)
-            .map(|f| f.1)
-            .or_else(|| (0..c.names.len()).find(|&i| mask.has(i)));
+        let gear = (page == 2)
+            .then(|| {
+                self.side_rects()
+                    .iter()
+                    .position(|&r| inside(self.cursor, r))
+                    .map(|i| [3, 1, 2, 0, 4, 5][i])
+            })
+            .flatten();
+        let c = if gear.is_some() { &self.columns[3] } else { c };
+        let shown = gear.or_else(|| {
+            self.choice
+                .focus
+                .filter(|f| f.0 == col)
+                .map(|f| f.1)
+                .or_else(|| (0..c.names.len()).find(|&i| mask.has(i)))
+        });
         let us = self.me().is_some_and(|s| s.options.sys != 0);
         let (heading, cost, words): (Vec<String>, Option<i32>, Vec<String>) = match shown {
+            Some(3) if gear == Some(3) => (
+                vec!["TRANQUILIZER".into()],
+                None,
+                vec!["Tranquilize instead of collecting trophies. Adds 25% to the score.".into()],
+            ),
             Some(i) => {
                 let t = if us { &c.texts_us } else { &c.texts };
                 // The first line repeats the name ("Weapon : Pistol").
-                let words = t.get(i).map_or_else(Vec::new, |v| {
+                let mut words = t.get(i).map_or_else(Vec::new, |v| {
                     v.iter()
                         .skip(1)
                         .skip_while(|l| l.trim().is_empty())
                         .map(|l| l.trim().to_string())
                         .collect()
                 });
+                if gear.is_some() {
+                    let impact = match i {
+                        0 => Some("Camouflage reduces the score by 15%."),
+                        1 => Some("Radar reduces the score by 30%."),
+                        2 => Some("Cover scent reduces the score by 20%."),
+                        _ => None,
+                    };
+                    if let Some(impact) = impact {
+                        words.insert(0, impact.into());
+                    }
+                }
                 let cost = c.prices.get(i).copied().filter(|&p| p > 0);
                 (vec![c.names[i].to_uppercase()], cost, words)
             }
@@ -817,27 +841,6 @@ impl Menu {
             if let Some(id) = k.button {
                 self.tinted(out, id, r, full, tint);
             }
-            if index >= 4 {
-                self.kit_line(
-                    out,
-                    Face::Body,
-                    (r.0 + r.2 / 2.0, r.1 + 4.0),
-                    12.0,
-                    PALE,
-                    &label,
-                    0.5,
-                );
-                self.kit_line(
-                    out,
-                    Face::Body,
-                    (r.0 + r.2 / 2.0, r.1 + 23.0),
-                    12.0,
-                    if on { PALE } else { STONE },
-                    if on { "ON" } else { "OFF" },
-                    0.5,
-                );
-                continue;
-            }
             let lamp = if on { k.lamp_on } else { k.lamp_off };
             if let Some(id) = lamp {
                 let s = r.3 * 0.62;
@@ -845,7 +848,7 @@ impl Menu {
                     out,
                     id,
                     (r.0 + r.2 * 0.1, r.1 + (r.3 - s) / 2.0, s, s),
-                    LAMP_UV,
+                    full,
                     [1.0; 4],
                 );
             }
@@ -861,7 +864,7 @@ impl Menu {
                     self.kit_line(
                         out,
                         Face::Body,
-                        (r.0 + r.2 * 0.5, at.1),
+                        (r.0 + r.2 * 0.66, at.1),
                         if index >= 4 { 12.0 } else { 16.0 },
                         PALE,
                         &label,

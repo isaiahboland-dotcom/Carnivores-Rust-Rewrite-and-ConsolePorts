@@ -17,8 +17,7 @@ const SPAWN_RISE: f32 = 1536.0;
 
 impl Hunt {
     /// One animal of wave `n` at a free spot on land in the box `[x, z, half
-    /// x, half z]`, coming for the hunter (`ArcadeGameGenerateWave`: 32
-    /// tries, else the last). A box made for the mobile maps can take in
+    /// x, half z]`, coming for the hunter. A box made for the mobile maps can take in
     /// the PC maps' mountain sides: spots with a way down to the hunter, near
     /// his height, first.
     pub(super) fn spawn_in_box(&mut self, area: &Area, ctype: usize, n: u32, b: [f32; 4]) {
@@ -33,7 +32,24 @@ impl Hunt {
                 }
             }
         }
-        self.spawn_wave_animal(area, ctype, n);
+        // Random attempts can miss a narrow usable strip. Check cell centres
+        // inside the box, but never fall back to the ring behind the hunter.
+        let x0 = libm::floorf((b[0] - b[2]) / 256.0).max(16.0) as i32;
+        let x1 = libm::floorf((b[0] + b[2]) / 256.0).min(1007.0) as i32;
+        let z0 = libm::floorf((b[1] - b[3]) / 256.0).max(16.0) as i32;
+        let z1 = libm::floorf((b[1] + b[3]) / 256.0).min(1007.0) as i32;
+        for z in z0..=z1 {
+            for x in x0..=x1 {
+                let p = (x as f32 * 256.0 + 128.0, z as f32 * 256.0 + 128.0);
+                if (p.0 - b[0]).abs() <= b[2]
+                    && (p.1 - b[1]).abs() <= b[3]
+                    && self.spawn_spot(area, p, &flow, false)
+                {
+                    self.add_wave_animal(area, ctype, n, p);
+                    return;
+                }
+            }
+        }
     }
 
     /// The flow field for where the hunter stands (kept for the wave).

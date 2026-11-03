@@ -4,7 +4,7 @@
 use alloc::{format, vec::Vec};
 
 use super::navigation::{Fence, Flow};
-use super::options::{dangerous, SurvivalOptions, TREX_WAVE};
+use super::options::{SurvivalOptions, TREX_WAVE};
 use crate::area::Area;
 use crate::game::{GameEvent, Hunt, MAX_HEALTH};
 
@@ -40,22 +40,11 @@ impl Survival {
 }
 
 impl Hunt {
-    /// Turns this hunt into a survival: the map's own hunting animals (and
-    /// any the mobile waves bring) go, the plant-eaters stay for the
-    /// scenery; the first wave comes soon. A mobile survival puts the
+    /// Turns this hunt into a survival: all ordinary map wildlife goes;
+    /// only survival waves may populate the map. A mobile survival puts the
     /// hunter at its spot.
     pub fn start_survival(&mut self, area: &Area, opts: SurvivalOptions) {
-        let waves: Vec<usize> = opts
-            .mobile
-            .iter()
-            .flat_map(|m| m.waves.iter().flatten().chain(&m.after))
-            .copied()
-            .collect();
-        while let Some(i) = self.herd.chars.iter().position(|c| {
-            c.wave == 0
-                && (waves.contains(&c.ctype)
-                    || self.herd.species.get(c.ctype).is_some_and(dangerous))
-        }) {
+        while let Some(i) = self.herd.chars.iter().position(|c| c.wave == 0) {
             self.remove_character(i);
         }
         let mut fence = None;
@@ -186,6 +175,17 @@ impl Hunt {
                 } else {
                     self.spawn_in_box(area, ctype, n, m.spawn);
                 }
+            }
+            if !m.wave(n).is_empty() && !self.herd.chars.iter().any(|c| c.wave == n) {
+                // A blocked box must not move the wave elsewhere or silently
+                // skip it. Retry this wave after the rest (the hunter can move).
+                if let Some(s) = self.survival.as_mut() {
+                    s.wave -= 1;
+                }
+                out.push(GameEvent::Message(
+                    "Survival spawn blocked; retrying".into(),
+                ));
+                return;
             }
             self.health = MAX_HEALTH;
             self.weapons.resupply();

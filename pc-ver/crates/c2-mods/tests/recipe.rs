@@ -259,3 +259,56 @@ fn the_repository_recipes_write_out_unchanged() {
         assert_eq!(r, again, "{}", p.display());
     }
 }
+
+#[test]
+fn pinned_collection_keeps_each_animals_donor_art_separate() {
+    use c2_mods::recipe::{check_folder, sha256, RecipeMod};
+    let root = tmp("collection-art");
+    let base = root.join("base");
+    let addons = root.join("imports");
+    write(&base, &[
+        ("HUNTDAT/_RES.TXT", b"characters {\n{\n name = 'Hunter'\n ai = 0\n}\n{\n name = 'Base animal'\n ai = 10\n}\n}\n"),
+        ("HUNTDAT/MENU/PICS/DINO1.TGA", b"base-picture"),
+    ]);
+    let mut entry = RecipeMod {
+        id: "imports".into(),
+        loose: true,
+        ..Default::default()
+    };
+    for name in ["Alpha", "Beta", "Gamma"] {
+        let text = format!("{{\n name = '{name}'\n file = '{name}.car'\n ai = 15\n runAnim = 0\n walkAnim = 1\n}}\n");
+        for (file, bytes) in [
+            (format!("{name}/{name}.txt"), text.as_bytes()),
+            (format!("{name}/DINO1.TGA"), name.as_bytes()),
+            (format!("{name}/{name}.car"), b"synthetic-model".as_slice()),
+        ] {
+            write(&addons, &[(&file, bytes)]);
+            entry.files.insert(file, sha256(bytes));
+        }
+    }
+    // Unpinned neighbouring data must not enter the output.
+    write(&addons, &[("Alpha/UNPINNED.CAR", b"not-selected")]);
+    let mut recipe = Recipe::default();
+    recipe.mods.push(entry);
+    recipe.load_order.order.push("imports".into());
+    let found = vec![check_folder(&recipe.mods[0], &addons, false)];
+    assert!(found[0].complete());
+    let v = vanilla(std::slice::from_ref(&base)).expect("base");
+    let (sources, opts) = prepare(&root.join("recipe.toml"), &recipe, &found, &v).expect("prepare");
+    assert_eq!(sources.len(), 3);
+    let pack = build_with(&[base], sources, &opts).expect("build");
+    let out = root.join("out");
+    materialize(&pack, &out).expect("output");
+    for (slot, expected) in ["base-picture", "Alpha", "Beta", "Gamma"]
+        .iter()
+        .enumerate()
+    {
+        assert_eq!(
+            std::fs::read(out.join(format!("HUNTDAT/MENU/PICS/DINO{}.TGA", slot + 1)))
+                .expect("picture"),
+            expected.as_bytes()
+        );
+    }
+    assert!(!out.join("HUNTDAT/UNPINNED.CAR").exists());
+    let _ = std::fs::remove_dir_all(root);
+}

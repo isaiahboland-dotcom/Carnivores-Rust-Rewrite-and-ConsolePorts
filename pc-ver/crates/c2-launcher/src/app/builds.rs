@@ -369,6 +369,7 @@ impl Launcher {
                 .ok_or("Choose an output folder.")?
                 .join(install_name(&r.id()));
             let mut launch = self.balance_args();
+            launch.extend(["--save-instance".into(), r.id()]);
             launch.extend(self.survival_args());
             match self.cfg.menu_style {
                 MenuStyle::Mobile => launch.push("--mobile-menu".into()),

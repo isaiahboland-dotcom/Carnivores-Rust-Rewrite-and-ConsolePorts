@@ -915,20 +915,20 @@ impl Menu {
             (
                 "Night vision",
                 150,
-                "Dynamic time equipment. N switches night vision on or off.",
+                "Costs 150 points. N toggles night vision. Using it cancels the 20% night score bonus.",
             ),
             (
                 "Flashlight",
                 15,
-                "Dynamic time equipment. L switches the forward light on or off.",
+                "Costs 15 points. L toggles the flashlight. Night kills keep the 20% bonus.",
             ),
         ] {
             let gear = &mut cols[3];
             gear.names.push(name.into());
             gear.prices.push(price);
             gear.pics.push(None);
-            gear.texts.push(vec![help.into()]);
-            gear.texts_us.push(vec![help.into()]);
+            gear.texts.push(vec![name.into(), help.into()]);
+            gear.texts_us.push(vec![name.into(), help.into()]);
         }
         // Slotted add-ons can omit their menu art too. Render a portrait
         // from the same resolved model the hunt loads in that case.
@@ -1038,8 +1038,8 @@ impl Menu {
             &[
                 "Fog".to_string(),
                 String::new(),
-                "Hunt in the original game's view range and fog, whatever the render distance \
-                 in Options says, at any time of day."
+                "Regardless of render distance, this option locks the view distance to the original game's range, \
+                 at any time of day."
                     .to_string(),
             ],
         );

@@ -259,8 +259,8 @@ impl Hunt {
                 self.successes += 1;
                 self.add_ship_task(area, index, out);
             }
-            if self.herd.chars[index].wave > 0 {
-                // A wave animal isn't replaced.
+            if self.survival.is_some() || self.herd.chars[index].wave > 0 {
+                // Survival populations are controlled exclusively by waves.
             } else if mee {
                 let p = (self.player.x, self.player.z);
                 let agres = self.opts.opt_agres;

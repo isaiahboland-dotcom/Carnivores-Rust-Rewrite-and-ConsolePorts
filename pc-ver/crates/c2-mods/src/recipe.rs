@@ -834,18 +834,31 @@ pub fn prepare(
     }
     let vres = read_res(&vanilla.read(RES_TXT)?)?;
     let mut sources = Vec::new();
+    let mut groups = BTreeMap::<String, String>::new();
     for (m, l) in r.mods.iter().zip(located) {
         let Some(root) = &l.root else { continue };
         if m.loose {
             // Installed as the loose reader would, from the pinned files only.
             let pinned: Vec<PathBuf> = l.ok.values().map(|f| root.join(f)).collect();
-            let mut s = load_loose(vanilla, root, &|p| pinned.iter().any(|q| q == p))?;
-            let info = &mut s.manifest.info;
-            info.id = m.id.clone();
-            info.authors = vec![m.credit.clone()];
-            info.source_url = m.url.clone();
-            s.inferred = false;
-            sources.push(s);
+            let children = crate::pack::expand_addons(root);
+            let collection = children.len() > 1;
+            for (i, child) in children.iter().enumerate() {
+                if !pinned.iter().any(|p| p.starts_with(child)) {
+                    continue;
+                }
+                let mut s = load_loose(vanilla, child, &|p| pinned.iter().any(|q| q == p))?;
+                let info = &mut s.manifest.info;
+                info.id = if collection {
+                    format!("{}--part-{i}", m.id)
+                } else {
+                    m.id.clone()
+                };
+                groups.insert(info.id.clone(), m.id.clone());
+                info.authors = vec![m.credit.clone()];
+                info.source_url = m.url.clone();
+                s.inferred = false;
+                sources.push(s);
+            }
             continue;
         }
         let dir = open_root(root)?;
@@ -875,7 +888,7 @@ pub fn prepare(
         });
     }
     if !r.load_order.order.is_empty() {
-        let ids: Vec<&String> = sources.iter().map(|s| &s.manifest.info.id).collect();
+        let ids: Vec<&String> = r.mods.iter().map(|m| &m.id).collect();
         for id in &r.load_order.order {
             if !ids.contains(&id) {
                 return Err(ModError::Recipe(format!(
@@ -891,10 +904,11 @@ pub fn prepare(
             }
         }
         sources.sort_by_key(|s| {
-            r.load_order
-                .order
-                .iter()
-                .position(|o| *o == s.manifest.info.id)
+            r.load_order.order.iter().position(|o| {
+                o == groups
+                    .get(&s.manifest.info.id)
+                    .unwrap_or(&s.manifest.info.id)
+            })
         });
     }
     let mut opts = BuildOptions::default();
@@ -912,6 +926,39 @@ pub fn prepare(
             return Err(ModError::Recipe(
                 "a [[resolve]] needs `path` or `entry = \"section:name\"`".into(),
             ));
+        }
+    }
+    // A collection remains one recipe choice. Resolve its winner to the
+    // last child providing that file/entry, preserving collection order.
+    for (path, winner) in &mut opts.file_winners {
+        if let Some(source) = sources.iter().rev().find(|s| {
+            groups.get(&s.manifest.info.id) == Some(winner)
+                && s.files.iter().any(|p| key(p) == key(path))
+        }) {
+            *winner = source.manifest.info.id.clone();
+        }
+    }
+    for (section, name, winner) in &mut opts.res_winners {
+        if let Some(source) = sources.iter().rev().find(|s| {
+            groups.get(&s.manifest.info.id) == Some(winner)
+                && s.res_changes.iter().any(|c| match c {
+                    crate::res_merge::Change::Add {
+                        section: sec,
+                        block,
+                    }
+                    | crate::res_merge::Change::Modify {
+                        section: sec,
+                        block,
+                        ..
+                    } => {
+                        sec.eq_ignore_ascii_case(section)
+                            && crate::res_merge::block_id(block)
+                                .is_some_and(|id| id.eq_ignore_ascii_case(name))
+                    }
+                    _ => false,
+                })
+        }) {
+            *winner = source.manifest.info.id.clone();
         }
     }
     for p in &r.patches {

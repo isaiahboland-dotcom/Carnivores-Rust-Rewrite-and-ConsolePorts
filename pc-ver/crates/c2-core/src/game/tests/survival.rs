@@ -20,8 +20,13 @@ fn survival_sends_growing_waves_and_awards_no_trophies() {
             ..Default::default()
         },
     );
-    // The plant-eater stays; the first wave comes after a rest.
-    assert_eq!(hunt.herd.chars.len(), 1);
+    // Even plant-eaters go: only the wave roster may populate survival.
+    assert!(hunt.herd.chars.is_empty());
+    hunt.add_secondary_one(&area, 1);
+    assert!(
+        hunt.herd.chars.is_empty(),
+        "no ambient replacements in survival"
+    );
     let cars = [None, Some(&car), Some(&car)];
     let mut out = Vec::new();
     let wave = |hunt: &Hunt, n: u32| hunt.herd.chars.iter().filter(|c| c.wave == n).count();
@@ -285,4 +290,65 @@ fn survival_picks_waves_mods_and_the_t_rex() {
     hunt.opts.targets = Bits::bit(ai::ALLO as usize);
     let o = SurvivalOptions::pick(&hunt, SurvivalKind::Custom, 5);
     assert_eq!((o.roster, o.trex, o.unlimited), (vec![2], Some(4), true));
+}
+
+#[test]
+fn blocked_survival_box_never_falls_back_behind_the_hunter_or_skips_a_wave() {
+    let (mut area, mut hunt, car) = setup(false);
+    // Entire spawn box is on a plateau with no route down to the hunter.
+    for z in 0..1024 {
+        for x in 0..388 {
+            area.map.height[z * 1024 + x] = 250;
+        }
+    }
+    hunt.herd.species.push(Species::new(info(ai::ALLO), &car));
+    hunt.start_survival(
+        &area,
+        SurvivalOptions {
+            max_wave: 3,
+            mobile: Some(crate::game::MobileWaves {
+                hunter: [400.0 * 256.0, 400.0 * 256.0],
+                spawn: [380.0 * 256.0, 400.0 * 256.0, 512.0, 512.0],
+                waves: vec![vec![2; 3]],
+                after: vec![2],
+                rest_ms: 100,
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    );
+    let mut out = Vec::new();
+    for _ in 0..25 {
+        hunt.tick(
+            &area,
+            &[None, Some(&car), Some(&car)],
+            &HuntInput::default(),
+            10,
+            &mut out,
+        );
+    }
+    assert!(
+        hunt.herd.chars.is_empty(),
+        "no ring fallback outside the box"
+    );
+    assert_eq!(hunt.wave(), 0, "blocked first wave remains pending");
+    assert!(out
+        .iter()
+        .any(|e| matches!(e, GameEvent::Message(m) if m.contains("spawn blocked"))));
+    let before = (hunt.player.x, hunt.player.z);
+    let input = HuntInput {
+        controls: crate::player::Controls {
+            strafe_right: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    for _ in 0..20 {
+        hunt.tick(&area, &[None, Some(&car), Some(&car)], &input, 10, &mut out);
+    }
+    assert_ne!(
+        (hunt.player.x, hunt.player.z),
+        before,
+        "survival still allows dodging"
+    );
 }

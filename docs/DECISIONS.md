@@ -3494,3 +3494,34 @@ cancels the +20% night bonus while switched on. Carrying inactive goggles or
 using only the flashlight keeps eligibility. PC and Wii U supply the active
 state to shared scoring before each simulation tick; the scored event retains
 the actual awarded percentage. Classic night scoring remains +10%.
+
+
+### Survival population and spawn boundaries (2026-11-03)
+
+Survival clears all ordinary map wildlife, including herbivores and ambients,
+and disables ordinary kill replacements. Only the wave roster populates a
+survival hunt. Classic/mobile and MEE waves with a designated spawn box must
+stay inside that box. The navigation field covers the fenced corridor including
+the box, rather than rejecting spawns beyond the former 96-cell search radius.
+After random placement attempts, check cell centres in
+it instead of falling back to a ring around the hunter. If no animal can be
+placed, report the blocked spawn and retry the same wave after its rest.
+Existing modes without a designated box retain their wave placement rules.
+Player movement remains enabled, including classic survival, by owner request:
+it allows sidestepping carnivores while hill pathfinding remains imperfect.
+
+
+### Recipe collections and instance hunters (2026-11-03)
+
+A pinned loose add-on collection is loaded as separate child add-ons before
+assigning menu slots. Each child retains only recipe-pinned files; recipe load
+order and winner declarations still address the collection. This prevents
+several Android imports' donor-slot pictures and calls overwriting each other
+or the base animals.
+
+PC recipe launches keep hunters and records under `c2rs/instances/<encoded recipe ID>`.
+Portable Windows instance builds preserve that ID through `--save-instance`.
+Instance hunters start empty instead of importing source-folder trophies.
+Direct launches retain the existing shared saves (including Ice Age's separate
+shared profile). Existing saves are neither moved nor deleted; cloning an
+instance must give it a distinct recipe ID to keep progress separate.
