@@ -7,6 +7,7 @@ struct Globals {
     fog: vec4<f32>,
     // x: night vision blend (0..1), y: time in seconds, z: brightness factor, w: ambient light
     misc: vec4<f32>,
+    // xyz: dawn/day/night blend, w: dynamic-time stars enabled.
     daylight: vec4<f32>,
     // xyz: camera forward, w: flashlight enabled.
     torch: vec4<f32>,

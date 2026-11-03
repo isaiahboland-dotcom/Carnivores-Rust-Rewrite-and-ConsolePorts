@@ -29,6 +29,8 @@ pub struct PcSettings {
     /// The map as the mobile game draws it: a yellow frame and a yellow
     /// cone for what the hunter sees (1 = on).
     pub map_mobile: i32,
+    /// Opt-in mouse-wheel map zoom and right-drag panning.
+    pub map_zoom: i32,
     /// Teleporting by the map (1 = on): open it, move the marker with the
     /// mouse, click; 5 s, then a minute's cooldown.
     pub teleport: i32,
@@ -56,6 +58,7 @@ impl Default for PcSettings {
             far_sprites: 1,
             map_heading: 0,
             map_mobile: 0,
+            map_zoom: 0,
             teleport: 0,
             hints: 0,
             all_huntable: 0,
@@ -95,6 +98,7 @@ impl PcSettings {
                 "far_sprites" => s.far_sprites = i32::from(v != 0),
                 "map_heading" => s.map_heading = i32::from(v != 0),
                 "map_mobile" => s.map_mobile = i32::from(v != 0),
+                "map_zoom" => s.map_zoom = i32::from(v != 0),
                 "teleport" => s.teleport = i32::from(v != 0),
                 "button_hints" => s.hints = i32::from(v != 0),
                 "dynamic_time" => s.dynamic_time = i32::from(v != 0),
@@ -109,7 +113,7 @@ impl PcSettings {
     pub fn store(&self) {
         let text = format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nfar_sprites = {}\n\
-             map_heading = {}\nmap_mobile = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\n",
+             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\n",
             self.render,
             self.fog,
             self.blood,
@@ -117,6 +121,7 @@ impl PcSettings {
             self.far_sprites,
             self.map_heading,
             self.map_mobile,
+            self.map_zoom,
             self.teleport,
             self.hints,
             self.all_huntable,
@@ -149,6 +154,14 @@ mod tests {
         assert_eq!(PcSettings::parse("blood = 0\n").dynamic_time, 0);
         assert_eq!(PcSettings::parse("dynamic_time = 1\n").dynamic_time, 1);
         assert_eq!(PcSettings::parse("dynamic_time = 0\n").dynamic_time, 0);
+    }
+
+    #[test]
+    fn map_zoom_is_opt_in_for_existing_settings() {
+        assert_eq!(PcSettings::default().map_zoom, 0);
+        assert_eq!(PcSettings::parse("map_mobile = 1\n").map_zoom, 0);
+        assert_eq!(PcSettings::parse("map_zoom = 1\n").map_zoom, 1);
+        assert_eq!(PcSettings::parse("map_zoom = 0\n").map_zoom, 0);
     }
 
     #[test]

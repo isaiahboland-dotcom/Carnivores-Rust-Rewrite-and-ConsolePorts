@@ -215,7 +215,9 @@ impl HuntView {
                         .filter_map(|s| self.map_viewport.project(s, &self.hud)),
                 );
                 sprites.extend(decorations);
-                self.map_viewport.pointer(&self.hud, sprites);
+                if self.setup.pc.map_zoom != 0 || self.hunt.can_teleport() {
+                    self.map_viewport.pointer(&self.hud, sprites);
+                }
             }
         }
     }

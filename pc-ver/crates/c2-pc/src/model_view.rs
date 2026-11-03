@@ -235,6 +235,7 @@ impl Scene for ModelView {
                 fog_rgb: [0.0; 3],
                 fog: (1e9, 2e9),
                 daylight: [0.0, 1.0, 0.0],
+                stars: false,
                 night_vision: 0.0,
                 ambient: 1.0,
                 flashlight: false,

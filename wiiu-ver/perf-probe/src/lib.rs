@@ -565,6 +565,7 @@ pub extern "C" fn c2_move_tick(
     let select_weapon = if flags & 64 != 0 { Some(tapped_weapon) } else { None };
     let toggle_weapon = flags & 8 != 0;
     sim.hunt.opts.dynamic_night = sim.cycle.map(|c| c.is_night());
+    sim.hunt.opts.night_vision_active = sim.night_vision;
     let before = sim.hunt.real_time;
     sim.hunt.tick(&sim.area, &cars, &HuntInput { controls, toggle_weapon, fire: flags & 16 != 0, call: flags & 32 != 0, select_weapon: if flags & 4096 != 0 && !sim.hunt.weapons.info.is_empty() { Some((sim.hunt.weapons.current+1) % sim.hunt.weapons.info.len()) } else { select_weapon }, ..Default::default() }, 16, &mut sim.events);
     if sim.hunt.health <= 0 { sim.death_ms += 16; }

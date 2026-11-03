@@ -559,6 +559,7 @@ impl HuntView {
             teleport: setup.pc.teleport != 0,
             auto_chamber: false,
             dynamic_night: None,
+            night_vision_active: false,
         };
         let mut opts = opts;
         opts.render_r = if trophy {
@@ -1300,6 +1301,7 @@ impl HuntView {
             .collect();
         self.prev_cam = self.hunt.camera().0;
         self.hunt.opts.dynamic_night = self.view.area.cycle.map(|c| c.is_night());
+        self.hunt.opts.night_vision_active = self.view.night_vision == Some(true);
         let before = self.hunt.real_time;
         self.hunt.tick(
             self.view.area(),
@@ -1767,7 +1769,8 @@ impl Scene for HuntView {
         // A virtual pointer works while the hunt owns the captured mouse.
         // Map gestures do not turn the camera or fire a weapon.
         if self.hunt.map_mode && !self.hunt.show_exit() {
-            self.map_viewport.update(input, dt);
+            self.map_viewport
+                .update(input, dt, self.setup.pc.map_zoom != 0);
             hin.controls.mouse = (0.0, 0.0);
             hin.fire = false;
         }
@@ -2271,7 +2274,11 @@ impl Scene for HuntView {
             self.hint_bar(&mut sprites, screen, scale, below + 8.0 * scale, true, hint);
         } else if self.hunt.map_mode {
             let hint: &[(&str, &str)] = if self.pad_last && !self.hunt.can_teleport() {
-                &[("R-stick", "Pointer"), ("R", "Close")]
+                if self.setup.pc.map_zoom != 0 {
+                    &[("R-stick", "Pointer"), ("R", "Close")]
+                } else {
+                    &[("R", "Close")]
+                }
             } else if self.pad_last {
                 &[
                     ("D-pad / R-stick", "Move"),
@@ -2279,6 +2286,17 @@ impl Scene for HuntView {
                     ("A", "Go"),
                     ("R", "Close"),
                 ]
+            } else if self.setup.pc.map_zoom == 0 {
+                if self.hunt.can_teleport() {
+                    &[
+                        ("Mouse", "Move"),
+                        ("Click", "Mark"),
+                        ("Enter", "Go"),
+                        ("Tab", "Close"),
+                    ]
+                } else {
+                    &[("Tab", "Close")]
+                }
             } else if !self.hunt.can_teleport() {
                 &[
                     ("Wheel", "Zoom"),

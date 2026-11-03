@@ -44,7 +44,11 @@ impl MapViewport {
         }
         self.clamp();
     }
-    pub fn update(&mut self, input: &Input, dt: f32) {
+    pub fn update(&mut self, input: &Input, dt: f32, zoom_enabled: bool) {
+        if !zoom_enabled {
+            self.span = 1.0;
+            self.origin = [0.0; 2];
+        }
         let Some((x, y, side)) = self.rect else {
             return;
         };
@@ -53,7 +57,7 @@ impl MapViewport {
         }
         let mut over = true;
         if input.grabbed {
-            if input.right_down {
+            if zoom_enabled && input.right_down {
                 self.pan([input.mouse_delta.0 / side, input.mouse_delta.1 / side]);
             } else {
                 self.pointer[0] += input.mouse_delta.0 / side;
@@ -63,7 +67,7 @@ impl MapViewport {
             over = px >= x && py >= y && px <= x + side && py <= y + side;
             if over {
                 self.pointer = [(px - x) / side, (py - y) / side];
-                if input.right_down {
+                if zoom_enabled && input.right_down {
                     if let Some((last_x, last_y)) = self.previous_cursor {
                         self.pan([(px - last_x) / side, (py - last_y) / side]);
                     }
@@ -78,10 +82,10 @@ impl MapViewport {
         for v in &mut self.pointer {
             *v = v.clamp(0.0, 1.0);
         }
-        if over {
+        if zoom_enabled && over {
             self.zoom(input.scroll);
         }
-        if input.pressed(winit::keyboard::KeyCode::Home) {
+        if zoom_enabled && input.pressed(winit::keyboard::KeyCode::Home) {
             self.span = 1.0;
             self.origin = [0.0; 2];
         }
@@ -176,6 +180,26 @@ mod tests {
         assert_eq!(v.span, 1.0);
         assert_eq!(v.origin, [0.0; 2]);
     }
+    #[test]
+    fn disabled_navigation_keeps_full_map_and_teleport_pointer() {
+        let mut v = MapViewport {
+            rect: Some((0.0, 0.0, 100.0)),
+            ..Default::default()
+        };
+        let mut input = Input::default();
+        input.grabbed = true;
+        input.right_down = true;
+        input.mouse_delta = (10.0, -10.0);
+        input.scroll = 8.0;
+        v.zoom(8.0);
+        v.update(&input, 0.0, false);
+        assert_eq!(v.span, 1.0);
+        assert_eq!(v.origin, [0.0; 2]);
+        assert_eq!(v.map_point(), [0.6, 0.4]);
+        v.update(&input, 0.0, true);
+        assert_eq!(v.span, 0.25);
+    }
+
     #[test]
     fn clipping_crops_texture_instead_of_stretching_it() {
         let s = Sprite {

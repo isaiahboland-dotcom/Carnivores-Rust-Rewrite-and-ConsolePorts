@@ -3469,3 +3469,28 @@ PC map navigation uses a bounded viewport shared by the map image, markers,
 and teleport picking. Wheel zoom anchors at the pointer, right-drag pans and
 Home restores the full map. Keep the original map frame fixed and crop marker
 geometry/UVs at the viewport edges. Rendering is extracted into hunt_view/map.rs.
+
+PC map zoom and panning are opt-in through "Map zoom / pan" in Video options.
+Persist the setting in c2rs.cfg and default missing entries to off. Disabling
+it keeps the full map and hides navigation hints/pointer, except the pointer
+needed for independently enabled teleport selection. Both PC menu styles share
+the setting; console controls are unchanged.
+
+### Extended Night Hunts (optional)
+
+Dynamic time of day, toggleable night vision with point costs, and flashlight gear with a 20% score bonus for night hunts. Off by default; the game plays as the original when disabled.
+
+PC dynamic-time hunts add procedural stars to the existing sky pass. Use
+camera-relative direction with a seamless upper-hemisphere projection, so
+stars stay fixed while walking rather than scrolling with the cloud texture.
+Fade with the night blend and toward the horizon; stars emit light independently
+of ground ambient darkening, while retaining night-vision grading. No game
+assets or extra textures are needed. Classic skies and console renderers remain
+unchanged. GPU pixel tests cover night visibility, daytime/classic absence,
+twilight fading and stability under camera translation.
+
+Dynamic-time night scoring checks active night vision at the scoring tick: it
+cancels the +20% night bonus while switched on. Carrying inactive goggles or
+using only the flashlight keeps eligibility. PC and Wii U supply the active
+state to shared scoring before each simulation tick; the scored event retains
+the actual awarded percentage. Classic night scoring remains +10%.

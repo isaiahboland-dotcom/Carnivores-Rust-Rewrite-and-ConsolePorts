@@ -109,8 +109,8 @@ impl Hunt {
             .call_bit(c)
             .is_some_and(|b| self.opts.no_call_bonus.has(b as usize));
         let night_bonus = match self.opts.dynamic_night {
-            Some(true) => 20,
-            Some(false) => 0,
+            Some(true) if !self.opts.night_vision_active => 20,
+            Some(_) => 0,
             None if area.time == crate::area::TimeOfDay::Night => 10,
             None => 0,
         };

@@ -520,6 +520,7 @@ fn new_hunt(
         // No buttons left for the dialect's reload and rack: on their own.
         auto_chamber: true,
         dynamic_night: None,
+        night_vision_active: false,
         distant_ai: false,
         no_call_bonus: setup.roamers.iter().map(|r| r.slot + 10).collect(),
     };

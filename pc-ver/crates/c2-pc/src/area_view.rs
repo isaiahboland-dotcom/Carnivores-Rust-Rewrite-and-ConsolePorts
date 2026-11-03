@@ -427,6 +427,7 @@ impl AreaView {
                 fog_rgb: self.clear_color().map(|c| c as f32),
                 fog: (far * self.fog_start, far),
                 daylight: self.area.time_weights(),
+                stars: self.area.cycle.is_some(),
                 night_vision: self
                     .night_vision
                     .map_or(self.area.time_weights()[2], f32::from),

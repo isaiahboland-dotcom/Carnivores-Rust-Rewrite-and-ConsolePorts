@@ -38,6 +38,8 @@ pub struct FrameParams {
     pub fog_rgb: [f32; 3],
     pub fog: (f32, f32),
     pub daylight: [f32; 3],
+    /// Procedural stars for dynamic-time hunts only.
+    pub stars: bool,
     pub night_vision: f32,
     pub ambient: f32,
     pub flashlight: bool,
@@ -84,7 +86,12 @@ impl Globals {
             cam_pos: f.eye.extend(1.0).to_array(),
             fog_color: [f.fog_rgb[0], f.fog_rgb[1], f.fog_rgb[2], 1.0],
             fog: [f.fog.0, f.fog.1, 0.0, 0.0],
-            daylight: [f.daylight[0], f.daylight[1], f.daylight[2], 0.0],
+            daylight: [
+                f.daylight[0],
+                f.daylight[1],
+                f.daylight[2],
+                f32::from(f.stars),
+            ],
             misc: [f.night_vision, f.time_s, f.brightness, f.ambient],
             torch: f
                 .view

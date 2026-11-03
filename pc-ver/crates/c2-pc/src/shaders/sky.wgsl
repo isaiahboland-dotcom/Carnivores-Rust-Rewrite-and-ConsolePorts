@@ -26,6 +26,26 @@ fn vs_sky(@builtin(vertex_index) vid: u32) -> SkyOut {
     return o;
 }
 
+// Stereographic coordinates are seamless over the upper hemisphere. Direction
+// relative to the camera keeps the stars fixed as the player walks; unlike the
+// cloud UVs, these coordinates never scroll.
+fn star_field(direction: vec3<f32>) -> f32 {
+    let p = direction.xz / (1.0 + direction.y) * 80.0;
+    let cell = floor(p);
+    var h = fract(vec3<f32>(cell.x, cell.y, cell.x) * vec3(0.1031, 0.1030, 0.0973));
+    h += dot(h, h.yxz + 33.33);
+    let random = fract((h.xxy + h.yzz) * h.zyx);
+    let center = vec2(0.2) + random.xy * 0.6;
+    let radius = mix(0.045, 0.095, random.z);
+    let distance_to_star = length(fract(p) - center);
+    let pixel = max(length(fwidth(p)), 0.001);
+    let edge = max(radius, pixel * 0.5);
+    let coverage = 1.0 - smoothstep(0.0, edge, distance_to_star);
+    let energy = min(1.0, radius * radius / (edge * edge));
+    return coverage * energy * step(0.88, random.z)
+        * smoothstep(0.04, 0.25, direction.y);
+}
+
 @fragment
 fn fs_sky(i: SkyOut) -> @location(0) vec4<f32> {
     // Texture space: 0.002 texels per world unit, scrolled by
@@ -39,7 +59,11 @@ fn fs_sky(i: SkyOut) -> @location(0) vec4<f32> {
     // Fade with distance: alpha = 40240 / (40240 + max(0, z - 100200)).
     let d = max(distance(i.world, g.cam_pos.xyz) - 100200.0, 0.0);
     let a = 40240.0 / (40240.0 + d);
-    return vec4<f32>(texel(c.rgb), a);
+    let direction = normalize(i.world - g.cam_pos.xyz);
+    let stars = star_field(direction) * g.daylight.w * smoothstep(0.05, 0.85, g.daylight.z);
+    // Stars emit light: night ambient darkening must not extinguish them.
+    // Keep night-vision grading, cloud texture and the existing horizon fade.
+    return vec4<f32>(texel(c.rgb) + grade_texel(vec3(0.78, 0.85, 1.0)) * stars, a);
 }
 
 struct SunIn {

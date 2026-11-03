@@ -20,6 +20,7 @@ fn time_blending_pipelines_validate() -> anyhow::Result<()> {
             fog_rgb: [0.0; 3],
             fog: (0.0, 100.0),
             daylight: [0.25, 0.25, 0.5],
+            stars: false,
             night_vision: 0.5,
             ambient: 1.0,
             flashlight: false,
@@ -63,6 +64,7 @@ fn sky_pixels_blend_at_midpoint_and_return_to_day() -> anyhow::Result<()> {
                     fog_rgb: [0.0; 3],
                     fog: (0.0, 100000.0),
                     daylight: self.weights,
+                    stars: false,
                     night_vision: self.weights[2],
                     ambient: 1.0,
                     flashlight: false,
@@ -161,6 +163,7 @@ fn flashlight_and_manual_night_vision_change_actual_pixels() -> anyhow::Result<(
                 fog_rgb: [0.; 3],
                 fog: (0., 10000.),
                 daylight: [0., 0., 1.],
+                stars: false,
                 night_vision: nv,
                 ambient,
                 flashlight,
@@ -221,6 +224,113 @@ fn flashlight_and_manual_night_vision_change_actual_pixels() -> anyhow::Result<(
         sample(0., 0.12, false)?.0,
         dark,
         "turning equipment off restores darkness"
+    );
+    Ok(())
+}
+
+// Black synthetic sky isolates star emission from authored sky textures.
+#[test]
+#[ignore = "requires an available wgpu adapter; run with --test-threads=1"]
+fn dynamic_stars_fade_and_stay_fixed_when_walking() -> anyhow::Result<()> {
+    use crate::scene::Scene;
+    struct Stars {
+        sky: SkyRenderer,
+        globals: Globals,
+        enabled: bool,
+        night: f32,
+        eye: Vec3,
+    }
+    impl Scene for Stars {
+        fn title(&self) -> String {
+            "synthetic stars".into()
+        }
+        fn update(&mut self, _: &Gpu, _: f32, _: &crate::input::Input) {}
+        fn clear_color(&self) -> [f64; 3] {
+            [0.; 3]
+        }
+        fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, _: (u32, u32)) {
+            let view = glam::camera::rh::view::look_at_mat4(self.eye, self.eye + Vec3::Y, Vec3::Z);
+            self.globals.write(
+                gpu,
+                &FrameParams {
+                    view,
+                    proj: glam::camera::rh::proj::directx::perspective(1.0, 1.0, 1.0, 100000.0),
+                    eye: self.eye,
+                    fog_rgb: [0.; 3],
+                    fog: (0., 100000.),
+                    daylight: [0., 1. - self.night, self.night],
+                    stars: self.enabled,
+                    night_vision: 0.,
+                    ambient: 0.12,
+                    flashlight: false,
+                    time_s: 0.,
+                    brightness: 1.,
+                },
+            );
+            self.sky
+                .draw(gpu, pass, &self.globals, view, [0.; 3], self.night);
+        }
+    }
+    let (gpu, target) = Gpu::offscreen((256, 256))?;
+    let crate::gpu::Target::Offscreen { texture } = target else {
+        unreachable!()
+    };
+    let output = texture.create_view(&Default::default());
+    let frame = crate::gpu::Frame::new(&gpu, (256, 256));
+    let globals = Globals::new(&gpu);
+    let images = core::array::from_fn(|_| [0, 0, 0, 255].repeat(256 * 256));
+    let sky = SkyRenderer::new(&gpu, &globals, &images, [None, None]);
+    let mut scene = Stars {
+        sky,
+        globals,
+        enabled: true,
+        night: 1.,
+        eye: Vec3::ZERO,
+    };
+    let mut sample = |enabled, night, eye| -> anyhow::Result<Vec<u8>> {
+        scene.enabled = enabled;
+        scene.night = night;
+        scene.eye = eye;
+        crate::scene::render(&gpu, &mut scene, &output, &frame);
+        gpu.read_rgba(&texture)
+    };
+    let energy = |pixels: &[u8]| -> u64 {
+        pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|p| u64::from(p[0]) + u64::from(p[1]) + u64::from(p[2]))
+            .sum()
+    };
+    let night = sample(true, 1., Vec3::ZERO)?;
+    assert!(
+        energy(&night) > 1000,
+        "stars must remain visible with dark ambient"
+    );
+    assert_eq!(
+        energy(&sample(false, 1., Vec3::ZERO)?),
+        0,
+        "classic night has no added stars"
+    );
+    assert_eq!(
+        energy(&sample(true, 0., Vec3::ZERO)?),
+        0,
+        "no stars in daylight"
+    );
+    let dusk = energy(&sample(true, 0.4, Vec3::ZERO)?);
+    assert!(
+        dusk > 0 && dusk < energy(&night),
+        "stars fade during twilight"
+    );
+    let moved = sample(true, 1., Vec3::new(8192., 256., -8192.))?;
+    let difference: u64 = night
+        .iter()
+        .zip(&moved)
+        .map(|(a, b)| u64::from(a.abs_diff(*b)))
+        .sum();
+    assert!(
+        difference < energy(&night) / 100,
+        "stars moved with the camera: {difference}"
     );
     Ok(())
 }

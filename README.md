@@ -162,9 +162,12 @@ cargo run --release -p c2-pc -- play GAME --recipe ../recipes/c2-mee-addons.toml
 stick moves, right stick looks, ZL draws, ZR fires, L binoculars, R map, A jump, B run, X call, Y next
 weapon, D-pad up crouch / down change call, + pause, − exit. In the menus, the left stick moves a pointer,
 A clicks and B goes back.
+Enable **Map zoom / pan** under **Options > Video** (off by default).
 With the PC map open, use the wheel to zoom at the pointer, right-drag to pan,
 and Home to restore the full map. Dynamic-time equipment uses N for night vision
 and L for the flashlight; select it under Equipment before the hunt.
+Dynamic-time night kills earn +20% while night vision is off; using the
+flashlight keeps that bonus.
 
 **PC VR** (early): `cargo run --release -p c2-vr -- play GAME` with an OpenXR runtime running (SteamVR,
 Monado, WiVRn). `c2-vr check` tells you which runtime it found. Plan and status:

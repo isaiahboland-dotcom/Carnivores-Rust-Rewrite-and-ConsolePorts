@@ -60,6 +60,8 @@ pub struct HuntOptions {
     pub auto_chamber: bool,
     /// None: classic scoring. Some: dynamic clock is currently night/day.
     pub dynamic_night: Option<bool>,
+    /// Active manual night vision cancels the dynamic-time night bonus.
+    pub night_vision_active: bool,
 }
 
 impl Default for HuntOptions {
@@ -87,6 +89,7 @@ impl Default for HuntOptions {
             stealth: false,
             auto_chamber: false,
             dynamic_night: None,
+            night_vision_active: false,
             teleport: false,
         }
     }

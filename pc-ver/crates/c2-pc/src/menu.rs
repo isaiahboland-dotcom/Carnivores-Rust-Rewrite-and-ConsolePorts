@@ -346,13 +346,14 @@ const GAME_OPTS: [Opt; 10] = [
     Opt::ClearTrophies,
 ];
 
-const VIDEO_OPTS: [Opt; 7] = [
+const VIDEO_OPTS: [Opt; 8] = [
     Opt::Slider("View range", |s| &mut s.options.view_r),
     Opt::PcSlider("Render distance", |p| &mut p.render),
     Opt::Slider("Brightness", |s| &mut s.options.brightness),
     Opt::PcToggle("Far sprites", |p| &mut p.far_sprites),
     Opt::PcToggle("Mobile radar", |p| &mut p.map_mobile),
     Opt::PcToggle("Map: where you look", |p| &mut p.map_heading),
+    Opt::PcToggle("Map zoom / pan", |p| &mut p.map_zoom),
     Opt::PcToggle("Teleport (map)", |p| &mut p.teleport),
 ];
 

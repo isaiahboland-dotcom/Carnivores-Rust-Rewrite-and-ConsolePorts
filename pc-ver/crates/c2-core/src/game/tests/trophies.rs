@@ -221,15 +221,20 @@ fn trophy_room_shows_plaques_and_removes_trophies() {
 
 #[test]
 fn dynamic_night_bonus_replaces_classic_bonus_at_kill_time() {
-    for (start, dynamic, expected) in [
-        (crate::area::TimeOfDay::Night, None, 10),
-        (crate::area::TimeOfDay::Night, Some(false), 0),
-        (crate::area::TimeOfDay::Day, Some(true), 20),
-        (crate::area::TimeOfDay::Day, Some(false), 0),
+    for (start, dynamic, night_vision, expected) in [
+        (crate::area::TimeOfDay::Night, None, false, 10),
+        (crate::area::TimeOfDay::Night, None, true, 10),
+        (crate::area::TimeOfDay::Night, Some(false), false, 0),
+        (crate::area::TimeOfDay::Day, Some(true), false, 20),
+        (crate::area::TimeOfDay::Day, Some(true), true, 0),
+        (crate::area::TimeOfDay::Night, Some(true), true, 0),
+        (crate::area::TimeOfDay::Day, Some(false), false, 0),
+        (crate::area::TimeOfDay::Day, Some(false), true, 0),
     ] {
         let (mut area, mut h, _) = setup(false);
         area.time = start;
         h.opts.dynamic_night = dynamic;
+        h.opts.night_vision_active = night_vision;
         h.opts.radar = false;
         h.opts.scent = false;
         h.opts.camo = false;
