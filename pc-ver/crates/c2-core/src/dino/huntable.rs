@@ -939,6 +939,38 @@ mod tests {
     }
 
     #[test]
+    fn survival_raptor_with_small_attack_radius_can_kill() {
+        let area = Area::flat(10);
+        let h = hunter();
+        let mut m = info(ai::VELO);
+        m.aggress = 160;
+        m.kill_dist = 25;
+        m.weave_range = 1648.0;
+        m.run_speed = 0.8;
+        m.walk_speed = 0.1;
+        m.jump_speed = 0.9;
+        m.kill_types = vec![KillType {
+            anim: EAT,
+            ..Default::default()
+        }];
+        let mut herd = Herd {
+            species: vec![species(m)],
+            ..Default::default()
+        };
+        let i = add(&mut herd, 0, &area, h.x - 2500.0, h.z);
+        let c = &mut herd.chars[i];
+        (c.state, c.afraid_time, c.aware_hunter, c.wave) = (2, 60_000, true, 1);
+        let events = run(&mut herd, &area, h, 10_000);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, DinoEvent::KillHunter { .. })),
+            "failed to attack, final distance {}",
+            dist(&herd.chars[i], &h)
+        );
+    }
+
+    #[test]
     fn aware_wolf_charges_and_kills_with_its_kill_type() {
         let area = Area::flat(10);
         let h = hunter();
