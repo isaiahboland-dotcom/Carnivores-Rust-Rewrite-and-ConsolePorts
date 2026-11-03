@@ -3394,3 +3394,24 @@ Regression tests exercise overlap rejection, results consumed once, failure and
 panic recovery, staged rebuild preservation, recipe verification, editor pinning,
 and balance reads. A headless egui test draws every tab without game data. These
 checks do not establish native Windows, headset, or console hardware behavior.
+
+## 2026-11-03 — Audit fixes follow parser and address-space boundaries
+
+Reject excessive `_RES.TXT` nesting at parsing, so downstream recursive walkers
+only receive bounded trees from files. Do not silently prune or clone a deep
+subtree at a recursion limit: cloning would recurse again, and pruning loses
+mod data. Serialisation instead uses an explicit stack, preserves out-of-range
+sub-block positions at the end, and avoids cloning section bodies.
+
+Bound mobile ELF instruction scans by the file-backed bytes at their virtual
+address. Clamping virtual addresses to the file length can silently omit valid
+code when section addresses differ from offsets. Validate PKM padding and the
+whole encoded payload before output allocation, rather than just estimating
+pixel counts from available blocks.
+
+The pinned ZIP dependency already implements CP437 fallback; retain it and test
+its behavior instead of maintaining another mapping table. Check tiling's
+programmer preconditions in every build, so release cooking has the same clear
+failure mode as debug cooking. No gameplay rules change. See
+[the audit follow-up](SECURITY-HARDENING.md#2026-11-03-audit-follow-up) for scope,
+CI coverage and the distinction between synthetic tests and owner-data parity.

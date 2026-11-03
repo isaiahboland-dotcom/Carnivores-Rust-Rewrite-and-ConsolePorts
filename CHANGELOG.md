@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Bound `_RES.TXT` nesting, preserve sub-blocks during writing, and reject invalid
+  menu slot hints without discarding their files.
+- Validate PKM payloads before allocation, bound mobile ELF scans, and reject
+  cooked-pack payload ranges outside the file.
+- Check texture tiling preconditions in every build and cover legacy ZIP names
+  with synthetic regression tests.
+- Pin CI actions, configure Dependabot, and run all-feature tests on Linux PRs
+  and in a daily/manual workflow.
+- Split shared hunt and survival logic into focused modules while preserving
+  their public paths.
+
 ## 0.1.0 — 2026-11-02
 
 First tagged source release of the Rust rewrite and console-port tools.

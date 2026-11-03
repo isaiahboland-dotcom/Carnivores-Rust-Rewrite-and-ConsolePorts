@@ -268,6 +268,103 @@ mod tests {
         }
     }
 
+    /// A stored (uncompressed) zip with one entry whose name is written
+    /// raw, without the UTF-8 flag: what a legacy Windows tool produces.
+    /// Includes a valid CRC so the same fixture checks reads as well as names.
+    fn raw_name_zip(raw_name: &[u8]) -> Vec<u8> {
+        fn le16(out: &mut Vec<u8>, v: u16) {
+            out.extend_from_slice(&v.to_le_bytes());
+        }
+        fn le32(out: &mut Vec<u8>, v: u32) {
+            out.extend_from_slice(&v.to_le_bytes());
+        }
+        let data = b"payload";
+        let mut out = Vec::new();
+        le32(&mut out, 0x0403_4b50); // local file header
+        le16(&mut out, 20); // version needed
+        le16(&mut out, 0); // flags: no UTF-8 bit
+        le16(&mut out, 0); // stored
+        le16(&mut out, 0); // time
+        le16(&mut out, 0); // date
+        le32(&mut out, 0x422c_6a15); // CRC32 of b"payload"
+        le32(&mut out, data.len() as u32);
+        le32(&mut out, data.len() as u32);
+        le16(&mut out, raw_name.len() as u16);
+        le16(&mut out, 0); // extra len
+        out.extend_from_slice(raw_name);
+        out.extend_from_slice(data);
+        let central_at = out.len() as u32;
+        le32(&mut out, 0x0201_4b50); // central directory header
+        le16(&mut out, 20); // version made by
+        le16(&mut out, 20); // version needed
+        le16(&mut out, 0); // flags
+        le16(&mut out, 0); // method
+        le16(&mut out, 0); // time
+        le16(&mut out, 0); // date
+        le32(&mut out, 0x422c_6a15); // CRC32 of b"payload"
+        le32(&mut out, data.len() as u32);
+        le32(&mut out, data.len() as u32);
+        le16(&mut out, raw_name.len() as u16);
+        le16(&mut out, 0); // extra
+        le16(&mut out, 0); // comment
+        le16(&mut out, 0); // disk
+        le16(&mut out, 0); // internal attrs
+        le32(&mut out, 0); // external attrs
+        le32(&mut out, 0); // local header offset
+        out.extend_from_slice(raw_name);
+        let cd_size = out.len() as u32 - central_at;
+        le32(&mut out, 0x0605_4b50); // end of central directory
+        le16(&mut out, 0); // this disk
+        le16(&mut out, 0); // cd disk
+        le16(&mut out, 1); // entries this disk
+        le16(&mut out, 1); // entries total
+        le32(&mut out, cd_size);
+        le32(&mut out, central_at);
+        le16(&mut out, 0); // comment len
+        out
+    }
+
+    #[test]
+    fn legacy_cp437_names_are_listed_not_dropped() {
+        // The pinned ZIP dependency supplies CP437 fallback for legacy
+        // Windows names (CP437 'é' = 0x82); keep that behavior covered.
+        let bytes = raw_name_zip(b"HUNTDAT/DINO\x82.TGA");
+        let path = std::env::temp_dir().join(format!("c2-vfs-cp437-{}.zip", std::process::id()));
+        std::fs::write(&path, bytes).unwrap();
+        let z = ZipBackend::new(&path, "").unwrap();
+        let listed = z.files();
+        assert_eq!(z.read("HUNTDAT/DINOé.TGA").unwrap(), b"payload");
+        drop(z);
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(listed, vec!["HUNTDAT/DINOé.TGA".to_string()]);
+    }
+
+    #[test]
+    fn legacy_cp437_root_is_discovered_and_readable() {
+        let path =
+            std::env::temp_dir().join(format!("c2-vfs-cp437-root-{}.zip", std::process::id()));
+        std::fs::write(&path, raw_name_zip(b"Mod\x82/HUNTDAT/x")).unwrap();
+        let z = ZipBackend::find(&path, "HUNTDAT").unwrap().unwrap();
+        assert_eq!(z.prefix(), "Modé/");
+        assert_eq!(z.read("HUNTDAT/x").unwrap(), b"payload");
+        drop(z);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn cp437_decoding_does_not_bypass_path_safety() {
+        // Decoding raw names must not re-open the traversal hole: the
+        // decoded name still goes through is_safe_relative_path.
+        let bytes = raw_name_zip(b"HUNTDAT/..\x5c..\x5coutsid\x82");
+        let path =
+            std::env::temp_dir().join(format!("c2-vfs-cp437-traversal-{}.zip", std::process::id()));
+        std::fs::write(&path, bytes).unwrap();
+        let opened = ZipBackend::new(&path, "");
+        assert!(matches!(opened, Err(VfsError::InvalidPack { .. })));
+        drop(opened);
+        std::fs::remove_file(&path).unwrap();
+    }
+
     #[test]
     fn normalized_prefix_does_not_slice_unrelated_unicode_names() {
         let path = std::env::temp_dir().join(format!("c2-vfs-prefix-{}.zip", std::process::id()));

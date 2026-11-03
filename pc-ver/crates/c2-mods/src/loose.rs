@@ -182,6 +182,24 @@ pub(crate) fn numbered(name: &str) -> Option<(String, usize)> {
     Some((prefix.to_string(), digits.parse().ok()?))
 }
 
+/// The menu slot a numbered file claims. Slot 0 does not exist: the menu
+/// lists slots from 1 (`menu.huntables[0]` is slot 1) and every consumer
+/// subtracts 1, so a file numbered from 0 (`DINO0.TGA`, audit F2) would
+/// reach an unchecked `slot - 1` — an overflow panic in debug builds, and
+/// a wrapped index with a price of 0 and nonsense retargeting in release.
+/// The file still ships; only the slot number is dropped, with a note.
+fn menu_slot_number(file: &Path, n: usize, notes: &mut Vec<String>) -> Option<usize> {
+    if n == 0 {
+        notes.push(format!(
+            "not used for slotting: `{}` is numbered from 0 (menu slots start at 1)",
+            file.display()
+        ));
+        None
+    } else {
+        Some(n)
+    }
+}
+
 /// Where a loose file goes in the game, if anywhere.
 fn place(p: &Path, base: &Vfs, root: Option<&Path>) -> Option<String> {
     // Under a folder standing for HUNTDAT: keep its place.
@@ -306,13 +324,17 @@ fn menu_slot(base: &Vfs, res: &ResTxt, n: usize) -> Option<usize> {
         .or_else(|| c2_formats::mee::is_dialect(res).then(|| MenuData::from_res(res)));
     match m {
         Some(m) => {
-            let name = m.huntables.get(n - 1)?.name.to_ascii_lowercase();
+            let name = m
+                .huntables
+                .get(n.checked_sub(1)?)?
+                .name
+                .to_ascii_lowercase();
             chars
                 .iter()
                 .position(|b| block_id(b).as_deref() == Some(&name))
         }
         None => {
-            let ai = 9 + n as i32;
+            let ai = i32::try_from(n).ok()?.checked_add(9)?;
             chars
                 .iter()
                 .position(|b| b.get(&["ai"]).map(c_atoi) == Some(ai))
@@ -379,13 +401,13 @@ pub fn read_only(dir: &Path, base: &Vfs, keep: &dyn Fn(&Path) -> bool) -> Result
             Some(p) => {
                 if let Some((kind, n)) = numbered(&name) {
                     if kind == "dino" && key(&p).contains("/menu/") {
-                        menu_slot_n = Some(n);
+                        menu_slot_n = menu_slot_number(f, n, &mut out.notes).or(menu_slot_n);
                     }
                     if kind == "weapon" && key(&p).contains("/menu/") {
-                        weapon_slot_n = Some(n);
+                        weapon_slot_n = menu_slot_number(f, n, &mut out.notes).or(weapon_slot_n);
                     }
                     if kind == "call" && e == "wav" {
-                        call_slot_n = Some(n);
+                        call_slot_n = menu_slot_number(f, n, &mut out.notes).or(call_slot_n);
                     }
                 }
                 out.files.push((p, f.clone()));
@@ -801,6 +823,24 @@ impl Backend for MapBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn slot_number_zero_is_reported_and_ignored_not_slotted() {
+        // Audit F2: DINO0.TGA etc. used to yield SlotAdd.from = 0, which
+        // reached `s.from - 1` in pack.rs — an overflow panic in debug
+        // builds, a wrapped index with price 0 in release.
+        let (mut notes, mut out) = (Vec::new(), Vec::new());
+        assert_eq!(
+            menu_slot_number(Path::new("/m/DINO0.TGA"), 0, &mut notes),
+            None
+        );
+        assert!(notes[0].contains("numbered from 0"), "{:?}", notes);
+        assert_eq!(
+            menu_slot_number(Path::new("/m/DINO7.TGA"), 7, &mut out),
+            Some(7)
+        );
+        assert!(out.is_empty());
+    }
 
     /// The ARK Yutyrannus: a Modder's Edition copy for each game, its menu
     /// files numbered for each game's slot. Only the base game's is taken.

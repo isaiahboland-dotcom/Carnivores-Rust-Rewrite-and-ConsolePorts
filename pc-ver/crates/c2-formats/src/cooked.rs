@@ -199,8 +199,21 @@ fn morton(x: usize, y: usize) -> usize {
 /// Converts a top-row-first RGBA8 image to the PICA200 layout: 8x8 tiles in
 /// rows, Morton order inside each tile, the bottom image row first. The
 /// GPU then samples it with `t` = the image's `v` (0 = top).
-/// `width` and `height` must be powers of two from 8 to 1024.
+///
+/// # Panics
+/// Panics if either side is not a power of two from 8 to 1024, or if
+/// `rgba` is not exactly `width * height * 4` bytes. [`parse_texture`]
+/// validates the same dimension constraint for file input.
 pub fn tile(rgba: &[u8], width: usize, height: usize, format: TexFormat) -> CookedTexture {
+    assert!(
+        valid_side(width) && valid_side(height),
+        "tile() needs power-of-two sides from 8 to 1024, got {width}x{height}"
+    );
+    assert_eq!(
+        rgba.len(),
+        width * height * 4,
+        "tile() needs an RGBA8 image"
+    );
     let bpp = format.bytes_per_texel();
     let mut data = vec![0u8; width * height * bpp];
     for y in 0..height {
@@ -224,7 +237,7 @@ pub fn tile(rgba: &[u8], width: usize, height: usize, format: TexFormat) -> Cook
     }
 }
 
-fn valid_side(n: u16) -> bool {
+fn valid_side(n: usize) -> bool {
     n.is_power_of_two() && (8..=1024).contains(&n)
 }
 
@@ -250,7 +263,7 @@ pub fn parse_texture(data: &[u8]) -> Result<CookedTexture, FormatError> {
     let width = r.u16("tex.width")?;
     let height = r.u16("tex.height")?;
     let [f, ..] = r.array::<4>("tex.format")?;
-    if !valid_side(width) || !valid_side(height) {
+    if !valid_side(usize::from(width)) || !valid_side(usize::from(height)) {
         return Err(bad(
             4,
             "tex.size",
@@ -273,6 +286,25 @@ pub fn parse_texture(data: &[u8]) -> Result<CookedTexture, FormatError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[should_panic(expected = "power-of-two")]
+    fn tile_rejects_non_power_of_two_sides() {
+        let rgba = vec![128u8; 12 * 12 * 4];
+        let _ = tile(&rgba, 12, 12, TexFormat::Rgb565);
+    }
+
+    #[test]
+    fn tile_covers_every_engine_size() {
+        for side in [8usize, 16, 32, 64, 128, 256, 512, 1024] {
+            let rgba = vec![0u8; side * side * 4];
+            let t = tile(&rgba, side, side, TexFormat::Rgba5551);
+            assert_eq!(
+                t.data.len(),
+                side * side * TexFormat::Rgba5551.bytes_per_texel()
+            );
+        }
+    }
 
     #[test]
     fn pack_round_trip() {

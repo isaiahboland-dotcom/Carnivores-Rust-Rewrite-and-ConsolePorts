@@ -14,7 +14,7 @@
 //! (exact key matching instead of `strstr`) are recorded in
 //! `docs/DECISIONS.md`.
 
-use crate::error::FormatError;
+use crate::error::{FormatError, FormatErrorKind};
 use alloc::{format, string::String, string::ToString, vec::Vec};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -140,12 +140,18 @@ impl Node {
     }
 }
 
+/// Maximum nested block depth below a section body. Deeper input returns
+/// a syntax error before exhausting the parser's stack. This also bounds
+/// downstream walkers of parsed trees. The writer uses an explicit stack.
+pub const MAX_BLOCK_DEPTH: usize = 64;
+
 /// Reads a body after its `{`. Returns it and whether its `}` was found
 /// (`false`: the file ended first, or a `.` line ended it).
 fn parse_node<'a>(
     lines: &mut core::iter::Peekable<impl Iterator<Item = (usize, &'a str)>>,
     warnings: &mut Vec<String>,
-) -> (Node, bool) {
+    depth: usize,
+) -> Result<(Node, bool), FormatError> {
     let mut node = Node::default();
     while let Some(&(_, raw)) = lines.peek() {
         let header = strip_comment(raw).trim().strip_suffix('{').map(str::trim);
@@ -166,25 +172,36 @@ fn parse_node<'a>(
         }) {
             // These are never nested blocks. A missing closing brace in a
             // mod must not consume every later section as a child.
-            return (node, false);
+            return Ok((node, false));
         }
         let Some((ln, raw)) = lines.next() else { break };
         if raw.starts_with('.') {
-            return (node, false);
+            return Ok((node, false));
         }
         let line = strip_comment(raw).trim();
         if line.is_empty() {
             continue;
         }
         if line.starts_with('}') {
-            return (node, true);
+            return Ok((node, true));
         }
         if let Some(name) = line.strip_suffix('{').map(str::trim) {
             let at = node.entries.len();
-            let (child, closed) = parse_node(lines, warnings);
+            if depth >= MAX_BLOCK_DEPTH {
+                // The text parser reports positions by line number in the
+                // context (it reads `text.lines()`, which has no offsets).
+                return Err(FormatError {
+                    offset: 0,
+                    context: format!("_RES.TXT line {}", ln + 1),
+                    kind: FormatErrorKind::Syntax(format!(
+                        "blocks nested more than {MAX_BLOCK_DEPTH} deep"
+                    )),
+                });
+            }
+            let (child, closed) = parse_node(lines, warnings, depth + 1)?;
             node.children.push((name.to_string(), at, child));
             if !closed {
-                return (node, false);
+                return Ok((node, false));
             }
         } else if let Some(e) = parse_entry(line) {
             node.entries.push(e);
@@ -195,7 +212,7 @@ fn parse_node<'a>(
             ));
         }
     }
-    (node, false)
+    Ok((node, false))
 }
 
 impl ResTxt {
@@ -228,7 +245,7 @@ impl ResTxt {
                     ln + 1
                 ));
             }
-            let (node, closed) = parse_node(&mut lines, &mut out.warnings);
+            let (node, closed) = parse_node(&mut lines, &mut out.warnings, 0)?;
             let mut section = Section {
                 name: name.to_string(),
                 blocks: Vec::new(),
@@ -278,14 +295,7 @@ impl ResTxt {
                 write_body(&mut s, b, 1);
                 s.push_str("}\r\n\r\n");
             }
-            write_body(
-                &mut s,
-                &Block {
-                    entries: sec.entries.clone(),
-                    subs: sec.subs.clone(),
-                },
-                1,
-            );
+            write_body_parts(&mut s, &sec.entries, &sec.subs, 1);
             s.push_str("}\r\n\r\n");
         }
         s.push_str(".\r\n");
@@ -325,16 +335,47 @@ pub fn write_block(b: &Block) -> String {
 }
 
 fn write_body(s: &mut String, b: &Block, depth: usize) {
-    let pad = " ".repeat(depth);
-    let mut subs = b.subs.iter().peekable();
-    for i in 0..=b.entries.len() {
-        while let Some(sub) = subs.next_if(|x| x.at <= i) {
+    write_body_parts(s, &b.entries, &b.subs, depth);
+}
+
+// An explicit stack avoids recursive writing (and cloning section subtrees).
+// Children retain their file order; positions past the entry list go at its end.
+fn write_body_parts(s: &mut String, entries: &[Entry], subs: &[Sub], depth: usize) {
+    struct Frame<'a> {
+        entries: &'a [Entry],
+        subs: core::iter::Peekable<core::slice::Iter<'a, Sub>>,
+        at: usize,
+        depth: usize,
+    }
+    let mut stack = Vec::new();
+    stack.push(Frame {
+        entries,
+        subs: subs.iter().peekable(),
+        at: 0,
+        depth,
+    });
+    while let Some(frame) = stack.last_mut() {
+        let pad = " ".repeat(frame.depth);
+        if let Some(sub) = frame
+            .subs
+            .next_if(|sub| sub.at.min(frame.entries.len()) <= frame.at)
+        {
             s.push_str(&format!("{pad}{} {{\r\n", sub.name));
-            write_body(s, &sub.block, depth + 1);
-            s.push_str(&format!("{pad}}}\r\n"));
-        }
-        if let Some(e) = b.entries.get(i) {
+            let depth = frame.depth + 1;
+            stack.push(Frame {
+                entries: &sub.block.entries,
+                subs: sub.block.subs.iter().peekable(),
+                at: 0,
+                depth,
+            });
+        } else if let Some(e) = frame.entries.get(frame.at) {
             s.push_str(&format!("{pad}{} = {}\r\n", e.key, e.value));
+            frame.at += 1;
+        } else {
+            stack.pop();
+            if let Some(parent) = stack.last() {
+                s.push_str(&format!("{}}}\r\n", " ".repeat(parent.depth)));
+            }
         }
     }
 }
@@ -559,6 +600,8 @@ pub struct ResData {
 #[cfg(test)]
 mod recovery_tests {
     use super::*;
+    use crate::error::FormatErrorKind;
+    use alloc::vec;
 
     #[test]
     fn missing_table_brace_does_not_swallow_characters_and_weapons() {
@@ -573,5 +616,91 @@ mod recovery_tests {
         let roundtrip = ResTxt::parse(&res.write()).unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(roundtrip.sections, res.sections);
         assert!(roundtrip.warnings.is_empty());
+    }
+
+    #[test]
+    fn deeply_nested_braces_are_an_error_not_a_stack_overflow() {
+        // ~100 KB of nested `{` lines (audit F1): before the cap this
+        // overflowed the stack and aborted the process, which no error
+        // handling could catch.
+        let text = format!("weapons {{\n{}\n.\n", "{\n".repeat(100_000));
+        let Err(err) = ResTxt::parse(&text) else {
+            panic!("deep nesting must be rejected, not parsed");
+        };
+        assert!(matches!(err.kind, FormatErrorKind::Syntax(_)), "{err}");
+        assert!(err.context.contains("line "), "{err}");
+    }
+
+    #[test]
+    fn nesting_at_the_cap_still_parses_and_round_trips() {
+        let depth = MAX_BLOCK_DEPTH;
+        let mut text = String::from("weapons {\n");
+        text.push_str(&"{\n".repeat(depth));
+        text.push_str("name = 'Gun'\n");
+        text.push_str(&"}\n".repeat(depth));
+        text.push_str("}\n.\n");
+        let res = ResTxt::parse(&text).unwrap_or_else(|e| panic!("{e}"));
+        // Anonymous `{` children of a section body land in `blocks`.
+        let mut b = &res.sections[0].blocks[0];
+        for _ in 1..depth {
+            b = &b.subs[0].block;
+        }
+        assert_eq!(b.get(&["name"]), Some("'Gun'"));
+        let roundtrip = ResTxt::parse(&res.write()).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(roundtrip.sections, res.sections);
+    }
+
+    #[test]
+    fn one_level_past_the_cap_is_rejected() {
+        let text = format!(
+            "weapons {{\n{}{} }}\n",
+            "{\n".repeat(MAX_BLOCK_DEPTH + 1),
+            "}\n".repeat(MAX_BLOCK_DEPTH + 1)
+        );
+        assert!(ResTxt::parse(&text).is_err());
+    }
+
+    #[test]
+    fn writer_preserves_deep_programmatically_built_trees() {
+        let mut block = Block::default();
+        for _ in 0..256 {
+            block = Block {
+                entries: Vec::new(),
+                subs: vec![Sub {
+                    name: "nested".into(),
+                    at: 0,
+                    block,
+                }],
+            };
+        }
+        assert_eq!(write_block(&block).matches("nested {").count(), 256);
+    }
+
+    #[test]
+    fn sub_block_past_the_entry_list_is_written_not_dropped() {
+        // Audit F10: merge code can build a sub-block whose `at` index is
+        // past the parent's entries; write_body() used to drop it.
+        let b = Block {
+            entries: vec![Entry {
+                key: "a".into(),
+                value: "1".into(),
+            }],
+            subs: vec![Sub {
+                name: "subname".into(),
+                at: 5,
+                block: Block {
+                    entries: vec![Entry {
+                        key: "b".into(),
+                        value: "2".into(),
+                    }],
+                    subs: Vec::new(),
+                },
+            }],
+        };
+        let written = write_block(&b);
+        let parsed = ResTxt::parse(&written).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(parsed.sections[0].entries[0].key, "a");
+        assert_eq!(parsed.sections[0].subs[0].name, "subname");
+        assert_eq!(parsed.sections[0].subs[0].block.get(&["b"]), Some("2"));
     }
 }

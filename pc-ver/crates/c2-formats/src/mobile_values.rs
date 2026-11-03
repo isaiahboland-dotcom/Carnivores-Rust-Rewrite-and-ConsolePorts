@@ -21,13 +21,19 @@ pub(crate) fn bad(what: &str) -> FormatError {
 }
 
 fn u16_at(d: &[u8], o: usize) -> Option<u16> {
-    Some(u16::from_le_bytes(d.get(o..o + 2)?.try_into().ok()?))
+    Some(u16::from_le_bytes(
+        d.get(o..o.checked_add(2)?)?.try_into().ok()?,
+    ))
 }
 pub(crate) fn u32_at(d: &[u8], o: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(d.get(o..o + 4)?.try_into().ok()?))
+    Some(u32::from_le_bytes(
+        d.get(o..o.checked_add(4)?)?.try_into().ok()?,
+    ))
 }
 pub(crate) fn u64_at(d: &[u8], o: usize) -> Option<u64> {
-    Some(u64::from_le_bytes(d.get(o..o + 8)?.try_into().ok()?))
+    Some(u64::from_le_bytes(
+        d.get(o..o.checked_add(8)?)?.try_into().ok()?,
+    ))
 }
 
 /// An ELF64 section: type, address, file offset, size, link.
@@ -45,14 +51,26 @@ pub(crate) fn sections(d: &[u8]) -> Option<Vec<Section>> {
     }
     let shoff = usize::try_from(u64_at(d, 0x28)?).ok()?;
     let (entsize, num) = (usize::from(u16_at(d, 0x3A)?), usize::from(u16_at(d, 0x3C)?));
+    if entsize < 64 {
+        return None;
+    }
+    d.get(shoff..shoff.checked_add(num.checked_mul(entsize)?)?)?;
     (0..num)
         .map(|i| {
             let o = shoff + i * entsize;
+            let off = usize::try_from(u64_at(d, o + 24)?).ok()?;
+            let size = usize::try_from(u64_at(d, o + 32)?).ok()?;
+            // Bound every downstream section scan to bytes in the file.
+            let off = off.min(d.len());
             Some(Section {
                 kind: u32_at(d, o + 4)?,
-                addr: u64_at(d, o + 16)?,
-                off: usize::try_from(u64_at(d, o + 24)?).ok()?,
-                size: usize::try_from(u64_at(d, o + 32)?).ok()?,
+                addr: {
+                    let addr = u64_at(d, o + 16)?;
+                    addr.checked_add(size.min(d.len() - off) as u64)?;
+                    addr
+                },
+                off,
+                size: size.min(d.len() - off),
                 link: usize::try_from(u32_at(d, o + 40)?).ok()?,
             })
         })
@@ -61,10 +79,14 @@ pub(crate) fn sections(d: &[u8]) -> Option<Vec<Section>> {
 
 /// The file bytes at a virtual address (not in a `NOBITS` section).
 pub(crate) fn at_va<'a>(d: &'a [u8], secs: &[Section], va: u64) -> Option<&'a [u8]> {
-    let s = secs
-        .iter()
-        .find(|s| s.addr != 0 && s.kind != 8 && va >= s.addr && va < s.addr + s.size as u64)?;
-    d.get(s.off + usize::try_from(va - s.addr).ok()?..s.off + s.size)
+    let s = secs.iter().find(|s| {
+        s.addr != 0
+            && s.kind != 8
+            && va
+                .checked_sub(s.addr)
+                .is_some_and(|off| off < s.size as u64)
+    })?;
+    d.get(s.off.checked_add(usize::try_from(va - s.addr).ok()?)?..s.off.checked_add(s.size)?)
 }
 
 /// `(name, address, size)` of every symbol.
@@ -74,13 +96,18 @@ pub(crate) fn symbols(d: &[u8], secs: &[Section]) -> Vec<(String, u64, u64)> {
         let Some(strs) = secs.get(s.link) else {
             continue;
         };
-        for o in (s.off..s.off + s.size).step_by(24) {
+        let Some(bytes) = d.get(s.off..s.off.saturating_add(s.size)) else {
+            continue;
+        };
+        for symbol in bytes.as_chunks::<24>().0 {
             let (Some(name), Some(value), Some(size)) =
-                (u32_at(d, o), u64_at(d, o + 8), u64_at(d, o + 16))
+                (u32_at(symbol, 0), u64_at(symbol, 8), u64_at(symbol, 16))
             else {
                 continue;
             };
-            let start = strs.off + name as usize;
+            let Some(start) = strs.off.checked_add(name as usize) else {
+                continue;
+            };
             let Some(bytes) = d.get(start..strs.off + strs.size) else {
                 continue;
             };
@@ -252,6 +279,41 @@ fn pow2(exp: i32) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
+
+    #[test]
+    fn section_offsets_and_sizes_are_clamped_to_the_file() {
+        // Audit F5: a crafted section header claiming off/size past the
+        // file must not drive `off .. off + size` loops (symbols()) past
+        // the input, nor overflow the range arithmetic.
+        let mut d = vec![0u8; 0x80];
+        d[..5].copy_from_slice(b"\x7fELF\x02");
+        d[0x28..0x30].copy_from_slice(&0x40u64.to_le_bytes()); // shoff
+        d[0x3a..0x3c].copy_from_slice(&64u16.to_le_bytes()); // shentsize
+        d[0x3c..0x3e].copy_from_slice(&1u16.to_le_bytes()); // shnum
+
+        // A SYMTAB claiming usize::MAX bytes starting past this input.
+        d[0x44..0x48].copy_from_slice(&2u32.to_le_bytes()); // kind = SYMTAB
+        d[0x58..0x60].copy_from_slice(&0x1000u64.to_le_bytes()); // off
+        d[0x60..0x68].copy_from_slice(&(usize::MAX as u64).to_le_bytes()); // size
+        let secs = sections(&d).unwrap_or_default();
+        assert_eq!(secs.len(), 1);
+        assert_eq!((secs[0].off, secs[0].size), (d.len(), 0));
+        // The symbol walk over the clamped range is empty and terminates.
+        assert!(symbols(&d, &secs).is_empty());
+    }
+
+    #[test]
+    fn overflowing_section_tables_and_reads_are_rejected() {
+        let mut d = vec![0u8; 64];
+        d[..5].copy_from_slice(b"\x7fELF\x02");
+        d[0x28..0x30].copy_from_slice(&u64::MAX.to_le_bytes());
+        d[0x3a..0x3c].copy_from_slice(&64u16.to_le_bytes());
+        d[0x3c..0x3e].copy_from_slice(&2u16.to_le_bytes());
+        assert!(sections(&d).is_none());
+        assert_eq!(u32_at(&d, usize::MAX), None);
+        assert_eq!(u64_at(&d, usize::MAX), None);
+    }
 
     fn adrp(rd: u32, pc: u64, target: u64) -> u32 {
         let imm = ((target & !0xFFF) as i64 - (pc & !0xFFF) as i64) >> 12;

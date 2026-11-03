@@ -705,3 +705,55 @@ fn an_import_without_a_picture_keeps_its_menu_entry_and_own_calls() {
         let _ = std::fs::remove_dir_all(d);
     }
 }
+
+#[test]
+fn zero_numbered_art_and_calls_do_not_create_slot_zero() {
+    let base = tmp("zero-base");
+    let addon = tmp("zero-addon");
+    write(
+        &base,
+        &[
+            ("HUNTDAT/_RES.TXT", MEE_RES.as_bytes()),
+            ("HUNTDAT/_MENU.TXT", MEE_MENU.as_bytes()),
+        ],
+    );
+    write(
+        &addon,
+        &[
+            ("rx.car", b"rx"),
+            ("DINO0.TGA", b"picture"),
+            ("CALL0_A.wav", b"call"),
+            ("WEAPON0.TGA", b"weapon picture"),
+            (
+                "README.txt",
+                b"{\n name = 'Raptor X'\n file = 'rx.car'\n ai = 16\n}\n",
+            ),
+        ],
+    );
+    let bases = [base.clone()];
+    let v = vanilla(&bases).expect("vanilla");
+    let loose = c2_mods::loose::read(&addon, &v).expect("loose addon");
+    assert!(loose.slots.iter().all(|s| s.from > 0));
+    assert_eq!(
+        loose
+            .notes
+            .iter()
+            .filter(|n| n.contains("numbered from 0"))
+            .count(),
+        3
+    );
+    assert!(loose
+        .files
+        .iter()
+        .any(|(name, _)| name.ends_with("DINO0.TGA")));
+    let pack = build(&bases, vec![load_mod(&v, &addon).expect("mod")]).expect("build");
+    assert_eq!(
+        pack.vfs
+            .read("HUNTDAT/MENU/PICS/DINO0.TGA")
+            .expect("retained art"),
+        b"picture"
+    );
+    for dir in [base, addon] {
+        std::fs::remove_dir_all(dir).expect("cleanup");
+    }
+}

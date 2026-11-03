@@ -74,6 +74,13 @@ impl<'a> Lib<'a> {
         at_va(self.d, &self.secs, va)?.get(..n)
     }
 
+    // Symbol sizes are untrusted. Bound scans by the file-backed section,
+    // preserving virtual addresses even when they differ from file offsets.
+    fn code(&self, va: u64, size: u64) -> &'a [u8] {
+        let bytes = at_va(self.d, &self.secs, va).unwrap_or_default();
+        &bytes[..bytes.len().min(usize::try_from(size).unwrap_or(usize::MAX))]
+    }
+
     fn word(&self, va: u64) -> Option<u32> {
         Some(u32::from_le_bytes(self.bytes(va, 4)?.try_into().ok()?))
     }
@@ -108,9 +115,18 @@ impl<'a> Lib<'a> {
                 let (Some(slot), Some(info)) = (u64_at(d, o), u64_at(d, o + 8)) else {
                     continue;
                 };
-                let sym = dynsym.off + (info >> 32) as usize * 24;
+                let Some(sym_offset) = usize::try_from(info >> 32)
+                    .ok()
+                    .and_then(|i| i.checked_mul(24))
+                    .filter(|&o| o.checked_add(24).is_some_and(|end| end <= dynsym.size))
+                else {
+                    continue;
+                };
+                let sym = dynsym.off + sym_offset;
                 let Some(name) = u32_at(d, sym) else { continue };
-                let start = strs.off + name as usize;
+                let Some(start) = strs.off.checked_add(name as usize) else {
+                    continue;
+                };
                 let Some(b) = d.get(start..strs.off + strs.size) else {
                     continue;
                 };
@@ -123,13 +139,13 @@ impl<'a> Lib<'a> {
             // Executable sections only hold stubs worth reading; any
             // `adrp x16` + `ldr x17, [x16]` pair is one.
             for va in (s.addr..s.addr + s.size as u64).step_by(4) {
-                let (Some(a), Some(l)) = (self.word(va), self.word(va + 4)) else {
+                let (Some(a), Some(l)) = (self.word(va), self.word(va.saturating_add(4))) else {
                     continue;
                 };
                 if a & 0x9F00_001F != 0x9000_0010 || l & 0xFFC0_03FF != 0xF940_0211 {
                     continue;
                 }
-                let slot = adrp(a, va) + u64::from((l >> 10) & 0xFFF) * 8;
+                let slot = adrp(a, va).wrapping_add(u64::from((l >> 10) & 0xFFF) * 8);
                 if let Some(n) = slot_name.get(&slot) {
                     out.insert(va, n.clone());
                 }
@@ -662,8 +678,9 @@ fn files(lib: &Lib<'_>) -> BTreeMap<i32, String> {
         return out;
     };
     let (mut x2, mut w1) = (None, None);
-    for pc in (va..va + size).step_by(4) {
-        let Some(ins) = lib.word(pc) else { break };
+    for (i, word) in lib.code(va, size).as_chunks::<4>().0.iter().enumerate() {
+        let pc = va + i as u64 * 4;
+        let ins = u32::from_le_bytes(*word);
         let (rd, rn) = ((ins & 31) as usize, ((ins >> 5) & 31) as usize);
         if ins & 0x9F00_001F == 0x9000_0002 {
             x2 = Some(adrp(ins, pc));
@@ -689,10 +706,15 @@ pub fn characters(lib: &[u8], balance: &BTreeMap<String, f64>) -> Result<Charact
     let init = lib
         .function("CharacterInfo_Init")
         .ok_or_else(|| bad("CharacterInfo_Init"))?;
-    let called: Vec<String> = (init.0..init.0 + init.1)
-        .step_by(4)
-        .filter_map(|pc| {
-            let ins = lib.word(pc)?;
+    let called: Vec<String> = lib
+        .code(init.0, init.1)
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .enumerate()
+        .filter_map(|(i, word)| {
+            let pc = init.0 + i as u64 * 4;
+            let ins = u32::from_le_bytes(*word);
             (ins & 0xFC00_0000 == 0x9400_0000).then(|| {
                 let t = pc.wrapping_add((sext(u64::from(ins & 0x03FF_FFFF), 26) * 4) as u64);
                 lib.plt.get(&t).cloned().unwrap_or_default()
@@ -820,6 +842,37 @@ pub fn strings(csv: &[u8]) -> BTreeMap<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn symbol_scans_use_file_backed_bytes_at_virtual_addresses() {
+        // Minimal ELF: a symbol table, strings and six instructions. The
+        // code VA deliberately exceeds the entire file length.
+        let mut bytes = alloc::vec![0u8; 0x180];
+        bytes[..5].copy_from_slice(b"\x7fELF\x02");
+        bytes[0x28..0x30].copy_from_slice(&0x40u64.to_le_bytes());
+        bytes[0x3a..0x3c].copy_from_slice(&64u16.to_le_bytes());
+        bytes[0x3c..0x3e].copy_from_slice(&3u16.to_le_bytes());
+        for (i, kind, addr, off, size, link) in [
+            (0, 2u32, 0u64, 0x100u64, 24u64, 1u32),
+            (1, 3, 0, 0x118, 24, 0),
+            (2, 1, 0x10000, 0x140, 24, 0),
+        ] {
+            let h = 0x40 + i * 64;
+            bytes[h + 4..h + 8].copy_from_slice(&kind.to_le_bytes());
+            bytes[h + 16..h + 24].copy_from_slice(&addr.to_le_bytes());
+            bytes[h + 24..h + 32].copy_from_slice(&off.to_le_bytes());
+            bytes[h + 32..h + 40].copy_from_slice(&size.to_le_bytes());
+            bytes[h + 40..h + 44].copy_from_slice(&link.to_le_bytes());
+        }
+        bytes[0x108..0x110].copy_from_slice(&0x10000u64.to_le_bytes());
+        bytes[0x110..0x118].copy_from_slice(&u64::MAX.to_le_bytes());
+        bytes[0x118..0x12b].copy_from_slice(b"CharacterInfo_Init\0");
+        let lib = Lib::new(&bytes).unwrap_or_else(|| panic!("synthetic ELF"));
+        assert_eq!(lib.code(0x10000, u64::MAX).len(), 24);
+        assert_eq!(lib.code(0x10004, 4).len(), 4);
+        assert!(lib.code(u64::MAX, u64::MAX).is_empty());
+        assert!(characters(&bytes, &BTreeMap::new()).is_ok());
+    }
 
     #[test]
     fn strings_take_english() {

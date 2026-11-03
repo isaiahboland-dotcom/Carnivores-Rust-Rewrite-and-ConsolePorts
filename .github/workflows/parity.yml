@@ -1,0 +1,27 @@
+name: Parity
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 3 * * *"   # daily, off the hour
+
+jobs:
+  all-features:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pc-ver
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # kira/cpal (ALSA) and gilrs (udev), as in ci.yml.
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable (branch head 2026-11-03)
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
+        with:
+          workspaces: pc-ver
+      # Runs the committed synthetic suites, including portable-hunt/load.
+      # Owner-data tests return early without their C2_* environment variables;
+      # this job does not establish parity against original game assets.
+      - run: cargo test --locked --workspace --all-features

@@ -591,10 +591,20 @@ fn assign_slots(
                     file_moves.insert(p.clone(), format!("{dir}/{new}"));
                 }
             }
+            // `from` is filtered to >= 1 where it is derived
+            // (`loose::menu_slot_number`); checked anyway so a future
+            // derivation path cannot reach an unchecked subtraction
+            // (audit F2).
             let slot_price = if chars {
-                menu.huntables.get(s.from - 1).map(|i| i.price)
+                s.from
+                    .checked_sub(1)
+                    .and_then(|i| menu.huntables.get(i))
+                    .map(|i| i.price)
             } else {
-                menu.weapons.get(s.from - 1).map(|i| i.price)
+                s.from
+                    .checked_sub(1)
+                    .and_then(|i| menu.weapons.get(i))
+                    .map(|i| i.price)
             }
             .unwrap_or(0);
             let Some(block) = m.res_changes.iter_mut().find_map(|c| match c {
@@ -608,7 +618,9 @@ fn assign_slots(
                 continue;
             };
             if chars {
-                retarget_conditions(block, s.from - 1, n - 1);
+                if let Some(from0) = s.from.checked_sub(1) {
+                    retarget_conditions(block, from0, n - 1);
+                }
                 retarget_character_art(block, s.from, n);
                 // It answers its own slot's call (`callNo`; an entry for the
                 // original game has none, and would answer slot 0's).
