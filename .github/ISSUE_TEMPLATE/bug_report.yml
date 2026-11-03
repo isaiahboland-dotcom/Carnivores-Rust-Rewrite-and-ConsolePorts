@@ -1,0 +1,79 @@
+name: Bug Report
+description: Report a crash, glitch, or incorrect behavior in the Rust rewrite or console ports.
+title: "[BUG]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please describe the bug and how to reproduce it.
+        Do not include private information, SDK files, original game assets or mod files.
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the Bug
+      description: What happened, and what did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Include the map, game variant, mods or recipe, and relevant settings by name.
+      placeholder: |
+        1. Start the game with ...
+        2. Load the map ...
+        3. Perform ...
+        4. Observe ...
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows (PC)
+        - Linux (PC / Steam Deck)
+        - macOS
+        - Nintendo 3DS / 2DS (homebrew)
+        - Wii U (homebrew)
+        - PC VR (OpenXR)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: System Details
+      description: OS version, console model and firmware, or emulator version. For VR, include the headset and runtime.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Game Version / Commit
+      description: Release version or commit hash of this rewrite. If unknown, say so and describe where you obtained the build.
+    validations:
+      required: true
+  - type: input
+    id: rust_version
+    attributes:
+      label: Rust Version
+      description: If you built from source, include the output of rustc --version.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Backtrace
+      description: Paste relevant output and redact private information before submitting.
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Verification
+      options:
+        - label: I have searched existing issues for duplicates.
+          required: true
