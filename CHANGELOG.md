@@ -12,7 +12,6 @@
   and in a daily/manual workflow.
 - Split shared hunt and survival logic into focused modules while preserving
   their public paths.
-- Add contribution instructions and a structured bug report form.
 
 ## 0.1.0 — 2026-11-02
 
