@@ -3,7 +3,7 @@ use c2_core::{
     area::{Area, TimeOfDay},
     dino::{self, Character, DinoInfo, Herd, Species},
     game::{GameEvent, Hunt, HuntInput, HuntOptions, WeaponInfo, WeaponState, Weapons},
-    model::{car_anim_duration_ms, pose_car},
+    model::pose_car,
     player::Player,
     rng::MsRand,
 };

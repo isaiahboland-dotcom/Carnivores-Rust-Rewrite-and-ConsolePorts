@@ -576,6 +576,7 @@ pub fn thin_objects(map: &mut Map, rsc: &Rsc, window: usize, budget: u64) -> usi
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::{format, string::String};
     use c2_formats::map::{CELLS, HALF_CELLS};
 
     #[test]

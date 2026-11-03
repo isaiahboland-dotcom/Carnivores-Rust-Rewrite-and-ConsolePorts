@@ -28,7 +28,10 @@ use alloc::{
     vec::Vec,
 };
 
-use super::*;
+use super::{GameEvent, Hunt, MAX_HEALTH};
+use crate::area::Area;
+use crate::dino::{ai, find_vector_alpha, Character};
+use crate::rng::MsRand;
 
 /// A wave animal's health at most: the original's shotgun is 6 pellets of 1.
 pub const WAVE_HEALTH: i32 = 3;

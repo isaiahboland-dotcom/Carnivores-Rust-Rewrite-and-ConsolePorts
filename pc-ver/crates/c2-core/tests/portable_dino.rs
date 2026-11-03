@@ -39,6 +39,7 @@ fn shared_herbivore_ai_flees_a_nearby_hunter() {
         scale0: 1000,
         scale_a: 0,
         danger_call: false,
+        runs_as: None,
     };
     let hunter = HunterView {
         x: 512.0 * 256.0,

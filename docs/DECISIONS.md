@@ -1,5 +1,54 @@
 # Decisions and deviations
 
+## 2026-11-03 — Split hunt orchestration by responsibility
+
+The 4,596-line `c2-core/src/game.rs` contained weapon definitions and ammo,
+frontend events, options/input, hunt state, tick scheduling, firing and bullets,
+animal detection, death cameras, audio, view helpers, trophies and exit handling,
+plus 1,458 lines of tests. It already delegated chambering, survival and teleporting
+to `game/` modules; extend that layout rather than impose menu/entity systems
+that this file does not contain.
+
+Keep `game.rs` as a thin facade with private submodules and public re-exports.
+Existing `c2_core::game::{Hunt, Weapons, GameEvent, ...}` paths, including
+`game::weapon_anim`, remain available to PC, VR and console callers. Split
+`impl Hunt` by concern; shared state stays in `state.rs`. Helpers and fields
+needed by sibling modules use `pub(super)`, limiting access to `game` rather
+than the whole crate. Dependencies are imported explicitly. Tick order,
+random-number consumption, gameplay bodies and feature attributes are preserved;
+no event-channel or trait-object layer is needed for this mechanical extraction.
+
+| Modules | Responsibility |
+|---|---|
+| `state`, `options`, `events`, `session` | Hunt ownership/initialization, inputs/tuning, frontend events, pause/exit |
+| `weapon_info`, `mee_weapon`, `weapons`, `weapon_actions` | Weapon data, dialect keys, ammo/poses, input and animations |
+| `update`, `combat`, `wildlife` | Tick order, shooting/projectiles, hearing/detection and species identity |
+| `death`, `audio`, `view`, `trophies` | Death camera, ambience/calls, view queries/map image, scoring/collection/room |
+| `tests/*` | The existing hunt regressions by behavior, with shared synthetic fixtures |
+
+New implementation and test files are below 400 lines; `game.rs` is 43 lines.
+The pre-existing `survival.rs` implementation is left intact except for explicit
+imports; splitting its navigation and wave logic is a separate follow-up.
+
+Feature-matrix validation also exposed stale test fixtures: add the existing
+`DinoInfo::runs_as` and overlay `View::masked` fields with their neutral values,
+remove an unused integration-test import, and import `alloc` macros/string types
+in area/record tests so the no_std library test harness compiles.
+
+Validation: the default-feature workspace Clippy check with all targets and
+warnings denied, workspace formatting, core rustdoc, and both core suites
+(all features; no defaults with `portable-load,hunt-diagnostics`) pass. Each
+suite reports 97 unit tests and 31 integration cases passing, with five ignored.
+Source comparison checked all
+117 original functions and 17 type/module declarations after normalizing
+whitespace and internal visibility. The minimal `portable-hunt` build and
+`portable-load,hunt-diagnostics` no_std build also compile. Asset-dependent
+integration cases require local environment variables and may return early;
+the five ignored tests are stress/timing checks. Console hardware was not re-tested.
+All-features Clippy still encounters the existing `prof.rs` diagnostic callback
+`type_complexity` warning; no_std unit tests expose an existing unused
+`FloatMath` import in `sound.rs` when the std test harness supplies float methods.
+
 ## 2026-11-02 — Public roadmap and versioned releases
 
 `docs/ROADMAP.md` is now the canonical public roadmap, linked from the README

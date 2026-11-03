@@ -466,6 +466,7 @@ fn hunt_overlay_shows_the_kill() {
             units_us: false,
             night: false,
             cross: None,
+            masked: false,
         };
         let (w, h) = (overlay::TEX_W, overlay::TEX_H);
         let mut tex = vec![0u8; w * h * 4];

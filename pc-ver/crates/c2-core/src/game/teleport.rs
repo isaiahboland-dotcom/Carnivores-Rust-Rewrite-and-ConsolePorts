@@ -17,7 +17,8 @@ use alloc::{
     vec::Vec,
 };
 
-use super::*;
+use super::{GameEvent, Hunt};
+use crate::area::Area;
 use crate::CELL;
 
 /// From picking a spot to being there.
