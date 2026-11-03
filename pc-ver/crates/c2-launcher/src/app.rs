@@ -246,6 +246,7 @@ impl Launcher {
             if let Some(p) = &mut self.recipe_page {
                 p.game = Some(out);
                 p.check_base(dirs);
+                p.dispatch(&mut self.job);
             }
         } else {
             self.set_base(out.clone());
@@ -282,12 +283,22 @@ impl Launcher {
                 Ok(crate::jobs::Completion::ApkBase { out, for_recipe }) => {
                     self.apk_base_done(out, for_recipe)
                 }
+                Ok(crate::jobs::Completion::Recipe(messages)) => {
+                    if let Some(page) = &mut self.recipe_page {
+                        page.apply(messages);
+                    }
+                }
                 Ok(crate::jobs::Completion::Addons(paths)) => self.add_addons(paths),
                 Ok(crate::jobs::Completion::Saved(saved)) => {
                     let (r, u) = *saved;
                     self.saving_done(r, u);
                 }
-                Err(e) => self.note = Some((e, RED)),
+                Err(e) => {
+                    if let Some(page) = &mut self.recipe_page {
+                        page.failed(&e);
+                    }
+                    self.note = Some((e, RED));
+                }
             }
         }
     }
@@ -472,6 +483,7 @@ impl Launcher {
         match crate::recipe_page::Page::open(&path, self.cfg.remembered(&path), dirs, candidates) {
             Ok(mut p) => {
                 p.scan(self.cfg.search_dirs());
+                p.dispatch(&mut self.job);
                 self.recipe_page = Some(p);
                 if self.tab != Tab::Instances {
                     self.tab = Tab::AddOns;
@@ -1660,7 +1672,7 @@ impl Launcher {
             let mut ask = crate::recipe_page::Ask::Nothing;
             let play = self.mode == Mode::Full;
             panel(ui, |ui| {
-                ui.add_enabled_ui(!busy, |ui| ask = p.ui(ui, &dirs, busy, play));
+                ui.add_enabled_ui(!busy, |ui| ask = p.ui(ui, &dirs, busy, play, &mut self.job));
             });
             match ask {
                 crate::recipe_page::Ask::Nothing => {}
@@ -2592,6 +2604,7 @@ impl Launcher {
             }
             if self.tab == Tab::AddOns && files.iter().all(|f| f.is_dir()) {
                 p.scan(files);
+                p.dispatch(&mut self.job);
                 return;
             }
         }
@@ -2651,7 +2664,7 @@ impl eframe::App for Launcher {
         let mut next = None;
         let busy = self.busy();
         if let Some(p) = &mut self.recipe_page {
-            p.poll();
+            p.dispatch(&mut self.job);
             if p.working() {
                 ctx.request_repaint_after(std::time::Duration::from_millis(150));
             } else if p.ready() && !busy {

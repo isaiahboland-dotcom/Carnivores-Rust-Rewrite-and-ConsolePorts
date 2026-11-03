@@ -6,7 +6,6 @@
 //! the recipe (`config::RecipeUse`).
 
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{channel, Receiver, Sender};
 
 use c2_mods::recipe::{self, Base, Located, Recipe, RecipeMod};
 use eframe::egui::{self, RichText};
@@ -44,7 +43,7 @@ pub struct Row {
     pub status: Status,
 }
 
-enum Msg {
+pub(crate) enum Msg {
     Row(usize, PathBuf, Located),
     /// A downloads folder looked through: how many entries it gave.
     Scanned(usize),
@@ -84,23 +83,7 @@ pub struct Page {
     /// tab's game is not the recipe's base: a standalone recipe's game is
     /// rarely the Game tab's.
     candidates: Vec<PathBuf>,
-    tx: Sender<Msg>,
-    rx: Receiver<Msg>,
-}
-
-/// Whether the game in `dir` is `base`, every listed file as it pins it
-/// (stops at the first that is not, so other games are quick to pass).
-fn is_base(base: &Base, dir: &Path) -> bool {
-    if base.files.is_empty() || c2_mods::pack::find_root(dir).is_none() {
-        return false;
-    }
-    let Ok(v) = c2_mods::pack::vanilla_files(&[dir.to_path_buf()]) else {
-        return false;
-    };
-    base.files.iter().all(|(path, want)| {
-        v.read(path)
-            .is_ok_and(|d| recipe::sha256(&d).eq_ignore_ascii_case(want))
-    })
+    requests: Vec<crate::jobs::recipe::Check>,
 }
 
 /// Whether a recipe entry's checked folder has every listed file as the
@@ -141,7 +124,6 @@ impl Page {
                 status: Status::Unset,
             })
             .collect();
-        let (tx, rx) = channel();
         let mut p = Page {
             path: path.to_path_buf(),
             recipe: r,
@@ -153,8 +135,7 @@ impl Page {
             note: None,
             next: None,
             candidates,
-            tx,
-            rx,
+            requests: Vec::new(),
         };
         for i in 0..p.rows.len() {
             if let Some(d) = p.rows[i].folder.clone() {
@@ -202,10 +183,11 @@ impl Page {
         };
         row.folder = Some(dir.clone());
         row.status = Status::Checking;
-        let (m, game, tx) = (row.entry.clone(), row.game, self.tx.clone());
-        std::thread::spawn(move || {
-            let l = recipe::check_folder(&m, &dir, game);
-            let _ = tx.send(Msg::Row(i, dir, l));
+        self.requests.push(crate::jobs::recipe::Check::Row {
+            index: i,
+            dir,
+            entry: row.entry.clone(),
+            game: row.game,
         });
     }
 
@@ -229,7 +211,6 @@ impl Page {
             return;
         };
         self.base_status = Status::Checking;
-        let tx = self.tx.clone();
         // Only the Game tab's game is looked past: a folder the player chose
         // is theirs.
         let others = if self.game.is_none() {
@@ -237,51 +218,11 @@ impl Page {
         } else {
             Vec::new()
         };
-        std::thread::spawn(move || {
-            let s = match recipe::check_apk(&base, &first) {
-                Some(true) => Status::Ok("built from that APK".into()),
-                Some(false) => {
-                    if let Some(g) = others
-                        .iter()
-                        .flat_map(|d| recipe::dir_and_subs(d, false))
-                        .find(|g| recipe::check_apk(&base, g) == Some(true))
-                    {
-                        let _ = tx.send(Msg::Found(g, Status::Ok("built from that APK".into())));
-                        return;
-                    }
-                    Status::Bad(
-                        "Select or build this recipe's APK base; the current game is different"
-                            .into(),
-                    )
-                }
-                None => match c2_mods::pack::vanilla_files(&dirs) {
-                    Err(e) => Status::Bad(e.to_string()),
-                    Ok(v) => {
-                        let (missing, bad) = recipe::check_base(&base, &v);
-                        if missing.is_empty() && bad.is_empty() {
-                            Status::Ok(format!("ok ({} files)", base.files.len()))
-                        } else if let Some(g) = others
-                            .iter()
-                            .flat_map(|d| recipe::dir_and_subs(d, false))
-                            .find(|g| !dirs.contains(g) && is_base(&base, g))
-                        {
-                            let _ = tx.send(Msg::Found(
-                                g.clone(),
-                                Status::Ok(format!("ok ({} files)", base.files.len())),
-                            ));
-                            return;
-                        } else {
-                            // As `c2-pc recipe verify`: a warning, not a stop.
-                            Status::Bad(format!(
-                                "{} missing, {} different (another version?)",
-                                missing.len(),
-                                bad.len()
-                            ))
-                        }
-                    }
-                },
-            };
-            let _ = tx.send(Msg::Base(s));
+        self.requests.push(crate::jobs::recipe::Check::Base {
+            base,
+            first,
+            dirs,
+            others,
         });
     }
 
@@ -314,25 +255,17 @@ impl Page {
             .copied()
             .collect();
         self.scanning += 1;
-        let tx = self.tx.clone();
-        std::thread::spawn(move || {
-            let found = recipe::locate(&mods, &dirs)
-                .into_iter()
-                .chain(recipe::locate_games(&games, &dirs));
-            let mut n = 0;
-            for (i, l) in index.into_iter().zip(found) {
-                if let (true, Some(root)) = (l.complete(), l.root.clone()) {
-                    n += 1;
-                    let _ = tx.send(Msg::Row(i, root, l));
-                }
-            }
-            let _ = tx.send(Msg::Scanned(n));
+        self.requests.push(crate::jobs::recipe::Check::Scan {
+            mods: Box::new(mods),
+            games,
+            index,
+            dirs,
         });
     }
 
     /// Takes in the checks that finished.
-    pub fn poll(&mut self) {
-        while let Ok(m) = self.rx.try_recv() {
+    pub(crate) fn apply(&mut self, messages: Vec<Msg>) {
+        for m in messages {
             match m {
                 Msg::Row(i, dir, l) => {
                     if let Some(r) = self.rows.get_mut(i) {
@@ -362,6 +295,38 @@ impl Page {
                 }
             }
         }
+    }
+
+    /// Submit the page's queued checks together to the launcher's one worker.
+    pub(crate) fn dispatch(&mut self, handle: &mut crate::jobs::Handle) {
+        if self.requests.is_empty() || handle.busy() {
+            return;
+        }
+        let checks = std::mem::take(&mut self.requests);
+        if let Err(e) = handle.start_task("Checking recipe files", move |_| {
+            Ok(crate::jobs::Completion::Recipe(
+                checks
+                    .into_iter()
+                    .flat_map(crate::jobs::recipe::Check::run)
+                    .collect(),
+            ))
+        }) {
+            self.failed(&e);
+        }
+    }
+
+    pub(crate) fn failed(&mut self, error: &str) {
+        self.requests.clear();
+        self.scanning = 0;
+        if self.base_status == Status::Checking {
+            self.base_status = Status::Bad(error.into());
+        }
+        for row in &mut self.rows {
+            if row.status == Status::Checking {
+                row.status = Status::Bad(error.into());
+            }
+        }
+        self.note = Some(error.into());
     }
 
     /// The entries not found yet (once nothing is being checked).
@@ -418,7 +383,14 @@ impl Page {
         ui.add_space(4.0);
     }
 
-    pub fn ui(&mut self, ui: &mut egui::Ui, game_dirs: &[PathBuf], busy: bool, play: bool) -> Ask {
+    pub fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        game_dirs: &[PathBuf],
+        busy: bool,
+        play: bool,
+        handle: &mut crate::jobs::Handle,
+    ) -> Ask {
         let mut ask = Ask::Nothing;
         let r = &self.recipe.recipe;
         ui.label(
@@ -605,6 +577,7 @@ impl Page {
                 ui.label(RichText::new(format!("{left} to go")).color(DIM));
             }
         });
+        self.dispatch(handle);
         ask
     }
 }
@@ -614,8 +587,15 @@ mod tests {
     use super::*;
 
     fn settle(p: &mut Page) {
+        let mut handle = crate::jobs::Handle::default();
         for _ in 0..500 {
-            p.poll();
+            p.dispatch(&mut handle);
+            if let Some(result) = handle.poll() {
+                match result {
+                    Ok(crate::jobs::Completion::Recipe(messages)) => p.apply(messages),
+                    _ => panic!("unexpected recipe worker result"),
+                }
+            }
             if !p.working() {
                 return;
             }
@@ -728,5 +708,52 @@ mod tests {
             used.folders.get("some-mod").and_then(|f| f.file_name()),
             Some(std::ffi::OsStr::new("Some Mod"))
         );
+    }
+}
+
+#[cfg(test)]
+mod job_tests {
+    use super::*;
+
+    #[test]
+    fn recipe_checks_share_the_handle_and_failure_can_be_retried() {
+        let temp = crate::publish::tests::Temp::new();
+        let path = temp.0.join("recipe.toml");
+        std::fs::write(&path, "[recipe]\nid = 'test'\n").unwrap();
+        let mut p = Page::open(&path, None, vec![], vec![]).unwrap();
+        p.scan(vec![temp.0.clone()]);
+        // Use a real row check so an otherwise empty recipe has worker work.
+        p.rows.push(Row {
+            kind: "mod",
+            entry: RecipeMod {
+                id: "missing".into(),
+                ..Default::default()
+            },
+            game: false,
+            folder: None,
+            status: Status::Unset,
+        });
+        p.check_row(0, temp.0.join("missing"));
+        let mut handle = crate::jobs::Handle::default();
+        p.dispatch(&mut handle);
+        assert!(handle.start("replace page", vec![]).is_err());
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while handle.result().is_none() {
+            assert!(std::time::Instant::now() < until);
+            std::thread::yield_now();
+        }
+        assert!(handle.busy(), "undelivered recipe results protect the page");
+        match handle.poll() {
+            Some(Ok(crate::jobs::Completion::Recipe(messages))) => p.apply(messages),
+            _ => panic!("expected recipe checks"),
+        }
+        assert!(!p.working());
+        assert!(matches!(p.rows[0].status, Status::Bad(_)));
+        p.check_row(0, temp.0.join("missing"));
+        p.failed("worker stopped");
+        assert!(!p.working());
+        assert!(p.requests.is_empty());
+        p.check_row(0, temp.0.join("retry"));
+        assert!(p.working());
     }
 }

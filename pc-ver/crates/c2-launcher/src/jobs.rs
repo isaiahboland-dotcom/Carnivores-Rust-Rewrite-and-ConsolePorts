@@ -11,11 +11,13 @@ use std::sync::{Arc, Mutex};
 pub(crate) mod addons;
 pub(crate) mod apk_base;
 pub(crate) mod imports;
+pub(crate) mod recipe;
 pub(crate) mod saving;
 
 /// Successful work delivered exactly once to the UI.
 pub(crate) enum Completion {
     Imported(PathBuf),
+    Recipe(Vec<crate::recipe_page::Msg>),
     Addons(Vec<PathBuf>),
     Saved(Box<(c2_mods::recipe::Recipe, crate::config::RecipeUse)>),
     ApkBase { out: PathBuf, for_recipe: bool },
