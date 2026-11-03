@@ -1,7 +1,7 @@
 // renderd3d.cpp: RenderSkyPlane (scrolling cloud plane above the camera) and
 // RenderSun / RenderModelSun (camera-facing sun or moon, blended additively).
 
-// Layer 0: sky (SkyPic), layer 1: sun or moon model texture.
+// Layers 0..2: dawn/day/night skies; layers 3..4: sun/moon model textures.
 @group(1) @binding(0) var sky_tex: texture_2d_array<f32>;
 @group(1) @binding(1) var samp: sampler;
 
@@ -33,7 +33,9 @@ fn fs_sky(i: SkyOut) -> @location(0) vec4<f32> {
     let ms = g.misc.y * 1000.0;
     let dtt = (ms - floor(ms / 131072.0) * 131072.0) / 512.0;
     let uv = vec2<f32>(i.world.x * 0.002 + dtt, i.world.z * 0.002 - dtt) / 256.0;
-    let c = textureSample(sky_tex, samp, uv, 0);
+    let c = textureSample(sky_tex, samp, uv, 0) * g.daylight.x
+        + textureSample(sky_tex, samp, uv, 1) * g.daylight.y
+        + textureSample(sky_tex, samp, uv, 2) * g.daylight.z;
     // Fade with distance: alpha = 40240 / (40240 + max(0, z - 100200)).
     let d = max(distance(i.world, g.cam_pos.xyz) - 100200.0, 0.0);
     let a = 40240.0 / (40240.0 + d);
@@ -44,11 +46,15 @@ struct SunIn {
     // Already in view space.
     @location(0) pos: vec3<f32>,
     @location(1) uv: vec2<f32>,
+    @location(2) layer: f32,
+    @location(3) alpha: f32,
 };
 
 struct SunOut {
     @builtin(position) clip: vec4<f32>,
     @location(0) uv: vec2<f32>,
+    @location(1) @interpolate(flat) layer: u32,
+    @location(2) alpha: f32,
 };
 
 @vertex
@@ -57,12 +63,14 @@ fn vs_sun(v: SunIn) -> SunOut {
     o.clip = g.proj * vec4<f32>(v.pos, 1.0);
     o.clip.z = 0.0;
     o.uv = v.uv;
+    o.layer = u32(v.layer);
+    o.alpha = v.alpha;
     return o;
 }
 
 @fragment
 fn fs_sun(i: SunOut) -> @location(0) vec4<f32> {
-    let c = textureSample(sky_tex, samp, i.uv, 1);
+    let c = textureSample(sky_tex, samp, i.uv, i.layer);
     // Alpha 200 (SkyTraceK = 1: nothing in front of the sun yet).
-    return vec4<f32>(texel(c.rgb) * (200.0 / 255.0), 1.0);
+    return vec4<f32>(grade_texel(c.rgb) * (200.0 / 255.0) * i.alpha, 1.0);
 }

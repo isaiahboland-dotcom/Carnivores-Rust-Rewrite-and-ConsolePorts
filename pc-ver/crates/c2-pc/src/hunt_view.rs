@@ -35,6 +35,9 @@ use crate::weapons::{load_weapons, WeaponAssets};
 use c2_core::ship::ship_sound;
 use c2_core::sound::SoundCmd;
 
+mod map;
+mod map_viewport;
+
 /// A key's name as the bindings show it.
 fn keys_name(k: KeyCode) -> String {
     keys::vk_of(k).map_or_else(|| format!("{k:?}"), keys::name)
@@ -44,10 +47,6 @@ fn keys_name(k: KeyCode) -> String {
 const PAD_STEP: f32 = 0.33;
 /// Gamepad: the right stick full over, in mouse pixels a second.
 const PAD_LOOK: f32 = 900.0;
-/// Gamepad, the teleport map's marker: cells a second held on the D-pad,
-/// and the right stick full over.
-const PAD_MAP_STEP: f32 = 64.0;
-const PAD_MAP_FAST: f32 = 160.0;
 
 /// Simulation step. The original runs on variable `TimeDt`; a fixed step keeps
 /// the simulation deterministic (needed for logic parity later).
@@ -99,6 +98,8 @@ pub struct HuntSetup {
     /// `WeaponPres`: bit per `_RES.TXT` weapon.
     pub weapons: u128,
     pub double_ammo: bool,
+    pub night_vision: bool,
+    pub flashlight: bool,
     pub observer: bool,
     /// A survival instead of a hunt (README M13), and the mobile game's
     /// rules for a mobile one.
@@ -142,6 +143,7 @@ pub struct HuntView {
     /// Teleporting: the marker on the open map (world x, z), and the spot
     /// picked (a circle) waiting for Enter.
     map_cursor: Option<(f32, f32)>,
+    map_viewport: map_viewport::MapViewport,
     teleport_pick: Option<(f32, f32)>,
     call_imgs: Vec<Option<usize>>,
     /// The phone kit's call pictures (its animals'), by call id 10..
@@ -168,7 +170,7 @@ pub struct HuntView {
     message: Option<(String, f32)>,
     /// The last kill's notice (bottom right): animal, points, metres,
     /// tranquilized; seconds left.
-    kill: Option<(String, i32, f32, bool, f32)>,
+    kill: Option<(String, i32, f32, bool, f32, u8)>,
     /// The trophy room's question waiting for Y / N.
     ask: Option<Ask>,
     /// The weapon-pick screen (PC only): open with the highlighted row.
@@ -234,6 +236,10 @@ impl HuntView {
     pub fn load(gpu: &Gpu, setup: HuntSetup) -> Result<Self> {
         let mut view = AreaView::load(gpu, &setup.map, setup.time)?;
         view.fly = false;
+        if setup.pc.dynamic_time != 0 && !setup.trophy() {
+            view.area.cycle = Some(c2_core::day_cycle::DayCycle::new(setup.time));
+            view.night_vision = Some(false);
+        }
         let seed = setup.seed.unwrap_or_else(|| {
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -415,6 +421,7 @@ impl HuntView {
             map_mobile: setup.pc.map_mobile != 0 || kit.is_some(),
             kit,
             map_cursor: None,
+            map_viewport: map_viewport::MapViewport::default(),
             teleport_pick: None,
             call_imgs,
             call_pics,
@@ -551,6 +558,7 @@ impl HuntView {
             stealth: false,
             teleport: setup.pc.teleport != 0,
             auto_chamber: false,
+            dynamic_night: None,
         };
         let mut opts = opts;
         opts.render_r = if trophy {
@@ -873,7 +881,7 @@ impl HuntView {
             return;
         };
         if !plaque {
-            self.kill = Some((s.info.name.clone(), 25, 84.0, false, 60.0));
+            self.kill = Some((s.info.name.clone(), 25, 84.0, false, 60.0, 0));
             return;
         }
         let (y, mo, d, h, mi) = self.hunt.clock;
@@ -1291,6 +1299,8 @@ impl HuntView {
             .map(|c| c.as_ref().map(|(c, _)| c))
             .collect();
         self.prev_cam = self.hunt.camera().0;
+        self.hunt.opts.dynamic_night = self.view.area.cycle.map(|c| c.is_night());
+        let before = self.hunt.real_time;
         self.hunt.tick(
             self.view.area(),
             &cars,
@@ -1298,11 +1308,22 @@ impl HuntView {
             TICK_MS as i32,
             &mut self.events,
         );
+        if let Some(cycle) = &mut self.view.area.cycle {
+            cycle.advance(self.hunt.real_time.wrapping_sub(before) as u32);
+        }
     }
 
     /// A fresh hunt on the same area, reloading the saved trophy room.
     fn restart(&mut self) {
         self.audio.stop_all();
+        self.map_viewport = map_viewport::MapViewport::default();
+        self.view.flashlight = false;
+        if self.view.night_vision.is_some() {
+            self.view.night_vision = Some(false);
+        }
+        if self.view.area.cycle.is_some() {
+            self.view.area.cycle = Some(c2_core::day_cycle::DayCycle::new(self.setup.time));
+        }
         self.seed = self.seed.wrapping_mul(1_103_515_245).wrapping_add(12345);
         let species = std::mem::take(&mut self.hunt.herd.species);
         let ship_ms = self.hunt.ship_anim_ms;
@@ -1338,6 +1359,7 @@ impl HuntView {
                     score,
                     range,
                     tranq,
+                    night_bonus,
                 } => {
                     let name = self
                         .hunt
@@ -1345,7 +1367,7 @@ impl HuntView {
                         .species
                         .get(ctype)
                         .map_or_else(String::new, |s| s.info.name.clone());
-                    self.kill = Some((name, score, range, tranq, 6.0));
+                    self.kill = Some((name, score, range, tranq, 6.0, night_bonus));
                 }
                 GameEvent::Killed { trophy: true, .. } => {
                     self.message = Some(("Trophy!".into(), 2.0));
@@ -1581,6 +1603,18 @@ impl Scene for HuntView {
             self.view.update(gpu, 0.0, &Input::default());
             return;
         }
+        if self.view.area.cycle.is_some()
+            && !self.hunt.show_exit()
+            && !self.hunt.paused
+            && self.hunt.death.is_none()
+        {
+            if self.setup.night_vision && input.pressed(KeyCode::KeyN) {
+                self.view.night_vision = Some(!self.view.night_vision.unwrap_or(false));
+            }
+            if self.setup.flashlight && input.pressed(KeyCode::KeyL) {
+                self.view.flashlight = !self.view.flashlight;
+            }
+        }
         let k = self.hunt.room.options.keys;
         let pressed = |vk| keys::pressed(input, vk);
         self.weapon_flash = (self.weapon_flash - dt).max(0.0);
@@ -1730,23 +1764,18 @@ impl Scene for HuntView {
             zoom_out: input.held(KeyCode::Minus) || input.held(KeyCode::NumpadSubtract),
             ..self.pending
         };
-        // Teleporting: with the map open the mouse moves its marker (not
-        // the view), fire puts the circle on a spot, Enter goes there.
+        // A virtual pointer works while the hunt owns the captured mouse.
+        // Map gestures do not turn the camera or fire a weapon.
+        if self.hunt.map_mode && !self.hunt.show_exit() {
+            self.map_viewport.update(input, dt);
+            hin.controls.mouse = (0.0, 0.0);
+            hin.fire = false;
+        }
         if self.hunt.map_mode && self.hunt.can_teleport() {
-            let p = &self.hunt.player;
-            let (mut x, mut z) = self.map_cursor.unwrap_or((p.x, p.z));
-            // A map pixel is 4 cells; a mouse pixel a quarter of that.
-            x += input.mouse_delta.0 * c2_core::CELL;
-            z += input.mouse_delta.1 * c2_core::CELL;
-            // The pad: the D-pad steadily, the right stick faster (cells a
-            // second), up the map being -z.
-            let [lx, ly] = pad.look;
-            let [dx, dy] = pad.dpad.map(f32::from);
-            let cells = |stick: f32, d: f32| stick * stick.abs() * PAD_MAP_FAST + d * PAD_MAP_STEP;
-            x += cells(lx, dx) * c2_core::CELL * dt;
-            z -= cells(ly, dy) * c2_core::CELL * dt;
+            let [mx, mz] = self.map_viewport.map_point();
+            let extent = c2_formats::map::MAP_SIZE as f32 * c2_core::CELL;
             let (lo, hi) = (c2_core::collide::WALK_MIN, c2_core::collide::WALK_MAX);
-            let (x, z) = (x.clamp(lo, hi), z.clamp(lo, hi));
+            let (x, z) = ((mx * extent).clamp(lo, hi), (mz * extent).clamp(lo, hi));
             self.map_cursor = Some((x, z));
             hin.controls.mouse = (0.0, 0.0);
             hin.controls.jump = keys::held(input, k.jump);
@@ -1852,14 +1881,8 @@ impl Scene for HuntView {
         // Weapon light: 96 + ground light / 4 (`wpnlight`).
         let p = &self.hunt.player;
         let cell = c2_formats::map::MAP_SIZE * (p.z / 256.0) as usize + (p.x / 256.0) as usize;
-        let ground = self
-            .view
-            .area()
-            .light_map()
-            .get(cell)
-            .copied()
-            .unwrap_or(128);
-        let light = (96.0 + f32::from(ground) / 4.0) / 255.0;
+        let ground = self.view.area().light_at(cell);
+        let light = (96.0 + ground / 4.0) / 255.0;
         let (dinos, weapons, hunt, effects) = (
             &mut self.dinos,
             &mut self.weapons,
@@ -1894,7 +1917,7 @@ impl Scene for HuntView {
         }
         sprites.extend(self.weapons.hud_sprites(&self.hud, &self.hunt, scale));
         // The last kill: a box in the bottom right.
-        if let Some((name, score, range, tranq, _)) = &self.kill {
+        if let Some((name, score, range, tranq, _, night_bonus)) = &self.kill {
             let us = self.hunt.room.options.sys != 0;
             let dist = if us {
                 format!("Range: {:.0} ft", range / 0.3)
@@ -1903,8 +1926,8 @@ impl Scene for HuntView {
             };
             let lines = [
                 name.clone(),
-                if self.setup.time == TimeOfDay::Night {
-                    format!("+{score} points (night +10%)")
+                if *night_bonus != 0 {
+                    format!("+{score} points (night +{night_bonus}%)")
                 } else {
                     format!("+{score} points")
                 },
@@ -2027,199 +2050,7 @@ impl Scene for HuntView {
                 }
             }
         }
-        // Map (`DrawHMap`): view range circle, the hunter, radar blips.
-        if self.hunt.map_mode {
-            // The phone's map: on its panel, filling most of the screen's
-            // height.
-            let kit_map = self.kit.as_ref().map(|k| {
-                let area = crate::save::area_title(&self.setup.game_dir, self.hunt.area_no);
-                k.map_panel(&self.hud, screen, &area, &mut sprites)
-            });
-            let scale = match kit_map {
-                Some((_, _, side)) => side / 256.0,
-                None => scale,
-            };
-            if let Some((id, mw, mh)) = self
-                .map_img
-                .and_then(|i| self.hud.image(i).map(|im| (i, im.w as f32, im.h as f32)))
-            {
-                let (cx, cy) = (screen.0 as f32 / 2.0, screen.1 as f32 / 2.0);
-                let (fx, fy) = match kit_map {
-                    Some((x, y, _)) => (x, y),
-                    None => (cx - mw * scale / 2.0, cy - (mh / 2.0 + 6.0) * scale),
-                };
-                let s = 256.0 * scale / mw.max(1.0);
-                let s = if kit_map.is_some() { s } else { scale };
-                sprites.push(Sprite::new(id, fx, fy, s));
-                let (ox, oy) = (fx + self.map_at.0 * scale, fy + self.map_at.1 * scale);
-                if let (Some(k), None) = (&self.kit, kit_map) {
-                    k.map_frame(&self.hud, (ox, oy, 256.0 * scale), &mut sprites);
-                }
-                let p = &self.hunt.player;
-                // CCX = (x / 512) * 2; one map pixel per 4 cells.
-                let ccx = ((p.x as i32 / 512) * 2) as f32 / 4.0;
-                let ccy = ((p.z as i32 / 512) * 2) as f32 / 4.0;
-                let dot = |x: f32, y: f32, c: [f32; 4]| {
-                    self.hud
-                        .rect(ox + x * scale, oy + y * scale, 2.0 * scale, 2.0 * scale, c)
-                };
-                let r = self.hunt.opts.view_r as f32 / 4.0;
-                let yellow = [1.0, 0.85, 0.1, 1.0];
-                if self.map_mobile && kit_map.is_none() {
-                    // The mobile game's: a yellow frame, and a yellow cone
-                    // for what the hunter sees (77 degrees, as the
-                    // original's camera; out to the view range).
-                    let (fw, fh) = (256.0 * scale, 256.0 * scale);
-                    for (x, y, w, h) in [
-                        (
-                            ox - 2.0 * scale,
-                            oy - 2.0 * scale,
-                            fw + 4.0 * scale,
-                            2.0 * scale,
-                        ),
-                        (ox - 2.0 * scale, oy + fh, fw + 4.0 * scale, 2.0 * scale),
-                        (ox - 2.0 * scale, oy, 2.0 * scale, fh),
-                        (ox + fw, oy, 2.0 * scale, fh),
-                    ] {
-                        sprites.extend(self.hud.rect(x, y, w, h, yellow));
-                    }
-                    sprites.extend(sector(
-                        &self.hud,
-                        (ccx, ccy),
-                        r,
-                        (p.alpha, 0.8f32.atan()),
-                        (ox, oy),
-                        scale,
-                        [1.0, 0.85, 0.1, 0.45],
-                    ));
-                }
-                // The view range circle (yellow in the mobile look).
-                let (ring, shade) = if kit_map.is_some() {
-                    // The phone's: a pale circle.
-                    ([0.95, 0.92, 0.88, 0.8], [0.0, 0.0, 0.0, 0.3])
-                } else if self.map_mobile {
-                    (yellow, [0.3, 0.25, 0.0, 1.0])
-                } else {
-                    ([0.0, 0.56, 0.0, 1.0], [0.0, 0.12, 0.0, 1.0])
-                };
-                // A line in the mobile look, the original's dots otherwise.
-                let n = if self.map_mobile { 128 } else { 48 };
-                for i in 0..n {
-                    let a = i as f32 / n as f32 * std::f32::consts::TAU;
-                    let (px, py) = (ccx + a.cos() * r, ccy + a.sin() * r);
-                    sprites.extend(self.hud.rect(
-                        ox + (px + 1.0) * scale,
-                        oy + (py + 1.0) * scale,
-                        scale,
-                        scale,
-                        shade,
-                    ));
-                    sprites.extend(self.hud.rect(
-                        ox + px * scale,
-                        oy + py * scale,
-                        scale,
-                        scale,
-                        ring,
-                    ));
-                }
-                let marker = (
-                    ox + (ccx + 1.0) * scale,
-                    oy + (ccy + 1.0) * scale,
-                    5.0 * scale,
-                );
-                if !self
-                    .kit
-                    .as_ref()
-                    .is_some_and(|k| k.map_me(marker, &mut sprites))
-                {
-                    sprites.extend(dot(ccx + 1.0, ccy + 1.0, [0.25, 0.0, 0.0, 1.0]));
-                    let me = if self.map_mobile {
-                        yellow
-                    } else {
-                        [0.97, 0.0, 0.0, 1.0]
-                    };
-                    sprites.extend(dot(ccx, ccy, me));
-                }
-                // Teleporting: the marker, and when it can go.
-                if let Some((x, z)) = self.map_cursor {
-                    let (mx, my) = (x / 1024.0, z / 1024.0);
-                    for (dx, dy) in [(-3.0, 0.0), (3.0, 0.0), (0.0, -3.0), (0.0, 3.0), (0.0, 0.0)] {
-                        sprites.extend(dot(mx + dx, my + dy, [1.0, 1.0, 1.0, 1.0]));
-                    }
-                    // The spot picked: a circle.
-                    if let Some((x, z)) = self.teleport_pick {
-                        let (cx, cy) = (x / 1024.0, z / 1024.0);
-                        for i in 0..24 {
-                            let a = i as f32 / 24.0 * std::f32::consts::TAU;
-                            sprites.extend(dot(
-                                cx + a.cos() * 4.0,
-                                cy + a.sin() * 4.0,
-                                [1.0, 0.85, 0.1, 1.0],
-                            ));
-                        }
-                    }
-                    let t = &self.hunt.teleport;
-                    let status = match (t.pending, t.cooldown, self.teleport_pick) {
-                        (Some((_, ms)), _, _) => format!("Teleporting in {}s", (ms + 999) / 1000),
-                        (None, ms, _) if ms > 0 => {
-                            format!("Teleport ready in {}s", (ms + 999) / 1000)
-                        }
-                        (None, _, Some(_)) => "Enter: teleport to the circle".into(),
-                        _ => "Click a spot to teleport to".into(),
-                    };
-                    let px = 8.0 * (screen.1 as f32 / 480.0).max(1.0).round();
-                    sprites.extend(
-                        self.hud
-                            .label(ox, oy + 262.0 * scale, px, [1.0; 4], &status),
-                    );
-                }
-                // Where he looks: a short line of dots, as on the 3DS map.
-                if self.map_heading {
-                    let (s, c) = p.alpha.sin_cos();
-                    for i in 1..4 {
-                        let d = i as f32 * 1.5;
-                        let (x, y) = (ccx + s * d, ccy - c * d);
-                        sprites.extend(self.hud.rect(
-                            ox + (x + 0.5) * scale,
-                            oy + (y + 0.5) * scale,
-                            scale,
-                            scale,
-                            [0.97, 0.31, 0.31, 1.0],
-                        ));
-                    }
-                }
-                // Radar: the picked animals green, other huntables that
-                // spawned anyway blue.
-                if self.hunt.opts.radar {
-                    for c in &self.hunt.herd.chars {
-                        if c.health <= 0 {
-                            continue;
-                        }
-                        let color = if self.hunt.is_target(c) && kit_map.is_some() {
-                            yellow
-                        } else if self.hunt.is_target(c) {
-                            [0.0, 0.97, 0.0, 1.0]
-                        } else if self.hunt.is_huntable(c) {
-                            [0.2, 0.55, 1.0, 1.0]
-                        } else {
-                            continue;
-                        };
-                        sprites.extend(dot(c.pos[0] / 1024.0, c.pos[2] / 1024.0, color));
-                    }
-                }
-                // Hit by a tracker: in its colour, radar or not.
-                for c in &self.hunt.herd.chars {
-                    if let Some((rgb, _)) = c.tracked {
-                        let color = [rgb[0], rgb[1], rgb[2]].map(|v| f32::from(v) / 255.0);
-                        sprites.extend(dot(
-                            c.pos[0] / 1024.0,
-                            c.pos[2] / 1024.0,
-                            [color[0], color[1], color[2], 1.0],
-                        ));
-                    }
-                }
-            }
-        }
+        self.draw_map(screen, scale, &mut sprites);
         // The selected call's icon (top right) after pressing change-call.
         if self.hunt.call_icon_time > 0 {
             let i = (self.hunt.target_call - 10).max(0) as usize;
@@ -2438,17 +2269,27 @@ impl Scene for HuntView {
                 &[("P", "Resume"), ("Esc", "Exit menu")]
             };
             self.hint_bar(&mut sprites, screen, scale, below + 8.0 * scale, true, hint);
-        } else if self.hunt.map_mode && self.hunt.can_teleport() {
-            let hint: &[(&str, &str)] = if self.pad_last {
+        } else if self.hunt.map_mode {
+            let hint: &[(&str, &str)] = if self.pad_last && !self.hunt.can_teleport() {
+                &[("R-stick", "Pointer"), ("R", "Close")]
+            } else if self.pad_last {
                 &[
                     ("D-pad / R-stick", "Move"),
                     ("ZR", "Mark"),
                     ("A", "Go"),
                     ("R", "Close"),
                 ]
+            } else if !self.hunt.can_teleport() {
+                &[
+                    ("Wheel", "Zoom"),
+                    ("Right-drag", "Pan"),
+                    ("Home", "Full map"),
+                    ("Tab", "Close"),
+                ]
             } else {
                 &[
-                    ("Mouse", "Move"),
+                    ("Wheel", "Zoom"),
+                    ("Right-drag", "Pan"),
                     ("Click", "Mark"),
                     ("Enter", "Go"),
                     ("Tab", "Close"),
@@ -2479,6 +2320,32 @@ impl Scene for HuntView {
             let rows: Vec<(&str, &str)> = rows.iter().map(|(b, a)| (b.as_str(), *a)).collect();
             let y = screen.1 as f32 - 28.0 * scale;
             self.hint_bar(&mut sprites, screen, scale, y, false, &rows);
+        }
+        if self.view.area.cycle.is_some() && self.hunt.death.is_none() {
+            let mut y = 12.0 * scale;
+            for (owned, key, name, on) in [
+                (
+                    self.setup.night_vision,
+                    "N",
+                    "Night vision",
+                    self.view.night_vision == Some(true),
+                ),
+                (
+                    self.setup.flashlight,
+                    "L",
+                    "Flashlight",
+                    self.view.flashlight,
+                ),
+            ] {
+                if owned {
+                    let label = format!("{key}: {name} {}", if on { "On" } else { "Off" });
+                    sprites.extend(
+                        self.hud
+                            .label(12.0 * scale, y, 9.0 * scale, [1.0; 4], &label),
+                    );
+                    y += 14.0 * scale;
+                }
+            }
         }
         self.hud.draw(gpu, pass, screen, &sprites);
     }

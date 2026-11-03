@@ -104,6 +104,10 @@ struct Simulation {
     models: Vec<PreparedModel>,
     model_uvs: Vec<Vec<[[f32; 2]; 3]>>,
     object_lights: Vec<f32>,
+    cycle: Option<c2_core::day_cycle::DayCycle>,
+    daylight_mean: [f32; 3],
+    night_vision: bool,
+    flashlight: bool,
     model_radii: Vec<f32>,
     transformed: Vec<[f32; 4]>,
     chunks: Vec<Option<SceneryChunk>>,
@@ -348,7 +352,16 @@ pub extern "C" fn c2_hunt_load(ui: *mut core::ffi::c_void, seed: u32, result: *m
     };
     let char_slot = l.cars.iter().map(|c| c.as_ref().map(&mut slot_of)).collect();
     let weapon_slot = l.weapon_cars.iter().map(&mut slot_of).collect();
+    let cycle = (choice.dynamic_time != 0 && !choice.trophy()).then(|| c2_core::day_cycle::DayCycle::new(area.time));
+    let daylight_mean = core::array::from_fn(|i| {
+        let m = &area.map.light[i];
+        m.iter().map(|v| *v as u64).sum::<u64>() as f32 / m.len().max(1) as f32
+    });
     let sim = Simulation {
+        cycle,
+        daylight_mean,
+        night_vision: false,
+        flashlight: false,
         area,
         terrain_cache,
         scenery_candidates: SceneryCandidates::default(),
@@ -456,6 +469,10 @@ pub extern "C" fn c2_move_tick(
     let sim = unsafe { &mut *ptr.cast::<Simulation>() };
     let dead = sim.hunt.health <= 0;
     let (lx, ly, rx, ry, flags) = if dead { (0.0, 0.0, 0.0, 0.0, 0) } else { (lx, ly, rx, ry, flags) };
+    if sim.cycle.is_some() && !dead && !sim.hunt.paused && !sim.hunt.exit_prompt && sim.choice.observer == 0 {
+        if flags & 1024 != 0 && sim.choice.night_vision != 0 { sim.night_vision = !sim.night_vision; sim.notice.message(alloc::format!("Night vision {}", if sim.night_vision { "On" } else { "Off" }), 2000); }
+        if flags & 2048 != 0 && sim.choice.flashlight != 0 { sim.flashlight = !sim.flashlight; sim.notice.message(alloc::format!("Flashlight {}", if sim.flashlight { "On" } else { "Off" }), 2000); }
+    }
     // Sprinting from a crouch stands up first; crouching ends a sprint.
     if flags & 2 != 0 {
         if sim.crouch { sim.crouch = false; sim.sprint = true; } else { sim.sprint = !sim.sprint; }
@@ -547,14 +564,18 @@ pub extern "C" fn c2_move_tick(
     let tapped_weapon = ((flags >> 16) & 7) as usize;
     let select_weapon = if flags & 64 != 0 { Some(tapped_weapon) } else { None };
     let toggle_weapon = flags & 8 != 0;
+    sim.hunt.opts.dynamic_night = sim.cycle.map(|c| c.is_night());
+    let before = sim.hunt.real_time;
     sim.hunt.tick(&sim.area, &cars, &HuntInput { controls, toggle_weapon, fire: flags & 16 != 0, call: flags & 32 != 0, select_weapon: if flags & 4096 != 0 && !sim.hunt.weapons.info.is_empty() { Some((sim.hunt.weapons.current+1) % sim.hunt.weapons.info.len()) } else { select_weapon }, ..Default::default() }, 16, &mut sim.events);
     if sim.hunt.health <= 0 { sim.death_ms += 16; }
+    if let Some(cycle) = &mut sim.cycle { cycle.advance(sim.hunt.real_time.wrapping_sub(before) as u32); }
     sim.notice.tick(16);
     for event in &sim.events {
         match event {
-            GameEvent::Scored { ctype, score, range, tranq } => {
+            GameEvent::Scored { ctype, score, range, tranq, night_bonus } => {
                 let name = sim.hunt.herd.species.get(*ctype).map_or_else(alloc::string::String::new, |s| s.info.name.clone());
                 sim.notice.kill(name, *score, *range, *tranq);
+                sim.notice.night_bonus = Some(*night_bonus);
             }
             GameEvent::Message(m) => sim.notice.message(m.clone(), 2000),
             GameEvent::Killed { trophy: true, .. } => sim.notice.message(alloc::string::String::from("Trophy!"), 2000),
@@ -678,6 +699,7 @@ fn dawn_warmth(pixels: &mut [u8]) {
 }
 // The time of day's look over atlas rows: night vision, or dawn's warmth.
 unsafe fn night_vision_rows(sim: &Simulation, pixels: *mut u8, pitch: u32, width: usize, rows: usize) {
+    if sim.cycle.is_some() { return; }
     let grade: fn(&mut [u8]) = match sim.area.time {
         _ if sim.area.time.night_vision() => night_vision,
         c2_core::area::TimeOfDay::Dusk => dawn_warmth,
@@ -1015,7 +1037,11 @@ pub extern "C" fn c2_sky_texture(ptr: *mut core::ffi::c_void, pixels: *mut u8, p
     let sky = if skies[sim.area.time as usize].len() == 256 * 256 { &skies[sim.area.time as usize] } else { &skies[0] };
     if pitch < 256 || sky.len() != 256 * 256 { return -1; }
     for z in 0..256usize { for x in 0..256usize {
-        let rgba = c2_core::color::rgb555_to_rgba8(sky[z * 256 + x], 255);
+        let rgba = if let Some(cycle) = sim.cycle {
+            let w = cycle.weights();
+            let colors: [[u8; 4]; 3] = core::array::from_fn(|i| c2_core::color::rgb555_to_rgba8(skies[i].get(z * 256 + x).copied().unwrap_or(0), 255));
+            core::array::from_fn(|k| (0..3).map(|i| colors[i][k] as f32 * w[i]).sum::<f32>().clamp(0.0, 255.0) as u8)
+        } else { c2_core::color::rgb555_to_rgba8(sky[z * 256 + x], 255) };
         unsafe { core::ptr::copy_nonoverlapping(rgba.as_ptr(), pixels.add((z * pitch as usize + x) * 4), 4); }
     }}
     unsafe { night_vision_rows(sim, pixels, pitch, 256, 256); }
@@ -1026,6 +1052,20 @@ pub extern "C" fn c2_sky_texture(ptr: *mut core::ffi::c_void, pixels: *mut u8, p
 #[no_mangle]
 pub extern "C" fn c2_fog_color(ptr: *mut core::ffi::c_void, out: *mut f32) {
     let sim = unsafe { &*ptr.cast::<Simulation>() };
+    if let Some(cycle) = sim.cycle {
+        let w = cycle.weights();
+        for k in 0..3 {
+            let c: f32 = (0..3).map(|i| {
+                let c = sim.area.rsc.fade_rgb[i][k] as f32;
+                let c = if i == 0 { (c * DAWN_TINT[k] as f32 / 256.0).min(255.0) } else { c };
+                c * w[i]
+            }).sum();
+            let c = if sim.night_vision && k != 1 { 0.0 } else { c };
+            let ambient = if sim.night_vision { 1.0 } else { 1.0 - 0.88 * w[2] };
+            unsafe { *out.add(k) = c.clamp(0.0, 255.0) * ambient / 255.0; }
+        }
+        return;
+    }
     let warm = sim.area.time == c2_core::area::TimeOfDay::Dusk;
     for (i, c) in sim.area.sky_rgb().iter().enumerate() {
         let c = if warm { *c * DAWN_TINT[i] as i32 / 256 } else { *c };
@@ -1413,4 +1453,21 @@ fn panic(info: &PanicInfo<'_>) -> ! {
     };
     line.buf[line.len] = 0;
     unsafe { c2_move_panic(line.buf.as_ptr()) }
+}
+
+/// Experimental GPU grading; keeps cached geometry and its shadow pattern.
+#[no_mangle]
+pub extern "C" fn c2_daylight(ptr: *mut core::ffi::c_void, out: *mut f32, flashlight: *mut f32) -> u32 {
+    let sim = unsafe { &*ptr.cast::<Simulation>() };
+    unsafe { *flashlight = if sim.flashlight { 1.0 } else { 0.0 }; }
+    let Some(cycle) = sim.cycle else {
+        unsafe { core::ptr::copy_nonoverlapping([0.0f32, 0.0, 1.0, 1.0].as_ptr(), out, 4); }
+        return 0;
+    };
+    let w = cycle.weights();
+    let mean: f32 = (0..3).map(|i| sim.daylight_mean[i] * w[i]).sum();
+    let gain = mean / sim.daylight_mean[sim.area.time as usize].max(1.0);
+    let ambient = if sim.night_vision { 1.0 } else { 1.0 - 0.88 * w[2] };
+    unsafe { core::ptr::copy_nonoverlapping([w[0], if sim.night_vision { 1.0 } else { 0.0 }, gain * ambient, ambient].as_ptr(), out, 4); }
+    (sim.hunt.real_time.max(0) as u32 / 1000) + 1
 }

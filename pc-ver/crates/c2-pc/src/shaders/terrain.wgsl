@@ -16,7 +16,8 @@ struct Params {
 
 // cells[i].x = height | light << 8 | water << 16 | water phase << 24
 // cells[i].y = texture1 | flags << 16
-@group(1) @binding(0) var<storage, read> cells: array<vec2<u32>>;
+// cells[i].z = dawn light | day light << 8 | night light << 16
+@group(1) @binding(0) var<storage, read> cells: array<vec4<u32>>;
 // waters[i] = (level * 64, texture index, transparency, 0)
 @group(1) @binding(1) var<storage, read> waters: array<vec4<f32>>;
 @group(1) @binding(2) var<uniform> params: Params;
@@ -38,6 +39,7 @@ struct VOut {
     @location(2) @interpolate(flat) layer: u32,
     @location(3) dist: f32,
     @location(4) alpha: f32,
+    @location(5) world: vec3<f32>,
 };
 
 fn degenerate() -> VOut {
@@ -46,7 +48,7 @@ fn degenerate() -> VOut {
     return o;
 }
 
-fn cell_at(x: i32, y: i32) -> vec2<u32> {
+fn cell_at(x: i32, y: i32) -> vec4<u32> {
     return cells[u32(y * MAP + x)];
 }
 
@@ -111,10 +113,11 @@ fn vs_ground(@builtin(vertex_index) vid: u32) -> VOut {
     let p = vec3<f32>(f32(v.x) * 256.0, f32(vc.x & 0xffu) * 64.0, f32(v.y) * 256.0);
     var o: VOut;
     o.clip = g.view_proj * vec4<f32>(p, 1.0);
+    o.world = p;
     o.uv = mix(vec2<f32>(TC_MIN), vec2<f32>(TC_MAX), rotate_uv(vec2<f32>(d), flags & 3u));
-    var light = i32((vc.x >> 8u) & 0xffu);
+    var light = dot(vec3<f32>(f32(vc.z & 255u), f32((vc.z >> 8u) & 255u), f32((vc.z >> 16u) & 255u)), g.daylight.xyz);
     if (params.clouds != 0u) {
-        light = max(64, light - cloud_shadow(v.x, v.y));
+        light = max(64.0, light - f32(cloud_shadow(v.x, v.y)));
     }
     o.light = f32(light) / 255.0;
     o.layer = min(here.y & 0xffffu, params.layers - 1u);
@@ -144,6 +147,7 @@ fn vs_water(@builtin(vertex_index) vid: u32) -> VOut {
     let p = vec3<f32>(f32(v.x) * 256.0, wt.x, f32(v.y) * 256.0);
     var o: VOut;
     o.clip = g.view_proj * vec4<f32>(p, 1.0);
+    o.world = p;
     o.uv = mix(vec2<f32>(TC_MIN), vec2<f32>(TC_MAX), vec2<f32>(d));
     // Hunt2.cpp: Light = 168 - (int)(wdelta * 24), wdelta = sin(-pi/2 +
     // RandomMap / 128 + RealTime / 200) per map vertex (c2_core::area::water_light).
@@ -159,5 +163,5 @@ fn vs_water(@builtin(vertex_index) vid: u32) -> VOut {
 @fragment
 fn fs(i: VOut) -> @location(0) vec4<f32> {
     let c = textureSample(tex, samp, i.uv, i.layer);
-    return vec4<f32>(fogged(texel(c.rgb) * i.light, i.dist), i.alpha);
+    return vec4<f32>(fogged(surface_light(c.rgb, i.light, i.world), i.dist), i.alpha);
 }

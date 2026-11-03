@@ -46,6 +46,9 @@ extern const unsigned char c2_menu_shader[];
 extern int32_t c2_sky_texture(void *, uint8_t *, uint32_t);
 extern uint32_t c2_sky_vertices(void *, float *, float *);
 extern void c2_fog_color(void *, float *);
+extern uint32_t c2_daylight(void *, float *, float *);
+static float world_daylight[4] = {0, 0, 1, 1};
+static float world_flashlight = 0;
 extern int32_t c2_map_texture(void *, uint8_t *, uint32_t);
 extern void c2_map_player(void *, float *, float *, float *, float *);
 extern uint32_t c2_water_vertices(void *, float *, float *);
@@ -463,7 +466,7 @@ static int32_t load_file(const char *name, uint8_t **data, uint32_t *len) {
  * bytes a vertex. The camera and the fog (colour, and the mode in w) are
  * uniforms, set per draw: -1 sky, -2 world space with object fog, -3
  * CPU-projected terrain, -4 world space with terrain fog, 0 none. */
-typedef struct { WHBGfxShaderGroup group; GX2UniformVar *eye, *angles, *fog, *zoom; uint32_t sampler; } WorldShader;
+typedef struct { WHBGfxShaderGroup group; GX2UniformVar *eye, *angles, *fog, *zoom, *daylight; uint32_t sampler; } WorldShader;
 /* The scope's zoom this frame (c2_hunt_zoom), for the world draws only. */
 static float world_zoom = 1.0f;
 /* The water shimmer's time this frame (c2_water_time). */
@@ -477,7 +480,8 @@ static void world_shader_load(WorldShader *w, const unsigned char *gsh) {
     w->angles = GX2GetVertexUniformVar(w->group.vertexShader, "uAngles");
     w->fog = GX2GetVertexUniformVar(w->group.vertexShader, "uFog");
     w->zoom = GX2GetVertexUniformVar(w->group.vertexShader, "uZoom");
-    if (!w->eye || !w->angles || !w->fog || !w->zoom) OSFatal("Scenery probe: camera or fog uniforms missing");
+    w->daylight = GX2GetVertexUniformVar(w->group.vertexShader, "uDaylight");
+    if (!w->eye || !w->angles || !w->fog || !w->zoom || !w->daylight) OSFatal("Scenery probe: camera or fog uniforms missing");
     if (w->group.pixelShader->samplerVarCount != 1) OSFatal("Terrain texture probe: shader sampler missing");
     w->sampler = w->group.pixelShader->samplerVars[0].location;
 }
@@ -485,8 +489,10 @@ static void world_shader_use(const WorldShader *w, const float fog[3], float mod
     GX2SetFetchShader(&w->group.fetchShader); GX2SetVertexShader(w->group.vertexShader); GX2SetPixelShader(w->group.pixelShader);
     const float f[4] = {fog[0], fog[1], fog[2], mode};
     GX2SetVertexUniformReg(w->fog->offset, 4, f);
-    const float z[4] = {mode < 0.0f ? world_zoom : 1.0f, world_water_t, 0.0f, 0.0f};
+    const float z[4] = {mode < 0.0f ? world_zoom : 1.0f, world_water_t, mode == 0.0f ? 0.0f : world_flashlight, 0.0f};
     GX2SetVertexUniformReg(w->zoom->offset, 4, z);
+    const float neutral[4] = {0, 0, 1, 1};
+    GX2SetVertexUniformReg(w->daylight->offset, 4, mode == 0.0f ? neutral : world_daylight);
 }
 static void world_camera(const WorldShader *w, void *sim) {
     float camera[8]; c2_scenery_camera(sim, camera);
@@ -1032,6 +1038,7 @@ end_load:
     if (!GX2RCreateBuffer(&overlay_pos) || !GX2RCreateBuffer(&overlay_uv)) OSFatal("Overlay: buffer allocation failed");
     uint32_t overlay_quads = 0;
     float fog_color[3]; c2_fog_color(sim, fog_color);
+    uint32_t daylight_stamp = c2_daylight(sim, world_daylight, &world_flashlight);
     const float no_fog[3] = {0.0f, 0.0f, 0.0f};
     /* L3 (left stick click): a diagnostic that draws the TV's world at the
      * TV's own resolution instead of 720p, for a same-session A/B. */
@@ -1103,8 +1110,8 @@ end_load:
                 if (t & VPAD_BUTTON_PLUS) edges |= BTN_PLUS;
                 flags |= hunt_edges(edges, hud.prompt, trophy_room);
                 if (sample.trigger & VPAD_BUTTON_LEFT) { vsync = !vsync; GX2SetSwapInterval(vsync ? 1 : 0); }
-                if (sample.trigger & VPAD_BUTTON_STICK_R) mipmaps = !mipmaps;
-                if (sample.trigger & VPAD_BUTTON_STICK_L) tv_scaled = !tv_scaled;
+                if (sample.trigger & VPAD_BUTTON_STICK_R) { if (menu.dynamic_time && !trophy_room) flags |= IN_NIGHT_VISION; else mipmaps = !mipmaps; }
+                if (sample.trigger & VPAD_BUTTON_STICK_L) { if (menu.dynamic_time && !trophy_room) flags |= IN_FLASHLIGHT; else tv_scaled = !tv_scaled; }
                 if (sample.trigger & VPAD_BUTTON_R) tv_map = !tv_map;
                 if (sample.trigger & VPAD_BUTTON_MINUS) { gamepad_game = !gamepad_game; tele_pick = 0; }
                 VPADTouchData touch = {0};
@@ -1158,8 +1165,8 @@ end_load:
                         if (t & WPAD_PRO_BUTTON_PLUS) edges |= BTN_PLUS;
                         flags |= hunt_edges(edges, hud.prompt, trophy_room);
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_LEFT) { vsync = !vsync; GX2SetSwapInterval(vsync ? 1 : 0); }
-                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_STICK_R) mipmaps = !mipmaps;
-                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_STICK_L) tv_scaled = !tv_scaled;
+                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_STICK_R) { if (menu.dynamic_time && !trophy_room) flags |= IN_NIGHT_VISION; else mipmaps = !mipmaps; }
+                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_STICK_L) { if (menu.dynamic_time && !trophy_room) flags |= IN_FLASHLIGHT; else tv_scaled = !tv_scaled; }
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_R) tv_map = !tv_map;
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_MINUS) gamepad_game = !gamepad_game;
                     }
@@ -1173,7 +1180,7 @@ end_load:
                 if (pro[channel].pro.rightStick.y > 0.25f || pro[channel].pro.rightStick.y < -0.25f) ry = pro[channel].pro.rightStick.y;
             }
             // Retain edge-triggered toggles across frames with no simulation step.
-            pending_toggles ^= flags & 4270;
+            pending_toggles ^= flags & (4270u | IN_NIGHT_VISION | IN_FLASHLIGHT);
             pending_toggles |= flags & (32u | IN_ESCAPE | IN_YES | IN_NO | IN_RESTART | IN_PAUSE | (15u << 20));
             /* A tapped call carries its index + 1 from IN_CALL_SHIFT; the latest wins. */
             const uint32_t call_bits = ~0u << IN_CALL_SHIFT;
@@ -1237,6 +1244,14 @@ end_load:
              * input and simulation while the GPU drew it. Wait here, before
              * the first CPU write to anything the GPU reads. */
             mark = OSGetTime(); GX2DrawDone(); frame_wait += OSGetTime() - mark;
+            /* GPU is idle before rewriting the small sky texture. Atlases stay resident. */
+            uint32_t next_daylight = c2_daylight(sim, world_daylight, &world_flashlight);
+            if (next_daylight != 0) c2_fog_color(sim, fog_color);
+            if (next_daylight != daylight_stamp) {
+                if (c2_sky_texture(sim, sky_tex.surface.image, sky_tex.surface.pitch)) OSFatal("Dynamic sky update failed");
+                GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, sky_tex.surface.image, sky_tex.surface.imageSize);
+                daylight_stamp = next_daylight;
+            }
             DCInvalidateRange(gpu_stamp, sizeof(gpu_stamp));
             if (gpu_stamp[1] > gpu_stamp[0] && gpu_stamp[2] >= gpu_stamp[1]) {
                 gpu_tv = GX2GPUTimeToCPUTime(gpu_stamp[1]) - GX2GPUTimeToCPUTime(gpu_stamp[0]);
@@ -1565,7 +1580,7 @@ end_load:
                 if (weapon_count) {
                     GX2SetViewport(0.0f, 0.0f, target_w, target_h, 0.0f, 0.02f);
                     GX2SetDepthOnlyControl(TRUE, TRUE, GX2_COMPARE_FUNC_LESS);
-                    world_shader_use(&world, fog_color, 0.0f);
+                    world_shader_use(&world, fog_color, 1.0f);
                     GX2SetPixelTexture(actor_tex, world.sampler); GX2SetPixelSampler(&sampler, world.sampler);
                     GX2RSetAttributeBuffer(&weapon_positions, 0, weapon_positions.elemSize, 0);
                     GX2RSetAttributeBuffer(&weapon_attrs, 1, weapon_attrs.elemSize, 0);

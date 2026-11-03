@@ -519,6 +519,7 @@ fn new_hunt(
         teleport: setup.teleport,
         // No buttons left for the dialect's reload and rack: on their own.
         auto_chamber: true,
+        dynamic_night: None,
         distant_ai: false,
         no_call_bonus: setup.roamers.iter().map(|r| r.slot + 10).collect(),
     };

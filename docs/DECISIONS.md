@@ -3423,3 +3423,49 @@ Set toolchain: nightly explicitly when using the shared pinned rust-toolchain
 action revision. Dependabot can replace a nightly-branch action pin with a
 stable-default revision; a trailing nightly comment does not select a channel.
 Keep rust-src installed and retain the real 3DS target build as the CI gate.
+
+## 2026-11-03 — Opt-in dynamic time on PC and experimental Wii U
+
+The owner requested a 30-minute day-to-night transition and a 30-minute return.
+Use a deterministic 60-minute visual cycle, starting at the selected time;
+Dawn is the rising transition, and the same authored assets supply dusk.
+Smooth weights interpolate the three authored states. The clock advances by
+simulation time, preserving pause behavior, and restarts with the hunt.
+Trophy rooms and existing settings default to fixed time. No 3DS or VR option
+is added. Spawn conditions retain the selected starting time.
+
+PC keeps the three sky/light maps on the GPU, blends the night-vision tint,
+and updates object lighting as the clock moves. Extract the celestial
+renderer into `render/sky.rs` rather than expanding the main renderer further.
+PC game options now have a bounded scroll viewport shared by drawing and hit
+testing, with fractional wheel accumulation and clickable arrows. Reset in
+the mobile-style menu includes hidden options.
+
+Wii U keeps cached terrain/scenery geometry: shader grading blends warmth,
+night vision and average authored map brightness, while the shadow pattern
+stays at the starting time. Refresh only the 256x256 sky texture once per
+played second, after the existing GPU synchronization. This deliberately
+approximate path is labelled experimental; hardware performance is unverified.
+See [Dynamic time](DYNAMIC_TIME.md) for timing and user-facing limitations.
+
+
+## 2026-11-03 — Dynamic hunts use optional night equipment and current-time scoring
+
+The owner requested a darker, optional long-hunt mode. In dynamic-time hunts,
+night vision (150 points) and a flashlight (15 points) are selected through the
+existing equipment/loadout budget. They start off and toggle independently:
+N/L on PC, right/left stick clicks on Wii U. Fixed-time hunts retain automatic
+night vision; 3DS exposes none of the new options. The Wii U stick-click debug
+controls remain available in fixed-time hunts.
+
+Dynamic hunts award 20% extra between the dusk and dawn clock stops; this
+replaces, rather than stacks with, the fixed Night selection's 10%. Include
+the awarded percentage in the score event so kill notices cannot change as
+the clock moves. Spawn tables remain selected at hunt start. The flashlight
+is a soft camera-facing cone with distance falloff; it does not render shadows.
+
+Shorten the PC option label to "Dynamic time" to avoid its On/Off value.
+PC map navigation uses a bounded viewport shared by the map image, markers,
+and teleport picking. Wheel zoom anchors at the pointer, right-drag pans and
+Home restores the full map. Keep the original map frame fixed and crop marker
+geometry/UVs at the viewport edges. Rendering is extracted into hunt_view/map.rs.

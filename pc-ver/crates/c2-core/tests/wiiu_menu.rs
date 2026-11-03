@@ -532,3 +532,53 @@ fn hunt_overlay_shows_the_kill() {
             .unwrap();
     }
 }
+
+#[test]
+fn experimental_clock_is_saved_and_fits_settings_page() {
+    let mut m = Menu::new(font());
+    assert_eq!(m.choice.dynamic_time, 0);
+    m.page = Page::Settings;
+    let rect = m
+        .items()
+        .into_iter()
+        .find(|(id, _)| *id == Id::DynamicTime)
+        .unwrap()
+        .1;
+    assert!(rect.y + rect.h <= 586.0, "must not overlap help or Back");
+    let (x, y) = rect.center();
+    m.touch(x, y);
+    assert_eq!(m.choice.dynamic_time, 1);
+    let mut restored = Menu::new(font());
+    restored.load_settings(&m.settings_text());
+    assert_eq!(restored.choice.dynamic_time, 1);
+}
+
+#[test]
+fn night_equipment_is_only_offered_for_dynamic_time() {
+    let mut m = Menu::new(font());
+    m.page = Page::Gear;
+    assert!(!m
+        .items()
+        .iter()
+        .any(|(id, _)| matches!(id, Id::Equip(4 | 5))));
+    m.choice.dynamic_time = 1;
+    for id in [Id::Equip(4), Id::Equip(5)] {
+        let r = m.items().into_iter().find(|(i, _)| *i == id).unwrap().1;
+        assert!(r.y + r.h < 632.0);
+        let (x, y) = r.center();
+        m.touch(x, y);
+    }
+    assert_eq!((m.choice.night_vision, m.choice.flashlight), (1, 1));
+    let mut restored = Menu::new(font());
+    restored.load_settings(&m.settings_text());
+    assert_eq!(
+        (restored.choice.night_vision, restored.choice.flashlight),
+        (1, 1)
+    );
+    assert_eq!(std::mem::size_of::<hunt_setup::HuntChoice>(), 104);
+    assert_eq!(
+        std::mem::offset_of!(hunt_setup::HuntChoice, night_vision),
+        92
+    );
+    assert_eq!(std::mem::offset_of!(hunt_setup::HuntChoice, flashlight), 96);
+}

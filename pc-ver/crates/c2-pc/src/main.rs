@@ -434,6 +434,8 @@ fn main() -> Result<()> {
                 // Without the menu, carry every weapon.
                 weapons: u128::MAX,
                 double_ammo: false,
+                night_vision: false,
+                flashlight: false,
                 observer: o.has("observer"),
                 // --survival normal|hardcore|custom|mobile|modded (README M13).
                 survival: match o.value("survival") {

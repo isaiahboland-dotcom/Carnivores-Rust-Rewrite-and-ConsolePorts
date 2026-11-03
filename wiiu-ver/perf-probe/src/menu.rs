@@ -46,7 +46,7 @@ struct Bases {
     txt_weapon: usize,
 }
 
-const EQUIPMENT: [&str; 4] = ["Camouflage", "Radar", "Cover scent", "Double ammo"];
+const EQUIPMENT: [&str; 6] = ["Camouflage", "Radar", "Cover scent", "Double ammo", "Night vision (150)", "Flashlight (15)"];
 const TIMES: [&str; 3] = ["Dawn", "Day", "Night"];
 const SURVIVALS: [&str; 3] = ["Normal", "Hardcore", "Custom"];
 const SURVIVAL_HELP: [&str; 3] = [
@@ -132,6 +132,7 @@ pub enum Id {
     Teleport,
     Hints,
     AllHuntable,
+    DynamicTime,
     Restart,
     MainMenu,
 }
@@ -182,7 +183,7 @@ const SETUP: [Page; 3] = [Page::Area, Page::Animals, Page::Gear];
 const BACK: Rect = rect(32.0, 648.0, 200.0, 60.0);
 const NEXT: Rect = rect(1048.0, 648.0, 200.0, 60.0);
 const INFO: Rect = rect(800.0, 100.0, 448.0, 524.0);
-const SETTINGS_ROWS: [Id; 9] = [Id::RunSpeed, Id::Ambient, Id::AllHuntable, Id::Blood, Id::DeathCam, Id::Units, Id::MapMobile, Id::Teleport, Id::Hints];
+const SETTINGS_ROWS: [Id; 10] = [Id::RunSpeed, Id::Ambient, Id::AllHuntable, Id::Blood, Id::DeathCam, Id::Units, Id::MapMobile, Id::Teleport, Id::Hints, Id::DynamicTime];
 
 const SQRT3: f32 = 1.732_050_8;
 
@@ -464,9 +465,9 @@ impl Menu {
     pub fn settings_text(&self) -> String {
         let c = &self.choice;
         format!(
-            "area={}\ntime={}\nanimals={}\nweapons={}\nradar={}\ncamo={}\nscent={}\ndouble_ammo={}\ntranq={}\nobserver={}\nrun_pct={}\nblood={}\ndeath_anim={}\nambient={}\nunits_us={}\nsurvival={}\nmap_mobile={}\nteleport={}\nhints={}\nall_huntable={}\n",
+            "area={}\ntime={}\nanimals={}\nweapons={}\nradar={}\ncamo={}\nscent={}\ndouble_ammo={}\ntranq={}\nobserver={}\nrun_pct={}\nblood={}\ndeath_anim={}\nambient={}\nunits_us={}\nsurvival={}\nmap_mobile={}\nteleport={}\nhints={}\nall_huntable={}\ndynamic_time={}\nnight_vision={}\nflashlight={}\n",
             c.area, c.time, c.animals, c.weapons, c.radar, c.camo, c.scent, c.double_ammo, c.tranq,
-            c.observer, c.run_pct, c.blood, c.death_anim, c.ambient, c.units_us, c.survival, c.map_mobile, c.teleport, c.hints, c.all_huntable
+            c.observer, c.run_pct, c.blood, c.death_anim, c.ambient, c.units_us, c.survival, c.map_mobile, c.teleport, c.hints, c.all_huntable, c.dynamic_time, c.night_vision, c.flashlight
         )
     }
 
@@ -502,6 +503,9 @@ impl Menu {
                 "map_mobile" => &mut c.map_mobile,
                 "teleport" => &mut c.teleport,
                 "hints" => &mut c.hints,
+                "night_vision" => &mut c.night_vision,
+                "flashlight" => &mut c.flashlight,
+                "dynamic_time" => &mut c.dynamic_time,
                 "all_huntable" => &mut c.all_huntable,
                 _ => continue,
             };
@@ -510,7 +514,7 @@ impl Menu {
         c.time = c.time.min(2);
         c.survival = c.survival.min(2);
         c.run_pct = (c.run_pct / 10 * 10).clamp(50, 100);
-        for f in [&mut c.radar, &mut c.camo, &mut c.scent, &mut c.double_ammo, &mut c.tranq, &mut c.observer, &mut c.blood, &mut c.death_anim, &mut c.ambient, &mut c.units_us, &mut c.map_mobile, &mut c.teleport, &mut c.hints, &mut c.all_huntable] {
+        for f in [&mut c.radar, &mut c.camo, &mut c.scent, &mut c.double_ammo, &mut c.tranq, &mut c.observer, &mut c.blood, &mut c.death_anim, &mut c.ambient, &mut c.units_us, &mut c.map_mobile, &mut c.teleport, &mut c.hints, &mut c.all_huntable, &mut c.dynamic_time, &mut c.night_vision, &mut c.flashlight] {
             *f = (*f != 0) as u32;
         }
         if self.install.is_some() {
@@ -552,14 +556,15 @@ impl Menu {
                 for (i, r) in fit_honeycomb(self.weapon_count(), rect(40.0, 96.0, 740.0, 214.0), 77.5).into_iter().enumerate() {
                     v.push((Id::Weapon(i), r));
                 }
-                let gear = [Id::Equip(0), Id::Equip(1), Id::Equip(2), Id::Equip(3), Id::Tranq, Id::Observer];
+                let mut gear = alloc::vec![Id::Equip(0), Id::Equip(1), Id::Equip(2), Id::Equip(3), Id::Tranq, Id::Observer];
+                if self.choice.dynamic_time != 0 { gear.extend([Id::Equip(4), Id::Equip(5)]); }
                 for (i, id) in gear.into_iter().enumerate() {
-                    v.push((id, rect(40.0 + (i % 2) as f32 * 376.0, 322.0 + (i / 2) as f32 * 68.0, 360.0, 56.0)));
+                    v.push((id, rect(40.0 + (i % 2) as f32 * 376.0, 322.0 + (i / 2) as f32 * 60.0, 360.0, 50.0)));
                 }
             }
             Page::Settings => {
                 for (i, id) in SETTINGS_ROWS.into_iter().enumerate() {
-                    v.push((id, rect(200.0, 96.0 + i as f32 * 54.0, 880.0, 48.0)));
+                    v.push((id, rect(200.0, 96.0 + i as f32 * 48.0, 880.0, 42.0)));
                 }
             }
             Page::Death => {
@@ -764,6 +769,8 @@ impl Menu {
         let c = &self.choice;
         if self.install.is_none() {
             Some("No game found on the SD card")
+        } else if c.dynamic_time != 0 && c.observer == 0 && (c.night_vision * 150 + c.flashlight * 15) as i32 > self.room.score {
+            Some("Not enough points for night equipment")
         } else if self.survival() {
             if c.animals & self.dangerous() == 0 {
                 Some("Pick at least one hunter for the waves")
@@ -844,7 +851,10 @@ impl Menu {
             Id::Equip(0) => c.camo ^= 1,
             Id::Equip(1) => c.radar ^= 1,
             Id::Equip(2) => c.scent ^= 1,
-            Id::Equip(_) => c.double_ammo ^= 1,
+            Id::Equip(3) => c.double_ammo ^= 1,
+            Id::Equip(4) => c.night_vision ^= 1,
+            Id::Equip(5) => c.flashlight ^= 1,
+            Id::Equip(_) => {},
             Id::Tranq => c.tranq ^= 1,
             Id::Observer => c.observer ^= 1,
             Id::Back => self.back(),
@@ -858,6 +868,7 @@ impl Menu {
             Id::RunSpeed => c.run_pct = if c.run_pct >= 100 { 50 } else { c.run_pct + 10 },
             Id::Ambient => c.ambient ^= 1,
             Id::Blood => c.blood ^= 1,
+            Id::DynamicTime => c.dynamic_time ^= 1,
             Id::DeathCam => c.death_anim ^= 1,
             Id::Units => c.units_us ^= 1,
             Id::MapMobile => c.map_mobile ^= 1,
@@ -1000,7 +1011,7 @@ impl Menu {
                 Id::Weapon(i) => self.hex_item(c, r, self.bases.pic_weapon + i, self.weapon_name(i), ch.weapons & (1 << i) != 0, focused, enabled),
                 // Observer mode carries no weapons or gear but the radar.
                 Id::Equip(i) => {
-                    let on = [ch.camo, ch.radar, ch.scent, ch.double_ammo][i] != 0;
+                    let on = [ch.camo, ch.radar, ch.scent, ch.double_ammo, ch.night_vision, ch.flashlight][i] != 0;
                     self.toggle(c, r, EQUIPMENT[i], on, focused, enabled)
                 }
                 Id::Time(i) => self.time_item(c, r, i, ch.time == i as u32, focused),
@@ -1098,6 +1109,13 @@ impl Menu {
             Id::Time(i) => (Some(b.pic_area + ch.area as usize), TIMES[i], TXT_TIME + i),
             Id::Animal(i) => (Some(b.pic_dino + i), self.animal_name(i), if ch.units_us != 0 { b.txt_dino_us } else { b.txt_dino_metric } + i),
             Id::Weapon(i) => (Some(b.pic_weapon + i), self.weapon_name(i), b.txt_weapon + i),
+            Id::Equip(i @ 4..=5) => {
+                c.fill(INFO, [10, 14, 10, 255]); c.frame(INFO, 2.0, EDGE);
+                self.shadowed(c, INFO.x + 20.0, INFO.y + 20.0, 30.0, GOLD, EQUIPMENT[i]);
+                let help = if i == 4 { "Dynamic time equipment. Press the right stick to toggle night vision. Uses 150 points of the loadout budget." } else { "Dynamic time equipment. Press the left stick to toggle the flashlight. Uses 15 points of the loadout budget." };
+                c.paragraph(&self.font, INFO.x + 20.0, INFO.y + 70.0, INFO.w - 40.0, INFO.y + INFO.h - 12.0, 21.0, TEXT, help);
+                return;
+            }
             Id::Equip(i) => (Some(PIC_EQUIP + i), EQUIPMENT[i], TXT_GEAR + i),
             Id::Tranq => (None, "Tranquilizer", TXT_GEAR + 4),
             Id::Observer => (None, "Observer mode", TXT_GEAR + 5),
@@ -1144,6 +1162,7 @@ impl Menu {
             let (label, value, help) = match id {
                 Id::RunSpeed => ("Dinosaur run speed", format!("<  {}%  >", ch.run_pct), "Slows every species by the same amount. 100% is the original."),
                 Id::Ambient => ("Ambient animals", String::from(flag(ch.ambient)), "The small animals that score nothing."),
+                Id::DynamicTime => ("Dynamic time (experimental)", String::from(flag(ch.dynamic_time)), "Day to night: 30 minutes; night to day: 30 minutes. Approximate lighting."),
                 Id::Blood => ("Blood", String::from(flag(ch.blood)), "Blood sprays and the trails of wounded animals."),
                 Id::DeathCam => ("Death camera", String::from(flag(ch.death_anim)), "Off: straight to the restart screen when you die."),
                 Id::Units => ("Animal descriptions", String::from(if ch.units_us != 0 { "US units" } else { "Metric" }), "Sizes and weights in the animal descriptions."),

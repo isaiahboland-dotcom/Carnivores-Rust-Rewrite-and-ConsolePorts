@@ -26,6 +26,8 @@ pub struct GlobalsData {
     pub fog_color: [f32; 4],
     pub fog: [f32; 4],
     pub misc: [f32; 4],
+    pub daylight: [f32; 4],
+    pub torch: [f32; 4],
 }
 
 /// Per-frame values shared by every shader.
@@ -35,7 +37,10 @@ pub struct FrameParams {
     pub eye: Vec3,
     pub fog_rgb: [f32; 3],
     pub fog: (f32, f32),
-    pub night_vision: bool,
+    pub daylight: [f32; 3],
+    pub night_vision: f32,
+    pub ambient: f32,
+    pub flashlight: bool,
     pub time_s: f32,
     /// `(OptBrightness + 128) / 256`, applied to every texture.
     pub brightness: f32,
@@ -79,12 +84,14 @@ impl Globals {
             cam_pos: f.eye.extend(1.0).to_array(),
             fog_color: [f.fog_rgb[0], f.fog_rgb[1], f.fog_rgb[2], 1.0],
             fog: [f.fog.0, f.fog.1, 0.0, 0.0],
-            misc: [
-                f32::from(u8::from(f.night_vision)),
-                f.time_s,
-                f.brightness,
-                0.0,
-            ],
+            daylight: [f.daylight[0], f.daylight[1], f.daylight[2], 0.0],
+            misc: [f.night_vision, f.time_s, f.brightness, f.ambient],
+            torch: f
+                .view
+                .inverse()
+                .transform_vector3(Vec3::NEG_Z)
+                .extend(f32::from(f.flashlight))
+                .to_array(),
         };
         gpu.queue.write_buffer(&self.buf, 0, bytemuck::bytes_of(&d));
     }
@@ -363,6 +370,11 @@ impl GpuModel {
         }
     }
 
+    pub fn set_lighting(&mut self, gpu: &Gpu, lights: Vec<[f32; 4]>, positions: &[[f32; 3]]) {
+        self.vlights = lights;
+        self.set_pose(gpu, positions);
+    }
+
     /// Uploads a new pose (same vertex count as the rest pose).
     pub fn set_pose(&self, gpu: &Gpu, positions: &[[f32; 3]]) {
         let Some(size) =
@@ -526,9 +538,19 @@ impl ModelRenderer {
     /// For an area's objects: `light_map` (1024x1024) lights instances with
     /// a negative light per vertex from the ground under them
     /// (`CalcModelGroundLight`).
-    pub fn with_ground(gpu: &Gpu, globals: &Globals, textures: &[&[u8]], light_map: &[u8]) -> Self {
-        let mut packed = light_map.to_vec();
-        packed.resize(packed.len().div_ceil(4).max(1) * 4, 0);
+    pub fn with_ground(
+        gpu: &Gpu,
+        globals: &Globals,
+        textures: &[&[u8]],
+        light_map: &[[u8; 3]],
+    ) -> Self {
+        let mut packed: Vec<u8> = light_map
+            .iter()
+            .flat_map(|v| [v[0], v[1], v[2], 0])
+            .collect();
+        if packed.is_empty() {
+            packed.resize(4, 0);
+        }
         Self::with_entry(gpu, globals, textures, "vs", &packed)
     }
 
@@ -720,17 +742,21 @@ pub struct TerrainRenderer {
 impl TerrainRenderer {
     pub fn new(gpu: &Gpu, globals: &Globals, area: &c2_core::area::Area) -> Self {
         let m = &area.map;
-        let light = area.light_map();
-        let cells: Vec<[u32; 2]> = (0..m.height.len())
+
+        let cells: Vec<[u32; 4]> = (0..m.height.len())
             .map(|i| {
                 let size = c2_formats::map::MAP_SIZE;
                 let phase = area.water_phase(i % size, i / size);
                 [
                     u32::from(m.height[i])
-                        | u32::from(light[i]) << 8
+                        | u32::from(area.light_map()[i]) << 8
                         | u32::from(m.water[i]) << 16
                         | u32::from(phase) << 24,
                     u32::from(m.texture1[i]) | u32::from(m.flags[i]) << 16,
+                    u32::from(m.light[0][i])
+                        | u32::from(m.light[1][i]) << 8
+                        | u32::from(m.light[2][i]) << 16,
+                    0,
                 ]
             })
             .collect();
@@ -888,136 +914,12 @@ impl TerrainRenderer {
     }
 }
 
-// ---------------------------------------------------------------- sky
+#[cfg(test)]
+#[path = "render_time_tests.rs"]
+mod time_tests;
 
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct SunVertex {
-    pos: [f32; 3],
-    uv: [f32; 2],
-}
-
-const SUN_ATTRS: [wgpu::VertexAttribute; 2] =
-    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2];
-
-/// Cloud plane plus sun/moon billboard.
-pub struct SkyRenderer {
-    sky: wgpu::RenderPipeline,
-    sun: wgpu::RenderPipeline,
-    group: wgpu::BindGroup,
-    /// Sun model triangles in model space.
-    sun_tris: Vec<SunVertex>,
-    sun_buf: wgpu::Buffer,
-}
-
-impl SkyRenderer {
-    /// `sky_rgba`: 256x256 sky. `sun`: the SUN2/MOON model, if found.
-    pub fn new(gpu: &Gpu, globals: &Globals, sky_rgba: &[u8], sun: Option<&PreparedModel>) -> Self {
-        let blank = vec![0u8; 256 * 256 * 4];
-        let sun_tex = sun.map_or(blank.as_slice(), |m| m.texture_rgba.as_slice());
-        let view = gpu.texture_array("sky", 256, 256, &[sky_rgba, sun_tex]);
-        let (tex_layout, group) = texture_group(gpu, "sky tex", &view, &gpu.sampler(true, true));
-        let layout = pipeline_layout(gpu, "sky", &[&globals.layout, &tex_layout]);
-        let module = shader(gpu, "sky", include_str!("shaders/sky.wgsl"));
-        let sky = pipeline(
-            gpu,
-            PipelineDesc {
-                label: "sky",
-                module: &module,
-                layout: &layout,
-                vs: "vs_sky",
-                fs: "fs_sky",
-                buffers: &[],
-                blend: Blend::Background,
-            },
-        );
-        let sun_layout = [Some(wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<SunVertex>() as u64,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &SUN_ATTRS,
-        })];
-        let sun_pipe = pipeline(
-            gpu,
-            PipelineDesc {
-                label: "sun",
-                module: &module,
-                layout: &layout,
-                vs: "vs_sun",
-                fs: "fs_sun",
-                buffers: &sun_layout,
-                blend: Blend::Additive,
-            },
-        );
-        let sun_tris: Vec<SunVertex> = sun
-            .map(|m| {
-                m.faces
-                    .iter()
-                    .flat_map(|f| {
-                        (0..3).map(move |k| SunVertex {
-                            pos: m.positions[f.v[k] as usize],
-                            uv: f.uv[k],
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        let sun_buf = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("sun"),
-            size: (sun_tris.len().max(1) * std::mem::size_of::<SunVertex>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        Self {
-            sky,
-            sun: sun_pipe,
-            group,
-            sun_tris,
-            sun_buf,
-        }
-    }
-
-    /// `sun_pos`: `Sun3dPos` (offset from the camera, world axes).
-    pub fn draw(
-        &self,
-        gpu: &Gpu,
-        pass: &mut wgpu::RenderPass<'_>,
-        globals: &Globals,
-        view: Mat4,
-        sun_pos: [f32; 3],
-        night: bool,
-    ) {
-        pass.set_bind_group(0, &globals.group, &[]);
-        pass.set_bind_group(1, &self.group, &[]);
-        pass.set_pipeline(&self.sky);
-        pass.draw(0..6, 0..1);
-
-        // RenderSun: sun position in camera space, pulled closer when near
-        // the screen centre; drawn only when in front (nv.z < -2024).
-        let nv = view.transform_vector3(Vec3::from(sun_pos));
-        if self.sun_tris.is_empty() || nv.z >= -2024.0 {
-            return;
-        }
-        let d = if night {
-            1.5
-        } else {
-            (2048.0 + (nv.x * nv.x + nv.y * nv.y).sqrt().min(812.0)) / 3048.0
-        };
-        let c = nv * d;
-        let verts: Vec<SunVertex> = self
-            .sun_tris
-            .iter()
-            .map(|v| SunVertex {
-                pos: (Vec3::from(v.pos) + c).to_array(),
-                uv: v.uv,
-            })
-            .collect();
-        gpu.queue
-            .write_buffer(&self.sun_buf, 0, bytemuck::cast_slice(&verts));
-        pass.set_pipeline(&self.sun);
-        pass.set_vertex_buffer(0, self.sun_buf.slice(..));
-        pass.draw(0..verts.len() as u32, 0..1);
-    }
-}
+mod sky;
+pub use sky::SkyRenderer;
 
 // ---------------------------------------------------------------- particles
 

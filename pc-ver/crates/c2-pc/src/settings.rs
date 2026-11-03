@@ -42,6 +42,8 @@ pub struct PcSettings {
     pub all_huntable: i32,
     /// Unselected huntable animals per map; zero disables them.
     pub secret_dinos: i32,
+    /// Opt-in one-hour visual day/night cycle.
+    pub dynamic_time: i32,
 }
 
 impl Default for PcSettings {
@@ -58,6 +60,7 @@ impl Default for PcSettings {
             hints: 0,
             all_huntable: 0,
             secret_dinos: 10,
+            dynamic_time: 0,
         }
     }
 }
@@ -70,10 +73,15 @@ impl PcSettings {
     /// The saved settings, or the defaults (nothing changed from the
     /// original) if there are none or they can't be read.
     pub fn load() -> Self {
-        let mut s = Self::default();
+        let s = Self::default();
         let Ok(text) = std::fs::read_to_string(path()) else {
             return s;
         };
+        Self::parse(&text)
+    }
+
+    fn parse(text: &str) -> Self {
+        let mut s = Self::default();
         for line in text.lines() {
             let Some((k, v)) = line.split_once('=') else {
                 continue;
@@ -89,6 +97,7 @@ impl PcSettings {
                 "map_mobile" => s.map_mobile = i32::from(v != 0),
                 "teleport" => s.teleport = i32::from(v != 0),
                 "button_hints" => s.hints = i32::from(v != 0),
+                "dynamic_time" => s.dynamic_time = i32::from(v != 0),
                 "secret_dinos" => s.secret_dinos = v.clamp(0, 255),
                 "all_huntable" => s.all_huntable = i32::from(v != 0),
                 _ => {}
@@ -100,7 +109,7 @@ impl PcSettings {
     pub fn store(&self) {
         let text = format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nfar_sprites = {}\n\
-             map_heading = {}\nmap_mobile = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\n",
+             map_heading = {}\nmap_mobile = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\n",
             self.render,
             self.fog,
             self.blood,
@@ -111,7 +120,8 @@ impl PcSettings {
             self.teleport,
             self.hints,
             self.all_huntable,
-            self.secret_dinos
+            self.secret_dinos,
+            self.dynamic_time
         );
         if let Some(dir) = path().parent() {
             let _ = std::fs::create_dir_all(dir);
@@ -133,6 +143,13 @@ impl PcSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dynamic_time_is_opt_in_for_existing_settings() {
+        assert_eq!(PcSettings::parse("blood = 0\n").dynamic_time, 0);
+        assert_eq!(PcSettings::parse("dynamic_time = 1\n").dynamic_time, 1);
+        assert_eq!(PcSettings::parse("dynamic_time = 0\n").dynamic_time, 0);
+    }
 
     #[test]
     fn fog_keeps_the_original_view() {

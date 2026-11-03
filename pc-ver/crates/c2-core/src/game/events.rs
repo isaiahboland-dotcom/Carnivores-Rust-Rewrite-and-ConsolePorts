@@ -70,6 +70,8 @@ pub enum GameEvent {
         /// Distance of the kill, metres (the trophy's "range").
         range: f32,
         tranq: bool,
+        /// Night bonus actually awarded, in percent (0, 10 or 20).
+        night_bonus: u8,
     },
     Message(String),
 }

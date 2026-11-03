@@ -331,7 +331,7 @@ enum Opt {
     ClearTrophies,
 }
 
-const GAME_OPTS: [Opt; 9] = [
+const GAME_OPTS: [Opt; 10] = [
     Opt::Slider("Aggressiveness", |s| &mut s.options.agres),
     Opt::Slider("Density", |s| &mut s.options.dens),
     Opt::Slider("Sensitivity", |s| &mut s.options.sens),
@@ -342,6 +342,7 @@ const GAME_OPTS: [Opt; 9] = [
     Opt::PcSlider("Total number of secret dinos on map", |p| {
         &mut p.secret_dinos
     }),
+    Opt::PcToggle("Dynamic time", |p| &mut p.dynamic_time),
     Opt::ClearTrophies,
 ];
 
@@ -453,6 +454,7 @@ pub struct Menu {
     binding: Option<usize>,
     /// The phone-style options' tab: game, controls, video.
     opt_tab: usize,
+    game_scroll: option_scroll::Scroll,
     drag: Option<Opt>,
     /// Hunt to start after the loading picture has been shown.
     launch: Option<HuntSetup>,
@@ -607,6 +609,7 @@ fn clock_seed() -> u32 {
 
 pub(crate) mod kit;
 mod mobile;
+mod option_scroll;
 
 impl Menu {
     /// `game_dir`: the install (or its `HUNTDAT`). `player`: sign straight in
@@ -907,6 +910,25 @@ impl Menu {
             texts: etexts.clone(),
             texts_us: etexts,
         });
+        for (name, price, help) in [
+            (
+                "Night vision",
+                150,
+                "Dynamic time equipment. N switches night vision on or off.",
+            ),
+            (
+                "Flashlight",
+                15,
+                "Dynamic time equipment. L switches the forward light on or off.",
+            ),
+        ] {
+            let gear = &mut cols[3];
+            gear.names.push(name.into());
+            gear.prices.push(price);
+            gear.pics.push(None);
+            gear.texts.push(vec![help.into()]);
+            gear.texts_us.push(vec![help.into()]);
+        }
         // Slotted add-ons can omit their menu art too. Render a portrait
         // from the same resolved model the hunt loads in that case.
         if let Some(res) = &dialect {
@@ -1096,6 +1118,7 @@ impl Menu {
             },
             binding: None,
             opt_tab: 0,
+            game_scroll: option_scroll::Scroll::default(),
             drag: None,
             launch: None,
             shown_loading: false,
@@ -1111,6 +1134,10 @@ impl Menu {
     /// The animal list by "All dinos huntable": off, the roaming add-ons
     /// aren't listed (or picked); they roam their own maps only.
     fn offer_animals(&mut self) {
+        self.columns[3].order = (0..if self.pc.dynamic_time != 0 { 6 } else { 4 }).collect();
+        if self.pc.dynamic_time == 0 {
+            self.choice.equip &= 15;
+        }
         let all = self.pc.all_huntable != 0;
         let first = self.menu_animals;
         if let Some(c) = self.columns.get_mut(1) {
@@ -1263,8 +1290,17 @@ impl Menu {
     /// Account left after paying for the choices.
     fn remaining(&self) -> i32 {
         let score = self.me().map_or(0, |s| s.score);
-        if self.choice.observer || self.choice.survival.is_some() {
+        if self.choice.observer {
             return score;
+        }
+        if self.choice.survival.is_some() {
+            return score
+                - if self.pc.dynamic_time != 0 {
+                    i32::from(self.choice.equip & 16 != 0) * 150
+                        + i32::from(self.choice.equip & 32 != 0) * 15
+                } else {
+                    0
+                };
         }
         let mut spent = 0;
         for (ci, c) in self.columns.iter().enumerate() {
@@ -1568,7 +1604,7 @@ impl Menu {
             2 => 128,
             _ => 32,
         };
-        if r >= max {
+        if r >= max || (col == 3 && r >= 4 && self.pc.dynamic_time == 0) {
             return;
         }
         let bit = 1u128.checked_shl(r as u32).unwrap_or(0);
@@ -1762,6 +1798,8 @@ impl Menu {
             reg,
             from_menu: true,
             pc: self.pc,
+            night_vision: self.pc.dynamic_time != 0 && !observer && self.choice.equip & 16 != 0,
+            flashlight: self.pc.dynamic_time != 0 && !observer && self.choice.equip & 32 != 0,
         });
         self.shown_loading = false;
         self.screen = Screen::Loading;
@@ -1771,16 +1809,12 @@ impl Menu {
     fn option_rows(&self) -> Vec<(Opt, Rect)> {
         let mut out = Vec::new();
         for (panel, opts) in [(GAME_PANEL, &GAME_OPTS[..]), (VIDEO_PANEL, &VIDEO_OPTS[..])] {
-            let mut y = panel.1;
-            for o in opts {
-                let h = if matches!(o, Opt::PcSlider("Total number of secret dinos on map", _)) {
-                    38.0
-                } else {
-                    OPT_ROW
-                };
-                out.push((*o, (panel.0, y, panel.2, h)));
-                y += h;
-            }
+            let first = if panel == GAME_PANEL {
+                self.game_scroll.first
+            } else {
+                0
+            };
+            out.extend(option_scroll::visible_rows(opts, panel, first));
         }
         let y0 = KEYS_PANEL.1 + ACTIONS.len() as f32 * 20.0 + 12.0;
         for (i, o) in MOUSE_OPTS.iter().enumerate() {
@@ -1833,6 +1867,7 @@ impl Menu {
         if !input.mouse_down {
             self.drag = None;
         }
+        self.scroll_game_options(input, false);
         let rows = self.option_rows();
         if input.clicked {
             let on_clear = rows
@@ -2309,6 +2344,7 @@ impl Menu {
         }
         let Some(s) = self.me() else { return };
         let mut copy = s.clone();
+        self.draw_game_scroll(out, false);
         for (o, r) in self.option_rows() {
             let hover = inside(self.cursor, r);
             let color = if hover { SAND } else { [0.85, 0.7, 0.5, 1.0] };

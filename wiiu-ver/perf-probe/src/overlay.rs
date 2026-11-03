@@ -81,6 +81,7 @@ const CROSS: Rgba = [0, 0, 16, 128];
 pub struct Notice {
     kill: Option<(String, i32, f32, bool)>,
     kill_ms: i32,
+    pub night_bonus: Option<u8>,
     message: Option<String>,
     message_ms: i32,
     /// Leaving after the exit was confirmed (the original's 4 s).
@@ -91,6 +92,7 @@ impl Notice {
     pub fn kill(&mut self, name: String, score: i32, range: f32, tranq: bool) {
         self.kill = Some((name, score, range, tranq));
         self.kill_ms = 6000;
+        self.night_bonus = None;
     }
     pub fn message(&mut self, text: String, ms: i32) {
         self.message = Some(text);
@@ -195,7 +197,8 @@ impl Overlay {
             KILL => {
                 let (name, score, range, tranq) = v.notice.kill.as_ref()?;
                 let dist = if v.units_us { format!("Range: {:.0} ft", range / 0.3) } else { format!("Range: {range:.0} m") };
-                let points = if v.night { format!("+{score} points (night +10%)") } else { format!("+{score} points") };
+                let bonus = v.notice.night_bonus.unwrap_or(if v.night { 10 } else { 0 });
+                let points = if bonus != 0 { format!("+{score} points (night +{bonus}%)") } else { format!("+{score} points") };
                 let how = if *tranq { "Tranquilized (+25%, no trophy)" } else { "Killed" };
                 alloc::vec![name.clone(), points, dist, String::from(how)]
             }

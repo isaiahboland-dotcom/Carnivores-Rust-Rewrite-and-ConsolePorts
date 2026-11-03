@@ -8,6 +8,10 @@ uniform vec4 uFog;
 // x: the scope or binoculars' zoom for world draws (fog mode < 0), else 1;
 // y: the water shimmer's time, RealTime / 200 (wrapped).
 uniform vec4 uZoom;
+// Dawn weight, manual night vision, geometry brightness, sky brightness.
+uniform vec4 uDaylight;
+out vec3 vDaylight;
+out float vTorch;
 out vec2 vTex;
 out float vLight;
 out float vCutout;
@@ -16,6 +20,10 @@ out vec3 vView;
 void main() {
     vec4 position = aPosition;
     vFog = uFog;
+    if (uFog.a > 0.5) vFog.a = 0.0;
+    vDaylight = vec3(uDaylight.xy, uDaylight.z);
+    vTorch = uZoom.z;
+    if (uFog.a < -0.5 && uFog.a > -1.5) { vDaylight.z = uDaylight.w; vTorch = 0.0; }
     // -2: world space, object fog; -3: CPU-projected, terrain fog;
     // -4: world space, terrain fog (resident terrain and water).
     if (uFog.a < -2.5 && uFog.a > -3.5) {

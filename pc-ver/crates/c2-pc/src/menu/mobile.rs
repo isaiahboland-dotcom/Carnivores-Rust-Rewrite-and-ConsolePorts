@@ -183,7 +183,20 @@ impl Menu {
     /// The side buttons' rects, in `mobile_side`'s order.
     fn side_rects(&self) -> Vec<Rect> {
         if self.kit.is_none() {
-            return side(4);
+            return side(self.mobile_side().len());
+        }
+        if self.mobile_page == 2 && self.pc.dynamic_time != 0 {
+            return [2, 3, 1, 0, 4, 5]
+                .iter()
+                .map(|&k| {
+                    (
+                        510.0 + (k % 2) as f32 * 144.0,
+                        352.0 + (k / 2) as f32 * 48.0,
+                        124.0,
+                        40.0,
+                    )
+                })
+                .collect();
         }
         // Two rows of two under the words; the weapons page's as the
         // phone's: camouflage, cover scent / tranquilizer, radar.
@@ -240,12 +253,17 @@ impl Menu {
                         n.to_string()
                     }
                 };
-                vec![
+                let mut buttons = vec![
                     ("Tranquilizer".into(), self.tranq()),
                     (named(1, "Radar"), c.equip & 2 != 0),
                     (named(2, "Cover Scent"), c.equip & 4 != 0),
                     (named(0, "Camouflage"), c.equip & 1 != 0),
-                ]
+                ];
+                if self.pc.dynamic_time != 0 {
+                    buttons.push((named(4, "Night vision"), c.equip & 16 != 0));
+                    buttons.push((named(5, "Flashlight"), c.equip & 32 != 0));
+                }
+                buttons
             }
             _ => Vec::new(),
         }
@@ -305,6 +323,7 @@ impl Menu {
             }
             // Radar, cover scent, camouflage: equipment bits 1, 2, 0.
             (2, Some(b @ 1..=3)) => self.pick(3, [1, 2, 0][b - 1]),
+            (2, Some(b @ 4..=5)) if self.pc.dynamic_time != 0 => self.pick(3, b),
             _ => {}
         }
     }
@@ -456,7 +475,7 @@ impl Menu {
                 self.text(out, cx - tw / 2.0, cy + h / 2.0 - 19.0, 12.0, col, &t);
             }
         }
-        for (r, (label, on)) in side(4).into_iter().zip(self.mobile_side()) {
+        for (r, (label, on)) in self.side_rects().into_iter().zip(self.mobile_side()) {
             self.mobile_button(out, r, &label, Some(on));
         }
         // What the cursor is on, and the way on.
@@ -783,12 +802,13 @@ impl Menu {
         } else {
             &k.icons[..4]
         };
-        for ((r, (label, on)), icon) in self
+        for (index, (r, (label, on))) in self
             .side_rects()
             .into_iter()
             .zip(self.mobile_side())
-            .zip(icons)
+            .enumerate()
         {
+            let icon = icons.get(index).and_then(|i| i.as_ref());
             let tint = if inside(self.cursor, r) {
                 [1.3, 1.3, 1.25, 1.0]
             } else {
@@ -796,6 +816,27 @@ impl Menu {
             };
             if let Some(id) = k.button {
                 self.tinted(out, id, r, full, tint);
+            }
+            if index >= 4 {
+                self.kit_line(
+                    out,
+                    Face::Body,
+                    (r.0 + r.2 / 2.0, r.1 + 4.0),
+                    12.0,
+                    PALE,
+                    &label,
+                    0.5,
+                );
+                self.kit_line(
+                    out,
+                    Face::Body,
+                    (r.0 + r.2 / 2.0, r.1 + 23.0),
+                    12.0,
+                    if on { PALE } else { STONE },
+                    if on { "ON" } else { "OFF" },
+                    0.5,
+                );
+                continue;
             }
             let lamp = if on { k.lamp_on } else { k.lamp_off };
             if let Some(id) = lamp {
@@ -817,7 +858,15 @@ impl Menu {
                 }
                 None => {
                     let at = (r.0 + r.2 * 0.66, r.1 + r.3 * 0.3);
-                    self.kit_line(out, Face::Body, at, 16.0, PALE, &label, 0.5);
+                    self.kit_line(
+                        out,
+                        Face::Body,
+                        (r.0 + r.2 * 0.5, at.1),
+                        if index >= 4 { 12.0 } else { 16.0 },
+                        PALE,
+                        &label,
+                        0.5,
+                    );
                 }
             }
         }
@@ -873,7 +922,13 @@ enum KitRow {
 impl Menu {
     /// The tab's rows with their rectangles, and the words' size.
     fn kit_rows(&self) -> (Vec<(KitRow, Rect)>, f32) {
-        let rows: Vec<KitRow> = match self.opt_tab {
+        let rows = self.kit_all_rows();
+        // The phone's spacing; the keys in two columns.
+        self.kit_layout(rows)
+    }
+
+    fn kit_all_rows(&self) -> Vec<KitRow> {
+        match self.opt_tab {
             0 => GAME_OPTS.iter().map(|&o| KitRow::Opt(o)).collect(),
             1 => MOUSE_OPTS
                 .iter()
@@ -881,7 +936,10 @@ impl Menu {
                 .chain((0..ACTIONS.len()).map(KitRow::Key))
                 .collect(),
             _ => VIDEO_OPTS.iter().map(|&o| KitRow::Opt(o)).collect(),
-        };
+        }
+    }
+
+    fn kit_layout(&self, rows: Vec<KitRow>) -> (Vec<(KitRow, Rect)>, f32) {
         // The phone's spacing; the keys in two columns.
         let per = if rows.len() <= 11 {
             11
@@ -891,6 +949,12 @@ impl Menu {
         let (y0, step) = (60.0, 42.0);
         let out = rows
             .into_iter()
+            .skip(if self.opt_tab == 0 {
+                self.game_scroll.first
+            } else {
+                0
+            })
+            .take(if self.opt_tab == 0 { 9 } else { usize::MAX })
             .enumerate()
             .map(|(i, r)| {
                 let rect = if per == 11 {
@@ -937,6 +1001,7 @@ impl Menu {
         if !input.mouse_down {
             self.drag = None;
         }
+        self.scroll_game_options(input, true);
         let (rows, _) = self.kit_rows();
         if input.clicked {
             if let Some(t) = Self::kit_tabs()
@@ -948,7 +1013,12 @@ impl Menu {
                 return;
             }
             if inside(self.cursor, OPT_RESET) {
-                self.kit_reset(&rows);
+                let all = self
+                    .kit_all_rows()
+                    .into_iter()
+                    .map(|r| (r, (0.0, 0.0, 0.0, 0.0)))
+                    .collect::<Vec<_>>();
+                self.kit_reset(&all);
                 return;
             }
             let on_clear = rows.iter().any(|(o, r)| {
@@ -1034,6 +1104,7 @@ impl Menu {
     }
 
     pub(super) fn draw_kit_options(&self, out: &mut Vec<Sprite>) {
+        self.draw_game_scroll(out, true);
         use super::kit::{PALE, RED, STONE};
         let Some(s) = self.me() else { return };
         let mut copy = s.clone();

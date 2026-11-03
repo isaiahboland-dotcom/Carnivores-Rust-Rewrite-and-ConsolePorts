@@ -3,13 +3,13 @@
 
 @group(1) @binding(0) var tex: texture_2d_array<f32>;
 @group(1) @binding(1) var samp: sampler;
-// The area's light map, four cells a word (objects only; else one word).
+// One cell per word: dawn/day/night light in its low three bytes (objects only).
 @group(1) @binding(2) var<storage, read> ground: array<u32>;
 
 fn cell_light(x: i32, y: i32) -> f32 {
     let i = u32(clamp(y, 0, 1023) * 1024 + clamp(x, 0, 1023));
-    let w = ground[min(i >> 2u, arrayLength(&ground) - 1u)];
-    return f32((w >> ((i & 3u) * 8u)) & 0xffu);
+    let w = ground[min(i, arrayLength(&ground) - 1u)];
+    return dot(vec3<f32>(f32(w & 255u), f32((w >> 8u) & 255u), f32((w >> 16u) & 255u)), g.daylight.xyz);
 }
 
 // Game.cpp: GetLandLt2: the light at (x, z), bilinear between every other
@@ -46,6 +46,7 @@ struct VOut {
     @location(1) light: f32,
     @location(2) @interpolate(flat) layer: u32,
     @location(3) dist: f32,
+    @location(4) world: vec3<f32>,
 };
 
 fn transform(v: VIn) -> VOut {
@@ -55,6 +56,7 @@ fn transform(v: VIn) -> VOut {
     let p = vec3<f32>(v.pos.x * c + v.pos.z * s, v.pos.y, -v.pos.x * s + v.pos.z * c) + v.offset;
     var o: VOut;
     o.clip = g.view_proj * vec4<f32>(p, 1.0);
+    o.world = p;
     o.uv = v.uv;
     // RenderModel: vertex colour = object light + VLight[VT][v]; a negative
     // light: ground-lit (CalcModelGroundLight: 128 + ground light - 128).
@@ -90,7 +92,7 @@ fn fs_opaque(i: VOut) -> @location(0) vec4<f32> {
     if (c.a < 0.5) {
         discard;
     }
-    return vec4<f32>(fogged(texel(c.rgb) * i.light, i.dist), 1.0);
+    return vec4<f32>(fogged(surface_light(c.rgb, i.light, i.world), i.dist), 1.0);
 }
 
 // sfTransparent faces: blended at the original's Direct3D alpha, 0x70 in
@@ -99,7 +101,7 @@ fn fs_opaque(i: VOut) -> @location(0) vec4<f32> {
 @fragment
 fn fs_blend(i: VOut) -> @location(0) vec4<f32> {
     let c = textureSample(tex, samp, i.uv, i.layer);
-    return vec4<f32>(fogged(texel(c.rgb) * i.light, i.dist), c.a * (112.0 / 255.0));
+    return vec4<f32>(fogged(surface_light(c.rgb, i.light, i.world), i.dist), c.a * (112.0 / 255.0));
 }
 
 // Water rings (`RenderWCircles`): added on top (`D3DBLEND_ONE`); the fade is

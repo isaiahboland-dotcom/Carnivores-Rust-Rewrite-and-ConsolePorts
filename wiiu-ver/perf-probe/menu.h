@@ -1,13 +1,7 @@
 /* The menus are drawn in Rust (src/menu.rs, src/ui.rs) at each display's
  * own resolution; C feeds them input and shows the result. */
 
-/* Mirrors hunt_setup::HuntChoice. Flags are 0 or 1. */
-typedef struct {
-    uint32_t area, time;
-    uint64_t animals;
-    uint32_t weapons, radar, camo, scent, double_ammo, tranq, observer,
-             run_pct, blood, death_anim, ambient, units_us, mode, survival, map_mobile, teleport, hints, all_huntable;
-} HuntChoice;
+#include "hunt_choice.h"
 /* HuntChoice.mode (hunt_setup.rs MODE_*). */
 enum { MODE_HUNT = 0, MODE_SURVIVAL = 1, MODE_TROPHY = 2 };
 /* c2_move_tick input bits beyond movement (lib.rs): + (exit prompt), A / B /
@@ -16,7 +10,7 @@ enum { IN_ESCAPE = 1 << 13, IN_YES = 1 << 14, IN_NO = 1 << 15,
        IN_TROPHY_PREV = 1 << 20, IN_TROPHY_NEXT = 1 << 21, IN_TROPHY_REMOVE = 1 << 22, IN_TROPHY_LOCK = 1 << 23,
        IN_RESTART = 1 << 24, IN_PAUSE = 1 << 25 };
 /* A tapped call: its index + 1 from this bit (lib.rs CALL_SHIFT). */
-enum { IN_CALL_SHIFT = 26 };
+enum { IN_CALL_SHIFT = 26, IN_NIGHT_VISION = 1024, IN_FLASHLIGHT = 2048 };
 /* The hunter's files (menu.rs PROFILE_*). */
 enum { PROFILE_SAVE = 0, PROFILE_RECORD = 1 };
 static const char *profile_files[2] = {"trophy00.sav", "trophy00.rec"};

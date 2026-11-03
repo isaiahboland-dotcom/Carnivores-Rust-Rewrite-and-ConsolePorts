@@ -67,6 +67,8 @@ pub struct Placement {
 }
 
 pub struct Area {
+    /// Optional visual clock; platform frontends opt in. Hunt rules retain the starting time.
+    pub cycle: Option<crate::day_cycle::DayCycle>,
     pub map: Map,
     pub rsc: Rsc,
     pub time: TimeOfDay,
@@ -134,6 +136,7 @@ impl Area {
             .map(crate::collide::ObjectShape::new)
             .collect();
         Self {
+            cycle: None,
             shapes,
             map,
             rsc,
@@ -275,6 +278,22 @@ impl Area {
         &self.map.light[self.time as usize]
     }
 
+    /// Light at a cell, blending the three authored maps when cycling.
+    pub fn light_at(&self, cell: usize) -> f32 {
+        if self.cycle.is_none() {
+            return f32::from(self.light_map().get(cell).copied().unwrap_or(128));
+        }
+        let w = self.time_weights();
+        (0..3)
+            .map(|i| f32::from(self.map.light[i].get(cell).copied().unwrap_or(128)) * w[i])
+            .sum()
+    }
+
+    pub fn time_weights(&self) -> [f32; 3] {
+        self.cycle
+            .map_or_else(|| crate::day_cycle::weights(self.time), |c| c.weights())
+    }
+
     /// `Game.cpp: GetLandH`: ground height in world units at world (x, z).
     pub fn land_height(&self, x: f32, z: f32) -> f32 {
         land_height(&self.map, x, z)
@@ -321,11 +340,7 @@ impl Area {
         let Some(o) = self.rsc.objects.get(usize::from(p.model)) else {
             return 0.5;
         };
-        let l = self
-            .light_map()
-            .get(idx(usize::from(p.cell.0), usize::from(p.cell.1)))
-            .copied()
-            .unwrap_or(128);
+        let l = self.light_at(idx(usize::from(p.cell.0), usize::from(p.cell.1))) as u8;
         // Ground-lit objects take the light of the ground under each vertex
         // (CalcModelGroundLight: 128 + LandLt - 128); here, under the object
         // (the PC lights them per vertex, `ground_light`).
@@ -365,14 +380,9 @@ impl Area {
     /// `Game.cpp: GetLandLt2`: the ground light at (x, z), 0..255, bilinear
     /// between every other cell's light.
     pub fn ground_light(&self, x: f32, z: f32) -> f32 {
-        let lm = self.light_map();
         let max = MAP_SIZE as i32 - 1;
         let at = |cx: i32, cy: i32| {
-            f32::from(
-                lm.get(idx(cx.clamp(0, max) as usize, cy.clamp(0, max) as usize))
-                    .copied()
-                    .unwrap_or(128),
-            )
+            self.light_at(idx(cx.clamp(0, max) as usize, cy.clamp(0, max) as usize))
         };
         let (xi, zi) = (x.max(0.0) as i32, z.max(0.0) as i32);
         let (cx, cy) = ((xi / 512) * 2, (zi / 512) * 2);
@@ -390,6 +400,21 @@ impl Area {
 
     /// Sky fade colour for the current time of day (`FadeRGB`), 0..=255.
     pub fn sky_rgb(&self) -> [i32; 3] {
+        if self.cycle.is_some() {
+            let w = self.time_weights();
+            return core::array::from_fn(|k| {
+                (0..3)
+                    .map(|i| {
+                        let c = if i == 2 && k != 1 {
+                            0
+                        } else {
+                            self.rsc.fade_rgb[i][k]
+                        };
+                        c as f32 * w[i]
+                    })
+                    .sum::<f32>() as i32
+            });
+        }
         let c = self.rsc.fade_rgb[self.time as usize];
         if self.time == TimeOfDay::Night {
             // LoadResources zeroes red/blue at night (night-vision green).

@@ -218,3 +218,35 @@ fn trophy_room_shows_plaques_and_removes_trophies() {
     assert_eq!(h.outcome(), Some(Outcome::Exited));
     assert_eq!(h.room.total.time, 0.0);
 }
+
+#[test]
+fn dynamic_night_bonus_replaces_classic_bonus_at_kill_time() {
+    for (start, dynamic, expected) in [
+        (crate::area::TimeOfDay::Night, None, 10),
+        (crate::area::TimeOfDay::Night, Some(false), 0),
+        (crate::area::TimeOfDay::Day, Some(true), 20),
+        (crate::area::TimeOfDay::Day, Some(false), 0),
+    ] {
+        let (mut area, mut h, _) = setup(false);
+        area.time = start;
+        h.opts.dynamic_night = dynamic;
+        h.opts.radar = false;
+        h.opts.scent = false;
+        h.opts.camo = false;
+        h.opts.tranq = false;
+        h.opts.no_call_bonus = c2_formats::bits::Bits::NONE;
+        h.opts.score_factor = 1.0;
+        h.successes = 1;
+        let ctype = h.herd.chars[0].ctype;
+        h.herd.species[ctype].info.base_score = 1000.0;
+        // Treat it as a dialect target to remove the stock non-target penalty.
+        h.herd.species[ctype].tuning.mee_ai = Some(10);
+        let before = h.room.score;
+        let mut events = Vec::new();
+        h.add_ship_task(&area, 0, &mut events);
+        assert_eq!(h.room.score - before, 1000 + i32::from(expected) * 10);
+        assert!(events.iter().any(
+            |e| matches!(e, GameEvent::Scored { night_bonus, .. } if *night_bonus == expected)
+        ));
+    }
+}

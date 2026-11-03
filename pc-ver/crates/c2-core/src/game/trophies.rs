@@ -108,10 +108,16 @@ impl Hunt {
         let no_call = self
             .call_bit(c)
             .is_some_and(|b| self.opts.no_call_bonus.has(b as usize));
-        // Night and no-call: +10% each (not in the original; owner's requests).
+        let night_bonus = match self.opts.dynamic_night {
+            Some(true) => 20,
+            Some(false) => 0,
+            None if area.time == crate::area::TimeOfDay::Night => 10,
+            None => 0,
+        };
+        // Dynamic hunts reward the time of the kill, never the starting selection.
         for (on, k) in [
             (self.opts.tranq, 1.25),
-            (area.time == crate::area::TimeOfDay::Night, 1.10),
+            (night_bonus != 0, 1.0 + night_bonus as f32 / 100.0),
             (no_call, 1.10),
             (self.opts.radar, 0.70),
             (self.opts.scent, 0.80),
@@ -132,6 +138,7 @@ impl Hunt {
             score: score as i32,
             range,
             tranq: self.opts.tranq,
+            night_bonus,
         });
         self.kills.push(HuntKill {
             ctype: c.ctype,

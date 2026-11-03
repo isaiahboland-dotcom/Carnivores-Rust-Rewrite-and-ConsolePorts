@@ -145,6 +145,10 @@ Register a hunter (or pick one copied from your install), then Hunt, Options, Tr
 Credits, as in the original. Your game folder is never written to. Saves go to
 `~/.local/share/c2rs/` (the first run copies your game's saves).
 
+PC game options support mouse-wheel scrolling and up/down arrows. **Dynamic time**
+adds an optional 60-minute day/night cycle, starting at the chosen time. Wii U
+has an experimental version; 3DS does not. See [timing and limitations](docs/DYNAMIC_TIME.md).
+
 With mods:
 
 ```sh
@@ -158,6 +162,9 @@ cargo run --release -p c2-pc -- play GAME --recipe ../recipes/c2-mee-addons.toml
 stick moves, right stick looks, ZL draws, ZR fires, L binoculars, R map, A jump, B run, X call, Y next
 weapon, D-pad up crouch / down change call, + pause, − exit. In the menus, the left stick moves a pointer,
 A clicks and B goes back.
+With the PC map open, use the wheel to zoom at the pointer, right-drag to pan,
+and Home to restore the full map. Dynamic-time equipment uses N for night vision
+and L for the flashlight; select it under Equipment before the hunt.
 
 **PC VR** (early): `cargo run --release -p c2-vr -- play GAME` with an OpenXR runtime running (SteamVR,
 Monado, WiVRn). `c2-vr check` tells you which runtime it found. Plan and status:

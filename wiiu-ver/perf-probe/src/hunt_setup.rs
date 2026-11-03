@@ -75,6 +75,10 @@ pub struct HuntChoice {
     /// Roaming add-ons listed among the animals; off, they only roam
     /// their own maps (as their makers meant).
     pub all_huntable: u32,
+    /// Experimental visual day/night cycle (Wii U only).
+    pub dynamic_time: u32,
+    pub night_vision: u32,
+    pub flashlight: u32,
 }
 pub const MODE_HUNT: u32 = 0;
 pub const MODE_SURVIVAL: u32 = 1;
@@ -107,6 +111,9 @@ impl Default for HuntChoice {
             teleport: 0,
             hints: 0,
             all_huntable: 0,
+            dynamic_time: 0,
+            night_vision: 0,
+            flashlight: 0,
         }
     }
 }

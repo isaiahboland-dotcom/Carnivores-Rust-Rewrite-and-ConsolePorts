@@ -93,10 +93,13 @@ fn load_sun(map_path: &Path, time: TimeOfDay) -> Option<PreparedModel> {
 
 pub struct AreaView {
     name: String,
-    area: Area,
+    pub(crate) area: Area,
+    pub night_vision: Option<bool>,
+    pub flashlight: bool,
     globals: Globals,
     terrain: TerrainRenderer,
     sky: SkyRenderer,
+    light_weights: [f32; 3],
     models: Vec<GpuModel>,
     /// Each object's far sprite (`None`: `ofNOBMP`); its texture is layer
     /// `models.len() + i`.
@@ -181,8 +184,11 @@ impl AreaView {
                 GpuModel::new(gpu, p, vl)
             })
             .collect();
-        let sky_rgba = c2_core::color::image_to_rgba8(&area.rsc.skies[time as usize], false);
-        let sky = SkyRenderer::new(gpu, &globals, &sky_rgba, load_sun(map_path, time).as_ref());
+        let skies =
+            core::array::from_fn(|i| c2_core::color::image_to_rgba8(&area.rsc.skies[i], false));
+        let sun = load_sun(map_path, TimeOfDay::Day);
+        let moon = load_sun(map_path, TimeOfDay::Night);
+        let sky = SkyRenderer::new(gpu, &globals, &skies, [sun.as_ref(), moon.as_ref()]);
         // RenderBMPModel: a sprite per object, but for ofNOBMP ones.
         let sprite_prep: Vec<Option<PreparedModel>> = area
             .rsc
@@ -212,7 +218,14 @@ impl AreaView {
         } else {
             textures
         };
-        let renderer = ModelRenderer::with_ground(gpu, &globals, &textures, area.light_map());
+        let renderer = ModelRenderer::with_ground(
+            gpu,
+            &globals,
+            &textures,
+            &(0..area.map.height.len())
+                .map(|i| core::array::from_fn(|t| area.map.light[t][i]))
+                .collect::<Vec<_>>(),
+        );
 
         let mut chunks = vec![Vec::new(); CHUNKS * CHUNKS];
         for p in area.placements() {
@@ -252,6 +265,9 @@ impl AreaView {
             globals,
             terrain,
             sky,
+            light_weights: c2_core::day_cycle::weights(time),
+            night_vision: None,
+            flashlight: false,
             models,
             renderer,
             chunks,
@@ -310,6 +326,34 @@ impl Scene for AreaView {
         if self.fly && (input.pressed(KeyCode::Minus) || input.pressed(KeyCode::NumpadSubtract)) {
             self.radius = (self.radius / 2).max(16);
         }
+        // Relight static normals only after a perceptible clock change; animated
+        // objects upload their current pose below using these same lights.
+        let weights = self.area.time_weights();
+        if weights
+            .iter()
+            .zip(self.light_weights)
+            .any(|(a, b)| (a - b).abs() >= 0.001)
+        {
+            self.light_weights = weights;
+            if let Some(cycle) = self.area.cycle {
+                for (o, m) in self.area.rsc.objects.iter().zip(&mut self.models) {
+                    if o.info.flags & (object_flags::NO_LIGHT | object_flags::GROUND_LIGHT) == 0 {
+                        let positions: Vec<_> = o
+                            .model
+                            .mesh
+                            .vertices
+                            .iter()
+                            .map(|v| [v.x * 2.0, v.y * 2.0, v.z * -2.0])
+                            .collect();
+                        m.set_lighting(
+                            gpu,
+                            vertex_lights(&o.model.mesh, cycle.sun_pos()),
+                            &positions,
+                        );
+                    }
+                }
+            }
+        }
         // CreateMorphedObject: all instances of an animated object share one pose.
         let t = self.start.elapsed().as_millis() as u32;
         for (o, m) in self.area.rsc.objects.iter().zip(&self.models) {
@@ -322,6 +366,21 @@ impl Scene for AreaView {
     }
 
     fn clear_color(&self) -> [f64; 3] {
+        if self.area.cycle.is_some() {
+            let weights = self.area.time_weights();
+            let rgb: [f32; 3] = core::array::from_fn(|k| {
+                (0..3)
+                    .map(|i| self.area.rsc.fade_rgb[i][k] as f32 * weights[i])
+                    .sum()
+            });
+            let rgb = if self.night_vision == Some(true) {
+                [0.0, rgb[1], 0.0]
+            } else {
+                rgb
+            };
+            return rgb
+                .map(|c| (c * self.brightness * self.ambient()).clamp(0.0, 255.0) as f64 / 255.0);
+        }
         self.area.sky_rgb().map(|c| {
             (f64::from(c) * f64::from(self.brightness))
                 .clamp(0.0, 255.0)
@@ -340,6 +399,14 @@ impl Scene for AreaView {
 pub type ExtraDraw<'a> = dyn FnMut(&Gpu, &mut wgpu::RenderPass<'_>, &Globals) + 'a;
 
 impl AreaView {
+    fn ambient(&self) -> f32 {
+        if self.area.cycle.is_some() && self.night_vision != Some(true) {
+            1.0 - 0.88 * self.area.time_weights()[2]
+        } else {
+            1.0
+        }
+    }
+
     pub fn draw_with(
         &mut self,
         gpu: &Gpu,
@@ -359,7 +426,12 @@ impl AreaView {
                 eye: self.cam.pos,
                 fog_rgb: self.clear_color().map(|c| c as f32),
                 fog: (far * self.fog_start, far),
-                night_vision: time.night_vision(),
+                daylight: self.area.time_weights(),
+                night_vision: self
+                    .night_vision
+                    .map_or(self.area.time_weights()[2], f32::from),
+                ambient: self.ambient(),
+                flashlight: self.flashlight,
                 time_s: t.as_secs_f32(),
                 brightness: self.brightness,
             },
@@ -369,8 +441,13 @@ impl AreaView {
             pass,
             &self.globals,
             view,
-            time.sun_pos(),
-            time == TimeOfDay::Night,
+            self.area.cycle.map_or(time.sun_pos(), |c| {
+                let w = c.weights();
+                let dawn = TimeOfDay::Dusk.sun_pos();
+                let day = TimeOfDay::Day.sun_pos();
+                core::array::from_fn(|k| dawn[k] * (1.0 - w[1]) + day[k] * w[1])
+            }),
+            self.area.time_weights()[2],
         );
 
         let center = self.cam_cell();
@@ -415,7 +492,11 @@ impl AreaView {
                         per_sprite[m].push(Instance {
                             offset: p.pos,
                             turns: facing,
-                            light: *sprite_light,
+                            light: if self.area.cycle.is_some() {
+                                self.area.sprite_light(p)
+                            } else {
+                                *sprite_light
+                            },
                             layer: n_models + u32::from(p.model),
                         });
                         continue;
@@ -423,7 +504,11 @@ impl AreaView {
                     per_model[usize::from(p.model)].push(Instance {
                         offset: p.pos,
                         turns: f32::from(p.quarter_turns),
-                        light: *light,
+                        light: if self.area.cycle.is_some() && *light >= 0.0 {
+                            self.area.object_light(p)
+                        } else {
+                            *light
+                        },
                         layer: u32::from(p.model),
                     });
                 }

@@ -58,6 +58,8 @@ pub struct HuntOptions {
     /// `autoReload` and `autoRack`): the consoles, which have no buttons
     /// left for them.
     pub auto_chamber: bool,
+    /// None: classic scoring. Some: dynamic clock is currently night/day.
+    pub dynamic_night: Option<bool>,
 }
 
 impl Default for HuntOptions {
@@ -84,6 +86,7 @@ impl Default for HuntOptions {
             notice_k: 1.0,
             stealth: false,
             auto_chamber: false,
+            dynamic_night: None,
             teleport: false,
         }
     }
