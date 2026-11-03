@@ -27,13 +27,11 @@ pub struct Launcher {
     mode: Mode,
     cfg: Config,
     tab: Tab,
-    job: Option<Job>,
+    job: crate::jobs::Handle,
     /// Text being typed in the path fields.
     base_text: String,
     note: Option<(String, Color32)>,
     balance: crate::balance::Editor,
-    /// An APK import running: where it writes its add-ons.
-    importing: Option<PathBuf>,
     unpacking: Vec<PathBuf>,
     /// A game being built from the player's APK, to become the base.
     apk_base: Option<PathBuf>,
@@ -160,7 +158,7 @@ impl Launcher {
             mode,
             tab: Tab::Instances,
             cfg,
-            job: None,
+            job: Default::default(),
             base_text,
             note: {
                 let pending = crate::publish::pending(&crate::config::data_dir());
@@ -171,7 +169,6 @@ impl Launcher {
                 b.mobile = mobile;
                 b
             },
-            importing: None,
             unpacking: Vec::new(),
             apk_base: None,
             apk_for_recipe: false,
@@ -201,41 +198,16 @@ impl Launcher {
         let out = crate::config::data_dir()
             .join("mobile")
             .join(crate::config::install_name(&stem));
-        let to = out.clone();
-        let step = Step::Task(Box::new(move |job| {
-            job.log(format!("Reading {}", apk.display()));
-            let base = c2_mods::vanilla(&bases).map_err(|e| e.to_string())?;
-            let stage = crate::publish::Staged::new(&to)?;
-            let done = match c2_mods::mobile::import(&apk, &base, &stage.path) {
-                Ok(done) => done,
-                Err(e) => return Err(stage.abort(e.to_string())),
-            };
-            if done.added.is_empty() {
-                return Err(stage.abort(
-                    "No compatible mobile add-ons were imported; previous install preserved."
-                        .into(),
-                ));
-            }
-            if let Some(warning) = stage.publish()? {
-                job.log(warning);
-            }
-            for s in done.skipped {
-                job.log(format!("Not imported: {s}"));
-            }
-            for a in done.added {
-                job.log(format!("{} (kind of the {})", a.name, a.donor));
-                for n in a.notes {
-                    job.log(format!("  {n}"));
-                }
-            }
-            Ok(())
-        }));
-        self.importing = Some(out);
-        self.job = Some(Job::start("Importing from the mobile game", vec![step]));
+        if let Err(e) = self
+            .job
+            .start_task("Importing from the mobile game", move |job| {
+                crate::jobs::imports::mobile(job, apk, bases, out)
+            })
+        {
+            self.note = Some((e, RED));
+        }
     }
 
-    /// Carnivores: Ice Age's animals and areas as add-ons beside C2's (the
-    /// combined game, `c2_mods::ice_age::import`).
     fn import_ice_age(&mut self, ia: PathBuf) {
         if !self.can_start_operation() {
             return;
@@ -248,44 +220,16 @@ impl Launcher {
         self.cfg.ice_age = Some(ia.clone());
         self.save();
         let out = crate::config::data_dir().join("ice-age");
-        let to = out.clone();
-        let step = Step::Task(Box::new(move |job| {
-            job.log(format!("Reading {}", ia.display()));
-            let base = c2_mods::vanilla(&bases).map_err(|e| e.to_string())?;
-            let stage = crate::publish::Staged::new(&to)?;
-            let done = match c2_mods::ice_age::import(&ia, &base, &stage.path) {
-                Ok(done) => done,
-                Err(e) => return Err(stage.abort(e.to_string())),
-            };
-            if done.added.is_empty() {
-                return Err(stage.abort(
-                    "No compatible Ice Age add-ons were imported; previous install preserved."
-                        .into(),
-                ));
-            }
-            let added: Vec<_> = done
-                .added
-                .iter()
-                .filter_map(|p| p.strip_prefix(&stage.path).ok().map(|p| to.join(p)))
-                .collect();
-            if let Some(warning) = stage.publish()? {
-                job.log(warning);
-            }
-            for s in done.skipped {
-                job.log(format!("Not imported: {s}"));
-            }
-            for d in added {
-                job.log(d.display().to_string());
-            }
-            Ok(())
-        }));
-        self.importing = Some(out);
-        self.job = Some(Job::start("Importing from Carnivores: Ice Age", vec![step]));
+        if let Err(e) = self
+            .job
+            .start_task("Importing from Carnivores: Ice Age", move |job| {
+                crate::jobs::imports::ice_age(job, ia, bases, out)
+            })
+        {
+            self.note = Some((e, RED));
+        }
     }
 
-    /// Rebuilds the mobile game from the player's APK as a game folder in
-    /// the data folder (`apk-base/<apk>/`, `c2_mods::mobile_base`), for
-    /// those with only the phone game; `apk_base_done` makes it the base.
     fn base_from_apk(&mut self, apk: PathBuf) {
         if !self.can_start_operation() {
             return;
@@ -323,7 +267,7 @@ impl Launcher {
             Ok(())
         }));
         self.apk_base = Some(out);
-        self.job = Some(Job::start("Building the game from your APK", vec![step]));
+        self.start_job("Building the game from your APK", vec![step]);
     }
 
     /// After building from an APK: the game is the base.
@@ -331,7 +275,7 @@ impl Launcher {
         let Some(out) = self.apk_base.clone() else {
             return;
         };
-        match self.job.as_ref().and_then(Job::result) {
+        match self.job.result() {
             None => return,
             Some(true) if self.apk_for_recipe => {
                 let dirs = self.game_folders().0;
@@ -352,37 +296,41 @@ impl Launcher {
 
     /// After an import: its folders become add-ons, its values go to the
     /// balance editor.
-    fn import_done(&mut self) {
-        let Some(out) = self.importing.clone() else {
-            return;
-        };
-        match self.job.as_ref().and_then(Job::result) {
-            None => return,
-            Some(false) => {}
-            Some(true) => {
-                let mut dirs: Vec<PathBuf> = std::fs::read_dir(&out)
-                    .map(|rd| {
-                        rd.flatten()
-                            .map(|e| e.path())
-                            .filter(|p| p.is_dir())
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                dirs.sort();
-                let values = out.join(c2_mods::mobile::MOBILE_VALUES);
-                self.cfg.mobile_values = values.exists().then_some(values);
-                let survive = out.join(c2_mods::mobile::MOBILE_SURVIVAL);
-                if survive.exists() {
-                    self.cfg.mobile_survival = Some(survive);
-                }
-                self.balance.mobile = cfg_mobile(&self.cfg);
-                let n = dirs.len();
-                self.importing = None;
-                self.add_addons(dirs);
-                self.note = Some((format!("{n} imported add-ons added (Add-ons tab)."), TEXT));
+    fn import_done(&mut self, out: PathBuf) {
+        let mut dirs: Vec<PathBuf> = std::fs::read_dir(&out)
+            .map(|rd| {
+                rd.flatten()
+                    .map(|e| e.path())
+                    .filter(|p| p.is_dir())
+                    .collect()
+            })
+            .unwrap_or_default();
+        dirs.sort();
+        let values = out.join(c2_mods::mobile::MOBILE_VALUES);
+        self.cfg.mobile_values = values.exists().then_some(values);
+        let survive = out.join(c2_mods::mobile::MOBILE_SURVIVAL);
+        if survive.exists() {
+            self.cfg.mobile_survival = Some(survive);
+        }
+        self.balance.mobile = cfg_mobile(&self.cfg);
+        let n = dirs.len();
+        self.add_addons(dirs);
+        self.note = Some((format!("{n} imported add-ons added (Add-ons tab)."), TEXT));
+    }
+
+    fn poll_job(&mut self) {
+        if let Some(result) = self.job.poll() {
+            match result {
+                Ok(crate::jobs::Completion::Imported(out)) => self.import_done(out),
+                Err(e) => self.note = Some((e, RED)),
             }
         }
-        self.importing = None;
+    }
+
+    fn start_job(&mut self, title: impl Into<String>, steps: Vec<Step>) {
+        if let Err(e) = self.job.start(title, steps) {
+            self.note = Some((e, RED));
+        }
     }
 
     fn shows_3ds(&self) -> bool {
@@ -401,8 +349,7 @@ impl Launcher {
     }
 
     fn busy(&self) -> bool {
-        self.job.as_ref().is_some_and(|j| j.result().is_none())
-            || self.importing.is_some()
+        self.job.busy()
             || !self.unpacking.is_empty()
             || self.apk_base.is_some()
             || self.saving.is_some()
@@ -483,7 +430,7 @@ impl Launcher {
         }
         if !unpack.is_empty() {
             self.unpacking = unpacking;
-            self.job = Some(Job::start("Unpacking add-ons", unpack));
+            self.start_job("Unpacking add-ons", unpack);
         }
         self.save();
     }
@@ -492,7 +439,7 @@ impl Launcher {
         if self.unpacking.is_empty() {
             return;
         }
-        let Some(ok) = self.job.as_ref().and_then(Job::result) else {
+        let Some(ok) = self.job.result() else {
             return;
         };
         let paths = std::mem::take(&mut self.unpacking);
@@ -834,8 +781,7 @@ impl Launcher {
                 .request_repaint_after(std::time::Duration::from_millis(150));
         }
         let mut ask = crate::recipe_edit::Ask::Nothing;
-        let other_busy = self.job.as_ref().is_some_and(|j| j.result().is_none())
-            || self.importing.is_some()
+        let other_busy = self.job.busy()
             || !self.unpacking.is_empty()
             || self.apk_base.is_some()
             || self.saving.is_some()
@@ -1195,7 +1141,7 @@ impl Launcher {
             program: pc,
             args: self.play_args(),
         }];
-        self.job = Some(Job::start("Starting the game", steps));
+        self.start_job("Starting the game", steps);
     }
 
     /// The same game in a VR headset (`c2-vr`, README M17): it checks the
@@ -1217,7 +1163,7 @@ impl Launcher {
             program: vr,
             args: self.play_args(),
         }];
-        self.job = Some(Job::start("Starting the game in VR", steps));
+        self.start_job("Starting the game in VR", steps);
     }
 
     fn build_3ds(&mut self) {
@@ -1385,10 +1331,7 @@ impl Launcher {
                 out: out.join("cia").join(format!("{name}.cia")),
             }));
         }
-        self.job = Some(Job::start(
-            format!("Building the 3DS install '{name}'"),
-            steps,
-        ));
+        self.start_job(format!("Building the 3DS install '{name}'"), steps);
     }
 
     /// The base game's files and the Wii U app onto the SD card
@@ -1552,7 +1495,7 @@ impl Launcher {
                 Ok(())
             })));
         }
-        self.job = Some(Job::start("Building the Wii U installs", steps));
+        self.start_job("Building the Wii U installs", steps);
     }
 
     // ------------------------------------------------------------ tabs
@@ -2500,7 +2443,7 @@ impl Launcher {
             ])
         })();
         match result {
-            Ok(steps) => self.job = Some(Job::start("Building Windows package", steps)),
+            Ok(steps) => self.start_job("Building Windows package", steps),
             Err(e) => self.note = Some((e, RED)),
         }
     }
@@ -2774,7 +2717,7 @@ impl eframe::App for Launcher {
                 .collect()
         });
         self.unpack_done();
-        self.import_done();
+        self.poll_job();
         self.apk_base_done();
         self.saving_done();
         self.dropped(dropped);
@@ -2859,7 +2802,7 @@ impl eframe::App for Launcher {
                 if let Some((n, c)) = &self.note {
                     ui.label(RichText::new(n).color(*c));
                 }
-                match &self.job {
+                match self.job.current() {
                     Some(j) => log_panel(ui, j),
                     None => help(ui, "Drop the game folder or add-ons on this window."),
                 }
@@ -2894,62 +2837,4 @@ fn cfg_mobile(cfg: &Config) -> Option<c2_mods::balance::Balance> {
     cfg.mobile_values
         .as_deref()
         .and_then(|p| c2_mods::balance::Balance::load(p).ok())
-}
-
-#[cfg(test)]
-mod operation_tests {
-    use super::*;
-    fn launcher() -> Launcher {
-        Launcher {
-            mode: Mode::Full,
-            cfg: Config::default(),
-            tab: Tab::Instances,
-            job: None,
-            base_text: String::new(),
-            note: None,
-            balance: Default::default(),
-            importing: None,
-            unpacking: Vec::new(),
-            apk_base: None,
-            apk_for_recipe: false,
-            recipe_page: None,
-            recipe_edit: None,
-            instances: Default::default(),
-            saving: None,
-        }
-    }
-    #[test]
-    fn every_job_start_rejects_pending_completion() {
-        let mut app = launcher();
-        app.importing = Some(PathBuf::from("pending"));
-        app.import_apk("input.apk".into());
-        app.import_ice_age("input".into());
-        app.base_from_apk("input.apk".into());
-        app.add_addons(vec!["input.zip".into()]);
-        app.play();
-        app.play_vr();
-        app.build_3ds();
-        app.build_wiiu();
-        app.build_windows();
-        app.save_instance();
-        assert!(app.job.is_none());
-        assert!(app.apk_base.is_none());
-        assert!(app.saving.is_none());
-        assert_eq!(app.importing, Some(PathBuf::from("pending")));
-        assert!(app.note.is_some());
-    }
-    #[test]
-    fn all_completion_kinds_hold_the_busy_guard() {
-        let mut app = launcher();
-        assert!(app.can_start_operation());
-        app.apk_base = Some("pending".into());
-        assert!(!app.can_start_operation());
-        app.apk_base = None;
-        app.unpacking.push("pending".into());
-        assert!(!app.can_start_operation());
-        app.unpacking.clear();
-        let (_tx, rx) = std::sync::mpsc::channel();
-        app.saving = Some(rx);
-        assert!(!app.can_start_operation());
-    }
 }

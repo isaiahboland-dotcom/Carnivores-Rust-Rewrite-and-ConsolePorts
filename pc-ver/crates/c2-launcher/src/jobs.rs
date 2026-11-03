@@ -5,7 +5,71 @@
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, Mutex};
+
+pub(crate) mod imports;
+
+/// Successful work delivered exactly once to the UI.
+pub(crate) enum Completion {
+    Imported(PathBuf),
+}
+
+/// The single owner of launcher work and its unconsumed completion.
+#[derive(Default)]
+pub(crate) struct Handle {
+    job: Option<Job>,
+    completion: Option<Receiver<Completion>>,
+}
+
+impl Handle {
+    pub fn busy(&self) -> bool {
+        self.completion.is_some() || self.result().is_none() && self.job.is_some()
+    }
+    pub fn current(&self) -> Option<&Job> {
+        self.job.as_ref()
+    }
+    pub fn result(&self) -> Option<bool> {
+        self.job.as_ref().and_then(Job::result)
+    }
+    pub fn start(&mut self, title: impl Into<String>, steps: Vec<Step>) -> Result<(), String> {
+        if self.busy() {
+            return Err("Wait for the current operation to finish.".into());
+        }
+        self.job = Some(Job::start(title, steps));
+        Ok(())
+    }
+    pub fn start_task(
+        &mut self,
+        title: impl Into<String>,
+        task: impl FnOnce(&Job) -> Result<Completion, String> + Send + 'static,
+    ) -> Result<(), String> {
+        if self.busy() {
+            return Err("Wait for the current operation to finish.".into());
+        }
+        let (tx, rx) = channel();
+        self.start(
+            title,
+            vec![Step::Task(Box::new(move |job| {
+                let done = task(job)?;
+                tx.send(done)
+                    .map_err(|_| "The launcher closed before completion.".into())
+            }))],
+        )?;
+        self.completion = Some(rx);
+        Ok(())
+    }
+    pub fn poll(&mut self) -> Option<Result<Completion, String>> {
+        let ok = self.result()?;
+        let rx = self.completion.take()?;
+        Some(if ok {
+            rx.try_recv()
+                .map_err(|_| "Worker stopped without a result.".into())
+        } else {
+            Err("Operation failed: see the job log.".into())
+        })
+    }
+}
 
 /// Work a [`Step::Task`] does.
 pub type Task = Box<dyn FnOnce(&Job) -> Result<(), String> + Send>;
@@ -62,14 +126,21 @@ impl Job {
         };
         let j = job.clone();
         std::thread::spawn(move || {
-            let mut ok = true;
-            for step in steps {
-                if let Err(e) = j.run(step) {
-                    j.log(format!("Failed: {e}"));
-                    ok = false;
-                    break;
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mut ok = true;
+                for step in steps {
+                    if let Err(e) = j.run(step) {
+                        j.log(format!("Failed: {e}"));
+                        ok = false;
+                        break;
+                    }
                 }
-            }
+                ok
+            }));
+            let ok = result.unwrap_or_else(|_| {
+                j.log("Failed: worker panicked.");
+                false
+            });
             if let Ok(mut s) = j.state.lock() {
                 s.ok = Some(ok);
             }
@@ -389,5 +460,63 @@ mod tests {
         assert!(unpack(&input, &out, &job).is_err());
         assert_eq!(std::fs::read(out.join("old")).unwrap(), b"old");
         assert!(crate::publish::pending(&t.0).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod flow_tests {
+    use super::*;
+
+    fn settle(handle: &Handle) {
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while handle.result().is_none() {
+            assert!(std::time::Instant::now() < until, "worker did not finish");
+            std::thread::yield_now();
+        }
+    }
+
+    #[test]
+    fn work_and_unconsumed_results_cannot_be_overwritten() {
+        let mut handle = Handle::default();
+        let (tx, rx) = channel();
+        handle
+            .start_task("first", move |_| {
+                rx.recv().map_err(|e| e.to_string())?;
+                Ok(Completion::Imported("first".into()))
+            })
+            .unwrap();
+        assert!(handle.start("overlap", vec![]).is_err());
+        tx.send(()).unwrap();
+        settle(&handle);
+        assert!(handle.busy());
+        assert!(handle.start("lost result", vec![]).is_err());
+        assert!(
+            matches!(handle.poll(), Some(Ok(Completion::Imported(p))) if p == Path::new("first"))
+        );
+        assert!(handle.poll().is_none());
+        assert!(!handle.busy());
+        assert!(handle.start("next", vec![]).is_ok());
+    }
+
+    #[test]
+    fn failed_or_panicking_workers_release_the_handle_once_polled() {
+        for panic in [false, true] {
+            let mut handle = Handle::default();
+            handle
+                .start_task("failure", move |_| {
+                    if panic {
+                        panic!("synthetic worker failure");
+                    }
+                    Err("synthetic error".into())
+                })
+                .unwrap();
+            settle(&handle);
+            assert_eq!(handle.result(), Some(false));
+            assert!(handle.busy());
+            assert!(handle.poll().unwrap().is_err());
+            assert!(handle.poll().is_none());
+            assert!(!handle.busy());
+            assert!(handle.start("retry", vec![]).is_ok());
+        }
     }
 }
