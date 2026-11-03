@@ -1,5 +1,30 @@
 # Decisions and deviations
 
+## 2026-11-03 — Split survival configuration, navigation and wave updates
+
+The 996-line `game/survival.rs` combines mode configuration and species
+selection, terrain navigation, wave progression and animal placement. Keep it
+as a 29-line facade and extract four private modules under `game/survival/`:
+`options` (rosters, mobile/MEE waves and species predicates), `navigation`
+(spawn-box fences, flow fields and their existing synthetic tests), `runtime`
+(survival state, setup and wave lifecycle), and `spawning` (placement and animal
+initialization). Each implementation file stays below 400 lines.
+
+Keep the public `game` re-exports stable. Navigation types and shared helpers
+are visible only within survival; `survival_step` remains accessible within
+`game` for tick scheduling. Preserve random draws, fallback order, rest timing,
+health/ammo behavior, navigation thresholds and feature attributes. Source
+comparison confirms all 36 original function bodies match after whitespace
+normalization; no gameplay logic or new dependency is introduced.
+
+Validation: workspace Clippy with all targets and warnings denied, formatting,
+all-features core rustdoc, the minimal `portable-hunt` build, and all 14 survival
+regressions under `no_std` (`portable-load,hunt-diagnostics`) pass. The full
+all-features core suite also passes. Asset-dependent integration cases may
+return early without local game paths; ignored timing/stress cases and console
+hardware remain outside this validation. The existing `sound.rs` unused
+`FloatMath` warning is still present in the no_std unit-test harness.
+
 ## 2026-11-03 — Split hunt orchestration by responsibility
 
 The 4,596-line `c2-core/src/game.rs` contained weapon definitions and ammo,
