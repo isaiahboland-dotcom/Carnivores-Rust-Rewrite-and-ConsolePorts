@@ -286,8 +286,10 @@ Optional per mod: `folder = "..."` (folder name hint). `[[resolve]]` takes `path
 
 ## 7. Milestones
 
-Code comments and `DECISIONS.md` refer to the roadmap's milestones by
-number:
+The [public roadmap](ROADMAP.md) tracks current priorities and validation gaps.
+See [RELEASING.md](RELEASING.md) for the release process and the root
+[CHANGELOG.md](../CHANGELOG.md) for released changes. Code comments and
+`DECISIONS.md` refer to milestones by number:
 
 | | |
 |---|---|

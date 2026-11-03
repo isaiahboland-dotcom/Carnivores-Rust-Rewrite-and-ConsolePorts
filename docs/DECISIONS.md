@@ -1,5 +1,18 @@
 # Decisions and deviations
 
+## 2026-11-02 — Public roadmap and versioned releases
+
+`docs/ROADMAP.md` is now the canonical public roadmap, linked from the README
+and development guide. It supersedes the earlier decision to keep the roadmap
+only in an ignored local TODO file. Local investigation notes remain local.
+
+The first tagged source milestone is v0.1.0. Both Rust workspaces and the shared
+path-package entries in all lockfiles use 0.1.0 without dependency upgrades.
+Every release gets an annotated tag, published notes and a minimal changelog;
+`docs/RELEASING.md` records the gate. Build/unit-test evidence is distinguished
+from interactive gameplay and hardware testing, especially for Windows, consoles
+and VR. No game or mod assets are included in the release.
+
 Newest first. Each entry: what, why, and what it affects.
 
 ## 2026-11-02 — Windows instance packaging and optional console UI

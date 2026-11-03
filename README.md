@@ -5,6 +5,8 @@ A fan-made, ground-up Rust rewrite of **Carnivores 2** (Action Forms, 1999), wit
 You need your own copy of Carnivores 2: this project contains **no game files and no mod files**, only
 code, documentation and recipes (lists of credits, download links and file hashes).
 
+**v0.1.0:** [Release notes](docs/releases/v0.1.0.md) · [Changelog](CHANGELOG.md) · [Public roadmap](docs/ROADMAP.md)
+
 ---
 
 ## Why this exists
@@ -45,10 +47,9 @@ the 3DS's PICA200 GPU and the Wii U's PowerPC CPU.
 | **PC VR** (OpenXR) | Early first draft | Menus and the hunt setup on a panel, walking the areas, animals that hunt you. No weapons yet. Tested with a PS VR2 on Linux through Monado. |
 | **PS5 / PS VR2** | Not started | Research notes only (`psvr2-ver/gameplan.md`). Mainly looking at an optimized PSVR2 setup since the PS5 CFW community is already working on translation layers for PC games to run |
 
-**Planned:** the mobile games' Android APKs as base games. Today an APK only adds its animals (and the
-Dinosaur Hunter's classic survival) to a PC Carnivores 2 or Ice Age install. Later, your own APK will be
-enough on its own to play, with add-ons on top, as the PC games are now. 
-Recipe files for some of the more popular mods
+The launcher can also rebuild a base game from your own supported Android APK, with add-ons on top.
+Mobile conversion and mixed-mod compatibility still need further gameplay testing; see the
+[roadmap](docs/ROADMAP.md) for current priorities.
 
 ---
 
