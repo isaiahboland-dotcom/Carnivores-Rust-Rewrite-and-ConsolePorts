@@ -283,6 +283,12 @@ impl Launcher {
                 Ok(crate::jobs::Completion::ApkBase { out, for_recipe }) => {
                     self.apk_base_done(out, for_recipe)
                 }
+                Ok(crate::jobs::Completion::Pinned(pinned)) => {
+                    if let Some(editor) = &mut self.recipe_edit {
+                        let (kind, entry, dir) = *pinned;
+                        editor.pinned(kind, entry, dir);
+                    }
+                }
                 Ok(crate::jobs::Completion::Recipe(messages)) => {
                     if let Some(page) = &mut self.recipe_page {
                         page.apply(messages);
@@ -294,6 +300,9 @@ impl Launcher {
                     self.saving_done(r, u);
                 }
                 Err(e) => {
+                    if let Some(editor) = &mut self.recipe_edit {
+                        editor.failed(&e);
+                    }
                     if let Some(page) = &mut self.recipe_page {
                         page.failed(&e);
                     }
@@ -723,7 +732,6 @@ impl Launcher {
         let Some(e) = &mut self.recipe_edit else {
             return;
         };
-        e.poll();
         if e.working() {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(150));
@@ -731,7 +739,9 @@ impl Launcher {
         let mut ask = crate::recipe_edit::Ask::Nothing;
         let other_busy = self.job.busy() || self.recipe_page.as_ref().is_some_and(|p| p.working());
         panel(ui, |ui| {
-            ui.add_enabled_ui(!other_busy && !e.working(), |ui| ask = e.ui(ui, &game));
+            ui.add_enabled_ui(!other_busy && !e.working(), |ui| {
+                ask = e.ui(ui, &game, &mut self.job)
+            });
         });
         match ask {
             crate::recipe_edit::Ask::Nothing => {}

@@ -8,7 +8,6 @@
 //! they are: "Save as instance" takes the other tabs' choices into them.
 
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{channel, Receiver};
 
 use c2_mods::recipe::{self, Recipe, RecipeMod};
 use eframe::egui::{self, Color32, RichText};
@@ -34,16 +33,13 @@ impl Kind {
     }
 }
 
-/// An entry pinned from a folder, with that folder.
-type Added = Result<(Kind, RecipeMod, PathBuf), String>;
-
 pub struct Editor {
     pub path: PathBuf,
     pub recipe: Recipe,
     saved: Recipe,
     /// Base profile ids found beside the recipe (`bases/*.toml`).
     bases: Vec<String>,
-    adding: Option<Receiver<Added>>,
+    adding: bool,
     /// Folders of entries added here: remembered once saved.
     pub added: Vec<(String, PathBuf)>,
     note: Option<(String, Color32)>,
@@ -209,7 +205,7 @@ impl Editor {
             saved: r.clone(),
             recipe: r,
             bases: base_ids(path),
-            adding: None,
+            adding: false,
             added: Vec::new(),
             note: None,
         })
@@ -220,67 +216,50 @@ impl Editor {
     }
 
     pub fn working(&self) -> bool {
-        self.adding.is_some()
+        self.adding
     }
 
-    /// An entry being pinned, once it is.
-    pub fn poll(&mut self) {
-        let Some(rx) = &self.adding else {
-            return;
-        };
-        let Ok(made) = rx.try_recv() else {
-            return;
-        };
-        self.adding = None;
-        self.note = Some(
-            match made.and_then(|(kind, m, dir)| {
-                let id = m.id.clone();
-                add_entry(&mut self.recipe, kind, m)?;
+    pub(crate) fn pinned(&mut self, kind: Kind, entry: RecipeMod, dir: PathBuf) {
+        self.adding = false;
+        let id = entry.id.clone();
+        self.note = Some(match add_entry(&mut self.recipe, kind, entry) {
+            Ok(()) => {
                 self.added.push((id.clone(), dir));
-                Ok(id)
-            }) {
-                Ok(id) => (format!("Added '{id}': save to keep it."), TEXT),
-                Err(e) => (format!("Not added: {e}"), RED),
-            },
-        );
+                (format!("Added '{id}': save to keep it."), TEXT)
+            }
+            Err(e) => (format!("Not added: {e}"), RED),
+        });
+    }
+
+    pub(crate) fn failed(&mut self, error: &str) {
+        if self.adding {
+            self.note = Some((format!("Not added: {error}"), RED));
+        }
+        self.adding = false;
     }
 
     /// Pins the folder (hashing its files) off the UI thread. An add-on
     /// is read against `game_dirs` (its `_RES.TXT` changes are what it
     /// pins with).
-    fn add_from(&mut self, kind: Kind, dir: PathBuf, game_dirs: Vec<PathBuf>) {
-        if self.working() {
+    fn add_from(
+        &mut self,
+        kind: Kind,
+        dir: PathBuf,
+        game_dirs: Vec<PathBuf>,
+        handle: &mut crate::jobs::Handle,
+    ) {
+        if self.working() || handle.busy() {
             return;
         }
-        let (tx, rx) = channel();
-        std::thread::spawn(move || {
-            let made = (|| -> Added {
-                let m = match kind {
-                    Kind::Overlay | Kind::Standalone => {
-                        recipe::pin_game(&dir).map_err(|e| e.to_string())?
-                    }
-                    Kind::AddOn => {
-                        if game_dirs.is_empty() {
-                            return Err(
-                                "an add-on is read against the game: set the Game tab's game"
-                                    .into(),
-                            );
-                        }
-                        let v = c2_mods::vanilla(&game_dirs).map_err(|e| e.to_string())?;
-                        let src = c2_mods::load_mod(&v, &dir).map_err(|e| e.to_string())?;
-                        recipe::new_recipe("x", "x", "", &[src])
-                            .map_err(|e| e.to_string())?
-                            .mods
-                            .pop()
-                            .ok_or("nothing to pin in it")?
-                    }
-                };
-                Ok((kind, m, dir))
-            })();
-            let _ = tx.send(made);
-        });
-        self.adding = Some(rx);
-        self.note = Some(("Pinning its files...".into(), TEXT));
+        match handle.start_task("Pinning recipe entry", move |_| {
+            crate::jobs::recipe_edit::pin(kind, dir, game_dirs)
+        }) {
+            Ok(()) => {
+                self.adding = true;
+                self.note = Some(("Pinning its files...".into(), TEXT));
+            }
+            Err(e) => self.failed(&e),
+        }
     }
 
     fn write(&mut self, to: &Path) -> Option<Ask> {
@@ -309,7 +288,12 @@ impl Editor {
     }
 
     /// `game_dirs`: the game add-ons are read against.
-    pub fn ui(&mut self, ui: &mut egui::Ui, game_dirs: &[PathBuf]) -> Ask {
+    pub fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        game_dirs: &[PathBuf],
+        handle: &mut crate::jobs::Handle,
+    ) -> Ask {
         let mut ask = Ask::Nothing;
         ui.label(
             RichText::new(format!("Editing: {}", self.path.display()))
@@ -395,7 +379,7 @@ impl Editor {
                             ui.label(RichText::new(kind.label()).color(SAND).strong());
                             if ui
                                 .add_enabled(
-                                    self.adding.is_none(),
+                                    !self.adding,
                                     egui::Button::new("Add from a folder..."),
                                 )
                                 .clicked()
@@ -468,7 +452,7 @@ impl Editor {
         }
         if let Some(kind) = add {
             if let Some(dir) = rfd::FileDialog::new().pick_folder() {
-                self.add_from(kind, dir, game_dirs.to_vec());
+                self.add_from(kind, dir, game_dirs.to_vec(), handle);
             }
         }
         ui.add_space(6.0);
@@ -607,5 +591,44 @@ mod tests {
         r.patches.push(recipe::PatchRef::default());
         assert!(save_problem(&r, from, Path::new("/x/recipes/b.toml")).is_none());
         assert!(save_problem(&r, from, Path::new("/y/b.toml")).is_some());
+    }
+}
+
+#[cfg(test)]
+mod job_tests {
+    use super::*;
+
+    #[test]
+    fn pinning_cannot_overlap_and_completed_entry_is_applied_once() {
+        let temp = crate::publish::tests::Temp::new();
+        let path = temp.0.join("recipe.toml");
+        std::fs::write(&path, "[recipe]\nid = 'test'\n").unwrap();
+        let dir = temp.0.join("overlay");
+        std::fs::create_dir_all(dir.join("HUNTDAT")).unwrap();
+        std::fs::write(dir.join("HUNTDAT/X.CAR"), b"synthetic").unwrap();
+        std::fs::write(dir.join("HUNTDAT/_RES.TXT"), b"synthetic config").unwrap();
+        let mut editor = Editor::open(&path).unwrap();
+        let mut handle = crate::jobs::Handle::default();
+        editor.add_from(Kind::Overlay, dir.clone(), vec![], &mut handle);
+        editor.add_from(Kind::Standalone, dir.clone(), vec![], &mut handle);
+        assert!(handle.start("overlap", vec![]).is_err());
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while handle.result().is_none() {
+            assert!(std::time::Instant::now() < until);
+            std::thread::yield_now();
+        }
+        assert!(editor.working());
+        match handle.poll() {
+            Some(Ok(crate::jobs::Completion::Pinned(pinned))) => {
+                let (kind, entry, folder) = *pinned;
+                editor.pinned(kind, entry, folder);
+            }
+            _ => panic!("expected pinned entry"),
+        }
+        assert!(!editor.working());
+        assert_eq!(editor.recipe.overlays.len(), 1);
+        assert!(editor.recipe.standalones.is_empty());
+        assert_eq!(editor.added, vec![("overlay".into(), dir)]);
+        assert!(handle.poll().is_none());
     }
 }
