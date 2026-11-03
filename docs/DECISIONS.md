@@ -3415,3 +3415,11 @@ programmer preconditions in every build, so release cooking has the same clear
 failure mode as debug cooking. No gameplay rules change. See
 [the audit follow-up](SECURITY-HARDENING.md#2026-11-03-audit-follow-up) for scope,
 CI coverage and the distinction between synthetic tests and owner-data parity.
+
+## 2026-11-03 — Select the 3DS CI toolchain explicitly
+
+The formats portability job requires nightly Cargo for its build-std invocation.
+Set toolchain: nightly explicitly when using the shared pinned rust-toolchain
+action revision. Dependabot can replace a nightly-branch action pin with a
+stable-default revision; a trailing nightly comment does not select a channel.
+Keep rust-src installed and retain the real 3DS target build as the CI gate.

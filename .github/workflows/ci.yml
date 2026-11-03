@@ -35,8 +35,9 @@ jobs:
         working-directory: pc-ver
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@2c76c034f9e32a5d6e2c104dc4df23a22476db04 # nightly
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable action; nightly selected below
         with:
+          toolchain: nightly
           components: rust-src
       - run: cargo build -p c2-formats --target armv6k-nintendo-3ds -Z build-std=std,panic_abort
 
