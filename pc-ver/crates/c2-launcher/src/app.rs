@@ -33,10 +33,6 @@ pub struct Launcher {
     note: Option<(String, Color32)>,
     balance: crate::balance::Editor,
     unpacking: Vec<PathBuf>,
-    /// A game being built from the player's APK, to become the base.
-    apk_base: Option<PathBuf>,
-    /// ... the recipe page's game instead.
-    apk_for_recipe: bool,
     /// A recipe being set up (Add-ons or Instances tab).
     recipe_page: Option<crate::recipe_page::Page>,
     /// A recipe being edited (Instances tab).
@@ -170,8 +166,6 @@ impl Launcher {
                 b
             },
             unpacking: Vec::new(),
-            apk_base: None,
-            apk_for_recipe: false,
             recipe_page: None,
             recipe_edit: None,
             instances: Default::default(),
@@ -230,7 +224,7 @@ impl Launcher {
         }
     }
 
-    fn base_from_apk(&mut self, apk: PathBuf) {
+    fn base_from_apk(&mut self, apk: PathBuf, for_recipe: bool) {
         if !self.can_start_operation() {
             return;
         }
@@ -241,61 +235,29 @@ impl Launcher {
         let out = crate::config::data_dir()
             .join("apk-base")
             .join(crate::config::install_name(&stem));
-        let to = out.clone();
-        let step = Step::Task(Box::new(move |job| {
-            job.log(format!("Reading {}", apk.display()));
-            let stage = crate::publish::Staged::new(&to)?;
-            let b = match c2_mods::mobile_base::build(&apk, &stage.path) {
-                Ok(b) => b,
-                Err(e) => return Err(stage.abort(e.to_string())),
-            };
-            if !stage.path.join("HUNTDAT/_RES.TXT").is_file() {
-                return Err(stage.abort("Build did not produce HUNTDAT/_RES.TXT".into()));
-            }
-            if let Some(warning) = stage.publish()? {
-                job.log(warning);
-            }
-            job.log(format!(
-                "{} areas, {} animals, {} weapons",
-                b.areas.len(),
-                b.animals.len(),
-                b.weapons.len()
-            ));
-            for n in b.notes {
-                job.log(format!("  {n}"));
-            }
-            Ok(())
-        }));
-        self.apk_base = Some(out);
-        self.start_job("Building the game from your APK", vec![step]);
-    }
-
-    /// After building from an APK: the game is the base.
-    fn apk_base_done(&mut self) {
-        let Some(out) = self.apk_base.clone() else {
-            return;
-        };
-        match self.job.result() {
-            None => return,
-            Some(true) if self.apk_for_recipe => {
-                let dirs = self.game_folders().0;
-                if let Some(p) = &mut self.recipe_page {
-                    p.game = Some(out.clone());
-                    p.check_base(dirs);
-                }
-            }
-            Some(true) => {
-                self.set_base(out.clone());
-                self.base_text = out.display().to_string();
-            }
-            Some(false) => {}
+        if let Err(e) = self
+            .job
+            .start_task("Building the game from your APK", move |job| {
+                crate::jobs::apk_base::build(job, apk, out, for_recipe)
+            })
+        {
+            self.note = Some((e, RED));
         }
-        self.apk_base = None;
-        self.apk_for_recipe = false;
     }
 
-    /// After an import: its folders become add-ons, its values go to the
-    /// balance editor.
+    fn apk_base_done(&mut self, out: PathBuf, for_recipe: bool) {
+        if for_recipe {
+            let dirs = self.game_folders().0;
+            if let Some(p) = &mut self.recipe_page {
+                p.game = Some(out);
+                p.check_base(dirs);
+            }
+        } else {
+            self.set_base(out.clone());
+            self.base_text = out.display().to_string();
+        }
+    }
+
     fn import_done(&mut self, out: PathBuf) {
         let mut dirs: Vec<PathBuf> = std::fs::read_dir(&out)
             .map(|rd| {
@@ -322,6 +284,9 @@ impl Launcher {
         if let Some(result) = self.job.poll() {
             match result {
                 Ok(crate::jobs::Completion::Imported(out)) => self.import_done(out),
+                Ok(crate::jobs::Completion::ApkBase { out, for_recipe }) => {
+                    self.apk_base_done(out, for_recipe)
+                }
                 Err(e) => self.note = Some((e, RED)),
             }
         }
@@ -351,7 +316,6 @@ impl Launcher {
     fn busy(&self) -> bool {
         self.job.busy()
             || !self.unpacking.is_empty()
-            || self.apk_base.is_some()
             || self.saving.is_some()
             || self.recipe_page.as_ref().is_some_and(|p| p.working())
             || self.recipe_edit.as_ref().is_some_and(|e| e.working())
@@ -783,7 +747,6 @@ impl Launcher {
         let mut ask = crate::recipe_edit::Ask::Nothing;
         let other_busy = self.job.busy()
             || !self.unpacking.is_empty()
-            || self.apk_base.is_some()
             || self.saving.is_some()
             || self.recipe_page.as_ref().is_some_and(|p| p.working());
         panel(ui, |ui| {
@@ -1587,7 +1550,7 @@ impl Launcher {
                     .add_filter("Android app", &["apk"])
                     .pick_file()
                 {
-                    self.base_from_apk(p);
+                    self.base_from_apk(p, false);
                 }
             }
         });
@@ -1740,8 +1703,7 @@ impl Launcher {
                         .add_filter("Android app", &["apk"])
                         .pick_file()
                     {
-                        self.base_from_apk(apk);
-                        self.apk_for_recipe = true;
+                        self.base_from_apk(apk, true);
                     }
                 }
             }
@@ -2655,8 +2617,7 @@ impl Launcher {
         let busy = self.busy();
         if let Some(p) = &mut self.recipe_page {
             if ext_is(&first, "apk") && p.is_apk_base() && !busy {
-                self.base_from_apk(first);
-                self.apk_for_recipe = true;
+                self.base_from_apk(first, true);
                 self.tab = Tab::AddOns;
                 return;
             }
@@ -2670,7 +2631,7 @@ impl Launcher {
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("apk"));
         if apk && (self.tab == Tab::Game || self.cfg.base.is_none()) && !self.busy() {
-            self.base_from_apk(first);
+            self.base_from_apk(first, false);
             return;
         }
         let is_game = describe_game(&first).is_some();
@@ -2718,7 +2679,6 @@ impl eframe::App for Launcher {
         });
         self.unpack_done();
         self.poll_job();
-        self.apk_base_done();
         self.saving_done();
         self.dropped(dropped);
         if self.saving.is_some() {

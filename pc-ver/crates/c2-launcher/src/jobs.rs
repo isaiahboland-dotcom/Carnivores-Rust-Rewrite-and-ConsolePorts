@@ -8,11 +8,13 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, Mutex};
 
+pub(crate) mod apk_base;
 pub(crate) mod imports;
 
 /// Successful work delivered exactly once to the UI.
 pub(crate) enum Completion {
     Imported(PathBuf),
+    ApkBase { out: PathBuf, for_recipe: bool },
 }
 
 /// The single owner of launcher work and its unconsumed completion.
