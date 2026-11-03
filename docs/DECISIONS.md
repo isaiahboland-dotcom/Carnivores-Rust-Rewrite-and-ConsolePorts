@@ -3285,3 +3285,25 @@ runtime diagnostics. No headset validation is claimed.
 Policy, recovery instructions, validation commands and remaining limits are in
 [SECURITY-HARDENING.md](SECURITY-HARDENING.md). Changes preserve gameplay rules;
 cosmetic refactors and performance experiments from the review remain separate.
+
+## 2026-11-02 — One launcher job owner
+
+The launcher owns configuration, presentation data, and a single `jobs::Handle`.
+Mobile/Ice Age importing, APK-base rebuilding, archive extraction, instance
+pinning, recipe verification, recipe-editor pinning, and balance reads run through
+that handle. Each worker extraction was validated separately before proceeding.
+Tab rendering and build-step construction live in focused `app/` modules;
+`app.rs` coordinates navigation and dispatches typed completion results.
+
+A handle stays busy while its worker runs **and until its result is consumed**.
+All entry points refuse to replace it, including dropped files. Recipe checks
+are batched into one job instead of spawning independent row/base/scan workers.
+Completion errors and worker panics release the handle on polling and clear
+presentation loading states, allowing another operation. Configuration controls
+are disabled during work; tab navigation and the log remain available. Running
+the PC game continues to hold the handle until exit, protecting its inputs.
+
+Regression tests exercise overlap rejection, results consumed once, failure and
+panic recovery, staged rebuild preservation, recipe verification, editor pinning,
+and balance reads. A headless egui test draws every tab without game data. These
+checks do not establish native Windows, headset, or console hardware behavior.

@@ -348,7 +348,7 @@ impl Launcher {
         }
         ui.add_space(6.0);
         let (bases, mods) = self.game_folders();
-        if let Some(e) = self.ui.balance.ui(ui, &bases, &mods) {
+        if let Some(e) = self.ui.balance.ui(ui, &bases, &mods, &mut self.job) {
             self.ui.note = Some((e, RED));
         }
     }

@@ -5,7 +5,6 @@
 //! are kept in it, by name, so it survives add-ons being reordered.
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 use c2_mods::balance::{Balance, Item};
 use eframe::egui::{self, RichText};
@@ -13,22 +12,8 @@ use eframe::egui::{self, RichText};
 use crate::app::{help, panel};
 use crate::theme::*;
 
-/// The game's own values, read off the UI thread.
-type Pending = Arc<Mutex<Option<Result<Balance, String>>>>;
-
 pub fn path() -> PathBuf {
     crate::config::data_dir().join("balance.toml")
-}
-
-/// The game (base, overlays, add-ons) combined in memory, and its values.
-fn read_game(bases: &[PathBuf], mods: &[PathBuf]) -> Result<Balance, String> {
-    let v = c2_mods::vanilla(bases).map_err(|e| e.to_string())?;
-    let sources = mods
-        .iter()
-        .map(|m| c2_mods::load_mod(&v, m).map_err(|e| format!("{}: {e}", m.display())))
-        .collect::<Result<Vec<_>, _>>()?;
-    let pack = c2_mods::build(bases, sources).map_err(|e| e.to_string())?;
-    c2_mods::balance::read(&pack.vfs).map_err(|e| e.to_string())
 }
 
 #[derive(Default)]
@@ -38,7 +23,7 @@ pub struct Editor {
     /// The game's own values, and the folders they are for.
     values: Option<Balance>,
     for_game: Vec<PathBuf>,
-    pending: Option<Pending>,
+    loading: bool,
     error: Option<String>,
     filter: String,
     /// The mobile game's values for this game's entries (written by the
@@ -140,37 +125,41 @@ impl Editor {
         std::fs::write(&p, self.edits.to_toml()).map_err(|e| e.to_string())
     }
 
-    /// Reads the game's values again when the folders changed.
-    fn refresh(&mut self, bases: &[PathBuf], mods: &[PathBuf], ctx: &egui::Context) {
-        if let Some(p) = &self.pending {
-            let done = p.lock().ok().and_then(|mut s| s.take());
-            match done {
-                Some(Ok(v)) => {
-                    (self.values, self.error, self.pending) = (Some(v), None, None);
-                }
-                Some(Err(e)) => (self.values, self.error, self.pending) = (None, Some(e), None),
-                None => {
-                    ctx.request_repaint_after(std::time::Duration::from_millis(100));
-                    return;
-                }
-            }
+    /// A changed game is read only when the launcher's worker is available.
+    fn refresh(&mut self, bases: &[PathBuf], mods: &[PathBuf], handle: &mut crate::jobs::Handle) {
+        if self.loading || handle.busy() {
+            return;
         }
         let key: Vec<PathBuf> = bases.iter().chain(mods).cloned().collect();
         if key == self.for_game || bases.is_empty() {
             return;
         }
-        self.for_game = key;
-        let p: Pending = Arc::default();
-        self.pending = Some(p.clone());
         let (bases, mods) = (bases.to_vec(), mods.to_vec());
-        let ctx = ctx.clone();
-        std::thread::spawn(move || {
-            let r = read_game(&bases, &mods);
-            if let Ok(mut s) = p.lock() {
-                *s = Some(r);
+        match handle.start_task("Reading balance values", move |_| {
+            crate::jobs::balance::read(bases, mods)
+        }) {
+            Ok(()) => {
+                self.for_game = key;
+                self.loading = true;
+                self.values = None;
+                self.error = None;
             }
-            ctx.request_repaint();
-        });
+            Err(e) => self.error = Some(e),
+        }
+    }
+
+    pub(crate) fn loaded(&mut self, values: Balance) {
+        self.values = Some(values);
+        self.loading = false;
+        self.error = None;
+    }
+
+    pub(crate) fn failed(&mut self, error: &str) {
+        if self.loading {
+            self.error = Some(error.into());
+            self.values = None;
+        }
+        self.loading = false;
     }
 
     fn edits_mut(&mut self, list: List) -> &mut Vec<Item> {
@@ -354,8 +343,14 @@ impl Editor {
     }
 
     /// The tab. Returns a note for the status line when saving failed.
-    pub fn ui(&mut self, ui: &mut egui::Ui, bases: &[PathBuf], mods: &[PathBuf]) -> Option<String> {
-        self.refresh(bases, mods, &ui.ctx().clone());
+    pub fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        bases: &[PathBuf],
+        mods: &[PathBuf],
+        handle: &mut crate::jobs::Handle,
+    ) -> Option<String> {
+        self.refresh(bases, mods, handle);
         if bases.is_empty() {
             ui.label(RichText::new("Set the game folder first (The game tab).").color(RED));
             return None;
@@ -556,5 +551,45 @@ mod tests {
         // Back to PC: nothing left to change.
         e.choose(List::Weapons, "Shotgun", &d[0].2, false);
         assert!(e.edits.weapons.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod job_tests {
+    use super::*;
+
+    #[test]
+    fn reading_balance_waits_for_other_work_and_keeps_its_pending_result() {
+        let mut editor = Editor::default();
+        let mut handle = crate::jobs::Handle::default();
+        handle
+            .start_task("import", |_| Ok(crate::jobs::Completion::Recipe(vec![])))
+            .unwrap();
+        editor.refresh(&["first".into()], &[], &mut handle);
+        assert!(!editor.loading);
+        assert!(editor.for_game.is_empty());
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while handle.result().is_none() {
+            assert!(std::time::Instant::now() < until);
+            std::thread::yield_now();
+        }
+        handle
+            .poll()
+            .unwrap()
+            .unwrap_or_else(|_| panic!("import result"));
+        editor.refresh(&["first".into()], &[], &mut handle);
+        editor.refresh(&["second".into()], &[], &mut handle);
+        assert!(editor.loading);
+        assert_eq!(editor.for_game, vec![PathBuf::from("first")]);
+        assert!(handle.start("overlap", vec![]).is_err());
+        while handle.result().is_none() {
+            assert!(std::time::Instant::now() < until);
+            std::thread::yield_now();
+        }
+        assert!(handle.poll().unwrap().is_err());
+        editor.failed("synthetic missing game");
+        assert!(!editor.loading);
+        assert!(editor.error.is_some());
+        assert!(!handle.busy());
     }
 }

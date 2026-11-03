@@ -179,6 +179,7 @@ impl Launcher {
         if let Some(result) = self.job.poll() {
             match result {
                 Ok(crate::jobs::Completion::Imported(out)) => self.import_done(out),
+                Ok(crate::jobs::Completion::Balance(values)) => self.ui.balance.loaded(*values),
                 Ok(crate::jobs::Completion::ApkBase { out, for_recipe }) => {
                     self.apk_base_done(out, for_recipe)
                 }
@@ -199,6 +200,7 @@ impl Launcher {
                     self.saving_done(r, u);
                 }
                 Err(e) => {
+                    self.ui.balance.failed(&e);
                     if let Some(editor) = &mut self.ui.recipe_edit {
                         editor.failed(&e);
                     }

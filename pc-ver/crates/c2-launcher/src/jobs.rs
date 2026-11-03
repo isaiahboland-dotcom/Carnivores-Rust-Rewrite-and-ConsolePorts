@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 
 pub(crate) mod addons;
 pub(crate) mod apk_base;
+pub(crate) mod balance;
 pub(crate) mod imports;
 pub(crate) mod recipe;
 pub(crate) mod recipe_edit;
@@ -18,6 +19,7 @@ pub(crate) mod saving;
 /// Successful work delivered exactly once to the UI.
 pub(crate) enum Completion {
     Imported(PathBuf),
+    Balance(Box<c2_mods::balance::Balance>),
     Pinned(
         Box<(
             crate::recipe_edit::Kind,
