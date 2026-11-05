@@ -22,12 +22,12 @@
 #   7. Adds a Desktop Mode application entry and offers to add it to Steam
 #
 # Run it in Desktop Mode (Konsole):
-#   curl -fsSL https://raw.githubusercontent.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/main/install-steamdeck.sh | bash
-# or download it first and run:  bash install-steamdeck.sh
+#   curl -fsSL https://raw.githubusercontent.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/main/steamdeck/installscript.sh | bash
+# or download it first and run:  bash installscript.sh
 #
 # Update an existing install later (pull + rebuild only — the toolchain/deps
 # checks above it stay silent when everything is already present):
-#   curl -fsSL https://raw.githubusercontent.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/main/install-steamdeck.sh | bash -s -- --update
+#   curl -fsSL https://raw.githubusercontent.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/main/steamdeck/installscript.sh | bash -s -- --update
 #
 # Environment overrides:
 #   INSTALL_ROOT=/some/path   install somewhere else (default ~/Games/c2rs — no spaces!)
@@ -36,7 +36,7 @@
 set -Eeuo pipefail
 
 REPO_URL="https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts.git"
-SCRIPT_URL="https://raw.githubusercontent.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/main/install-steamdeck.sh"
+SCRIPT_URL="https://raw.githubusercontent.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/main/steamdeck/installscript.sh"
 INSTALL_ROOT="${INSTALL_ROOT:-$HOME/Games/c2rs}"
 CLONE_DIR="$INSTALL_ROOT/clone"
 RELEASE_DIR="$CLONE_DIR/pc-ver/target/release"
