@@ -5,12 +5,13 @@ build instructions and milestone definitions live in [DEVELOPMENT.md](DEVELOPMEN
 Implementation does not imply that every platform or combination of mods has been
 validated. Game and mod assets must come from the player's own copies.
 
-## Current milestone: v0.1.0
+## Current milestone: v0.4.0
 
-The first tagged source release establishes versioned releases, archive/import
-hardening, and a launcher with one job owner. Linux PC play and earlier 3DS hardware
-tests provide the gameplay baseline. Windows CI checks builds and automated tests;
-Wii U remains a demo and PC VR remains experimental.
+Hunt options (day/night equipment, multi ammo, advanced observer), a points-based
+survival rewrite, and a launcher that picks parts of standalone games and edits an
+instance's balance. Linux PC play is the gameplay baseline. The 3DS, Wii U and
+Windows paths still need fresh hardware runs. See the
+[v0.4.0 notes](releases/v0.4.0.md).
 
 ## Next priorities
 

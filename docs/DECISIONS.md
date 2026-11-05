@@ -3802,3 +3802,11 @@ the pack and names the areas that may be refused; it fails only when
 no area fits (`--force` still overrides that). The shrinking it does
 was all there and runs as before (Old 3DS textures, thinned animations,
 thinned trees and plants).
+
+## 2026-11-05 — Second tagged release is v0.4.0
+
+The owner chose v0.4.0 for the release after v0.1.0, skipping 0.2 and 0.3. Nothing
+was published under those numbers. The changelog and notes say so, so the gap does
+not look like missing history. Both workspaces and the shared path-package entries
+in all three lockfiles move to 0.4.0 with no dependency upgrades, following
+`docs/RELEASING.md`.
