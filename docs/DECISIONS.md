@@ -3754,3 +3754,22 @@ tabs do.
   (so the 3DS and Wii U packs too). Ignored when standalones are combined
   beside the base: their numbering would no longer be the base's alone.
   Left-out parts' own higher-numbered files stay in the pack, unread.
+
+### A standalone that is on is not also an add-on (2026-11-05)
+
+Owner's test: Genesis Redux as the base, JPHL beside it with a few
+animals and weapons picked. With one menu choice the hunt showed JPHL's
+menu screens and all of its animals; with another it was right. The menu
+choice was not the cause: it only swaps the frame pictures, and the
+command line gave the same, correct lists with "Mod", "Original" and
+JPHL's own menu. The launcher's build folders showed the failing run had
+built `combined-jphl-special-edition+jphl-special-edition`: the same JPHL
+folder was also an enabled add-on, which merges all of JPHL (its menu
+pictures too) over the combined game. A folder of add-ons holding it
+(`addons-extracted/`) does the same once expanded. Now
+`Config::enabled_addons` leaves out any add-on whose game is an enabled
+standalone (compared by game root, resolved on disk), and the Add-ons
+list marks such rows. Not changed: the owner's idea of blocking the
+"Mod" menu for Modder's Edition bases (it shows the base's own screens
+correctly); "Android" was already offered only on a base built from an
+APK.

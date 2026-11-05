@@ -168,6 +168,7 @@ impl Launcher {
         let n = self.cfg.addons.len();
         let mut changed = false;
         let mut action: Option<(usize, i32)> = None;
+        let shadowed = self.cfg.addons_shadowed();
         panel(ui, |ui| {
             if n == 0 {
                 help(ui, "No add-ons yet.");
@@ -183,6 +184,19 @@ impl Launcher {
                             let name =
                                 RichText::new(a.name()).color(if a.enabled { TEXT } else { DIM });
                             ui.label(name).on_hover_text(a.path.display().to_string());
+                            if shadowed.contains(&a.path) {
+                                ui.label(
+                                    RichText::new(
+                                        "(holds a standalone game: not loaded as an add-on)",
+                                    )
+                                    .color(GOLD),
+                                )
+                                .on_hover_text(
+                                    "That game is on under Standalone games, with the parts \
+                                         picked there; loading it as an add-on too would bring \
+                                         all of it back.",
+                                );
+                            }
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {

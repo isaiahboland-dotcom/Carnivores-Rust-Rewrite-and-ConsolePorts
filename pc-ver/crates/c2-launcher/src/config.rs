@@ -521,13 +521,53 @@ impl Config {
         }
     }
 
+    /// The add-ons that are on, folders of several expanded. A game that is
+    /// also an enabled standalone is left out (owner's test 2026-11-05: JPHL
+    /// both a standalone, with parts picked, and an add-on, directly or
+    /// inside a folder of add-ons, brought all of JPHL back).
     pub fn enabled_addons(&self) -> Vec<PathBuf> {
+        let games = self.standalone_games();
         self.addons
             .iter()
             .filter(|a| a.enabled)
             .flat_map(|a| c2_mods::expand_addons(&a.path))
+            .filter(|m| !games.contains(&same_game(m)))
             .collect()
     }
+
+    /// The enabled standalones, as [`same_game`] keys.
+    fn standalone_games(&self) -> Vec<PathBuf> {
+        self.enabled_standalones()
+            .iter()
+            .map(|p| same_game(p))
+            .collect()
+    }
+
+    /// The enabled add-on folders (or folders of add-ons) that hold an
+    /// enabled standalone game, which is not loaded as an add-on.
+    pub fn addons_shadowed(&self) -> Vec<PathBuf> {
+        let games = self.standalone_games();
+        if games.is_empty() {
+            return Vec::new();
+        }
+        self.addons
+            .iter()
+            .filter(|a| a.enabled)
+            .filter(|a| {
+                c2_mods::expand_addons(&a.path)
+                    .iter()
+                    .any(|m| games.contains(&same_game(m)))
+            })
+            .map(|a| a.path.clone())
+            .collect()
+    }
+}
+
+/// A folder's game as compared between the add-on and standalone lists:
+/// its game root (the folder itself if none), resolved on disk.
+fn same_game(p: &Path) -> PathBuf {
+    let r = c2_mods::pack::find_game_root(p).unwrap_or_else(|| p.to_path_buf());
+    std::fs::canonicalize(&r).unwrap_or(r)
 }
 
 /// `name` in `dir`, any case.
@@ -592,6 +632,34 @@ pub fn install_name(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_standalone_that_is_on_is_not_also_an_add_on() {
+        let t = crate::publish::tests::Temp::new();
+        let mk = |rel: &str| {
+            let d = t.0.join(rel);
+            std::fs::create_dir_all(d.join("HUNTDAT")).unwrap();
+            std::fs::write(d.join("HUNTDAT/_RES.TXT"), "characters {\n}\n.\n").unwrap();
+            d
+        };
+        let (game, other) = (mk("mods/jphl"), mk("mods/other"));
+        let on = |path: &Path| AddOn {
+            path: path.to_path_buf(),
+            enabled: true,
+            skip: Default::default(),
+        };
+        let mut c = Config {
+            addons: vec![on(&game), on(&t.0.join("mods"))],
+            standalones: vec![on(&game)],
+            ..Default::default()
+        };
+        // Directly, and inside the folder of add-ons: only the other one.
+        assert_eq!(c.enabled_addons(), [other]);
+        assert_eq!(c.addons_shadowed(), [game.clone(), t.0.join("mods")]);
+        c.standalones[0].enabled = false;
+        assert_eq!(c.enabled_addons().len(), 3);
+        assert!(c.addons_shadowed().is_empty());
+    }
 
     #[test]
     fn instance_outputs_survive_switching_and_reload() {
