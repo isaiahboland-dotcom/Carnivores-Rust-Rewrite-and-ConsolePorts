@@ -60,7 +60,14 @@ impl Launcher {
                     .entry(a.path.clone())
                     .or_insert_with(|| c2_mods::standalone::parts(&a.path));
                 if let Some(p) = p {
-                    ui.indent(("parts", i), |ui| changed |= pick_parts(ui, i, p, a));
+                    ui.indent(("parts", i), |ui| {
+                        changed |= pick_parts(
+                            ui,
+                            egui::IdSalt::new(("pick-parts", i, &a.path)),
+                            p,
+                            &mut a.skip,
+                        )
+                    });
                 }
             }
         });
@@ -74,15 +81,15 @@ impl Launcher {
     }
 }
 
-/// The dropdown for one standalone: whether a choice changed.
-fn pick_parts(
+/// The dropdown for one standalone (`salt`: its id): whether a choice
+/// changed. Also the recipe editor's, for an instance's standalones.
+pub(crate) fn pick_parts(
     ui: &mut egui::Ui,
-    i: usize,
+    salt: egui::IdSalt,
     p: &c2_mods::standalone::Parts,
-    a: &mut crate::config::AddOn,
+    s: &mut c2_mods::standalone::Skip,
 ) -> bool {
     let kept = |all: usize, out: &[u32]| all - out.iter().filter(|&&n| n as usize <= all).count();
-    let s = &mut a.skip;
     let title = format!(
         "Pick parts: {} of {} areas, {} of {} animals, {} of {} weapons",
         kept(p.areas, &s.areas),
@@ -94,7 +101,7 @@ fn pick_parts(
     );
     let mut changed = false;
     egui::CollapsingHeader::new(RichText::new(title).color(if s.is_empty() { DIM } else { GOLD }))
-        .id_salt(("pick-parts", i, &a.path))
+        .id_salt(salt)
         .show(ui, |ui| {
             let areas: Vec<String> = (1..=p.areas).map(|n| format!("Area {n}")).collect();
             changed |= pick_list(ui, "Areas", &areas, &mut s.areas);

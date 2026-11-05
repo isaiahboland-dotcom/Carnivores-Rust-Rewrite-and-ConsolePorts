@@ -8,6 +8,8 @@
   APK as the game" moved into the Base game box; Instances as wrapping cards with an always
   visible scroll bar; an Interface size setting that fits the window and full screen under
   Steam's game mode / Big Picture (Steam Deck).
+- Launcher: editing an instance now covers its balance (a new hunter's points, each area's,
+  animal's and weapon's price and score) and **Pick parts** for each of its standalone games.
 
 - Bound `_RES.TXT` nesting, preserve sub-blocks during writing, and reject invalid
   menu slot hints without discarding their files.

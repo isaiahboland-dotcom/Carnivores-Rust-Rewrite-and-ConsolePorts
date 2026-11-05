@@ -20,6 +20,8 @@ pub(crate) mod saving;
 pub(crate) enum Completion {
     Imported(PathBuf),
     Balance(Box<c2_mods::balance::Balance>),
+    /// The recipe editor's instance values (`balance::read_instance`).
+    RecipeBalance(Box<c2_mods::balance::Balance>),
     Pinned(
         Box<(
             crate::recipe_edit::Kind,

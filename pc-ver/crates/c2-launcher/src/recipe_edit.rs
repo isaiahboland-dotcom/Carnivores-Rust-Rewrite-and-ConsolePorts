@@ -5,8 +5,13 @@
 //! folder, pinned as "Save as instance" pins them) and how standalones
 //! are combined. Saved over the recipe or as a new one; "Clone" on the
 //! Instances list is a save-as straight away. The `[settings]` are left as
-//! they are: "Save as instance" takes the other tabs' choices into them.
+//! they are: "Save as instance" takes the other tabs' choices into them,
+//! except the balance and the standalones' parts, edited here too
+//! (`instance`).
 
+mod instance;
+
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use c2_mods::recipe::{self, Recipe, RecipeMod};
@@ -43,6 +48,7 @@ pub struct Editor {
     /// Folders of entries added here: remembered once saved.
     pub added: Vec<(String, PathBuf)>,
     note: Option<(String, Color32)>,
+    extras: instance::Extras,
 }
 
 /// What the editor asks of the launcher.
@@ -201,6 +207,7 @@ impl Editor {
     pub fn open(path: &Path) -> Result<Self, String> {
         let r = Recipe::load(path).map_err(|e| e.to_string())?;
         Ok(Editor {
+            extras: instance::Extras::new(&r),
             path: path.to_path_buf(),
             saved: r.clone(),
             recipe: r,
@@ -219,6 +226,15 @@ impl Editor {
         self.adding
     }
 
+    /// Reading the instance's values (the editor stays usable).
+    pub fn reading(&self) -> bool {
+        self.extras.reading()
+    }
+
+    pub(crate) fn values_read(&mut self, values: c2_mods::balance::Balance) {
+        self.extras.values_read(values);
+    }
+
     pub(crate) fn pinned(&mut self, kind: Kind, entry: RecipeMod, dir: PathBuf) {
         self.adding = false;
         let id = entry.id.clone();
@@ -232,6 +248,7 @@ impl Editor {
     }
 
     pub(crate) fn failed(&mut self, error: &str) {
+        self.extras.failed(error);
         if self.adding {
             self.note = Some((format!("Not added: {error}"), RED));
         }
@@ -287,14 +304,18 @@ impl Editor {
         })
     }
 
-    /// `game_dirs`: the game add-ons are read against.
+    /// `game_dirs`: the game add-ons are read against; `folders`: the
+    /// entries' folders as given for the instance.
     pub fn ui(
         &mut self,
         ui: &mut egui::Ui,
         game_dirs: &[PathBuf],
+        folders: &BTreeMap<String, PathBuf>,
         handle: &mut crate::jobs::Handle,
     ) -> Ask {
         let mut ask = Ask::Nothing;
+        let mut folders = folders.clone();
+        folders.extend(self.added.iter().cloned());
         ui.label(
             RichText::new(format!("Editing: {}", self.path.display()))
                 .size(18.0)
@@ -305,11 +326,14 @@ impl Editor {
             ui,
             "Change the recipe's entries and details here. Files stay pinned by their hashes; \
              an added folder is pinned now. Saving keeps the comments at the top of the file, not \
-             ones further down. The menu and 3DS choices are taken from \
+             ones further down. \"Pick parts\" under a standalone game leaves some of its \
+             areas, animals or weapons out; \"Points and scores\" sets the instance's \
+             prices and scores. The menu and 3DS choices are taken from \
              the other tabs with \"Save as instance\".",
         );
         ui.add_space(4.0);
         let r = &mut self.recipe;
+        let extras = &mut self.extras;
         panel(ui, |ui| {
             egui::Grid::new("recipe-edit-info")
                 .spacing([10.0, 4.0])
@@ -363,7 +387,7 @@ impl Editor {
             .id_salt("recipe-edit-rows")
             .show(ui, |ui| {
                 for kind in [Kind::Overlay, Kind::Standalone, Kind::AddOn] {
-                    let list: Vec<&mut RecipeMod> = match kind {
+                    let mut list: Vec<&mut RecipeMod> = match kind {
                         Kind::Overlay => r.overlays.iter_mut().collect(),
                         Kind::Standalone => r.standalones.iter_mut().collect(),
                         Kind::AddOn => {
@@ -401,7 +425,7 @@ impl Editor {
                                 ui.label(RichText::new("download page").color(DIM));
                                 ui.label("");
                                 ui.end_row();
-                                for (i, m) in list.into_iter().enumerate() {
+                                for (i, m) in list.iter_mut().enumerate() {
                                     ui.label(&m.id)
                                         .on_hover_text(format!("{} files", m.files.len()));
                                     ui.add(
@@ -438,10 +462,18 @@ impl Editor {
                                     ui.end_row();
                                 }
                             });
+                        if kind == Kind::Standalone {
+                            extras.parts_ui(ui, &mut list, &folders);
+                        }
                     });
                     ui.add_space(4.0);
                 }
             });
+        ui.add_space(4.0);
+        panel(ui, |ui| {
+            self.extras
+                .balance_ui(ui, &mut self.recipe, game_dirs, &folders, handle)
+        });
         if let Some(id) = remove {
             remove_entry(&mut self.recipe, &id);
             self.added.retain(|(a, _)| *a != id);

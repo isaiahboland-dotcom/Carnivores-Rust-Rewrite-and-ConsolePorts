@@ -264,23 +264,27 @@ impl Launcher {
         let Some(e) = &self.ui.recipe_edit else {
             return;
         };
-        let game = match self.cfg.remembered(&e.path) {
-            Some(u) => self.recipe_game_with_overlays(&u.clone()),
-            None => self.game_folders().0,
+        let (game, folders) = match self.cfg.remembered(&e.path) {
+            Some(u) => (
+                self.recipe_game_with_overlays(&u.clone()),
+                u.folders.clone(),
+            ),
+            None => (self.game_folders().0, Default::default()),
         };
         let Some(e) = &mut self.ui.recipe_edit else {
             return;
         };
-        if e.working() {
+        if e.working() || e.reading() {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(150));
         }
         let mut ask = crate::recipe_edit::Ask::Nothing;
-        let other_busy =
-            self.job.busy() || self.ui.recipe_page.as_ref().is_some_and(|p| p.working());
+        // Its own reading of the instance's values leaves it usable.
+        let other_busy = (self.job.busy() && !e.reading())
+            || self.ui.recipe_page.as_ref().is_some_and(|p| p.working());
         panel(ui, |ui| {
             ui.add_enabled_ui(!other_busy && !e.working(), |ui| {
-                ask = e.ui(ui, &game, &mut self.job)
+                ask = e.ui(ui, &game, &folders, &mut self.job)
             });
         });
         match ask {
@@ -288,6 +292,14 @@ impl Launcher {
             crate::recipe_edit::Ask::Close => self.ui.recipe_edit = None,
             crate::recipe_edit::Ask::Saved { from, to } => {
                 let added = std::mem::take(&mut e.added);
+                // The instance in use plays with its new balance.
+                let balance = e.recipe.settings.balance.clone();
+                if self.cfg.recipe.as_ref().is_some_and(|u| u.path == to) {
+                    self.ui.balance.edits = balance.unwrap_or_default();
+                    if let Err(err) = self.ui.balance.store() {
+                        self.ui.note = Some((format!("Balance not saved: {err}"), RED));
+                    }
+                }
                 self.recipe_saved(&from, &to, &added);
             }
         }

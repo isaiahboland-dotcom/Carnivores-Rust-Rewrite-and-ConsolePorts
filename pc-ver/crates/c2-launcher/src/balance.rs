@@ -107,6 +107,14 @@ impl Editor {
         }
     }
 
+    /// An editor over `edits` (an instance's own), not tied to the file.
+    pub(crate) fn over(edits: Balance) -> Self {
+        Self {
+            edits,
+            ..Default::default()
+        }
+    }
+
     /// The balance file to pass on, if it changes anything.
     pub fn file(&self) -> Option<PathBuf> {
         let p = path();
@@ -329,8 +337,7 @@ impl Editor {
     }
 
     /// Edits for names this game doesn't have (kept for other games).
-    fn elsewhere(&self) -> usize {
-        let Some(v) = &self.values else { return 0 };
+    fn elsewhere(&self, v: &Balance) -> usize {
         let has = |l: &[Item], n: &str| l.iter().any(|i| i.name.eq_ignore_ascii_case(n));
         [
             (&self.edits.areas, &v.areas),
@@ -366,6 +373,18 @@ impl Editor {
             });
             return None;
         };
+        if self.edit_ui(ui, &values) {
+            if let Err(e) = self.store() {
+                return Some(format!("Balance not saved: {e}"));
+            }
+        }
+        None
+    }
+
+    /// The starting points and the lists, over the game's `values`:
+    /// whether a value changed. Used by the Balance tab and the instance
+    /// editor (`recipe_edit`), which keeps the edits in the recipe.
+    pub(crate) fn edit_ui(&mut self, ui: &mut egui::Ui, values: &Balance) -> bool {
         let mut changed = false;
         ui.horizontal(|ui| {
             ui.label("Find:");
@@ -381,7 +400,7 @@ impl Editor {
                 changed = true;
             }
         });
-        let others = self.elsewhere();
+        let others = self.elsewhere(values);
         if others > 0 {
             help(
                 ui,
@@ -412,7 +431,7 @@ impl Editor {
             });
         });
         ui.add_space(8.0);
-        changed |= self.mobile_ui(ui, &values);
+        changed |= self.mobile_ui(ui, values);
         for (list, title, items) in [
             (List::Areas, "Areas", &values.areas),
             (List::Animals, "Animals", &values.animals),
@@ -421,12 +440,7 @@ impl Editor {
             ui.add_space(8.0);
             changed |= self.list_ui(ui, list, title, items);
         }
-        if changed {
-            if let Err(e) = self.store() {
-                return Some(format!("Balance not saved: {e}"));
-            }
-        }
-        None
+        changed
     }
 
     fn list_ui(&mut self, ui: &mut egui::Ui, list: List, title: &str, items: &[Item]) -> bool {

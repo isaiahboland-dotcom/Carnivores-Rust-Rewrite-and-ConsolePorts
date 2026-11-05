@@ -18,7 +18,7 @@ mod recipes;
 mod screen;
 mod settings;
 mod setup;
-mod standalones;
+pub(crate) mod standalones;
 mod three_ds;
 mod tuning;
 mod wiiu;
@@ -189,6 +189,11 @@ impl Launcher {
             match result {
                 Ok(crate::jobs::Completion::Imported(out)) => self.import_done(out),
                 Ok(crate::jobs::Completion::Balance(values)) => self.ui.balance.loaded(*values),
+                Ok(crate::jobs::Completion::RecipeBalance(values)) => {
+                    if let Some(editor) = &mut self.ui.recipe_edit {
+                        editor.values_read(*values);
+                    }
+                }
                 Ok(crate::jobs::Completion::ApkBase { out, for_recipe }) => {
                     self.apk_base_done(out, for_recipe)
                 }
