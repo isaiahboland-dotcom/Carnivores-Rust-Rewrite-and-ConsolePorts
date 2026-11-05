@@ -4,39 +4,28 @@
 
 ## 0.4.3 — 2026-11-05
 
-A launcher release: it is now built around instances, and an instance can no longer play
-a game other than its own. Versions 0.4.1 and 0.4.2 were skipped; nothing was released under
-them.
+Overhauled Launcher: it is now built around instances, and an instance can no longer play
+a game other than its own.
 
 ### Launcher
 
-- **Instances first.** The home screen is a grid of boxes, one per instance, sized to the
-  window. Each shows the base game, the number of add-ons, a yellow notice with the number
-  of missing items (base game or downloads), and the time played, or "Unplayed".
+- **Instances first.** overhauled the launcher so that the main focus is the instances.
 - Each box has **Play**, **Build** and **Options**. Build asks for the platform (Windows,
   3DS or Wii U) and shows only that builder, with **Cancel** to go back. Options (also on a
-  right click): **Edit**, **Clone**, **Fix missing**, **Export…**, **Play in VR**, **Delete**.
+  right click): **Edit**, **Clone**, **Fix missing**, **Export…**, **Play in VR**(note VR is 
+  in very early stages, only working on vanilla gameplay currently), **Delete**.
 - **Edit** has Base game, Add-ons and Balance pages, with **Save**, **Save and exit**,
   **Discard changes** and **Cancel**. Any standalone game can be the base game; the page
   says which game the chosen folder is. Balance has **Refresh list**.
 - **Fix missing** looks through the mod and add-on folders (Settings) for an instance's
   base game and downloads, and keeps what it finds.
-- **Import recipe…** on the home screen and **Export…** per instance share a recipe with
-  its patches and base game hash list (credits, links and hashes only).
-- Removed: the Game, Add-ons, Play, Windows, 3DS and Wii U tabs, the "Show the 3DS/Wii U
-  section" settings, Settings' export/import of engine options, and dropping archives onto
-  the launcher (unpack them first). The old Game/Add-ons setup can be turned into an
-  instance once.
 
 ### Fixes
 
 - **Launch protection:** each instance keeps its own game folder. Play and the builds stop
   when that folder doesn't match the base game's hashes in the recipe; **Use this game
   anyway** lets another version of the same game through. Before, an instance could play
-  whatever game was last set on the Game tab (Anachronous played the Android game).
-- The "Original" menu style took its frames from the old Game tab's folder, so every
-  instance showed that game's menus (JPHL's). It now uses an instance on the retail game,
-  else the game's own menus.
+  whatever game was last set on the Game tab.
 - Steam Deck game mode: the Auto interface size no longer flips every frame, and no longer
   deadlocks on the first frame.
 
