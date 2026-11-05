@@ -3730,6 +3730,19 @@ Owner requests from the launcher backlog.
   `C2_LAUNCHER_FULLSCREEN=1` asks for that anywhere. Needs the owner's
   retest on the Deck.
 
+### Launcher: Auto interface size jitter on the Steam Deck (2026-11-05)
+
+Owner retest (fresh install, no launch option): in game mode the launcher
+jittered between the zoomed-in menu and the fitted, full-screen one, so it
+could not be used; Desktop Mode was fine. Cause: Auto turned the window's
+size in points into pixels with this pass's `pixels_per_point`, but egui
+measures that size before the pass at the old zoom and applies a new zoom
+only at the start of the next pass. One pass after each change the two
+disagree, so the fit came out as the square of the right zoom, then right
+again, forever. Desktop Mode never shrinks (the 900x640 window fits), so it
+never started. Now the size is converted with the zoom it was measured at
+(the last pass's, kept in egui's memory). Needs the owner's retest.
+
 ### Instance editor: balance, standalone parts, the base game's parts (2026-11-05)
 
 Owner request: editing an instance should set its starting points and

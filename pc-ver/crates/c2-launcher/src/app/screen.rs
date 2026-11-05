@@ -26,7 +26,17 @@ pub(crate) fn steam_game_mode() -> bool {
 
 /// The zoom for this frame: the chosen size, or (`None`) the largest up
 /// to the system's at which a [`FIT`] page fits the window.
+///
+/// The window's size in points was measured before this pass, at the zoom
+/// of the last pass; a new zoom only takes effect at the start of a pass.
+/// So the size is turned into pixels with last pass's zoom (kept in egui's
+/// memory), not this pass's `pixels_per_point`: mixing the two made Auto
+/// flip between the right zoom and its square every other frame (the
+/// owner's Steam Deck in game mode, 2026-11-05).
 pub(super) fn fit_screen(ctx: &egui::Context, scale: Option<f32>) {
+    let id = egui::Id::unique("c2-launcher-measured-zoom");
+    let measured = ctx.data(|d| d.get_temp::<f32>(id));
+    ctx.data_mut(|d| d.insert_temp(id, ctx.zoom_factor()));
     let zoom = match scale {
         Some(z) => z.clamp(0.5, 2.0),
         None => {
@@ -34,20 +44,25 @@ pub(super) fn fit_screen(ctx: &egui::Context, scale: Option<f32>) {
                 let v = i.viewport();
                 (v.inner_rect, v.native_pixels_per_point)
             });
-            let (Some(rect), Some(native)) = (rect, native) else {
+            let (Some(rect), Some(native), Some(measured)) = (rect, native, measured) else {
                 return;
             };
-            let pixels = rect.size() * ctx.pixels_per_point();
-            let fit = (pixels.x / (FIT.x * native)).min(pixels.y / (FIT.y * native));
-            if !fit.is_finite() {
-                return;
+            match auto_zoom(rect.size() * measured * native, native) {
+                Some(z) => z,
+                None => return,
             }
-            fit.clamp(0.5, 1.0)
         }
     };
     if (ctx.zoom_factor() - zoom).abs() > 0.01 {
         ctx.set_zoom_factor(zoom);
     }
+}
+
+/// The Auto zoom for a window of `pixels` at the system's `native` scale:
+/// the largest up to 1 at which a [`FIT`] page fits, never below 0.5.
+fn auto_zoom(pixels: egui::Vec2, native: f32) -> Option<f32> {
+    let fit = (pixels.x / (FIT.x * native)).min(pixels.y / (FIT.y * native));
+    fit.is_finite().then(|| fit.clamp(0.5, 1.0))
 }
 
 /// Scroll bars that are always there and wide enough to drag on a touch
@@ -94,5 +109,21 @@ impl Launcher {
              screen (C2_LAUNCHER_FULLSCREEN=1 asks for that anywhere).",
         );
         changed
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The Steam Deck screen at a 1.5 system scale: one zoom, applied once.
+    #[test]
+    fn auto_zoom_is_steady() {
+        let pixels = egui::vec2(1280.0, 800.0);
+        let z = auto_zoom(pixels, 1.5).unwrap();
+        assert!((z - 800.0 / 900.0).abs() < 1e-4);
+        // measured at that zoom, the same window gives the same answer
+        let points = pixels / (1.5 * z);
+        assert_eq!(auto_zoom(points * z * 1.5, 1.5), Some(z));
     }
 }

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Launcher: under Steam's game mode (Steam Deck handheld) the Auto interface size no longer
+  flips between two sizes every frame.
+
 ## 0.4.0 — 2026-11-05
 
 Gameplay options, a reworked survival mode and a much larger launcher. Versions 0.2 and 0.3
