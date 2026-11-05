@@ -331,7 +331,7 @@ enum Opt {
     ClearTrophies,
 }
 
-const GAME_OPTS: [Opt; 12] = [
+const GAME_OPTS: [Opt; 13] = [
     Opt::Slider("Aggressiveness", |s| &mut s.options.agres),
     Opt::Slider("Density", |s| &mut s.options.dens),
     Opt::Slider("Sensitivity", |s| &mut s.options.sens),
@@ -343,7 +343,8 @@ const GAME_OPTS: [Opt; 12] = [
         &mut p.secret_dinos
     }),
     Opt::PcToggle("Dynamic time", |p| &mut p.dynamic_time),
-    Opt::PcToggle("Narrow flashlight", |p| &mut p.narrow_flashlight),
+    Opt::PcToggle("Multi ammo", |p| &mut p.multi_ammo),
+    Opt::PcToggle("Advanced observer mode", |p| &mut p.advanced_observer),
     Opt::PcSlider("Survival starting budget", |p| &mut p.survival_budget),
     Opt::ClearTrophies,
 ];
@@ -479,6 +480,8 @@ pub struct Menu {
     record: c2_core::record::Record,
     /// "Remove unlocked trophies" was clicked once (a second click does it).
     clear_armed: bool,
+    /// Multi ammo's Half / Full tranq question is open.
+    tranq_ask: bool,
 }
 
 fn read_text(dir: Option<&Path>, name: &str) -> Vec<String> {
@@ -567,6 +570,7 @@ const SURVIVAL_BUTTON: Rect = (330.0, 518.0, 260.0, 30.0);
 pub(crate) mod kit;
 mod mobile;
 mod option_scroll;
+mod tranq_ask;
 
 impl Menu {
     /// `game_dir`: the install (or its `HUNTDAT`). `player`: sign straight in
@@ -883,7 +887,7 @@ impl Menu {
             (
                 "Flashlight",
                 15,
-                "Costs 15 points. L toggles the flashlight. Night kills keep the 20% bonus. Experimental narrow beam: enable Narrow flashlight in Game options for less width and longer reach.",
+                "Costs 15 points. L toggles the flashlight. Night kills keep the 20% bonus. B switches between the wide beam and a narrow one that reaches farther.",
             ),
         ] {
             let gear = &mut cols[3];
@@ -1038,6 +1042,7 @@ impl Menu {
             kit,
             record: Default::default(),
             clear_armed: false,
+            tranq_ask: false,
             hud,
             game_dir,
             huntdat,
@@ -1524,11 +1529,7 @@ impl Menu {
                 self.pc.fog = i32::from(self.pc.fog == 0);
                 self.pc.store();
             }
-            5 => {
-                if let Some(s) = self.me_mut() {
-                    s.options.tranq = i32::from(s.options.tranq == 0);
-                }
-            }
+            5 => self.toggle_tranq(),
             6 => {
                 self.toggle_observer();
                 if self.choice.observer {
@@ -2393,6 +2394,7 @@ impl Scene for Menu {
                     self.screen = Screen::Main;
                 }
             }
+            Screen::Setup if self.tranq_ask => self.update_tranq_ask(input),
             Screen::Setup if self.mobile.is_some() => self.update_mobile(input),
             Screen::Setup => {
                 let r = self.setup.region(p);
@@ -2438,6 +2440,9 @@ impl Scene for Menu {
                 self.draw_loading(&mut out);
                 self.shown_loading = true;
             }
+        }
+        if self.tranq_ask && matches!(self.screen, Screen::Setup) {
+            self.draw_tranq_ask(&mut out);
         }
         self.hud.draw(gpu, pass, screen, &out);
     }

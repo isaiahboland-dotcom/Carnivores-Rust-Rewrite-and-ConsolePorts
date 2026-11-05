@@ -106,6 +106,10 @@ pub struct Hunt {
     pub trophy_time: i32,
     /// A teleport under way or cooling down ([`Hunt::request_teleport`]).
     pub teleport: Teleport,
+    /// Advanced observer: flying, and time stopped (animals, effects and
+    /// the clock hold still; the camera moves).
+    pub flying: bool,
+    pub time_stopped: bool,
 }
 
 impl Hunt {
@@ -123,6 +127,10 @@ impl Hunt {
             speed: 10.0,
         };
         let ship = Ship::new(area, (player.x, player.z));
+        let mut weapons = weapons;
+        if opts.half_tranq && !opts.observer && !opts.trophy {
+            weapons.split_tranq();
+        }
         // LoadResources: random sounds per ambient zone; at night those with
         // flags set are removed; the first countdown is randomized.
         let night = area.time == crate::area::TimeOfDay::Night;
@@ -174,6 +182,8 @@ impl Hunt {
             trophy_body: None,
             trophy_time: 0,
             teleport: Teleport::default(),
+            flying: false,
+            time_stopped: false,
             player,
             herd,
             weapons,

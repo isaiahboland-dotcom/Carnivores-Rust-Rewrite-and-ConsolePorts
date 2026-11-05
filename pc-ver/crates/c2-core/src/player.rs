@@ -14,6 +14,8 @@ use alloc::vec::Vec;
 use crate::area::Area;
 use crate::CELL;
 
+mod fly;
+
 /// Standing eye height (`HeadY`); crouching goes down to 110.
 pub const HEAD_STAND: f32 = 220.0;
 pub const HEAD_CROUCH: f32 = 110.0;

@@ -26,6 +26,8 @@ use crate::draw2d::{in_hex, inside, Canvas, Rgba, WHITE};
 use crate::gpu::{Gpu, Texture, BOTTOM_W, TOP_W};
 use crate::hunt::{PackInfo, Setup};
 use crate::rules::{Roam, Role, Rules};
+
+mod tranq;
 use crate::settings::Settings;
 use crate::ui::load;
 
@@ -60,9 +62,9 @@ const TROPHIES: [f32; 4] = [60.0, 114.0, 200.0, 30.0];
 const SETTINGS: [f32; 4] = [60.0, 150.0, 200.0, 30.0];
 const QUIT: [f32; 4] = [60.0, 186.0, 200.0, 30.0];
 /// Settings: remove every unlocked trophy (a second tap does it).
-const CLEAR_TROPHIES: [f32; 4] = [16.0, 80.0, 140.0, 26.0];
+const CLEAR_TROPHIES: [f32; 4] = [16.0, 78.0, 140.0, 24.0];
 /// Settings: "All dinos huntable" (a modded game's roaming add-ons listed).
-const ALL_HUNTABLE: [f32; 4] = [164.0, 80.0, 140.0, 26.0];
+const ALL_HUNTABLE: [f32; 4] = [164.0, 78.0, 140.0, 24.0];
 /// The original's game options (`Options > Game`), 0..=255, kept in the
 /// save: bars for aggressiveness, density and sensitivity.
 const GAME_OPTS: [(&str, f32); 3] = [
@@ -81,9 +83,9 @@ fn hunter_row(i: usize) -> [f32; 4] {
 /// Settings screen: run speed bar with - / +, then the toggles.
 // The hunt options screen.
 /// Settings: the crouch button (cycles).
-const CROUCH_KEY: [f32; 4] = [16.0, 112.0, 140.0, 28.0];
+const CROUCH_KEY: [f32; 4] = [16.0, 104.0, 140.0, 24.0];
 /// Settings: the stealth gyro aim strength (cycles).
-const GYRO: [f32; 4] = [164.0, 112.0, 140.0, 28.0];
+const GYRO: [f32; 4] = [164.0, 104.0, 140.0, 24.0];
 const O_SPEED_BAR: [f32; 4] = [64.0, 24.0, 192.0, 20.0];
 const O_SPEED_DOWN: [f32; 4] = [20.0, 20.0, 36.0, 28.0];
 const O_SPEED_UP: [f32; 4] = [264.0, 20.0, 36.0, 28.0];
@@ -91,11 +93,15 @@ const O_AMBIENT: [f32; 4] = [40.0, 56.0, 240.0, 24.0];
 const O_RANDOM: [f32; 4] = [40.0, 84.0, 240.0, 24.0];
 const O_FRIENDLY: [f32; 4] = [40.0, 112.0, 240.0, 24.0];
 const O_STEALTH: [f32; 4] = [40.0, 140.0, 240.0, 24.0];
-const BLOOD: [f32; 4] = [16.0, 144.0, 140.0, 28.0];
-const DEATH_ANIM: [f32; 4] = [164.0, 144.0, 140.0, 28.0];
+const BLOOD: [f32; 4] = [16.0, 130.0, 140.0, 24.0];
+const DEATH_ANIM: [f32; 4] = [164.0, 130.0, 140.0, 24.0];
 /// Settings: the mobile game's map look; teleporting by the map.
-const MAP_STYLE: [f32; 4] = [16.0, 176.0, 140.0, 28.0];
-const TELEPORT: [f32; 4] = [164.0, 176.0, 140.0, 28.0];
+const MAP_STYLE: [f32; 4] = [16.0, 156.0, 140.0, 24.0];
+const TELEPORT: [f32; 4] = [164.0, 156.0, 140.0, 24.0];
+/// Settings: multi ammo (lethal and tranquilizer rounds), and advanced
+/// observer mode.
+const MULTI_AMMO: [f32; 4] = [16.0, 182.0, 140.0, 24.0];
+const FREE_OBSERVER: [f32; 4] = [164.0, 182.0, 140.0, 24.0];
 /// Settings: the controls shown in a hunt (beside Back).
 const HINTS: [f32; 4] = [164.0, 210.0, 140.0, 26.0];
 /// Settings: unlimited points for testing (beside Back).
@@ -309,6 +315,8 @@ pub struct Menu {
     pub want_name: bool,
     /// Settings: "Remove unlocked trophies" tapped once.
     clear_armed: bool,
+    /// Multi ammo's Half / Full tranq question is up on the gear page.
+    tranq_ask: bool,
     /// "All dinos huntable" changed: the menu loop builds the menu again
     /// (its animal list).
     pub reload: bool,
@@ -536,6 +544,7 @@ impl Menu {
             on_disk,
             want_name: false,
             clear_armed: false,
+            tranq_ask: false,
             reload: false,
             record: crate::save::load_record(),
             survival: None,
@@ -725,6 +734,8 @@ impl Menu {
             crouch_key: self.settings.crouch_key,
             gyro_k: 0.0,
             survival: None,
+            half_tranq: false,
+            free_observer: false,
         }
     }
 
@@ -762,6 +773,8 @@ impl Menu {
             crouch_key: self.settings.crouch_key,
             gyro_k: self.settings.gyro_pct as f32 / 100.0,
             survival: self.survival.filter(|_| !self.observer),
+            half_tranq: self.half_tranq(),
+            free_observer: self.settings.free_observer,
         }
     }
 
@@ -1151,6 +1164,12 @@ impl Menu {
                     self.focus = Some("Tap the map in a hunt; 5 s, then a minute".into());
                 } else if inside(HINTS, x, y) {
                     s.hints = !s.hints;
+                } else if inside(MULTI_AMMO, x, y) {
+                    s.multi_ammo = !s.multi_ammo;
+                    self.focus = Some("Tranq asks: half lethal/half darts, or all".into());
+                } else if inside(FREE_OBSERVER, x, y) {
+                    s.free_observer = !s.free_observer;
+                    self.focus = Some("Observe: teleport, fly, stop time".into());
                 } else if inside(TEST_PTS, x, y) {
                     s.test_points = !s.test_points;
                     self.focus = Some(if s.test_points {
@@ -1247,9 +1266,12 @@ impl Menu {
                         }
                         .into(),
                     );
+                } else if self.tranq_ask {
+                    self.answer_tranq(x, y);
                 } else if inside(Self::TRANQ, x, y) {
                     let t = &mut self.save.options.tranq;
                     *t = i32::from(*t == 0);
+                    self.tranq_ask = *t != 0 && self.settings.multi_ammo;
                 } else if inside(Self::OBSERVE, x, y) {
                     self.observer = !self.observer;
                 }
@@ -1640,8 +1662,20 @@ impl Menu {
                         true,
                         k.name(),
                     )],
+                    None if self.tranq_ask => vec![
+                        (Self::TRANQ, self.settings.half_tranq, "Half tranq"),
+                        (Self::OBSERVE, !self.settings.half_tranq, "Full tranq"),
+                    ],
                     None => vec![
-                        (Self::TRANQ, tranq, "Tranq"),
+                        (
+                            Self::TRANQ,
+                            tranq,
+                            if tranq && self.half_tranq() {
+                                "Tranq 1/2"
+                            } else {
+                                "Tranq"
+                            },
+                        ),
                         (Self::OBSERVE, self.observer, "Observe"),
                     ],
                 };
@@ -1776,6 +1810,8 @@ impl Menu {
             (HINTS, s.hints, "Hints"),
             (ALL_HUNTABLE, s.all_huntable, "All dinos"),
             (TEST_PTS, s.test_points, "Test"),
+            (MULTI_AMMO, s.multi_ammo, "Multi ammo"),
+            (FREE_OBSERVER, s.free_observer, "Adv observer"),
         ];
         for (r, on, _) in toggles {
             c.rect(r, if on { [60, 110, 60, 255] } else { PANEL });

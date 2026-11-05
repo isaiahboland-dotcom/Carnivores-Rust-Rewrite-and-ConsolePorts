@@ -217,7 +217,13 @@ and Home to restore the full map. Dynamic-time equipment uses N for night vision
 and L for the flashlight (one at a time; the right stick click on a pad, or the
 round nv / light buttons on the Android screen); select it under Equipment before the hunt.
 Dynamic-time night kills earn +20% while night vision is off; using the
-flashlight keeps that bonus.
+flashlight keeps that bonus. **K** switches the flashlight's beam between wide and a narrow one that
+reaches farther (remembered for the next hunt).
+**Multi ammo** (Options > Game, off by default): picking the tranquilizer asks **Half tranq** (each
+weapon's rounds split between lethal rounds and darts; **T** swaps them, and the other kind loads when one
+runs out; the top-left HUD shows "lethal:" and "tranq:" rows) or **Full tranq** (darts only, as the
+original). **Advanced observer mode** (Options > Game): in observer hunts, teleport by the map with no
+wait or cooldown, **F** flies (jump rises, crouch sinks), **T** stops time for camera shots.
 
 **PC VR** (early): `cargo run --release -p c2-vr -- play GAME` with an OpenXR runtime running (SteamVR,
 Monado, WiVRn). `c2-vr check` tells you which runtime it found. Plan and status:

@@ -3528,8 +3528,9 @@ instance must give it a distinct recipe ID to keep progress separate.
 
 ### Experimental PC flashlight beam
 
-PC Game options can select a narrower flashlight cone with twice the reach
-(40 cells instead of 20). The existing broad beam remains the default. This
+(Superseded 2026-11-05: the beam is now switched in the hunt with K, see
+"Multi ammo, advanced observer, in-game beam" below.) PC Game options could
+select a narrower flashlight cone with twice the reach (40 cells instead of 20). The existing broad beam remains the default. This
 changes illumination only: equipment cost, the L toggle, fog and render-distance
 limits, and night scoring remain unchanged. It uses the existing surface-light
 shader without an additional rendering pass; consoles retain their current beam.
@@ -3646,3 +3647,37 @@ APK):
   `AREA1.MAP`/`AREA2.MAP`), and Dawn picked in the Android menu renders as dawn
   with dynamic time on (the owner's setting), from the command line and through
   the menu. Left open for the owner to retest.
+
+### Multi ammo, advanced observer, in-game beam (2026-11-05)
+
+Owner requests; none of these is in the original, and all are off by default.
+
+- **Flashlight beam.** The "Narrow flashlight" Game option is gone; K switches
+  wide / narrow in a dynamic-time hunt with the flashlight bought, and the
+  last choice is kept in `c2rs.cfg` (`narrow_flashlight`, the key the option
+  used). Consoles keep their one beam.
+- **Multi ammo** (a setting on PC, 3DS and Wii U). With it on, picking the
+  tranquilizer asks Half or Full. Full is the original's tranquilizer (the
+  hunt option). Half is per round: each carried weapon's rounds (spare
+  magazines counted) are split, the odd one lethal, and the hunt starts with
+  lethal rounds loaded. The other kind waits aside (`Weapons::stash`); the
+  swap control exchanges them whole (chambered rounds too, and a dialect
+  weapon chambers its new reserve at once, so the swap is seamless). A shot
+  using up the loaded kind loads the other. Each hit marks the animal with
+  the round's kind (`Character::darted`, the last hit counts); a darted kill
+  sleeps and scores as the tranquilizer's (+25%, no trophy, no ship). Extra
+  ammo refills give both kinds half again. Survival drops the split. Controls:
+  PC T; 3DS a Switch button under the map with "lethal" / "tranq" under its
+  label; Wii U D-pad Left (the vsync probe toggle when multi ammo is not in
+  use). HUD: PC two rows, "lethal:" and "tranq:", the loaded one bright; 3DS
+  weapon cards `L7 T7`; Wii U the GamePad's ammo line (`+LETHAL:7 TRANQ:7`;
+  its HUD texture shows two text rows, the second is the kills).
+- **Advanced observer mode** (a setting; with Observer picked). Teleports by
+  the map whatever the Teleport setting says, arriving at once with no
+  cooldown. Flying moves where the camera looks, jump rises and crouch sinks,
+  over the ground and under 8192 units above it, no collision. Time stop runs
+  only the camera, map, binoculars, teleports and leaving: no animals,
+  effects, clock or day cycle (`real_time` is held, which freezes the dynamic
+  cycle), unlike Pause which also freezes the camera. Controls: PC F / T;
+  3DS Fly and Stop buttons in the (empty) weapon column; Wii U D-pad Left /
+  Y. HuntChoice (Wii U, shared with C) grows to 112 bytes.

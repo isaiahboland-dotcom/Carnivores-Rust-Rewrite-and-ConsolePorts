@@ -97,6 +97,8 @@ pub struct Bullet {
     /// Its model's animation time (`bModel`).
     pub ftime: i32,
     pub weapon: usize,
+    /// A tranquilizer dart (multi ammo).
+    pub dart: bool,
 }
 
 /// `Weapon.state`.
@@ -144,8 +146,14 @@ pub struct Weapons {
     /// Sniper scope view (`OPTICMODE`).
     pub optic_mode: bool,
     /// What `new` was given, for [`resupply`](Self::resupply).
-    present: Bits,
+    pub(super) present: Bits,
     pub(super) double_ammo: bool,
+    /// Multi ammo ([`split_tranq`](Self::split_tranq)): whether each
+    /// weapon has tranquilizer darts loaded, and the other kind's rounds
+    /// put aside. Not in the original.
+    pub darts: Vec<bool>,
+    pub(super) stash: Vec<super::ammo_kinds::Stash>,
+    pub(super) multi: bool,
 }
 
 impl Weapons {
@@ -177,6 +185,9 @@ impl Weapons {
             optic_mode: false,
             present,
             double_ammo,
+            darts: vec![false; n],
+            stash: vec![Default::default(); n],
+            multi: false,
         };
         let mut first = None;
         for i in 0..n.min(Bits::LEN) {
@@ -228,6 +239,11 @@ impl Weapons {
     /// Every carried weapon back to the ammo it started with (not in the
     /// original: the 3DS "extra ammo" gear, unlimited survival ammo).
     pub fn resupply(&mut self) {
+        // Multi ammo: both kinds back to half the full load each.
+        let multi = self.multi;
+        if multi {
+            self.unsplit();
+        }
         for i in 0..self.info.len().min(Bits::LEN) {
             if self.present.has(i) {
                 if self.info[i].chambers() {
@@ -239,6 +255,9 @@ impl Weapons {
                     self.refill(i, false);
                 }
             }
+        }
+        if multi {
+            self.split_tranq();
         }
     }
 

@@ -679,7 +679,7 @@ pub fn animate_dead(c: &mut Character, index: usize, sp: &Species, m: &MeeInfo, 
         c.process_prev_phase(sp, dt);
         c.ftime += dt;
         if c.ftime >= sp.time(c.phase) {
-            if ctx.tranq && !d.no_sleep {
+            if (ctx.tranq || c.darted) && !d.no_sleep {
                 c.ftime = 0;
                 c.phase = d.sleep;
                 c.activate_fx(index, sp, ctx);

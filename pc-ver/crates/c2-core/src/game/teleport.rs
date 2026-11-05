@@ -39,7 +39,7 @@ impl Hunt {
     /// Whether teleporting is on for this hunt (the option, not in a
     /// survival or the trophy room).
     pub fn can_teleport(&self) -> bool {
-        self.opts.teleport && self.survival.is_none() && !self.opts.trophy
+        (self.opts.teleport || self.free_observer()) && self.survival.is_none() && !self.opts.trophy
     }
 
     /// Starts a teleport to world (`x`, `z`) (the nearest dry ground the
@@ -58,7 +58,9 @@ impl Hunt {
             ));
         }
         let at = landing(area, x, z).ok_or("No ground to stand on there")?;
-        self.teleport.pending = Some((at, DELAY_MS));
+        // Advanced observer: at once, and as often as he likes.
+        let delay = if self.free_observer() { 0 } else { DELAY_MS };
+        self.teleport.pending = Some((at, delay));
         Ok(())
     }
 
@@ -82,7 +84,9 @@ impl Hunt {
             return;
         }
         t.pending = None;
-        t.cooldown = COOLDOWN_MS;
+        if !self.opts.free_observer {
+            t.cooldown = COOLDOWN_MS;
+        }
         let (alpha, beta) = (self.player.alpha, self.player.beta);
         let cell = |v: f32| (v / CELL) as u16;
         self.player = crate::player::Player::new(area, (cell(at.0), cell(at.1)));

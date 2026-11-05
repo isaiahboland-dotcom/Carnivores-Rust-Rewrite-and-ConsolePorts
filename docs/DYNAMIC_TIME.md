@@ -43,7 +43,9 @@ the other off. The HUD shows their state; a game built from an APK shows the
 phone-style round **nv** and **light** buttons at the right edge, which a tap
 or a click also switches (the other greys while one is on). Night vision provides the familiar
 green view; the flashlight illuminates a soft forward cone with distance
-falloff, reaching up to 80 metres. It does not add a shadow-map pass.
+falloff, reaching up to 80 metres. It does not add a shadow-map pass. On PC,
+**K** switches it to a narrow beam (less width, twice the reach) and back; the
+choice is remembered for the next hunt.
 
 Fixed-time hunts keep automatic night vision and their existing scoring.
 Turning dynamic time off hides the extra equipment and clears its PC selection.

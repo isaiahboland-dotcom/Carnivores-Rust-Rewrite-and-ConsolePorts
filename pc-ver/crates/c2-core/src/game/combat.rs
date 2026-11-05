@@ -57,6 +57,7 @@ impl Hunt {
         self.shots_made += 1;
 
         let info = self.weapons.info[cur].clone();
+        let dart = self.weapons.fires_darts(cur);
         let under = self.player.underwater;
         let (da, db) = self.weapon_sway();
         let p = &self.player;
@@ -107,6 +108,7 @@ impl Hunt {
                     stuck: false,
                     ftime: 0,
                     weapon: cur,
+                    dart,
                 });
                 continue;
             }
@@ -115,7 +117,7 @@ impl Hunt {
                 origin[1] + nv[1] * reach,
                 origin[2] + nv[2] * reach,
             ];
-            self.make_shot(area, cars, &info, origin, to, out);
+            self.make_shot(area, cars, &info, origin, to, dart, out);
         }
         if !under {
             // Stealth crouch: crouched, a shot carries half as far.
@@ -134,10 +136,12 @@ impl Hunt {
         } else {
             self.weapons.shots_left[cur] -= 1;
         }
+        self.auto_swap_kind();
     }
 
     /// `MakeShot`: trace one round (in three falling segments for the
     /// crossbow) and apply damage.
+    #[allow(clippy::too_many_arguments)]
     fn make_shot(
         &mut self,
         area: &Area,
@@ -145,6 +149,7 @@ impl Hunt {
         info: &WeaponInfo,
         a: [f32; 3],
         b: [f32; 3],
+        dart: bool,
         out: &mut Vec<GameEvent>,
     ) {
         let (chars, species) = (&self.herd.chars, &self.herd.species);
@@ -170,13 +175,15 @@ impl Hunt {
             r
         };
         let Some((hit, pos)) = res else { return };
-        self.apply_hit(area, info, hit, pos, false, out);
+        self.apply_hit(area, info, hit, pos, false, dart, out);
     }
 
     /// A round's hit (`MakeShot` / `AnimateBullet`): impact effects, then
     /// damage to an animal.
     /// `poon`: a harpoon's round under water (`AnimateBullet`): its
-    /// `aqua_power`, and no dust where it stops.
+    /// `aqua_power`, and no dust where it stops. `dart`: a tranquilizer
+    /// dart's (multi ammo).
+    #[allow(clippy::too_many_arguments)]
     fn apply_hit(
         &mut self,
         area: &Area,
@@ -184,6 +191,7 @@ impl Hunt {
         hit: Hit,
         pos: [f32; 3],
         poon: bool,
+        dart: bool,
         out: &mut Vec<GameEvent>,
     ) {
         out.push(GameEvent::Impact { hit, pos });
@@ -236,6 +244,7 @@ impl Hunt {
         // The dialect's `registerDamage` also marks the animal hurt and
         // aware of the hunter.
         c.damaged = true;
+        c.darted = dart;
         if let Some((rgb, ms)) = info.mee.as_ref().and_then(|m| m.radar) {
             c.tracked = Some((rgb, (ms > 0).then_some(ms)));
         }
@@ -346,7 +355,7 @@ impl Hunt {
                 .filter(|(h, _)| !(m.harpoon && matches!(h, Hit::Water)));
             if let Some((hit, pos)) = res {
                 let under = wet(pos[0], pos[1], pos[2]);
-                self.apply_hit(area, &info, hit, pos, under, out);
+                self.apply_hit(area, &info, hit, pos, under, b.dart, out);
                 if m.retrieve && matches!(hit, Hit::Ground | Hit::Model) {
                     b.stuck = true;
                     b.pos = pos;

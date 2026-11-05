@@ -35,6 +35,7 @@ use crate::weapons::{load_weapons, WeaponAssets};
 use c2_core::ship::ship_sound;
 use c2_core::sound::SoundCmd;
 
+mod extras;
 mod lights;
 mod map;
 mod map_viewport;
@@ -577,6 +578,10 @@ impl HuntView {
             c2_formats::bits::Bits::from(setup.weapons)
         };
         let weapons = Weapons::new(infos.to_vec(), anims.to_vec(), carried, setup.double_ammo);
+        let half_tranq = o.tranq != 0
+            && setup.pc.multi_ammo != 0
+            && setup.pc.half_tranq != 0
+            && setup.survival.is_none();
         let opts = HuntOptions {
             targets: setup.targets,
             radar: o.radar != 0,
@@ -587,7 +592,11 @@ impl HuntView {
             render_r: 0,
             camo: o.camo != 0,
             scent: o.scent != 0,
-            tranq: o.tranq != 0,
+            // Multi ammo's Half tranq splits the rounds; Full tranq is the
+            // original's tranquilizer.
+            tranq: o.tranq != 0 && !half_tranq,
+            half_tranq,
+            free_observer: setup.observer && setup.pc.advanced_observer != 0,
             observer: setup.observer,
             trophy,
             score_factor: 1.0,
@@ -1680,6 +1689,7 @@ impl Scene for HuntView {
             return;
         }
         let light_tapped = self.update_lights(input);
+        self.update_extras(input);
         let k = self.hunt.room.options.keys;
         let pressed = |vk| keys::pressed(input, vk);
         self.weapon_flash = (self.weapon_flash - dt).max(0.0);
@@ -2181,7 +2191,10 @@ impl Scene for HuntView {
                         let w = &h.weapons;
                         let cur = w.current;
                         let left = w.shots_left[cur];
-                        if w.info[cur].chambers() {
+                        if w.multi_ammo() {
+                            let (l, t) = w.kinds(cur);
+                            format!("{l}L / {t}T")
+                        } else if w.info[cur].chambers() {
                             // The dialect's: chambered / the reserve.
                             format!("{} / {left}", w.chambered[cur])
                         } else {
@@ -2407,6 +2420,7 @@ impl Scene for HuntView {
                 keyboard.to_vec()
             };
             rows.extend(self.light_hints(self.pad_last));
+            rows.extend(self.extra_hints(self.pad_last));
             let rows: Vec<(&str, &str)> = rows.iter().map(|(b, a)| (b.as_str(), *a)).collect();
             let y = screen.1 as f32 - 28.0 * scale;
             self.hint_bar(&mut sprites, screen, scale, y, false, &rows);

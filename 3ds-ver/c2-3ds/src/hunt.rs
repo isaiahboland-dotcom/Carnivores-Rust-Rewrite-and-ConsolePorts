@@ -197,6 +197,13 @@ pub struct Setup {
     pub gyro_k: f32,
     /// A survival instead of a hunt (README M13).
     pub survival: Option<SurvivalKind>,
+    /// Multi ammo's Half tranq (with the tranquilizer): each weapon's
+    /// rounds split between lethal ones and darts, swapped by the bottom
+    /// screen's ammo switch.
+    pub half_tranq: bool,
+    /// Advanced observer mode (with the observer): unlimited instant
+    /// teleports, flying and stopping time.
+    pub free_observer: bool,
 }
 
 /// The most snowflakes on the 3DS (an area asks for up to 2000).
@@ -493,7 +500,9 @@ fn new_hunt(
         render_r: 0,
         camo: o.camo != 0,
         scent: o.scent != 0,
-        tranq: o.tranq != 0,
+        tranq: o.tranq != 0 && !setup.half_tranq,
+        half_tranq: o.tranq != 0 && setup.half_tranq,
+        free_observer: setup.observer && setup.free_observer,
         observer: setup.observer,
         trophy,
         score_factor: setup.score_factor,

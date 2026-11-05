@@ -250,6 +250,7 @@ fn a_harpoon_fires_under_water_with_its_own_numbers_and_a_bolt_is_picked_up() {
         stuck: true,
         ftime: 0,
         weapon: 0,
+        dart: false,
     });
     let cars = [Some(&car), Some(&car)];
     weapon_ticks(&mut h, &area, &cars, HuntInput::default(), 1, &mut ev);

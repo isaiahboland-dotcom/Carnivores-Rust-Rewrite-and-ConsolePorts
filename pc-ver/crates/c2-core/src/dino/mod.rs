@@ -401,6 +401,9 @@ pub struct Character {
     pub heard_shot: bool,
     /// Has been hit (`damaged`).
     pub damaged: bool,
+    /// The last round that hit it was a tranquilizer dart (multi ammo; not
+    /// in the original, where the hunt's tranquilizer option decides).
+    pub darted: bool,
     /// Hit by a tracker (a dialect weapon's `radar`): shown on the map in
     /// this colour, for the ms left (`None`: for good) (`tracker`, `RTime`).
     pub tracked: Option<([u8; 3], Option<i32>)>,
@@ -952,6 +955,7 @@ impl Character {
                     (scale_a as f32 / species.info.scale_a as f32 * m.health_a as f32) as i32;
             }
             self.damaged = false;
+            self.darted = false;
             self.follow_leader = false;
             self.aquatic_idle = false;
             self.turny = 0.0;

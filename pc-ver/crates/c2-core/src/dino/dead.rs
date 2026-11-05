@@ -42,7 +42,7 @@ pub fn animate(
         c.process_prev_phase(sp, dt);
         c.ftime += dt;
         if c.ftime >= sp.time(c.phase) {
-            if let (true, Some(slp)) = (ctx.tranq, slp) {
+            if let (true, Some(slp)) = (ctx.tranq || c.darted, slp) {
                 c.ftime = 0;
                 c.phase = slp;
                 c.activate_fx(index, sp, ctx);

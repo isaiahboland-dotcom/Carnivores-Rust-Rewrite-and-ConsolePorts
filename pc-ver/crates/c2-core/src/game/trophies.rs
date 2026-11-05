@@ -43,6 +43,8 @@ impl Hunt {
         let Some(c) = self.herd.chars.get(index) else {
             return;
         };
+        // Asleep, not dead: the hunt's tranquilizer, or a dart (multi ammo).
+        let tranq = self.opts.tranq || c.darted;
         if self.survival.is_some() {
             // No ship, trophy or score in a survival; the kill is recorded.
             let p = &self.player;
@@ -59,7 +61,7 @@ impl Hunt {
             return;
         }
         let water = area.land_up_h(c.pos[0], c.pos[2]) - area.land_height(c.pos[0], c.pos[2]);
-        if water < 100.0 && !self.opts.tranq {
+        if water < 100.0 && !tranq {
             self.ship.tasks.push_back(index);
             let slot = crate::ship::ship_sound::CALL;
             out.push(GameEvent::Ship(ShipEvent::Sound { slot, at: None }));
@@ -116,7 +118,7 @@ impl Hunt {
         };
         // Dynamic hunts reward the time of the kill, never the starting selection.
         for (on, k) in [
-            (self.opts.tranq, 1.25),
+            (tranq, 1.25),
             (night_bonus != 0, 1.0 + night_bonus as f32 / 100.0),
             (no_call, 1.10),
             (self.opts.radar, 0.70),
@@ -137,7 +139,7 @@ impl Hunt {
             ctype: c.ctype,
             score: score as i32,
             range,
-            tranq: self.opts.tranq,
+            tranq,
             night_bonus,
         });
         self.kills.push(HuntKill {
@@ -146,7 +148,7 @@ impl Hunt {
             range,
             weapon: self.weapons.current,
         });
-        if let (false, Some(t)) = (self.opts.tranq, t) {
+        if let (false, Some(t)) = (tranq, t) {
             let (y, mo, d, h, mi) = self.clock;
             self.room.bodies[t] = TrophyItem {
                 ctype: c.ctype as i32,

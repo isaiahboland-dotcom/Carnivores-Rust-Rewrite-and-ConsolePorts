@@ -19,8 +19,14 @@ pub struct HuntOptions {
     pub camo: bool,
     pub scent: bool,
     pub tranq: bool,
+    /// Multi ammo's "Half tranq" (not in the original): each weapon's load
+    /// is split between lethal rounds and darts ([`crate::game::Weapons::split_tranq`]).
+    pub half_tranq: bool,
     /// Observer mode (`-observ`): no weapons or calls, animals ignore you.
     pub observer: bool,
+    /// Advanced observer mode (a setting; with `observer`): unlimited
+    /// instant teleports, flying, and stopping time for camera shots.
+    pub free_observer: bool,
     /// The trophy room (`TrophyMode`): the area is `TROPHY.MAP` and the
     /// animals are the saved trophies, standing still.
     pub trophy: bool,
@@ -76,7 +82,9 @@ impl Default for HuntOptions {
             camo: false,
             scent: false,
             tranq: false,
+            half_tranq: false,
             observer: false,
+            free_observer: false,
             trophy: false,
             score_factor: 1.0,
             dino_run_k: 1.0,

@@ -571,7 +571,16 @@ fn night_equipment_is_only_offered_for_dynamic_time() {
         (restored.choice.night_vision, restored.choice.flashlight),
         (1, 1)
     );
-    assert_eq!(std::mem::size_of::<hunt_setup::HuntChoice>(), 104);
+    // Multi ammo and advanced observer follow (tests/hunt_choice_test.c).
+    assert_eq!(std::mem::size_of::<hunt_setup::HuntChoice>(), 112);
+    assert_eq!(
+        std::mem::offset_of!(hunt_setup::HuntChoice, multi_ammo),
+        100
+    );
+    assert_eq!(
+        std::mem::offset_of!(hunt_setup::HuntChoice, free_observer),
+        108
+    );
     assert_eq!(
         std::mem::offset_of!(hunt_setup::HuntChoice, night_vision),
         92
@@ -674,5 +683,44 @@ fn survival_modes_use_menu_prices_without_an_animal_selection_or_apk() {
             restarted.survival.as_ref().unwrap().opts.initial_budget(),
             if kind == 0 { 60 } else { 200 }
         );
+    }
+}
+
+#[test]
+fn multi_ammo_asks_half_or_full_and_both_settings_are_saved() {
+    let mut m = Menu::new(font());
+    m.choice.multi_ammo = 1;
+    m.choice.free_observer = 1;
+    m.choice.half_tranq = 0;
+    m.page = Page::Gear;
+    let at = |m: &Menu, id: Id| {
+        m.items()
+            .into_iter()
+            .find(|(i, _)| *i == id)
+            .unwrap()
+            .1
+            .center()
+    };
+    let (x, y) = at(&m, Id::Tranq);
+    m.touch(x, y);
+    assert_eq!(m.choice.tranq, 1);
+    // Now the Tranquilizer row reads Half tranq: take it.
+    m.touch(x, y);
+    assert_eq!((m.choice.half_tranq, m.choice.observer), (1, 0));
+    assert!(m.choice.half_tranq());
+    let mut restored = Menu::new(font());
+    restored.load_settings(&m.settings_text());
+    let c = restored.choice;
+    assert_eq!((c.multi_ammo, c.half_tranq, c.free_observer), (1, 1, 1));
+    // Both settings rows fit above the help line and Back.
+    restored.page = Page::Settings;
+    for id in [Id::MultiAmmo, Id::FreeObserver] {
+        let r = restored
+            .items()
+            .into_iter()
+            .find(|(i, _)| *i == id)
+            .unwrap()
+            .1;
+        assert!(r.y + r.h <= 586.0);
     }
 }

@@ -39,6 +39,11 @@ impl Hunt {
     /// only survival waves may populate the map. The hunter goes to the
     /// arena's spot; the waves keep to the ground between it and their box.
     pub fn start_survival(&mut self, area: &Area, opts: SurvivalOptions) {
+        // No tranquilizer darts in a survival (multi ammo).
+        if self.weapons.multi_ammo() {
+            self.weapons.unsplit();
+            self.weapons.resupply();
+        }
         while let Some(i) = self.herd.chars.iter().position(|c| c.wave == 0) {
             self.remove_character(i);
         }

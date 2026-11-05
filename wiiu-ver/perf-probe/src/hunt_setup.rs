@@ -79,6 +79,14 @@ pub struct HuntChoice {
     pub dynamic_time: u32,
     pub night_vision: u32,
     pub flashlight: u32,
+    /// Multi ammo (a setting): with the tranquilizer picked, the gear page
+    /// asks Half tranq (rounds split between lethal ones and darts, D-pad
+    /// Left swaps them in the hunt) or Full tranq; and that answer.
+    pub multi_ammo: u32,
+    pub half_tranq: u32,
+    /// Advanced observer mode (a setting): observing, unlimited instant
+    /// teleports, flying (D-pad Left) and stopping time (Y).
+    pub free_observer: u32,
 }
 pub const MODE_HUNT: u32 = 0;
 pub const MODE_SURVIVAL: u32 = 1;
@@ -114,6 +122,9 @@ impl Default for HuntChoice {
             dynamic_time: 0,
             night_vision: 0,
             flashlight: 0,
+            multi_ammo: 0,
+            half_tranq: 1,
+            free_observer: 0,
         }
     }
 }
@@ -135,6 +146,10 @@ impl HuntChoice {
     }
     fn observer(&self) -> bool {
         self.observer != 0 && self.mode == MODE_HUNT
+    }
+    /// Multi ammo's Half tranq for this hunt.
+    pub fn half_tranq(&self) -> bool {
+        self.tranq != 0 && self.multi_ammo != 0 && self.half_tranq != 0 && self.mode == MODE_HUNT
     }
 }
 
@@ -408,7 +423,9 @@ fn new_hunt(
             radar: choice.radar != 0,
             camo: choice.camo != 0,
             scent: choice.scent != 0,
-            tranq: choice.tranq != 0 && choice.mode == MODE_HUNT,
+            tranq: choice.tranq != 0 && choice.mode == MODE_HUNT && !choice.half_tranq(),
+            half_tranq: choice.half_tranq(),
+            free_observer: observer && choice.free_observer != 0,
             observer,
             dino_run_k: choice.run_pct.clamp(50, 100) as f32 / 100.0,
             blood: choice.blood != 0,

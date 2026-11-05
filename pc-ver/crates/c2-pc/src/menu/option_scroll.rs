@@ -163,7 +163,7 @@ mod tests {
         assert!(matches!(bottom.last().unwrap().0, Opt::ClearTrophies));
         assert!(bottom
             .iter()
-            .any(|(o, _)| matches!(o, Opt::PcToggle("Narrow flashlight", _))));
+            .any(|(o, _)| matches!(o, Opt::PcToggle("Advanced observer mode", _))));
         for first in 0..=last_start {
             let rows = visible_rows(&GAME_OPTS, GAME_PANEL, first);
             for (_, r) in &rows {

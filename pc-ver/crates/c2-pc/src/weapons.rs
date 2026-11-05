@@ -481,6 +481,10 @@ impl WeaponAssets {
             }
         };
         let cur = w.current;
+        if w.multi_ammo() {
+            multi_rows(hud, w, *img, scale, &mut out);
+            return out;
+        }
         if w.info[cur].chambers() {
             self.chamber_sprites(hud, hunt, *img, scale, &mut out);
             return out;
@@ -549,6 +553,61 @@ impl WeaponAssets {
                     scale,
                 ));
             }
+        }
+    }
+}
+
+/// Multi ammo's two rows, "lethal:" and "tranq:", each with its rounds (an
+/// icon apiece, or one and the count); the kind not loaded dimmed.
+fn multi_rows(
+    hud: &Hud,
+    w: &c2_core::game::Weapons,
+    img: usize,
+    scale: f32,
+    out: &mut Vec<Sprite>,
+) {
+    let Some(im) = hud.image(img) else { return };
+    let cur = w.current;
+    let (lethal, tranq) = w.kinds(cur);
+    let darts = w.fires_darts(cur);
+    let px = 8.0 * scale.max(1.0).round();
+    let label_w = hud
+        .label_width(px, "lethal:")
+        .max(hud.label_width(px, "tranq:"));
+    let step = (im.h as f32).max(8.0) * scale + 4.0 * scale;
+    for (i, (name, n, loaded)) in [("lethal:", lethal, !darts), ("tranq:", tranq, darts)]
+        .into_iter()
+        .enumerate()
+    {
+        let y = 5.0 * scale + i as f32 * step;
+        let color = if loaded {
+            [1.0; 4]
+        } else {
+            [0.55, 0.55, 0.55, 0.8]
+        };
+        out.extend(hud.label(6.0 * scale, y, px, color, name));
+        let x0 = 6.0 * scale + label_w + 4.0 * scale;
+        let n = n.max(0);
+        let icons = if n > MAX_ICONS { 1 } else { n };
+        for b in 0..icons {
+            out.push(Sprite {
+                color,
+                ..Sprite::new(img, x0 + (b as u32 * im.w) as f32 * scale, y, scale)
+            });
+        }
+        if n > MAX_ICONS || n == 0 {
+            let x = x0
+                + if n == 0 {
+                    0.0
+                } else {
+                    (im.w as f32 + 4.0) * scale
+                };
+            let t = if n == 0 {
+                "0".to_string()
+            } else {
+                format!("x{n}")
+            };
+            out.extend(hud.label(x, y, px, color, &t));
         }
     }
 }

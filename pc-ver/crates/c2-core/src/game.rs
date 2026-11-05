@@ -5,12 +5,14 @@
 //! machine in `DrawPostObjects`, `MakeShot`, `MakeNoise`, `CheckAfraid`,
 //! `AnimateProcesses` (wind), `AddDeadBody`, `ProcessDemoMovement`.
 
+mod ammo_kinds;
 mod arms;
 mod audio;
 mod combat;
 mod death;
 mod events;
 mod mee_weapon;
+mod observer;
 mod options;
 mod session;
 mod state;

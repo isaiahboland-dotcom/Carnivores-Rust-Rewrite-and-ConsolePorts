@@ -79,7 +79,8 @@ extern int32_t c2_call_label(void *, uint32_t, char *, uint32_t);
 typedef struct { float x, z; uint32_t rgba; } RadarBlip;
 extern void c2_set_radar(void *, uint32_t);
 extern uint32_t c2_radar_blips(void *, RadarBlip *, uint32_t);
-typedef struct { int32_t ammo; uint32_t weapon_ready; int32_t call; int32_t weapon; uint32_t kills; uint32_t prompt; } HudState;
+typedef struct { int32_t ammo; uint32_t weapon_ready; int32_t call; int32_t weapon; uint32_t kills; uint32_t prompt;
+                 int32_t lethal, tranq; uint32_t darts; } HudState;
 extern void c2_hud_state(void *, HudState *);
 extern uint32_t c2_hunt_dead(void *, uint32_t *, uint32_t *);
 extern int32_t c2_restart_hunt(void *, uint32_t);
@@ -275,6 +276,12 @@ static uint32_t hunt_edges(uint32_t b, int prompt, int trophy) {
     if (b & BTN_RIGHT) f |= IN_PAUSE;
     return f;
 }
+/* Advanced observer mode, and whether D-pad Left is multi ammo's ammo switch
+ * or (advanced observer) fly rather than the vsync probe toggle. */
+static int free_observer_on(const HuntChoice *m) { return m->observer && m->free_observer && m->mode == MODE_HUNT; }
+static int left_is_extra(const HuntChoice *m) {
+    return free_observer_on(m) || (m->multi_ammo && m->tranq && m->half_tranq && m->mode == MODE_HUNT && !m->observer);
+}
 /* The GamePad map's zoom button: HUD texels 448..512 x 64..128, shown at
  * 618..662 x 6..50 of the 854x480 screen. */
 static int zoom_hit(int x, int y) { return x >= 610 && x < 670 && y < 58; }
@@ -310,7 +317,12 @@ static void hud_update(GX2Texture *tex, const HudState *hud, const char *weapon,
             }
     }
     char line[40];
-    if (weapon) snprintf(line, sizeof(line), "%s %d", weapon, hud->ammo); else snprintf(line, sizeof(line), "%s", unarmed);
+    /* Multi ammo: both kinds in place of the name (the HUD shows two rows),
+     * the loaded one marked with +. */
+    if (weapon && hud->lethal >= 0)
+        snprintf(line, sizeof(line), "%sLETHAL:%d %sTRANQ:%d", hud->darts ? "" : "+", hud->lethal, hud->darts ? "+" : "", hud->tranq);
+    else if (weapon) snprintf(line, sizeof(line), "%s %d", weapon, hud->ammo);
+    else snprintf(line, sizeof(line), "%s", unarmed);
     perf_line(tex, 0, line);
     snprintf(line, sizeof(line), "KILLS %u", hud->kills); perf_line(tex, 1, line);
     GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, tex->surface.image, tex->surface.imageSize);
@@ -1109,7 +1121,8 @@ end_load:
                 if (t & VPAD_BUTTON_ZR) edges |= BTN_ZR;
                 if (t & VPAD_BUTTON_PLUS) edges |= BTN_PLUS;
                 flags |= hunt_edges(edges, hud.prompt, trophy_room);
-                if (sample.trigger & VPAD_BUTTON_LEFT) { vsync = !vsync; GX2SetSwapInterval(vsync ? 1 : 0); }
+                if (sample.trigger & VPAD_BUTTON_LEFT) { if (left_is_extra(&menu)) flags |= IN_AMMO_SWITCH; else { vsync = !vsync; GX2SetSwapInterval(vsync ? 1 : 0); } }
+                if ((sample.trigger & VPAD_BUTTON_Y) && free_observer_on(&menu)) flags |= IN_TIME_STOP;
                 if (sample.trigger & VPAD_BUTTON_STICK_R) { if (menu.dynamic_time && !trophy_room) flags |= IN_NIGHT_VISION; else mipmaps = !mipmaps; }
                 if (sample.trigger & VPAD_BUTTON_STICK_L) { if (menu.dynamic_time && !trophy_room) flags |= IN_FLASHLIGHT; else tv_scaled = !tv_scaled; }
                 if (sample.trigger & VPAD_BUTTON_R) tv_map = !tv_map;
@@ -1164,7 +1177,8 @@ end_load:
                         if (t & WPAD_PRO_BUTTON_ZR) edges |= BTN_ZR;
                         if (t & WPAD_PRO_BUTTON_PLUS) edges |= BTN_PLUS;
                         flags |= hunt_edges(edges, hud.prompt, trophy_room);
-                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_LEFT) { vsync = !vsync; GX2SetSwapInterval(vsync ? 1 : 0); }
+                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_LEFT) { if (left_is_extra(&menu)) flags |= IN_AMMO_SWITCH; else { vsync = !vsync; GX2SetSwapInterval(vsync ? 1 : 0); } }
+                        if ((sample_pro.pro.trigger & WPAD_PRO_BUTTON_Y) && free_observer_on(&menu)) flags |= IN_TIME_STOP;
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_STICK_R) { if (menu.dynamic_time && !trophy_room) flags |= IN_NIGHT_VISION; else mipmaps = !mipmaps; }
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_STICK_L) { if (menu.dynamic_time && !trophy_room) flags |= IN_FLASHLIGHT; else tv_scaled = !tv_scaled; }
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_R) tv_map = !tv_map;
@@ -1268,7 +1282,7 @@ end_load:
                 prev_call_page = call_page;
                 GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, icons_tex.surface.image, icons_tex.surface.imageSize);
             }
-            if (hud.call != prev_hud.call || hud.weapon != prev_hud.weapon || hud.ammo != prev_hud.ammo || hud.weapon_ready != prev_hud.weapon_ready || hud.kills != prev_hud.kills || hud_dirty) { char weapon[24]; hud_update(&hud_tex, &hud, c2_weapon_label(sim, (uint32_t)hud.weapon, weapon, sizeof(weapon)) ? NULL : weapon, menu.mode == MODE_TROPHY ? "TROPHY ROOM" : "OBSERVER", drc_zoom); prev_hud = hud; hud_dirty = 0; }
+            if (hud.call != prev_hud.call || hud.weapon != prev_hud.weapon || hud.ammo != prev_hud.ammo || hud.weapon_ready != prev_hud.weapon_ready || hud.kills != prev_hud.kills || hud.lethal != prev_hud.lethal || hud.tranq != prev_hud.tranq || hud.darts != prev_hud.darts || hud_dirty) { char weapon[24]; hud_update(&hud_tex, &hud, c2_weapon_label(sim, (uint32_t)hud.weapon, weapon, sizeof(weapon)) ? NULL : weapon, menu.mode == MODE_TROPHY ? "TROPHY ROOM" : "OBSERVER", drc_zoom); prev_hud = hud; hud_dirty = 0; }
             {
                 float *op = GX2RLockBufferEx(&overlay_pos, 0), *ou = GX2RLockBufferEx(&overlay_uv, 0);
                 if (!op || !ou) OSFatal("Overlay: buffer lock failed");

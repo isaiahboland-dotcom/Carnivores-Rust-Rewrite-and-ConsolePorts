@@ -320,11 +320,7 @@ impl Menu {
         match (self.mobile_page, hit) {
             (0, Some(t @ 0..=2)) => self.choice.time = t,
             (0, Some(3)) => self.toggle_observer(),
-            (2, Some(0)) => {
-                if let Some(s) = self.me_mut() {
-                    s.options.tranq = i32::from(s.options.tranq == 0);
-                }
-            }
+            (2, Some(0)) => self.toggle_tranq(),
             // Radar, cover scent, camouflage: equipment bits 1, 2, 0.
             (2, Some(b @ 1..=3)) => self.pick(3, [1, 2, 0][b - 1]),
             (2, Some(b @ 4..=5)) if self.pc.dynamic_time != 0 => self.pick(3, b),

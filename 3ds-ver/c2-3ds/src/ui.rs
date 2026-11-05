@@ -22,6 +22,8 @@ use crate::draw2d::{inside, Canvas, Rgba, WHITE};
 use crate::gpu::{Gpu, Texture, BOTTOM_H, TOP_H, TOP_W};
 use crate::hunt::Game;
 
+mod extras;
+
 const LEFT_W: f32 = 72.0;
 const RIGHT_X: f32 = 248.0;
 const MAP: [f32; 4] = [LEFT_W, 0.0, RIGHT_X - LEFT_W, 176.0];
@@ -77,6 +79,11 @@ pub enum Tap {
     Pause,
     /// Use an extra ammo refill.
     Resupply,
+    /// Multi ammo: load the other kind (lethal / tranquilizer).
+    AmmoSwitch,
+    /// Advanced observer: fly or walk; stop or start time.
+    Fly,
+    TimeStop,
 }
 
 pub struct Ui {
@@ -162,6 +169,9 @@ impl Ui {
 
     /// What a tap at bottom-screen pixel (x, y) means.
     pub fn tap(&self, game: &Game, x: f32, y: f32) -> Option<Tap> {
+        if let Some(t) = extras::tap(&game.hunt, x, y) {
+            return Some(t);
+        }
         if x < LEFT_W {
             let i = (y / self.wpn_slot()) as usize;
             return self.weapons.get(i).map(|w| Tap::Weapon(w.0));
@@ -181,13 +191,14 @@ impl Ui {
             }
             return Some(Tap::MapZoom);
         }
-        if inside(AMMO, x, y) {
+        let [ammo, binoc, pause] = extras::buttons(&game.hunt);
+        if inside(ammo, x, y) {
             return Some(Tap::Resupply);
         }
-        if inside(BINOC, x, y) {
+        if inside(binoc, x, y) {
             return Some(Tap::Binoculars);
         }
-        if inside(PAUSE, x, y) {
+        if inside(pause, x, y) {
             return Some(Tap::Pause);
         }
         None
@@ -238,9 +249,11 @@ impl Ui {
                 c.rect(r, HILITE);
             }
         }
-        for (r, on) in [(AMMO, false), (BINOC, h.bin_mode), (PAUSE, h.paused)] {
+        let [ammo, binoc, pause] = extras::buttons(h);
+        for (r, on) in [(ammo, false), (binoc, h.bin_mode), (pause, h.paused)] {
             c.rect(r, if on { HILITE } else { PANEL });
         }
+        extras::panels(c, h);
         c.flush(gpu);
 
         // Weapon pictures, names and shots left; with more than four
@@ -267,13 +280,12 @@ impl Ui {
                 .take(9)
                 .collect();
             c.text(gpu, 4.0, y + 41.0, 1.0, WHITE, &name);
-            let shots = w.rounds(*i);
             let col = if *i == w.current && drawn {
                 WHITE
             } else {
                 GREY
             };
-            c.text(gpu, 4.0, y + 49.0, 1.0, col, &format!("x{shots}"));
+            c.text(gpu, 4.0, y + 49.0, 1.0, col, &extras::count(h, *i));
         }
 
         // Call icons.
@@ -362,49 +374,59 @@ impl Ui {
             format!("Bagged: {}", h.successes)
         };
         c.text_c(gpu, cx, 180.0, 1.0, WHITE, &state);
+        let slim = h.weapons.multi_ammo();
         if let Some(m) = message {
-            let m: String = m.chars().take(22).collect();
-            c.text_c(gpu, cx, 194.0, 1.0, GREEN, &m);
+            // Beside the ammo switch when there is one.
+            let (mx, n) = if slim { (189.0, 14) } else { (cx, 22) };
+            let m: String = m.chars().take(n).collect();
+            c.text_c(gpu, mx, 194.0, 1.0, GREEN, &m);
         }
         let left = game.resupplies;
         let col = if left > 0 { WHITE } else { GREY };
+        let ammo_x = if slim { 0.0 } else { -4.0 };
         c.text_c(
             gpu,
-            AMMO[0] + AMMO[2] / 2.0 - 4.0,
-            AMMO[1] + 8.0,
+            ammo[0] + ammo[2] / 2.0 + ammo_x,
+            ammo[1] + 8.0,
             1.0,
             col,
             "Ammo",
         );
         if left > 0 {
             // The refills left, as a red badge.
-            c.disc(AMMO[0] + AMMO[2] - 6.0, AMMO[1] + 4.0, 7.0, RED);
+            c.disc(ammo[0] + ammo[2] - 6.0, ammo[1] + 4.0, 7.0, RED);
             c.flush(gpu);
             c.text_c(
                 gpu,
-                AMMO[0] + AMMO[2] - 6.0,
-                AMMO[1],
+                ammo[0] + ammo[2] - 6.0,
+                ammo[1],
                 1.0,
                 WHITE,
                 &left.to_string(),
             );
         }
+        let (bt, pt) = if slim {
+            ("Bino", "Wait")
+        } else {
+            ("Binocs", "Pause")
+        };
         c.text_c(
             gpu,
-            BINOC[0] + BINOC[2] / 2.0,
-            BINOC[1] + 8.0,
+            binoc[0] + binoc[2] / 2.0,
+            binoc[1] + 8.0,
             1.0,
             WHITE,
-            "Binocs",
+            bt,
         );
         c.text_c(
             gpu,
-            PAUSE[0] + PAUSE[2] / 2.0,
-            PAUSE[1] + 8.0,
+            pause[0] + pause[2] / 2.0,
+            pause[1] + 8.0,
             1.0,
             WHITE,
-            "Pause",
+            pt,
         );
+        extras::labels(c, gpu, h);
     }
 
     /// Overlays on the top screen, after the world. `debug` (fps, memory)

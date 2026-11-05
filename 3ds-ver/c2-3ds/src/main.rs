@@ -581,6 +581,7 @@ fn hunt(
             Some(Tap::TeleportConfirm) => {
                 if let Some((x, z)) = ui.teleport_pick.take() {
                     let m = match game.hunt.request_teleport(&game.area, x, z) {
+                        Ok(()) if game.hunt.free_observer() => "Teleporting".to_string(),
                         Ok(()) => "Teleporting in 5 seconds".to_string(),
                         Err(e) => e,
                     };
@@ -594,6 +595,27 @@ fn hunt(
             Some(Tap::Binoculars) => pad.binoculars = true,
             Some(Tap::Pause) => pad.pause = true,
             Some(Tap::Resupply) => pad.resupply = true,
+            Some(Tap::AmmoSwitch) => {
+                if let Some(m) = game.hunt.swap_ammo() {
+                    message = Some((m.to_string(), frame + 120));
+                }
+            }
+            Some(Tap::Fly) => {
+                let m = if game.hunt.toggle_fly() {
+                    "Flying"
+                } else {
+                    "Walking"
+                };
+                message = Some((m.to_string(), frame + 120));
+            }
+            Some(Tap::TimeStop) => {
+                let m = if game.hunt.toggle_time_stop() {
+                    "Time stopped"
+                } else {
+                    "Time going"
+                };
+                message = Some((m.to_string(), frame + 120));
+            }
             None => {}
         }
         let now = ticks();

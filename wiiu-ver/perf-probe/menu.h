@@ -11,6 +11,9 @@ enum { IN_ESCAPE = 1 << 13, IN_YES = 1 << 14, IN_NO = 1 << 15,
        IN_RESTART = 1 << 24, IN_PAUSE = 1 << 25 };
 /* A tapped call: its index + 1 from this bit (lib.rs CALL_SHIFT). */
 enum { IN_CALL_SHIFT = 26, IN_NIGHT_VISION = 1024, IN_FLASHLIGHT = 2048 };
+/* D-pad Left: multi ammo's ammo switch (advanced observer: fly); Y in advanced
+ * observer mode: stop / start time (lib.rs AMMO_SWITCH, TIME_STOP). */
+enum { IN_AMMO_SWITCH = 1 << 16, IN_TIME_STOP = 1 << 17 };
 /* The hunter's files (menu.rs PROFILE_*). */
 enum { PROFILE_SAVE = 0, PROFILE_RECORD = 1 };
 static const char *profile_files[2] = {"trophy00.sav", "trophy00.rec"};

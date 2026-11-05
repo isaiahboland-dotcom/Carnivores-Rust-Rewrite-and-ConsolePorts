@@ -167,6 +167,10 @@ const TROPHY_LOCK: u32 = 1 << 23;
 /// Y at the exit prompt: start this hunt over, unsaved.
 const RESTART: u32 = 1 << 24;
 const PAUSE: u32 = 1 << 25;
+/// D-pad Left: multi ammo's ammo switch; in advanced observer mode, fly.
+/// Y in advanced observer mode: stop or start time (menu.h `IN_*`).
+const AMMO_SWITCH: u32 = 1 << 16;
+const TIME_STOP: u32 = 1 << 17;
 
 /// Sound kinds for `c2_play_sound` / `c2_sound_clip` (slots within each):
 /// effects (steps 0-5, underwater 6, the hunter's screams 7-10), calls
@@ -192,7 +196,19 @@ pub struct Snapshot {
     crouch: u32,
 }
 #[repr(C)]
-pub struct HudState { ammo: i32, weapon_ready: u32, call: i32, weapon: i32, kills: u32, prompt: u32 }
+pub struct HudState {
+    ammo: i32,
+    weapon_ready: u32,
+    call: i32,
+    weapon: i32,
+    kills: u32,
+    prompt: u32,
+    /// Multi ammo: the lethal and tranquilizer rounds, and which is loaded
+    /// (1 darts); `lethal` -1 otherwise.
+    lethal: i32,
+    tranq: i32,
+    darts: u32,
+}
 #[no_mangle]
 pub extern "C" fn c2_hud_state(ptr: *mut core::ffi::c_void, out: *mut HudState) {
     let sim = unsafe { &*ptr.cast::<Simulation>() };
@@ -205,6 +221,9 @@ pub extern "C" fn c2_hud_state(ptr: *mut core::ffi::c_void, out: *mut HudState) 
         kills: if sim.hunt.survival.is_some() { sim.hunt.kills.len() as u32 } else { sim.hunt.successes },
         // A question waits for A / B (main.c sends YES / NO then).
         prompt: (sim.hunt.health > 0 && (sim.hunt.exit_prompt || sim.ask.is_some())) as u32,
+        lethal: if w.multi_ammo() { w.kinds(w.current).0 } else { -1 },
+        tranq: w.kinds(w.current).1,
+        darts: w.fires_darts(w.current) as u32,
     }; }
 }
 #[no_mangle]
@@ -472,6 +491,24 @@ pub extern "C" fn c2_move_tick(
     if sim.cycle.is_some() && !dead && !sim.hunt.paused && !sim.hunt.exit_prompt && sim.choice.observer == 0 {
         if flags & 1024 != 0 && sim.choice.night_vision != 0 { sim.night_vision = !sim.night_vision; sim.notice.message(alloc::format!("Night vision {}", if sim.night_vision { "On" } else { "Off" }), 2000); }
         if flags & 2048 != 0 && sim.choice.flashlight != 0 { sim.flashlight = !sim.flashlight; sim.notice.message(alloc::format!("Flashlight {}", if sim.flashlight { "On" } else { "Off" }), 2000); }
+    }
+    if !dead && !sim.hunt.paused && !sim.hunt.exit_prompt {
+        let m = if sim.hunt.free_observer() {
+            if flags & AMMO_SWITCH != 0 {
+                Some(if sim.hunt.toggle_fly() { "Flying" } else { "Walking" })
+            } else if flags & TIME_STOP != 0 {
+                Some(if sim.hunt.toggle_time_stop() { "Time stopped" } else { "Time going" })
+            } else {
+                None
+            }
+        } else if flags & AMMO_SWITCH != 0 {
+            sim.hunt.swap_ammo()
+        } else {
+            None
+        };
+        if let Some(m) = m {
+            sim.notice.message(alloc::string::String::from(m), 2000);
+        }
     }
     // Sprinting from a crouch stands up first; crouching ends a sprint.
     if flags & 2 != 0 {

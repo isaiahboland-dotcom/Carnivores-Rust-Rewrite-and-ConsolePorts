@@ -78,6 +78,12 @@ whether the hunt fits in memory.
    less), x2 (50, 2 refills, -5%), x3 (150, 3 refills, no penalty), off.
    In the hunt, the **Ammo** button under the map (red number = refills
    left) refills every carried weapon.
+   With **Multi ammo** on (Settings), tapping Tranq turns the two buttons
+   into **Half tranq** / **Full tranq** until one is tapped. Half splits
+   each weapon's rounds between lethal rounds and darts; Full is the
+   original's tranquilizer.
+   **Adv observer** (Settings) gives observer hunts unlimited instant
+   teleports (tap the map), flying and stopping time.
 
 Each hexagon shows its price; picks can't cost more than your score, as in
 the original. Leaving a hunt saves your score and trophies to
@@ -122,6 +128,12 @@ saving.
   left.
 - Tap a call to select it; tap the selected one to call (ZR also calls).
 - Ammo: use an extra ammo refill (the red number is how many are left).
+- Half tranq (multi ammo): a **Switch** button left of Ammo, with the
+  loaded kind under its label ("lethal" or "tranq"), swaps them; the
+  weapon cards show both counts (`L7 T7`). When one kind runs out the
+  other loads on its own.
+- Advanced observer: **Fly** / **Walk** and **Stop** / **Go** (time) in
+  the weapon column. Flying: L rises, the crouch button sinks.
 - Tap the map to switch between close-up (follows you) and the whole area.
   Huntable animals in view range are bright green, others pale. With the
   radar, the hunted species show everywhere on the map.

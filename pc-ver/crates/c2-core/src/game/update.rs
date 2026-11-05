@@ -27,6 +27,10 @@ impl Hunt {
         if self.paused && self.health > 0 {
             return;
         }
+        if self.time_stopped && self.free_observer() && self.health > 0 {
+            self.stopped_tick(area, input, dt, out);
+            return;
+        }
         self.prof.start();
         self.real_time += dt;
         self.takt = self.takt.wrapping_add(1);
@@ -57,7 +61,9 @@ impl Hunt {
             let mut controls = input.controls;
             controls.run &= self.weapons.state == WeaponState::Hidden
                 || self.weapons.mee().is_some_and(|m| m.can_run);
-            self.player.tick(area, &controls, dt as u32, &mut pev);
+            if !self.fly_step(area, input, dt) {
+                self.player.tick(area, &controls, dt as u32, &mut pev);
+            }
             self.apply_recoil(dt);
             self.prof.mark(0);
             self.player_effects(area, &pev);

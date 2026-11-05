@@ -46,8 +46,18 @@ pub struct PcSettings {
     pub secret_dinos: i32,
     /// Opt-in one-hour visual day/night cycle.
     pub dynamic_time: i32,
-    /// Experimental narrower flashlight with twice the reach (0 = original beam).
+    /// The flashlight's beam last picked in a hunt (B toggles it there):
+    /// 0 wide (the original), 1 narrow, with twice the reach.
     pub narrow_flashlight: i32,
+    /// Multi ammo (1 = on): with the tranquilizer picked, the hunt menu asks
+    /// Half tranq (rounds split between lethal and darts, swapped in the
+    /// hunt) or Full tranq (darts only).
+    pub multi_ammo: i32,
+    /// That answer: 1 Half tranq, 0 Full tranq.
+    pub half_tranq: i32,
+    /// Advanced observer mode (1 = on): observing, unlimited instant
+    /// teleports, flying and stopping time.
+    pub advanced_observer: i32,
     /// Starting survival points; zero derives the budget from menu prices.
     pub survival_budget: i32,
 }
@@ -69,6 +79,9 @@ impl Default for PcSettings {
             secret_dinos: 10,
             dynamic_time: 0,
             narrow_flashlight: 0,
+            multi_ammo: 0,
+            half_tranq: 1,
+            advanced_observer: 0,
             survival_budget: 0,
         }
     }
@@ -108,6 +121,9 @@ impl PcSettings {
                 "teleport" => s.teleport = i32::from(v != 0),
                 "button_hints" => s.hints = i32::from(v != 0),
                 "narrow_flashlight" => s.narrow_flashlight = i32::from(v != 0),
+                "multi_ammo" => s.multi_ammo = i32::from(v != 0),
+                "half_tranq" => s.half_tranq = i32::from(v != 0),
+                "advanced_observer" => s.advanced_observer = i32::from(v != 0),
                 "dynamic_time" => s.dynamic_time = i32::from(v != 0),
                 "survival_budget" => s.survival_budget = v.max(0),
                 "secret_dinos" => s.secret_dinos = v.clamp(0, 255),
@@ -121,7 +137,7 @@ impl PcSettings {
     pub fn store(&self) {
         let text = format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nfar_sprites = {}\n\
-             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nsurvival_budget = {}\n",
+             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\n",
             self.render,
             self.fog,
             self.blood,
@@ -136,6 +152,9 @@ impl PcSettings {
             self.secret_dinos,
             self.dynamic_time,
             self.narrow_flashlight,
+            self.multi_ammo,
+            self.half_tranq,
+            self.advanced_observer,
             self.survival_budget
         );
         if let Some(dir) = path().parent() {
@@ -198,6 +217,14 @@ mod tests {
             PcSettings::parse("narrow_flashlight = 0\n").narrow_flashlight,
             0
         );
+    }
+
+    #[test]
+    fn multi_ammo_and_advanced_observer_are_opt_in_and_round_trip() {
+        let d = PcSettings::parse("");
+        assert_eq!((d.multi_ammo, d.half_tranq, d.advanced_observer), (0, 1, 0));
+        let s = PcSettings::parse("multi_ammo = 1\nhalf_tranq = 0\nadvanced_observer = 1\n");
+        assert_eq!((s.multi_ammo, s.half_tranq, s.advanced_observer), (1, 0, 1));
     }
 
     #[test]
