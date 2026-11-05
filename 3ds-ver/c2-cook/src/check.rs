@@ -10,7 +10,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use c2_core::area::TimeOfDay;
 use c2_core::dino::{Herd, PlaceOptions};
-use c2_core::game::{Hunt, HuntInput, HuntOptions, SurvivalOptions, Weapons};
+use c2_core::game::{Hunt, HuntInput, HuntOptions, SurvivalKind, SurvivalOptions, Weapons};
 use c2_core::player::Player;
 use c2_core::rng::MsRand;
 use c2_vfs::PackBackend;
@@ -279,14 +279,10 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
         problems += 1;
     }
     if bench.is_none() {
-        if let Some(d) = vfs.read("C2RS/SURVIVE.TXT").ok() {
-            let m = c2_formats::mobile_arcade::Survive::parse(&String::from_utf8_lossy(&d));
-            if !classic(&vfs, &rules, &m)? {
+        for kind in SurvivalKind::ALL {
+            if !survival(&vfs, &rules, kind) {
                 problems += 1;
             }
-        }
-        if !modded(&vfs, &rules)? {
-            problems += 1;
         }
     }
     if problems > 0 {
@@ -405,7 +401,6 @@ struct SurvivalHunt {
     area: c2_core::area::Area,
     hunt: Hunt,
     cars: Vec<Option<c2_formats::car::Car>>,
-    tables: Option<c2_formats::mee::Tables>,
 }
 
 fn survival_hunt(
@@ -451,79 +446,37 @@ fn survival_hunt(
         area,
         hunt,
         cars,
-        tables: hr.tables,
     })
 }
 
-/// Classic survival on its area with every animal loaded. `false`: it
-/// didn't run.
-fn classic(vfs: &Vfs, rules: &Rules, m: &c2_formats::mobile_arcade::Survive) -> Result<bool> {
-    let area_name = format!("AREA{}", m.area);
-    println!("classic survival ({area_name}):");
-    let Some(mut s) = survival_hunt(vfs, rules, &area_name, TimeOfDay::Day) else {
-        return Ok(false);
+/// A survival on Mount Ravan with every animal loaded, its waves bought
+/// with the menu's prices. `false`: it didn't run (Classic is skipped in a
+/// game without the stock animals, as the menus hide it).
+fn survival(vfs: &Vfs, rules: &Rules, kind: SurvivalKind) -> bool {
+    println!("{}:", kind.name().to_ascii_lowercase());
+    let Some(mut s) = survival_hunt(vfs, rules, "AREA5", TimeOfDay::Day) else {
+        return false;
     };
-    let Some(o) = SurvivalOptions::mobile(&s.hunt, m, 6) else {
-        println!("  MISSING: its animals (or their stand-ins)");
-        return Ok(false);
-    };
-    if o.mobile.as_ref().is_some_and(|w| w.stand_ins) {
-        println!("  with stand-ins, round the hunter");
+    c2_core::game::price_species(&mut s.hunt.herd.species, &rules.menu);
+    let mut o = SurvivalOptions::pick(&s.hunt, kind, 6);
+    o.roster
+        .retain(|&(i, _)| s.cars.get(i).is_some_and(Option::is_some));
+    o.starting_budget = rules.menu.survival_budget;
+    if o.roster.is_empty() && kind == SurvivalKind::Classic {
+        println!("  not offered (no stock animals)");
+        return true;
     }
-    Ok(play_waves(&mut s, o))
-}
-
-/// The dialect game's own survival, if the pack's game has one: on its
-/// area at its time, its roster from the area's box. `false`: it has one
-/// that didn't run.
-fn modded(vfs: &Vfs, rules: &Rules) -> Result<bool> {
-    let Some(res) = vfs
-        .read("HUNTDAT/_RES.TXT")
-        .ok()
-        .and_then(|d| c2_formats::res_txt::ResTxt::parse(&String::from_utf8_lossy(&d)).ok())
-        .filter(c2_formats::mee::is_dialect)
-    else {
-        return Ok(true);
-    };
-    let Some(c) = c2_formats::mee::survival_common(&res) else {
-        return Ok(true);
-    };
-    let area_name = format!("AREA{}", c.area);
-    println!("modded survival ({area_name}):");
-    let time = match c.time {
-        0 => TimeOfDay::Dusk,
-        2 => TimeOfDay::Night,
-        _ => TimeOfDay::Day,
-    };
-    let Some(mut s) = survival_hunt(vfs, rules, &area_name, time) else {
-        return Ok(false);
-    };
-    let Some(t) = s.tables.clone() else {
-        println!("  MISSING: the dialect's tables");
-        return Ok(false);
-    };
-    let mut roster = t.survival_roster();
-    let names: Vec<String> = roster
+    if !o.budget_ready() {
+        println!("  MISSING: an attacking animal within the starting budget");
+        return false;
+    }
+    let names: Vec<String> = o
+        .roster
         .iter()
-        .map(|&i| {
-            s.hunt
-                .herd
-                .species
-                .get(i)
-                .map_or("?".into(), |sp| sp.info.name.clone())
-        })
+        .map(|&(i, cost)| format!("{} ({cost})", s.hunt.herd.species[i].info.name))
         .collect();
-    println!("  roster (cheapest first): {}", names.join(", "));
-    roster.retain(|&i| s.cars.get(i).is_some_and(Option::is_some));
-    let Some(o) = t
-        .survival
-        .as_ref()
-        .and_then(|spot| SurvivalOptions::mee(&roster, spot, 6))
-    else {
-        println!("  MISSING: the area's survival spot, or the roster's models");
-        return Ok(false);
-    };
-    Ok(play_waves(&mut s, o))
+    println!("  roster: {}", names.join(", "));
+    play_waves(&mut s, o)
 }
 
 /// The hunter stands; each wave, once it has come, is felled. Prints what

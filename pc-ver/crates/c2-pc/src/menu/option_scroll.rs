@@ -30,7 +30,13 @@ pub(super) fn visible_rows(opts: &[Opt], panel: Rect, first: usize) -> Vec<(Opt,
     let mut rows = Vec::new();
     let mut y = panel.1;
     for o in opts.iter().skip(first) {
-        let height = if matches!(o, Opt::PcSlider("Total number of secret dinos on map", _)) {
+        let height = if matches!(
+            o,
+            Opt::PcSlider(
+                "Total number of secret dinos on map" | "Survival starting budget",
+                _
+            )
+        ) {
             38.0
         } else {
             OPT_ROW
@@ -57,7 +63,13 @@ impl Menu {
             let mut height = 0.0;
             let mut count = 0;
             for o in GAME_OPTS.iter().rev() {
-                height += if matches!(o, Opt::PcSlider("Total number of secret dinos on map", _)) {
+                height += if matches!(
+                    o,
+                    Opt::PcSlider(
+                        "Total number of secret dinos on map" | "Survival starting budget",
+                        _
+                    )
+                ) {
                     38.0
                 } else {
                     OPT_ROW
@@ -139,12 +151,20 @@ mod tests {
     fn modifier_rows_stay_inside_panel_and_bottom_options_are_reachable() {
         let top = visible_rows(&GAME_OPTS, GAME_PANEL, 0);
         assert!(!top.iter().any(|(o, _)| matches!(o, Opt::ClearTrophies)));
-        let bottom = visible_rows(&GAME_OPTS, GAME_PANEL, 3);
+        let last_start = (0..GAME_OPTS.len())
+            .find(|&first| {
+                visible_rows(&GAME_OPTS, GAME_PANEL, first).len() == GAME_OPTS.len() - first
+            })
+            .unwrap();
+        let bottom = visible_rows(&GAME_OPTS, GAME_PANEL, last_start);
         assert!(bottom
             .iter()
             .any(|(o, _)| matches!(o, Opt::PcToggle("Dynamic time", _))));
         assert!(matches!(bottom.last().unwrap().0, Opt::ClearTrophies));
-        for first in 0..=3 {
+        assert!(bottom
+            .iter()
+            .any(|(o, _)| matches!(o, Opt::PcToggle("Narrow flashlight", _))));
+        for first in 0..=last_start {
             let rows = visible_rows(&GAME_OPTS, GAME_PANEL, first);
             for (_, r) in &rows {
                 assert!(r.1 >= GAME_PANEL.1 && r.1 + r.3 <= GAME_PANEL.1 + GAME_PANEL.3);

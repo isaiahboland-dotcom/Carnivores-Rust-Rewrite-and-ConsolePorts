@@ -331,7 +331,7 @@ enum Opt {
     ClearTrophies,
 }
 
-const GAME_OPTS: [Opt; 10] = [
+const GAME_OPTS: [Opt; 12] = [
     Opt::Slider("Aggressiveness", |s| &mut s.options.agres),
     Opt::Slider("Density", |s| &mut s.options.dens),
     Opt::Slider("Sensitivity", |s| &mut s.options.sens),
@@ -343,6 +343,8 @@ const GAME_OPTS: [Opt; 10] = [
         &mut p.secret_dinos
     }),
     Opt::PcToggle("Dynamic time", |p| &mut p.dynamic_time),
+    Opt::PcToggle("Narrow flashlight", |p| &mut p.narrow_flashlight),
+    Opt::PcSlider("Survival starting budget", |p| &mut p.survival_budget),
     Opt::ClearTrophies,
 ];
 
@@ -408,8 +410,8 @@ pub struct Menu {
     hud: Hud,
     game_dir: PathBuf,
     huntdat: PathBuf,
-    /// The dialect game's survival, when offered.
-    modded: Option<c2_formats::mee::SurvivalCommon>,
+    /// Stock animals are present, so Classic can be offered.
+    classic_survival: bool,
     /// Which survival? (more than one offered).
     survival_pick: bool,
     start_score: i32,
@@ -559,56 +561,8 @@ pub static MENU_ART: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 /// The experimental mobile layout of the hunt setup (`--mobile-menu`).
 pub static MOBILE_MENU: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 
-/// Which survivals are offered (the launcher's choice): the mobile game's
-/// (`--mobile-survival FILE`, from the player's APK), the dialect game's
-/// own, and ours (benched, owner 2026-10-23: only when asked for by name).
-#[derive(Debug, Clone)]
-pub struct Survivals {
-    pub ours: bool,
-    pub mobile: Option<c2_formats::mobile_arcade::Survive>,
-    pub modded: bool,
-}
-
-pub static SURVIVALS: std::sync::OnceLock<Survivals> = std::sync::OnceLock::new();
-
-/// Our survival offered (benched: only when asked for).
-fn ours_offered() -> bool {
-    SURVIVALS.get().is_some_and(|s| s.ours)
-}
-
-/// The dialect game's own survival (`common {}`, the area's spot, a
-/// `survivalIndex` roster), if it has one that can be played.
-fn modded_survival(huntdat: &Path) -> Option<c2_formats::mee::SurvivalCommon> {
-    let res = find_file(huntdat, "_RES.TXT")
-        .and_then(|p| std::fs::read(p).ok())
-        .and_then(|d| ResTxt::parse(&String::from_utf8_lossy(&d)).ok())?;
-    if !c2_formats::mee::is_dialect(&res) {
-        return None;
-    }
-    let c = c2_formats::mee::survival_common(&res)?;
-    let h = c2_formats::mee::Hunt {
-        area: Some(c.area),
-        time: c.time,
-        picked: Bits::NONE,
-    };
-    let t = c2_formats::mee::Tables::read(&res, &h);
-    (t.survival.is_some() && !t.survival_roster().is_empty()).then_some(c)
-}
-
-/// The classic (mobile) survival, if offered.
-fn classic() -> Option<c2_formats::mobile_arcade::Survive> {
-    SURVIVALS.get().and_then(|s| s.mobile.clone())
-}
-
 /// Main menu button (ours, under the original's): survival.
 const SURVIVAL_BUTTON: Rect = (330.0, 518.0, 260.0, 30.0);
-
-/// A seed from the clock (random area and time of a survival).
-fn clock_seed() -> u32 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(1, |d| d.subsec_nanos() ^ d.as_secs() as u32)
-}
 
 pub(crate) mod kit;
 mod mobile;
@@ -625,13 +579,18 @@ impl Menu {
                 game_dir.to_path_buf(),
             ),
         };
-        let modded = SURVIVALS
-            .get()
-            .is_none_or(|s| s.modded)
-            .then(|| modded_survival(&huntdat))
-            .flatten();
-        // A readable `_RES.TXT` is what makes this a game folder.
-        load_res(&huntdat).context("reading the game data (is this a game folder?)")?;
+        let data = load_res(&huntdat).context("reading the game data (is this a game folder?)")?;
+        let classic_survival = data
+            .characters
+            .iter()
+            .filter(|d| {
+                c2_core::game::classic_identity(
+                    d.name.as_deref().unwrap_or(""),
+                    d.file.as_deref().unwrap_or(""),
+                )
+            })
+            .count()
+            >= 6;
         let dir = find_file(&huntdat, "MENU").unwrap_or_else(|| huntdat.join("MENU"));
         let mut hud = Hud::new(gpu);
         // The style's frames where it has them (else the game's).
@@ -661,7 +620,7 @@ impl Menu {
             .flatten();
         let mut kit_loading = None;
         let mut more_board = Board::default();
-        let survive = classic().is_some() || modded.is_some() || ours_offered();
+        let survive = true;
         let (main, stats_board, quit_board, reg, waiver, delete, options, credits) = match &kit {
             Some(k) => {
                 let b = k.boards(&mut hud, gpu, &game_title(&huntdat), survive);
@@ -924,7 +883,7 @@ impl Menu {
             (
                 "Flashlight",
                 15,
-                "Costs 15 points. L toggles the flashlight. Night kills keep the 20% bonus.",
+                "Costs 15 points. L toggles the flashlight. Night kills keep the 20% bonus. Experimental narrow beam: enable Narrow flashlight in Game options for less width and longer reach.",
             ),
         ] {
             let gear = &mut cols[3];
@@ -1114,7 +1073,7 @@ impl Menu {
             stats: false,
             more: false,
             more_board,
-            modded,
+            classic_survival,
             survival_pick: false,
             name: String::new(),
             picked: None,
@@ -1475,11 +1434,7 @@ impl Menu {
             inside(self.cursor, SURVIVAL_BUTTON)
         };
         if survive {
-            match self.survival_modes()[..] {
-                [] => {}
-                [one] => self.start_survival(one),
-                _ => self.survival_pick = true,
-            }
+            self.survival_pick = !self.survival_modes().is_empty();
             return;
         }
         // The name field: change hunter.
@@ -1520,8 +1475,8 @@ impl Menu {
         let on_mode = inside(self.cursor, MODE_RECT) && self.choice.survival.is_some();
         let region = if on_mode { 0 } else { region };
         if input.clicked && on_mode {
-            // Survival -> hardcore -> custom -> survival.
-            let all = SurvivalKind::ALL;
+            // Cycle only modes available for this install.
+            let all = self.survival_modes();
             if let Some(k) = self.choice.survival {
                 let i = all.iter().position(|&a| a == k).unwrap_or(0);
                 self.choice.survival = Some(all[(i + 1) % all.len()]);
@@ -1554,7 +1509,7 @@ impl Menu {
         if !input.clicked {
             return;
         }
-        // A survival: only the guns are picked (the rest is random).
+        // Survival launches directly from its mode chooser.
         if survival {
             if region == 8 && self.can_hunt() {
                 self.launch_hunt();
@@ -1639,14 +1594,21 @@ impl Menu {
 
     /// Starts the hunt the choices describe.
     fn launch_hunt(&mut self) {
-        self.save_equipment();
+        if self.choice.survival.is_none() {
+            self.save_equipment();
+        }
         let mut c = self.choice.clone();
-        // A survival: a random area and time of day, every animal there to
-        // draw on, no gear.
+        // Mobile survival: Mount Ravan, daylight, shotgun, no equipment.
         if c.survival.is_some() {
-            let seed = clock_seed() as usize;
-            c.area = seed % self.areas.len().max(1);
-            c.time = seed / 7 % 3;
+            c.area = self
+                .areas
+                .iter()
+                .position(|p| {
+                    p.file_stem()
+                        .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("AREA5"))
+                })
+                .unwrap_or(c.area);
+            c.time = 1;
             c.dinos = Bits::ALL;
             c.equip = 0;
         }
@@ -1664,19 +1626,13 @@ impl Menu {
         }
     }
 
-    /// The survivals offered: the mobile game's, the dialect game's, ours
-    /// (benched).
+    /// APK-independent modes, with Classic hidden for standalone rosters.
     fn survival_modes(&self) -> Vec<SurvivalKind> {
         let mut v = Vec::new();
-        if classic().is_some() {
-            v.push(SurvivalKind::Mobile);
+        if self.classic_survival {
+            v.push(SurvivalKind::Classic);
         }
-        if self.modded.is_some() {
-            v.push(SurvivalKind::Mee);
-        }
-        if ours_offered() {
-            v.push(SurvivalKind::Normal);
-        }
+        v.push(SurvivalKind::Modded);
         v
     }
 
@@ -1688,81 +1644,16 @@ impl Menu {
     }
 
     fn start_survival(&mut self, kind: SurvivalKind) {
-        match kind {
-            SurvivalKind::Mobile => {
-                if let Some(m) = classic() {
-                    self.launch_classic(&m);
-                }
-            }
-            SurvivalKind::Mee => {
-                if let Some(c) = self.modded {
-                    self.launch_modded(c);
-                }
-            }
-            _ => {
-                self.choice.survival = Some(SurvivalKind::Normal);
-                self.choice.observer = false;
-                self.choice.focus = None;
-                self.screen = Screen::Setup;
-            }
-        }
-    }
-
-    /// The dialect game's survival: straight in, on its area at its time,
-    /// with its weapon (`common {}`).
-    fn launch_modded(&mut self, c: c2_formats::mee::SurvivalCommon) {
-        let name = format!("AREA{}.MAP", c.area);
-        let Some(map) = self.areas.iter().find(|a| {
-            a.file_name()
-                .is_some_and(|f| f.to_string_lossy().eq_ignore_ascii_case(&name))
-        }) else {
-            return;
-        };
-        let time = match c.time {
-            0 => TimeOfDay::Dusk,
-            2 => TimeOfDay::Night,
-            _ => TimeOfDay::Day,
-        };
-        let n = self.columns[2].names.len().max(1);
-        let weapon = c.weapon.min(n - 1).min(127);
-        self.start(map.clone(), time, Bits::ALL, 1 << weapon, false, false);
-        if let Some(l) = &mut self.launch {
-            l.survival = Some(SurvivalKind::Mee);
-        }
-    }
-
-    /// Classic survival (the mobile game's): straight in, on its area, with
-    /// the shotgun.
-    fn launch_classic(&mut self, m: &c2_formats::mobile_arcade::Survive) {
-        let name = format!("AREA{}.MAP", m.area);
-        let Some(map) = self.areas.iter().find(|a| {
-            a.file_name()
-                .is_some_and(|f| f.to_string_lossy().eq_ignore_ascii_case(&name))
-        }) else {
-            return;
-        };
-        let names = &self.columns[2].names;
-        let shotgun = names
+        self.choice.survival = Some(kind);
+        self.choice.observer = false;
+        self.choice.focus = None;
+        self.choice.weapons = self.columns[2]
+            .names
             .iter()
             .position(|n| n.trim().eq_ignore_ascii_case("shotgun"))
-            .or_else(|| {
-                names
-                    .iter()
-                    .position(|n| n.to_ascii_lowercase().contains("shotgun"))
-            })
-            .unwrap_or(0);
-        self.start(
-            map.clone(),
-            TimeOfDay::Day,
-            Bits::ALL,
-            1 << shotgun,
-            false,
-            false,
-        );
-        if let Some(l) = &mut self.launch {
-            l.survival = Some(SurvivalKind::Mobile);
-            l.mobile_survival = Some(m.clone());
-        }
+            .map_or(0, |i| 1u128 << i);
+        self.choice.equip = 0;
+        self.launch_hunt();
     }
 
     /// Keeps the accessory choice in the save, as the original does.
@@ -1800,7 +1691,6 @@ impl Menu {
             double_ammo,
             observer,
             survival: None,
-            mobile_survival: None,
             reg,
             from_menu: true,
             pc: self.pc,
@@ -1929,7 +1819,11 @@ impl Menu {
                 _ => None,
             });
             if let Some(v) = r.and_then(|r| self.slider_value(r)) {
-                *f(&mut self.pc) = v;
+                *f(&mut self.pc) = if name == "Survival starting budget" {
+                    v * 10
+                } else {
+                    v
+                };
             }
         }
         if let Some(Opt::Slider(name, f)) = self.drag {
@@ -2105,16 +1999,15 @@ impl Menu {
             self.text(out, 92.0, 14.0, 16.0, SAND, &p.player_name());
             self.text(out, 474.0, 14.0, 16.0, SAND, &p.score.to_string());
         }
-        // Survival: one button; the chooser when more than one is offered.
+        // Survival: choose Classic/Modded, then launch immediately.
         let modes = self.survival_modes();
         let mut buttons = Vec::new();
         if self.survival_pick {
             self.fill(out, (0.0, 0.0, 1024.0, 768.0), [0.0, 0.0, 0.0, 0.5]);
             for (i, k) in modes.iter().enumerate() {
                 let label = match k {
-                    SurvivalKind::Mobile => "CLASSIC (ANDROID)",
-                    SurvivalKind::Mee => "MODDED (THIS GAME'S)",
-                    _ => "OURS",
+                    SurvivalKind::Classic => "CLASSIC",
+                    SurvivalKind::Modded => "MODDED",
                 };
                 buttons.push((Self::pick_rect(i, modes.len()), label));
             }
@@ -2233,7 +2126,7 @@ impl Menu {
         for (ci, col) in self.columns.iter().enumerate() {
             // A survival: only the guns; the rest is random.
             if c.survival.is_some() && ci != 2 {
-                let note = ["Random area", "Random animals", "", "-"][ci.min(3)];
+                let note = ["Mount Ravan", "Wave animals", "Shotgun only", "-"][ci.min(3)];
                 let note = if ci == 1 { "Random, dangerous" } else { note };
                 self.text(out, col.rect.0 + 6.0, col.rect.1 + 6.0, 12.0, DIM, note);
                 continue;
@@ -2279,11 +2172,8 @@ impl Menu {
         }
         // Our survival switch (a survival only).
         let mode = c.survival.map_or("", |k| match k {
-            SurvivalKind::Normal => "SURVIVAL",
-            SurvivalKind::Hardcore => "SURVIVAL: HARDCORE",
-            SurvivalKind::Custom => "SURVIVAL: CUSTOM",
-            SurvivalKind::Mobile => "CLASSIC SURVIVAL",
-            SurvivalKind::Mee => "MODDED SURVIVAL",
+            SurvivalKind::Classic => "CLASSIC SURVIVAL",
+            SurvivalKind::Modded => "MODDED SURVIVAL",
         });
         let mc = if on_mode {
             HOVER
@@ -2300,12 +2190,12 @@ impl Menu {
             "",
             "Waves of dangerous animals, picked",
             "at random, come for you, more each",
-            "wave, on a random area. Health and",
+            "wave, in Mount Ravan's ravine. Health and",
             "ammunition come back between waves.",
             "Free; no trophies or score.",
-            "Hardcore: 1-3 mods' animals join",
-            "each wave. Custom: unlimited ammo,",
-            "and the T-Rex from wave 15.",
+            "Budget: twice cheapest attacker; +10% per round.",
+            "Classic: base-game animals only.",
+            "Modded: all eligible installed animals.",
         ]
         .map(String::from)
         .to_vec();
@@ -2364,7 +2254,8 @@ impl Menu {
                     self.image_native(out, self.knob, kx, r.1 + 5.0);
                 }
                 Opt::PcSlider(name, f) => {
-                    let secret = name == "Total number of secret dinos on map";
+                    let budget = name == "Survival starting budget";
+                    let secret = budget || name == "Total number of secret dinos on map";
                     self.text(
                         out,
                         r.0,
@@ -2376,7 +2267,9 @@ impl Menu {
                     let v = *f(&mut self.pc.clone());
                     let slider_y = r.1 + if secret { 20.0 } else { 4.0 };
                     if secret {
-                        let value = if v == 0 {
+                        let value = if budget && v == 0 {
+                            "Automatic".into()
+                        } else if v == 0 {
                             "Off (selected dinos only)".into()
                         } else {
                             v.to_string()
@@ -2385,6 +2278,7 @@ impl Menu {
                     }
                     let x0 = r.0 + r.2 - 128.0 - 8.0;
                     self.image_native(out, self.slider, x0, slider_y);
+                    let v = if budget { v / 10 } else { v };
                     let kx = x0 + 4.0 + v.clamp(0, 255) as f32 * 120.0 / 255.0 - 4.0;
                     self.image_native(out, self.knob, kx, slider_y + 1.0);
                 }

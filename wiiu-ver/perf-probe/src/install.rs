@@ -274,6 +274,7 @@ pub const MAX_ANIMALS: usize = 24;
 pub const MAX_WEAPONS: usize = 8;
 
 pub struct Install {
+    pub classic_survival: bool,
     pub vfs: Vfs,
     pub rules: Rules,
     pub info: Info,
@@ -321,6 +322,9 @@ impl Install {
         let first = areas.first().map_or("AREA1", |a| a.file.as_str());
         let neutral = rules.hunt(first, TimeOfDay::Day, Bits::ALL);
         mark("Install: rules resolved");
+        let classic_survival = neutral.res.characters.iter().filter(|d| {
+            c2_core::game::classic_identity(d.name.as_deref().unwrap_or(""), d.file.as_deref().unwrap_or(""))
+        }).count() >= 6;
         let char_of = |pick: &Pick| match pick {
             Pick::Roamer(r) => Some(r.char),
             Pick::Slot(k) => neutral.roles.iter().position(|&r| r == Role::Slot(*k)),
@@ -369,7 +373,7 @@ impl Install {
             .map(|(i, w)| menu.weapons.get(i).map(|m| m.name.clone()).filter(|n| !n.is_empty()).or_else(|| w.name.clone()).unwrap_or_else(|| format!("Weapon {}", i + 1)))
             .take(MAX_WEAPONS)
             .collect();
-        Some(Install { vfs, rules, info, areas, animals, menu_animals, weapons, trophy_room })
+        Some(Install { classic_survival, vfs, rules, info, areas, animals, menu_animals, weapons, trophy_room })
     }
 
     /// The picked animals (bits by position in `animals`) as hunt targets

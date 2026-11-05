@@ -1,12 +1,12 @@
 //! Engine options as one file to export, keep or share and import again:
 //! the balance (prices, scores, and where PC and mobile differ, which one
-//! each entry takes), which survivals are offered, the menu style, the PC
+//! each entry takes), the menu style, the PC
 //! game's own settings (`c2rs.cfg`) and the 3DS build's choices. No paths
 //! (folders differ between machines) and no game data.
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{Config, MenuStyle, SurvivalModes, Target};
+use crate::config::{Config, MenuStyle, Target};
 
 /// The file (`*.c2rs-options.toml`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -14,7 +14,6 @@ use crate::config::{Config, MenuStyle, SurvivalModes, Target};
 pub struct Options {
     /// A note for whoever reads it.
     pub about: String,
-    pub survival: Option<SurvivalModes>,
     pub menu_style: Option<MenuStyle>,
     /// 3DS: the target and the title art.
     pub target_3ds: Option<Target>,
@@ -34,7 +33,6 @@ impl Options {
     pub fn current(cfg: &Config, balance: &c2_mods::balance::Balance) -> Self {
         Self {
             about: "c2rs engine options (export from the launcher; import there)".into(),
-            survival: Some(cfg.survival_modes),
             menu_style: Some(cfg.menu_style),
             target_3ds: Some(cfg.three_ds.target),
             ice_age_title: Some(cfg.three_ds.ice_age_title),
@@ -59,10 +57,6 @@ impl Options {
         balance: &mut c2_mods::balance::Balance,
     ) -> Result<Vec<&'static str>, String> {
         let mut done = Vec::new();
-        if let Some(s) = self.survival {
-            cfg.survival_modes = s;
-            done.push("survival");
-        }
         if let Some(m) = self.menu_style {
             cfg.menu_style = m;
             done.push("menu style");
@@ -99,10 +93,6 @@ mod tests {
     fn options_round_trip_and_leave_the_rest() {
         let o = Options {
             about: "x".into(),
-            survival: Some(SurvivalModes {
-                classic: true,
-                modded: false,
-            }),
             menu_style: Some(MenuStyle::IceAge),
             ..Default::default()
         };
@@ -112,17 +102,10 @@ mod tests {
         cfg.three_ds.ice_age_title = true;
         let mut b = c2_mods::balance::Balance::default();
         let done = back.apply(&mut cfg, &mut b).unwrap();
-        assert_eq!(done, ["survival", "menu style"]);
-        assert_eq!(
-            cfg.survival_modes,
-            SurvivalModes {
-                classic: true,
-                modded: false
-            }
-        );
-        // An older file's single choice still reads.
+        assert_eq!(done, ["menu style"]);
+        // An older file's survival choices still read (and are ignored).
         let old: Config = toml::from_str("survival_modes = \"Ours\"\n").unwrap();
-        assert!(!old.survival_modes.classic && old.survival_modes.modded);
+        assert_eq!(old.menu_style, Config::default().menu_style);
         assert!(cfg.three_ds.ice_age_title);
     }
 }

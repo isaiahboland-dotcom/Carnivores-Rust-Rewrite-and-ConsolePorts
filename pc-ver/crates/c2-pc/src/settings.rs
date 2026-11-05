@@ -46,6 +46,10 @@ pub struct PcSettings {
     pub secret_dinos: i32,
     /// Opt-in one-hour visual day/night cycle.
     pub dynamic_time: i32,
+    /// Experimental narrower flashlight with twice the reach (0 = original beam).
+    pub narrow_flashlight: i32,
+    /// Starting survival points; zero derives the budget from menu prices.
+    pub survival_budget: i32,
 }
 
 impl Default for PcSettings {
@@ -64,6 +68,8 @@ impl Default for PcSettings {
             all_huntable: 0,
             secret_dinos: 10,
             dynamic_time: 0,
+            narrow_flashlight: 0,
+            survival_budget: 0,
         }
     }
 }
@@ -101,7 +107,9 @@ impl PcSettings {
                 "map_zoom" => s.map_zoom = i32::from(v != 0),
                 "teleport" => s.teleport = i32::from(v != 0),
                 "button_hints" => s.hints = i32::from(v != 0),
+                "narrow_flashlight" => s.narrow_flashlight = i32::from(v != 0),
                 "dynamic_time" => s.dynamic_time = i32::from(v != 0),
+                "survival_budget" => s.survival_budget = v.max(0),
                 "secret_dinos" => s.secret_dinos = v.clamp(0, 255),
                 "all_huntable" => s.all_huntable = i32::from(v != 0),
                 _ => {}
@@ -113,7 +121,7 @@ impl PcSettings {
     pub fn store(&self) {
         let text = format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nfar_sprites = {}\n\
-             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\n",
+             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nsurvival_budget = {}\n",
             self.render,
             self.fog,
             self.blood,
@@ -126,7 +134,9 @@ impl PcSettings {
             self.hints,
             self.all_huntable,
             self.secret_dinos,
-            self.dynamic_time
+            self.dynamic_time,
+            self.narrow_flashlight,
+            self.survival_budget
         );
         if let Some(dir) = path().parent() {
             let _ = std::fs::create_dir_all(dir);
@@ -150,6 +160,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn survival_budget_defaults_to_auto_and_accepts_point_overrides() {
+        assert_eq!(PcSettings::parse("").survival_budget, 0);
+        assert_eq!(
+            PcSettings::parse("survival_budget = -20").survival_budget,
+            0
+        );
+        assert_eq!(
+            PcSettings::parse("survival_budget = 5000").survival_budget,
+            5000
+        );
+    }
+
+    #[test]
     fn dynamic_time_is_opt_in_for_existing_settings() {
         assert_eq!(PcSettings::parse("blood = 0\n").dynamic_time, 0);
         assert_eq!(PcSettings::parse("dynamic_time = 1\n").dynamic_time, 1);
@@ -162,6 +185,19 @@ mod tests {
         assert_eq!(PcSettings::parse("map_mobile = 1\n").map_zoom, 0);
         assert_eq!(PcSettings::parse("map_zoom = 1\n").map_zoom, 1);
         assert_eq!(PcSettings::parse("map_zoom = 0\n").map_zoom, 0);
+    }
+
+    #[test]
+    fn narrow_flashlight_is_opt_in() {
+        assert_eq!(PcSettings::parse("dynamic_time = 1\n").narrow_flashlight, 0);
+        assert_eq!(
+            PcSettings::parse("narrow_flashlight = 1\n").narrow_flashlight,
+            1
+        );
+        assert_eq!(
+            PcSettings::parse("narrow_flashlight = 0\n").narrow_flashlight,
+            0
+        );
     }
 
     #[test]

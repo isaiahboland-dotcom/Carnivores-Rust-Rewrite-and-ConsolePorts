@@ -3526,6 +3526,89 @@ Direct launches retain the existing shared saves (including Ice Age's separate
 shared profile). Existing saves are neither moved nor deleted; cloning an
 instance must give it a distinct recipe ID to keep progress separate.
 
+### Experimental PC flashlight beam
+
+PC Game options can select a narrower flashlight cone with twice the reach
+(40 cells instead of 20). The existing broad beam remains the default. This
+changes illumination only: equipment cost, the L toggle, fog and render-distance
+limits, and night scoring remain unchanged. It uses the existing surface-light
+shader without an additional rendering pass; consoles retain their current beam.
+
+### Points-based survival rewrite (2026-11-03)
+
+The menus now offer Classic and Modded, independently of APK survival files or
+MEE `survivalIndex`/arena declarations. Classic uses stock C2 or Ice Age animal
+identities (exact name and root model path); it is hidden when fewer than six
+stock identities remain, so standalone packs and namespaced imported animals
+are not mistaken for the base game. Replacements retaining a stock name and
+path remain that stock identity; this is identity detection, not an asset hash
+or authenticity check. Modded includes every eligible loaded species.
+
+An animal costs its configured hunt-menu price, including numbered `prices.dino`
+overrides from `_MENU.TXT` (or `_RES.TXT` when there is no menu file). Roaming
+add-ons inherit the same-AI donor price used by the hunt menu (zero when an
+explicit roaming add-on has no donor). Negative or missing prices do not qualify; a configured zero price stays free and is bounded by the
+wave cap. Kill scores do not set wave prices.
+
+By default, starting budget B is max(10, 2 × cheapest eligible animal's price),
+computed separately for the selected mode's loaded roster. Round n receives
+floor(B × 1.1^(n−1)); rounding happens after compounding. Players can override B
+with **Survival starting budget** in PC Game options (Automatic or 10-point
+steps through 2550), or `survival_budget` in `c2rs.cfg` for other integer values.
+Packs can set `survival_start` in the menu script's `prices` section on all
+platforms; zero/absent means automatic. A nonzero PC setting overrides the pack
+value. Nonzero values below 10 clamp to 10.
+
+Random affordable choices repeat until nothing fits or the platform wave cap
+is reached; unused points do not carry over. This budget never reads or spends
+the hunter's saved points. For example, prices 50 and 100 give B=100 and round 7
+has 177 points. Very late budgets saturate at u32::MAX. Existing platform
+population and model-memory limits still apply;
+the 3DS loads as many candidate species as its memory check permits.
+
+Missing models, non-attacking AIs, dialect attacks with zero kill distance or
+zero running speed, and invalid costs do not qualify. A hunt with no affordable
+first-wave animal reports an error rather than starting an empty survival.
+Movement, health/ammo replenishment, capped wave health, no hunting trophies or
+score rewards, and removal of ordinary wildlife remain unchanged. Legacy wave
+readers remain internally for compatibility tests; Hardcore/Custom/APK-specific
+choices are no longer exposed by the game menus.
+
+### Survival arena correction (2026-11-03)
+
+The points rewrite initially used random maps and circular spawns. That was an
+implementation error: Classic/Modded select rosters within the mobile game's
+survival mode, not a different arena mode. Both now launch directly from the
+mode chooser into Mount Ravan (AREA5), daylight, with only the shotgun and no
+equipment. The APK is not required: placement uses the known PC-coordinate
+hunter spot and approach box. Budget waves use the existing fenced ravine
+navigation and boxed spawn retry, never the circular fallback. The hunter faces
+the approach; movement stays enabled. No animal/map/weapon setup pages intervene.
+Packs must provide the survival map and shotgun; missing assets produce an error.
+Testing an arbitrary first wave on another map did not validate this behavior.
+
+### Survival: only Classic and Modded; stock entries in dialect packs (2026-11-05)
+
+Owner playtest: an Ultimate modpack instance (Modder's Edition over the base,
+plus standalones) could not start Classic. Cause: the Reborn standalone's stock
+replacements (`allo.car`, `velo2.car`, ...) are original-engine entries
+(`runspeed`, `kradius`, no animation keys). With the Modder's Edition as a base
+layer the merger treated the base as dialect and did not mark them `nativeAI`,
+so they loaded as dialect animals with no gait, speed or kill distance: survival
+rejected them all (and they could not move in ordinary hunts either). Fixes:
+the merger now marks any entry with an original AI (1-18) and no animation
+layout `nativeAI` whenever the merged rules are dialect, and the loader applies
+the same rule to packs already built. The Modder's Edition's own entries always
+carry animations (only its Hunter, AI 0, has none), so they are unaffected.
+
+Every survival variant not based on the mobile game's is removed: the game
+offers Classic and Modded only (mobile Survive files, the dialect's own
+`survivalIndex` waves, Hardcore/Custom and the ring spawn are gone, in the
+shared code, PC, 3DS, the cook's check and the launcher). Both launch straight
+from the chooser into the Mount Ravan ravine with the shotgun. `--survival-modes`
+and `--mobile-survival` are still read by `c2-pc` and `c2-cook` and ignored, so
+older launch lines keep working. The launcher's survival checkboxes are gone.
+
 ### Android (APK) mode: phone menus only, one light at a time, paged animals (2026-11-05)
 
 Owner playtest (PC and Steam Deck, an instance built from the Dinosaur Hunter

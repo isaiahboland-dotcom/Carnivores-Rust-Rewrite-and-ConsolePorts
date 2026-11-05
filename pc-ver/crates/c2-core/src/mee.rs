@@ -525,6 +525,22 @@ pub fn info(b: &Block, mee_ai: i32) -> MeeInfo {
     m
 }
 
+/// An original-engine entry in a dialect game: one of the original's AIs
+/// and no animation layout at all (a standalone's stock replacement merged
+/// over the Modder's Edition, `runspeed`/`kradius` keys it doesn't read). The
+/// dialect can't run it (no gait, speed or kill distance), so it keeps the
+/// original AI, as the merger's `nativeAI` marks it.
+fn native_block(b: &Block, ai_id: i32) -> bool {
+    let anim = |k: &str| k.to_ascii_lowercase().ends_with("anim");
+    let anim_sub = |n: &str| {
+        let n = n.trim().to_ascii_lowercase();
+        ["idlegroup", "idle2group", "deathtype", "killtype"].contains(&n.as_str())
+    };
+    (1..=18).contains(&ai_id)
+        && !b.entries.iter().any(|e| anim(&e.key))
+        && !b.subs.iter().any(|s| anim_sub(&s.name))
+}
+
 /// Gives loaded species their dialect data. AIs with the dialect's own
 /// behaviour ported ([`is_ported`]) run it; the rest run as their
 /// [`family`] with [`Tuning`] overrides (AI -1, never placed, when there is
@@ -536,7 +552,7 @@ pub fn tune(species: &mut [Species], tables: &Tables) {
         if let Some(v) = c.block.get(&["basescore"]) {
             s.info.base_score = c_atof(v);
         }
-        if flag(&c.block, "nativeAI") == Some(true) {
+        if flag(&c.block, "nativeAI") == Some(true) || native_block(&c.block, s.info.ai) {
             continue;
         }
         let mee_ai = s.tuning.mee_ai.unwrap_or(s.info.ai);
@@ -678,5 +694,25 @@ mod tests {
         assert_eq!(m.idle_groups[0].start, 0.5);
         assert_eq!((m.run_speed, m.kill_dist, m.fear_shot), (1.5, 300, true));
         assert_eq!(m.morph_time, 1.0);
+    }
+
+    #[test]
+    fn original_engine_entries_keep_their_original_ai_in_a_dialect_game() {
+        // A standalone's stock Allosaurus merged over the Modder's Edition:
+        // its own engine's keys, no animation layout.
+        let stock = ResTxt::parse(
+            "characters {\n{\n name = 'Allosaurus'\n file = 'allo.car'\n ai = 13\n runspeed = 1.2\n kradius = 256\n}\n}\n",
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        let b = &stock.section("characters").unwrap().blocks[0];
+        assert!(native_block(b, 13));
+        // The dialect's own entries, the hunter, and AIs past the original's do not.
+        let own = ResTxt::parse(RES).unwrap_or_else(|e| panic!("{e}"));
+        assert!(!native_block(
+            &own.section("characters").unwrap().blocks[0],
+            22
+        ));
+        assert!(!native_block(b, 0));
+        assert!(!native_block(b, 19));
     }
 }

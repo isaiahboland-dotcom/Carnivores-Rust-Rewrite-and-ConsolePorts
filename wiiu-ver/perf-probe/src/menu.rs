@@ -48,11 +48,10 @@ struct Bases {
 
 const EQUIPMENT: [&str; 6] = ["Camouflage", "Radar", "Cover scent", "Double ammo", "Night vision (150)", "Flashlight (15)"];
 const TIMES: [&str; 3] = ["Dawn", "Day", "Night"];
-const SURVIVALS: [&str; 3] = ["Normal", "Hardcore", "Custom"];
-const SURVIVAL_HELP: [&str; 3] = [
-    "Waves of the animals picked, two more each wave. Unlimited ammunition.",
-    "Each wave also brings one to three more hunters.",
-    "The Tyrannosaurus may come from wave 15.",
+const SURVIVALS: [&str; 2] = ["Classic", "Modded"];
+const SURVIVAL_HELP: [&str; 2] = [
+    "Stock animals. Budget starts at twice the cheapest attacker; +10% per round.",
+    "All eligible animals. Budget starts at twice the cheapest attacker; +10% per round.",
 ];
 
 const BG: Rgba = [16, 22, 16, 255];
@@ -111,7 +110,7 @@ pub enum Id {
     Record,
     Settings,
     Exit,
-    /// Normal, hardcore, custom.
+    /// Classic or Modded.
     SurvivalKind(usize),
     Area(usize),
     Time(usize),
@@ -380,6 +379,7 @@ impl Menu {
         let (areas, animals, weapons) = (self.area_count(), self.animal_count(), self.weapon_count());
         let mask = |n: usize| if n >= 64 { u64::MAX } else { (1u64 << n) - 1 };
         let c = &mut self.choice;
+        if !self.install.as_ref().is_some_and(|n| n.classic_survival) { c.survival = 1; }
         c.area = c.area.min(areas.saturating_sub(1) as u32);
         c.animals &= mask(animals);
         c.weapons &= mask(weapons) as u32;
@@ -512,7 +512,7 @@ impl Menu {
             *field = v;
         }
         c.time = c.time.min(2);
-        c.survival = c.survival.min(2);
+        c.survival = c.survival.min(1);
         c.run_pct = (c.run_pct / 10 * 10).clamp(50, 100);
         for f in [&mut c.radar, &mut c.camo, &mut c.scent, &mut c.double_ammo, &mut c.tranq, &mut c.observer, &mut c.blood, &mut c.death_anim, &mut c.ambient, &mut c.units_us, &mut c.map_mobile, &mut c.teleport, &mut c.hints, &mut c.all_huntable, &mut c.dynamic_time, &mut c.night_vision, &mut c.flashlight] {
             *f = (*f != 0) as u32;
@@ -541,14 +541,15 @@ impl Menu {
                 }
             }
             Page::Animals => {
-                // A survival: the kinds below (the hexagons a row higher).
-                let grid = if self.survival() { rect(40.0, 96.0, 740.0, 410.0) } else { rect(40.0, 96.0, 740.0, 520.0) };
-                for (i, r) in fit_honeycomb(self.animal_count(), grid, 92.0).into_iter().enumerate() {
-                    v.push((Id::Animal(i), r));
+                if !self.survival() {
+                    for (i, r) in fit_honeycomb(self.animal_count(), rect(40.0, 96.0, 740.0, 520.0), 92.0).into_iter().enumerate() {
+                        v.push((Id::Animal(i), r));
+                    }
                 }
                 if self.survival() {
-                    for i in 0..3 {
-                        v.push((Id::SurvivalKind(i), rect(40.0 + i as f32 * 244.0, 520.0, 228.0, 56.0)));
+                    for i in 0..SURVIVALS.len() {
+                        if i == 0 && !self.install.as_ref().is_some_and(|n| n.classic_survival) { continue; }
+                        v.push((Id::SurvivalKind(i), rect(64.0 + i as f32 * 360.0, 250.0, 330.0, 80.0)));
                     }
                 }
             }
@@ -576,7 +577,7 @@ impl Menu {
         if SETUP.contains(&self.page) || matches!(self.page, Page::Settings | Page::Record) {
             v.push((Id::Back, BACK));
         }
-        if SETUP.contains(&self.page) {
+        if !self.survival() && SETUP.contains(&self.page) {
             v.push((Id::Next, NEXT));
         }
         v
@@ -670,10 +671,10 @@ impl Menu {
         if buttons & B != 0 {
             self.back();
         }
-        if buttons & PLUS != 0 && SETUP.contains(&self.page) {
+        if !self.survival() && buttons & PLUS != 0 && SETUP.contains(&self.page) {
             self.try_hunt();
         }
-        if SETUP.contains(&self.page) && buttons & (L | R) != 0 {
+        if !self.survival() && SETUP.contains(&self.page) && buttons & (L | R) != 0 {
             let at = SETUP.iter().position(|p| *p == self.page).unwrap();
             if buttons & L != 0 && at > 0 {
                 self.go(SETUP[at - 1]);
@@ -739,6 +740,7 @@ impl Menu {
         self.focus = match page {
             Page::Title => Id::Play,
             Page::Area => Id::Area(self.choice.area as usize),
+            Page::Animals if self.survival() => Id::SurvivalKind(self.choice.survival as usize),
             Page::Animals => Id::Animal((0..self.animal_count()).find(|i| self.choice.animals & (1 << i) != 0).unwrap_or(0)),
             Page::Gear => Id::Weapon((0..self.weapon_count()).find(|i| self.choice.weapons & (1 << i) != 0).unwrap_or(0)),
             Page::Settings => Id::RunSpeed,
@@ -759,6 +761,7 @@ impl Menu {
                 self.go(Page::Title);
                 self.focus = from;
             }
+            Page::Animals if self.survival() => self.go(Page::Title),
             Page::Animals => self.go(Page::Area),
             Page::Gear => self.go(Page::Animals),
             Page::Title | Page::Death => {}
@@ -772,8 +775,8 @@ impl Menu {
         } else if c.dynamic_time != 0 && c.observer == 0 && (c.night_vision * 150 + c.flashlight * 15) as i32 > self.room.score {
             Some("Not enough points for night equipment")
         } else if self.survival() {
-            if c.animals & self.dangerous() == 0 {
-                Some("Pick at least one hunter for the waves")
+            if self.dangerous() == 0 {
+                Some("No dangerous animals available for survival")
             } else if c.weapons == 0 {
                 Some("Pick a weapon")
             } else {
@@ -795,7 +798,7 @@ impl Menu {
         let survival = self.survival();
         let observer = c.observer != 0 && !survival;
         match id {
-            Id::Animal(i) => !survival || self.dangerous() & (1 << i) != 0,
+            Id::Animal(_) => !survival,
             Id::Weapon(_) | Id::Tranq => !observer && !(survival && id == Id::Tranq),
             Id::Equip(i) => !observer || i == 1,
             Id::Observer => !survival,
@@ -832,7 +835,7 @@ impl Menu {
             }
             Id::Survival => {
                 c.mode = MODE_SURVIVAL;
-                self.go(Page::Area);
+                self.go(Page::Animals);
             }
             Id::Trophies if !self.install.as_ref().is_some_and(|i| i.trophy_room) => self.message = Some("This game has no trophy room"),
             Id::Trophies => {
@@ -841,7 +844,29 @@ impl Menu {
                 self.loading = true;
             }
             Id::Record => self.go(Page::Record),
-            Id::SurvivalKind(i) => c.survival = i as u32,
+            Id::SurvivalKind(i) => {
+                c.survival = i as u32;
+                let area = self.install.as_ref().and_then(|n| n.areas.iter().position(|a| a.file.eq_ignore_ascii_case("AREA5")));
+                let shotgun = self.install.as_ref().and_then(|n| n.weapons.iter().position(|w| w.trim().eq_ignore_ascii_case("shotgun")));
+                match (area, shotgun) {
+                    (Some(area), Some(shotgun)) => {
+                        c.area = area as u32;
+                        c.weapons = 1 << shotgun;
+                        c.time = 1;
+                        c.observer = 0;
+                        c.tranq = 0;
+                        c.double_ammo = 0;
+                        c.camo = 0;
+                        c.radar = 0;
+                        c.scent = 0;
+                        c.night_vision = 0;
+                        c.flashlight = 0;
+                        c.teleport = 0;
+                        self.try_hunt();
+                    }
+                    _ => self.message = Some("Survival requires Mount Ravan and the shotgun"),
+                }
+            },
             Id::Settings => self.go(Page::Settings),
             Id::Exit => self.action = Action::Exit,
             Id::Area(i) => c.area = i as u32,
@@ -860,8 +885,8 @@ impl Menu {
             Id::Back => self.back(),
             Id::Next => match self.page {
                 Page::Area => self.go(Page::Animals),
-                Page::Animals if c.mode == MODE_SURVIVAL && c.animals & dangerous == 0 => self.message = Some("Pick at least one hunter for the waves"),
-                Page::Animals if c.animals == 0 => self.message = Some("Pick at least one animal to hunt"),
+                Page::Animals if c.mode == MODE_SURVIVAL && dangerous == 0 => self.message = Some("No dangerous animals available for survival"),
+                Page::Animals if c.mode != MODE_SURVIVAL && c.animals == 0 => self.message = Some("Pick at least one animal to hunt"),
                 Page::Animals => self.go(Page::Gear),
                 _ => self.try_hunt(),
             },
@@ -987,10 +1012,10 @@ impl Menu {
     }
 
     fn draw_setup(&self, c: &mut Canvas) {
-        self.header(c, if self.survival() { "Survival setup" } else { "Hunt setup" });
+        self.header(c, if self.survival() { "Choose survival mode" } else { "Hunt setup" });
         let mut x = 460.0;
         let animals = if self.survival() { "Waves" } else { "Animals" };
-        for (i, (page, name)) in SETUP.iter().zip(["Area", animals, "Weapons & gear"]).enumerate() {
+        for (i, (page, name)) in SETUP.iter().filter(|_| !self.survival()).zip(["Area", animals, "Weapons & gear"]).enumerate() {
             let on = *page == self.page;
             let label = format!("{}. {name}", i + 1);
             let w = c.text(&self.font, x, 26.0, 26.0, if on { GOLD } else { DIM }, &label);
@@ -1041,14 +1066,14 @@ impl Menu {
                 let animals = if survival { (ch.animals & self.dangerous()).count_ones() } else { ch.animals.count_ones() };
                 let weapons = if observer { String::from("observer") } else { format!("{} weapon{}", ch.weapons.count_ones(), if ch.weapons.count_ones() == 1 { "" } else { "s" }) };
                 let s = if survival {
-                    format!("{} survival - {} - {} - {} hunter{} - {}", SURVIVALS[ch.survival as usize], self.area_name(ch.area as usize), TIMES[ch.time as usize], animals, if animals == 1 { "" } else { "s" }, weapons)
+                    String::from("Mount Ravan ravine - daylight - shotgun only")
                 } else {
                     format!("{} - {} - {} animal{} - {}", self.area_name(ch.area as usize), TIMES[ch.time as usize], animals, if animals == 1 { "" } else { "s" }, weapons)
                 };
                 c.text_centered(&self.font, mid, 24.0, TEXT, &s);
             }
         }
-        c.text_centered(&self.font, rect(250.0, 682.0, 780.0, 26.0), 18.0, DIM, if survival { "A: pick   B: back   L/R: page   +: start the survival" } else { "A: pick   B: back   L/R: page   +: start the hunt" });
+        c.text_centered(&self.font, rect(250.0, 682.0, 780.0, 26.0), 18.0, DIM, if survival { "A: start selected mode   B: back" } else { "A: pick   B: back   L/R: page   +: start the hunt" });
     }
 
     fn hex_item(&self, c: &mut Canvas, r: Rect, pic: usize, name: &str, on: bool, focused: bool, enabled: bool) {

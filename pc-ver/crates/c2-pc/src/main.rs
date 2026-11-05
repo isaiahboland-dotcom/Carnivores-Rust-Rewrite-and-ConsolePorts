@@ -34,7 +34,7 @@ use c2_core::game::SurvivalKind;
 const USAGE: &str = "usage:
   c2-pc play  <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR...] [--balance FILE]
               [--screen main|stats|hunt|options|credits|register|quit|loading]
-              [--script 'X,Y;'TEXT;enter;esc'] [--shot out.png]\n              [--survival-modes classic,modded,ours] [--mobile-survival FILE]
+              [--script 'X,Y;'TEXT;enter;esc'] [--shot out.png]
   c2-pc balance <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]...   (prints prices and scores as a balance file)
   c2-pc mobile <APK> --base <GAME_DIR> [--overlay DIR]... --out <DIR>   (the mobile game's animals as add-ons)
   c2-pc mobile <APK> --values                                         (its tuning values)
@@ -52,7 +52,7 @@ const USAGE: &str = "usage:
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
   c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--models] [--shot out.png]
   c2-pc hunt  <AREA.MAP|TROPHY.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all]
-              [--weapon N] [--bino] [--pause] [--exit] [--message TEXT] [--kill] [--plaque] [--pick] [--call] [--fill] [--die AI,MS[,NAME]] [--observer] [--player N] [--survival normal|hardcore|custom|mobile]\n              [--mobile-survival FILE]\n              [--shot out.png]
+              [--weapon N] [--bino] [--pause] [--exit] [--message TEXT] [--kill] [--plaque] [--pick] [--call] [--fill] [--die AI,MS[,NAME]] [--observer] [--player N] [--survival classic|modded]\n              [--shot out.png]
 
 model: drag to orbit, wheel zoom, [ ] next/prev file, N/P next/prev animation, Space pause
 area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distance
@@ -100,6 +100,8 @@ const VALUE_FLAGS: &[&str] = &[
     "menu-art",
     "save-instance",
     "survival",
+    // Older launchers' survival choices (read and ignored: survival is
+    // always Classic / Modded now).
     "survival-modes",
     "mobile-survival",
 ];
@@ -166,23 +168,6 @@ fn ambients(o: &Opts) -> Result<c2_mods::standalone::Ambients> {
         Some("random") => Ambients::Random,
         Some(v) => bail!("--ambients tied|random, not {v:?}"),
     })
-}
-
-/// `--mobile-survival FILE`: the mobile game's Survive mode; without it,
-/// a game built from the APK brings its own (`mobile-survival.txt` in the
-/// game folder).
-fn mobile_survival(o: &Opts) -> Result<Option<c2_formats::mobile_arcade::Survive>> {
-    let own = o
-        .positional
-        .first()
-        .map(|d| std::path::Path::new(d).join(c2_mods::mobile::MOBILE_SURVIVAL))
-        .filter(|p| p.is_file());
-    let file = o.value("mobile-survival").map(PathBuf::from).or(own);
-    file.map(|f| {
-        let t = std::fs::read_to_string(&f).with_context(|| format!("reading {}", f.display()))?;
-        Ok(c2_formats::mobile_arcade::Survive::parse(&t))
-    })
-    .transpose()
 }
 
 fn time_of_day(o: &Opts) -> TimeOfDay {
@@ -450,17 +435,13 @@ fn main() -> Result<()> {
                 night_vision: false,
                 flashlight: false,
                 observer: o.has("observer"),
-                // --survival normal|hardcore|custom|mobile|modded (README M13).
+                // --survival classic|modded.
                 survival: match o.value("survival") {
                     None => None,
-                    Some("hardcore") => Some(SurvivalKind::Hardcore),
-                    Some("custom") => Some(SurvivalKind::Custom),
-                    Some("mobile") => Some(SurvivalKind::Mobile),
-                    Some("modded") => Some(SurvivalKind::Mee),
-                    Some(_) => Some(SurvivalKind::Normal),
+                    Some("classic") => Some(SurvivalKind::Classic),
+                    Some("modded") => Some(SurvivalKind::Modded),
+                    Some(v) => bail!("--survival classic|modded, not {v:?}"),
                 },
-                // --mobile-survival FILE (`mobile-survival.txt` from an APK import).
-                mobile_survival: mobile_survival(&o)?,
                 reg: o.num("player", 0i32)?,
                 from_menu: false,
                 pc: settings::PcSettings::load(),
@@ -526,22 +507,6 @@ fn main() -> Result<()> {
             if o.has("mobile-menu") {
                 let _ = menu::MOBILE_MENU.set(true);
             }
-            // --survival-modes classic,modded[,ours] (which are offered;
-            // default the first two; ours is benched), --mobile-survival FILE.
-            let modes: Vec<String> = o
-                .value("survival-modes")
-                .unwrap_or("classic,modded")
-                .split(',')
-                .map(|m| m.trim().to_ascii_lowercase())
-                .collect();
-            let has = |names: &[&str]| modes.iter().any(|m| names.contains(&m.as_str()));
-            let mobile =
-                mobile_survival(&o)?.filter(|_| has(&["classic", "mobile", "android", "both"]));
-            let _ = menu::SURVIVALS.set(menu::Survivals {
-                ours: has(&["ours"]),
-                mobile,
-                modded: has(&["modded", "mee", "both"]),
-            });
             // --script: canvas clicks / typing / keys, applied before the shot.
             let script = o.value("script").map(str::to_owned);
             // --mod DIR (repeatable): play a combined game from the data dir.

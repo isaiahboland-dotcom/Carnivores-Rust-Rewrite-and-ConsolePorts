@@ -63,7 +63,7 @@ pub struct HuntChoice {
     pub units_us: u32,
     /// `MODE_HUNT`, `MODE_SURVIVAL` or `MODE_TROPHY` (the trophy room).
     pub mode: u32,
-    /// A survival's kind: 0 normal, 1 hardcore, 2 custom (`SurvivalKind::ALL`).
+    /// A survival's kind: 0 Classic, 1 Modded (`SurvivalKind::ALL`).
     pub survival: u32,
     /// The maps in the mobile game's look (a yellow frame, ring and view
     /// cone) instead of the original's.
@@ -131,7 +131,7 @@ impl HuntChoice {
         self.mode == MODE_TROPHY
     }
     pub fn survival_kind(&self) -> Option<SurvivalKind> {
-        (self.mode == MODE_SURVIVAL).then(|| SurvivalKind::ALL[(self.survival as usize).min(2)])
+        (self.mode == MODE_SURVIVAL).then(|| SurvivalKind::ALL[(self.survival as usize).min(1)])
     }
     fn observer(&self) -> bool {
         self.observer != 0 && self.mode == MODE_HUNT
@@ -198,9 +198,26 @@ pub const FX_FILES: [&str; 11] = [
 
 /// Loads the hunt `choice` picks, with the hunter's trophies `room`.
 /// Errors: -1 no install, -2 area, -10 nothing to hunt, -11 no landing,
-/// -12 no room for an animal, -13 no weapon.
+/// -12 no room for an animal, -13 no weapon, -24 no affordable survival attacker.
 pub fn load(install: Option<&Install>, choice: &HuntChoice, room: &Save, seed: u32) -> Result<Loaded, i32> {
     let install = install.ok_or(-1)?;
+    let mut fixed = *choice;
+    if choice.mode == MODE_SURVIVAL {
+        fixed.area = install.areas.iter().position(|a| a.file.eq_ignore_ascii_case("AREA5")).ok_or(-2)? as u32;
+        let shotgun = install.weapons.iter().position(|n| n.trim().eq_ignore_ascii_case("shotgun")).ok_or(-13)?;
+        fixed.weapons = 1 << shotgun;
+        fixed.time = 1;
+        fixed.observer = 0;
+        fixed.tranq = 0;
+        fixed.double_ammo = 0;
+        fixed.camo = 0;
+        fixed.radar = 0;
+        fixed.scent = 0;
+        fixed.night_vision = 0;
+        fixed.flashlight = 0;
+        fixed.teleport = 0;
+    }
+    let choice = &fixed;
     let trophy = choice.trophy();
     let area_file = if trophy {
         String::from("TROPHY")
@@ -209,7 +226,7 @@ pub fn load(install: Option<&Install>, choice: &HuntChoice, room: &Save, seed: u
     };
     let time = if trophy { c2_core::area::TimeOfDay::Day } else { choice.time_of_day() };
     let area = load::area(&install.vfs, &area_file, time).map_err(|_| -2)?;
-    let (targets, roamers) = if trophy { (Bits::NONE, Vec::new()) } else { install.targets(choice.animals) };
+    let (targets, roamers) = if trophy { (Bits::NONE, Vec::new()) } else { install.targets(if choice.mode == MODE_SURVIVAL { u64::MAX } else { choice.animals }) };
     let rules = install.rules.hunt_with(&area_file, time, targets, &roamers);
     // What to load: the hunter, the picked animals, the ambient ones (if
     // on), or the trophies on display; at most the atlas's slots with the
@@ -271,6 +288,7 @@ pub fn load(install: Option<&Install>, choice: &HuntChoice, room: &Save, seed: u
     if let Some(t) = &rules.tables {
         c2_core::mee::tune(&mut species, t);
     }
+    c2_core::game::price_species(&mut species, &install.rules.menu);
     let weapons = load::weapons_with(&install.vfs, &rules.res, &|i| carried.contains(&i));
     let mut infos = Vec::new();
     let mut anims = Vec::new();
@@ -290,7 +308,7 @@ pub fn load(install: Option<&Install>, choice: &HuntChoice, room: &Save, seed: u
     if infos.is_empty() && !carried.is_empty() {
         return Err(-13);
     }
-    let mut hunt = new_hunt(&area, species, infos, anims, choice, rules.tables.as_ref(), targets, &roamers, room, seed)?;
+    let mut hunt = new_hunt(&area, species, infos, anims, choice, rules.tables.as_ref(), targets, &roamers, room, seed, install.rules.menu.survival_budget)?;
     hunt.area_no = c2_formats::mee::area_of(&area_file).map_or(0, |n| n as i32);
     // Snow of the area's own (the phone's Ice Age areas).
     if let (None, Some(s), false) = (&hunt.effects.snow, area.snow, trophy) {
@@ -344,6 +362,7 @@ pub fn restart(area: &Area, previous: &Hunt, choice: &HuntChoice, tables: Option
         roamers,
         room,
         seed,
+        previous.survival.as_ref().map_or(0, |s| s.opts.starting_budget),
     )?;
     hunt.area_no = previous.area_no;
     hunt.target_call = previous.target_call;
@@ -362,6 +381,7 @@ fn new_hunt(
     roamers: &[Roam],
     room: &Save,
     seed: u32,
+    survival_budget: u32,
 ) -> Result<Hunt, i32> {
     let trophy = choice.trophy();
     let mut rng = MsRand::new(seed);
@@ -404,7 +424,9 @@ fn new_hunt(
     let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room.clone());
     hunt.effects.snow = tables.and_then(|t| t.snow).filter(|_| !trophy).map(|s| c2_core::effects::Snowfall::new(s, SNOW_MAX));
     if let Some(kind) = choice.survival_kind() {
-        let opts = SurvivalOptions::pick(&hunt, kind, SURVIVAL_MAX);
+        let mut opts = SurvivalOptions::pick(&hunt, kind, SURVIVAL_MAX);
+        opts.starting_budget = survival_budget;
+        if !opts.budget_ready() { return Err(-24); }
         hunt.start_survival(area, opts);
     }
     Ok(hunt)

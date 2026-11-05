@@ -17,8 +17,8 @@ const SPAWN_RISE: f32 = 1536.0;
 
 impl Hunt {
     /// One animal of wave `n` at a free spot on land in the box `[x, z, half
-    /// x, half z]`, coming for the hunter. A box made for the mobile maps can take in
-    /// the PC maps' mountain sides: spots with a way down to the hunter, near
+    /// x, half z]`, coming for the hunter. The mobile game's box takes in the
+    /// PC map's mountain sides: spots with a way down to the hunter, near
     /// his height, first.
     pub(super) fn spawn_in_box(&mut self, area: &Area, ctype: usize, n: u32, b: [f32; 4]) {
         let flow = self.wave_flow(area);
@@ -121,28 +121,5 @@ impl Hunt {
         c.aware_hunter = true;
         (c.tgx, c.tgz) = (hx, hz);
         self.herd.chars.push(c);
-    }
-
-    /// One animal of wave `n` on land in a ring around the hunter, out of
-    /// his sight, coming for him.
-    pub(super) fn spawn_wave_animal(&mut self, area: &Area, ctype: usize, n: u32) {
-        let (hx, hz) = (self.player.x, self.player.z);
-        let r0 = (self.opts.view_r as f32 * 0.7).clamp(20.0, 40.0) * 256.0;
-        let size = 1024.0 * 256.0;
-        let flow = self.wave_flow(area);
-        for strict in [true, false] {
-            for _ in 0..40 {
-                let a = self.rng.r_rand(6283) as f32 / 1000.0;
-                let r = r0 + self.rng.r_rand(2048) as f32;
-                let (x, z) = (hx + a.cos() * r, hz + a.sin() * r);
-                if !(4096.0..size - 4096.0).contains(&x) || !(4096.0..size - 4096.0).contains(&z) {
-                    continue;
-                }
-                if self.spawn_spot(area, (x, z), &flow, strict) {
-                    self.add_wave_animal(area, ctype, n, (x, z));
-                    return;
-                }
-            }
-        }
     }
 }

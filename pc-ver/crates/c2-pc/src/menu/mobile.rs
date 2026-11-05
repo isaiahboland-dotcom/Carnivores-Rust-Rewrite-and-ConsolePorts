@@ -883,7 +883,7 @@ impl Menu {
 
     fn kit_layout(&self, rows: Vec<KitRow>) -> (Vec<(KitRow, Rect)>, f32) {
         // The phone's spacing; the keys in two columns.
-        let per = if rows.len() <= 11 {
+        let per = if self.opt_tab == 0 || rows.len() <= 11 {
             11
         } else {
             rows.len().div_ceil(2)
@@ -1010,7 +1010,13 @@ impl Menu {
         });
         let v = r.and_then(|r| self.kit_slider_value(r));
         match (self.drag, v) {
-            (Some(Opt::PcSlider(_, f)), Some(v)) => *f(&mut self.pc) = v,
+            (Some(Opt::PcSlider(n, f)), Some(v)) => {
+                *f(&mut self.pc) = if n == "Survival starting budget" {
+                    v * 10
+                } else {
+                    v
+                }
+            }
             (Some(Opt::Slider(_, f)), Some(v)) => {
                 if let Some(s) = self.me_mut() {
                     *f(s) = v;
@@ -1144,7 +1150,14 @@ impl Menu {
                 }
                 KitRow::Opt(Opt::PcSlider(n, f)) => {
                     let v = *f(&mut pc);
-                    if n == "Total number of secret dinos on map" {
+                    if n == "Survival starting budget" {
+                        let count = if v == 0 {
+                            "Automatic".into()
+                        } else {
+                            v.to_string()
+                        };
+                        label(out, &format!("{n}: {count}"));
+                    } else if n == "Total number of secret dinos on map" {
                         let count = if v == 0 {
                             "Off (selected dinos only)".into()
                         } else {
@@ -1154,7 +1167,14 @@ impl Menu {
                     } else {
                         label(out, n);
                     }
-                    slider(out, v);
+                    slider(
+                        out,
+                        if n == "Survival starting budget" {
+                            v / 10
+                        } else {
+                            v
+                        },
+                    );
                 }
                 KitRow::Opt(Opt::Toggle(n, labels, f)) => {
                     label(out, n);

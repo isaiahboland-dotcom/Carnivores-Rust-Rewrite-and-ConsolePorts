@@ -64,9 +64,6 @@ pub struct PackInfo {
     pub heaps: HashMap<String, usize>,
     /// Areas where it snows by their `.c2map` (Ice Age's beside C2's).
     pub snow: Vec<String>,
-    /// Which survivals are offered: `ours`, `mobile` or `both` (the mobile
-    /// one only with its `C2RS/SURVIVE.TXT`, from the player's APK).
-    pub survival: String,
     /// Where each roaming add-on (character index) spawns, as the cooker
     /// worked it out (`roam.N = AREA3,AREA7`); `None` in older packs.
     pub roam_areas: Option<HashMap<usize, Vec<String>>>,
@@ -96,7 +93,6 @@ impl PackInfo {
             costs: Self::prefixed(&m, "cost."),
             heap_kb: num("heap_kb", 34 * 1024) as usize,
             heaps: Self::prefixed(&m, "heap."),
-            survival: get("survival"),
             roam_areas: m.contains_key("roam_map").then(|| {
                 m.iter()
                     .filter_map(|(k, v)| {
@@ -201,11 +197,6 @@ pub struct Setup {
     pub gyro_k: f32,
     /// A survival instead of a hunt (README M13).
     pub survival: Option<SurvivalKind>,
-    /// Animals loaded for the survival only (bit 10 + slot, among the
-    /// targets): hardcore's extras, custom's T-Rex. Not in the waves.
-    pub survival_extra: Bits,
-    /// The mobile game's Survive mode, for a mobile survival.
-    pub mobile_survival: Option<c2_formats::mobile_arcade::Survive>,
 }
 
 /// The most snowflakes on the 3DS (an area asks for up to 2000).
@@ -283,7 +274,7 @@ impl Setup {
         let Some(t) = &rules.tables else {
             return Vec::new();
         };
-        if self.trophy() || self.survival.is_some() || self.mobile_survival.is_some() {
+        if self.trophy() || self.survival.is_some() {
             return Vec::new();
         }
         let (mut lin, mut heap) = self.load_kb(info, rules, &|i, r| self.keeps_char(i, r));
@@ -531,46 +522,9 @@ fn new_hunt(
         .and_then(|t| t.snow)
         .filter(|_| !setup.trophy())
         .map(|s| c2_core::effects::Snowfall::new(s, SNOW_MAX));
-    let mobile = setup
-        .mobile_survival
-        .as_ref()
-        .filter(|_| setup.survival == Some(SurvivalKind::Mobile))
-        .and_then(|m| SurvivalOptions::mobile(&hunt, m, SURVIVAL_MAX));
-    // The dialect game's own survival: its roster (those loaded) from the
-    // area's box.
-    let modded = tables
-        .filter(|_| setup.survival == Some(SurvivalKind::Mee))
-        .and_then(|t| {
-            let mut roster = t.survival_roster();
-            roster.retain(|&c| species.get(c).is_some_and(|s| !s.ani_time.is_empty()));
-            SurvivalOptions::mee(&roster, t.survival.as_ref()?, SURVIVAL_MAX)
-        });
-    if let Some(o) = modded {
-        hunt.start_survival(area, o);
-    } else if let Some(o) = mobile {
-        hunt.start_survival(area, o);
-    } else if let Some(kind) = setup.survival {
-        let kind = if kind == SurvivalKind::Mobile {
-            SurvivalKind::Normal
-        } else {
-            kind
-        };
-        let mut o = SurvivalOptions::pick(&hunt, kind, SURVIVAL_MAX);
-        // The menu's extras come only as extras.
-        let extra = |&i: &usize| {
-            let c = c2_core::dino::Character {
-                ctype: i,
-                ..Default::default()
-            };
-            hunt.call_bit(&c)
-                .is_some_and(|b| usize::try_from(b).is_ok_and(|b| setup.survival_extra.has(b)))
-        };
-        let extras: Vec<usize> = (0..species.len()).filter(extra).collect();
-        o.roster.retain(|i| !extras.contains(i));
-        if kind == SurvivalKind::Hardcore && !extras.is_empty() {
-            o.hardcore = extras;
-        }
-        hunt.start_survival(area, o);
+    // Survival: the waves the menu prices buy, in Mount Ravan's ravine.
+    if let Some(kind) = setup.survival {
+        hunt.start_survival(area, SurvivalOptions::pick(&hunt, kind, SURVIVAL_MAX));
     }
     hunt
 }
@@ -597,8 +551,8 @@ impl Game {
         progress(&format!("area {}", setup.area));
         let area = load::area_with(vfs, &setup.area, setup.time, true)?;
         progress("rules (_RES.TXT)");
-        let rules =
-            Rules::load(vfs)?.hunt_with(&setup.area, setup.time, setup.targets, &setup.roamers);
+        let menu_rules = Rules::load(vfs)?;
+        let rules = menu_rules.hunt_with(&setup.area, setup.time, setup.targets, &setup.roamers);
         progress("animals");
         // The trophy room needs only the species on display (every one a
         // pack with add-ons has won't fit in an Old 3DS), and of those as
@@ -652,6 +606,7 @@ impl Game {
         if let Some(t) = &rules.tables {
             c2_core::mee::tune(&mut species, t);
         }
+        c2_core::game::price_species(&mut species, &menu_rules.menu);
         let res = &rules.res;
         progress("weapons");
         let carried = setup.carried();
@@ -674,6 +629,9 @@ impl Game {
             seed,
             room,
         );
+        if let Some(s) = &mut hunt.survival {
+            s.opts.starting_budget = menu_rules.menu.survival_budget;
+        }
         // A dialect game's tables can place a dozen ambients or more:
         // the setting's cap, as the original's placement has.
         if rules.tables.is_some() && !setup.trophy() {
@@ -708,6 +666,10 @@ impl Game {
                 hunt.target_call = a;
             }
         }
+        anyhow::ensure!(
+            hunt.survival.as_ref().is_none_or(|s| s.opts.budget_ready()),
+            "Survival needs an attacking animal within the starting budget"
+        );
         let keys = rules.keys;
         let resupplies = setup.resupplies;
         let setup_stealth = setup.stealth;

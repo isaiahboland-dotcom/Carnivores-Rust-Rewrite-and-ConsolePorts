@@ -43,6 +43,7 @@ pub struct FrameParams {
     pub night_vision: f32,
     pub ambient: f32,
     pub flashlight: bool,
+    pub narrow_flashlight: bool,
     pub time_s: f32,
     /// `(OptBrightness + 128) / 256`, applied to every texture.
     pub brightness: f32,
@@ -97,7 +98,13 @@ impl Globals {
                 .view
                 .inverse()
                 .transform_vector3(Vec3::NEG_Z)
-                .extend(f32::from(f.flashlight))
+                .extend(if !f.flashlight {
+                    0.0
+                } else if f.narrow_flashlight {
+                    2.0
+                } else {
+                    1.0
+                })
                 .to_array(),
         };
         gpu.queue.write_buffer(&self.buf, 0, bytemuck::bytes_of(&d));

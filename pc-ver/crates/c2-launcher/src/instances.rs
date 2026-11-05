@@ -119,7 +119,7 @@ impl List {
                 )
                 .on_hover_text(
                     "Create a new instance: the game, add-ons and standalone games set up on \
-                     the other tabs, or the recipe in use, with the menu, survival and 3DS \
+                     the other tabs, or the recipe in use, with the menu and 3DS \
                      choices, saved as a recipe.",
                 )
                 .clicked()

@@ -214,6 +214,8 @@ impl Tuning {
 #[derive(Debug, Clone)]
 pub struct Species {
     pub info: DinoInfo,
+    /// Resolved hunt-menu price; None when no menu entry or donor exists.
+    pub hunt_price: Option<i32>,
     /// Dialect overrides (default: none).
     pub tuning: Tuning,
     /// A dialect species running the dialect's own AI; its phases are
@@ -251,6 +253,7 @@ impl Species {
             .fold(0.0, f32::max);
         Self {
             info,
+            hunt_price: None,
             tuning: Tuning::default(),
             mee: None,
             ani_time,

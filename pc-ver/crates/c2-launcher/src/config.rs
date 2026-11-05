@@ -94,74 +94,6 @@ impl MenuStyle {
     }
 }
 
-/// Which survivals the games offer (owner, 2026-10-23): the mobile game's
-/// classic one (from a Carnivores 2 APK import; on Ice Age with its
-/// stand-ins) and a dialect game's own ("modded"). With more than one, the
-/// game asks which. Ours is benched (not offered).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(from = "SurvivalModesFile")]
-pub struct SurvivalModes {
-    pub classic: bool,
-    pub modded: bool,
-}
-
-impl Default for SurvivalModes {
-    fn default() -> Self {
-        Self {
-            classic: true,
-            modded: true,
-        }
-    }
-}
-
-/// As saved: the table, or an older single choice (`"Ours"`, `"Mobile"`,
-/// `"Both"`).
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum SurvivalModesFile {
-    Old(String),
-    New {
-        #[serde(default = "yes")]
-        classic: bool,
-        #[serde(default = "yes")]
-        modded: bool,
-    },
-}
-
-fn yes() -> bool {
-    true
-}
-
-impl From<SurvivalModesFile> for SurvivalModes {
-    fn from(f: SurvivalModesFile) -> Self {
-        match f {
-            SurvivalModesFile::New { classic, modded } => Self { classic, modded },
-            SurvivalModesFile::Old(s) => Self {
-                classic: !s.eq_ignore_ascii_case("ours"),
-                modded: true,
-            },
-        }
-    }
-}
-
-impl SurvivalModes {
-    /// `--survival-modes` for `c2-pc` / `c2-cook`.
-    pub fn arg(self) -> String {
-        let mut v = Vec::new();
-        if self.classic {
-            v.push("classic");
-        }
-        if self.modded {
-            v.push("modded");
-        }
-        if v.is_empty() {
-            "none".into()
-        } else {
-            v.join(",")
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct ThreeDs {
@@ -302,10 +234,6 @@ pub struct Config {
     /// The mobile game's values for this game (`mobile-values.toml` from
     /// the last APK import), offered in the balance editor.
     pub mobile_values: Option<PathBuf>,
-    /// The mobile game's Survive mode (`mobile-survival.txt` from the last
-    /// Carnivores 2 APK import), and which survivals are offered.
-    pub mobile_survival: Option<PathBuf>,
-    pub survival_modes: SurvivalModes,
     /// The PC menu style, and the Ice Age folder it (and the 3DS title)
     /// can take art from.
     pub menu_style: MenuStyle,
@@ -528,13 +456,6 @@ impl Config {
         if let Some(m) = MenuStyle::from_name(&s.menu) {
             self.menu_style = m;
         }
-        if let Some(v) = &s.survival {
-            let has = |k: &str| v.iter().any(|x| x.eq_ignore_ascii_case(k));
-            self.survival_modes = SurvivalModes {
-                classic: has("classic"),
-                modded: has("modded"),
-            };
-        }
         match s.three_ds_target.as_str() {
             "o3ds" => self.three_ds.target = Target::Old,
             "n3ds" => self.three_ds.target = Target::New,
@@ -554,16 +475,8 @@ impl Config {
     /// The choices to save in a recipe: the launcher's, over `old` (a
     /// recipe's own, which keep what the launcher has no control for).
     pub fn settings(&self, old: &Settings) -> Settings {
-        let m = self.survival_modes;
         Settings {
             menu: self.menu_style.name().into(),
-            survival: Some(
-                [("classic", m.classic), ("modded", m.modded)]
-                    .iter()
-                    .filter(|(_, on)| *on)
-                    .map(|(k, _)| k.to_string())
-                    .collect(),
-            ),
             three_ds_target: self.three_ds.target.arg().into(),
             ice_age_title: Some(self.three_ds.ice_age_title),
             pictures: self.pictures,
@@ -718,7 +631,6 @@ mod tests {
         let mut c = Config::default();
         let s = Settings {
             menu: "mobile".into(),
-            survival: Some(vec!["classic".into()]),
             three_ds_target: "n3ds".into(),
             pictures: c2_mods::recipe::Pictures {
                 scope: c2_mods::recipe::Source::Mobile,
@@ -728,13 +640,11 @@ mod tests {
         };
         c.apply(&s);
         assert_eq!(c.menu_style, MenuStyle::Mobile);
-        assert!(c.survival_modes.classic && !c.survival_modes.modded);
         assert_eq!(c.three_ds.target, Target::New);
         // What the launcher has no control for is kept from the recipe.
         let back = c.settings(&s);
         assert_eq!(back.pictures, s.pictures);
         assert_eq!(back.menu, "mobile");
-        assert_eq!(back.survival, s.survival);
         // Unset leaves the launcher's choice alone.
         c.apply(&Settings::default());
         assert_eq!(c.menu_style, MenuStyle::Mobile);

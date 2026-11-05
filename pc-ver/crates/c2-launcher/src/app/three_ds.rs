@@ -78,9 +78,7 @@ impl Launcher {
                 "The app asks which pack at start; each keeps its own save.",
             );
         });
-        changed |= panel(ui, |ui| {
-            self.menu_style_ui(ui, true) | self.survival_ui(ui) | self.pictures_ui(ui)
-        });
+        changed |= panel(ui, |ui| self.menu_style_ui(ui, true) | self.pictures_ui(ui));
         ui.add_space(8.0);
         changed |= self.cia_panel(ui);
         if changed {

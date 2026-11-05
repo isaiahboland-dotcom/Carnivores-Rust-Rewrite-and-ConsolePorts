@@ -21,7 +21,7 @@ Wii U remains a demo and PC VR remains experimental.
 | Mobile bases (M15) | Refine converted menus, visuals, calls and trophy placement | Rebuild from supported owned APKs and re-cook console packs after converter changes |
 | Nintendo 3DS (M6–M8, M11) | Check far terrain seams, frustum/LOD behavior, memory and performance with large packs | Old and New 3DS hardware, including 56/76-cell view ranges and comfort settings |
 | Wii U | Validate survival, trophies, saves, pause/exit and modded packaging; improve jungle performance and reproducible cross-builds | Aroma hardware runs and clean-toolchain builds; portable C tests cover only host-testable code |
-| Windows | Test native gameplay and portable distribution | Fresh Windows machine, interactive launcher and complete hunt; CI is build/unit-test coverage |
+| Windows | Follow up the owner VM run with native gameplay and portable distribution tests | CI builds/tests pass; VM log confirms software rendering, with input/performance comparisons pending. Fresh physical Windows machine, interactive launcher and complete hunt still needed |
 | PC VR (M17) | Audit constructor failure cleanup and Vulkan/device/session lifetimes; implement weapons and tune performance | Runtime diagnostics during scene replacement, session loss and shutdown, then headset hunts |
 | PS5 / PS VR2 (M18) | Research a dedicated port | No port implementation or hardware compatibility claim yet |
 

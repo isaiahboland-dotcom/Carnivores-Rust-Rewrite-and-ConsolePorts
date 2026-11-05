@@ -9,7 +9,7 @@ struct Globals {
     misc: vec4<f32>,
     // xyz: dawn/day/night blend, w: dynamic-time stars enabled.
     daylight: vec4<f32>,
-    // xyz: camera forward, w: flashlight enabled.
+    // xyz: camera forward, w: flashlight mode (0 off, 1 broad, 2 narrow).
     torch: vec4<f32>,
 };
 
@@ -32,14 +32,15 @@ fn texel(c: vec3<f32>) -> vec3<f32> {
     return grade_texel(c) * g.misc.w;
 }
 
-// A camera-mounted light with a soft cone and a 20-cell (80m) range.
+// A camera-mounted light: broad 20-cell (80m) or narrow 40-cell (160m) beam.
 // Depth testing still occludes geometry; no additional shadow-map pass.
 fn surface_light(c: vec3<f32>, light: f32, world: vec3<f32>) -> vec3<f32> {
     let offset = world - g.cam_pos.xyz;
     let dist = length(offset);
     let facing = dot(offset / max(dist, 0.001), g.torch.xyz);
-    let cone = smoothstep(0.88, 0.98, facing);
-    let falloff = 1.0 - smoothstep(1024.0, 5120.0, dist);
-    let beam = g.torch.w * cone * falloff;
+    let narrow = g.torch.w > 1.5;
+    let cone = smoothstep(select(0.88, 0.97, narrow), select(0.98, 0.995, narrow), facing);
+    let falloff = 1.0 - smoothstep(select(1024.0, 2048.0, narrow), select(5120.0, 10240.0, narrow), dist);
+    let beam = min(g.torch.w, 1.0) * cone * falloff;
     return grade_texel(c) * max(light * g.misc.w, beam);
 }

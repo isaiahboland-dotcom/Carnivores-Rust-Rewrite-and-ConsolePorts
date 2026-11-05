@@ -24,6 +24,7 @@ fn time_blending_pipelines_validate() -> anyhow::Result<()> {
             night_vision: 0.5,
             ambient: 1.0,
             flashlight: false,
+            narrow_flashlight: false,
             time_s: 0.0,
             brightness: 1.0,
         },
@@ -68,6 +69,7 @@ fn sky_pixels_blend_at_midpoint_and_return_to_day() -> anyhow::Result<()> {
                     night_vision: self.weights[2],
                     ambient: 1.0,
                     flashlight: false,
+                    narrow_flashlight: false,
                     time_s: 0.0,
                     brightness: 1.0,
                 },
@@ -135,7 +137,10 @@ fn flashlight_and_manual_night_vision_change_actual_pixels() -> anyhow::Result<(
             return vec4(p[i], 0.5, 1.);
         }
         @fragment fn fs(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-            let point = select(vec3(0., 0., -2048.), vec3(6000., 0., -2048.), p.x > 4.);
+            var point = vec3(0., 0., -2048.);
+            if p.x >= 2. { point = vec3(6000., 0., -2048.); }
+            if p.x >= 4. { point = vec3(700., 0., -2048.); }
+            if p.x >= 6. { point = vec3(0., 0., -6500.); }
             return vec4(surface_light(vec3(0.8, 0.6, 0.4), 0.7, point), 1.);
         }
     "#,
@@ -153,7 +158,7 @@ fn flashlight_and_manual_night_vision_change_actual_pixels() -> anyhow::Result<(
             blend: Blend::Opaque,
         },
     );
-    let sample = |nv, ambient, flashlight| -> anyhow::Result<([u8; 3], [u8; 3])> {
+    let sample = |nv, ambient, flashlight, narrow_flashlight| -> anyhow::Result<[[u8; 3]; 4]> {
         globals.write(
             &gpu,
             &FrameParams {
@@ -167,6 +172,7 @@ fn flashlight_and_manual_night_vision_change_actual_pixels() -> anyhow::Result<(
                 night_vision: nv,
                 ambient,
                 flashlight,
+                narrow_flashlight,
                 time_s: 0.,
                 brightness: 1.,
             },
@@ -203,10 +209,24 @@ fn flashlight_and_manual_night_vision_change_actual_pixels() -> anyhow::Result<(
             let i = (4 * 8 + x) * 4;
             [rgba[i], rgba[i + 1], rgba[i + 2]]
         };
-        Ok((at(2), at(6)))
+        Ok([at(0), at(2), at(4), at(6)])
     };
-    let (dark, _) = sample(0., 0.12, false)?;
-    let (beam, outside) = sample(0., 0.12, true)?;
+    let [dark, _, _, _] = sample(0., 0.12, false, false)?;
+    let [beam, outside, broad_shoulder, broad_far] = sample(0., 0.12, true, false)?;
+    let [narrow_near, narrow_outside, narrow_shoulder, narrow_far] = sample(0., 0.12, true, true)?;
+    assert!(narrow_near[0] >= beam[0]);
+    assert_eq!(narrow_outside, dark);
+    assert!(
+        broad_shoulder[0] > narrow_shoulder[0] + 20,
+        "narrow beam must illuminate less width"
+    );
+    assert_eq!(narrow_shoulder, dark);
+    assert_eq!(broad_far, dark);
+    assert!(
+        narrow_far[0] > broad_far[0] + 20,
+        "narrow beam must reach farther"
+    );
+    assert_eq!(sample(0., 0.12, false, true)?[0], dark);
     assert!(
         beam[0] > dark[0] * 3,
         "flashlight did not illuminate its cone"
@@ -215,13 +235,13 @@ fn flashlight_and_manual_night_vision_change_actual_pixels() -> anyhow::Result<(
         outside, dark,
         "flashlight must not brighten the whole scene"
     );
-    let (nv, _) = sample(1., 1., false)?;
+    let [nv, _, _, _] = sample(1., 1., false, false)?;
     assert!(
         nv[1] > 60 && nv[0] < nv[1] / 4 && nv[2] < nv[1] / 4,
         "{nv:?}"
     );
     assert_eq!(
-        sample(0., 0.12, false)?.0,
+        sample(0., 0.12, false, false)?[0],
         dark,
         "turning equipment off restores darkness"
     );
@@ -263,6 +283,7 @@ fn dynamic_stars_fade_and_stay_fixed_when_walking() -> anyhow::Result<()> {
                     night_vision: 0.,
                     ambient: 0.12,
                     flashlight: false,
+                    narrow_flashlight: false,
                     time_s: 0.,
                     brightness: 1.,
                 },

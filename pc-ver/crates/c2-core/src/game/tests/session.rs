@@ -35,7 +35,7 @@ fn teleport_takes_five_seconds_then_cools_down_a_minute() {
     hunt.start_survival(
         &area,
         SurvivalOptions {
-            roster: vec![1],
+            roster: vec![(1, 0)],
             ..Default::default()
         },
     );

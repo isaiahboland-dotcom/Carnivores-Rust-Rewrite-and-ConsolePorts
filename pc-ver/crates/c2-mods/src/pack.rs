@@ -1033,6 +1033,7 @@ pub fn build_with(
             })
             .collect();
         let native_base = !c2_formats::mee::is_dialect(&vanilla_res);
+        let dialect = c2_formats::mee::is_dialect(&merged.res);
         if let Some(s) = merged
             .res
             .sections
@@ -1053,8 +1054,19 @@ pub fn build_with(
                     });
                 }
                 // Original-engine characters in a mixed pack retain
-                // their original AI and fixed animation layout.
-                if native_base && !crate::loose::has_anims(b) {
+                // their original AI and fixed animation layout, whichever
+                // layer they came from (a standalone's stock replacements
+                // over a Modder's Edition base too).
+                let original_ai = b
+                    .get(&["ai"])
+                    .and_then(|v| v.trim().parse::<i32>().ok())
+                    .is_some_and(|ai| (1..=18).contains(&ai));
+                let marked = b
+                    .entries
+                    .iter()
+                    .any(|e| e.key.eq_ignore_ascii_case("nativeAI"));
+                if (native_base || dialect && original_ai) && !marked && !crate::loose::has_anims(b)
+                {
                     b.entries.push(c2_formats::res_txt::Entry {
                         key: "nativeAI".into(),
                         value: "TRUE".into(),

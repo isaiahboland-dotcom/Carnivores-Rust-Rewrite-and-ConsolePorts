@@ -53,5 +53,6 @@ bannertool (*)
 /recipes/instances/testing/
 
 # Local screenshots, test packs, probes and temporary investigation files
+/screenshots/
 /pc-ver/(testing)/
 newest-mods-credits-etc

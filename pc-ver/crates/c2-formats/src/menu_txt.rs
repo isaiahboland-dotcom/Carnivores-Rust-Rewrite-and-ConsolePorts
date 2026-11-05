@@ -89,6 +89,8 @@ pub struct MenuArea {
 pub struct MenuData {
     /// A new hunter's points (`prices.start`, default 100).
     pub start: i32,
+    /// Initial survival budget (`prices.survival_start`); zero is automatic.
+    pub survival_budget: u32,
     pub weapons: Vec<MenuItem>,
     /// Huntables in menu-slot order.
     pub huntables: Vec<MenuItem>,
@@ -142,6 +144,7 @@ impl MenuData {
                 let v = c_atoi(&e.value);
                 match e.key.to_ascii_lowercase().as_str() {
                     "start" => out.start = v,
+                    "survival_start" => out.survival_budget = v.max(0) as u32,
                     "area" => {
                         area += 1;
                         out.areas.push(MenuArea {

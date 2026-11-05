@@ -14,8 +14,11 @@ code, documentation and recipes (lists of credits, download links and file hashe
 This is a passion project. Carnivores Classic has been one of my favourite games for a long time. It's a game I grew up with and the overall tense feeling of hunting while potentially being hunted always stuck with me. This project is my way of showing how much I admire the game, and the community that has kept it alive for over twenty-five years!
 
 The goal is to make the game **more accessible while staying faithful to it**. The original game's
-behaviour is the reference: where this rewrite differs, that's a bug or a documented choice
-(`docs/DECISIONS.md`), never an "improvement" slipped in quietly.
+behaviour is the vision. Anything this rewrite has that is different, that's a bug or a documented choice
+(`docs/DECISIONS.md`), never an "improvement" slipped in quietly. If you are looking for a fully 
+modernized version of Carnivores, I urge you to check out [Carnis](https://cce.carnivoressaga.com)! Although we will add some optional 
+settings for some QOL changes I wanted to see, we aim to preserve the functionality of the base game
+and for it to be accessible on multiple platforms.
 
 The modding community has been absolutely amazing. There are new animals, weapons, maps, whole
 standalone games, and the Modder's Edition Engine. It can also feel a bit daunting. Different mods are
@@ -51,14 +54,27 @@ The launcher can also rebuild a base game from your own supported Android APK, w
 Mobile conversion and mixed-mod compatibility still need further gameplay testing; see the
 [roadmap](docs/ROADMAP.md) for current priorities.
 
+Survival offers **Classic** (stock animals; hidden on standalone rosters) and
+**Modded** (eligible stock and installed mod animals). Neither requires an APK.
+Waves use hunt-menu prices and a separate budget that grows 10% per round.
+The starting budget defaults to twice the cheapest eligible dangerous animal's
+price (minimum 10). PC Game options can override it; packs can set
+`survival_start` in the menu script's `prices` section on all platforms.
+Choosing Classic or Modded starts immediately on Mount Ravan in the mobile
+survival ravine, with a shotgun only. Waves come from the fixed approach;
+ordinary map wildlife is removed. Movement remains enabled.
+Console memory and wave limits still apply.
+
+
 ---
 
 ## What you need
 
 - **Your own Carnivores 2 install**: the folder that contains `HUNTDAT/`. ReShade or other wrapper DLLs
   in it are ignored.
-- **Rust**: stable for PC (<https://rustup.rs>). The 3DS and Wii U builds also need nightly; see their
-  sections.
+- **Building from source:** stable Rust for PC (<https://rustup.rs>). Downloaded Windows
+  builds do not need Rust or C++ build tools; see [Windows installation](#windows-installation).
+  The 3DS and Wii U source builds also need nightly; see their sections.
 - Optional: mods you've downloaded, each in its own folder (or as a `.zip`; extract `.rar` and `.7z` separately
   before adding their folders). Carnivores: Ice Age and the mobile games' APKs can be imported too.
 
@@ -111,9 +127,10 @@ The tabs:
 - **Play**: **PLAY** builds the combined game (cached until something changes) and starts it.
   **PLAY IN VR** starts the same game in a headset.
 - **Windows (experimental)**: package a saved instance with a Windows `c2-pc.exe` and copied game data.
-  Native Windows builds and gameplay have not yet been verified. Graphics, audio, input and
-  packaging may have platform-specific issues; successful Linux tests do not establish Windows compatibility.
-  See [Windows builds and packaging](docs/WINDOWS.md) for binaries, setup and testing status.
+  Windows CI builds/tests pass, and the owner reports the rewrite running in a Windows VM.
+  Physical Windows hardware testing remains pending; VM performance and mouse behavior need
+  further checking. See [Windows installation](#windows-installation) and the
+  [full guide](docs/WINDOWS.md).
 - **3DS**: choose Old or New 3DS, an install name and your SD card (or a folder). **Build for 3DS** cooks
   the packs (one for the original game or the base with its add-ons, and one per standalone game that's
   on) and copies the app into `3ds/<name>/`. It can also make a `.cia` with your own home-menu icon and
@@ -131,6 +148,38 @@ source tree's build folders. So for the 3DS and Wii U tabs, build those apps fir
 After an engine update, rebuild the tools and console app, then use the saved instance's build action
 to regenerate its packs and copy the updated app. The GUI packages existing binaries; it does not
 compile the Rust or devkitPro projects.
+
+---
+
+## Windows installation
+
+1. Use a **64-bit Windows** system with working graphics/audio drivers. In a VM,
+   install its guest graphics drivers/tools and enable 3D acceleration if available;
+   compatibility depends on the graphics API exposed by that VM.
+2. Open the [Windows workflow](https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/actions/workflows/windows.yml),
+   choose a successful run for the revision you want, and download the
+   **c2rs-windows-x64** artifact (GitHub sign-in may be required). Extract the ZIP.
+   The executables are under `pc-ver/target/x86_64-pc-windows-msvc/release/`.
+3. Keep `c2-launcher.exe` and `c2-pc.exe` together. Open `c2-launcher.exe`, select
+   your own game folder containing `HUNTDAT`, then use **PLAY**. The download
+   contains no game assets. A generated portable instance can instead be started
+   by double-clicking its `c2-pc.exe`; keep its whole folder together.
+
+Downloaded builds need **no Rust, Visual Studio build tools or devkitPro**.
+Builds importing `VCRUNTIME140.dll` (including the inspected VM test executable)
+need Microsoft's [Visual C++ x64 runtime](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist).
+The CI configuration requests static C runtime linking; runtime dependencies must
+still be verified for the executable being distributed. Graphics driver support
+is required; original-game wrapper/ReShade DLLs are not dependencies.
+Saves and settings are under `%APPDATA%\c2rs`.
+
+To compile your own executables, you also need stable Rust (MSVC), Git if cloning,
+and Visual Studio Build Tools with **Desktop development with C++** and a Windows
+SDK. The [Windows guide](docs/WINDOWS.md) has PowerShell build commands,
+packaging instructions and [diagnostic log capture](docs/WINDOWS.md#capture-a-diagnostic-log).
+
+Windows remains experimental: CI and an owner VM run are evidence of progress,
+while native hardware gameplay and broader compatibility testing are pending.
 
 ---
 
@@ -317,7 +366,7 @@ The recipes here:
 |---|---|
 | `c2-mee-addons.toml` | ten add-on animals on the Modder's Edition Engine 1.1.1 |
 | `c2-everything.toml` | every add-on, plus the mobile Dinosaur Hunter's and Ice Age's animals (APKs needed) |
-| `c2-android.toml` | Carnivores 2 with the mobile Dinosaur Hunter's animals and classic survival (APK needed) |
+| `c2-android.toml` | Carnivores 2 with the mobile Dinosaur Hunter's animals (APK needed for these animals) |
 | `ice-age-android.toml` | Carnivores: Ice Age with the mobile Ice Age's animals (APK needed) |
 | `example.toml` | the format, not a real pack |
 | `bases/*.toml` | hashes of the retail Carnivores 2 and Ice Age, to check a base game |

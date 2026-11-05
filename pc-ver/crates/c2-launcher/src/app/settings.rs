@@ -9,8 +9,7 @@ impl Launcher {
             help(
                 ui,
                 "One file with the balance (prices, scores, and PC or mobile for each entry where \
-                 they differ), the survival choice, the menu style, the PC game's settings and the \
-                 3DS target: keep it, share it, or bring it to another machine. No folders, no game \
+                 they differ), the menu style, the PC game's settings and the 3DS target: keep it, share it, or bring it to another machine. No folders, no game \
                  data.",
             );
             ui.horizontal(|ui| {

@@ -48,37 +48,6 @@ const TIMES: [(TimeOfDay, &str); 3] = [
 /// on kill scores) for x1, x2, x3.
 const EXTRA_AMMO: [(i32, u32, f32); 3] = [(10, 1, 0.95), (50, 2, 0.95), (150, 3, 1.0)];
 
-/// The pack's dialect game's own survival (its `_RES.TXT`'s `common {}`,
-/// the area's spot, a `survivalIndex` roster), with the roster's names.
-fn modded_survival(
-    rules: &Rules,
-    areas: &[String],
-) -> Option<(c2_formats::mee::SurvivalCommon, Vec<String>)> {
-    // The rules as already parsed (a combined game's are half a MiB).
-    let res = rules.raw()?;
-    let c = c2_formats::mee::survival_common(res)?;
-    if !areas
-        .iter()
-        .any(|a| a.eq_ignore_ascii_case(&format!("AREA{}", c.area)))
-    {
-        return None;
-    }
-    let h = c2_formats::mee::Hunt {
-        area: Some(c.area),
-        time: c.time,
-        picked: c2_formats::bits::Bits::NONE,
-    };
-    let t = c2_formats::mee::Tables::read(res, &h);
-    t.survival?;
-    let names: Vec<String> = t
-        .survival_roster()
-        .iter()
-        .filter_map(|&i| t.characters.get(i)?.block.get(&["name"]))
-        .map(|n| n.trim().trim_matches('\'').trim().to_string())
-        .collect();
-    (!names.is_empty()).then_some((c, names))
-}
-
 /// Title screen buttons.
 const PLAY: [f32; 4] = [60.0, 6.0, 200.0, 30.0];
 const SURVIVAL: [f32; 4] = [60.0, 42.0, 200.0, 30.0];
@@ -353,20 +322,10 @@ pub struct Menu {
     /// the picks: hardcore's 1-3 mods' animals, custom's T-Rex, the mobile
     /// one's animals.
     extra_dinos: Bits,
-    /// The animals among `extra_dinos` that are hardcore's or custom's (not
-    /// in the waves).
-    special_dinos: Bits,
-    /// The mobile game's Survive mode (`C2RS/SURVIVE.TXT`; classic
-    /// survival), and whether ours is offered too (the launcher's choice).
-    mobile_survival: Option<c2_formats::mobile_arcade::Survive>,
-    ours: bool,
-    /// The dialect game's own survival and its roster's names, if offered.
-    modded: Option<(c2_formats::mee::SurvivalCommon, Vec<String>)>,
+    /// Classic survival is offered (the stock animals are in the pack).
+    classic_survival: bool,
     /// Choosing which survival (more than one offered).
     survival_pick: bool,
-    /// A classic or modded survival picked: its hunt options (run speed,
-    /// ambients) are on screen, Next starts it.
-    survival_next: Option<SurvivalKind>,
 }
 
 pub(crate) fn title(vfs: &Vfs, file: &str, fallback: String) -> String {
@@ -422,12 +381,9 @@ impl Menu {
             .collect();
         let first = info.areas.first().cloned().unwrap_or_default();
         let neutral = rules.hunt(&first, TimeOfDay::Day, Bits::ALL);
-        // Off, they roam their own maps only (`Setup::native_roamers`).
-        let roams = if settings.all_huntable {
-            Rules::roams(&neutral)
-        } else {
-            Vec::new()
-        };
+        // Survival needs every cooked candidate even when normal hunting hides
+        // roaming add-ons. Hidden entries stay at the end of the menu vector.
+        let roams = Rules::roams(&neutral);
         for r in roams {
             let name = neutral
                 .res
@@ -450,26 +406,25 @@ impl Menu {
         dinos.truncate(Bits::LEN);
         // Cheapest first, left to right and top to bottom (equal prices
         // keep their order: the game's, then add-ons).
-        dinos.sort_by_key(|d| d.1.price);
-        // Which survivals the pack offers (`survival = classic,modded`).
-        let modes = info.survival.to_ascii_lowercase();
-        let offered = |names: &[&str]| modes.split(',').any(|m| names.contains(&m.trim()));
-        // The mobile Survive mode: only on its area (and if offered).
-        let mobile_survival = vfs
-            .read("C2RS/SURVIVE.TXT")
-            .ok()
-            .map(|d| c2_formats::mobile_arcade::Survive::parse(&String::from_utf8_lossy(&d)))
-            .filter(|s| {
-                info.areas
-                    .iter()
-                    .any(|a| a.eq_ignore_ascii_case(&format!("AREA{}", s.area)))
+        dinos.sort_by_key(|d| {
+            (
+                !settings.all_huntable && matches!(d.0, Pick::Roamer(_)),
+                d.1.price,
+            )
+        });
+        // Classic needs the stock animals (exact name and root model).
+        let classic_survival = neutral
+            .res
+            .characters
+            .iter()
+            .filter(|d| {
+                c2_core::game::classic_identity(
+                    d.name.as_deref().unwrap_or(""),
+                    d.file.as_deref().unwrap_or(""),
+                )
             })
-            .filter(|_| offered(&["classic", "mobile", "android", "both"]));
-        // Ours is benched (owner, 2026-10-23): only when the pack asks.
-        let ours = offered(&["ours"]);
-        let modded = offered(&["modded", "mee", "both"])
-            .then(|| modded_survival(&rules, &info.areas))
-            .flatten();
+            .count()
+            >= 6;
         let dialect = rules.dialect();
         let kinds = dinos
             .iter()
@@ -488,7 +443,7 @@ impl Menu {
                 info.map_or((false, false, false), |i| {
                     (
                         c2_core::game::dangerous_ai(i.ai, dialect.then(|| aggress.unwrap_or(0))),
-                        c2_core::game::modded(&d.1.name),
+                        !c2_core::game::classic_identity(&i.name, &i.file),
                         c2_core::game::is_trex(&d.1.name, i.ai, dialect),
                     )
                 })
@@ -586,12 +541,8 @@ impl Menu {
             survival: None,
             kinds,
             extra_dinos: Bits::NONE,
-            special_dinos: Bits::NONE,
-            ours,
-            mobile_survival,
-            modded,
+            classic_survival,
             survival_pick: false,
-            survival_next: None,
             weapons,
             equip,
             area: 0,
@@ -774,8 +725,6 @@ impl Menu {
             crouch_key: self.settings.crouch_key,
             gyro_k: 0.0,
             survival: None,
-            survival_extra: Bits::NONE,
-            mobile_survival: None,
         }
     }
 
@@ -813,8 +762,6 @@ impl Menu {
             crouch_key: self.settings.crouch_key,
             gyro_k: self.settings.gyro_pct as f32 / 100.0,
             survival: self.survival.filter(|_| !self.observer),
-            mobile_survival: self.mobile_survival.clone(),
-            survival_extra: self.extra_targets(),
         }
     }
 
@@ -827,24 +774,8 @@ impl Menu {
         }
     }
 
-    /// Hardcore's and custom's animals' target bits (bit 10 + slot).
-    fn extra_targets(&self) -> Bits {
-        let mut bits = Bits::NONE;
-        for (k, d) in self.dinos.iter().enumerate() {
-            if self.special_dinos.has(k) {
-                let slot = match d.0 {
-                    Pick::Slot(s) => s,
-                    Pick::Roamer(r) => r.slot,
-                };
-                bits.set(slot + 10);
-            }
-        }
-        bits
-    }
-
-    /// Our survival's random area, time of day and animals (up to three
-    /// dangerous ones that fit, the T-Rex aside; hardcore: and 1-3 mods'
-    /// ones, custom: and the T-Rex, as they fit).
+    /// Daylight and the cheapest-first candidate pool that fits memory.
+    /// Equal-price candidates are shuffled; waves choose randomly from the pool.
     fn roll_survival(&mut self) {
         let mut seed = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -856,214 +787,73 @@ impl Menu {
             seed ^= seed << 5;
             seed
         };
-        self.area = next() as usize % self.areas.len().max(1);
-        self.time = next() as usize % 3;
-        (self.extra_dinos, self.special_dinos) = (Bits::NONE, Bits::NONE);
+        self.time = 1;
+        self.extra_dinos = Bits::NONE;
         let n = self.dinos.len();
-        let order = crate::hunt::pick(&(0..n).collect::<Vec<_>>(), n, next());
+        let mut order = crate::hunt::pick(&(0..n).collect::<Vec<_>>(), n, next());
+        // Keep an affordable starting animal before spending memory on giants.
+        // Equal-price candidates retain their randomized order.
+        order.sort_by_key(|&i| self.dinos[i].1.price);
         let fits = |m: &Self| {
             let mem = m.memory();
             mem.linear.0 <= mem.linear.1 && mem.heap.0 <= mem.heap.1
         };
-        let take =
-            |m: &mut Self, ok: &dyn Fn(&(bool, bool, bool)) -> bool, most: usize, special: bool| {
-                let mut got = 0;
-                for &i in &order {
-                    if got == most {
-                        break;
-                    }
-                    if m.extra_dinos.has(i) || !ok(&m.kinds[i]) {
-                        continue;
-                    }
-                    m.extra_dinos.set(i);
-                    if fits(m) {
-                        got += 1;
-                        if special {
-                            m.special_dinos.set(i);
-                        }
-                    } else {
-                        m.extra_dinos.clear(i);
-                    }
-                }
-            };
-        take(self, &|k| k.0 && !k.2, 3, false);
-        match self.survival {
-            Some(SurvivalKind::Hardcore) => {
-                let most = 1 + next() as usize % 3;
-                take(self, &|k| k.0 && k.1 && !k.2, most, true);
+        let classic = self.survival == Some(SurvivalKind::Classic);
+        // Load as many eligible species as this console's memory permits.
+        for &i in &order {
+            let (dangerous, modded, _) = self.kinds[i];
+            if !dangerous || (classic && modded) {
+                continue;
             }
-            Some(SurvivalKind::Custom) => take(self, &|k| k.2, 1, true),
-            _ => {}
+            self.extra_dinos.set(i);
+            if !fits(self) {
+                self.extra_dinos.clear(i);
+            }
         }
     }
 
-    /// The survivals offered: the mobile game's, the dialect game's, ours
-    /// (benched).
+    /// APK-independent modes; Classic needs stock animal identities.
     fn survival_modes(&self) -> Vec<(SurvivalKind, &'static str)> {
         let mut v = Vec::new();
-        if self.mobile_survival.is_some() {
-            v.push((SurvivalKind::Mobile, "CLASSIC (ANDROID)"));
+        if self.classic_survival {
+            v.push((SurvivalKind::Classic, "CLASSIC"));
         }
-        if self.modded.is_some() {
-            v.push((SurvivalKind::Mee, "MODDED"));
-        }
-        if self.ours {
-            v.push((SurvivalKind::Normal, "OURS"));
-        }
+        v.push((SurvivalKind::Modded, "MODDED"));
         v
     }
 
-    /// Starts survival `kind` (a hunt setup, or our gun pick).
+    /// Choosing a mode launches directly into the mobile survival arena.
     fn start_survival(&mut self, kind: SurvivalKind) -> Option<Setup> {
-        match kind {
-            // Their own area and guns: the hunt options, then in.
-            SurvivalKind::Mobile | SurvivalKind::Mee => {
-                self.survival_next = Some(kind);
-                self.step = Step::Options;
-            }
-            _ => {
-                // Ours: the guns, the hunt options.
-                self.survival = Some(SurvivalKind::Normal);
-                self.observer = false;
-                self.step = Step::Gear;
-            }
-        }
-        None
-    }
-
-    /// A classic or modded survival, after its hunt options.
-    fn begin_survival(&mut self, kind: SurvivalKind) -> Option<Setup> {
-        let r = match kind {
-            SurvivalKind::Mobile => self.classic_setup(),
-            _ => self.modded_setup(),
+        let Some(area) = self
+            .areas
+            .iter()
+            .position(|a| a.0.eq_ignore_ascii_case("AREA5"))
+        else {
+            self.message = Some("Survival requires Mount Ravan (AREA5)".into());
+            return None;
         };
-        match r {
-            Ok(s) => Some(s),
+        let Some(shotgun) = self
+            .weapons
+            .iter()
+            .position(|w| w.name.trim().eq_ignore_ascii_case("shotgun"))
+        else {
+            self.message = Some("Survival requires the shotgun".into());
+            return None;
+        };
+        self.area = area;
+        self.survival = Some(kind);
+        self.observer = false;
+        self.picked_weapons = Bits::bit(shotgun);
+        self.picked_equip = Bits::NONE;
+        self.extra_ammo = 0;
+        self.roll_survival();
+        match self.can_hunt() {
+            Ok(()) => Some(self.setup()),
             Err(e) => {
-                self.survival = None;
                 self.message = Some(e.into());
                 None
             }
         }
-    }
-
-    /// The dialect game's survival: on its area at its time, with its
-    /// weapon and its roster (`common {}`); the hunt's picks come back
-    /// afterwards.
-    fn modded_setup(&mut self) -> Result<Setup, &'static str> {
-        let (c, roster) = self.modded.clone().ok_or("No modded survival")?;
-        let kept = (
-            self.area,
-            self.time,
-            self.picked_weapons,
-            self.picked_equip,
-            self.extra_ammo,
-        );
-        let out = (|| {
-            let name = format!("AREA{}", c.area);
-            self.area = self
-                .areas
-                .iter()
-                .position(|a| a.0.eq_ignore_ascii_case(&name))
-                .ok_or("The survival's area isn't in this pack")?;
-            // The dialect's 0 dusk, 1 day, 2 night: TIMES' order.
-            self.time = usize::from(c.time).min(TIMES.len() - 1);
-            self.survival = Some(SurvivalKind::Mee);
-            self.observer = false;
-            self.extra_dinos = (0..self.dinos.len())
-                .filter(|&i| {
-                    roster
-                        .iter()
-                        .any(|n| n.eq_ignore_ascii_case(&self.dinos[i].1.name))
-                })
-                .collect();
-            if self.extra_dinos.is_empty() {
-                return Err("None of the survival's animals is in this pack");
-            }
-            self.special_dinos = Bits::NONE;
-            self.picked_weapons = Bits::bit(c.weapon.min(self.weapons.len().saturating_sub(1)));
-            self.picked_equip = Bits::NONE;
-            self.extra_ammo = 0;
-            self.can_hunt()?;
-            Ok(self.setup())
-        })();
-        (
-            self.area,
-            self.time,
-            self.picked_weapons,
-            self.picked_equip,
-            self.extra_ammo,
-        ) = kept;
-        out
-    }
-
-    /// Classic survival: the mobile game's, on its area, with its animals
-    /// and the shotgun.
-    fn classic_setup(&mut self) -> Result<Setup, &'static str> {
-        let m = self.mobile_survival.clone().ok_or("No classic survival")?;
-        // The hunt's picks come back afterwards.
-        let kept = (
-            self.area,
-            self.time,
-            self.picked_weapons,
-            self.picked_equip,
-            self.extra_ammo,
-        );
-        let out = self.classic_with(&m);
-        (
-            self.area,
-            self.time,
-            self.picked_weapons,
-            self.picked_equip,
-            self.extra_ammo,
-        ) = kept;
-        out
-    }
-
-    fn classic_with(
-        &mut self,
-        m: &c2_formats::mobile_arcade::Survive,
-    ) -> Result<Setup, &'static str> {
-        let name = format!("AREA{}", m.area);
-        self.area = self
-            .areas
-            .iter()
-            .position(|a| a.0.eq_ignore_ascii_case(&name))
-            .ok_or("Classic survival's area isn't in this pack")?;
-        self.time = 1;
-        self.survival = Some(SurvivalKind::Mobile);
-        self.observer = false;
-        let norm = |n: &str| -> String {
-            n.chars()
-                .filter(char::is_ascii_alphanumeric)
-                .map(|c| c.to_ascii_lowercase())
-                .collect()
-        };
-        // Ice Age's stand-ins where the game lacks the mode's animals.
-        let names: Vec<String> = self.dinos.iter().map(|d| d.1.name.clone()).collect();
-        let m = m
-            .for_game(&names)
-            .ok_or("This game lacks classic survival's animals")?;
-        let wanted: Vec<String> = m.animals().iter().map(|n| norm(n)).collect();
-        self.extra_dinos = (0..self.dinos.len())
-            .filter(|&i| wanted.contains(&norm(&self.dinos[i].1.name)))
-            .collect();
-        self.special_dinos = Bits::NONE;
-        let names: Vec<String> = self
-            .weapons
-            .iter()
-            .map(|w| w.name.to_ascii_lowercase())
-            .collect();
-        let shotgun = names
-            .iter()
-            .position(|n| n.trim() == "shotgun")
-            .or_else(|| names.iter().position(|n| n.contains("shotgun")))
-            .unwrap_or(0);
-        self.picked_weapons = Bits::bit(shotgun);
-        self.picked_equip = Bits::NONE;
-        self.extra_ammo = 0;
-        self.can_hunt()?;
-        Ok(self.setup())
     }
 
     /// Keeps the accessory choice in the save, as the original does.
@@ -1178,7 +968,12 @@ impl Menu {
                 n @ 0..=6 => lay(n, 3, 34.0, 162.0),
                 n => lay(n, 5, 24.0, 162.0),
             },
-            Step::Animals => match self.dinos.len() {
+            Step::Animals => match self
+                .dinos
+                .iter()
+                .filter(|d| self.settings.all_huntable || !matches!(d.0, Pick::Roamer(_)))
+                .count()
+            {
                 n @ 0..=15 => lay(n, 5, 32.0, 210.0),
                 n @ 16..=24 => lay(n, 7, 24.0, 210.0),
                 n @ 25..=40 => lay(n, 8, 19.0, 210.0),
@@ -1297,10 +1092,6 @@ impl Menu {
                     self.extra_dinos = Bits::NONE;
                     self.step = Step::Area;
                 } else if inside(SURVIVAL, x, y) && !self.survival_modes().is_empty() {
-                    let modes = self.survival_modes();
-                    if let [(one, _)] = modes[..] {
-                        return self.start_survival(one);
-                    }
                     self.survival_pick = true;
                 } else if inside(TROPHIES, x, y) && self.trophy_room {
                     return Some(self.trophy_setup());
@@ -1440,7 +1231,7 @@ impl Menu {
                 } else if self.survival.is_some()
                     && (inside(Self::TRANQ, x, y) || inside(Self::OBSERVE, x, y))
                 {
-                    let all = SurvivalKind::ALL;
+                    let all: Vec<_> = self.survival_modes().into_iter().map(|(k, _)| k).collect();
                     let i = all
                         .iter()
                         .position(|&k| Some(k) == self.survival)
@@ -1449,9 +1240,10 @@ impl Menu {
                     self.survival = Some(k);
                     self.focus = Some(
                         match k {
-                            SurvivalKind::Hardcore => "1-3 mods' animals join each wave",
-                            SurvivalKind::Custom => "Unlimited ammo; T-Rex from wave 15",
-                            _ => "Random dangerous animals, random area",
+                            SurvivalKind::Classic => "Stock animals; menu prices, +10% per wave",
+                            SurvivalKind::Modded => {
+                                "All eligible animals; menu prices, +10% per wave"
+                            }
                         }
                         .into(),
                     );
@@ -1522,7 +1314,6 @@ impl Menu {
             Step::Animals => Step::Area,
             Step::Gear if self.survival.is_some() => Step::Title,
             Step::Gear => Step::Animals,
-            Step::Options if self.survival_next.take().is_some() => Step::Title,
             Step::Options => Step::Gear,
         };
     }
@@ -1533,7 +1324,6 @@ impl Menu {
             self.quit = true;
         } else {
             self.back();
-            self.survival_next = None;
             self.step = Step::Title;
         }
     }
@@ -1546,16 +1336,6 @@ impl Menu {
             Step::Area if !self.trophy() => self.step = Step::Animals,
             Step::Animals => self.step = Step::Gear,
             Step::Gear => self.step = Step::Options,
-            Step::Options if self.survival_next.is_some() => {
-                self.store_settings();
-                let kind = self.survival_next.take()?;
-                let s = self.begin_survival(kind);
-                if s.is_none() {
-                    // Not startable: the message shows on the title.
-                    self.step = Step::Title;
-                }
-                return s;
-            }
             // Our survival: the guns, the options, then in.
             Step::Options if self.survival.is_some() => {
                 self.store_settings();
@@ -2227,15 +2007,12 @@ impl Menu {
             &pts,
         );
 
-        // The area and the time of day (a survival's are random).
-        let survival = (self.survival.is_some() || self.survival_next.is_some()) && !self.trophy();
+        // The area and the time of day (a survival has its own).
+        let survival = self.survival.is_some() && !self.trophy();
         if survival {
             c.rect([8.0, 22.0, 192.0, 112.0], PANEL);
             c.flush(gpu);
-            let t = match self.survival_next {
-                Some(_) => "Survival",
-                None => "Survival: random area and time",
-            };
+            let t = "Survival: Mount Ravan, daylight, shotgun";
             c.text(gpu, 8.0, 140.0, 1.0, WHITE, t);
         } else if let Some((_, a)) = self.areas.get(self.area) {
             if let Some(t) = &a.pic {

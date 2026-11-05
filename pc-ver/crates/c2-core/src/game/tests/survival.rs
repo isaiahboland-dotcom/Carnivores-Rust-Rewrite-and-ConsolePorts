@@ -1,11 +1,91 @@
 use super::support::{info, setup};
 use crate::dino::{ai, Character, Species};
 use crate::game::{
-    dangerous, GameEvent, Hunt, HuntInput, SurvivalKind, SurvivalOptions, MAX_HEALTH, WAVE_HEALTH,
+    dangerous, Arena, GameEvent, Hunt, HuntInput, SurvivalKind, SurvivalOptions, MAX_HEALTH,
+    WAVE_HEALTH,
 };
 #[cfg(not(feature = "std"))]
 use alloc::{vec, vec::Vec};
-use c2_formats::bits::Bits;
+
+#[test]
+fn budget_survival_filters_rosters_and_spends_without_touching_hunter_points() {
+    let (area, mut hunt, car) = setup(false);
+    for (name, file, cost) in [
+        ("Chasmosaurus", "chasmosa.car", 18.0),
+        ("Velociraptor", "velo2.car", 25.0),
+        ("Mod raptor", "mods/raptor.car", 12.0),
+        ("Free raptor", "free.car", 0.0),
+        ("Broken raptor", "broken.car", -1.0),
+    ] {
+        let mut i = info(ai::VELO);
+        i.name = name.into();
+        i.file = file.into();
+        i.base_score = 999.0;
+        let mut sp = Species::new(i, &car);
+        sp.hunt_price = Some(cost as i32);
+        hunt.herd.species.push(sp);
+    }
+    let classic = SurvivalOptions::pick(&hunt, SurvivalKind::Classic, 6);
+    assert_eq!(classic.roster, [(2, 18), (3, 25)]);
+    let modded = SurvivalOptions::pick(&hunt, SurvivalKind::Modded, 6);
+    assert_eq!(modded.roster, [(2, 18), (3, 25), (4, 12), (5, 0)]);
+    assert!(classic.budget_ready());
+    assert_eq!(classic.initial_budget(), 36);
+    assert_eq!(modded.initial_budget(), 10);
+    hunt.room.score = 987;
+    hunt.start_survival(&area, classic);
+    // Budget waves retain the mobile arena and face its fixed approach.
+    assert!((hunt.player.x - 89330.13).abs() <= 128.0);
+    assert!((hunt.player.z - 65388.617).abs() <= 128.0);
+    assert!(hunt.player.alpha < 0.0);
+    assert!(hunt.herd.chars.is_empty());
+    let mut events = Vec::new();
+    hunt.survival.as_mut().unwrap().rest_ms = 0;
+    hunt.survival_step(&area, 10, &mut events);
+    assert_eq!(hunt.wave(), 1);
+    assert!((1..=2).contains(&hunt.herd.chars.len()));
+    assert!(hunt.herd.chars.iter().all(|c| matches!(c.ctype, 2 | 3)));
+    assert!(hunt
+        .herd
+        .chars
+        .iter()
+        .all(|c| (c.pos[0] - 84069.125).abs() <= 3000.0
+            && (c.pos[2] - 45230.77).abs() <= 2000.0
+            && c.pos[2] < hunt.player.z));
+    assert_eq!(hunt.room.score, 987);
+    // Insufficient funds never buy an expensive animal or silently skip a round.
+    hunt.herd.chars.clear();
+    let s = hunt.survival.as_mut().unwrap();
+    s.wave = 0;
+    s.rest_ms = 0;
+    s.opts.roster = vec![(3, 31)];
+    s.opts.starting_budget = 30;
+    assert!(!s.opts.budget_ready());
+    hunt.survival_step(&area, 10, &mut events);
+    assert_eq!(hunt.wave(), 0);
+    assert!(hunt.herd.chars.is_empty());
+}
+
+#[test]
+fn budget_survival_requires_a_working_dialect_attack() {
+    let (_, mut hunt, car) = setup(false);
+    let mut i = info(ai::VELO);
+    i.base_score = 18.0;
+    let mut sp = Species::new(i, &car);
+    sp.hunt_price = Some(18);
+    sp.mee = Some(alloc::boxed::Box::new(crate::dino::mee::MeeInfo {
+        ai: ai::VELO,
+        kill_dist: 0,
+        run_speed: 0.8,
+        ..crate::dino::mee::MeeInfo::new(ai::VELO)
+    }));
+    hunt.herd.species.push(sp);
+    assert!(!SurvivalOptions::pick(&hunt, SurvivalKind::Modded, 6).budget_ready());
+    hunt.herd.species[2].mee.as_mut().unwrap().kill_dist = 25;
+    assert!(SurvivalOptions::pick(&hunt, SurvivalKind::Modded, 6).budget_ready());
+    hunt.herd.species[2].ani_time.clear();
+    assert!(!SurvivalOptions::pick(&hunt, SurvivalKind::Modded, 6).budget_ready());
+}
 
 #[test]
 fn survival_sends_growing_waves_and_awards_no_trophies() {
@@ -15,8 +95,9 @@ fn survival_sends_growing_waves_and_awards_no_trophies() {
     hunt.start_survival(
         &area,
         SurvivalOptions {
-            roster: vec![2],
+            roster: vec![(2, 0)],
             max_wave: 3,
+            arena: open_arena(),
             ..Default::default()
         },
     );
@@ -35,19 +116,18 @@ fn survival_sends_growing_waves_and_awards_no_trophies() {
             hunt.tick(&area, &cars, &HuntInput::default(), 10, out);
         }
     };
-    run(&mut hunt, 3100, &mut out);
+    run(&mut hunt, 600, &mut out);
     assert_eq!((hunt.wave(), wave(&hunt, 1)), (1, 3));
     assert!(out
         .iter()
-        .any(|e| matches!(e, GameEvent::Message(m) if m == "Wave 1")));
+        .any(|e| matches!(e, GameEvent::Message(m) if m.starts_with("Wave 1"))));
     for c in hunt.herd.chars.iter().filter(|c| c.wave == 1) {
         assert!(c.aware_hunter && c.state != 0);
         assert!(
             (1..=WAVE_HEALTH).contains(&c.health),
             "a shotgun blast kills"
         );
-        let d = (c.pos[0] - hunt.player.x).hypot(c.pos[2] - hunt.player.z);
-        assert!(d >= 20.0 * 256.0, "{d}");
+        assert!(open_arena().spawn[1] - c.pos[2] <= 1024.0, "from the box");
     }
     // Killed: logged, but no score, trophy or ship.
     while let Some(i) = hunt
@@ -62,128 +142,9 @@ fn survival_sends_growing_waves_and_awards_no_trophies() {
     assert!(hunt.ship.tasks.is_empty() && hunt.room.bodies.iter().all(|b| b.ctype == 0));
     // The next wave (capped at 3) replaces the fallen; health is back.
     hunt.health = 1000;
-    run(&mut hunt, 4100, &mut out);
+    run(&mut hunt, 2100, &mut out);
     assert_eq!((hunt.wave(), wave(&hunt, 1), wave(&hunt, 2)), (2, 0, 3));
     assert_eq!(hunt.health, MAX_HEALTH);
-}
-
-#[test]
-fn modded_survival_waves_buy_the_dearest_first() {
-    let w = crate::game::survival::mee_waves(&[7, 8, 9]);
-    assert_eq!(w.len(), 26);
-    // 2, 4, 8, 16 points; costs 1, 3, 9.
-    assert_eq!(w[0], [7, 7]);
-    assert_eq!(w[1], [8, 7]);
-    assert_eq!(w[2], [8, 8, 7, 7]);
-    assert_eq!(w[3], [9, 8, 8, 7]);
-    let spot = c2_formats::mee::SurvivalSpot {
-        hunter: (345, 245),
-        angle: 90.0,
-        spawn: [318, 336, 170, 180],
-    };
-    let o = SurvivalOptions::mee(&[7, 8, 9], &spot, 6).expect("roster");
-    let m = o.mobile.expect("waves");
-    assert!(o.unlimited);
-    assert_eq!(m.hunter, [345.0 * 256.0 + 128.0, 245.0 * 256.0 + 128.0]);
-    assert!((m.spawn[0] - (327.0 * 256.0 + 128.0)).abs() < 1.0);
-    assert!((m.hunter_alpha.unwrap_or(0.0) - core::f32::consts::FRAC_PI_2).abs() < 1e-5);
-    assert!(SurvivalOptions::mee(&[], &spot, 6).is_none());
-}
-
-#[test]
-fn mobile_survival_on_ice_age_takes_stand_ins_round_the_hunter() {
-    let (area, mut hunt, car) = setup(false);
-    for (name, a) in [("Smilodon", ai::ALLO), ("Wooly rhinoceros", ai::CHASM)] {
-        let mut i = info(a);
-        i.name = name.into();
-        hunt.herd.species.push(Species::new(i, &car));
-    }
-    let sv = c2_formats::mobile_arcade::Survive {
-        area: 5,
-        hunter: [100_000.0, 100_000.0],
-        spawn: [100_000.0, 110_000.0, 500.0, 500.0],
-        first_ms: 500,
-        rest_ms: 2000,
-        waves: vec![vec!["Allosaurus".into(), "Chasmosaurus".into()]],
-        after: vec!["Allosaurus".into()],
-        stand_ins: false,
-    };
-    let start = (hunt.player.x, hunt.player.z);
-    let o = SurvivalOptions::mobile(&hunt, &sv, 8).expect("stand-ins");
-    let m = o.mobile.clone().unwrap_or_default();
-    assert!(m.stand_ins);
-    assert_eq!(m.waves, vec![vec![2, 3]]);
-    hunt.start_survival(&area, o);
-    // Not moved to Mount Ravan's spot.
-    assert_eq!((hunt.player.x, hunt.player.z), start);
-    let cars = [None, Some(&car), Some(&car), Some(&car)];
-    let mut out = Vec::new();
-    for _ in 0..60 {
-        hunt.tick(&area, &cars, &HuntInput::default(), 10, &mut out);
-    }
-    let wave: Vec<&Character> = hunt.herd.chars.iter().filter(|c| c.wave == 1).collect();
-    assert_eq!(wave.len(), 2);
-    // Round the hunter, not in the box.
-    assert!(wave.iter().all(|c| (c.pos[2] - 110_000.0).abs() > 500.0));
-}
-
-#[test]
-fn mobile_survival_sends_its_waves_from_its_box() {
-    let (area, mut hunt, car) = setup(false);
-    for (name, a) in [("Chasmosaurus", ai::CHASM), ("Allosaurus", ai::ALLO)] {
-        let mut i = info(a);
-        i.name = name.into();
-        hunt.herd.species.push(Species::new(i, &car));
-    }
-    let sv = c2_formats::mobile_arcade::Survive {
-        area: 5,
-        hunter: [100_000.0, 100_000.0],
-        spawn: [100_000.0, 110_000.0, 500.0, 500.0],
-        first_ms: 500,
-        rest_ms: 2000,
-        waves: vec![vec!["Chasmosaurus".into()], vec!["Allosaurus".into(); 2]],
-        after: vec!["Chasmosaurus".into(); 3],
-        stand_ins: false,
-    };
-    let missing = c2_formats::mobile_arcade::Survive {
-        after: vec!["Utahraptor".into()],
-        ..sv.clone()
-    };
-    assert!(SurvivalOptions::mobile(&hunt, &missing, 8).is_none());
-    let o = SurvivalOptions::mobile(&hunt, &sv, 8).unwrap();
-    hunt.start_survival(&area, o);
-    assert!((hunt.player.x - 100_000.0).abs() < 256.0);
-    let cars = [None, Some(&car), Some(&car), Some(&car)];
-    let mut out = Vec::new();
-    for _ in 0..60 {
-        hunt.tick(&area, &cars, &HuntInput::default(), 10, &mut out);
-    }
-    let wave: Vec<&Character> = hunt.herd.chars.iter().filter(|c| c.wave == 1).collect();
-    assert_eq!(wave.len(), 1);
-    let c = wave[0];
-    assert_eq!(c.ctype, 2);
-    assert!((c.pos[2] - 110_000.0).abs() <= 500.0 && (c.pos[0] - 100_000.0).abs() <= 500.0);
-    // 39 cells off on open ground, the Chasmosaurus comes straight on
-    // (no lure: the straight line is a way; walls: `flow_tests`).
-    assert_eq!(c.lure, None);
-    assert!((c.tgz - hunt.player.z).abs() < 1.0 && (c.tgx - hunt.player.x).abs() < 1.0);
-    // Then the next wave in turn, 2 s after this one falls.
-    hunt.debug_bag(
-        &area,
-        hunt.herd.chars.iter().position(|c| c.wave == 1).unwrap(),
-        &mut out,
-    );
-    for _ in 0..210 {
-        hunt.tick(&area, &cars, &HuntInput::default(), 10, &mut out);
-    }
-    let w2: Vec<usize> = hunt
-        .herd
-        .chars
-        .iter()
-        .filter(|c| c.wave == 2)
-        .map(|c| c.ctype)
-        .collect();
-    assert_eq!(w2, [3, 3]);
 }
 
 #[test]
@@ -200,17 +161,12 @@ fn box_survival_waves_keep_to_the_ravine_floor() {
     let mut i = info(ai::CHASM);
     i.name = "Chasmosaurus".into();
     hunt.herd.species.push(Species::new(i, &car));
-    let sv = c2_formats::mobile_arcade::Survive {
-        area: 5,
+    let arena = Arena {
         hunter: [390.0 * 256.0, 500.0 * 256.0],
         spawn: [390.0 * 256.0, 400.0 * 256.0, 1000.0, 1000.0],
-        first_ms: 500,
-        rest_ms: 2000,
-        waves: vec![vec!["Chasmosaurus".into(); 3]],
-        after: vec![],
-        stand_ins: false,
+        ..Arena::ravine()
     };
-    hunt.start_survival(&area, SurvivalOptions::mobile(&hunt, &sv, 8).unwrap());
+    hunt.start_survival(&area, priced(3, arena));
     let cars = [None, Some(&car), Some(&car)];
     let mut out = Vec::new();
     for _ in 0..60 {
@@ -246,17 +202,12 @@ fn survival_waves_start_by_the_hunter_not_up_a_mountain() {
     let mut i = info(ai::CHASM);
     i.name = "Chasmosaurus".into();
     hunt.herd.species.push(Species::new(i, &car));
-    let sv = c2_formats::mobile_arcade::Survive {
-        area: 5,
+    let arena = Arena {
         hunter: [100_000.0, 100_000.0],
         spawn: [100_000.0, 106_000.0, 2000.0, 500.0],
-        first_ms: 500,
-        rest_ms: 2000,
-        waves: vec![vec!["Chasmosaurus".into(); 6]],
-        after: vec![],
-        stand_ins: false,
+        ..Arena::ravine()
     };
-    hunt.start_survival(&area, SurvivalOptions::mobile(&hunt, &sv, 8).unwrap());
+    hunt.start_survival(&area, priced(6, arena));
     let cars = [None, Some(&car), Some(&car)];
     let mut out = Vec::new();
     for _ in 0..60 {
@@ -271,29 +222,7 @@ fn survival_waves_start_by_the_hunter_not_up_a_mountain() {
 }
 
 #[test]
-fn survival_picks_waves_mods_and_the_t_rex() {
-    let (_, mut hunt, car) = setup(false);
-    for (name, a) in [
-        ("Allosaurus", ai::ALLO),
-        ("Utahraptor", ai::VELO),
-        ("T-Rex", ai::TREX),
-    ] {
-        let mut i = info(a);
-        i.name = name.into();
-        hunt.herd.species.push(Species::new(i, &car));
-    }
-    // Nothing hunting picked: every hunter but the T-Rex; the mod's
-    // animal is the hardcore extra.
-    let o = SurvivalOptions::pick(&hunt, SurvivalKind::Hardcore, 5);
-    assert_eq!((o.roster, o.hardcore, o.trex), (vec![2, 3], vec![3], None));
-    // The allosaur picked: it alone comes; custom brings the T-Rex.
-    hunt.opts.targets = Bits::bit(ai::ALLO as usize);
-    let o = SurvivalOptions::pick(&hunt, SurvivalKind::Custom, 5);
-    assert_eq!((o.roster, o.trex, o.unlimited), (vec![2], Some(4), true));
-}
-
-#[test]
-fn blocked_survival_box_never_falls_back_behind_the_hunter_or_skips_a_wave() {
+fn blocked_budget_survival_box_never_falls_back_behind_the_hunter_or_skips_a_wave() {
     let (mut area, mut hunt, car) = setup(false);
     // Entire spawn box is on a plateau with no route down to the hunter.
     for z in 0..1024 {
@@ -306,14 +235,14 @@ fn blocked_survival_box_never_falls_back_behind_the_hunter_or_skips_a_wave() {
         &area,
         SurvivalOptions {
             max_wave: 3,
-            mobile: Some(crate::game::MobileWaves {
+            roster: vec![(2, 18)],
+            arena: Arena {
                 hunter: [400.0 * 256.0, 400.0 * 256.0],
                 spawn: [380.0 * 256.0, 400.0 * 256.0, 512.0, 512.0],
-                waves: vec![vec![2; 3]],
-                after: vec![2],
+                first_ms: 0,
                 rest_ms: 100,
-                ..Default::default()
-            }),
+                ..Arena::ravine()
+            },
             ..Default::default()
         },
     );
@@ -351,4 +280,70 @@ fn blocked_survival_box_never_falls_back_behind_the_hunter_or_skips_a_wave() {
         before,
         "survival still allows dodging"
     );
+}
+
+#[test]
+fn survival_menu_prices_override_scores_and_roamers_use_their_ai_donor() {
+    use c2_formats::{menu_txt::MenuData, res_txt::ResTxt};
+    let (_, mut hunt, car) = setup(false);
+    let menu = MenuData::from_res(&ResTxt::parse(
+        "characters {\n{\n name = 'First'\n ai = 15\n price = 3\n}\n{\n name = 'Second'\n ai = 15\n price = 4\n}\n}\nprices {\n dino = 50\n dino = 100\n survival_start = 150\n}\n"
+    ).unwrap());
+    assert_eq!(menu.survival_budget, 150);
+    for slot in [0, 1, -1] {
+        let mut i = info(ai::VELO);
+        i.base_score = 999.0;
+        let mut sp = Species::new(i, &car);
+        sp.tuning.menu_slot = Some(slot);
+        hunt.herd.species.push(sp);
+    }
+    crate::game::price_species(&mut hunt.herd.species, &menu);
+    assert_eq!(hunt.herd.species[2].hunt_price, Some(50));
+    assert_eq!(hunt.herd.species[3].hunt_price, Some(100));
+    assert_eq!(hunt.herd.species[4].hunt_price, Some(50));
+    let mut opts = SurvivalOptions::pick(&hunt, SurvivalKind::Modded, 6);
+    assert_eq!(opts.roster, [(2, 50), (3, 100), (4, 50)]);
+    assert_eq!(opts.initial_budget(), 100);
+    assert_eq!(opts.wave_budget(2), 110);
+    opts.starting_budget = menu.survival_budget;
+    assert_eq!(opts.wave_budget(1), 150);
+    assert_eq!(opts.wave_budget(2), 165);
+    opts.starting_budget = 20;
+    assert!(!opts.budget_ready());
+}
+
+#[test]
+fn survival_free_animals_keep_their_price_and_are_bounded_by_wave_cap() {
+    let (area, mut hunt, car) = setup(false);
+    let mut sp = Species::new(info(ai::VELO), &car);
+    sp.hunt_price = Some(0);
+    hunt.herd.species.push(sp);
+    let opts = SurvivalOptions::pick(&hunt, SurvivalKind::Modded, 3);
+    assert_eq!(opts.initial_budget(), 10);
+    assert!(opts.budget_ready());
+    hunt.start_survival(&area, opts);
+    hunt.survival.as_mut().unwrap().rest_ms = 0;
+    hunt.survival_step(&area, 10, &mut Vec::new());
+    assert_eq!(hunt.wave(), 1);
+    assert_eq!(hunt.herd.chars.len(), 3);
+}
+
+/// Flat test ground: the hunter in the middle, the box 16 cells north.
+fn open_arena() -> Arena {
+    Arena {
+        hunter: [512.0 * 256.0, 512.0 * 256.0],
+        spawn: [512.0 * 256.0, 496.0 * 256.0, 512.0, 512.0],
+        ..Arena::ravine()
+    }
+}
+
+/// Every wave animal (character type 2) free, up to `max_wave` a wave.
+fn priced(max_wave: usize, arena: Arena) -> SurvivalOptions {
+    SurvivalOptions {
+        roster: vec![(2, 0)],
+        max_wave,
+        arena,
+        unlimited: true,
+        ..Default::default()
+    }
 }

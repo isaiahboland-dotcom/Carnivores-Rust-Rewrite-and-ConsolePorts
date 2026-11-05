@@ -448,7 +448,8 @@ fn trophies_trophy_room_and_survival() {
     room.press_escape();
     assert_eq!(room.outcome(), Some(c2_core::game::Outcome::Exited));
 
-    // A survival: the map's hunters go, waves of the picked ones come.
+    // A survival: the map's animals go; the menu prices buy its waves
+    // (the hunt's picks don't matter).
     let survive = HuntChoice {
         mode: hunt_setup::MODE_SURVIVAL,
         animals: wiiu_common::slots(&inst, 0b1000),
@@ -458,19 +459,18 @@ fn trophies_trophy_room_and_survival() {
     let sl = load(&inst, &survive, 3);
     let mut s = restart(&sl, &sl.hunt, &survive, 3);
     assert!(s.survival.is_some() && !s.opts.tranq && !s.opts.observer);
-    let allo = s
-        .herd
-        .species
-        .iter()
-        .position(|sp| sp.info.ai == 13)
-        .unwrap();
     let srefs = refs(&sl.cars);
     for _ in 0..(5000 / 16) {
         events.clear();
         s.tick(&sl.area, &srefs, &HuntInput::default(), 16, &mut events);
     }
     assert_eq!(s.wave(), 1);
-    assert!(s.herd.chars.iter().any(|c| c.wave > 0 && c.ctype == allo));
+    let opts = &s.survival.as_ref().unwrap().opts;
+    let price = |ct: usize| opts.roster.iter().find(|r| r.0 == ct).map(|r| r.1);
+    let wave: Vec<_> = s.herd.chars.iter().filter(|c| c.wave == 1).collect();
+    assert!(!wave.is_empty() && wave.iter().all(|c| price(c.ctype).is_some()));
+    let cost: u32 = wave.iter().filter_map(|c| price(c.ctype)).sum();
+    assert!(cost <= opts.wave_budget(1));
     let restarted = restart(&sl, &s, &survive, 4);
     assert!(restarted.survival.is_some() && restarted.wave() == 0);
 }

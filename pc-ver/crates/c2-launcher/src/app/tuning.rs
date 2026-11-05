@@ -1,4 +1,4 @@
-//! Balance, survival, and menu choices.
+//! Balance and menu choices.
 use super::*;
 
 impl Launcher {
@@ -95,20 +95,10 @@ impl Launcher {
         changed
     }
 
-    /// `--survival-modes ..`, and `--mobile-survival FILE` once an APK
-    /// import has made the file.
-    pub(super) fn survival_args(&self) -> Vec<String> {
-        let mut v = vec!["--survival-modes".into(), self.cfg.survival_modes.arg()];
-        if let Some(f) = self.cfg.mobile_survival.as_ref().filter(|f| f.exists()) {
-            v.extend(["--mobile-survival".into(), f.display().to_string()]);
-        }
-        v
-    }
-
-    /// `c2-cook`'s survival arguments, and the phone's pictures where
-    /// chosen (`--phone-game`, `--phone-pictures`; the 3DS and Wii U).
+    /// `c2-cook`'s phone pictures where chosen (`--phone-game`,
+    /// `--phone-pictures`; the 3DS and Wii U).
     pub(super) fn cook_extras(&self) -> Vec<String> {
-        let mut v = self.survival_args();
+        let mut v = Vec::new();
         let Some(phone) = self.phone_game() else {
             return v;
         };
@@ -193,41 +183,6 @@ impl Launcher {
         changed
     }
 
-    /// Survival choice (PC and 3DS alike).
-    pub(super) fn survival_ui(&mut self, ui: &mut egui::Ui) -> bool {
-        let have = self
-            .cfg
-            .mobile_survival
-            .as_ref()
-            .is_some_and(|f| f.exists());
-        let mut changed = false;
-        let m = &mut self.cfg.survival_modes;
-        ui.horizontal(|ui| {
-            ui.label("Survival:");
-            changed |= ui
-                .add_enabled(
-                    have,
-                    egui::Checkbox::new(&mut m.classic, "Classic (Android)"),
-                )
-                .changed();
-            changed |= ui.checkbox(&mut m.modded, "Modded").changed();
-        });
-        help(
-            ui,
-            if have {
-                "Classic: the mobile game's own Survive mode, read from your APK (its waves on \
-                 Mount Ravan, straight in with the shotgun; on Ice Age, Ice Age animals stand \
-                 in). Modded: a Modder's Edition game's own survival, where its data has one. \
-                 With both, the game asks which when you pick Survival."
-            } else {
-                "Modded: a Modder's Edition game's own survival, where its data has one. The \
-                 mobile game's classic Survive mode comes with importing your Carnivores 2 \
-                 (Dinosaur Hunter) APK (Add-ons tab)."
-            },
-        );
-        changed
-    }
-
     /// `play <base> --overlay .. --mod .. [--balance ..]`
     pub(super) fn play_args(&self) -> Vec<String> {
         let mut args = vec!["play".to_string()];
@@ -257,7 +212,6 @@ impl Launcher {
             }
         }
         args.extend(self.balance_args());
-        args.extend(self.survival_args());
         let art = match self.menu_style() {
             MenuStyle::Original => self.cfg.base.clone(),
             MenuStyle::IceAge => self.cfg.ice_age.clone(),

@@ -102,10 +102,8 @@ pub struct HuntSetup {
     pub night_vision: bool,
     pub flashlight: bool,
     pub observer: bool,
-    /// A survival instead of a hunt (README M13), and the mobile game's
-    /// rules for a mobile one.
+    /// A survival instead of a hunt (README M13).
     pub survival: Option<SurvivalKind>,
-    pub mobile_survival: Option<c2_formats::mobile_arcade::Survive>,
     /// The player (`trophy0N.sav`).
     pub reg: i32,
     /// Return to the menu afterwards (otherwise close the window).
@@ -236,8 +234,22 @@ enum Pick {
 const HOLD_TO_PICK: f32 = 0.35;
 
 impl HuntView {
-    pub fn load(gpu: &Gpu, setup: HuntSetup) -> Result<Self> {
+    pub fn load(gpu: &Gpu, mut setup: HuntSetup) -> Result<Self> {
+        if setup.survival.is_some() {
+            setup.map = setup
+                .map
+                .parent()
+                .and_then(|p| find_file(p, "AREA5.MAP"))
+                .ok_or_else(|| anyhow::anyhow!("Survival requires Mount Ravan (AREA5.MAP)"))?;
+            setup.time = TimeOfDay::Day;
+            setup.targets = c2_formats::bits::Bits::ALL;
+            setup.observer = false;
+            setup.double_ammo = false;
+            setup.night_vision = false;
+            setup.flashlight = false;
+        }
         let mut view = AreaView::load(gpu, &setup.map, setup.time)?;
+        view.narrow_flashlight = setup.pc.narrow_flashlight != 0;
         view.fly = false;
         if setup.pc.dynamic_time != 0 && !setup.trophy() {
             view.area.cycle = Some(c2_core::day_cycle::DayCycle::new(setup.time));
@@ -274,9 +286,33 @@ impl HuntView {
             }
             None => (load_res(&huntdat)?, None),
         };
+        if setup.survival.is_some() {
+            let shotgun = res
+                .weapons
+                .iter()
+                .position(|w| {
+                    w.file
+                        .as_deref()
+                        .is_some_and(|f| f.eq_ignore_ascii_case("shotgun.car"))
+                })
+                .or_else(|| {
+                    res.weapons.iter().position(|w| {
+                        w.name
+                            .as_deref()
+                            .is_some_and(|n| n.trim().eq_ignore_ascii_case("shotgun"))
+                    })
+                })
+                .ok_or_else(|| anyhow::anyhow!("Survival requires the shotgun"))?;
+            setup.weapons = 1u128 << shotgun;
+        }
         let (mut species, cars) = load_species(&huntdat, &res)?;
         if let Some(t) = &mee {
             c2_core::mee::tune(&mut species, t);
+        }
+        let menu = crate::menu::menu_data(&huntdat)?;
+        c2_core::game::price_species(&mut species, &menu);
+        if setup.pc.survival_budget == 0 {
+            setup.pc.survival_budget = menu.survival_budget.min(i32::MAX as u32) as i32;
         }
         let mut hud = Hud::new(gpu);
         let (weapon_infos, weapon_anims, mut weapons) =
@@ -395,6 +431,10 @@ impl HuntView {
             seed,
             &setup,
             mee.as_ref(),
+        );
+        anyhow::ensure!(
+            hunt.survival.as_ref().is_none_or(|s| s.opts.budget_ready()),
+            "Survival needs a loaded animal that can attack and fits the configured starting budget"
         );
         hunt.ship_anim_ms = dinos.ship_anim_ms();
         if let Some(ms) = weapons.muzzle_ms() {
@@ -597,27 +637,10 @@ impl HuntView {
         if let Some(s) = &hunt.effects.snow {
             tracing::info!("snow: {} flakes", s.kind.dens);
         }
-        // The dialect game's own survival: its roster from the area's box.
-        let modded = mee
-            .filter(|_| setup.survival == Some(SurvivalKind::Mee))
-            .and_then(|t| {
-                SurvivalOptions::mee(&t.survival_roster(), t.survival.as_ref()?, SURVIVAL_MAX)
-            });
-        if let Some(o) = modded {
-            hunt.start_survival(area, o);
-        } else if let Some(kind) = setup.survival {
-            let mobile = setup
-                .mobile_survival
-                .as_ref()
-                .filter(|_| kind == SurvivalKind::Mobile);
-            let opts = match mobile.map(|m| SurvivalOptions::mobile(&hunt, m, SURVIVAL_MAX)) {
-                Some(Some(o)) => o,
-                Some(None) => {
-                    tracing::warn!("the mobile survival's animals aren't all in this game");
-                    SurvivalOptions::pick(&hunt, SurvivalKind::Normal, SURVIVAL_MAX)
-                }
-                None => SurvivalOptions::pick(&hunt, kind, SURVIVAL_MAX),
-            };
+        // Survival: the waves the menu prices buy, in Mount Ravan's ravine.
+        if let Some(kind) = setup.survival {
+            let mut opts = SurvivalOptions::pick(&hunt, kind, SURVIVAL_MAX);
+            opts.starting_budget = setup.pc.survival_budget.max(0) as u32;
             hunt.start_survival(area, opts);
         }
         hunt.clock = local_clock();
@@ -1350,14 +1373,61 @@ impl HuntView {
         self.prev_cam = self.hunt.camera().0;
     }
 
+    /// Logs what killed the hunter (an attacker the player never saw:
+    /// a model that didn't load, past the draw distance, under water) and
+    /// returns its name for the death message.
+    fn report_killer(&self) -> Option<String> {
+        let h = &self.hunt;
+        let c = h
+            .death
+            .and_then(|d| d.killer)
+            .and_then(|i| h.herd.chars.get(i))?;
+        let sp = h.herd.species.get(c.ctype)?;
+        let (dx, dz) = (c.pos[0] - h.player.x, c.pos[2] - h.player.z);
+        let dist = (dx * dx + dz * dz).sqrt();
+        let drawn_r = self.view.radius as f32 * c2_core::CELL;
+        let model = self.dinos.cars.get(c.ctype).and_then(Option::as_ref);
+        let area = self.view.area();
+        let water = area.land_up_h(c.pos[0], c.pos[2]) - area.land_height(c.pos[0], c.pos[2]);
+        tracing::warn!(
+            species = %sp.info.name,
+            model = %sp.info.file,
+            ai = sp.info.ai,
+            dialect_ai = sp.mee.as_ref().map(|m| m.ai),
+            kill_dist = sp.mee.as_ref().map(|m| m.kill_dist),
+            scale = c.scale,
+            distance = dist as i32,
+            draw_distance = drawn_r as i32,
+            model_loaded = model.is_some(),
+            vertices = model.map_or(0, |(car, _)| car.mesh.vertices.len()),
+            water_depth = water as i32,
+            wave = c.wave,
+            "hunter killed"
+        );
+        if model.is_none() || dist > drawn_r {
+            tracing::warn!(species = %sp.info.name, "the killer was not drawn");
+        }
+        Some(sp.info.name.clone())
+    }
+
     fn handle_events(&mut self) {
         self.play_sounds();
+        let killer = self
+            .events
+            .iter()
+            .any(|e| matches!(e, GameEvent::HunterDied { .. }))
+            .then(|| self.report_killer())
+            .flatten();
         for e in self.events.drain(..) {
             match e {
                 GameEvent::Message(m) => self.message = Some((m, 2.0)),
                 GameEvent::HunterDied { kind, .. } => {
                     let how = ["eaten", "drowned", "fell", "killed"];
-                    let m = format!("You were {}.", how.get(kind as usize).unwrap_or(&"killed"));
+                    let how = how.get(kind as usize).unwrap_or(&"killed");
+                    let m = match &killer {
+                        Some(name) => format!("You were {how} by {name}."),
+                        None => format!("You were {how}."),
+                    };
                     self.message = Some((m, 6.0));
                 }
                 GameEvent::Scored {

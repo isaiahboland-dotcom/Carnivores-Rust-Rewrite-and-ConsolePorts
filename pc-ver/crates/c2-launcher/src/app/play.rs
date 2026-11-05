@@ -68,7 +68,7 @@ impl Launcher {
                  list changes).",
             );
             ui.add_space(4.0);
-            if self.menu_style_ui(ui, false) | self.survival_ui(ui) {
+            if self.menu_style_ui(ui, false) {
                 self.save();
             }
         });

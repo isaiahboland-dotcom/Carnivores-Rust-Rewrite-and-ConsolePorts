@@ -171,6 +171,7 @@ mod tests {
                         night_vision: 0.0,
                         ambient: 1.0,
                         flashlight: false,
+                        narrow_flashlight: false,
                         time_s: 0.0,
                         brightness: 1.0,
                     },

@@ -97,10 +97,6 @@ impl Launcher {
         dirs.sort();
         let values = out.join(c2_mods::mobile::MOBILE_VALUES);
         self.cfg.mobile_values = values.exists().then_some(values);
-        let survive = out.join(c2_mods::mobile::MOBILE_SURVIVAL);
-        if survive.exists() {
-            self.cfg.mobile_survival = Some(survive);
-        }
         self.ui.balance.mobile = cfg_mobile(&self.cfg);
         let n = dirs.len();
         self.add_addons(dirs);

@@ -172,36 +172,32 @@ fn every_page_draws_and_the_setup_reaches_a_hunt() {
     m.input(A);
     assert_eq!(m.action, Action::MainMenu);
 
-    // Survival: only the hunters can come in waves; no observer.
+    // Survival picks its own roster; this page only chooses Classic/Modded.
     m.open_title();
     m.input(DOWN);
     m.input(A);
     assert_eq!(
         (m.page, m.choice.mode),
-        (Page::Area, hunt_setup::MODE_SURVIVAL)
+        (Page::Animals, hunt_setup::MODE_SURVIVAL)
     );
     m.input(R);
     assert_eq!(m.page, Page::Animals);
-    m.choice.animals = 0b1;
-    m.focus = Id::Animal(1);
-    m.input(A);
-    assert_eq!(
-        m.choice.animals, 0b1,
-        "Ankylosaurus is not a survival animal"
-    );
-    m.input(PLUS);
-    assert_eq!(m.action, Action::None);
-    m.focus = Id::Animal(3);
-    m.input(A);
+    assert!(!m
+        .items()
+        .iter()
+        .any(|(id, _)| matches!(id, Id::Animal(_) | Id::Next | Id::Weapon(_))));
+    assert!(m.items().iter().any(|(id, _)| *id == Id::SurvivalKind(0)));
+    assert!(m.items().iter().any(|(id, _)| *id == Id::SurvivalKind(1)));
+    m.choice.animals = 0;
     m.focus = Id::SurvivalKind(1);
     m.input(A);
     assert_eq!(m.choice.survival, 1);
-    shot(&m, "10-survival");
-    m.input(R);
-    m.focus = Id::Observer;
-    m.input(A);
+    assert_eq!(m.choice.weapons.count_ones(), 1);
+    assert_eq!(
+        m.weapon_name(m.choice.weapons.trailing_zeros() as usize),
+        "Shotgun"
+    );
     assert_eq!(m.choice.observer, 0);
-    m.input(PLUS);
     assert_eq!(m.action, Action::Hunt);
 
     // The trophy room starts at once; the record shows the save.
@@ -581,4 +577,102 @@ fn night_equipment_is_only_offered_for_dynamic_time() {
         92
     );
     assert_eq!(std::mem::offset_of!(hunt_setup::HuntChoice, flashlight), 96);
+}
+
+#[test]
+fn survival_modes_use_menu_prices_without_an_animal_selection_or_apk() {
+    let Some((_, mut inst)) = wiiu_common::original() else {
+        return;
+    };
+    for kind in 0..2 {
+        // A pack override reaches the shared options and survives a restart.
+        inst.rules.menu.survival_budget = if kind == 0 { 0 } else { 200 };
+        let choice = hunt_setup::HuntChoice {
+            mode: hunt_setup::MODE_SURVIVAL,
+            survival: kind,
+            animals: 0,
+            weapons: 1,
+            ..Default::default()
+        };
+        let mut loaded = hunt_setup::load(Some(&inst), &choice, &hunt_setup::new_save(), 9)
+            .expect("survival without animal selections");
+        assert_eq!(loaded.hunt.area_no, 5, "selection cannot change the arena");
+        assert!((loaded.hunt.player.x - 89330.13).abs() <= 128.0);
+        assert!((loaded.hunt.player.z - 65388.617).abs() <= 128.0);
+        assert!(loaded.hunt.player.alpha < 0.0);
+        assert_eq!(loaded.weapon_ids.len(), 1, "shotgun only");
+        let opts = &loaded.hunt.survival.as_ref().unwrap().opts;
+        assert_eq!(opts.initial_budget(), if kind == 0 { 60 } else { 200 });
+        assert!(opts.budget_ready());
+        assert!(
+            loaded.hunt.herd.chars.is_empty(),
+            "ordinary wildlife removed"
+        );
+        loaded.hunt.survival.as_mut().unwrap().rest_ms = 0;
+        let cars: Vec<_> = loaded.cars.iter().map(Option::as_ref).collect();
+        loaded.hunt.tick(
+            &loaded.area,
+            &cars,
+            &c2_core::game::HuntInput::default(),
+            10,
+            &mut Vec::new(),
+        );
+        assert_eq!(loaded.hunt.wave(), 1);
+        assert!(!loaded.hunt.herd.chars.is_empty());
+        assert!(loaded
+            .hunt
+            .herd
+            .chars
+            .iter()
+            .all(|c| (c.pos[0] - 84069.125).abs() <= 3000.0
+                && (c.pos[2] - 45230.77).abs() <= 2000.0
+                && c.pos[2] < loaded.hunt.player.z));
+        let cost: i32 = loaded
+            .hunt
+            .herd
+            .chars
+            .iter()
+            .map(|c| loaded.hunt.herd.species[c.ctype].hunt_price.unwrap())
+            .sum();
+        assert!(cost <= if kind == 0 { 60 } else { 200 });
+        // Follow the actual terrain, not just a successful spawn: the wave
+        // must come down the ravine toward the hunter.
+        let mut closest = f32::MAX;
+        for _ in 0..9000 {
+            loaded.hunt.tick(
+                &loaded.area,
+                &cars,
+                &c2_core::game::HuntInput::default(),
+                10,
+                &mut Vec::new(),
+            );
+            for c in &loaded.hunt.herd.chars {
+                let dx = c.pos[0] - loaded.hunt.player.x;
+                let dz = c.pos[2] - loaded.hunt.player.z;
+                closest = closest.min((dx * dx + dz * dz).sqrt());
+            }
+            if closest < 1024.0 || loaded.hunt.death.is_some() {
+                break;
+            }
+        }
+        assert!(
+            closest < 1024.0 || loaded.hunt.death.is_some(),
+            "wave stuck before reaching the hunter: {closest}"
+        );
+        let restarted = hunt_setup::restart(
+            &loaded.area,
+            &loaded.hunt,
+            &choice,
+            loaded.tables.as_ref(),
+            loaded.targets,
+            &loaded.roamers,
+            &hunt_setup::new_save(),
+            10,
+        )
+        .expect("survival restart");
+        assert_eq!(
+            restarted.survival.as_ref().unwrap().opts.initial_budget(),
+            if kind == 0 { 60 } else { 200 }
+        );
+    }
 }

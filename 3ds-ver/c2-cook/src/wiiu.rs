@@ -3,8 +3,8 @@
 //! `HUNTDAT` file of the merged game (base, overlays, add-ons, recipe,
 //! balance) is written under the output folder with an upper-case name
 //! (one spelling for the SD card's file system and the app's lookups),
-//! with `INFO.TXT` (what the 3DS pack's says: areas, snow, roaming add-ons,
-//! survivals) and `FILES.TXT` (every file, one a line: the app's index).
+//! with `INFO.TXT` (what the 3DS pack's says: areas, snow, roaming add-ons)
+//! and `FILES.TXT` (every file, one a line: the app's index).
 //! The folder is the install's `wiiu/apps/<name>/` on the SD card.
 
 use std::collections::BTreeMap;
@@ -23,7 +23,6 @@ pub struct Info<'a> {
     pub snow: Vec<&'a str>,
     /// Roaming add-ons' areas, by character.
     pub roams: BTreeMap<usize, Vec<&'a str>>,
-    pub survival: &'a str,
 }
 
 /// `INFO.TXT`'s text.
@@ -34,7 +33,6 @@ fn info_text(i: &Info) -> String {
     if !i.snow.is_empty() {
         s += &format!("snow = {}\n", i.snow.join(","));
     }
-    s += &format!("survival = {}\n", i.survival);
     for (c, list) in &i.roams {
         s += &format!("roam.{c} = {}\n", list.join(","));
     }
@@ -94,11 +92,10 @@ mod tests {
             areas: &areas,
             snow: vec!["AREA2"],
             roams,
-            survival: "classic,modded",
         };
         assert_eq!(
             info_text(&i),
-            "wiiu = 1\nname = Carnivores 2\nareas = AREA1,AREA2,TROPHY\nsnow = AREA2\nsurvival = classic,modded\nroam.31 = AREA2\n"
+            "wiiu = 1\nname = Carnivores 2\nareas = AREA1,AREA2,TROPHY\nsnow = AREA2\nroam.31 = AREA2\n"
         );
     }
 }

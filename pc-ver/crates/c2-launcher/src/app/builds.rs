@@ -32,11 +32,11 @@ impl Launcher {
         let dir = out.join("3ds").join(&name);
         let mut steps = Vec::new();
         let title_art = t.ice_age_title.then(|| self.cfg.ice_age.clone()).flatten();
-        let survival = self.cook_extras();
+        let extras = self.cook_extras();
         let cook_args = |extra: Vec<String>, pack: &str| -> Vec<String> {
             let mut a = vec!["--game".to_string(), base.display().to_string()];
             a.extend(extra);
-            a.extend(survival.clone());
+            a.extend(extras.clone());
             if let Some(ia) = &title_art {
                 a.extend(["--menu-art".to_string(), ia.display().to_string()]);
             }
@@ -200,14 +200,14 @@ impl Launcher {
         };
         let w = &self.cfg.wiiu;
         let game = |root: &std::path::Path| vec!["--game".to_string(), root.display().to_string()];
-        let survival = self.cook_extras();
+        let extras = self.cook_extras();
         let addons = self.cfg.enabled_addons();
         let modded = !addons.is_empty() || !self.cfg.overlays.is_empty();
         let (folder, title) = crate::config::base_install(&base);
         let mut v = Vec::new();
         if w.original {
             let mut a = game(&base);
-            a.extend(survival.clone());
+            a.extend(extras.clone());
             if !modded {
                 a.extend(self.balance_args());
             }
@@ -222,7 +222,7 @@ impl Launcher {
                 a.extend(["--mod".to_string(), m.display().to_string()]);
             }
             a.extend(self.balance_args());
-            a.extend(survival.clone());
+            a.extend(extras.clone());
             v.push((format!("{folder}-addons"), format!("{title} Add-ons"), a));
         }
         if w.standalones {
@@ -234,7 +234,7 @@ impl Launcher {
                     .file_name()
                     .map_or_else(|| "Carnivores".into(), |n| n.to_string_lossy().into_owned());
                 let mut a = game(&root);
-                a.extend(survival.clone());
+                a.extend(extras.clone());
                 v.push((install_name(&c2_mods::manifest::slug(&title)), title, a));
             }
         }
@@ -370,7 +370,6 @@ impl Launcher {
                 .join(install_name(&r.id()));
             let mut launch = self.balance_args();
             launch.extend(["--save-instance".into(), r.id()]);
-            launch.extend(self.survival_args());
             match self.menu_style() {
                 MenuStyle::Mobile => launch.push("--mobile-menu".into()),
                 MenuStyle::Original | MenuStyle::IceAge => {

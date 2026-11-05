@@ -305,7 +305,7 @@ impl Editor {
             ui,
             "Change the recipe's entries and details here. Files stay pinned by their hashes; \
              an added folder is pinned now. Saving keeps the comments at the top of the file, not \
-             ones further down. The menu, survival and 3DS choices are taken from \
+             ones further down. The menu and 3DS choices are taken from \
              the other tabs with \"Save as instance\".",
         );
         ui.add_space(4.0);

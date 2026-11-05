@@ -79,9 +79,6 @@ pub struct Settings {
     /// PC menu: `mod`, `original`, `ice-age` or `mobile`.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub menu: String,
-    /// The survivals offered (`classic`, `modded`).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub survival: Option<Vec<String>>,
     /// Hunt pictures: the phone's or the PC's.
     #[serde(skip_serializing_if = "Pictures::is_auto")]
     pub pictures: Pictures,

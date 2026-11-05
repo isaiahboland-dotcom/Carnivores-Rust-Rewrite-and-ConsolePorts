@@ -30,7 +30,6 @@ mod wiiu;
 const USAGE: &str = "usage:
   c2-cook --game <GAME_DIR> [--overlay DIR]... [--mod MOD]...
           [--recipe RECIPE.toml --mods DIR...] [--balance FILE] [--areas N,N]
-          [--mobile-survival FILE] [--survival-modes classic,modded,ours]
           [--phone-game DIR --phone-pictures weapons,animals,scope]
           [--target n3ds|o3ds] [--force] --out <PACK.c2pk>
 
@@ -47,9 +46,6 @@ const USAGE: &str = "usage:
              Edition, which most add-ons are made for); repeatable
   --balance  prices and scores over the game (a balance file; see `c2-pc balance`)
   --menu-art the menu style: a game folder whose title art is used (Ice Age's)
-  --mobile-survival  the mobile game's Survive mode (mobile-survival.txt from an
-             APK import); --survival-modes which survivals are offered (default
-             classic,modded: the mobile one, the dialect game's own; ours is benched)
   --phone-game  a game built from your APK (`c2-pc mobile-base`): with
              --phone-pictures, its weapon pictures, animal pictures (and call
              icons from them) and scope mask replace the game's own, matched
@@ -248,9 +244,6 @@ struct Args {
     balance: Option<PathBuf>,
     /// Menu style: the game folder whose title art is used (Ice Age's).
     menu_art: Option<PathBuf>,
-    /// The mobile game's Survive mode, and which survivals are offered.
-    mobile_survival: Option<PathBuf>,
-    survival_modes: Option<String>,
     areas: Option<String>,
     target: Option<String>,
     /// The game's name on the Wii U's title screen.
@@ -282,8 +275,11 @@ fn parse_args() -> Result<Args> {
             "--mods" => a.mods_dirs.push(val()?.into()),
             "--balance" => a.balance = Some(val()?.into()),
             "--menu-art" => a.menu_art = Some(val()?.into()),
-            "--mobile-survival" => a.mobile_survival = Some(val()?.into()),
-            "--survival-modes" => a.survival_modes = Some(val()?),
+            // Older launchers' survival choices: survival is always
+            // Classic / Modded now.
+            "--mobile-survival" | "--survival-modes" => {
+                val()?;
+            }
             "--areas" => a.areas = Some(val()?),
             "--target" => a.target = Some(val()?),
             "--title" => a.title = Some(val()?),
@@ -1145,7 +1141,6 @@ fn main() -> Result<()> {
                 .as_ref()
                 .map(|raw| roam_areas(raw, &areas))
                 .unwrap_or_default(),
-            survival: a.survival_modes.as_deref().unwrap_or("classic,modded"),
         };
         return wiiu::install(&vfs, &info, &out);
     }
@@ -1515,17 +1510,6 @@ fn main() -> Result<()> {
     if !snowy.is_empty() {
         info += &format!("snow = {}\n", snowy.join(","));
     }
-    // The mobile Survive mode, from the player's own APK import.
-    if let Some(f) = &a.mobile_survival {
-        let t = std::fs::read_to_string(f).with_context(|| format!("reading {}", f.display()))?;
-        c.entries.push(("C2RS/SURVIVE.TXT".into(), t.into_bytes()));
-    }
-    // Which survivals the app offers: classic (needs the file above),
-    // modded (the dialect game's own, if it has one); ours is benched.
-    info += &format!(
-        "survival = {}\n",
-        a.survival_modes.as_deref().unwrap_or("classic,modded")
-    );
     // Where each roaming add-on spawns (per area its tables), so the 3DS
     // menu needn't resolve the rules for every area when it opens (seconds
     // on an Old 3DS for a combined game's many).

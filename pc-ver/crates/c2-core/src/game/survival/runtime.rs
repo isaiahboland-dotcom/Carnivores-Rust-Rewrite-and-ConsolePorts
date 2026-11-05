@@ -4,7 +4,7 @@
 use alloc::{format, vec::Vec};
 
 use super::navigation::{Fence, Flow};
-use super::options::{SurvivalOptions, TREX_WAVE};
+use super::options::SurvivalOptions;
 use crate::area::Area;
 use crate::game::{GameEvent, Hunt, MAX_HEALTH};
 
@@ -23,7 +23,7 @@ pub struct Survival {
 
 impl Survival {
     pub fn new(opts: SurvivalOptions) -> Self {
-        let rest_ms = opts.mobile.as_ref().map_or(3000, |m| m.first_ms);
+        let rest_ms = opts.arena.first_ms;
         Self {
             opts,
             wave: 0,
@@ -32,37 +32,27 @@ impl Survival {
             fence: None,
         }
     }
-
-    /// The animals of wave `n`: two more each wave, up to the cap.
-    fn size(&self, n: u32) -> usize {
-        (2 + n as usize).min(self.opts.max_wave.max(1))
-    }
 }
 
 impl Hunt {
     /// Turns this hunt into a survival: all ordinary map wildlife goes;
-    /// only survival waves may populate the map. A mobile survival puts the
-    /// hunter at its spot.
+    /// only survival waves may populate the map. The hunter goes to the
+    /// arena's spot; the waves keep to the ground between it and their box.
     pub fn start_survival(&mut self, area: &Area, opts: SurvivalOptions) {
         while let Some(i) = self.herd.chars.iter().position(|c| c.wave == 0) {
             self.remove_character(i);
         }
-        let mut fence = None;
-        if let Some(m) = opts.mobile.as_ref().filter(|m| !m.stand_ins) {
-            let cell = |v: f32| (v / 256.0).clamp(1.0, 1022.0) as u16;
-            let at = (cell(m.hunter[0]), cell(m.hunter[1]));
-            self.player = crate::player::Player::new(area, at);
-            if let Some(a) = m.hunter_alpha {
-                self.player.alpha = a;
-            }
-            fence = Some(Fence::new(
-                area,
-                (i32::from(at.0), i32::from(at.1)),
-                m.spawn,
-            ));
-        }
+        let m = opts.arena;
+        let cell = |v: f32| (v / 256.0).clamp(1.0, 1022.0) as u16;
+        let at = (cell(m.hunter[0]), cell(m.hunter[1]));
+        self.player = crate::player::Player::new(area, at);
+        self.player.alpha = m.hunter_alpha;
         let mut s = Survival::new(opts);
-        s.fence = fence;
+        s.fence = Some(Fence::new(
+            area,
+            (i32::from(at.0), i32::from(at.1)),
+            m.spawn,
+        ));
         self.survival = Some(s);
     }
 
@@ -154,7 +144,7 @@ impl Hunt {
             return;
         }
         s.wave += 1;
-        s.rest_ms = s.opts.mobile.as_ref().map_or(4000, |m| m.rest_ms);
+        s.rest_ms = s.opts.arena.rest_ms;
         let n = s.wave;
         // The fallen of the last wave go.
         while let Some(i) = self
@@ -165,53 +155,40 @@ impl Hunt {
         {
             self.remove_character(i);
         }
-        // Who comes: the mobile wave; or the roster, a T-Rex from wave 15,
-        // hardcore extras.
+        // Who comes: what the wave's points buy.
         let s = self.survival.clone().unwrap_or_default();
-        if let Some(m) = &s.opts.mobile {
-            for &ctype in m.wave(n).iter().take(s.opts.max_wave.max(1)) {
-                if m.stand_ins {
-                    self.spawn_wave_animal(area, ctype, n);
-                } else {
-                    self.spawn_in_box(area, ctype, n, m.spawn);
-                }
+        let kinds = super::budget::buy_wave(
+            &s.opts.roster,
+            s.opts.wave_budget(n),
+            s.opts.max_wave,
+            &mut self.rng,
+        );
+        if kinds.is_empty() {
+            if let Some(s) = self.survival.as_mut() {
+                s.wave -= 1;
             }
-            if !m.wave(n).is_empty() && !self.herd.chars.iter().any(|c| c.wave == n) {
-                // A blocked box must not move the wave elsewhere or silently
-                // skip it. Retry this wave after the rest (the hunter can move).
-                if let Some(s) = self.survival.as_mut() {
-                    s.wave -= 1;
-                }
-                out.push(GameEvent::Message(
-                    "Survival spawn blocked; retrying".into(),
-                ));
-                return;
-            }
-            self.health = MAX_HEALTH;
-            self.weapons.resupply();
-            out.push(GameEvent::Message(format!("Wave {n}")));
+            out.push(GameEvent::Message(
+                "No eligible animal fits this wave budget".into(),
+            ));
             return;
         }
-        let mut kinds = Vec::new();
-        if let (Some(t), true) = (s.opts.trex, n >= TREX_WAVE) {
-            kinds.push(t);
-        }
-        while kinds.len() < s.size(n) && !s.opts.roster.is_empty() {
-            let i = self.rng.r_rand(s.opts.roster.len() as i32) as usize;
-            kinds.push(s.opts.roster[i % s.opts.roster.len()]);
-        }
-        if !s.opts.hardcore.is_empty() {
-            for _ in 0..1 + self.rng.r_rand(3) {
-                let i = self.rng.r_rand(s.opts.hardcore.len() as i32) as usize;
-                kinds.push(s.opts.hardcore[i % s.opts.hardcore.len()]);
-            }
-        }
         for ctype in kinds {
-            self.spawn_wave_animal(area, ctype, n);
+            self.spawn_in_box(area, ctype, n, s.opts.arena.spawn);
         }
-        // A rest's worth: health and ammunition back.
+        if !self.herd.chars.iter().any(|c| c.wave == n) {
+            if let Some(s) = self.survival.as_mut() {
+                s.wave -= 1;
+            }
+            out.push(GameEvent::Message(
+                "Survival spawn blocked; retrying".into(),
+            ));
+            return;
+        }
         self.health = MAX_HEALTH;
         self.weapons.resupply();
-        out.push(GameEvent::Message(format!("Wave {n}")));
+        out.push(GameEvent::Message(format!(
+            "Wave {n} ({} points)",
+            s.opts.wave_budget(n)
+        )));
     }
 }
