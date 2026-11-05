@@ -45,7 +45,10 @@ pub(super) fn show(
                         .max_rect(rect.shrink(10.0))
                         .layout(egui::Layout::top_down(egui::Align::Min)),
                 );
-                inner.set_clip_rect(rect.shrink(2.0));
+                // Inside the box, and inside the scrolled page: never over the
+                // panels around it (owner's report 2026-11-05: boxes showed
+                // through the log at the bottom of a small window).
+                inner.set_clip_rect(rect.shrink(2.0).intersect(ui.clip_rect()));
                 match items.get(i) {
                     Some(it) => {
                         instance_box(&mut inner, it, using, mode, busy, ask);
@@ -283,5 +286,40 @@ mod tests {
         assert!(found.contains("play"), "{found:?}");
         assert!(found.contains("build"), "{found:?}");
         assert!(menu, "right click opens Options");
+    }
+
+    /// Owner's report 2026-11-05: in a small window the boxes past the
+    /// scrolled page drew over the log panel under it.
+    #[test]
+    fn boxes_stay_inside_the_scrolled_page() {
+        let ctx = egui::Context::default();
+        let items: Vec<Item> = (0..8).map(|_| item()).collect();
+        let mut view = egui::Rect::NOTHING;
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(600.0, 400.0),
+            )),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .max_height(150.0)
+                    .show(ui, |ui| {
+                        view = ui.clip_rect();
+                        let mut ask = Ask::Nothing;
+                        show(ui, &items, None, crate::Mode::Full, false, &mut ask);
+                    });
+            });
+        });
+        out.textures_delta.clear();
+        assert!(view.height() <= 151.0, "{view:?}");
+        for s in &out.shapes {
+            let c = s.clip_rect;
+            if c.height() > 0.0 && c.min.y >= view.min.y - 1.0 {
+                assert!(c.max.y <= view.max.y + 1.0, "{c:?} past {view:?}");
+            }
+        }
     }
 }
