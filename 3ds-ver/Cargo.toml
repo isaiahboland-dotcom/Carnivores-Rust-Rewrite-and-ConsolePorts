@@ -9,7 +9,7 @@ members = ["c2-cook", "c2-3ds"]
 default-members = ["c2-cook"]
 
 [workspace.package]
-version = "0.4.0"
+version = "0.4.3"
 edition = "2021"
 license = "MIT"
 

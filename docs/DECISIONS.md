@@ -3920,3 +3920,11 @@ JPHL; the editor showed the right game and Anachronous's animals):
   `Config::base`, `overlays`, `addons` and `standalones` remain only for
   "Instance from the old setup".
 
+
+## 2026-11-05 — Third tagged release is v0.4.3
+
+The owner chose v0.4.3 for the launcher release after v0.4.0, skipping 0.4.1 and
+0.4.2; nothing was published under those numbers, and the changelog and notes say so.
+Both workspaces and our own packages in all three lockfiles move to 0.4.3 (outside
+crates that happen to be at 0.4.0 are untouched), with no dependency upgrades,
+following `docs/RELEASING.md`.

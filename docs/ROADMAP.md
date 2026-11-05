@@ -5,13 +5,14 @@ build instructions and milestone definitions live in [DEVELOPMENT.md](DEVELOPMEN
 Implementation does not imply that every platform or combination of mods has been
 validated. Game and mod assets must come from the player's own copies.
 
-## Current milestone: v0.4.0
+## Current milestone: v0.4.3
 
-Hunt options (day/night equipment, multi ammo, advanced observer), a points-based
-survival rewrite, and a launcher that picks parts of standalone games and edits an
-instance's balance. Linux PC play is the gameplay baseline. The 3DS, Wii U and
-Windows paths still need fresh hardware runs. See the
-[v0.4.0 notes](releases/v0.4.0.md).
+A launcher built around instances (home grid, per-platform builds, Edit pages, Fix
+missing, import/export) with launch protection: an instance only plays or builds its
+own base game. Gameplay is as in v0.4.0 (hunt options, points-based survival). Linux PC
+play is the gameplay baseline. The 3DS, Wii U and Windows paths, and the new launcher on
+the Steam Deck and Windows, still need fresh runs. See the
+[v0.4.3 notes](releases/v0.4.3.md) and [v0.4.0 notes](releases/v0.4.0.md).
 
 ## Next priorities
 
