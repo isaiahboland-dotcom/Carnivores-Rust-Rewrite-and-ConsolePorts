@@ -4,6 +4,10 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+mod game_root;
+pub use game_root::game_root;
+use game_root::same_game;
+
 use c2_mods::recipe::{Pictures, Settings, Tuning};
 use serde::{Deserialize, Serialize};
 
@@ -364,10 +368,14 @@ pub fn recipes_dir() -> PathBuf {
 
 impl Config {
     pub fn load() -> Self {
-        std::fs::read_to_string(path())
+        let mut c: Self = std::fs::read_to_string(path())
             .ok()
             .and_then(|t| toml::from_str(&t).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        if c.fix_instance_games() {
+            let _ = c.store();
+        }
+        c
     }
 
     pub fn store(&self) -> Result<(), String> {
@@ -561,13 +569,6 @@ impl Config {
             .map(|a| a.path.clone())
             .collect()
     }
-}
-
-/// A folder's game as compared between the add-on and standalone lists:
-/// its game root (the folder itself if none), resolved on disk.
-fn same_game(p: &Path) -> PathBuf {
-    let r = c2_mods::pack::find_game_root(p).unwrap_or_else(|| p.to_path_buf());
-    std::fs::canonicalize(&r).unwrap_or(r)
 }
 
 /// `name` in `dir`, any case.

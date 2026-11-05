@@ -11,6 +11,9 @@
 - Launcher: editing an instance now covers its balance (a new hunter's points, each area's,
   animal's and weapon's price and score) and **Pick parts** for each of its standalone games,
   and for the base game itself when that is a standalone game (`[recipe.skip]`, PC, 3DS and Wii U).
+- Launcher: 3DS and Wii U builds from an instance no longer stay greyed out when its game was
+  picked or found as a parent folder (`source/`, a download's folder); BUILD says what it is waiting
+  for.
 - Launcher: a game that is on under Standalone games is no longer loaded as an add-on as well
   (directly or inside a folder of add-ons), which brought back all of it and its menu screens.
 

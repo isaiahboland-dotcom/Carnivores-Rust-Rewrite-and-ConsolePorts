@@ -159,6 +159,33 @@ fn big_button(ui: &mut egui::Ui, text: &str, enabled: bool) -> bool {
     .clicked()
 }
 
+/// A build's BUILD button, with what keeps it greyed out listed under it
+/// (owner's report 2026-11-05: greyed out with no reason given).
+fn build_button(ui: &mut egui::Ui, blockers: &[String], busy: bool) -> bool {
+    let go = big_button(ui, "BUILD", blockers.is_empty() && !busy);
+    if busy {
+        help(ui, "Wait for the current operation to finish.");
+    }
+    for b in blockers {
+        ui.label(RichText::new(format!("Not ready: {b}")).color(RED));
+    }
+    go
+}
+
+/// Why `game` can't be built from, if it can't.
+fn game_blocker(game: Option<&Path>, instance: bool) -> Option<String> {
+    match game {
+        None if instance => Some(
+            "the instance has no game: open it on the Instances page and find its base game".into(),
+        ),
+        None => Some("set the game folder first (the Game tab)".into()),
+        Some(g) if describe_game(g).is_none() => {
+            Some(format!("no game (a HUNTDAT folder) in {}", g.display()))
+        }
+        Some(_) => None,
+    }
+}
+
 impl Launcher {
     pub fn new(cc: &eframe::CreationContext<'_>, mode: Mode) -> Self {
         style(&cc.egui_ctx);

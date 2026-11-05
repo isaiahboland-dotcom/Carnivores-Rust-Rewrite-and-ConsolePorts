@@ -90,12 +90,17 @@ impl Launcher {
             Some(r) => self.recipe_game(r).first().cloned(),
             None => self.cfg.base.clone(),
         };
-        let ready = game.as_deref().is_some_and(|b| describe_game(b).is_some())
-            && t.out.is_some()
-            && (t.vanilla_pack
-                || t.addons_pack
-                || (self.active_recipe().is_none() && t.standalone_packs));
-        if big_button(ui, "BUILD", ready && !self.busy()) {
+        let instance = self.active_recipe().is_some();
+        let mut blockers: Vec<String> = game_blocker(game.as_deref(), instance)
+            .into_iter()
+            .collect();
+        if t.out.is_none() {
+            blockers.push("choose the SD card (or a folder) above".into());
+        }
+        if !(t.vanilla_pack || t.addons_pack || (!instance && t.standalone_packs)) {
+            blockers.push("tick at least one pack above".into());
+        }
+        if build_button(ui, &blockers, self.busy()) {
             self.build_3ds();
         }
     }

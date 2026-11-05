@@ -3773,3 +3773,24 @@ list marks such rows. Not changed: the owner's idea of blocking the
 "Mod" menu for Modder's Edition bases (it shows the base's own screens
 correctly); "Android" was already offered only on a base built from an
 APK.
+
+### An instance's game is its game folder; why BUILD is greyed out (2026-11-05)
+
+Owner's report: the 3DS and Wii U builds stayed greyed out for some
+instances (jphl, and others) with every option picked, and said nothing
+("set the game folder first" on the Wii U page, with the Game tab set).
+Cause: an instance's game was kept as given, the folder picked on its
+recipe page or the search folder its base was found under (`source/`,
+`addons-extracted/jphl-se`). Play and `recipe verify` search a few
+folders down for the game and worked; the build pages looked for
+`HUNTDAT` in that folder itself. Now the recipe page keeps the game
+folder found in what is picked or found (`config::game_root`, as
+`c2-pc` finds it), and on start the launcher corrects the instances it
+remembers (once; stored). The BUILD buttons on the 3DS and Wii U pages
+list what keeps them greyed out (no game, no SD card, nothing ticked).
+
+Found while checking: JPHL Special Edition's 3DS pack is over the
+memory budget on both targets (the linear memory: each area about
+22-26 MiB with 8 MiB more, against 22), so its build stops with
+`c2-cook`'s budget error, shown in the job log. The launcher does not
+pass `--force`: an over-budget pack can fail on the console.

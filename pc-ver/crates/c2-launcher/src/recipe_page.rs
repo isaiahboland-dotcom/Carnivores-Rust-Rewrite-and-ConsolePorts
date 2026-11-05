@@ -290,7 +290,7 @@ impl Page {
                 }
                 Msg::Base(s) => self.base_status = s,
                 Msg::Found(g, s) => {
-                    self.game = Some(g);
+                    self.game = Some(crate::config::game_root(&g));
                     self.base_status = s;
                 }
             }
@@ -458,7 +458,8 @@ impl Page {
         });
         if pick_game {
             if let Some(p) = rfd::FileDialog::new().pick_folder() {
-                self.game = Some(p);
+                // The game folder in it (a download's parent picked).
+                self.game = Some(crate::config::game_root(&p));
                 self.check_base(game_dirs.to_vec());
             }
         }

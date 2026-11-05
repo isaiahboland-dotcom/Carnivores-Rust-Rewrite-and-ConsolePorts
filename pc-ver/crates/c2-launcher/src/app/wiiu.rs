@@ -19,7 +19,6 @@ impl Launcher {
             .active_recipe()
             .and_then(|r| self.recipe_game(r).first().cloned())
             .or_else(|| self.cfg.base.clone());
-        let kind = game.as_deref().and_then(describe_game);
         panel(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label("SD card (or a folder):");
@@ -41,9 +40,6 @@ impl Launcher {
         ui.add_space(8.0);
         panel(ui, |ui| {
             ui.label(RichText::new("What goes on").color(GOLD));
-            if kind.is_none() {
-                ui.label(RichText::new("set the game folder first (The game tab)").color(RED));
-            }
             let on = self.cfg.enabled_addons().len();
             let overlays = self.cfg.overlays.len();
             let standalones = self.cfg.enabled_standalones().len();
@@ -146,9 +142,21 @@ impl Launcher {
             self.save();
         }
         ui.add_space(12.0);
-        let ready =
-            kind.is_some() && self.cfg.wiiu.out.is_some() && !self.wiiu_installs().is_empty();
-        if big_button(ui, "BUILD", ready && !self.busy()) {
+        let instance = self.active_recipe().is_some();
+        let mut blockers: Vec<String> = game_blocker(game.as_deref(), instance)
+            .into_iter()
+            .collect();
+        if self.cfg.wiiu.out.is_none() {
+            blockers.push("choose the SD card (or a folder) above".into());
+        }
+        if blockers.is_empty() && self.wiiu_installs().is_empty() {
+            blockers.push(if instance {
+                "tick \"Saved instance\" under What goes on".into()
+            } else {
+                "tick at least one install under What goes on".into()
+            });
+        }
+        if build_button(ui, &blockers, self.busy()) {
             self.build_wiiu();
         }
     }
