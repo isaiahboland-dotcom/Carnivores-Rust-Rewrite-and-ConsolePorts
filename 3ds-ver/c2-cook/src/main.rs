@@ -1432,7 +1432,8 @@ fn main() -> Result<()> {
     println!(
         "  3DS memory: base (area, hunter, ambient animals) + the 3 costliest animals and weapons"
     );
-    let mut over = false;
+    // Areas whose base (area, hunter, every ambient animal there) is over.
+    let mut over_areas: Vec<String> = Vec::new();
     let mut worst = false;
     let mut base_heap = BTreeMap::new();
     for name in &areas {
@@ -1464,7 +1465,9 @@ fn main() -> Result<()> {
             mib(lin),
             mib(picks_linear)
         );
-        over |= base > profile.heap_kb || lin > profile.linear_kb;
+        if base > profile.heap_kb || lin > profile.linear_kb {
+            over_areas.push(name.clone());
+        }
         worst |= base + picks_heap > profile.heap_kb || lin + picks_linear > profile.linear_kb;
     }
     println!(
@@ -1473,15 +1476,27 @@ fn main() -> Result<()> {
         mib(profile.linear_kb),
         mib(sum("menu"))
     );
-    if worst && !over {
+    if worst && over_areas.is_empty() {
         println!(
             "  The costliest picks don't fit together; the 3DS menu says when picks are too much."
         );
     }
-    if over && !a.force {
-        bail!(
-            "over the {} budget; use --target o3ds for smaller textures, or --force",
-            profile.name
+    // The console checks each hunt as picked (the ambient animals it places,
+    // the picks) and refuses one that doesn't fit ("Too much for this
+    // console"): a pack with some areas over plays the rest (JPHL Special
+    // Edition on Old 3DS, owner's hardware). Only a pack where no area fits
+    // is refused.
+    if !over_areas.is_empty() {
+        if over_areas.len() == areas.len() && !a.force {
+            bail!(
+                "over the {} budget in every area; use --target o3ds for smaller textures, or --force",
+                profile.name
+            );
+        }
+        println!(
+            "  Over the budget with every ambient animal: {}. The 3DS menu refuses a hunt there that \
+             doesn't fit (\"Too much for this console\"); fewer ambient animals or picks may fit.",
+            over_areas.join(", ")
         );
     }
     // What each piece costs, for the 3DS menu to check a hunt fits:

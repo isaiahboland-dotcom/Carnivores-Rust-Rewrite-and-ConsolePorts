@@ -14,6 +14,9 @@
 - Launcher: 3DS and Wii U builds from an instance no longer stay greyed out when its game was
   picked or found as a parent folder (`source/`, a download's folder); BUILD says what it is waiting
   for.
+- 3DS: `c2-cook` no longer refuses a whole pack when some areas are over the memory budget with
+  every ambient animal (the console already refuses a hunt that doesn't fit); it names those
+  areas, and fails only when no area fits. JPHL Special Edition builds from the launcher again.
 - Launcher: a game that is on under Standalone games is no longer loaded as an add-on as well
   (directly or inside a folder of add-ons), which brought back all of it and its menu screens.
 

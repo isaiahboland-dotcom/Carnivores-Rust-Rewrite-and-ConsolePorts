@@ -8,7 +8,7 @@
 #   c2-pc play GAME
 #
 # 3DS pack (Old 3DS: --target o3ds), into sdmc:/3ds/<install>/:
-#   c2-cook --game GAME --target o3ds --force --out jphl.c2pk
+#   c2-cook --game GAME --target o3ds --out jphl.c2pk
 #
 
 [recipe]

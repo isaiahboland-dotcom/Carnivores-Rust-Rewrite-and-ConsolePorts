@@ -3789,8 +3789,16 @@ folder found in what is picked or found (`config::game_root`, as
 remembers (once; stored). The BUILD buttons on the 3DS and Wii U pages
 list what keeps them greyed out (no game, no SD card, nothing ticked).
 
-Found while checking: JPHL Special Edition's 3DS pack is over the
-memory budget on both targets (the linear memory: each area about
-22-26 MiB with 8 MiB more, against 22), so its build stops with
-`c2-cook`'s budget error, shown in the job log. The launcher does not
-pass `--force`: an over-budget pack can fail on the console.
+Found while checking: the launcher still could not make JPHL Special
+Edition's pack. `c2-cook` refused the whole pack when any area's base
+(the area, the hunter and every ambient animal placed there) was over
+the budget: JPHL's AREA4-6 are (22.3-25.7 MiB of 22 linear; AREA1-3 and
+7 fit). It had been built by hand with `--force` (its recipe said so)
+and plays on the owner's Old 3DS, because the console checks each hunt
+as picked (the ambient animals it actually places, the picks) and
+refuses one that doesn't fit ("Too much for this console") instead of
+loading it. The cook's figure is the worst case. Now `c2-cook` writes
+the pack and names the areas that may be refused; it fails only when
+no area fits (`--force` still overrides that). The shrinking it does
+was all there and runs as before (Old 3DS textures, thinned animations,
+thinned trees and plants).
