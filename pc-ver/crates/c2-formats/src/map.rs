@@ -25,7 +25,7 @@ pub struct Map {
     pub objects: Vec<u8>,
     /// `FMap`: per-cell flags.
     pub flags: Vec<u16>,
-    /// `LMap`: light maps indexed by time of day (`OptDayNight`: 0 day, 1 dusk, 2 night).
+    /// `LMap`: light maps indexed by time of day (`OptDayNight`: 0 the menu's dawn, 1 day, 2 night).
     pub light: [Vec<u8>; 3],
     /// `WMap`: water index per cell.
     pub water: Vec<u8>,

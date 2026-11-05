@@ -3525,3 +3525,41 @@ Instance hunters start empty instead of importing source-folder trophies.
 Direct launches retain the existing shared saves (including Ice Age's separate
 shared profile). Existing saves are neither moved nor deleted; cloning an
 instance must give it a distinct recipe ID to keep progress separate.
+
+### Android (APK) mode: phone menus only, one light at a time, paged animals (2026-11-05)
+
+Owner playtest (PC and Steam Deck, an instance built from the Dinosaur Hunter
+APK):
+
+- **Menus.** A game built from an APK has no PC menu frames. Choosing the
+  "Original" menu passed the APK folder itself as `--menu-art`, the menu then
+  skipped the phone layout and drew empty PC boards (the black screen). `c2-pc`
+  now uses the phone's menus whenever the `--menu-art` folder has no frames, and
+  the launcher plays such a game (on its own, no standalones) with the Android
+  menus only, without changing the Menu choice other instances use. The
+  "Experimental mobile layout" choice is gone from the launcher: without the
+  APK's pictures (calls, binoculars, map, menu icons) it was not the phone game;
+  "Android" is offered only when the base is built from an APK. `--mobile-menu`
+  still works from the command line.
+- **Night vision / flashlight.** Bought on the gear page (dynamic time), they
+  could only be switched with N / L, so a pad or a touch screen could not use
+  them. Now: the pad's right stick click (VR's recenter, unused in PC hunts)
+  steps off → flashlight → night vision, skipping what was not bought; the
+  Android hunt screen shows two round yellow buttons, "nv" and "light", that a
+  touch (new: `WindowEvent::Touch`, since the hunt's captured pointer gives
+  clicks no place) or a free pointer's click switches. Only one light is on at
+  a time, as the owner asked: switching one on turns the other off and greys
+  its button. A tap on a button does not also fire. The Wii U keeps its own
+  stick clicks.
+- **Animals page.** With more than 20 animals (modded rosters) the honeycomb
+  used to add rows and shrink every picture. It now keeps the phone's size, 20
+  a page (four rows of five), with back / on arrows beside the account and the
+  page number under it (also Page Up / Page Down).
+- **Scrolling.** The Steam Deck needed its back buttons mapped to the mouse
+  wheel for the options list. The pad's right stick and D-pad up / down now
+  scroll lists in every menu, and dragging the Android options list scrolls it.
+- **Dawn at night** (same report) did not reproduce: the APK's areas carry the
+  PC's three light maps in the PC's order (identical averages to the original
+  `AREA1.MAP`/`AREA2.MAP`), and Dawn picked in the Android menu renders as dawn
+  with dynamic time on (the owner's setting), from the command line and through
+  the menu. Left open for the owner to retest.

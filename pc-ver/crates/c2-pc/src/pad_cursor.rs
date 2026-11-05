@@ -3,6 +3,7 @@
 //! A clicks where it is, B is Escape (back), + is Enter. The menus read it
 //! as the mouse (`Input::cursor`, `clicked`), so every screen takes it as it
 //! is. Moving the mouse hides the arrow and the pad carries on from there.
+//! The right stick and D-pad up / down scroll lists, as the mouse wheel.
 //! Off while the cursor is captured (the hunt reads the pad itself). While
 //! it shows, "A Select  B Back" sits in the bottom right.
 
@@ -14,6 +15,8 @@ use crate::input::Input;
 
 /// Full over, the arrow crosses this share of the window's height a second.
 const SPEED: f32 = 1.1;
+/// Rows a second the right stick scrolls, pushed all the way.
+const SCROLL: f32 = 8.0;
 /// The arrow image's size and on-screen scale.
 const W: usize = 12;
 const H: usize = 18;
@@ -92,6 +95,14 @@ impl PadCursor {
             return;
         }
         let pad = input.pad;
+        // The right stick and the D-pad scroll lists, as the wheel does.
+        input.scroll += pad.look[1] * SCROLL * dt;
+        if pad.pressed(Pad::Crouch) {
+            input.scroll += 1.0;
+        }
+        if pad.pressed(Pad::NextCall) {
+            input.scroll -= 1.0;
+        }
         let (w, h) = (size.0.max(1) as f32, size.1.max(1) as f32);
         let [sx, sy] = pad.walk;
         if sx != 0.0 || sy != 0.0 || pad.pressed(Pad::Jump) {

@@ -371,7 +371,7 @@ impl Launcher {
             let mut launch = self.balance_args();
             launch.extend(["--save-instance".into(), r.id()]);
             launch.extend(self.survival_args());
-            match self.cfg.menu_style {
+            match self.menu_style() {
                 MenuStyle::Mobile => launch.push("--mobile-menu".into()),
                 MenuStyle::Original | MenuStyle::IceAge => {
                     let art = if self.cfg.menu_style == MenuStyle::IceAge {

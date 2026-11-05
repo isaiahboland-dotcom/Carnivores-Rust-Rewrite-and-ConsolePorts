@@ -258,7 +258,7 @@ impl Launcher {
         }
         args.extend(self.balance_args());
         args.extend(self.survival_args());
-        let art = match self.cfg.menu_style {
+        let art = match self.menu_style() {
             MenuStyle::Original => self.cfg.base.clone(),
             MenuStyle::IceAge => self.cfg.ice_age.clone(),
             MenuStyle::Mod => None,
@@ -287,21 +287,34 @@ impl Launcher {
                 changed |= ui
                     .radio_value(&mut t.ice_age_title, true, "Ice Age")
                     .changed();
+            } else if self.plays_phone_game() {
+                ui.label(
+                    RichText::new("Android (a game built from an APK has the phone's menus only)")
+                        .color(SAND),
+                );
             } else {
                 for (s, name) in [
                     (MenuStyle::Original, "Original"),
                     (MenuStyle::Mod, "Mod"),
                     (MenuStyle::IceAge, "Ice Age"),
-                    (MenuStyle::Mobile, "Experimental mobile layout"),
                 ] {
-                    changed |= ui.radio_value(&mut self.cfg.menu_style, s, name).changed();
+                    let on = self.menu_style() == s;
+                    if ui.radio(on, name).clicked() && !on {
+                        self.cfg.menu_style = s;
+                        changed = true;
+                    }
                 }
+                ui.add_enabled(false, egui::RadioButton::new(false, "Android"))
+                    .on_disabled_hover_text(
+                        "The Android menus need a game built from your APK as the base \
+                         (its call, binocular, map and menu pictures).",
+                    );
             }
         });
         let wants_ia = if three_ds {
             self.cfg.three_ds.ice_age_title
         } else {
-            self.cfg.menu_style == MenuStyle::IceAge
+            self.menu_style() == MenuStyle::IceAge
         };
         if wants_ia {
             ui.horizontal(|ui| {

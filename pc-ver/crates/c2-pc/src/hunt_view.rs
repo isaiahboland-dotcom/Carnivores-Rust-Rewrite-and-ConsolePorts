@@ -35,6 +35,7 @@ use crate::weapons::{load_weapons, WeaponAssets};
 use c2_core::ship::ship_sound;
 use c2_core::sound::SoundCmd;
 
+mod lights;
 mod map;
 mod map_viewport;
 
@@ -143,6 +144,8 @@ pub struct HuntView {
     /// Teleporting: the marker on the open map (world x, z), and the spot
     /// picked (a circle) waiting for Enter.
     map_cursor: Option<(f32, f32)>,
+    /// The window's size at the last draw (taps on the light buttons).
+    screen: (u32, u32),
     map_viewport: map_viewport::MapViewport,
     teleport_pick: Option<(f32, f32)>,
     call_imgs: Vec<Option<usize>>,
@@ -421,6 +424,7 @@ impl HuntView {
             map_mobile: setup.pc.map_mobile != 0 || kit.is_some(),
             kit,
             map_cursor: None,
+            screen: (1280, 720),
             map_viewport: map_viewport::MapViewport::default(),
             teleport_pick: None,
             call_imgs,
@@ -1605,18 +1609,7 @@ impl Scene for HuntView {
             self.view.update(gpu, 0.0, &Input::default());
             return;
         }
-        if self.view.area.cycle.is_some()
-            && !self.hunt.show_exit()
-            && !self.hunt.paused
-            && self.hunt.death.is_none()
-        {
-            if self.setup.night_vision && input.pressed(KeyCode::KeyN) {
-                self.view.night_vision = Some(!self.view.night_vision.unwrap_or(false));
-            }
-            if self.setup.flashlight && input.pressed(KeyCode::KeyL) {
-                self.view.flashlight = !self.view.flashlight;
-            }
-        }
+        let light_tapped = self.update_lights(input);
         let k = self.hunt.room.options.keys;
         let pressed = |vk| keys::pressed(input, vk);
         self.weapon_flash = (self.weapon_flash - dt).max(0.0);
@@ -1767,6 +1760,9 @@ impl Scene for HuntView {
             ..self.pending
         };
         // A virtual pointer works while the hunt owns the captured mouse.
+        if light_tapped {
+            hin.fire = false;
+        }
         // Map gestures do not turn the camera or fire a weapon.
         if self.hunt.map_mode && !self.hunt.show_exit() {
             self.map_viewport
@@ -1880,6 +1876,7 @@ impl Scene for HuntView {
     }
 
     fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, screen: (u32, u32)) {
+        self.screen = screen;
         let aspect = screen.0.max(1) as f32 / screen.1.max(1) as f32;
         // Weapon light: 96 + ground light / 4 (`wpnlight`).
         let p = &self.hunt.player;
@@ -2334,37 +2331,17 @@ impl Scene for HuntView {
                 ("A".to_string(), "Jump"),
                 ("D-pad up".to_string(), "Crouch"),
             ];
-            let rows = if self.pad_last { pad } else { keyboard };
+            let mut rows: Vec<(String, &str)> = if self.pad_last {
+                pad.to_vec()
+            } else {
+                keyboard.to_vec()
+            };
+            rows.extend(self.light_hints(self.pad_last));
             let rows: Vec<(&str, &str)> = rows.iter().map(|(b, a)| (b.as_str(), *a)).collect();
             let y = screen.1 as f32 - 28.0 * scale;
             self.hint_bar(&mut sprites, screen, scale, y, false, &rows);
         }
-        if self.view.area.cycle.is_some() && self.hunt.death.is_none() {
-            let mut y = 12.0 * scale;
-            for (owned, key, name, on) in [
-                (
-                    self.setup.night_vision,
-                    "N",
-                    "Night vision",
-                    self.view.night_vision == Some(true),
-                ),
-                (
-                    self.setup.flashlight,
-                    "L",
-                    "Flashlight",
-                    self.view.flashlight,
-                ),
-            ] {
-                if owned {
-                    let label = format!("{key}: {name} {}", if on { "On" } else { "Off" });
-                    sprites.extend(
-                        self.hud
-                            .label(12.0 * scale, y, 9.0 * scale, [1.0; 4], &label),
-                    );
-                    y += 14.0 * scale;
-                }
-            }
-        }
+        self.draw_lights(&mut sprites, scale);
         self.hud.draw(gpu, pass, screen, &sprites);
     }
 

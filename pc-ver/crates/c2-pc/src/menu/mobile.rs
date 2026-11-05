@@ -7,6 +7,9 @@
 
 use super::*;
 
+mod comb;
+use comb::Comb;
+
 /// The menus' dark olive, which the hexagon frames are filled with.
 const BG: [u8; 3] = [18, 24, 16];
 const BG_F: [f32; 4] = [18.0 / 255.0, 24.0 / 255.0, 16.0 / 255.0, 1.0];
@@ -165,11 +168,12 @@ impl Menu {
     fn mobile_cells(&self) -> Vec<(usize, f32, f32, f32, f32)> {
         let col = &self.columns[self.mobile_col()];
         if self.kit.is_some() {
-            let comb = Comb::new(col.order.len(), self.mobile_page);
+            let items = self.comb_items();
+            let comb = Comb::new(items.len(), self.mobile_page);
             return comb
                 .cells()
                 .into_iter()
-                .zip(&col.order)
+                .zip(items)
                 .map(|((x, y), &i)| (i, x + comb.w / 2.0, y + comb.h / 2.0, comb.w, comb.h))
                 .collect();
         }
@@ -296,7 +300,7 @@ impl Menu {
         if let Some((i, ..)) = hovered {
             self.choice.focus = Some((col, i));
         }
-        if !input.clicked {
+        if self.update_comb_arrows(input) || !input.clicked {
             return;
         }
         if inside(p, next) {
@@ -508,72 +512,6 @@ const KIT_BACK: Rect = (11.0, 505.0, 178.0, 52.0);
 const KIT_NEXT: Rect = (611.0, 505.0, 178.0, 52.0);
 const KIT_RIGHT: f32 = 787.0;
 
-/// The honeycomb: corner-up cells `w` x `h`, `sx` apart in a row and `sy`
-/// between rows, every other row half a cell in; the first cell's top
-/// left, and each row's length (the longer rows last, as the phone's).
-struct Comb {
-    w: f32,
-    h: f32,
-    sx: f32,
-    sy: f32,
-    x0: f32,
-    y0: f32,
-    rows: Vec<usize>,
-}
-
-impl Comb {
-    /// `n` cells: the phone's rows (three; four of animals), more and
-    /// smaller when they wouldn't fit across.
-    fn new(n: usize, page: usize) -> Self {
-        let (gx, gy, gw, gh) = KIT_GRID;
-        let mut r: usize = if page == 1 { 4 } else { 3 };
-        loop {
-            let h = (420.0 / (1.0 + 0.843 * (r - 1) as f32)).min(163.0);
-            let (w, sy) = (h * 0.9, h * 0.843);
-            let sx = w * 1.06;
-            let long = n.div_ceil(r).max(1);
-            if (long - 1) as f32 * sx + w + sx / 2.0 <= gw || r >= 12 {
-                let (base, extra) = (n / r, n % r);
-                let rows = (0..r).map(|i| base + usize::from(i >= r - extra)).collect();
-                let tall = h + sy * (r - 1) as f32;
-                return Self {
-                    w,
-                    h,
-                    sx,
-                    sy,
-                    x0: gx,
-                    y0: gy + ((gh - tall) / 2.0).max(0.0),
-                    rows,
-                };
-            }
-            r += 1;
-        }
-    }
-
-    /// Cell `row`, `col`'s top left (beyond the rows too: the empty
-    /// cells around).
-    fn at(&self, row: i32, col: i32) -> (f32, f32) {
-        let odd = if row.rem_euclid(2) == 1 {
-            self.sx / 2.0
-        } else {
-            0.0
-        };
-        (
-            self.x0 + col as f32 * self.sx + odd,
-            self.y0 + row as f32 * self.sy,
-        )
-    }
-
-    fn cells(&self) -> Vec<(f32, f32)> {
-        self.rows
-            .iter()
-            .enumerate()
-            .flat_map(|(r, &n)| (0..n).map(move |c| (r, c)))
-            .map(|(r, c)| self.at(r as i32, c as i32))
-            .collect()
-    }
-}
-
 /// The kit's faces.
 #[derive(Clone, Copy)]
 enum Face {
@@ -626,7 +564,7 @@ impl Menu {
             self.tinted(out, bg, cover, full, [1.0; 4]);
         }
         // The empty cells of the honeycomb, all over.
-        let comb = Comb::new(c.order.len(), page);
+        let comb = Comb::new(self.comb_items().len(), page);
         if let Some(id) = k.empty {
             let r0 = ((cover.1 - comb.y0) / comb.sy).floor() as i32 - 1;
             let r1 = ((cover.1 + cover.3 - comb.y0) / comb.sy).ceil() as i32;
@@ -901,6 +839,7 @@ impl Menu {
         let acc = format!("Your Account: {left}");
         let color = if left < 0 { RED } else { PALE };
         self.kit_line(out, Face::Body, (CW / 2.0, 517.0), 26.0, color, &acc, 0.5);
+        self.draw_comb_arrows(out, k);
     }
 }
 

@@ -182,6 +182,11 @@ impl ApplicationHandler for App {
                     r.input.grabbed = grab(&r.window, true);
                 }
             }
+            WindowEvent::Touch(t) if t.phase == winit::event::TouchPhase::Started => {
+                r.input
+                    .taps
+                    .push((t.location.x as f32, t.location.y as f32));
+            }
             WindowEvent::Focused(false) if r.input.grabbed => {
                 r.input.grabbed = grab(&r.window, false);
             }

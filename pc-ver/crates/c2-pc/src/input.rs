@@ -20,6 +20,9 @@ pub struct Input {
     pub right_clicked: bool,
     /// Cursor position in window pixels.
     pub cursor: Option<(f32, f32)>,
+    /// Touches that began this frame, in window pixels. A captured pointer
+    /// gives clicks no place, so the hunt's on-screen buttons read these.
+    pub taps: Vec<(f32, f32)>,
     /// Text typed this frame (name entry).
     pub typed: String,
     /// The last key that went down this frame (key binding).
@@ -55,6 +58,7 @@ impl Input {
         self.scroll = 0.0;
         self.clicked = false;
         self.right_clicked = false;
+        self.taps.clear();
         self.typed.clear();
         self.last_pressed = None;
     }

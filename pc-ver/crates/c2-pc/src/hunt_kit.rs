@@ -33,6 +33,8 @@ pub struct HuntKit {
     /// The compass's face, and the area's painted map (grid and all).
     compass: Option<usize>,
     pub map: Option<usize>,
+    /// A round button (our own drawing, tinted): night vision, flashlight.
+    disc: usize,
 }
 
 /// The phone's yellow (the hunt's words, buttons, rings).
@@ -50,6 +52,7 @@ impl HuntKit {
         map: Option<&str>,
     ) -> Option<Self> {
         let kit = Kit::load(huntdat, hud, gpu)?;
+        let disc = hud.add_image_filtered(gpu, DISC as u32, DISC as u32, &disc(), true);
         let compass = kit.picture("COMPAS.PNG", hud, gpu);
         let map = map.and_then(|m| kit.picture(&format!("MAPS/{m}.PNG"), hud, gpu));
         let mut img = |n: &str| kit.image(n, hud, gpu);
@@ -80,6 +83,7 @@ impl HuntKit {
             active: img("game_active_cell"),
             compass,
             map,
+            disc,
             kit,
         })
     }
@@ -248,6 +252,51 @@ impl HuntKit {
                 YELLOW,
                 t,
             );
+        }
+    }
+
+    /// A round light button at (centre x, y, diameter): yellow when on, dim
+    /// when off, grey while the other light is on. Its word sits in the
+    /// middle.
+    pub fn light_button(
+        &self,
+        hud: &Hud,
+        (x, y, d): (f32, f32, f32),
+        word: &str,
+        on: bool,
+        other_on: bool,
+        out: &mut Vec<Sprite>,
+    ) {
+        let tint = if on {
+            YELLOW
+        } else if other_on {
+            [0.42, 0.42, 0.4, 0.6]
+        } else {
+            [YELLOW[0], YELLOW[1], YELLOW[2], 0.55]
+        };
+        if hud.image(self.disc).is_some() {
+            out.push(Sprite {
+                size: Some([d, d]),
+                color: tint,
+                ..Sprite::new(self.disc, x - d / 2.0, y - d / 2.0, 1.0)
+            });
+        }
+        let ink = [BLACK[0], BLACK[1], BLACK[2], if on { 1.0 } else { 0.75 }];
+        if let Some(f) = self.kit.body.as_ref().or(self.kit.heading.as_ref()) {
+            let px = (d * 0.36).round();
+            let w = f.width(px, word);
+            f.sprites(
+                out,
+                (1.0, 0.0, 0.0),
+                (x - w / 2.0, y - px * 0.55),
+                px,
+                ink,
+                word,
+            );
+        } else {
+            let px = d * 0.3;
+            let w = hud.label_width(px, word);
+            out.extend(hud.label(x - w / 2.0, y - px / 2.0, px, ink, word));
         }
     }
 
@@ -583,4 +632,23 @@ pub struct Buttons {
     pub ammo: Option<String>,
     /// Where the hunter looks (radians, 0 north), for the compass.
     pub heading: f32,
+}
+
+/// The light buttons' disc picture's side.
+const DISC: usize = 64;
+
+/// A white disc with a soft edge and a darker rim, to be tinted.
+fn disc() -> Vec<u8> {
+    let mut px = vec![0u8; DISC * DISC * 4];
+    let r = DISC as f32 / 2.0;
+    for y in 0..DISC {
+        for x in 0..DISC {
+            let d = (x as f32 + 0.5 - r).hypot(y as f32 + 0.5 - r);
+            let alpha = (r - d).clamp(0.0, 1.0);
+            let shade = if d > r - 4.0 { 150 } else { 255 };
+            let i = (y * DISC + x) * 4;
+            px[i..i + 4].copy_from_slice(&[shade, shade, shade, (alpha * 255.0) as u8]);
+        }
+    }
+    px
 }

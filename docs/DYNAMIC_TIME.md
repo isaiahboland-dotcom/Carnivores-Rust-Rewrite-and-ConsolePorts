@@ -37,7 +37,11 @@ not a permanent equipment inventory. Select what to carry before starting.
 Both devices start switched off and reset to off when restarting a hunt.
 
 On PC, press **N** to toggle equipped night vision or **L** to toggle the
-flashlight. The HUD shows their state. Night vision provides the familiar
+flashlight; on a gamepad, click the **right stick** to step through off,
+flashlight and night vision. Only one is on at a time: turning one on turns
+the other off. The HUD shows their state; a game built from an APK shows the
+phone-style round **nv** and **light** buttons at the right edge, which a tap
+or a click also switches (the other greys while one is on). Night vision provides the familiar
 green view; the flashlight illuminates a soft forward cone with distance
 falloff, reaching up to 80 metres. It does not add a shadow-map pass.
 

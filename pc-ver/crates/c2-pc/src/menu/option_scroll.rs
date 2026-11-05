@@ -5,6 +5,9 @@ use super::*;
 pub(super) struct Scroll {
     pub first: usize,
     remainder: f32,
+    /// A finger (or the held button) dragging the list: where it was, in
+    /// canvas units.
+    grab: Option<f32>,
 }
 impl Scroll {
     fn wheel(&mut self, delta: f32, max: usize) {
@@ -83,6 +86,22 @@ impl Menu {
         if inside(self.cursor, panel) {
             self.game_scroll.wheel(input.scroll, max);
         }
+        // Touch: dragging the list a row's height moves it a row (not
+        // while a slider is held).
+        let y = self.cursor.map(|c| c.1);
+        self.game_scroll.grab = match (self.game_scroll.grab, y) {
+            (_, Some(y)) if mobile && input.mouse_down && self.drag.is_none() => {
+                match self.game_scroll.grab {
+                    Some(from) => {
+                        let rows = ((y - from) / OPT_ROW).trunc();
+                        self.game_scroll.wheel(rows, max);
+                        Some(from + rows * OPT_ROW)
+                    }
+                    None => (input.clicked && inside(self.cursor, panel)).then_some(y),
+                }
+            }
+            _ => None,
+        };
         if input.clicked {
             if inside(self.cursor, up) {
                 self.game_scroll.first = self.game_scroll.first.saturating_sub(1);

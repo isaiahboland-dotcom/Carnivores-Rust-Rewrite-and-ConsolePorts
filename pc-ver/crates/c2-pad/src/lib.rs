@@ -20,7 +20,7 @@
 //! | D-pad down | next call |
 //! | + / Start | pause |
 //! | − / Select | exit prompt (VR: quit) |
-//! | right stick click | VR: recenter (standing height here, the menu in front) |
+//! | right stick click | VR: recenter (standing height here, the menu in front); PC hunt: next light (off, flashlight, night vision) |
 
 use gilrs::{Axis, Button, EventType, Gilrs, GilrsBuilder};
 

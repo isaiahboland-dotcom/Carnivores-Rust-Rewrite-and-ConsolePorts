@@ -185,6 +185,36 @@ impl Launcher {
         (bases, mods)
     }
 
+    /// The game played is one built from an APK, with no standalone game
+    /// beside it: it has the phone's menus only (the PC's would be black,
+    /// its folder has no PC frames), whatever the Menu choice says.
+    pub(super) fn plays_phone_game(&self) -> bool {
+        match self.active_recipe() {
+            Some(r) => self
+                .recipe_game(r)
+                .first()
+                .is_some_and(|g| crate::config::is_phone_game(g)),
+            None => {
+                self.cfg.enabled_standalones().is_empty()
+                    && self
+                        .cfg
+                        .base
+                        .as_deref()
+                        .is_some_and(crate::config::is_phone_game)
+            }
+        }
+    }
+
+    /// The menu the game is played with: the phone's for a phone game, and
+    /// only there (without the APK's pictures it would be the mod's).
+    pub(super) fn menu_style(&self) -> MenuStyle {
+        match (self.plays_phone_game(), self.cfg.menu_style) {
+            (true, _) => MenuStyle::Mobile,
+            (false, MenuStyle::Mobile) => MenuStyle::Mod,
+            (false, s) => s,
+        }
+    }
+
     /// The recipe in use, if it is on.
     pub(super) fn active_recipe(&self) -> Option<&RecipeUse> {
         self.cfg.recipe.as_ref().filter(|r| r.on)

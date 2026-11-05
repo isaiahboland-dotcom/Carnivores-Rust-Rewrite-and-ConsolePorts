@@ -468,6 +468,8 @@ pub struct Menu {
     /// (0 maps, 1 animals, 2 weapons and gear).
     mobile: Option<mobile::Art>,
     mobile_page: usize,
+    /// The animals' page in twenties (the phone layout, modded rosters).
+    comb_page: usize,
     /// The phone game's interface art (a game built from an APK).
     kit: Option<kit::Kit>,
     /// The signed-in hunter's record (`trophy0N.rec`), read when the
@@ -651,8 +653,10 @@ impl Menu {
         let options = board("OPT_OFF.TGA", "OPT_ON.TGA", "OPT_MAP.RAW");
         let credits = board("CREDITS.TGA", "", "");
         // A game built from the player's APK keeps the phone's interface
-        // art and has no PC frames: its menus are drawn as the phone's.
-        let kit = (MENU_ART.get().is_none() && find_file(&dir, "MENUM.TGA").is_none())
+        // art and has no PC frames: its menus are drawn as the phone's,
+        // also when `--menu-art` names a folder without frames (the APK's
+        // own, picked as "Original": the PC boards would be black).
+        let kit = (art == dir && find_file(&dir, "MENUM.TGA").is_none())
             .then(|| kit::Kit::load(&huntdat, &mut hud, gpu))
             .flatten();
         let mut kit_loading = None;
@@ -1071,6 +1075,7 @@ impl Menu {
         let mut m = Self {
             mobile,
             mobile_page: 0,
+            comb_page: 0,
             kit,
             record: Default::default(),
             clear_armed: false,

@@ -161,11 +161,12 @@ cargo run --release -p c2-pc -- play GAME --recipe ../recipes/c2-mee-addons.toml
 **Controls:** keyboard and mouse follow your bindings (Options > Controls). A gamepad works too: left
 stick moves, right stick looks, ZL draws, ZR fires, L binoculars, R map, A jump, B run, X call, Y next
 weapon, D-pad up crouch / down change call, + pause, − exit. In the menus, the left stick moves a pointer,
-A clicks and B goes back.
+A clicks, B goes back, and the right stick or D-pad scrolls lists.
 Enable **Map zoom / pan** under **Options > Video** (off by default).
 With the PC map open, use the wheel to zoom at the pointer, right-drag to pan,
 and Home to restore the full map. Dynamic-time equipment uses N for night vision
-and L for the flashlight; select it under Equipment before the hunt.
+and L for the flashlight (one at a time; the right stick click on a pad, or the
+round nv / light buttons on the Android screen); select it under Equipment before the hunt.
 Dynamic-time night kills earn +20% while night vision is off; using the
 flashlight keeps that bonus.
 
