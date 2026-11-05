@@ -32,6 +32,8 @@ pub(crate) enum Completion {
     /// The editor's game folder and the base profile it matches.
     BaseMatch(Box<(PathBuf, Option<String>)>),
     Addons(Vec<PathBuf>),
+    /// The game closed: the instance played, seconds, and any error.
+    Played(Box<(Option<PathBuf>, u64, Option<String>)>),
     Saved(Box<(c2_mods::recipe::Recipe, crate::config::RecipeUse)>),
     ApkBase {
         out: PathBuf,

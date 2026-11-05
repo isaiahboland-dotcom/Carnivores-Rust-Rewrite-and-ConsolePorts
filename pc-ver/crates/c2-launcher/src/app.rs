@@ -260,6 +260,10 @@ impl Launcher {
                     }
                 }
                 Ok(crate::jobs::Completion::Addons(paths)) => self.add_addons(paths),
+                Ok(crate::jobs::Completion::Played(p)) => {
+                    let (instance, secs, error) = *p;
+                    self.played(instance, secs, error);
+                }
                 Ok(crate::jobs::Completion::Saved(saved)) => {
                     let (r, u) = *saved;
                     self.saving_done(r, u);

@@ -13,11 +13,34 @@ impl Launcher {
             ));
             return;
         };
-        let steps = vec![Step::Launch {
+        let step = Step::Launch {
             program: pc,
             args: self.play_args(),
-        }];
-        self.start_job("Starting the game", steps);
+        };
+        // The time played goes to the instance in use.
+        let instance = self.active_recipe().map(|r| r.path.clone());
+        if let Err(e) = self.job.start_task("Starting the game", move |job| {
+            let t = std::time::Instant::now();
+            let result = job.run(step).err();
+            let secs = t.elapsed().as_secs();
+            Ok(crate::jobs::Completion::Played(Box::new((
+                instance, secs, result,
+            ))))
+        }) {
+            self.ui.note = Some((e, RED));
+        }
+    }
+
+    /// The game closed: its time added to the instance's.
+    pub(super) fn played(&mut self, instance: Option<PathBuf>, secs: u64, error: Option<String>) {
+        if let Some(p) = instance {
+            *self.cfg.playtime.entry(p).or_default() += secs;
+            self.save();
+            self.ui.instances.refresh(&self.cfg);
+        }
+        if let Some(e) = error {
+            self.ui.note = Some((e, RED));
+        }
     }
 
     /// The same game in a VR headset (`c2-vr`, README M17): it checks the

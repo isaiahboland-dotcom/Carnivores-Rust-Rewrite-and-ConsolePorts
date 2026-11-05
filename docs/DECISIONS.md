@@ -3883,3 +3883,23 @@ The owner also asked for the launcher to be reorganised around instances
 - Archives can't be dropped on the editor (pins need folders); unpack them
   first. The search for downloads still reads `.zip` files.
 
+Follow-up, same day (owner's report: Play, Build and Options did nothing,
+even after a rebuild; boxes cut off):
+
+- Each box laid a click area over its own contents after drawing them, and
+  egui gives a click to the widget added last, so the box took every click.
+  The boxes are now cells of a grid sized to the window (as many columns as
+  fit, all the same size); each cell's area is laid down first and its
+  buttons over it. A headless test clicks across a box (Play, Build, right
+  click) and fails with the old order.
+- Settings no longer exports or imports engine options (the `options`
+  module is removed; the 2026-10-23 "engine options file" entry above is
+  superseded). Sharing is per instance: **Export…** in Options writes the
+  recipe with its patches and its base game's hash list (`bases/`), and
+  **Import recipe…** copies one in under a free name. Both copy only
+  credits, links and hashes.
+- Each box shows its base game, add-on count, a yellow count of what is
+  missing (no folder, or the folder is gone; not hash-checked, Play does
+  that) and the time played from the launcher (`playtime` in the launcher
+  config, per recipe path; measured while `c2-pc` runs), or "Unplayed".
+

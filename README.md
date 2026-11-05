@@ -108,16 +108,19 @@ Three builds of the same app:
 | `c2-3ds-builder` | 3DS installs only (`cargo run --release -p c2-launcher --bin c2-3ds-builder`) |
 | `c2-wiiu-builder` | Wii U installs only (`cargo run --release -p c2-launcher --bin c2-wiiu-builder`) |
 
-The launcher opens on **Instances**: a box per instance (a whole game: a base game, its add-ons and its
-choices), plus **New instance**. **Settings** is the only other tab.
+The launcher opens on **Instances**: a grid of boxes, one per instance (a whole game: a base game, its
+add-ons and its choices), sized to the window, plus **New instance**. Each box shows the base game, how
+many add-ons, a yellow **⚠ N missing** when its base game or downloads can't be found, and the time
+played (or **Unplayed**). **Import recipe…** copies in a recipe someone shared. **Settings** is the only
+other tab.
 
 - **Play** checks the instance's downloads and its base game, then builds the combined game (cached
   until something changes) and starts it. Missing downloads are listed with their download pages.
 - **Build** asks which platform: **Windows** (experimental), **3DS** or **Wii U**, then shows only that
   builder; **Cancel** at the bottom goes back. Output, packaging and artwork choices are remembered
   separately for each instance. The 3DS and Wii U builders only offer their own platform.
-- **Options** (or a right click on the box): **Edit**, **Clone**, **Fix missing**, **Play in VR** and
-  **Delete**. **Fix missing** looks through the mod and add-on folders set in Settings for the instance's
+- **Options** (or a right click on the box): **Edit**, **Clone**, **Fix missing**, **Export…** (the recipe
+  to share, with its base game's hash list and patches), **Play in VR** and **Delete**. **Fix missing** looks through the mod and add-on folders set in Settings for the instance's
   base game and downloads and keeps what it finds: drop new downloads into those folders, then run it.
 
 **Edit** shows the instance's own pages, with **Save**, **Save and exit**, **Discard changes** and

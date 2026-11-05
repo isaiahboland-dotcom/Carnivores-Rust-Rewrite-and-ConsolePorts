@@ -55,6 +55,8 @@ impl Launcher {
             Ask::Delete(p) => self.ui.dialog = Some(Dialog::Delete(p)),
             Ask::FixMissing(p) => self.fix_missing(p),
             Ask::New => self.ui.dialog = Some(Dialog::New(String::new())),
+            Ask::Import => self.import_recipe(),
+            Ask::Export(p) => self.export_recipe(&p),
             Ask::FromOldSetup => self.save_instance(),
         }
     }
@@ -277,6 +279,60 @@ impl Launcher {
         }
     }
 
+    /// Import recipe: a shared recipe copied into the recipes folder (under
+    /// a free name), with its patches and base game hash list.
+    fn import_recipe(&mut self) {
+        let Some(from) = rfd::FileDialog::new()
+            .add_filter("Recipe", &["toml"])
+            .pick_file()
+        else {
+            return;
+        };
+        let dir = crate::config::recipes_dir();
+        let stem = from
+            .file_stem()
+            .map_or("recipe".into(), |s| s.to_string_lossy().into_owned());
+        let to = (1..)
+            .map(|n| match n {
+                1 => dir.join(format!("{stem}.toml")),
+                n => dir.join(format!("{stem}-{n}.toml")),
+            })
+            .find(|p| !p.exists())
+            .unwrap_or_else(|| dir.join("imported.toml"));
+        self.ui.note = Some(match crate::instances::copy_recipe(&from, &to) {
+            Ok(()) => {
+                self.ui.instances.refresh(&self.cfg);
+                (
+                    format!(
+                        "Imported as {}: Fix missing (Options) finds its downloads.",
+                        to.display()
+                    ),
+                    TEXT,
+                )
+            }
+            Err(e) => (format!("Not imported: {e}"), RED),
+        });
+    }
+
+    /// Export: the recipe written where the player picks, to share.
+    fn export_recipe(&mut self, from: &Path) {
+        let name = from.file_name().map(|n| n.to_string_lossy().into_owned());
+        let mut d = rfd::FileDialog::new().add_filter("Recipe", &["toml"]);
+        if let Some(n) = name {
+            d = d.set_file_name(n);
+        }
+        let Some(to) = d.save_file() else {
+            return;
+        };
+        if to == from {
+            return;
+        }
+        self.ui.note = Some(match crate::instances::copy_recipe(from, &to) {
+            Ok(()) => (format!("Exported to {}", to.display()), TEXT),
+            Err(e) => (format!("Not exported: {e}"), RED),
+        });
+    }
+
     /// The recipe file deleted, and what the launcher kept for it.
     fn delete_instance(&mut self, path: &Path) {
         if let Err(e) = std::fs::remove_file(path) {
@@ -285,6 +341,7 @@ impl Launcher {
         }
         self.cfg.remembered.retain(|u| u.path != path);
         self.cfg.instance_builds.remove(path);
+        self.cfg.playtime.remove(path);
         if self.cfg.recipe.as_ref().is_some_and(|u| u.path == path) {
             self.cfg.recipe = None;
         }

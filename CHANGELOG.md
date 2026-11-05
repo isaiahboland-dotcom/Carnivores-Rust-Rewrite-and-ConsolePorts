@@ -6,7 +6,10 @@
   Build (choose Windows, 3DS or Wii U) and Options (Edit, Clone, Fix missing, Play in VR,
   Delete; also on right click). Editing shows Base game, Add-ons and Balance pages with Save,
   Save and exit, Discard changes and Cancel. The Game, Add-ons, Play and console tabs and the
-  "Show the 3DS/Wii U section" settings are gone.
+  "Show the 3DS/Wii U section" settings are gone. Boxes snap to a grid sized to the window and
+  show the base game, add-on count, missing items (yellow) and time played or "Unplayed".
+  **Import recipe** on the home screen, **Export** per instance; the Settings export/import of
+  engine options is removed.
 - Launcher: launch protection. Each instance keeps its own game folder, and Play and the builds
   stop when it doesn't match the base game's hashes in the recipe (an instance could play the
   wrong game after the launcher's game was changed).

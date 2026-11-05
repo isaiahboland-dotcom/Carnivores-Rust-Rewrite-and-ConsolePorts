@@ -16,13 +16,51 @@ use crate::app::help;
 use crate::config::Config;
 use crate::theme::*;
 
+mod grid;
+
 pub struct Item {
     pub path: PathBuf,
     /// The path under the recipes folder, for the list.
     pub shown: String,
     pub recipe: Recipe,
-    /// The recipe's folders were given before (it can play straight away).
-    pub known: bool,
+    /// The base game's name: its profile id, else the game folder's name.
+    pub base: String,
+    /// The game and downloads with no folder, or a folder that is gone
+    /// (not hash-checked: Play does that).
+    pub missing: usize,
+    /// Seconds played from the launcher.
+    pub played: u64,
+}
+
+impl Item {
+    fn new(path: PathBuf, dir: &Path, recipe: Recipe, cfg: &Config) -> Self {
+        let used = cfg.remembered(&path);
+        let game = used.and_then(|u| u.game.clone());
+        let base = if !recipe.recipe.base.is_empty() {
+            recipe.recipe.base.clone()
+        } else {
+            game.as_deref()
+                .and_then(Path::file_name)
+                .map_or("no base game".into(), |n| n.to_string_lossy().into_owned())
+        };
+        let gone = |p: Option<&PathBuf>| !p.is_some_and(|p| p.is_dir());
+        let missing = usize::from(gone(game.as_ref()))
+            + recipe::entries(&recipe)
+                .filter(|(_, m, _)| gone(used.and_then(|u| u.folders.get(&m.id))))
+                .count();
+        Item {
+            shown: path
+                .strip_prefix(dir)
+                .unwrap_or(&path)
+                .display()
+                .to_string(),
+            played: cfg.playtime.get(&path).copied().unwrap_or(0),
+            path,
+            recipe,
+            base,
+            missing,
+        }
+    }
 }
 
 /// Where to go once a saved instance's downloads have been checked.
@@ -61,7 +99,9 @@ pub enum Ask {
     Clone(PathBuf),
     Delete(PathBuf),
     FixMissing(PathBuf),
+    Export(PathBuf),
     New,
+    Import,
     /// Make an instance from the old Game and Add-ons tabs' setup.
     FromOldSetup,
 }
@@ -73,9 +113,6 @@ pub struct List {
     looked: bool,
 }
 
-/// An instance box's size (points): two or three across on a Steam Deck.
-const BOX: egui::Vec2 = egui::vec2(270.0, 128.0);
-
 impl List {
     pub fn refresh(&mut self, cfg: &Config) {
         self.dir = crate::config::recipes_dir();
@@ -83,24 +120,15 @@ impl List {
             .into_iter()
             .filter_map(|path| {
                 let r = Recipe::load(&path).ok()?;
-                let shown = path
-                    .strip_prefix(&self.dir)
-                    .unwrap_or(&path)
-                    .display()
-                    .to_string();
-                Some(Item {
-                    known: cfg.remembered(&path).is_some(),
-                    path,
-                    shown,
-                    recipe: r,
-                })
+                Some(Item::new(path, &self.dir, r, cfg))
             })
             .collect();
         self.looked = true;
     }
 
     /// The home screen: a box per instance (Play, Build, Options; a right
-    /// click opens Options too) and one to make a new instance.
+    /// click opens Options too) and one to make a new instance, in a grid
+    /// as wide as the window.
     pub fn ui(&mut self, ui: &mut egui::Ui, cfg: &Config, mode: crate::Mode, busy: bool) -> Ask {
         if !self.looked {
             self.refresh(cfg);
@@ -112,6 +140,13 @@ impl List {
              build it for another platform, or use Options (or right click) to edit it.",
         );
         ui.horizontal_wrapped(|ui| {
+            if ui
+                .add_enabled(!busy, egui::Button::new("Import recipe..."))
+                .on_hover_text("A recipe someone shared (.toml): copied in as a new instance.")
+                .clicked()
+            {
+                ask = Ask::Import;
+            }
             if ui.button("Refresh").clicked() {
                 self.refresh(cfg);
             }
@@ -134,17 +169,9 @@ impl List {
                 ask = Ask::FromOldSetup;
             }
         });
-        ui.label(RichText::new(self.dir.display().to_string()).color(DIM));
         ui.add_space(6.0);
         let in_use = cfg.recipe.as_ref().map(|r| r.path.clone());
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
-            for it in &self.items {
-                let using = in_use.as_ref() == Some(&it.path);
-                instance_box(ui, it, using, mode, busy, &mut ask);
-            }
-            new_box(ui, busy, &mut ask);
-        });
+        grid::show(ui, &self.items, in_use.as_deref(), mode, busy, &mut ask);
         ask
     }
 }
@@ -158,150 +185,12 @@ pub fn display_name(r: &Recipe) -> String {
     }
 }
 
-/// A box on the home screen, `add` drawing in it; its response (to click
-/// or right click).
-fn boxed(
-    ui: &mut egui::Ui,
-    stroke: egui::Color32,
-    add: impl FnOnce(&mut egui::Ui),
-) -> egui::Response {
-    let r = egui::Frame::new()
-        .fill(PANEL)
-        .stroke(egui::Stroke::new(1.5, stroke))
-        .inner_margin(10.0)
-        .corner_radius(6.0)
-        .show(ui, |ui| {
-            ui.set_min_size(BOX);
-            ui.set_max_width(BOX.x);
-            ui.vertical(add);
-        })
-        .response;
-    ui.interact(r.rect, r.id.with("box"), egui::Sense::click())
-}
-
-fn instance_box(
-    ui: &mut egui::Ui,
-    it: &Item,
-    using: bool,
-    mode: crate::Mode,
-    busy: bool,
-    ask: &mut Ask,
-) {
-    let r = &it.recipe;
-    let n = recipe::entries(r).count();
-    let resp = boxed(ui, if using { GOLD } else { PANEL_HI }, |ui| {
-        ui.add(
-            egui::Label::new(
-                RichText::new(display_name(r))
-                    .size(17.0)
-                    .color(if using { GOLD } else { SAND })
-                    .strong(),
-            )
-            .truncate(),
-        )
-        .on_hover_text(&it.shown);
-        ui.label(
-            RichText::new(format!(
-                "{} · {n} download{}",
-                if r.recipe.base.is_empty() {
-                    "any game"
-                } else {
-                    &r.recipe.base
-                },
-                if n == 1 { "" } else { "s" }
-            ))
-            .color(DIM),
-        );
-        if !it.known {
-            ui.label(RichText::new("not set up yet").color(DIM))
-                .on_hover_text(
-                    "Play finds its downloads in the mod and add-on folders (Settings).",
-                );
-        }
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            if mode == crate::Mode::Full
-                && ui
-                    .add_enabled(
-                        !busy,
-                        egui::Button::new(RichText::new("Play").color(GOLD).strong()).fill(GREEN),
-                    )
-                    .clicked()
-            {
-                *ask = Ask::Play(it.path.clone());
-            }
-            if ui.add_enabled(!busy, egui::Button::new("Build")).clicked() {
-                *ask = Ask::Build(it.path.clone());
-            }
-            ui.add_enabled_ui(!busy, |ui| {
-                ui.menu_button("Options", |ui| options_menu(ui, &it.path, mode, ask));
-            });
-        });
-    });
-    if !busy {
-        resp.context_menu(|ui| options_menu(ui, &it.path, mode, ask));
-    }
-}
-
-/// An instance's Options: the same on its button and on a right click.
-fn options_menu(ui: &mut egui::Ui, path: &Path, mode: crate::Mode, ask: &mut Ask) {
-    let p = || path.to_path_buf();
-    if ui.button("Edit").clicked() {
-        *ask = Ask::Edit(p());
-    }
-    if ui.button("Clone").clicked() {
-        *ask = Ask::Clone(p());
-    }
-    if ui
-        .button("Fix missing")
-        .on_hover_text(
-            "Looks for its base game and downloads in the mod and add-on folders (Settings) and \
-             keeps what is found.",
-        )
-        .clicked()
-    {
-        *ask = Ask::FixMissing(p());
-    }
-    if mode == crate::Mode::Full
-        && ui
-            .button("Play in VR")
-            .on_hover_text(
-                "A first draft, through OpenXR (start SteamVR, Monado or WiVRn first): it \
-                 checks your headset runtime and the game, then shows a test scene. Its report \
-                 is in the log.",
-            )
-            .clicked()
-    {
-        *ask = Ask::PlayVr(p());
-    }
-    ui.separator();
-    if ui.button(RichText::new("Delete").color(RED)).clicked() {
-        *ask = Ask::Delete(p());
-    }
-}
-
-fn new_box(ui: &mut egui::Ui, busy: bool, ask: &mut Ask) {
-    let resp = boxed(ui, PANEL_HI, |ui| {
-        ui.label(
-            RichText::new("New instance")
-                .size(17.0)
-                .color(SAND)
-                .strong(),
-        );
-        help(ui, "Start from a base game, then add add-ons.");
-        ui.add_space(4.0);
-        if ui
-            .add_enabled(
-                !busy,
-                egui::Button::new(RichText::new("+ New").color(GOLD)).fill(GREEN),
-            )
-            .clicked()
-        {
-            *ask = Ask::New;
-        }
-    });
-    if resp.clicked() && !busy {
-        *ask = Ask::New;
+/// Seconds as "3h 12m" (or "5m").
+pub fn played_text(secs: u64) -> String {
+    let m = secs / 60;
+    match (m / 60, m % 60) {
+        (0, m) => format!("{m}m"),
+        (h, m) => format!("{h}h {m}m"),
     }
 }
 
@@ -339,6 +228,39 @@ pub(crate) fn match_base(recipe_path: &Path, game: &Path) -> Option<String> {
             missing.is_empty() && bad.is_empty()
         })
         .map(|b| b.base.id.clone())
+}
+
+/// A recipe copied from `from` to `to` as it is (its comments too), with
+/// the patches it names beside it and its base game's hash list in
+/// `bases/` beside it (unless one by that id is there already). Only
+/// credits, links and hashes: no game or mod files.
+pub fn copy_recipe(from: &Path, to: &Path) -> Result<(), String> {
+    let r = Recipe::load(from).map_err(|e| e.to_string())?;
+    let (src, dst) = (
+        from.parent().unwrap_or(Path::new(".")),
+        to.parent().unwrap_or(Path::new(".")),
+    );
+    std::fs::create_dir_all(dst).map_err(|e| e.to_string())?;
+    std::fs::copy(from, to).map_err(|e| e.to_string())?;
+    for p in &r.patches {
+        let (a, b) = (src.join(&p.patch), dst.join(&p.patch));
+        if a.is_file() && !b.exists() {
+            if let Some(d) = b.parent() {
+                std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+            }
+            std::fs::copy(&a, &b).map_err(|e| format!("{}: {e}", a.display()))?;
+        }
+    }
+    if let Some(base) = recipe::load_base(from, &r) {
+        let out = dst.join("bases").join(format!("{}.toml", base.base.id));
+        let known = recipe::load_base(to, &r).is_some();
+        if !known && !out.exists() {
+            let text = toml::to_string_pretty(&base).map_err(|e| e.to_string())?;
+            std::fs::create_dir_all(dst.join("bases")).map_err(|e| e.to_string())?;
+            std::fs::write(&out, text).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
 }
 
 /// `name` as a recipe id: lower case letters, digits and `-`.
@@ -379,6 +301,35 @@ mod tests {
         );
         assert_eq!(Destination::builds(crate::Mode::ThreeDs).len(), 1);
         assert_eq!(Destination::builds(crate::Mode::WiiU).len(), 1);
+    }
+
+    #[test]
+    fn a_recipe_is_copied_with_its_base_and_patches() {
+        let t = crate::publish::tests::Temp::new();
+        let (a, b) = (t.0.join("a"), t.0.join("b"));
+        std::fs::create_dir_all(a.join("bases")).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(
+            a.join("bases/sa.toml"),
+            "[base]\nid = 'sa'\n\n[files]\n'X' = 'y'\n",
+        )
+        .unwrap();
+        std::fs::write(a.join("fix.patch"), "synthetic").unwrap();
+        std::fs::write(
+            a.join("r.toml"),
+            "# shared\n[recipe]\nid = 'r'\nbase = 'sa'\n\n[[patches]]\ntarget = 'T'\npatch = 'fix.patch'\n",
+        )
+        .unwrap();
+        copy_recipe(&a.join("r.toml"), &b.join("r.toml")).unwrap();
+        assert!(std::fs::read_to_string(b.join("r.toml"))
+            .unwrap()
+            .starts_with("# shared"));
+        assert!(b.join("fix.patch").is_file());
+        let r = Recipe::load(&b.join("r.toml")).unwrap();
+        assert_eq!(
+            recipe::load_base(&b.join("r.toml"), &r).map(|x| x.files.len()),
+            Some(1)
+        );
     }
 
     #[test]

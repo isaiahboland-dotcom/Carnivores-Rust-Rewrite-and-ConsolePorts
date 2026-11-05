@@ -272,6 +272,8 @@ pub struct Config {
     /// The phone game's rules (shotgun, scoring, animals' health) over a PC
     /// game, each (`c2_mods::balance::Balance::phone_tuning`).
     pub tuning: Tuning,
+    /// Seconds each instance (by recipe path) was played from the launcher.
+    pub playtime: BTreeMap<PathBuf, u64>,
 }
 
 /// Platform output choices last used for one saved instance.
