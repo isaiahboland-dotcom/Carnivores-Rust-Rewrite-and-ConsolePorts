@@ -3743,6 +3743,17 @@ again, forever. Desktop Mode never shrinks (the 900x640 window fits), so it
 never started. Now the size is converted with the zoom it was measured at
 (the last pass's, kept in egui's memory). Needs the owner's retest.
 
+Follow-up the same day: that build never showed its window, on the Deck
+(Steam, both modes) or anywhere. It read `ctx.zoom_factor()` inside
+`ctx.data_mut`, which holds egui's context lock, so the first frame
+deadlocked. Auto now measures with egui's `viewport_rect` instead, which is
+in the current pass's points (egui rescales it on the pass a new zoom takes
+effect), times the current `pixels_per_point`: no stored state, no lock.
+`inner_rect` also turned out to be missing under X11 here, so the old Auto
+did nothing there. Checked on the desktop: windowed, frames draw and a
+636x345 window settles at 0.575 in one step; full screen at 2560x1440 stays
+at 1.0.
+
 ### Instance editor: balance, standalone parts, the base game's parts (2026-11-05)
 
 Owner request: editing an instance should set its starting points and

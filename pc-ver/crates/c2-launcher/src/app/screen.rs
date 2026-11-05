@@ -27,29 +27,25 @@ pub(crate) fn steam_game_mode() -> bool {
 /// The zoom for this frame: the chosen size, or (`None`) the largest up
 /// to the system's at which a [`FIT`] page fits the window.
 ///
-/// The window's size in points was measured before this pass, at the zoom
-/// of the last pass; a new zoom only takes effect at the start of a pass.
-/// So the size is turned into pixels with last pass's zoom (kept in egui's
-/// memory), not this pass's `pixels_per_point`: mixing the two made Auto
-/// flip between the right zoom and its square every other frame (the
-/// owner's Steam Deck in game mode, 2026-11-05).
+/// The window is measured by egui's viewport rect, which is in this pass's
+/// points (egui rescales it on the pass a new zoom takes effect), times
+/// this pass's `pixels_per_point`. The viewport info's `inner_rect` is not
+/// used: it was measured at the last pass's zoom, and mixing the two made
+/// Auto flip between the right zoom and its square every other frame (the
+/// owner's Steam Deck in game mode, 2026-11-05); X11 may not report it at
+/// all.
 pub(super) fn fit_screen(ctx: &egui::Context, scale: Option<f32>) {
-    let id = egui::Id::unique("c2-launcher-measured-zoom");
-    let measured = ctx.data(|d| d.get_temp::<f32>(id));
-    ctx.data_mut(|d| d.insert_temp(id, ctx.zoom_factor()));
     let zoom = match scale {
         Some(z) => z.clamp(0.5, 2.0),
         None => {
-            let (rect, native) = ctx.input(|i| {
-                let v = i.viewport();
-                (v.inner_rect, v.native_pixels_per_point)
-            });
-            let (Some(rect), Some(native), Some(measured)) = (rect, native, measured) else {
+            let (rect, native) =
+                ctx.input(|i| (i.viewport_rect(), i.viewport().native_pixels_per_point));
+            let Some(native) = native else {
                 return;
             };
-            match auto_zoom(rect.size() * measured * native, native) {
-                Some(z) => z,
-                None => return,
+            match auto_zoom(rect.size() * ctx.pixels_per_point(), native) {
+                Some(z) if rect.width() > 0.0 && rect.height() > 0.0 => z,
+                _ => return,
             }
         }
     };
