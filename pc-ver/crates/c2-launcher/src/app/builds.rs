@@ -21,7 +21,7 @@ impl Launcher {
         let recipe_game = recipe.as_ref().map(|r| self.recipe_game_with_overlays(r));
         let base = match &recipe_game {
             Some(g) => g.first().cloned(),
-            None => self.cfg.base.clone(),
+            None => None,
         };
         let (Some(base), Some(out)) = (base, self.cfg.three_ds.out.clone()) else {
             self.ui.note = Some(("Set the game folder and the SD card first.".into(), RED));

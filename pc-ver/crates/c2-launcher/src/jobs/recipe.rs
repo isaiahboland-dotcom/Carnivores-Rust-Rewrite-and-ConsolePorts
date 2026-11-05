@@ -12,7 +12,8 @@ pub(crate) enum Check {
     },
     Base {
         base: Base,
-        first: PathBuf,
+        /// The game to check; `None`: only look in `others`.
+        first: Option<PathBuf>,
         dirs: Vec<PathBuf>,
         others: Vec<PathBuf>,
     },
@@ -57,15 +58,42 @@ impl Check {
                 dirs,
                 others,
             } => {
+                // A game in `others` that is the base (built from its APK,
+                // or with every listed file as pinned).
+                let found = || {
+                    others
+                        .iter()
+                        .flat_map(|d| recipe::dir_and_subs(d, false))
+                        .find(|g| {
+                            !dirs.contains(g)
+                                && match recipe::check_apk(&base, g) {
+                                    Some(ok) => ok,
+                                    None => base.base.apk.is_empty() && is_base(&base, g),
+                                }
+                        })
+                };
+                let ok = || {
+                    if base.base.apk.is_empty() {
+                        Status::Ok(format!("ok ({} files)", base.files.len()))
+                    } else {
+                        Status::Ok("built from that APK".into())
+                    }
+                };
+                let Some(first) = first else {
+                    return vec![match found() {
+                        Some(g) => Msg::Found(g, ok()),
+                        None => Msg::Base(Status::Bad(
+                            "no game folder: its base game wasn't found in the mod and add-on \
+                             folders; pick it with Edit, Base game"
+                                .into(),
+                        )),
+                    }];
+                };
                 let s = match recipe::check_apk(&base, &first) {
-                    Some(true) => Status::Ok("built from that APK".into()),
+                    Some(true) => ok(),
                     Some(false) => {
-                        if let Some(g) = others
-                            .iter()
-                            .flat_map(|d| recipe::dir_and_subs(d, false))
-                            .find(|g| recipe::check_apk(&base, g) == Some(true))
-                        {
-                            return vec![Msg::Found(g, Status::Ok("built from that APK".into()))];
+                        if let Some(g) = found() {
+                            return vec![Msg::Found(g, ok())];
                         }
                         Status::Bad(
                             "Select or build this recipe's APK base; the current game is different"
@@ -77,18 +105,11 @@ impl Check {
                         Ok(v) => {
                             let (missing, bad) = recipe::check_base(&base, &v);
                             if missing.is_empty() && bad.is_empty() {
-                                Status::Ok(format!("ok ({} files)", base.files.len()))
-                            } else if let Some(g) = others
-                                .iter()
-                                .flat_map(|d| recipe::dir_and_subs(d, false))
-                                .find(|g| !dirs.contains(g) && is_base(&base, g))
-                            {
-                                return vec![Msg::Found(
-                                    g.clone(),
-                                    Status::Ok(format!("ok ({} files)", base.files.len())),
-                                )];
+                                ok()
+                            } else if let Some(g) = found() {
+                                return vec![Msg::Found(g, ok())];
                             } else {
-                                // As `c2-pc recipe verify`: a warning, not a stop.
+                                // Play waits for "Use this game anyway".
                                 Status::Bad(format!(
                                     "{} missing, {} different (another version?)",
                                     missing.len(),

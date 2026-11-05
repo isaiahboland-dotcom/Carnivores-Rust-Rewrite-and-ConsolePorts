@@ -3903,3 +3903,20 @@ even after a rebuild; boxes cut off):
   that) and the time played from the launcher (`playtime` in the launcher
   config, per recipe path; measured while `c2-pc` runs), or "Unplayed".
 
+Second follow-up, same day (owner's report: every instance played as
+JPHL; the editor showed the right game and Anachronous's animals):
+
+- The instance's game was right. The **Original** menu style passed
+  `--menu-art` the old Game tab's folder (`Config::base`), which the owner
+  had last set to JPHL, so every instance showed JPHL's menu frames, hit
+  maps and slider. Original now takes the retail game from an instance
+  whose recipe base is `c2-vanilla` (the edited/in-use one first); with
+  none, the game's own menus are shown.
+- No other path lends an instance the old Game tab's game any more: an
+  instance without a game of its own has none (`recipe_game`), Play
+  refuses it, the 3DS/Wii U pages show it as a blocker, and the recipe
+  page looks for its base in the candidates (standalones, the mod and
+  add-on folders, built APK games) instead of checking the old game.
+  `Config::base`, `overlays`, `addons` and `standalones` remain only for
+  "Instance from the old setup".
+

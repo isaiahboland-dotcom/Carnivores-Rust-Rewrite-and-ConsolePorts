@@ -12,7 +12,9 @@
   engine options is removed.
 - Launcher: launch protection. Each instance keeps its own game folder, and Play and the builds
   stop when it doesn't match the base game's hashes in the recipe (an instance could play the
-  wrong game after the launcher's game was changed).
+  wrong game after the launcher's game was changed). The "Original" menu no longer takes its
+  frames from the old Game tab's folder (every instance showed that game's menus); nothing an
+  instance plays or builds comes from that folder any more.
 - Launcher: under Steam's game mode (Steam Deck handheld) the Auto interface size no longer
   flips between two sizes every frame.
 

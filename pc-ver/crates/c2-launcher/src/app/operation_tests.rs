@@ -106,3 +106,53 @@ fn editing_an_instance_shows_its_pages_and_cancel_restores_it() {
     assert_eq!(e.recipe.recipe.name, "Inst");
     assert_eq!(app.cfg.recipe.as_ref().and_then(|u| u.game.clone()), None);
 }
+
+/// Owner's report 2026-11-05: every instance showed JPHL, the folder left
+/// on the old Game tab. Nothing an instance plays comes from it.
+#[test]
+fn an_instance_never_takes_the_old_game_tabs_folder() {
+    let t = crate::publish::tests::Temp::new();
+    let game = |name: &str| {
+        let g = t.0.join(name);
+        std::fs::create_dir_all(g.join("HUNTDAT")).unwrap();
+        std::fs::write(g.join("HUNTDAT/_RES.TXT"), "characters {\n}\n.\n").unwrap();
+        g
+    };
+    let (old, own, retail) = (game("old-tab"), game("own"), game("retail"));
+    let recipe = |name: &str, base: &str| {
+        let p = t.0.join(format!("{name}.toml"));
+        std::fs::write(&p, format!("[recipe]\nid = '{name}'\nbase = '{base}'\n")).unwrap();
+        p
+    };
+    let mut app = launcher();
+    app.cfg.base = Some(old.clone());
+    app.cfg.menu_style = MenuStyle::Original;
+    let used = |path: PathBuf, game: Option<PathBuf>| RecipeUse {
+        path,
+        game,
+        overlays: Some(Vec::new()),
+        on: true,
+        ..Default::default()
+    };
+    // Its own game, and no Carnivores 2 known: the game's own menus.
+    app.cfg.recipe = Some(used(recipe("sa", "sa"), Some(own.clone())));
+    let args = app.play_args();
+    let shown = |p: &Path| args.iter().any(|a| a == &p.display().to_string());
+    assert!(shown(&own) && !shown(&old), "{args:?}");
+    // The original's menus come from an instance on the retail game.
+    app.cfg
+        .remembered
+        .push(used(recipe("vanilla", "c2-vanilla"), Some(retail.clone())));
+    let args = app.play_args();
+    assert!(
+        args.iter().any(|a| a == &retail.display().to_string()),
+        "{args:?}"
+    );
+    assert!(
+        !args.iter().any(|a| a == &old.display().to_string()),
+        "{args:?}"
+    );
+    // No game of its own: none lent.
+    app.cfg.recipe = Some(used(recipe("none", ""), None));
+    assert!(app.recipe_game(app.active_recipe().unwrap()).is_empty());
+}

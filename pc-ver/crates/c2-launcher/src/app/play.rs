@@ -6,6 +6,13 @@ impl Launcher {
         if !self.can_start_operation() {
             return;
         }
+        if self.active_recipe().and_then(|r| r.game.as_ref()).is_none() {
+            self.ui.note = Some((
+                "The instance has no base game: Edit it and choose one.".into(),
+                RED,
+            ));
+            return;
+        }
         let Some(pc) = find_tool("c2-pc", self.cfg.tools.as_deref()) else {
             self.ui.note = Some((
                 "c2-pc not found: set the tools folder in Settings.".into(),

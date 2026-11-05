@@ -17,8 +17,7 @@ impl Launcher {
         let recipe_id = self.active_recipe().map(|r| install_name(&r.id()));
         let game = self
             .active_recipe()
-            .and_then(|r| self.recipe_game(r).first().cloned())
-            .or_else(|| self.cfg.base.clone());
+            .and_then(|r| self.recipe_game(r).first().cloned());
         panel(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label("SD card (or a folder):");

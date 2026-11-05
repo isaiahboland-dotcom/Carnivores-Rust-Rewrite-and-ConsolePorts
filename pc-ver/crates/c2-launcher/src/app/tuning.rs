@@ -131,14 +131,12 @@ impl Launcher {
         let own = self
             .active_recipe()
             .and_then(|r| r.game.clone())
-            .into_iter()
-            .chain(self.cfg.base.clone());
+            .into_iter();
         let built = crate::config::phone_games();
         let ice = |p: &PathBuf| p.to_string_lossy().to_ascii_lowercase().contains("ice");
         let wants_ice = self
-            .cfg
-            .base
-            .as_deref()
+            .active_recipe()
+            .and_then(|r| r.game.as_deref())
             .is_some_and(c2_mods::ice_age::is_ice_age_dir);
         own.into_iter()
             .find(|g| crate::config::is_phone_game(g))

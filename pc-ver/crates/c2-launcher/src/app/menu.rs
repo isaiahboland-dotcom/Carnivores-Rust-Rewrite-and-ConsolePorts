@@ -75,10 +75,27 @@ impl Launcher {
             .map(|(_, d)| d)
     }
 
+    /// A Carnivores 2 install for the original's menus: the instance's own
+    /// game if its base is the retail game (`bases/c2-vanilla.toml`), else
+    /// another instance's that is. Never the old Game tab's folder (owner's
+    /// report 2026-11-05: every instance showed JPHL's menus, the folder
+    /// left there).
+    pub(super) fn original_c2(&self) -> Option<PathBuf> {
+        let vanilla = |u: &RecipeUse| {
+            c2_mods::recipe::Recipe::load(&u.path).is_ok_and(|r| r.recipe.base == "c2-vanilla")
+        };
+        self.active_recipe()
+            .into_iter()
+            .chain(&self.cfg.remembered)
+            .filter(|u| vanilla(u))
+            .filter_map(|u| u.game.clone())
+            .find(|g| describe_game(g).is_some())
+    }
+
     /// `c2-pc` arguments for the menu (`--menu-art DIR`, `--mobile-menu`).
     pub(super) fn menu_args(&self) -> Vec<String> {
         let art = match self.menu_style() {
-            MenuStyle::Original => self.cfg.base.clone(),
+            MenuStyle::Original => self.original_c2(),
             MenuStyle::IceAge => self.cfg.ice_age.clone(),
             MenuStyle::Game => self.menu_game_dir(),
             MenuStyle::Mod => None,

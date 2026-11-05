@@ -225,14 +225,15 @@ impl Launcher {
         self.cfg.recipe.as_ref().filter(|r| r.on)
     }
 
-    /// A recipe's game folders: its own game, or the Game tab's with its
-    /// overlays.
+    /// A recipe's game folders: its own game and overlays (none if it has
+    /// no game yet).
     pub(super) fn recipe_game(&self, r: &RecipeUse) -> Vec<PathBuf> {
         match &r.game {
             Some(g) => std::iter::once(g.clone())
                 .chain(r.overlays.clone().unwrap_or_default())
                 .collect(),
-            None => self.game_folders().0,
+            // Never the old Game tab's game: an instance has its own.
+            None => Vec::new(),
         }
     }
 

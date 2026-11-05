@@ -232,30 +232,30 @@ impl Page {
             None => dirs.first().map(|g| crate::config::game_root(g)),
             Some(_) => None,
         };
-        if dirs.is_empty() {
-            self.base_status = Status::Bad("no game folder: pick one with Edit, Base game".into());
-            return;
-        }
+        let no_game = || Status::Bad("no game folder: pick one with Edit, Base game".into());
         let Some(base) = self.base.clone() else {
-            self.base_status = if self.recipe.recipe.base.is_empty() {
+            self.base_status = if dirs.is_empty() {
+                no_game()
+            } else if self.recipe.recipe.base.is_empty() {
                 Status::Ok("any".into())
             } else {
                 Status::Ok("no hash list beside the recipe: not checked".into())
             };
             return;
         };
-        let Some(first) = dirs.first().cloned() else {
-            self.base_status = Status::Bad("no game folder".into());
-            return;
-        };
-        self.base_status = Status::Checking;
-        // Only the Game tab's game is looked past: a folder the player chose
-        // is theirs.
+        // An instance without a game of its own looks for its base in the
+        // candidates; a folder the player chose is theirs.
         let others = if self.game.is_none() {
             self.candidates.clone()
         } else {
             Vec::new()
         };
+        if dirs.is_empty() && others.is_empty() {
+            self.base_status = no_game();
+            return;
+        }
+        let first = dirs.first().cloned();
+        self.base_status = Status::Checking;
         self.requests.push(crate::jobs::recipe::Check::Base {
             base,
             first,

@@ -9,7 +9,10 @@ impl Launcher {
         if !self.can_start_operation() {
             return;
         }
-        let dirs = self.game_folders().0;
+        // No game is lent to an instance: one without its own looks for
+        // its base in the candidates (the old Game tab's game was used, and
+        // instances played it: owner's reports 2026-11-05).
+        let dirs = Vec::new();
         let candidates = self.base_candidates();
         match crate::recipe_page::Page::open(&path, self.cfg.remembered(&path), dirs, candidates) {
             Ok(mut p) => {

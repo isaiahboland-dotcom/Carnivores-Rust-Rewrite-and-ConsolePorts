@@ -88,11 +88,23 @@ fn standalone_base_found_past_the_game_tabs() {
         "[recipe]\nid = \"sa\"\nname = \"SA\"\nbase = \"sa\"\n",
     )
     .unwrap_or_else(|e| panic!("{e}"));
-    let mut p = Page::open(&path, None, vec![vanilla], vec![other, standalone.clone()])
-        .unwrap_or_else(|e| panic!("{e}"));
+    let mut p = Page::open(
+        &path,
+        None,
+        vec![vanilla],
+        vec![other.clone(), standalone.clone()],
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
     settle(&mut p);
     let (got, status) = (p.game.clone(), p.base_status.clone());
+    // With no game lent at all, it is still found.
+    let mut q = Page::open(&path, None, Vec::new(), vec![other, standalone.clone()])
+        .unwrap_or_else(|e| panic!("{e}"));
+    settle(&mut q);
+    let (lone, lone_ready) = (q.game.clone(), q.ready());
     std::fs::remove_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(lone, Some(standalone.clone()));
+    assert!(lone_ready);
     assert_eq!(got, Some(standalone));
     assert!(matches!(status, Status::Ok(_)), "{status:?}");
 }

@@ -88,7 +88,7 @@ impl Launcher {
         let t = &self.cfg.three_ds;
         let game = match self.active_recipe() {
             Some(r) => self.recipe_game(r).first().cloned(),
-            None => self.cfg.base.clone(),
+            None => None,
         };
         let instance = self.active_recipe().is_some();
         let mut blockers: Vec<String> = game_blocker(game.as_deref(), instance)
