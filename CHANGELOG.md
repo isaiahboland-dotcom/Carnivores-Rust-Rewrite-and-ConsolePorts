@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Launcher: all add-ons (and standalones) on/off at once; **Pick parts** per standalone game
+  (areas, animals, weapons left out on PC, `c2-pc --skip`, recipe `skip`); a Menu choice for
+  Android and each standalone's own menus; **Stop using** moved to the Instances page; "Use my
+  APK as the game" moved into the Base game box; Instances as wrapping cards with an always
+  visible scroll bar; an Interface size setting that fits the window and full screen under
+  Steam's game mode / Big Picture (Steam Deck).
+
 - Bound `_RES.TXT` nesting, preserve sub-blocks during writing, and reject invalid
   menu slot hints without discarding their files.
 - Validate PKM payloads before allocation, bound mobile ELF scans, and reject

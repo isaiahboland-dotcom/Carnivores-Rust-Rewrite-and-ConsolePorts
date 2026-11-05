@@ -50,6 +50,13 @@ impl Launcher {
             });
         });
         ui.add_space(8.0);
+        if panel(ui, |ui| {
+            ui.label(RichText::new("Window").color(GOLD));
+            self.ui_scale_ui(ui)
+        }) {
+            self.save();
+        }
+        ui.add_space(8.0);
         panel(ui, |ui| {
             ui.label(RichText::new("Tools folder").color(GOLD));
             help(

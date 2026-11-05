@@ -82,10 +82,11 @@ pub fn build_combined(
     mods: &[PathBuf],
     balance_file: Option<&Path>,
     ambients: c2_mods::standalone::Ambients,
+    skip: Vec<c2_mods::standalone::Skip>,
     out: &Path,
 ) -> Result<()> {
     use c2_mods::standalone::{add_ons, build, Options};
-    let o = Options { ambients };
+    let o = Options { ambients, skip };
     let games = if mods.is_empty() && balance_file.is_none() {
         out.to_path_buf()
     } else {
@@ -342,6 +343,7 @@ pub fn build_recipe(
                 Some("random") => Ambients::Random,
                 _ => Ambients::Tied,
             },
+            skip: r.standalones.iter().map(|m| m.skip.clone()).collect(),
         };
         let games = Verified::roots(&found.games)?;
         let games_dir = PathBuf::from(format!("{}.games", out.display()));

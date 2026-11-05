@@ -96,6 +96,7 @@ const VALUE_FLAGS: &[&str] = &[
     "standalone",
     "base-id",
     "ambients",
+    "skip",
     "balance",
     "menu-art",
     "save-instance",
@@ -168,6 +169,25 @@ fn ambients(o: &Opts) -> Result<c2_mods::standalone::Ambients> {
         Some("random") => Ambients::Random,
         Some(v) => bail!("--ambients tied|random, not {v:?}"),
     })
+}
+
+/// `--skip N=area2,dino1,weapon3` (repeatable): what of the `N`th
+/// `--standalone` (from 1) is left out.
+fn skips(o: &Opts, games: usize) -> Result<Vec<c2_mods::standalone::Skip>> {
+    let mut out = vec![c2_mods::standalone::Skip::default(); games];
+    for v in o.values("skip") {
+        let (n, what) = v.split_once('=').context("--skip N=area2,dino1,weapon3")?;
+        let slot = n
+            .trim()
+            .parse::<usize>()
+            .ok()
+            .and_then(|n| n.checked_sub(1))
+            .and_then(|i| out.get_mut(i))
+            .with_context(|| format!("--skip: no --standalone number {n}"))?;
+        *slot =
+            c2_mods::standalone::Skip::parse(what).map_err(|e| anyhow::anyhow!("--skip: {e}"))?;
+    }
+    Ok(out)
 }
 
 fn time_of_day(o: &Opts) -> TimeOfDay {
@@ -299,7 +319,15 @@ fn main() -> Result<()> {
             .flat_map(|m| c2_mods::expand_addons(std::path::Path::new(m)))
             .collect();
         let balance = o.value("balance").map(std::path::Path::new);
-        mods_cli::build_combined(&bases, &games, &mods, balance, ambients(&o)?, &out)?;
+        mods_cli::build_combined(
+            &bases,
+            &games,
+            &mods,
+            balance,
+            ambients(&o)?,
+            skips(&o, games.len())?,
+            &out,
+        )?;
         println!(
             "\nWritten to {}. Play: c2-pc play \"{}\"",
             out.display(),
@@ -540,6 +568,7 @@ fn main() -> Result<()> {
                     &mods,
                     balance,
                     ambients(&o)?,
+                    skips(&o, standalones.len())?,
                     &out,
                 )?;
                 out

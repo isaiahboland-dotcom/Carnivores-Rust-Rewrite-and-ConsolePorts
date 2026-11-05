@@ -141,6 +141,7 @@ fn standalones_are_renumbered_tied_to_their_maps_and_original_ones_converted() {
         &out,
         &Options {
             ambients: Ambients::Tied,
+            skip: Vec::new(),
         },
     )
     .expect("combine");
@@ -249,6 +250,7 @@ fn standalones_are_renumbered_tied_to_their_maps_and_original_ones_converted() {
         &built,
         &Options {
             ambients: Ambients::Tied,
+            skip: Vec::new(),
         },
     )
     .expect("add-ons");
@@ -368,6 +370,7 @@ prices {\n start = 100\n area = 30\n dino = 40\n weapon = 7\n}\n.\n",
         &out,
         &Options {
             ambients: Ambients::Tied,
+            skip: Vec::new(),
         },
     )
     .expect("combine");
@@ -398,4 +401,96 @@ prices {\n start = 100\n area = 30\n dino = 40\n weapon = 7\n}\n.\n",
     for d in [base, game, out] {
         let _ = std::fs::remove_dir_all(d);
     }
+}
+
+#[test]
+fn left_out_parts_are_not_combined_and_the_rest_closes_up() {
+    use c2_mods::standalone::Skip;
+    let base = tmp("skip-base");
+    write(
+        &base,
+        &[
+            ("HUNTDAT/_RES.TXT", BASE_RES.as_bytes()),
+            ("HUNTDAT/_MENU.TXT", BASE_MENU.as_bytes()),
+            ("HUNTDAT/hunter.car", &model(&["stand"])),
+            ("HUNTDAT/velo.car", &model(&["run", "walk", "die"])),
+            ("HUNTDAT/WEAPONS/pistol.car", b"pistol"),
+            ("HUNTDAT/AREAS/AREA1.MAP", b"base map"),
+        ],
+    );
+    let b = tmp("skip-games").join("Game B");
+    write(
+        &b,
+        &[
+            ("HUNTDAT/_RES.TXT", B_RES.as_bytes()),
+            ("HUNTDAT/utah.car", &model(&["Ut_run", "Ut_wlk", "Ut_die"])),
+            (
+                "HUNTDAT/big.car",
+                &model(&["Bg_walk", "Bg_run", "Bg_idle1", "Bg_die", "Bg_slp"]),
+            ),
+            ("HUNTDAT/WEAPONS/rifle.car", b"rifle"),
+            ("HUNTDAT/AREAS/AREA1.MAP", b"b map"),
+            ("HUNTDAT/MENU/DINO1.TGA", b"utah pic"),
+            ("HUNTDAT/MENU/DINO2.TGA", b"big pic"),
+        ],
+    );
+    let parts = c2_mods::standalone::parts(&b).expect("a game");
+    assert_eq!(parts.areas, 1, "two areas listed, one map");
+    assert_eq!(parts.huntables, ["Utahraptor", "Big"]);
+    assert_eq!(parts.weapons, ["Rifle"]);
+    let out = tmp("skip-out");
+    let built = build(
+        std::slice::from_ref(&base),
+        std::slice::from_ref(&b),
+        &out,
+        &Options {
+            ambients: Ambients::Tied,
+            skip: vec![Skip {
+                huntables: vec![1],
+                weapons: vec![1],
+                ..Default::default()
+            }],
+        },
+    )
+    .expect("combine");
+    assert!(built.report.contains("left out"), "{}", built.report);
+    let h = out.join("HUNTDAT");
+    // Big (B's second) takes the slot after the base's: DINO2.
+    assert_eq!(
+        std::fs::read(h.join("MENU/DINO2.TGA")).ok(),
+        Some(b"big pic".to_vec())
+    );
+    assert!(!h.join("MENU/DINO3.TGA").exists());
+    let res =
+        ResTxt::parse(&std::fs::read_to_string(h.join("_RES.TXT")).expect("res")).expect("parse");
+    let names: Vec<String> = res
+        .section("characters")
+        .expect("characters")
+        .blocks
+        .iter()
+        .filter_map(|c| c.get(&["name"]).map(str::to_owned))
+        .collect();
+    assert!(!names.iter().any(|n| n.contains("Utahraptor")), "{names:?}");
+    let big = res
+        .section("characters")
+        .expect("characters")
+        .blocks
+        .iter()
+        .find(|c| c.get(&["name"]).is_some_and(|n| n.contains("Big")))
+        .expect("Big kept");
+    assert_eq!(big.get(&["callNo"]), Some("1"));
+    let weapons: Vec<String> = res
+        .section("weapons")
+        .expect("weapons")
+        .blocks
+        .iter()
+        .filter_map(|c| c.get(&["name"]).map(str::to_owned))
+        .collect();
+    assert!(!weapons.iter().any(|n| n.contains("Rifle")), "{weapons:?}");
+    let menu = c2_formats::menu_txt::MenuData::from_res(
+        &ResTxt::parse(&std::fs::read_to_string(h.join("_MENU.TXT")).expect("menu"))
+            .expect("parse"),
+    );
+    assert_eq!(menu.huntables.len(), 2);
+    assert_eq!(menu.weapons.len(), 1);
 }

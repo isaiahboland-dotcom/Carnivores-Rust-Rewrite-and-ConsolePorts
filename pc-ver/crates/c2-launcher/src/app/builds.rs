@@ -370,20 +370,7 @@ impl Launcher {
                 .join(install_name(&r.id()));
             let mut launch = self.balance_args();
             launch.extend(["--save-instance".into(), r.id()]);
-            match self.menu_style() {
-                MenuStyle::Mobile => launch.push("--mobile-menu".into()),
-                MenuStyle::Original | MenuStyle::IceAge => {
-                    let art = if self.cfg.menu_style == MenuStyle::IceAge {
-                        &self.cfg.ice_age
-                    } else {
-                        &self.cfg.base
-                    };
-                    if let Some(p) = art {
-                        launch.extend(["--menu-art".into(), p.display().to_string()]);
-                    }
-                }
-                MenuStyle::Mod => {}
-            }
+            launch.extend(self.menu_args());
             crate::windows::validate_exe(&exe)?;
             Ok(vec![
                 Step::Run { program: pc, args },

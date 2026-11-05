@@ -59,7 +59,12 @@ pub enum Ambients {
 
 pub struct Options {
     pub ambients: Ambients,
+    /// Per game (in `games` order): what of it is left out. Missing: none.
+    pub skip: Vec<Skip>,
 }
+
+mod skip;
+pub use skip::{parts, Parts, Skip};
 
 /// One standalone game, read.
 struct Game {
@@ -772,7 +777,8 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
         .collect();
 
     let mut slugs: HashSet<String> = HashSet::new();
-    for dir in games {
+    for (gi, dir) in games.iter().enumerate() {
+        let skip = o.skip.get(gi).cloned().unwrap_or_default();
         let root = crate::pack::find_game_root(dir)
             .and_then(|r| find_ci(&r, "HUNTDAT"))
             .ok_or_else(|| ModError::NoHuntdat(dir.clone()))?;
@@ -842,10 +848,38 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
                 g_areas
             ));
         }
-        let area_map = |n: u32| (n >= 1 && n as usize <= g_areas).then(|| a0 as u32 + n);
+        // What is kept (`Skip`) gets the next numbers, with no gaps.
+        let kept_areas = Skip::kept(&skip.areas, g_areas);
+        let area_map = |n: u32| {
+            kept_areas
+                .iter()
+                .position(|&k| k == n)
+                .map(|i| a0 as u32 + i as u32 + 1)
+        };
         let g_dinos = gm.huntables.len();
-        let slot_map = |n: u32| ((n as usize) < g_dinos).then(|| d0 as u32 + n);
-        let my_areas: Vec<u32> = (1..=g_areas as u32).map(|n| a0 as u32 + n).collect();
+        // Slots count from 0, the picker's numbers from 1.
+        let kept_dinos: Vec<u32> = Skip::kept(&skip.huntables, g_dinos)
+            .into_iter()
+            .map(|n| n - 1)
+            .collect();
+        let slot_map = |n: u32| {
+            kept_dinos
+                .iter()
+                .position(|&k| k == n)
+                .map(|i| d0 as u32 + i as u32)
+        };
+        let my_areas: Vec<u32> = (1..=kept_areas.len() as u32)
+            .map(|n| a0 as u32 + n)
+            .collect();
+        let gone_areas: Vec<u32> = skip.areas.clone();
+        let gone_slots: Vec<u32> = skip.huntables.iter().map(|n| n - 1).collect();
+        let gone_names: HashSet<String> = gm
+            .huntables
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| gone_slots.contains(&(*i as u32)))
+            .map(|(_, h)| h.name.to_ascii_lowercase())
+            .collect();
 
         // Hunter: its kill animations into the shared model.
         let g_hunter = game_hunter(&g.res)
@@ -883,9 +917,14 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
             .and_then(|b| b.get(&["file"]).map(unquote));
 
         // Weapons: shared when the game already has the same one.
-        let mut weapon_slot: Vec<usize> = Vec::new();
+        let mut weapon_slot: Vec<Option<usize>> = Vec::new();
         let mut new_weapons: Vec<(usize, Block)> = Vec::new();
+        let mut shared = 0;
         for (i, b) in blocks(&g.res, "weapons").iter().enumerate() {
+            if skip.weapons.contains(&(i as u32 + 1)) {
+                weapon_slot.push(None);
+                continue;
+            }
             let wname = b.get(&["name"]).map(unquote).unwrap_or_default();
             let file = b.get(&["file"]).map(unquote).unwrap_or_default();
             let data = crate::pack::find_path(&g.root, &format!("WEAPONS/{file}"))
@@ -895,15 +934,20 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
                 .iter()
                 .position(|(n, d)| *n == wname.to_ascii_lowercase() && *d == data)
             {
-                weapon_slot.push(j);
+                weapon_slot.push(Some(j));
+                shared += 1;
                 continue;
             }
             weapon_cars.push((wname.to_ascii_lowercase(), data));
             n_weapons += 1;
-            weapon_slot.push(n_weapons - 1);
+            weapon_slot.push(Some(n_weapons - 1));
             new_weapons.push((i, b.clone()));
         }
-        let wslot = |n: usize| weapon_slot.get(n - 1).map(|&j| j + 1);
+        let wslot = |n: usize| {
+            n.checked_sub(1)
+                .and_then(|i| weapon_slot.get(i).copied().flatten())
+                .map(|j| j + 1)
+        };
 
         // Files.
         let mut all = Vec::new();
@@ -984,6 +1028,7 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
                 .cloned()
                 .collect();
             for s in &mut add {
+                skip::drop_refs(&mut s.block, &gone_areas, &gone_slots);
                 moves.block(&mut s.block);
             }
             let sec = section_mut(&mut res, table);
@@ -1001,6 +1046,13 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
             .filter(|b| b.get(&["ai"]).map(c_atoi).unwrap_or(0) != 0)
         {
             let mut b = b.clone();
+            let left_out = b
+                .get(&["name"])
+                .is_some_and(|n| gone_names.contains(&unquote(n).to_ascii_lowercase()));
+            if left_out {
+                continue;
+            }
+            skip::drop_refs(&mut b, &gone_areas, &gone_slots);
             if let Some(n) = b.get(&["name"]).map(unquote) {
                 let mut u = n.clone();
                 if names.contains(&u.to_ascii_lowercase()) {
@@ -1038,6 +1090,9 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
             .collect();
         let mut prices: Vec<Entry> = Vec::new();
         for (i, b) in menu_dinos.iter().enumerate() {
+            if gone_slots.contains(&(i as u32)) {
+                continue;
+            }
             let mut b = (*b).clone();
             // The name its _RES entry got.
             if let Some(n) = b.get(&["name"]).map(unquote) {
@@ -1068,15 +1123,28 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
                 value: gm.weapons.get(*i).map_or(0, |w| w.price).to_string(),
             });
         }
-        for a in gm.areas.iter().take(g_areas) {
+        for (_, a) in gm
+            .areas
+            .iter()
+            .take(g_areas)
+            .enumerate()
+            .filter(|(i, _)| kept_areas.contains(&(*i as u32 + 1)))
+        {
             prices.push(Entry {
                 key: "area".into(),
                 value: a.price.to_string(),
             });
         }
         section_mut(&mut menu, "prices").entries.extend(prices);
-        n_dinos += g_dinos;
-        n_areas += g_areas;
+        n_dinos += kept_dinos.len();
+        n_areas += kept_areas.len();
+        if !skip.is_empty() {
+            report.push_str(&format!(
+                "- **{}**: left out (as picked): {}\n",
+                g.name,
+                skip.to_arg()
+            ));
+        }
         report.push_str(&format!(
             "- **{}**: areas {}–{}, huntables {}–{}, {} new weapons ({} shared), {} characters ({} renamed: same name as one already in), files under `MODS/{}/`\n",
             g.name,
@@ -1085,7 +1153,7 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
             d0 + 1,
             n_dinos,
             new_weapons.len(),
-            weapon_slot.len() - new_weapons.len(),
+            shared,
             added,
             renames.len(),
             g.slug

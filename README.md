@@ -111,16 +111,21 @@ Three builds of the same app:
 The tabs:
 
 - **The game**: drop in, browse to, or paste the path of your Carnivores 2 (or Carnivores: Ice Age) folder;
-  it's checked for `HUNTDAT`. **Base overlays** go on top of it, such as the Modder's Edition release, which
+  it's checked for `HUNTDAT`. Only have the phone game? **Use my APK as the game…** beside it builds the
+  base from your APK. **Base overlays** go on top of it, such as the Modder's Edition release, which
   ships changed files only.
-- **Add-ons**: add mod folders or ZIP archives, switch each on or off, and change their
+- **Add-ons**: add mod folders or ZIP archives, switch each on or off (or all at once), and change their
   order. **Standalone games** (whole games made from Carnivores 2) go here too, and are combined beside
-  the base game. You can also import animals from Ice Age or from the mobile games' APKs.
+  the base game; **Pick parts** under each one chooses which of its areas, animals and weapons come along
+  (PC). You can also import animals from Ice Age or from the mobile games' APKs.
 - **Instances**: save a setup as a recipe, then choose **Play**, **Build Windows…**, **Build 3DS…** or **Build Wii U…**
   beside it. Missing downloads are listed before opening the builder. Choose an output folder and press
   **BUILD**; output, packaging and artwork choices are remembered separately for each instance.
   Combined recipes are merged again before cooking, so rebuilding uses the current conversion tools.
   An active instance produces its combined recipe pack rather than separate standalone installs.
+  **Stop using** at the top unloads the instance in use (after a test run, say). With several standalone
+  games or an APK base, the **Menu** choice (Play tab) also offers Android's and each standalone's own
+  menu screens.
 - **Balance**: every area, animal and weapon with its price and score, plus the starting points. Edit them to
   taste, or to make several mods fit together. Where the PC and mobile versions differ, pick which one to
   use. Your changes are kept as a balance file over the game, never written into it.

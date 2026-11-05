@@ -169,6 +169,10 @@ pub struct RecipeMod {
     /// `HUNTDAT` parent, or a loose add-on's folder). Only these files are
     /// taken from the mod.
     pub files: BTreeMap<String, String>,
+    /// A standalone's areas, huntables and weapons left out when it is
+    /// combined (`crate::standalone::Skip`).
+    #[serde(skip_serializing_if = "crate::standalone::Skip::is_empty")]
+    pub skip: crate::standalone::Skip,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -795,6 +799,7 @@ pub fn new_recipe(
             .unwrap_or_default(),
             loose: m.is_loose(),
             files,
+            skip: Default::default(),
         });
         r.load_order.order.push(info.id.clone());
     }

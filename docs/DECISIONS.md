@@ -3681,3 +3681,51 @@ Owner requests; none of these is in the original, and all are off by default.
   cycle), unlike Pause which also freezes the camera. Controls: PC F / T;
   3DS Fly and Stop buttons in the (empty) weapon column; Wii U D-pad Left /
   Y. HuntChoice (Wii U, shared with C) grows to 112 bytes.
+
+### Launcher: pick parts, more menus, Instances layout, Steam Deck fit (2026-11-05)
+
+Owner requests from the launcher backlog.
+
+- **Pick parts** (per standalone, Add-ons tab). `c2_mods::standalone::Skip`
+  lists a game's areas, huntables and weapons to leave out (numbers from 1
+  in that game's menu order); `Options::skip` holds one per game. The rest
+  closes up: area, slot and weapon numbers (and the renumbered menu, call
+  and area files) are given in order to what is kept, so the combined menu
+  has no holes. Left-out huntables' characters (matched by their menu
+  name) are not added. In the kept characters and the spawn / pack tables,
+  `areaN` / `charN` words naming something left out are removed from
+  condition headers, and a condition left naming none of a kind it named
+  is dropped (it could no longer hold); `callNo` / `fearCall` / `dontFear`
+  entries pointing at a left-out slot go. Files of left-out parts that
+  carry no number (models) are still copied under `MODS/<game>/`, unused.
+  Passed as `c2-pc --skip N=area2,dino1,weapon3`, saved as the
+  standalone's `skip` in a recipe (and by "Save as instance"). PC only: the
+  3DS and Wii U take each standalone whole, as its own pack. Checked on
+  Carnivores Triassic beside the Modder's Edition: leaving out one area,
+  two huntables and one weapon gives 12 areas, 17 huntables, 13 weapons
+  and two fewer characters.
+- **Menu choice** (Play tab). New `MenuStyle::Game` with
+  `Config::menu_game`: a standalone's own menu frames (`--menu-art` its
+  game root); in a recipe `menu = "game:<standalone id>"`. With an APK base
+  beside standalones, "Android" is offered (`--mobile-menu`) in place of
+  Original / Mod: the APK folder has no PC frames and the combined game
+  takes no standalone's `MENUM.TGA`, so those two drew the phone's menus
+  anyway. An APK base on its own still plays with the phone's menus only.
+  The Windows build uses the same arguments as Play.
+- **Stop using** is on the Instances page (a line at the top naming the
+  recipe in use, and on its row), so a test recipe is unloaded in one
+  click; the Add-ons tab keeps the on/off box and Edit.
+- **Steam Deck.** The owner's report: as a non-Steam game the launcher was
+  zoomed in and the instances' Play buttons could not be reached, also
+  with `WINIT_X11_SCALE_FACTOR=1.0` and the game resolution set. The
+  instances grid was wider than the 900-point window (one row: name, path,
+  base, status, then four action buttons), with no horizontal scroll. Now
+  each instance is a card whose actions wrap below its name, Play first;
+  the tabs row wraps too; scroll bars are solid, 12 points wide and always
+  shown. A Settings "Interface size" (default Auto) shrinks the UI (down
+  to 50%, never above the system's) until an 880x600-point page fits the
+  window; fixed sizes 60-150% are offered. Under Steam's game mode or Big
+  Picture (`SteamGamepadUI`, `SteamTenfoot`, `GAMESCOPE_WAYLAND_DISPLAY`,
+  or `SteamDeck=1` with `SteamAppId`) the window opens full screen;
+  `C2_LAUNCHER_FULLSCREEN=1` asks for that anywhere. Needs the owner's
+  retest on the Deck.

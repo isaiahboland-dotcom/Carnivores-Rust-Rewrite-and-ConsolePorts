@@ -38,6 +38,15 @@ pub(crate) fn from_setup(cfg: Config, out: PathBuf, id: String) -> Result<Comple
             list.push(m);
         }
     }
+    // Each standalone's "Pick parts" goes with it.
+    let skips = cfg
+        .standalones
+        .iter()
+        .filter(|a| a.enabled)
+        .map(|a| a.skip.clone());
+    for (m, skip) in r.standalones.iter_mut().zip(skips) {
+        m.skip = skip;
+    }
     if !r.standalones.is_empty() {
         r.combine = Some(recipe::Combine {
             ambients: "tied".into(),

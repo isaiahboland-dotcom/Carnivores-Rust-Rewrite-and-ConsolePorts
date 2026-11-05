@@ -65,6 +65,8 @@ pub enum Ask {
     Edit(PathBuf),
     Clone(PathBuf),
     Save,
+    /// Stop using the recipe in use.
+    Stop,
 }
 
 #[derive(Default)]
@@ -144,85 +146,129 @@ impl List {
             return ask;
         }
         let in_use = cfg.recipe.as_ref().filter(|r| r.on).map(|r| r.path.clone());
-        panel(ui, |ui| {
-            egui::Grid::new("instances")
-                .striped(true)
-                .spacing([12.0, 6.0])
-                .show(ui, |ui| {
-                    for it in &self.items {
-                        let r = &it.recipe;
-                        let name = if r.recipe.name.is_empty() {
-                            r.recipe.id.clone()
-                        } else {
-                            r.recipe.name.clone()
-                        };
-                        let using = in_use.as_ref() == Some(&it.path);
-                        ui.label(RichText::new(name).color(if using { GOLD } else { SAND }))
-                            .on_hover_text(it.path.display().to_string());
-                        ui.label(RichText::new(&it.shown).color(DIM));
-                        let n = recipe::entries(r).count();
-                        ui.label(format!(
-                            "{} · {n} download{}",
-                            if r.recipe.base.is_empty() {
-                                "any game"
-                            } else {
-                                &r.recipe.base
-                            },
-                            if n == 1 { "" } else { "s" }
-                        ));
-                        ui.label(RichText::new(if using {
-                            "in use"
-                        } else if it.known {
-                            "set up before"
-                        } else {
-                            ""
-                        }))
-                        .on_hover_text("Its folders were given before: it plays straight away.");
-                        ui.horizontal(|ui| {
-                            for &(destination, label) in Destination::offered(mode) {
-                                if !destination.visible(mode, cfg) {
-                                    continue;
-                                }
-                                if ui
-                                    .add_enabled(!busy, egui::Button::new(label).fill(GREEN))
-                                    .clicked()
-                                {
-                                    ask = Ask::Start(it.path.clone(), destination);
-                                }
-                            }
-                            if ui
-                                .add_enabled(!busy, egui::Button::new("Open"))
-                                .on_hover_text(
-                                    "Its downloads, what's missing and their download pages.",
-                                )
-                                .clicked()
-                            {
-                                ask = Ask::Open(it.path.clone());
-                            }
-                            if ui
-                                .add_enabled(!busy, egui::Button::new("Edit"))
-                                .on_hover_text(
-                                    "Its name, base and entries: remove, reorder or add some.",
-                                )
-                                .clicked()
-                            {
-                                ask = Ask::Edit(it.path.clone());
-                            }
-                            if ui
-                                .add_enabled(!busy, egui::Button::new("Clone..."))
-                                .on_hover_text(
-                                    "A copy to tweak, under a new name; its folders go with it.",
-                                )
-                                .clicked()
-                            {
-                                ask = Ask::Clone(it.path.clone());
-                            }
-                        });
-                        ui.end_row();
+        // The recipe in use, to stop using it quickly after a test run.
+        if let Some(r) = &cfg.recipe {
+            panel(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new("In use:").color(SAND).strong());
+                    ui.label(RichText::new(r.id()).color(GOLD))
+                        .on_hover_text(r.path.display().to_string());
+                    if !r.on {
+                        help(ui, "(switched off on the Add-ons tab)");
+                    }
+                    if ui
+                        .add_enabled(!busy, egui::Button::new("Stop using"))
+                        .on_hover_text(
+                            "Unload it: play and the builds go by the Game and Add-ons tabs \
+                             again. The recipe file stays.",
+                        )
+                        .clicked()
+                    {
+                        ask = Ask::Stop;
                     }
                 });
-        });
+            });
+            ui.add_space(6.0);
+        }
+        for it in &self.items {
+            let using = in_use.as_ref() == Some(&it.path);
+            panel(ui, |ui| {
+                self.row(ui, it, using, cfg, mode, busy, &mut ask);
+            });
+            ui.add_space(4.0);
+        }
         ask
+    }
+}
+
+impl List {
+    /// One instance: its name and what it needs on the first line, its
+    /// actions (Play first) wrapping below, so none is out of reach on a
+    /// narrow or zoomed screen (the Steam Deck).
+    #[allow(clippy::too_many_arguments)]
+    fn row(
+        &self,
+        ui: &mut egui::Ui,
+        it: &Item,
+        using: bool,
+        cfg: &Config,
+        mode: crate::Mode,
+        busy: bool,
+        ask: &mut Ask,
+    ) {
+        let r = &it.recipe;
+        let name = if r.recipe.name.is_empty() {
+            r.recipe.id.clone()
+        } else {
+            r.recipe.name.clone()
+        };
+        ui.horizontal_wrapped(|ui| {
+            ui.label(
+                RichText::new(name)
+                    .color(if using { GOLD } else { SAND })
+                    .strong(),
+            )
+            .on_hover_text(it.path.display().to_string());
+            ui.label(RichText::new(&it.shown).color(DIM));
+            let n = recipe::entries(r).count();
+            ui.label(format!(
+                "{} · {n} download{}",
+                if r.recipe.base.is_empty() {
+                    "any game"
+                } else {
+                    &r.recipe.base
+                },
+                if n == 1 { "" } else { "s" }
+            ));
+            if using {
+                ui.label(RichText::new("in use").color(GOLD));
+            } else if it.known {
+                ui.label("set up before")
+                    .on_hover_text("Its folders were given before: it plays straight away.");
+            }
+        });
+        ui.horizontal_wrapped(|ui| {
+            for &(destination, label) in Destination::offered(mode) {
+                if !destination.visible(mode, cfg) {
+                    continue;
+                }
+                if ui
+                    .add_enabled(!busy, egui::Button::new(label).fill(GREEN))
+                    .clicked()
+                {
+                    *ask = Ask::Start(it.path.clone(), destination);
+                }
+            }
+            if ui
+                .add_enabled(!busy, egui::Button::new("Open"))
+                .on_hover_text("Its downloads, what's missing and their download pages.")
+                .clicked()
+            {
+                *ask = Ask::Open(it.path.clone());
+            }
+            if ui
+                .add_enabled(!busy, egui::Button::new("Edit"))
+                .on_hover_text("Its name, base and entries: remove, reorder or add some.")
+                .clicked()
+            {
+                *ask = Ask::Edit(it.path.clone());
+            }
+            if ui
+                .add_enabled(!busy, egui::Button::new("Clone..."))
+                .on_hover_text("A copy to tweak, under a new name; its folders go with it.")
+                .clicked()
+            {
+                *ask = Ask::Clone(it.path.clone());
+            }
+            if using
+                && ui
+                    .add_enabled(!busy, egui::Button::new("Stop using"))
+                    .on_hover_text("Unload it after a test run; the recipe file stays.")
+                    .clicked()
+            {
+                *ask = Ask::Stop;
+            }
+        });
     }
 }
 

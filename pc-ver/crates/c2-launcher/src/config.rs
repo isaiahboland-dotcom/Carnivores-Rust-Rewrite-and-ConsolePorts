@@ -29,6 +29,10 @@ pub struct AddOn {
     /// A folder (archives are unpacked into the data folder first).
     pub path: PathBuf,
     pub enabled: bool,
+    /// A standalone game's areas, huntables and weapons left out on PC
+    /// (the Add-ons tab's "Pick parts").
+    #[serde(default, skip_serializing_if = "c2_mods::standalone::Skip::is_empty")]
+    pub skip: c2_mods::standalone::Skip,
 }
 
 impl AddOn {
@@ -69,6 +73,8 @@ pub enum MenuStyle {
     IceAge,
     /// A touch-style layout after the mobile game's (experimental).
     Mobile,
+    /// A standalone game's own menu frames (`Config::menu_game`).
+    Game,
 }
 
 impl MenuStyle {
@@ -79,6 +85,7 @@ impl MenuStyle {
             MenuStyle::Original => "original",
             MenuStyle::IceAge => "ice-age",
             MenuStyle::Mobile => "mobile",
+            MenuStyle::Game => "game",
         }
     }
 
@@ -237,7 +244,13 @@ pub struct Config {
     /// The PC menu style, and the Ice Age folder it (and the 3DS title)
     /// can take art from.
     pub menu_style: MenuStyle,
+    /// With `MenuStyle::Game`: the standalone whose menu is used (its
+    /// name in the list, or its id in a recipe).
+    pub menu_game: Option<String>,
     pub ice_age: Option<PathBuf>,
+    /// The launcher window's interface size (1.0 = the system's); `None`:
+    /// fit the screen (handheld PCs, Steam's Big Picture / game mode).
+    pub ui_scale: Option<f32>,
     /// A recipe set up on the Add-ons tab (`crate::recipe_page`).
     pub recipe: Option<RecipeUse>,
     /// The folders each recipe was last given, so an instance plays again
@@ -365,6 +378,22 @@ impl Config {
 
     /// The add-ons to load, in order: a folder of add-ons (dropped as one)
     /// is its add-ons (`c2_mods::expand_addons`).
+    /// `--skip N=...` for the standalones that are on (`N` counts those).
+    pub fn standalone_skips(&self) -> Vec<String> {
+        self.standalones
+            .iter()
+            .filter(|a| a.enabled)
+            .enumerate()
+            .filter(|(_, a)| !a.skip.is_empty())
+            .flat_map(|(i, a)| {
+                [
+                    "--skip".to_string(),
+                    format!("{}={}", i + 1, a.skip.to_arg()),
+                ]
+            })
+            .collect()
+    }
+
     /// The standalone games that are on.
     pub fn enabled_standalones(&self) -> Vec<PathBuf> {
         self.standalones
@@ -453,7 +482,10 @@ impl Config {
 
     /// Takes in a recipe's choices: those it leaves unset stay as they are.
     pub fn apply(&mut self, s: &Settings) {
-        if let Some(m) = MenuStyle::from_name(&s.menu) {
+        if let Some(g) = s.menu.strip_prefix("game:") {
+            self.menu_style = MenuStyle::Game;
+            self.menu_game = Some(g.to_string());
+        } else if let Some(m) = MenuStyle::from_name(&s.menu) {
             self.menu_style = m;
         }
         match s.three_ds_target.as_str() {
@@ -476,7 +508,11 @@ impl Config {
     /// recipe's own, which keep what the launcher has no control for).
     pub fn settings(&self, old: &Settings) -> Settings {
         Settings {
-            menu: self.menu_style.name().into(),
+            menu: match (self.menu_style, &self.menu_game) {
+                (MenuStyle::Game, Some(g)) => format!("game:{g}"),
+                (MenuStyle::Game, None) => MenuStyle::Mod.name().into(),
+                (m, _) => m.name().into(),
+            },
             three_ds_target: self.three_ds.target.arg().into(),
             ice_age_title: Some(self.three_ds.ice_age_title),
             pictures: self.pictures,
@@ -627,6 +663,21 @@ mod tests {
     }
 
     #[test]
+    fn a_standalones_menu_round_trips_through_a_recipe() {
+        let mut c = Config::default();
+        c.apply(&Settings {
+            menu: "game:ice-age-ultimate".into(),
+            ..Default::default()
+        });
+        assert_eq!(c.menu_style, MenuStyle::Game);
+        assert_eq!(c.menu_game.as_deref(), Some("ice-age-ultimate"));
+        assert_eq!(
+            c.settings(&Settings::default()).menu,
+            "game:ice-age-ultimate"
+        );
+    }
+
+    #[test]
     fn recipe_settings_in_and_out() {
         let mut c = Config::default();
         let s = Settings {
@@ -657,6 +708,7 @@ mod tests {
             addons: vec![AddOn {
                 path: "/mods/a".into(),
                 enabled: false,
+                skip: Default::default(),
             }],
             show_3ds: Some(true),
             show_wiiu: Some(false),

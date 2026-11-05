@@ -175,7 +175,7 @@ A recipe can also hold the choices made for its game, so the launcher's
 Instances tab can rebuild it later exactly as it was:
 ```toml
 [settings]
-menu = "mobile"              # mod, original, ice-age, mobile
+menu = "mobile"              # mod, original, ice-age, mobile, game:<standalone id>
 survival = ["classic", "modded"]
 three_ds_target = "o3ds"     # or n3ds
 
@@ -202,6 +202,19 @@ A game folder can be the folder you extracted (the game may be a few
 folders down). Games made for the original engine are read as dialect
 games: each animal takes the animations and spawns of the base's animal
 with the same AI. `COMBINED.md` in the result says what each game got.
+
+Parts of a game can be left out: `--skip N=area2,dino1,weapon3` (repeatable)
+for the `N`th game (from 1), numbers from 1 in that game's own menu order.
+What is kept closes up (no gaps in the numbering); the left-out animals'
+characters are not added, and their conditions go with them. The
+launcher's "Pick parts" under each standalone game does the same. In a
+recipe it is the standalone's `skip`:
+```toml
+[[standalones]]
+id = "carnivores-triassic"
+skip = { areas = [2], huntables = [1, 2], weapons = [1] }
+```
+The 3DS and Wii U take each standalone whole, as a pack of its own.
 
 In a recipe, `[[overlays]]` (the Modder's Edition release) and
 `[[standalones]]` are listed like mods, with their files' paths in each

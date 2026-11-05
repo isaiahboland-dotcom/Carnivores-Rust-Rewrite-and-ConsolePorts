@@ -12,10 +12,13 @@ use crate::{find_tool, Mode};
 
 mod builds;
 mod game;
+mod menu;
 mod play;
 mod recipes;
+mod screen;
 mod settings;
 mod setup;
+mod standalones;
 mod three_ds;
 mod tuning;
 mod wiiu;
@@ -51,6 +54,8 @@ struct View {
     recipe_page: Option<crate::recipe_page::Page>,
     recipe_edit: Option<crate::recipe_edit::Editor>,
     instances: crate::instances::List,
+    /// Each standalone's areas, animals and weapons, read once for "Pick parts".
+    parts: std::collections::HashMap<PathBuf, Option<c2_mods::standalone::Parts>>,
 }
 
 fn style(ctx: &egui::Context) {
@@ -74,7 +79,10 @@ fn style(ctx: &egui::Context) {
     v.widgets.active.bg_fill = GREEN;
     v.widgets.active.weak_bg_fill = GREEN;
     ctx.set_visuals(v);
+    screen::scroll_style(ctx);
 }
+
+pub(crate) use screen::steam_game_mode;
 
 fn heading(ui: &mut egui::Ui, text: &str) {
     ui.label(RichText::new(text).size(20.0).color(SAND).strong());
@@ -167,6 +175,7 @@ impl Launcher {
             recipe_page: None,
             recipe_edit: None,
             instances: Default::default(),
+            parts: Default::default(),
         };
         Self {
             cfg,
@@ -332,6 +341,7 @@ fn log_panel(ui: &mut egui::Ui, job: &Job) {
 impl eframe::App for Launcher {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        screen::fit_screen(&ctx, self.cfg.ui_scale);
         let dropped: Vec<PathBuf> = ctx.input(|i| {
             i.raw
                 .dropped_files
@@ -371,7 +381,7 @@ impl eframe::App for Launcher {
         egui::Panel::top("tabs")
             .frame(egui::Frame::new().fill(PANEL).inner_margin(8.0))
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(
                         RichText::new("CARNIVORES 2")
                             .size(22.0)
@@ -426,19 +436,22 @@ impl eframe::App for Launcher {
             });
         let enabled = !self.busy();
         egui::CentralPanel::default().show(ui, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.add_enabled_ui(enabled, |ui| match self.ui.tab {
-                    Tab::Instances => self.instances_tab(ui),
-                    Tab::Game => self.game_tab(ui),
-                    Tab::AddOns => self.addons_tab(ui),
-                    Tab::Balance => self.balance_tab(ui),
-                    Tab::Play => self.play_tab(ui),
-                    Tab::ThreeDs => self.three_ds_tab(ui),
-                    Tab::WiiU => self.wiiu_tab(ui),
-                    Tab::Windows => self.windows_tab(ui),
-                    Tab::Settings => self.settings_tab(ui),
-                })
-            });
+            egui::ScrollArea::vertical()
+                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
+                .auto_shrink(false)
+                .show(ui, |ui| {
+                    ui.add_enabled_ui(enabled, |ui| match self.ui.tab {
+                        Tab::Instances => self.instances_tab(ui),
+                        Tab::Game => self.game_tab(ui),
+                        Tab::AddOns => self.addons_tab(ui),
+                        Tab::Balance => self.balance_tab(ui),
+                        Tab::Play => self.play_tab(ui),
+                        Tab::ThreeDs => self.three_ds_tab(ui),
+                        Tab::WiiU => self.wiiu_tab(ui),
+                        Tab::Windows => self.windows_tab(ui),
+                        Tab::Settings => self.settings_tab(ui),
+                    })
+                });
         });
         if self.ui.mode == Mode::Full && self.cfg.show_3ds.is_none() && !self.busy() {
             self.first_launch(&ctx);
@@ -475,6 +488,7 @@ mod operation_tests {
                 recipe_page: None,
                 recipe_edit: None,
                 instances: Default::default(),
+                parts: Default::default(),
             },
             job: Default::default(),
         }

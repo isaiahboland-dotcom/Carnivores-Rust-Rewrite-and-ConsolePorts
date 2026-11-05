@@ -171,6 +171,15 @@ impl Launcher {
             crate::instances::Ask::Edit(p) => self.edit_recipe(&p),
             crate::instances::Ask::Clone(p) => self.clone_recipe(&p),
             crate::instances::Ask::Save => self.save_instance(),
+            crate::instances::Ask::Stop => {
+                self.cfg.recipe = None;
+                self.save();
+                self.ui.instances.refresh(&self.cfg);
+                self.ui.note = Some((
+                    "Recipe unloaded: play and the builds go by the Game and Add-ons tabs.".into(),
+                    TEXT,
+                ));
+            }
         }
     }
 
@@ -312,7 +321,6 @@ impl Launcher {
             return;
         }
         let mut open = None;
-        let mut stop = false;
         let mut changed = false;
         panel(ui, |ui| {
             ui.horizontal(|ui| {
@@ -321,16 +329,14 @@ impl Launcher {
                         changed |= ui
                             .checkbox(&mut r.on, RichText::new("Recipe").color(SAND).strong())
                             .on_hover_text(
-                                "On: play and the builds use the recipe instead of the lists                                  below.",
+                                "On: play and the builds use the recipe instead of the lists below.",
                             )
                             .changed();
                         ui.label(r.id()).on_hover_text(r.path.display().to_string());
                         if ui.button("Edit").clicked() {
                             open = Some(r.path.clone());
                         }
-                        if ui.button("Stop using").clicked() {
-                            stop = true;
-                        }
+                        help(ui, "(Stop using: on the Instances page)");
                     }
                     None => {
                         ui.label(RichText::new("Recipe").color(SAND).strong());
@@ -346,14 +352,10 @@ impl Launcher {
             if self.active_recipe().is_some() {
                 help(
                     ui,
-                    "While the recipe is on, the add-on list and the standalone games below                      aren't used.",
+                    "While the recipe is on, the add-on list and the standalone games below aren't used.",
                 );
             }
         });
-        if stop {
-            self.cfg.recipe = None;
-            changed = true;
-        }
         if changed {
             self.save();
         }

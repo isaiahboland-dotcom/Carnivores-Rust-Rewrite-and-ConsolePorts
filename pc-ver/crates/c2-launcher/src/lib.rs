@@ -227,7 +227,9 @@ pub fn run(mode: Mode) -> eframe::Result {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([900.0, 640.0])
             .with_min_inner_size([640.0, 480.0])
-            .with_drag_and_drop(true),
+            .with_drag_and_drop(true)
+            // Steam's game mode / Big Picture: the whole screen.
+            .with_fullscreen(app::steam_game_mode()),
         ..Default::default()
     };
     eframe::run_native(

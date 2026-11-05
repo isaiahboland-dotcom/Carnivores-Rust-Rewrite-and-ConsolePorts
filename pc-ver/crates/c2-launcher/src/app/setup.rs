@@ -157,6 +157,7 @@ impl Launcher {
                 self.cfg.addons.push(AddOn {
                     path: dest,
                     enabled: true,
+                    skip: Default::default(),
                 });
             }
         }
@@ -198,16 +199,6 @@ impl Launcher {
                         .as_deref()
                         .is_some_and(crate::config::is_phone_game)
             }
-        }
-    }
-
-    /// The menu the game is played with: the phone's for a phone game, and
-    /// only there (without the APK's pictures it would be the mod's).
-    pub(super) fn menu_style(&self) -> MenuStyle {
-        match (self.plays_phone_game(), self.cfg.menu_style) {
-            (true, _) => MenuStyle::Mobile,
-            (false, MenuStyle::Mobile) => MenuStyle::Mod,
-            (false, s) => s,
         }
     }
 

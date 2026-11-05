@@ -206,98 +206,15 @@ impl Launcher {
                 args.push("--standalone".into());
                 args.push(s.display().to_string());
             }
+            args.extend(self.cfg.standalone_skips());
             for a in self.cfg.enabled_addons() {
                 args.push("--mod".into());
                 args.push(a.display().to_string());
             }
         }
         args.extend(self.balance_args());
-        let art = match self.menu_style() {
-            MenuStyle::Original => self.cfg.base.clone(),
-            MenuStyle::IceAge => self.cfg.ice_age.clone(),
-            MenuStyle::Mod => None,
-            MenuStyle::Mobile => {
-                args.push("--mobile-menu".into());
-                None
-            }
-        };
-        if let Some(a) = art {
-            args.push("--menu-art".into());
-            args.push(a.display().to_string());
-        }
+        args.extend(self.menu_args());
         args
-    }
-
-    /// Menu style choice (PC: four; the 3DS: the title art).
-    pub(super) fn menu_style_ui(&mut self, ui: &mut egui::Ui, three_ds: bool) -> bool {
-        let mut changed = false;
-        ui.horizontal(|ui| {
-            ui.label("Menu:");
-            if three_ds {
-                let t = &mut self.cfg.three_ds;
-                changed |= ui
-                    .radio_value(&mut t.ice_age_title, false, "Carnivores 2")
-                    .changed();
-                changed |= ui
-                    .radio_value(&mut t.ice_age_title, true, "Ice Age")
-                    .changed();
-            } else if self.plays_phone_game() {
-                ui.label(
-                    RichText::new("Android (a game built from an APK has the phone's menus only)")
-                        .color(SAND),
-                );
-            } else {
-                for (s, name) in [
-                    (MenuStyle::Original, "Original"),
-                    (MenuStyle::Mod, "Mod"),
-                    (MenuStyle::IceAge, "Ice Age"),
-                ] {
-                    let on = self.menu_style() == s;
-                    if ui.radio(on, name).clicked() && !on {
-                        self.cfg.menu_style = s;
-                        changed = true;
-                    }
-                }
-                ui.add_enabled(false, egui::RadioButton::new(false, "Android"))
-                    .on_disabled_hover_text(
-                        "The Android menus need a game built from your APK as the base \
-                         (its call, binocular, map and menu pictures).",
-                    );
-            }
-        });
-        let wants_ia = if three_ds {
-            self.cfg.three_ds.ice_age_title
-        } else {
-            self.menu_style() == MenuStyle::IceAge
-        };
-        if wants_ia {
-            ui.horizontal(|ui| {
-                let shown = self
-                    .cfg
-                    .ice_age
-                    .as_ref()
-                    .map_or("Ice Age folder: not set".to_string(), |p| {
-                        format!("Ice Age folder: {}", p.display())
-                    });
-                let ok = self
-                    .cfg
-                    .ice_age
-                    .as_deref()
-                    .is_some_and(|p| describe_game(p).is_some());
-                ui.label(RichText::new(shown).color(if ok { SAND } else { RED }));
-                if ui.button("Browse...").clicked() {
-                    if let Some(p) = rfd::FileDialog::new().pick_folder() {
-                        self.cfg.ice_age = Some(p);
-                        changed = true;
-                    }
-                }
-            });
-            help(
-                ui,
-                "Your own Carnivores: Ice Age folder (the one with HUNTDAT); its menu art only.",
-            );
-        }
-        changed
     }
 
     pub(super) fn balance_tab(&mut self, ui: &mut egui::Ui) {

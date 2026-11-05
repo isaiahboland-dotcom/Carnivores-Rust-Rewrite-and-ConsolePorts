@@ -32,6 +32,27 @@ impl Launcher {
                     }
                 }
             });
+            let busy = self.busy();
+            ui.horizontal_wrapped(|ui| {
+                if ui
+                    .add_enabled(!busy, egui::Button::new("Use my APK as the game..."))
+                    .on_hover_text(
+                        "Only have the phone game? Carnivores: Dinosaur Hunter or Ice Age for \
+                         Android: the game is built from your APK (its areas, animals, weapons, \
+                         sounds and the phone's menus) and set as the base game. It all stays \
+                         on this computer.",
+                    )
+                    .clicked()
+                {
+                    if let Some(p) = rfd::FileDialog::new()
+                        .add_filter("Android app", &["apk"])
+                        .pick_file()
+                    {
+                        self.base_from_apk(p, false);
+                    }
+                }
+                help(ui, "only have the phone game? build the base from your APK");
+            });
             match self.cfg.base.as_deref().map(|b| (b, describe_game(b))) {
                 Some((_, Some(kind))) => {
                     ui.label(RichText::new(format!("OK: {kind}")).color(GREEN.gamma_multiply(2.0)));
@@ -70,28 +91,6 @@ impl Launcher {
                 if let Some(p) = rfd::FileDialog::new().pick_folder() {
                     self.cfg.overlays.push(p);
                     self.save();
-                }
-            }
-        });
-        ui.add_space(8.0);
-        panel(ui, |ui| {
-            ui.label(RichText::new("Only have the phone game?").color(GOLD));
-            help(
-                ui,
-                "Carnivores: Dinosaur Hunter or Ice Age for Android: pick your APK and the game \
-                 is built from it (its areas, animals, weapons, sounds and the phone's menus) \
-                 and set as the base game. It all stays on this computer.",
-            );
-            let busy = self.busy();
-            if ui
-                .add_enabled(!busy, egui::Button::new("Use my APK as the game..."))
-                .clicked()
-            {
-                if let Some(p) = rfd::FileDialog::new()
-                    .add_filter("Android app", &["apk"])
-                    .pick_file()
-                {
-                    self.base_from_apk(p, false);
                 }
             }
         });
@@ -172,6 +171,8 @@ impl Launcher {
         panel(ui, |ui| {
             if n == 0 {
                 help(ui, "No add-ons yet.");
+            } else {
+                changed |= all_on_off(ui, &mut self.cfg.addons);
             }
             egui::ScrollArea::vertical()
                 .max_height(360.0)
@@ -222,63 +223,29 @@ impl Launcher {
         ui.add_space(12.0);
         self.standalones_ui(ui);
     }
+}
 
-    /// Standalone games: whole games made from Carnivores 2, combined beside
-    /// the base on PC; a 3DS pack each.
-    pub(super) fn standalones_ui(&mut self, ui: &mut egui::Ui) {
-        heading(ui, "Standalone games");
-        help(
-            ui,
-            "Whole games made from Carnivores 2 (the folder you extracted). On PC each one's \
-             areas, animals and weapons are added beside the base game's, its animals on its \
-             own maps; most need the Modder's Edition as a base overlay. On the 3DS each one \
-             is a pack of its own.",
-        );
-        ui.add_space(6.0);
-        if ui.button("Add game folder...").clicked() {
-            if let Some(p) = rfd::FileDialog::new().pick_folder() {
-                if c2_mods::pack::find_game_root(&p).is_some() {
-                    if !self.cfg.standalones.iter().any(|s| s.path == p) {
-                        self.cfg.standalones.push(crate::config::AddOn {
-                            path: p,
-                            enabled: true,
-                        });
-                        self.save();
-                    }
-                } else {
-                    self.ui.note = Some((
-                        "No game (HUNTDAT with _RES.TXT) in that folder.".into(),
-                        RED,
-                    ));
-                }
-            }
+/// "All on" / "All off" over a list: whether it changed.
+pub(super) fn all_on_off(ui: &mut egui::Ui, list: &mut [AddOn]) -> bool {
+    let mut set = None;
+    ui.horizontal(|ui| {
+        let on = list.iter().filter(|a| a.enabled).count();
+        ui.label(RichText::new(format!("{on} of {} on", list.len())).color(DIM));
+        if ui
+            .add_enabled(on < list.len(), egui::Button::new("All on").small())
+            .clicked()
+        {
+            set = Some(true);
         }
-        ui.add_space(6.0);
-        let mut changed = false;
-        let mut remove = None;
-        panel(ui, |ui| {
-            if self.cfg.standalones.is_empty() {
-                help(ui, "No standalone games yet.");
-            }
-            for (i, a) in self.cfg.standalones.iter_mut().enumerate() {
-                ui.horizontal(|ui| {
-                    changed |= ui.checkbox(&mut a.enabled, "").changed();
-                    let name = RichText::new(a.name()).color(if a.enabled { TEXT } else { DIM });
-                    ui.label(name).on_hover_text(a.path.display().to_string());
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button("Remove").clicked() {
-                            remove = Some(i);
-                        }
-                    });
-                });
-            }
-        });
-        if let Some(i) = remove {
-            self.cfg.standalones.remove(i);
-            changed = true;
+        if ui
+            .add_enabled(on > 0, egui::Button::new("All off").small())
+            .clicked()
+        {
+            set = Some(false);
         }
-        if changed {
-            self.save();
-        }
+    });
+    if let Some(v) = set {
+        list.iter_mut().for_each(|a| a.enabled = v);
     }
+    set.is_some()
 }
