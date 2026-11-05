@@ -216,6 +216,20 @@ skip = { areas = [2], huntables = [1, 2], weapons = [1] }
 ```
 The 3DS and Wii U take each standalone whole, as a pack of its own.
 
+When the standalone game is the recipe's base (it is played on its own,
+no `[[standalones]]` beside it), its own parts are left out with
+`[recipe.skip]`, the same numbers; this applies on PC, the 3DS and the
+Wii U (the launcher's instance editor: "Pick parts" of the base game):
+```toml
+[recipe]
+id = "anachronous"
+base = "anachronous"
+
+[recipe.skip]
+areas = [2]
+huntables = [1]
+```
+
 In a recipe, `[[overlays]]` (the Modder's Edition release) and
 `[[standalones]]` are listed like mods, with their files' paths in each
 game's folder; `[combine] ambients = "tied"` (or `"random"`); `[[mods]]`

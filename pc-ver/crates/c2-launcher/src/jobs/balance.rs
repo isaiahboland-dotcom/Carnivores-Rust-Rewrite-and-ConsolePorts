@@ -6,16 +6,25 @@ use c2_mods::standalone::{Ambients, Skip};
 
 /// The game (base, overlays, add-ons) combined in memory, and its values.
 pub(crate) fn read(bases: Vec<PathBuf>, mods: Vec<PathBuf>) -> Result<super::Completion, String> {
-    Ok(super::Completion::Balance(Box::new(values(&bases, &mods)?)))
+    let none = Skip::default();
+    Ok(super::Completion::Balance(Box::new(values(
+        &bases, &mods, &none,
+    )?)))
 }
 
-fn values(bases: &[PathBuf], mods: &[PathBuf]) -> Result<Balance, String> {
+/// `skip`: the base game's own parts left out.
+fn values(bases: &[PathBuf], mods: &[PathBuf], skip: &Skip) -> Result<Balance, String> {
     let v = c2_mods::vanilla(bases).map_err(|e| e.to_string())?;
     let sources = mods
         .iter()
         .map(|m| c2_mods::load_mod(&v, m).map_err(|e| format!("{}: {e}", m.display())))
         .collect::<Result<Vec<_>, _>>()?;
-    let pack = c2_mods::build(bases, sources).map_err(|e| e.to_string())?;
+    let mut pack = c2_mods::build(bases, sources).map_err(|e| e.to_string())?;
+    if let Some(l) =
+        c2_mods::standalone::leave_out::layer(&pack.vfs, skip).map_err(|e| e.to_string())?
+    {
+        pack.vfs.push("left out", Box::new(l));
+    }
     c2_mods::balance::read(&pack.vfs).map_err(|e| e.to_string())
 }
 
@@ -25,6 +34,8 @@ fn values(bases: &[PathBuf], mods: &[PathBuf]) -> Result<Balance, String> {
 pub(crate) struct Instance {
     /// The game, then its overlays.
     pub bases: Vec<PathBuf>,
+    /// The base game's own parts left out (no standalones beside it).
+    pub base_skip: Skip,
     /// Standalone games and what of each is left out.
     pub standalones: Vec<(PathBuf, Skip)>,
     /// Add-ons in load order.
@@ -39,7 +50,7 @@ pub(crate) struct Instance {
 /// their parts left out), the add-ons over that.
 pub(crate) fn read_instance(i: Instance) -> Result<super::Completion, String> {
     let values = if i.standalones.is_empty() {
-        values(&i.bases, &i.mods)?
+        values(&i.bases, &i.mods, &i.base_skip)?
     } else {
         use c2_mods::standalone::{add_ons, build, Options};
         let (games, skip): (Vec<PathBuf>, Vec<Skip>) = i.standalones.into_iter().unzip();

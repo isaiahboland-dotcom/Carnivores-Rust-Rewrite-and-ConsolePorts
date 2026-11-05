@@ -3729,3 +3729,28 @@ Owner requests from the launcher backlog.
   or `SteamDeck=1` with `SteamAppId`) the window opens full screen;
   `C2_LAUNCHER_FULLSCREEN=1` asks for that anywhere. Needs the owner's
   retest on the Deck.
+
+### Instance editor: balance, standalone parts, the base game's parts (2026-11-05)
+
+Owner request: editing an instance should set its starting points and
+each map's, animal's and weapon's price and score, and leave out maps,
+animals and weapons of its standalone games, as the Balance and Add-ons
+tabs do.
+
+- The balance is the recipe's `[settings.balance]`, edited with the
+  Balance tab's table, over values read from the instance's own game
+  (its standalones combined with their parts left out, its add-ons over
+  that). Entries whose folder the launcher hasn't been given yet are left
+  out of that reading.
+- A standalone entry's parts are its `skip` (as before).
+- An instance whose **base** is a standalone game (Anachronous, JPHL...)
+  had nothing to pick: `skip` only applied to games combined beside a
+  base. New: `[recipe.skip]`, applied as a layer of rewritten files over
+  the built game (`c2_mods::standalone::leave_out`), like a balance
+  file. The left-out parts' blocks and `prices` lines go from `_RES.TXT`
+  and `_MENU.TXT`, what is kept is renumbered (conditions, `callNo`,
+  map, menu and call files) as the combiner does, and conditions naming
+  only left-out parts go. Used by `c2-pc` recipe builds and `c2-cook`
+  (so the 3DS and Wii U packs too). Ignored when standalones are combined
+  beside the base: their numbering would no longer be the base's alone.
+  Left-out parts' own higher-numbered files stay in the pack, unread.

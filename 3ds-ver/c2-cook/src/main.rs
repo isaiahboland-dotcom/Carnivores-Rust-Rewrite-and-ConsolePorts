@@ -460,7 +460,12 @@ fn merged_game(a: &Args, game: &Path) -> Result<Vfs> {
             );
         }
         let (sources, opts) = c2_mods::recipe::prepare(r, &recipe, &found, &vanilla)?;
-        return Ok(c2_mods::build_with(game, sources, &opts)?.vfs);
+        let mut vfs = c2_mods::build_with(game, sources, &opts)?.vfs;
+        // The base game's own parts left out (a standalone as the base).
+        if let Some(l) = c2_mods::standalone::leave_out::layer(&vfs, &recipe.recipe.skip)? {
+            vfs.push("left out", Box::new(l));
+        }
+        return Ok(vfs);
     }
     let game = &bases[..];
     if a.mods.is_empty() {

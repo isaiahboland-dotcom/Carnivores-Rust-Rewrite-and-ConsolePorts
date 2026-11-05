@@ -326,7 +326,8 @@ impl Editor {
             ui,
             "Change the recipe's entries and details here. Files stay pinned by their hashes; \
              an added folder is pinned now. Saving keeps the comments at the top of the file, not \
-             ones further down. \"Pick parts\" under a standalone game leaves some of its \
+             ones further down. \"Pick parts\" (the base game's, or under a standalone game) \
+             leaves some of its \
              areas, animals or weapons out; \"Points and scores\" sets the instance's \
              prices and scores. The menu and 3DS choices are taken from \
              the other tabs with \"Save as instance\".",
@@ -377,6 +378,10 @@ impl Editor {
                     }
                 });
         });
+        if !game_dirs.is_empty() && r.standalones.is_empty() {
+            ui.add_space(6.0);
+            panel(ui, |ui| extras.base_parts_ui(ui, r, game_dirs));
+        }
         ui.add_space(6.0);
         let mut remove: Option<String> = None;
         let mut shift: Option<(String, isize)> = None;

@@ -280,7 +280,7 @@ Workflow:
 2. `c2-pc recipe verify recipes/ultimate-c2.toml --base <game> --mods <dir>` → reports missing/mismatched files with the URL to get each.
 3. `c2-pc recipe build …` / `c2-pc play <game> --recipe … --mods <dir>` → merged pack (PC) or `c2-cook` → cooked pack (3DS).
 
-Optional per standalone: `skip = { areas = [..], huntables = [..], weapons = [..] }` (numbers from 1, left out when combined; `docs/MODDING.md`). `[settings] menu = "game:<standalone id>"` picks a standalone's own menu screens.
+Optional per standalone: `skip = { areas = [..], huntables = [..], weapons = [..] }` (numbers from 1, left out when combined; `docs/MODDING.md`); `[recipe.skip]` (same shape) leaves parts of the base game itself out, only when no standalones are combined. `[settings] menu = "game:<standalone id>"` picks a standalone's own menu screens.
 
 Optional per mod: `folder = "..."` (folder name hint). `[[resolve]]` takes `path` (a file) or `entry = "characters:T-Rex"` (a `_RES.TXT` entry).
 

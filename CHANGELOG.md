@@ -9,7 +9,8 @@
   visible scroll bar; an Interface size setting that fits the window and full screen under
   Steam's game mode / Big Picture (Steam Deck).
 - Launcher: editing an instance now covers its balance (a new hunter's points, each area's,
-  animal's and weapon's price and score) and **Pick parts** for each of its standalone games.
+  animal's and weapon's price and score) and **Pick parts** for each of its standalone games,
+  and for the base game itself when that is a standalone game (`[recipe.skip]`, PC, 3DS and Wii U).
 
 - Bound `_RES.TXT` nesting, preserve sub-blocks during writing, and reject invalid
   menu slot hints without discarding their files.

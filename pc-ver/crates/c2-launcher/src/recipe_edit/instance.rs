@@ -74,6 +74,7 @@ pub(super) fn instance(
         .collect();
     let i = Instance {
         bases,
+        base_skip: r.recipe.skip.clone(),
         standalones,
         mods,
         random_ambients: r.combine.as_ref().is_some_and(|c| c.ambients == "random"),
@@ -125,6 +126,49 @@ impl Extras {
             }
             Err(e) => self.error = Some(e),
         }
+    }
+
+    /// The parts of the base game picked, when it is a game on its own
+    /// (no standalones beside it): whether a choice changed.
+    pub(super) fn base_parts_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        r: &mut Recipe,
+        game: &[PathBuf],
+    ) -> bool {
+        if !r.standalones.is_empty() {
+            if !r.recipe.skip.is_empty() {
+                help(
+                    ui,
+                    "The base game's parts picked are not used while standalone games are \
+                     combined beside it.",
+                );
+            }
+            return false;
+        }
+        let Some(dir) = game.first() else {
+            return false;
+        };
+        let p = self
+            .parts
+            .entry(dir.clone())
+            .or_insert_with(|| c2_mods::standalone::parts(dir));
+        let Some(p) = p else {
+            return false;
+        };
+        ui.label(RichText::new("The base game").color(SAND).strong())
+            .on_hover_text(dir.display().to_string());
+        help(
+            ui,
+            "Untick its areas, animals or weapons to leave them out of this instance (PC and the \
+             3DS pack); what is kept is renumbered.",
+        );
+        crate::app::standalones::pick_parts(
+            ui,
+            egui::IdSalt::new("recipe-base-parts"),
+            p,
+            &mut r.recipe.skip,
+        )
     }
 
     /// The parts of each standalone game picked (in the Standalone

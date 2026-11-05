@@ -149,6 +149,11 @@ pub struct Info {
     pub version: String,
     /// Expected base game: `bases/<base>.toml` next to the recipe lists its hashes.
     pub base: String,
+    /// The base game's own areas, huntables and weapons left out (a
+    /// standalone game as the base, `crate::standalone::leave_out`); only
+    /// when no standalones are combined beside it.
+    #[serde(skip_serializing_if = "crate::standalone::Skip::is_empty")]
+    pub skip: crate::standalone::Skip,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -753,6 +758,7 @@ pub fn new_recipe(
             name: name.into(),
             version: "0.1".into(),
             base: base.into(),
+            ..Default::default()
         },
         ..Default::default()
     };
