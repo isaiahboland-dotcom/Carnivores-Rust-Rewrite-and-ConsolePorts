@@ -114,12 +114,12 @@ This is a portable folder, not a single executable containing proprietary assets
 an installer or a signed application. Custom binaries with additional DLL dependencies
 must supply those separately; use the CI build for the supported packaging route.
 
-## Optional console sections
+## Console builds
 
-In the full launcher's **Settings**, independently turn off **Show the 3DS section**
-and **Show the Wii U section**. This hides their tabs, instance build buttons and
-tool diagnostics, while retaining saved build preferences. The dedicated console
-builders always retain their own platform controls.
+The full launcher no longer hides the 3DS and Wii U sections: **Build** on an instance asks
+for the platform (Windows, 3DS or Wii U) and shows only that builder. Saved build
+preferences are kept per instance. The dedicated console builders offer their own
+platform only.
 
 ## Windows verification before calling it supported
 

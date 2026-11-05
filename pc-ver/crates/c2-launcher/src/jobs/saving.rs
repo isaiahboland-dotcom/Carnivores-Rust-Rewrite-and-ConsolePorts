@@ -11,7 +11,7 @@ pub(crate) fn from_setup(cfg: Config, out: PathBuf, id: String) -> Result<Comple
     let settings = cfg.settings(&Default::default());
     let base = base
         .filter(|b| describe_game(b).is_some())
-        .ok_or("no game folder on the Game tab")?;
+        .ok_or("no game folder in the old setup")?;
     let games: Vec<PathBuf> = std::iter::once(base.clone())
         .chain(overlays.clone())
         .collect();

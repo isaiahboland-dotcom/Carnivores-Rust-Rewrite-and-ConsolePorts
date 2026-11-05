@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Launcher: reorganised around instances. The home screen has a box per instance with Play,
+  Build (choose Windows, 3DS or Wii U) and Options (Edit, Clone, Fix missing, Play in VR,
+  Delete; also on right click). Editing shows Base game, Add-ons and Balance pages with Save,
+  Save and exit, Discard changes and Cancel. The Game, Add-ons, Play and console tabs and the
+  "Show the 3DS/Wii U section" settings are gone.
+- Launcher: launch protection. Each instance keeps its own game folder, and Play and the builds
+  stop when it doesn't match the base game's hashes in the recipe (an instance could play the
+  wrong game after the launcher's game was changed).
 - Launcher: under Steam's game mode (Steam Deck handheld) the Auto interface size no longer
   flips between two sizes every frame.
 

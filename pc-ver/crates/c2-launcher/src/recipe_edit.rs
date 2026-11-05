@@ -1,14 +1,15 @@
-//! The recipe editor (owner, 2026-11-02: "an edit option in the gui and
-//! also a clone option so people can easily tweak a recipe"): a recipe's
-//! name, version and base, its entries (credit and download page edited,
-//! removed, add-ons put in another load order, new ones added from a
-//! folder, pinned as "Save as instance" pins them) and how standalones
-//! are combined. Saved over the recipe or as a new one; "Clone" on the
-//! Instances list is a save-as straight away. The `[settings]` are left as
-//! they are: "Save as instance" takes the other tabs' choices into them,
-//! except the balance and the standalones' parts, edited here too
-//! (`instance`).
+//! The instance editor (owner, 2026-11-02: "an edit option in the gui and
+//! also a clone option so people can easily tweak a recipe"; reworked
+//! 2026-11-05 into pages): Base game (`base_tab`: the instance's name, its
+//! game folder checked against the recipe's base hashes, pinned overlays
+//! and the base game's parts), Add-ons (`entries`: standalone games and
+//! add-ons, each with its folder, load order and parts) and Balance
+//! (`instance`). The recipe (shareable: credits, links, hashes) is written
+//! over its file on save; the folders (`Draft`) are kept by the launcher.
 
+mod base_tab;
+pub use base_tab::BaseAsk;
+mod entries;
 mod instance;
 
 use std::collections::BTreeMap;
@@ -17,7 +18,6 @@ use std::path::{Path, PathBuf};
 use c2_mods::recipe::{self, Recipe, RecipeMod};
 use eframe::egui::{self, Color32, RichText};
 
-use crate::app::{help, panel};
 use crate::theme::*;
 
 /// Which list an entry is in.
@@ -38,29 +38,49 @@ impl Kind {
     }
 }
 
+/// The instance's own folders, kept by the launcher (not in the recipe,
+/// which is shareable): its game, any unpinned overlays over it, and each
+/// entry's folder.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Draft {
+    pub game: Option<PathBuf>,
+    pub overlays: Vec<PathBuf>,
+    pub folders: BTreeMap<String, PathBuf>,
+}
+
+impl Draft {
+    /// The game and its overlays, in order.
+    pub fn game_dirs(&self) -> Vec<PathBuf> {
+        self.game.iter().chain(&self.overlays).cloned().collect()
+    }
+}
+
+/// Which base profile the instance's game folder is (read off the UI
+/// thread from the hashes in `bases/*.toml`).
+#[derive(Debug, Clone, PartialEq)]
+enum BaseMatch {
+    Unchecked,
+    Checking(PathBuf),
+    Done(PathBuf, Option<String>),
+}
+
 pub struct Editor {
     pub path: PathBuf,
     pub recipe: Recipe,
     saved: Recipe,
+    pub draft: Draft,
+    saved_draft: Draft,
     /// Base profile ids found beside the recipe (`bases/*.toml`).
     bases: Vec<String>,
+    base_match: BaseMatch,
+    /// A game folder was just picked: its base profile becomes the
+    /// recipe's once read.
+    take_base: bool,
     adding: bool,
-    /// Folders of entries added here: remembered once saved.
-    pub added: Vec<(String, PathBuf)>,
+    /// Folders still to pin, one job at a time.
+    queue: Vec<(Kind, PathBuf)>,
     note: Option<(String, Color32)>,
     extras: instance::Extras,
-}
-
-/// What the editor asks of the launcher.
-pub enum Ask {
-    Nothing,
-    Close,
-    /// Written to `to` (from the recipe at `from`): its folders are to be
-    /// remembered under `to` too.
-    Saved {
-        from: PathBuf,
-        to: PathBuf,
-    },
 }
 
 /// The ids of the base profiles in the first `bases/` folder beside or
@@ -163,13 +183,6 @@ pub fn renamed_for(r: &Recipe, to: &Path) -> Recipe {
     r
 }
 
-/// Why a recipe can't be written to `to` (from `from`), if it can't: its
-/// patches are found beside it.
-pub fn save_problem(r: &Recipe, from: &Path, to: &Path) -> Option<String> {
-    (!r.patches.is_empty() && to.parent() != from.parent())
-        .then(|| "the recipe has patches beside it: save it in the same folder".to_string())
-}
-
 /// `toml` (a recipe written out) under the comment block that opens
 /// `old` (the file it replaces or copies): the instructions at the top of
 /// a recipe are kept; comments further down are not.
@@ -188,51 +201,78 @@ pub fn with_header(old: &str, toml: &str) -> String {
     format!("{}\n\n{toml}", header[..n].join("\n"))
 }
 
-/// Asks where to save a copy of the recipe at `from` (beside it, named
-/// `<name>-copy.toml`).
-pub fn pick_copy_path(from: &Path) -> Option<PathBuf> {
-    let stem = from
-        .file_stem()
-        .map_or("recipe".into(), |s| s.to_string_lossy().into_owned());
-    let mut d = rfd::FileDialog::new()
-        .set_file_name(format!("{stem}-copy.toml"))
-        .add_filter("Recipe", &["toml"]);
-    if let Some(dir) = from.parent() {
-        d = d.set_directory(dir);
-    }
-    d.save_file()
-}
-
 impl Editor {
-    pub fn open(path: &Path) -> Result<Self, String> {
+    /// The recipe at `path`, with the instance's folders as last kept.
+    pub fn open(path: &Path, draft: Draft) -> Result<Self, String> {
         let r = Recipe::load(path).map_err(|e| e.to_string())?;
         Ok(Editor {
             extras: instance::Extras::new(&r),
             path: path.to_path_buf(),
             saved: r.clone(),
             recipe: r,
+            saved_draft: draft.clone(),
+            draft,
             bases: base_ids(path),
+            base_match: BaseMatch::Unchecked,
+            take_base: false,
             adding: false,
-            added: Vec::new(),
+            queue: Vec::new(),
             note: None,
         })
     }
 
-    pub fn changed(&self) -> bool {
-        self.recipe != self.saved
+    /// The settings as the launcher writes them, taken as the saved ones
+    /// (so opening an instance is not a change).
+    pub fn settle_settings(&mut self, s: c2_mods::recipe::Settings) {
+        self.recipe.settings = s.clone();
+        self.saved.settings = s;
     }
 
+    pub fn changed(&self) -> bool {
+        self.recipe != self.saved || self.draft != self.saved_draft
+    }
+
+    /// Pinning folders (the editor waits for it).
     pub fn working(&self) -> bool {
-        self.adding
+        self.adding || !self.queue.is_empty()
     }
 
     /// Reading the instance's values (the editor stays usable).
     pub fn reading(&self) -> bool {
-        self.extras.reading()
+        self.extras.reading() || matches!(self.base_match, BaseMatch::Checking(_))
+    }
+
+    /// The saved recipe's settings (to put the launcher back on discard).
+    pub fn saved_settings(&self) -> &c2_mods::recipe::Settings {
+        &self.saved.settings
+    }
+
+    /// The instance as the launcher keeps it.
+    pub fn to_use(&self, on: bool) -> crate::config::RecipeUse {
+        crate::config::RecipeUse {
+            path: self.path.clone(),
+            game: self.draft.game.clone(),
+            overlays: Some(self.draft.overlays.clone()),
+            folders: self.draft.folders.clone(),
+            on,
+        }
     }
 
     pub(crate) fn values_read(&mut self, values: c2_mods::balance::Balance) {
         self.extras.values_read(values);
+    }
+
+    pub(crate) fn base_matched(&mut self, game: PathBuf, id: Option<String>) {
+        if self.base_match != BaseMatch::Checking(game.clone()) {
+            return;
+        }
+        if self.take_base {
+            self.take_base = false;
+            if let Some(id) = &id {
+                self.recipe.recipe.base = id.clone();
+            }
+        }
+        self.base_match = BaseMatch::Done(game, id);
     }
 
     pub(crate) fn pinned(&mut self, kind: Kind, entry: RecipeMod, dir: PathBuf) {
@@ -240,8 +280,8 @@ impl Editor {
         let id = entry.id.clone();
         self.note = Some(match add_entry(&mut self.recipe, kind, entry) {
             Ok(()) => {
-                self.added.push((id.clone(), dir));
-                (format!("Added '{id}': save to keep it."), TEXT)
+                self.draft.folders.insert(id.clone(), dir);
+                (format!("Added '{id}'."), TEXT)
             }
             Err(e) => (format!("Not added: {e}"), RED),
         });
@@ -249,10 +289,55 @@ impl Editor {
 
     pub(crate) fn failed(&mut self, error: &str) {
         self.extras.failed(error);
+        if let BaseMatch::Checking(g) = &self.base_match {
+            self.base_match = BaseMatch::Done(g.clone(), None);
+        }
         if self.adding {
             self.note = Some((format!("Not added: {error}"), RED));
         }
         self.adding = false;
+    }
+
+    /// The game folder (the game in it, when a download's parent is given).
+    pub fn set_game(&mut self, dir: PathBuf) {
+        self.draft.game = Some(crate::config::game_root(&dir));
+        self.base_match = BaseMatch::Unchecked;
+        self.take_base = true;
+        self.extras.refresh_list();
+    }
+
+    /// Folders to pin as `kind` entries, one after another.
+    pub fn queue_pins(&mut self, kind: Kind, dirs: Vec<PathBuf>) {
+        self.queue.extend(dirs.into_iter().map(|d| (kind, d)));
+    }
+
+    /// Starts the next waiting job (a pin, or reading the game's base), if
+    /// the launcher's worker is free.
+    pub fn pump(&mut self, handle: &mut crate::jobs::Handle) {
+        if self.adding || handle.busy() {
+            return;
+        }
+        if !self.queue.is_empty() {
+            let (kind, dir) = self.queue.remove(0);
+            self.add_from(kind, dir, self.draft.game_dirs(), handle);
+            return;
+        }
+        if self.base_match == BaseMatch::Unchecked {
+            let Some(game) = self.draft.game.clone() else {
+                return;
+            };
+            let recipe = self.path.clone();
+            let g = game.clone();
+            match handle.start_task("Reading the base game", move |_| {
+                crate::jobs::recipe_edit::match_base(recipe, g)
+            }) {
+                Ok(()) => self.base_match = BaseMatch::Checking(game),
+                Err(e) => {
+                    self.note = Some((e, RED));
+                    self.base_match = BaseMatch::Done(game, None);
+                }
+            }
+        }
     }
 
     /// Pins the folder (hashing its files) off the UI thread. An add-on
@@ -265,7 +350,7 @@ impl Editor {
         game_dirs: Vec<PathBuf>,
         handle: &mut crate::jobs::Handle,
     ) {
-        if self.working() || handle.busy() {
+        if self.adding || handle.busy() {
             return;
         }
         match handle.start_task("Pinning recipe entry", move |_| {
@@ -279,266 +364,63 @@ impl Editor {
         }
     }
 
-    fn write(&mut self, to: &Path) -> Option<Ask> {
-        let r = if to == self.path {
-            self.recipe.clone()
-        } else {
-            renamed_for(&self.recipe, to)
-        };
-        if let Some(p) = save_problem(&r, &self.path, to) {
-            self.note = Some((format!("Not saved: {p}."), RED));
-            return None;
-        }
-        let old = std::fs::read_to_string(&self.path).unwrap_or_default();
-        if let Err(e) = std::fs::write(to, with_header(&old, &r.to_toml())) {
-            self.note = Some((format!("Not saved: {e}"), RED));
-            return None;
-        }
-        let from = std::mem::replace(&mut self.path, to.to_path_buf());
-        self.recipe = r.clone();
-        self.saved = r;
-        self.note = Some((format!("Saved: {}", to.display()), TEXT));
-        Some(Ask::Saved {
-            from,
-            to: to.to_path_buf(),
-        })
+    /// Takes an entry out (with its folder).
+    pub fn remove(&mut self, id: &str) {
+        remove_entry(&mut self.recipe, id);
+        self.draft.folders.remove(id);
+        self.note = Some((format!("Removed '{id}'."), TEXT));
     }
 
-    /// `game_dirs`: the game add-ons are read against; `folders`: the
-    /// entries' folders as given for the instance.
-    pub fn ui(
-        &mut self,
-        ui: &mut egui::Ui,
-        game_dirs: &[PathBuf],
-        folders: &BTreeMap<String, PathBuf>,
-        handle: &mut crate::jobs::Handle,
-    ) -> Ask {
-        let mut ask = Ask::Nothing;
-        let mut folders = folders.clone();
-        folders.extend(self.added.iter().cloned());
-        ui.label(
-            RichText::new(format!("Editing: {}", self.path.display()))
-                .size(18.0)
-                .color(SAND)
-                .strong(),
-        );
-        help(
-            ui,
-            "Change the recipe's entries and details here. Files stay pinned by their hashes; \
-             an added folder is pinned now. Saving keeps the comments at the top of the file, not \
-             ones further down. \"Pick parts\" (the base game's, or under a standalone game) \
-             leaves some of its \
-             areas, animals or weapons out; \"Points and scores\" sets the instance's \
-             prices and scores. The menu and 3DS choices are taken from \
-             the other tabs with \"Save as instance\".",
-        );
-        ui.add_space(4.0);
-        let r = &mut self.recipe;
-        let extras = &mut self.extras;
-        panel(ui, |ui| {
-            egui::Grid::new("recipe-edit-info")
-                .spacing([10.0, 4.0])
-                .show(ui, |ui| {
-                    ui.label("Name");
-                    ui.text_edit_singleline(&mut r.recipe.name);
-                    ui.end_row();
-                    ui.label("Id");
-                    ui.text_edit_singleline(&mut r.recipe.id).on_hover_text(
-                        "Lower case letters, digits and '-': the built game's folder name.",
-                    );
-                    ui.end_row();
-                    ui.label("Version");
-                    ui.text_edit_singleline(&mut r.recipe.version);
-                    ui.end_row();
-                    ui.label("Base game");
-                    egui::ComboBox::from_id_salt("recipe-edit-base")
-                        .selected_text(if r.recipe.base.is_empty() {
-                            "any game".to_string()
-                        } else {
-                            r.recipe.base.clone()
-                        })
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut r.recipe.base, String::new(), "any game");
-                            for b in &self.bases {
-                                ui.selectable_value(&mut r.recipe.base, b.clone(), b);
-                            }
-                        });
-                    ui.end_row();
-                    if let Some(c) = &mut r.combine {
-                        ui.label("Ambient animals");
-                        ui.horizontal(|ui| {
-                            ui.radio_value(
-                                &mut c.ambients,
-                                "tied".to_string(),
-                                "on their own game's maps",
-                            );
-                            ui.radio_value(&mut c.ambients, "random".to_string(), "on every map");
-                        });
-                        ui.end_row();
-                    }
-                });
-        });
-        if !game_dirs.is_empty() && r.standalones.is_empty() {
-            ui.add_space(6.0);
-            panel(ui, |ui| extras.base_parts_ui(ui, r, game_dirs));
+    /// Back to the instance as last saved.
+    pub fn discard(&mut self) {
+        self.recipe = self.saved.clone();
+        self.draft = self.saved_draft.clone();
+        self.extras = instance::Extras::new(&self.recipe);
+        self.base_match = BaseMatch::Unchecked;
+        self.take_base = false;
+        self.queue.clear();
+        self.note = Some(("Changes discarded.".into(), TEXT));
+    }
+
+    /// Writes the recipe over its file (the comments at its top kept).
+    pub fn save(&mut self) -> Result<(), String> {
+        if self.working() {
+            return Err("wait for the folders being added".into());
         }
-        ui.add_space(6.0);
-        let mut remove: Option<String> = None;
-        let mut shift: Option<(String, isize)> = None;
-        let mut add: Option<Kind> = None;
-        let order = add_on_order(r);
-        egui::ScrollArea::vertical()
-            .max_height(420.0)
-            .id_salt("recipe-edit-rows")
-            .show(ui, |ui| {
-                for kind in [Kind::Overlay, Kind::Standalone, Kind::AddOn] {
-                    let mut list: Vec<&mut RecipeMod> = match kind {
-                        Kind::Overlay => r.overlays.iter_mut().collect(),
-                        Kind::Standalone => r.standalones.iter_mut().collect(),
-                        Kind::AddOn => {
-                            let mut v: Vec<&mut RecipeMod> = r.mods.iter_mut().collect();
-                            v.sort_by_key(|m| {
-                                order.iter().position(|o| *o == m.id).unwrap_or(usize::MAX)
-                            });
-                            v
-                        }
-                    };
-                    panel(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new(kind.label()).color(SAND).strong());
-                            if ui
-                                .add_enabled(
-                                    !self.adding,
-                                    egui::Button::new("Add from a folder..."),
-                                )
-                                .clicked()
-                            {
-                                add = Some(kind);
-                            }
-                        });
-                        if list.is_empty() {
-                            ui.label(RichText::new("none").color(DIM));
-                            return;
-                        }
-                        let n = list.len();
-                        egui::Grid::new(("recipe-edit", kind as u8))
-                            .striped(true)
-                            .spacing([8.0, 4.0])
-                            .show(ui, |ui| {
-                                ui.label(RichText::new("id").color(DIM));
-                                ui.label(RichText::new("by").color(DIM));
-                                ui.label(RichText::new("download page").color(DIM));
-                                ui.label("");
-                                ui.end_row();
-                                for (i, m) in list.iter_mut().enumerate() {
-                                    ui.label(&m.id)
-                                        .on_hover_text(format!("{} files", m.files.len()));
-                                    ui.add(
-                                        egui::TextEdit::singleline(&mut m.credit)
-                                            .desired_width(140.0),
-                                    );
-                                    ui.add(
-                                        egui::TextEdit::singleline(&mut m.url).desired_width(260.0),
-                                    );
-                                    ui.horizontal(|ui| {
-                                        if kind == Kind::AddOn {
-                                            if ui
-                                                .add_enabled(i > 0, egui::Button::new("⏶").small())
-                                                .on_hover_text("Load earlier")
-                                                .clicked()
-                                            {
-                                                shift = Some((m.id.clone(), -1));
-                                            }
-                                            if ui
-                                                .add_enabled(
-                                                    i + 1 < n,
-                                                    egui::Button::new("⏷").small(),
-                                                )
-                                                .on_hover_text("Load later")
-                                                .clicked()
-                                            {
-                                                shift = Some((m.id.clone(), 1));
-                                            }
-                                        }
-                                        if ui.small_button("Remove").clicked() {
-                                            remove = Some(m.id.clone());
-                                        }
-                                    });
-                                    ui.end_row();
-                                }
-                            });
-                        if kind == Kind::Standalone {
-                            extras.parts_ui(ui, &mut list, &folders);
-                        }
-                    });
-                    ui.add_space(4.0);
-                }
-            });
-        ui.add_space(4.0);
-        panel(ui, |ui| {
-            self.extras
-                .balance_ui(ui, &mut self.recipe, game_dirs, &folders, handle)
-        });
-        if let Some(id) = remove {
-            remove_entry(&mut self.recipe, &id);
-            self.added.retain(|(a, _)| *a != id);
-            self.note = Some((format!("Removed '{id}': save to keep it."), TEXT));
+        let ids: std::collections::HashSet<String> = recipe::entries(&self.recipe)
+            .map(|(_, m, _)| m.id.clone())
+            .collect();
+        self.draft.folders.retain(|id, _| ids.contains(id));
+        let old = std::fs::read_to_string(&self.path).unwrap_or_default();
+        std::fs::write(&self.path, with_header(&old, &self.recipe.to_toml()))
+            .map_err(|e| e.to_string())?;
+        self.saved = self.recipe.clone();
+        self.saved_draft = self.draft.clone();
+        self.note = Some(("Saved.".into(), TEXT));
+        Ok(())
+    }
+
+    /// The editor's last message.
+    pub fn note_ui(&self, ui: &mut egui::Ui) {
+        if self.working() {
+            ui.spinner();
         }
-        if let Some((id, by)) = shift {
-            move_add_on(&mut self.recipe, &id, by);
+        if let Some((n, c)) = &self.note {
+            ui.label(RichText::new(n).color(*c));
         }
-        if let Some(kind) = add {
-            if let Some(dir) = rfd::FileDialog::new().pick_folder() {
-                self.add_from(kind, dir, game_dirs.to_vec(), handle);
-            }
-        }
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            let changed = self.changed();
-            if ui
-                .add_enabled(
-                    changed && !self.working(),
-                    egui::Button::new(RichText::new("Save").color(GOLD).strong()).fill(GREEN),
-                )
-                .clicked()
-            {
-                let p = self.path.clone();
-                if let Some(a) = self.write(&p) {
-                    ask = a;
-                }
-            }
-            if ui
-                .add_enabled(!self.working(), egui::Button::new("Save as a new recipe..."))
-                .clicked()
-            {
-                if let Some(to) = pick_copy_path(&self.path) {
-                    if let Some(a) = self.write(&to) {
-                        ask = a;
-                    }
-                }
-            }
-            if ui
-                .button("Open in a text editor")
-                .on_hover_text("The recipe file itself, for anything not here (resolutions, patches, settings).")
-                .clicked()
-            {
-                ui.ctx()
-                    .open_url(egui::OpenUrl::new_tab(format!("file://{}", self.path.display())));
-            }
-            if ui
-                .button(if changed { "Close without saving" } else { "Close" })
-                .clicked()
-            {
-                ask = Ask::Close;
-            }
-            if self.working() {
-                ui.spinner();
-            }
-            if let Some((n, c)) = &self.note {
-                ui.label(RichText::new(n).color(*c));
-            }
-        });
-        ask
+    }
+
+    /// The Balance page: starting points, prices and scores.
+    pub fn balance_ui(&mut self, ui: &mut egui::Ui, handle: &mut crate::jobs::Handle) {
+        let game = self.draft.game_dirs();
+        self.extras
+            .balance_ui(ui, &mut self.recipe, &game, &self.draft.folders, handle)
+    }
+
+    /// Reads the instance's areas, animals and weapons again (after its
+    /// base game or add-ons changed).
+    pub fn refresh_list(&mut self) {
+        self.extras.refresh_list();
     }
 }
 
@@ -616,18 +498,13 @@ mod tests {
     }
 
     #[test]
-    fn a_copy_takes_its_file_name_and_keeps_patches_beside_it() {
-        let mut r = sample();
+    fn a_copy_takes_its_file_name() {
+        let r = sample();
         let c = renamed_for(&r, Path::new("/x/recipes/My Copy.toml"));
         assert_eq!(
             (c.recipe.id.as_str(), c.recipe.name.as_str()),
             ("my-copy", "My Copy")
         );
-        let from = Path::new("/x/recipes/a.toml");
-        assert!(save_problem(&r, from, Path::new("/y/b.toml")).is_none());
-        r.patches.push(recipe::PatchRef::default());
-        assert!(save_problem(&r, from, Path::new("/x/recipes/b.toml")).is_none());
-        assert!(save_problem(&r, from, Path::new("/y/b.toml")).is_some());
     }
 }
 
@@ -644,9 +521,10 @@ mod job_tests {
         std::fs::create_dir_all(dir.join("HUNTDAT")).unwrap();
         std::fs::write(dir.join("HUNTDAT/X.CAR"), b"synthetic").unwrap();
         std::fs::write(dir.join("HUNTDAT/_RES.TXT"), b"synthetic config").unwrap();
-        let mut editor = Editor::open(&path).unwrap();
+        let mut editor = Editor::open(&path, Draft::default()).unwrap();
         let mut handle = crate::jobs::Handle::default();
-        editor.add_from(Kind::Overlay, dir.clone(), vec![], &mut handle);
+        editor.queue_pins(Kind::Overlay, vec![dir.clone()]);
+        editor.pump(&mut handle);
         editor.add_from(Kind::Standalone, dir.clone(), vec![], &mut handle);
         assert!(handle.start("overlap", vec![]).is_err());
         let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
@@ -665,7 +543,7 @@ mod job_tests {
         assert!(!editor.working());
         assert_eq!(editor.recipe.overlays.len(), 1);
         assert!(editor.recipe.standalones.is_empty());
-        assert_eq!(editor.added, vec![("overlay".into(), dir)]);
+        assert_eq!(editor.draft.folders.get("overlay"), Some(&dir));
         assert!(handle.poll().is_none());
     }
 }

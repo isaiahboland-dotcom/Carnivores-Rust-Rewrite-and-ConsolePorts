@@ -550,25 +550,6 @@ impl Config {
             .map(|p| same_game(p))
             .collect()
     }
-
-    /// The enabled add-on folders (or folders of add-ons) that hold an
-    /// enabled standalone game, which is not loaded as an add-on.
-    pub fn addons_shadowed(&self) -> Vec<PathBuf> {
-        let games = self.standalone_games();
-        if games.is_empty() {
-            return Vec::new();
-        }
-        self.addons
-            .iter()
-            .filter(|a| a.enabled)
-            .filter(|a| {
-                c2_mods::expand_addons(&a.path)
-                    .iter()
-                    .any(|m| games.contains(&same_game(m)))
-            })
-            .map(|a| a.path.clone())
-            .collect()
-    }
 }
 
 /// `name` in `dir`, any case.
@@ -656,10 +637,8 @@ mod tests {
         };
         // Directly, and inside the folder of add-ons: only the other one.
         assert_eq!(c.enabled_addons(), [other]);
-        assert_eq!(c.addons_shadowed(), [game.clone(), t.0.join("mods")]);
         c.standalones[0].enabled = false;
         assert_eq!(c.enabled_addons().len(), 3);
-        assert!(c.addons_shadowed().is_empty());
     }
 
     #[test]

@@ -1,17 +1,18 @@
 //! Instances (owner, 2026-11-01): every recipe under the recipes folder,
 //! any folder deep (`recipes/instances/testing/` is gitignored for the
 //! owner's own), each a whole game: its downloads, the base it expects and
-//! its `[settings]`. Play goes through the recipe page, which finds the
-//! downloads in the search folders and lists what is missing with the
-//! authors' download pages. "Save as instance" writes the launcher's
-//! setup as a recipe.
+//! its `[settings]`. The launcher's home screen (owner, 2026-11-05): a box
+//! per instance with Play, Build (then the platform) and Options (Edit,
+//! Clone, Fix missing, Delete; a right click opens them too). Play and the
+//! builds go through the recipe page, which finds the downloads in the
+//! search folders and checks the base game against the recipe's hashes.
 
 use std::path::{Path, PathBuf};
 
 use c2_mods::recipe::{self, Base, Recipe};
 use eframe::egui::{self, RichText};
 
-use crate::app::{help, panel};
+use crate::app::help;
 use crate::config::Config;
 use crate::theme::*;
 
@@ -28,45 +29,41 @@ pub struct Item {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Destination {
     Play,
+    /// The same game in a headset (`c2-vr`, a first draft).
+    PlayVr,
     Windows,
     ThreeDs,
     WiiU,
 }
 
 impl Destination {
-    fn visible(self, mode: crate::Mode, cfg: &Config) -> bool {
-        mode != crate::Mode::Full
-            || match self {
-                Self::ThreeDs => cfg.show_3ds == Some(true),
-                Self::WiiU => cfg.show_wiiu != Some(false),
-                _ => true,
-            }
-    }
-
-    pub fn offered(mode: crate::Mode) -> &'static [(Self, &'static str)] {
+    /// The platforms this launcher builds for, as offered after "Build".
+    pub fn builds(mode: crate::Mode) -> &'static [(Self, &'static str)] {
         match mode {
             crate::Mode::Full => &[
-                (Self::Play, "Play"),
-                (Self::Windows, "Build Windows…"),
-                (Self::ThreeDs, "Build 3DS…"),
-                (Self::WiiU, "Build Wii U…"),
+                (Self::Windows, "Windows"),
+                (Self::ThreeDs, "3DS"),
+                (Self::WiiU, "Wii U"),
             ],
-            crate::Mode::ThreeDs => &[(Self::ThreeDs, "Build 3DS…")],
-            crate::Mode::WiiU => &[(Self::WiiU, "Build Wii U…")],
+            crate::Mode::ThreeDs => &[(Self::ThreeDs, "3DS")],
+            crate::Mode::WiiU => &[(Self::WiiU, "Wii U")],
         }
     }
 }
 
-/// What the list asks of the launcher.
+/// What the home screen asks of the launcher.
 pub enum Ask {
     Nothing,
-    Open(PathBuf),
-    Start(PathBuf, Destination),
+    Play(PathBuf),
+    PlayVr(PathBuf),
+    Build(PathBuf),
     Edit(PathBuf),
     Clone(PathBuf),
-    Save,
-    /// Stop using the recipe in use.
-    Stop,
+    Delete(PathBuf),
+    FixMissing(PathBuf),
+    New,
+    /// Make an instance from the old Game and Add-ons tabs' setup.
+    FromOldSetup,
 }
 
 #[derive(Default)]
@@ -75,6 +72,9 @@ pub struct List {
     pub items: Vec<Item>,
     looked: bool,
 }
+
+/// An instance box's size (points): two or three across on a Steam Deck.
+const BOX: egui::Vec2 = egui::vec2(270.0, 128.0);
 
 impl List {
     pub fn refresh(&mut self, cfg: &Config) {
@@ -99,6 +99,8 @@ impl List {
         self.looked = true;
     }
 
+    /// The home screen: a box per instance (Play, Build, Options; a right
+    /// click opens Options too) and one to make a new instance.
     pub fn ui(&mut self, ui: &mut egui::Ui, cfg: &Config, mode: crate::Mode, busy: bool) -> Ask {
         if !self.looked {
             self.refresh(cfg);
@@ -106,112 +108,100 @@ impl List {
         let mut ask = Ask::Nothing;
         help(
             ui,
-            "Each recipe is a whole game: its add-ons and standalone games (credits, download \
-             pages and file hashes, never the files), the base game it needs and the choices \
-             made for it. Play and the console builders find the downloads in the search folders (Settings) and list \
-             any that are missing, with their download pages.",
+            "Each instance is a whole game: a base game, its add-ons and its choices. Play it, \
+             build it for another platform, or use Options (or right click) to edit it.",
         );
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            if ui
-                .add_enabled(
-                    !busy,
-                    egui::Button::new(RichText::new("Save as instance...").color(GOLD).strong())
-                        .fill(GREEN),
-                )
-                .on_hover_text(
-                    "Create a new instance: the game, add-ons and standalone games set up on \
-                     the other tabs, or the recipe in use, with the menu and 3DS \
-                     choices, saved as a recipe.",
-                )
-                .clicked()
-            {
-                ask = Ask::Save;
-            }
+        ui.horizontal_wrapped(|ui| {
             if ui.button("Refresh").clicked() {
                 self.refresh(cfg);
             }
-            if ui.button("Open the recipes folder").clicked() {
+            if ui.button("Open the instances folder").clicked() {
                 let _ = std::fs::create_dir_all(&self.dir);
                 ui.ctx().open_url(egui::OpenUrl::new_tab(format!(
                     "file://{}",
                     self.dir.display()
                 )));
             }
+            if cfg.base.is_some()
+                && ui
+                    .add_enabled(!busy, egui::Button::new("Instance from the old setup..."))
+                    .on_hover_text(
+                        "The game, overlays, add-ons and standalone games set up on the old \
+                         Game and Add-ons tabs, saved as an instance.",
+                    )
+                    .clicked()
+            {
+                ask = Ask::FromOldSetup;
+            }
         });
         ui.label(RichText::new(self.dir.display().to_string()).color(DIM));
         ui.add_space(6.0);
-        if self.items.is_empty() {
-            help(ui, "No recipes found there yet.");
-            return ask;
-        }
-        let in_use = cfg.recipe.as_ref().filter(|r| r.on).map(|r| r.path.clone());
-        // The recipe in use, to stop using it quickly after a test run.
-        if let Some(r) = &cfg.recipe {
-            panel(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(RichText::new("In use:").color(SAND).strong());
-                    ui.label(RichText::new(r.id()).color(GOLD))
-                        .on_hover_text(r.path.display().to_string());
-                    if !r.on {
-                        help(ui, "(switched off on the Add-ons tab)");
-                    }
-                    if ui
-                        .add_enabled(!busy, egui::Button::new("Stop using"))
-                        .on_hover_text(
-                            "Unload it: play and the builds go by the Game and Add-ons tabs \
-                             again. The recipe file stays.",
-                        )
-                        .clicked()
-                    {
-                        ask = Ask::Stop;
-                    }
-                });
-            });
-            ui.add_space(6.0);
-        }
-        for it in &self.items {
-            let using = in_use.as_ref() == Some(&it.path);
-            panel(ui, |ui| {
-                self.row(ui, it, using, cfg, mode, busy, &mut ask);
-            });
-            ui.add_space(4.0);
-        }
+        let in_use = cfg.recipe.as_ref().map(|r| r.path.clone());
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
+            for it in &self.items {
+                let using = in_use.as_ref() == Some(&it.path);
+                instance_box(ui, it, using, mode, busy, &mut ask);
+            }
+            new_box(ui, busy, &mut ask);
+        });
         ask
     }
 }
 
-impl List {
-    /// One instance: its name and what it needs on the first line, its
-    /// actions (Play first) wrapping below, so none is out of reach on a
-    /// narrow or zoomed screen (the Steam Deck).
-    #[allow(clippy::too_many_arguments)]
-    fn row(
-        &self,
-        ui: &mut egui::Ui,
-        it: &Item,
-        using: bool,
-        cfg: &Config,
-        mode: crate::Mode,
-        busy: bool,
-        ask: &mut Ask,
-    ) {
-        let r = &it.recipe;
-        let name = if r.recipe.name.is_empty() {
-            r.recipe.id.clone()
-        } else {
-            r.recipe.name.clone()
-        };
-        ui.horizontal_wrapped(|ui| {
-            ui.label(
-                RichText::new(name)
+/// The name shown for a recipe.
+pub fn display_name(r: &Recipe) -> String {
+    if r.recipe.name.is_empty() {
+        r.recipe.id.clone()
+    } else {
+        r.recipe.name.clone()
+    }
+}
+
+/// A box on the home screen, `add` drawing in it; its response (to click
+/// or right click).
+fn boxed(
+    ui: &mut egui::Ui,
+    stroke: egui::Color32,
+    add: impl FnOnce(&mut egui::Ui),
+) -> egui::Response {
+    let r = egui::Frame::new()
+        .fill(PANEL)
+        .stroke(egui::Stroke::new(1.5, stroke))
+        .inner_margin(10.0)
+        .corner_radius(6.0)
+        .show(ui, |ui| {
+            ui.set_min_size(BOX);
+            ui.set_max_width(BOX.x);
+            ui.vertical(add);
+        })
+        .response;
+    ui.interact(r.rect, r.id.with("box"), egui::Sense::click())
+}
+
+fn instance_box(
+    ui: &mut egui::Ui,
+    it: &Item,
+    using: bool,
+    mode: crate::Mode,
+    busy: bool,
+    ask: &mut Ask,
+) {
+    let r = &it.recipe;
+    let n = recipe::entries(r).count();
+    let resp = boxed(ui, if using { GOLD } else { PANEL_HI }, |ui| {
+        ui.add(
+            egui::Label::new(
+                RichText::new(display_name(r))
+                    .size(17.0)
                     .color(if using { GOLD } else { SAND })
                     .strong(),
             )
-            .on_hover_text(it.path.display().to_string());
-            ui.label(RichText::new(&it.shown).color(DIM));
-            let n = recipe::entries(r).count();
-            ui.label(format!(
+            .truncate(),
+        )
+        .on_hover_text(&it.shown);
+        ui.label(
+            RichText::new(format!(
                 "{} · {n} download{}",
                 if r.recipe.base.is_empty() {
                     "any game"
@@ -219,60 +209,102 @@ impl List {
                     &r.recipe.base
                 },
                 if n == 1 { "" } else { "s" }
-            ));
-            if using {
-                ui.label(RichText::new("in use").color(GOLD));
-            } else if it.known {
-                ui.label("set up before")
-                    .on_hover_text("Its folders were given before: it plays straight away.");
-            }
-        });
-        ui.horizontal_wrapped(|ui| {
-            for &(destination, label) in Destination::offered(mode) {
-                if !destination.visible(mode, cfg) {
-                    continue;
-                }
-                if ui
-                    .add_enabled(!busy, egui::Button::new(label).fill(GREEN))
-                    .clicked()
-                {
-                    *ask = Ask::Start(it.path.clone(), destination);
-                }
-            }
-            if ui
-                .add_enabled(!busy, egui::Button::new("Open"))
-                .on_hover_text("Its downloads, what's missing and their download pages.")
-                .clicked()
-            {
-                *ask = Ask::Open(it.path.clone());
-            }
-            if ui
-                .add_enabled(!busy, egui::Button::new("Edit"))
-                .on_hover_text("Its name, base and entries: remove, reorder or add some.")
-                .clicked()
-            {
-                *ask = Ask::Edit(it.path.clone());
-            }
-            if ui
-                .add_enabled(!busy, egui::Button::new("Clone..."))
-                .on_hover_text("A copy to tweak, under a new name; its folders go with it.")
-                .clicked()
-            {
-                *ask = Ask::Clone(it.path.clone());
-            }
-            if using
+            ))
+            .color(DIM),
+        );
+        if !it.known {
+            ui.label(RichText::new("not set up yet").color(DIM))
+                .on_hover_text(
+                    "Play finds its downloads in the mod and add-on folders (Settings).",
+                );
+        }
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            if mode == crate::Mode::Full
                 && ui
-                    .add_enabled(!busy, egui::Button::new("Stop using"))
-                    .on_hover_text("Unload it after a test run; the recipe file stays.")
+                    .add_enabled(
+                        !busy,
+                        egui::Button::new(RichText::new("Play").color(GOLD).strong()).fill(GREEN),
+                    )
                     .clicked()
             {
-                *ask = Ask::Stop;
+                *ask = Ask::Play(it.path.clone());
             }
+            if ui.add_enabled(!busy, egui::Button::new("Build")).clicked() {
+                *ask = Ask::Build(it.path.clone());
+            }
+            ui.add_enabled_ui(!busy, |ui| {
+                ui.menu_button("Options", |ui| options_menu(ui, &it.path, mode, ask));
+            });
         });
+    });
+    if !busy {
+        resp.context_menu(|ui| options_menu(ui, &it.path, mode, ask));
     }
 }
 
-/// What a running "Save as instance" sends back.
+/// An instance's Options: the same on its button and on a right click.
+fn options_menu(ui: &mut egui::Ui, path: &Path, mode: crate::Mode, ask: &mut Ask) {
+    let p = || path.to_path_buf();
+    if ui.button("Edit").clicked() {
+        *ask = Ask::Edit(p());
+    }
+    if ui.button("Clone").clicked() {
+        *ask = Ask::Clone(p());
+    }
+    if ui
+        .button("Fix missing")
+        .on_hover_text(
+            "Looks for its base game and downloads in the mod and add-on folders (Settings) and \
+             keeps what is found.",
+        )
+        .clicked()
+    {
+        *ask = Ask::FixMissing(p());
+    }
+    if mode == crate::Mode::Full
+        && ui
+            .button("Play in VR")
+            .on_hover_text(
+                "A first draft, through OpenXR (start SteamVR, Monado or WiVRn first): it \
+                 checks your headset runtime and the game, then shows a test scene. Its report \
+                 is in the log.",
+            )
+            .clicked()
+    {
+        *ask = Ask::PlayVr(p());
+    }
+    ui.separator();
+    if ui.button(RichText::new("Delete").color(RED)).clicked() {
+        *ask = Ask::Delete(p());
+    }
+}
+
+fn new_box(ui: &mut egui::Ui, busy: bool, ask: &mut Ask) {
+    let resp = boxed(ui, PANEL_HI, |ui| {
+        ui.label(
+            RichText::new("New instance")
+                .size(17.0)
+                .color(SAND)
+                .strong(),
+        );
+        help(ui, "Start from a base game, then add add-ons.");
+        ui.add_space(4.0);
+        if ui
+            .add_enabled(
+                !busy,
+                egui::Button::new(RichText::new("+ New").color(GOLD)).fill(GREEN),
+            )
+            .clicked()
+        {
+            *ask = Ask::New;
+        }
+    });
+    if resp.clicked() && !busy {
+        *ask = Ask::New;
+    }
+}
+
 /// The id of the base profile (`bases/*.toml` near the recipe) that the
 /// game folder matches, if one does.
 pub(crate) fn match_base(recipe_path: &Path, game: &Path) -> Option<String> {
@@ -332,20 +364,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hiding_consoles_keeps_pc_actions_and_dedicated_builders() {
-        let cfg = Config {
-            show_3ds: Some(false),
-            show_wiiu: Some(false),
-            ..Default::default()
-        };
-        let offered: Vec<_> = Destination::offered(crate::Mode::Full)
+    fn every_platform_is_offered_after_build() {
+        let all: Vec<_> = Destination::builds(crate::Mode::Full)
             .iter()
-            .filter(|(d, _)| d.visible(crate::Mode::Full, &cfg))
             .map(|(d, _)| *d)
             .collect();
-        assert_eq!(offered, [Destination::Play, Destination::Windows]);
-        assert!(Destination::ThreeDs.visible(crate::Mode::ThreeDs, &cfg));
-        assert!(Destination::WiiU.visible(crate::Mode::WiiU, &cfg));
+        assert_eq!(
+            all,
+            [
+                Destination::Windows,
+                Destination::ThreeDs,
+                Destination::WiiU
+            ]
+        );
+        assert_eq!(Destination::builds(crate::Mode::ThreeDs).len(), 1);
+        assert_eq!(Destination::builds(crate::Mode::WiiU).len(), 1);
     }
 
     #[test]

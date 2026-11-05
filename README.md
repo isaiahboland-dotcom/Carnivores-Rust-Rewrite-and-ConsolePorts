@@ -108,243 +108,43 @@ Three builds of the same app:
 | `c2-3ds-builder` | 3DS installs only (`cargo run --release -p c2-launcher --bin c2-3ds-builder`) |
 | `c2-wiiu-builder` | Wii U installs only (`cargo run --release -p c2-launcher --bin c2-wiiu-builder`) |
 
-The tabs:
+The launcher opens on **Instances**: a box per instance (a whole game: a base game, its add-ons and its
+choices), plus **New instance**. **Settings** is the only other tab.
 
-- **The game**: drop in, browse to, or paste the path of your Carnivores 2 (or Carnivores: Ice Age) folder;
-  it's checked for `HUNTDAT`. Only have the phone game? **Use my APK as the game…** beside it builds the
-  base from your APK. **Base overlays** go on top of it, such as the Modder's Edition release, which
-  ships changed files only.
-- **Add-ons**: add mod folders or ZIP archives, switch each on or off (or all at once), and change their
-  order. **Standalone games** (whole games made from Carnivores 2) go here too, and are combined beside
-  the base game; **Pick parts** under each one chooses which of its areas, animals and weapons come along
-  (PC). You can also import animals from Ice Age or from the mobile games' APKs.
-- **Instances**: save a setup as a recipe, then choose **Play**, **Build Windows…**, **Build 3DS…** or **Build Wii U…**
-  beside it. Missing downloads are listed before opening the builder. Choose an output folder and press
-  **BUILD**; output, packaging and artwork choices are remembered separately for each instance.
-  Combined recipes are merged again before cooking, so rebuilding uses the current conversion tools.
-  An active instance produces its combined recipe pack rather than separate standalone installs.
-  **Stop using** at the top unloads the instance in use (after a test run, say). With several standalone
-  games or an APK base, the **Menu** choice (Play tab) also offers Android's and each standalone's own
-  menu screens.
-- **Balance**: every area, animal and weapon with its price and score, plus the starting points. Edit them to
-  taste, or to make several mods fit together. Where the PC and mobile versions differ, pick which one to
-  use. Your changes are kept as a balance file over the game, never written into it.
-- **Play**: **PLAY** builds the combined game (cached until something changes) and starts it.
-  **PLAY IN VR** starts the same game in a headset.
-- **Windows (experimental)**: package a saved instance with a Windows `c2-pc.exe` and copied game data.
-  Windows CI builds/tests pass, and the owner reports the rewrite running in a Windows VM.
-  Physical Windows hardware testing remains pending; VM performance and mouse behavior need
-  further checking. See [Windows installation](#windows-installation) and the
-  [full guide](docs/WINDOWS.md).
-- **3DS**: choose Old or New 3DS, an install name and your SD card (or a folder). **Build for 3DS** cooks
-  the packs (one for the original game or the base with its add-ons, and one per standalone game that's
-  on) and copies the app into `3ds/<name>/`. It can also make a `.cia` with your own home-menu icon and
-  banner (see [.cia builds](#cia-builds-optional)).
-- **Wii U**: choose your SD card and output format. **Build for Wii U** makes one install per game: the
-  base game with its overlays and add-ons, and one for each standalone game that's on. Each is a folder
-  `wiiu/apps/<name>/` with its own `.wuhb` for the Aroma Wii U Menu, with an icon and boot images cut from
-  the game's menu picture (`wuhbtool` from devkitPro `wut-tools` is required). An `.rpx` for the Homebrew
-  Launcher is also possible, but only as the one default install (`wiiu/apps/carnivores-probe/`).
-- **Settings**: the tools folder (where `c2-pc`, `c2-cook`, the 3DS and Wii U apps, `wuhbtool`, `makerom` and `bannertool`
-  are found), independently showing or hiding the 3DS and Wii U sections, and engine options.
+- **Play** checks the instance's downloads and its base game, then builds the combined game (cached
+  until something changes) and starts it. Missing downloads are listed with their download pages.
+- **Build** asks which platform: **Windows** (experimental), **3DS** or **Wii U**, then shows only that
+  builder; **Cancel** at the bottom goes back. Output, packaging and artwork choices are remembered
+  separately for each instance. The 3DS and Wii U builders only offer their own platform.
+- **Options** (or a right click on the box): **Edit**, **Clone**, **Fix missing**, **Play in VR** and
+  **Delete**. **Fix missing** looks through the mod and add-on folders set in Settings for the instance's
+  base game and downloads and keeps what it finds: drop new downloads into those folders, then run it.
 
-The launcher runs the other programs for you. It finds them beside itself, in the tools folder, or in this
-source tree's build folders. So for the 3DS and Wii U tabs, build those apps first (below).
-After an engine update, rebuild the tools and console app, then use the saved instance's build action
-to regenerate its packs and copy the updated app. The GUI packages existing binaries; it does not
-compile the Rust or devkitPro projects.
+**Edit** shows the instance's own pages, with **Save**, **Save and exit**, **Discard changes** and
+**Cancel** at the bottom:
 
----
+- **Base game**: the instance's name and its game folder: your Carnivores 2 (or Ice Age) folder, a game
+  built from your APK (**Build from my APK…**), or a standalone mod used as the base game on its own.
+  The folder is checked against the base game's file hashes, so a wrong game shows up here. Pinned
+  overlays (such as the Modder's Edition), **Pick parts** for the base game, and the **Menu** choice.
+- **Add-ons**: standalone games (combined beside the base; **Pick parts** keeps only the areas, animals
+  and weapons you want) and add-ons in load order, each with its folder. Animals can also be imported
+  from Ice Age or the mobile games' APKs. Drop folders on the window to add them.
+- **Balance**: PC or phone rules, and every area, animal and weapon with its price and score, plus the
+  starting points. **Refresh list** reads them again after the other pages change. Changes are kept in
+  the instance, never written into the game.
 
-## Windows installation
-
-1. Use a **64-bit Windows** system with working graphics/audio drivers. In a VM,
-   install its guest graphics drivers/tools and enable 3D acceleration if available;
-   compatibility depends on the graphics API exposed by that VM.
-2. Open the [Windows workflow](https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/actions/workflows/windows.yml),
-   choose a successful run for the revision you want, and download the
-   **c2rs-windows-x64** artifact (GitHub sign-in may be required). Extract the ZIP.
-   The executables are under `pc-ver/target/x86_64-pc-windows-msvc/release/`.
-3. Keep `c2-launcher.exe` and `c2-pc.exe` together. Open `c2-launcher.exe`, select
-   your own game folder containing `HUNTDAT`, then use **PLAY**. The download
-   contains no game assets. A generated portable instance can instead be started
-   by double-clicking its `c2-pc.exe`; keep its whole folder together.
-
-Downloaded builds need **no Rust, Visual Studio build tools or devkitPro**.
-Builds importing `VCRUNTIME140.dll` (including the inspected VM test executable)
-need Microsoft's [Visual C++ x64 runtime](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist).
-The CI configuration requests static C runtime linking; runtime dependencies must
-still be verified for the executable being distributed. Graphics driver support
-is required; original-game wrapper/ReShade DLLs are not dependencies.
-Saves and settings are under `%APPDATA%\c2rs`.
-
-To compile your own executables, you also need stable Rust (MSVC), Git if cloning,
-and Visual Studio Build Tools with **Desktop development with C++** and a Windows
-SDK. The [Windows guide](docs/WINDOWS.md) has PowerShell build commands,
-packaging instructions and [diagnostic log capture](docs/WINDOWS.md#capture-a-diagnostic-log).
-
-Windows remains experimental: CI and an owner VM run are evidence of progress,
-while native hardware gameplay and broader compatibility testing are pending.
-
----
-
-## PC from the command line
-
-```sh
-cd pc-ver
-cargo run --release -p c2-pc -- play PATH/TO/Carnivores2
-```
-
-Register a hunter (or pick one copied from your install), then Hunt, Options, Trophy, Statistics and
-Credits, as in the original. Your game folder is never written to. Saves go to
-`~/.local/share/c2rs/` (the first run copies your game's saves).
-
-PC game options support mouse-wheel scrolling and up/down arrows. **Dynamic time**
-adds an optional 60-minute day/night cycle, starting at the chosen time. Wii U
-has an experimental version; 3DS does not. See [timing and limitations](docs/DYNAMIC_TIME.md).
-
-With mods:
-
-```sh
-cargo run --release -p c2-pc -- play GAME --mod ADDON_DIR --mod ADDON.zip              # add-ons
-cargo run --release -p c2-pc -- play GAME --overlay "PATH/Carnivores 2" --mod ADDON    # on the Modder's Edition
-cargo run --release -p c2-pc -- play GAME --standalone GAME_DIR                         # a standalone game beside the base
-cargo run --release -p c2-pc -- play GAME --recipe ../recipes/c2-mee-addons.toml --mods DOWNLOADS --overlay "PATH/Carnivores 2"
-```
-
-**Controls:** keyboard and mouse follow your bindings (Options > Controls). A gamepad works too: left
-stick moves, right stick looks, ZL draws, ZR fires, L binoculars, R map, A jump, B run, X call, Y next
-weapon, D-pad up crouch / down change call, + pause, − exit. In the menus, the left stick moves a pointer,
-A clicks, B goes back, and the right stick or D-pad scrolls lists.
-Enable **Map zoom / pan** under **Options > Video** (off by default).
-With the PC map open, use the wheel to zoom at the pointer, right-drag to pan,
-and Home to restore the full map. Dynamic-time equipment uses N for night vision
-and L for the flashlight (one at a time; the right stick click on a pad, or the
-round nv / light buttons on the Android screen); select it under Equipment before the hunt.
-Dynamic-time night kills earn +20% while night vision is off; using the
-flashlight keeps that bonus. **K** switches the flashlight's beam between wide and a narrow one that
-reaches farther (remembered for the next hunt).
-**Multi ammo** (Options > Game, off by default): picking the tranquilizer asks **Half tranq** (each
-weapon's rounds split between lethal rounds and darts; **T** swaps them, and the other kind loads when one
-runs out; the top-left HUD shows "lethal:" and "tranq:" rows) or **Full tranq** (darts only, as the
-original). **Advanced observer mode** (Options > Game): in observer hunts, teleport by the map with no
-wait or cooldown, **F** flies (jump rises, crouch sinks), **T** stops time for camera shots.
-
-**PC VR** (early): `cargo run --release -p c2-vr -- play GAME` with an OpenXR runtime running (SteamVR,
-Monado, WiVRn). `c2-vr check` tells you which runtime it found. Plan and status:
-`pc-ver/crates/c2-vr/GAMEPLAN.md`.
-
-More: [docs/MODDING.md](docs/MODDING.md) (mods, recipes, balance files, standalone games) and
-[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) (viewers, debug modes, design).
-
----
-
-## 3DS settings for handheld play
-
-Aiming and moving on a 3DS can feel awkward when a fast predator is on you, so the 3DS version has some
-optional settings to make it easier (Settings on the title screen):
-
-- **3DS friendly**: animals notice and chase you from a shorter distance (60% of the original's, within
-  42 cells), so a far-off animal isn't a few pixels you have to snipe. Off by default: animals use the
-  phone game's full 76 cells.
-- **Dinosaur run speed**: a slider from 50% to 100% that slows every species by the same amount, so the
-  differences between them stay. 100% is the original speed.
-
-With both left at their defaults, the hunt plays as the original does at the mobile game's view range
-(76 cells). The New 3DS draws all of it; the Old 3DS draws 56 cells, so there an animal can notice you
-from just past the fog.
-
-## Nintendo 3DS from the command line
-
-Needs devkitPro (devkitARM, libctru, citro3d), Rust nightly with `rust-src` (selected by
-`3ds-ver/rust-toolchain.toml`), `cargo-3ds` (`cargo install cargo-3ds`) and libclang. Details:
-[docs/3DS.md](docs/3DS.md).
-
-```sh
-cd 3ds-ver
-
-# 1. Cook your game into a pack (runs on the PC). Use --target n3ds for a New 3DS.
-cargo run --release -p c2-cook -- --game PATH/TO/Carnivores2 --target o3ds --out c2rs.c2pk
-#    add-ons:  --overlay "PATH/Carnivores 2" --mod ADDON --mod ADDON ...   (or --recipe R.toml --mods DIR)
-
-# 2. Build the app.
-export DEVKITPRO=/opt/devkitpro DEVKITARM=/opt/devkitpro/devkitARM
-cargo 3ds build --release -p c2-3ds        # -> target/armv6k-nintendo-3ds/release/c2-3ds.3dsx
-
-# 3. Optional: check a pack on the PC the way the 3DS loads it.
-cargo run --release -p c2-cook -- --check c2rs.c2pk
-```
-
-On the SD card, put `c2-3ds.3dsx` in `/3ds/` and the pack(s) in `/3ds/c2rs/`. Start it from the Homebrew
-Launcher; with more than one pack, it asks which to play. Each pack keeps its own saves. Packs are made
-from your own files: keep them to yourself.
-
-The launcher's 3DS tab does all of this for you, and installs under a name of your choosing
-(`sdmc:/3ds/<name>/`), so several installs can sit side by side.
-
-### `.cia` builds (optional)
-
-A `.cia` installs the game to the home menu (with FBI or a similar title manager). It needs two tools that
-are **not part of this project**; download them yourself:
-- **makerom**, from Project_CTR: <https://github.com/3DSGuy/Project_CTR/releases>
-- **bannertool**: <https://github.com/Steveice10/bannertool/releases>
-
-Put them beside the launcher or in its tools folder (on Linux and macOS, `chmod +x makerom bannertool`),
-then use the 3DS tab, or (from `pc-ver/target/release/`):
-
-```sh
-c2-3ds-builder --cia NAME --tools DIR --out SD_DIR [--target o3ds|n3ds] [--icon PNG] [--banner PNG] [--sound WAV]
-```
-
-Each install name gets its own title ID and reads its packs from `sdmc:/3ds/NAME/`. The icon (48x48),
-banner (256x128) and banner sound are your own. Without them, they're made from the game's own menu picture.
-
----
-
-## Wii U from the command line (demo)
-
-The Wii U version is a demo, tested in Cemu and on a real Wii U under Aroma. It's a C
-frontend on devkitPro's WUT with the shared Rust code linked in. You need:
-
-- Rust nightly with `rust-src`
-- Docker, for the `devkitpro/devkitppc` image
-- the third-party tools fetched into `wiiu-ver/tools/`, as described in
-  [wiiu-ver/tools/README.md](wiiu-ver/tools/README.md)
-
-From the repository root:
-
-```sh
-cargo +nightly build --release \
-  --manifest-path wiiu-ver/perf-probe/Cargo.toml \
-  --target wiiu-ver/perf-probe/powerpc-wiiu.json \
-  -Z json-target-spec -Z build-std=core,alloc,compiler_builtins
-docker run --rm --user "$(id -u):$(id -g)" \
-  -v "$(pwd)/wiiu-ver/perf-probe:/src" -w /src devkitpro/devkitppc \
-  sh -c '/opt/devkitpro/devkitPPC/bin/powerpc-eabi-objcopy --remove-section .note.GNU-stack target/powerpc-wiiu/release/libc2_wiiu_terrain_probe.a target/wiiu-terrain.a && /opt/devkitpro/portlibs/wiiu/bin/powerpc-eabi-cmake -S . -B build && cmake --build build'
-
-# An install on the SD card: a game (as c2-cook takes it) and its own Wii U Menu entry.
-# It finds c2-cook, the app and wuhbtool in this tree's builds, $DEVKITPRO/tools/bin or PATH (or --tools DIR).
-cargo run --release --manifest-path pc-ver/Cargo.toml -p c2-launcher --bin c2-wiiu-builder -- \
-  --install carnivores-triassic \
-  --title "Carnivores Triassic" --sd SD -- --game "PATH/TO/Carnivores Triassic"
-```
-
-Everything after `--` goes to `c2-cook` (`--game`, `--overlay`, `--mods`, `--recipe`, `--balance`). Add
-`--rpx` for a Homebrew Launcher build instead of a `.wuhb` (it reads `wiiu/apps/carnivores-probe/`).
-To run it in Cemu, cook into Cemu's SD card (`c2-cook --target wiiu --out
-~/.local/share/Cemu/sdcard/wiiu/apps/carnivores-probe ...`) and start the `.rpx`. Hardware frame-time captures and session results are kept locally in the ignored
-`wiiu-ver/perf-probe/hardware-logs/` directory. Controls and the current state: [wiiu-ver/perf-probe/README.md](wiiu-ver/perf-probe/README.md);
-the plan: [docs/WIIU.md](docs/WIIU.md) and [wiiu-ver/gameplan.md](wiiu-ver/gameplan.md).
-
----
+**Launch protection:** each instance keeps its own game folder, and Play and the builds stop when that
+folder's files don't match the base game the recipe names (its SHA-256 hashes). Use the right folder, or
+tick **Use this game anyway** when it is another version of the same game.
 
 ## Recipes: sharing a mod setup
 
 A recipe (`recipes/*.toml`) describes a modded game **without containing any of it**. Each mod is listed
 with its authors' credit, its download page and the SHA-256 of every file used, plus the load order,
 conflict choices and any small patches of our own. Anyone can rebuild the exact same game from their own
-downloads. Recipes are used from the command line for now; the launcher's Add-ons tab takes the same
-downloads directly.
+downloads. In the launcher, every instance is a recipe: put the file under `recipes/` and it shows on the
+Instances screen.
 
 **Using a recipe:**
 

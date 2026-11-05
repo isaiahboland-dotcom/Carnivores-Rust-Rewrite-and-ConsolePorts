@@ -83,6 +83,14 @@ pub struct Page {
     /// tab's game is not the recipe's base: a standalone recipe's game is
     /// rarely the Game tab's.
     candidates: Vec<PathBuf>,
+    /// The launcher's game the base was last checked against, while the
+    /// instance had none of its own: kept as the instance's own game once
+    /// used, so it never follows another game later (owner's report
+    /// 2026-11-05: an instance played the APK game set up afterwards).
+    fallback: Option<PathBuf>,
+    /// The player chose to play a game whose files differ from the
+    /// recipe's base (another version of it).
+    pub accept_base: bool,
     requests: Vec<crate::jobs::recipe::Check>,
 }
 
@@ -135,6 +143,8 @@ impl Page {
             note: None,
             next: None,
             candidates,
+            fallback: None,
+            accept_base: false,
             requests: Vec::new(),
         };
         for i in 0..p.rows.len() {
@@ -157,16 +167,35 @@ impl Page {
             || self.rows.iter().any(|r| r.status == Status::Checking)
     }
 
-    /// Every entry has its folder, matching.
+    /// Every entry has its folder, matching, and the game is the recipe's
+    /// base (its hash list), or the player accepted a different version.
+    /// Launch protection: a wrong game is never played or built silently.
     pub fn ready(&self) -> bool {
-        (!self.is_apk_base() || matches!(self.base_status, Status::Ok(_)))
+        (matches!(self.base_status, Status::Ok(_)) || self.base_accepted())
             && self.rows.iter().all(|r| matches!(r.status, Status::Ok(_)))
+    }
+
+    /// The game differs from the recipe's base, and the player said to use
+    /// it anyway (never for a game built from an APK: that is another game).
+    fn base_accepted(&self) -> bool {
+        self.accept_base && !self.is_apk_base() && self.base_differs()
+    }
+
+    /// The game was checked and isn't the recipe's base.
+    pub fn base_differs(&self) -> bool {
+        matches!(self.base_status, Status::Bad(_))
+    }
+
+    /// The instance's game as it will be used: its own, else the one it was
+    /// checked against.
+    pub fn game(&self) -> Option<PathBuf> {
+        self.game.clone().or_else(|| self.fallback.clone())
     }
 
     pub fn to_use(&self) -> RecipeUse {
         RecipeUse {
             path: self.path.clone(),
-            game: self.game.clone(),
+            game: self.game(),
             overlays: None,
             folders: self
                 .rows
@@ -198,6 +227,15 @@ impl Page {
             Some(g) => vec![g.clone()],
             None => game_dirs,
         };
+        self.accept_base = false;
+        self.fallback = match &self.game {
+            None => dirs.first().map(|g| crate::config::game_root(g)),
+            Some(_) => None,
+        };
+        if dirs.is_empty() {
+            self.base_status = Status::Bad("no game folder: pick one with Edit, Base game".into());
+            return;
+        }
         let Some(base) = self.base.clone() else {
             self.base_status = if self.recipe.recipe.base.is_empty() {
                 Status::Ok("any".into())
@@ -364,7 +402,8 @@ impl Page {
             });
             help(
                 ui,
-                "Download each from its page and unpack it into a search folder (Settings),                  or give its folder below.",
+                "Download each from its page and unpack it into a mod or add-on folder \
+                 (Settings), then use Fix missing; or give its folder below.",
             );
             for r in missing {
                 ui.horizontal(|ui| {
@@ -410,7 +449,6 @@ impl Page {
         );
         ui.add_space(4.0);
         let mut pick_game = false;
-        let mut own_game_off = false;
         panel(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Game").color(SAND).strong());
@@ -425,17 +463,24 @@ impl Page {
                 }
             });
             ui.horizontal(|ui| {
-                let shown = match (&self.game, game_dirs.first()) {
-                    (Some(g), _) => g.display().to_string(),
-                    (None, Some(g)) if game_dirs.len() > 1 => {
-                        format!("{} and its overlays (Game tab)", g.display())
-                    }
-                    (None, Some(g)) => format!("{} (Game tab)", g.display()),
-                    (None, None) => "the Game tab's (not set)".into(),
+                let shown = match self.game() {
+                    Some(g) => g.display().to_string(),
+                    None => "none yet".into(),
                 };
                 ui.label(RichText::new(shown).color(SAND));
                 self.base_status.show(ui);
             });
+            if self.base_differs() && !self.is_apk_base() {
+                ui.label(
+                    RichText::new(
+                        "That folder isn't this instance's base game (its files differ from \
+                         the recipe's hashes). Choose the right folder, or use it anyway if it is \
+                         another version of the same game.",
+                    )
+                    .color(RED),
+                );
+                ui.checkbox(&mut self.accept_base, "Use this game anyway");
+            }
             ui.horizontal(|ui| {
                 if self.is_apk_base()
                     && ui
@@ -451,9 +496,6 @@ impl Page {
                 if ui.button("Choose game folder...").clicked() {
                     pick_game = true;
                 }
-                if self.game.is_some() && ui.button("Use the Game tab's").clicked() {
-                    own_game_off = true;
-                }
             });
         });
         if pick_game {
@@ -462,10 +504,6 @@ impl Page {
                 self.game = Some(crate::config::game_root(&p));
                 self.check_base(game_dirs.to_vec());
             }
-        }
-        if own_game_off {
-            self.game = None;
-            self.check_base(game_dirs.to_vec());
         }
         ui.add_space(6.0);
         ui.horizontal(|ui| {
@@ -551,7 +589,7 @@ impl Page {
             if ui
                 .add_enabled(
                     ready,
-                    egui::Button::new(RichText::new("Use this recipe").color(GOLD).strong())
+                    egui::Button::new(RichText::new("Use this instance").color(GOLD).strong())
                         .fill(GREEN),
                 )
                 .on_disabled_hover_text("Every entry needs its folder, matching (ok).")
@@ -566,7 +604,7 @@ impl Page {
             {
                 ask = Ask::Play;
             }
-            if ui.button("Close").clicked() {
+            if ui.button("Cancel").clicked() {
                 ask = Ask::Close;
             }
             let left = self
@@ -584,177 +622,4 @@ impl Page {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn settle(p: &mut Page) {
-        let mut handle = crate::jobs::Handle::default();
-        for _ in 0..500 {
-            p.dispatch(&mut handle);
-            if let Some(result) = handle.poll() {
-                match result {
-                    Ok(crate::jobs::Completion::Recipe(messages)) => p.apply(messages),
-                    _ => panic!("unexpected recipe worker result"),
-                }
-            }
-            if !p.working() {
-                return;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        panic!("checks never finished");
-    }
-
-    #[test]
-    fn apk_recipe_finds_its_own_base_and_rejects_a_wrong_selected_game() {
-        let dir = std::env::temp_dir().join(format!("c2rs-apk-recipe-{}", std::process::id()));
-        std::fs::create_dir_all(dir.join("bases")).unwrap_or_else(|e| panic!("{e}"));
-        let correct = dir.join("converted");
-        std::fs::create_dir_all(&correct).unwrap_or_else(|e| panic!("{e}"));
-        std::fs::write(
-            correct.join(c2_mods::mobile_base::SOURCE_APK),
-            "sha256:synthetic",
-        )
-        .unwrap_or_else(|e| panic!("{e}"));
-        std::fs::write(
-            dir.join("bases/phone.toml"),
-            "[base]\nid = 'phone'\napk = 'sha256:synthetic'\n",
-        )
-        .unwrap_or_else(|e| panic!("{e}"));
-        let path = dir.join("phone.toml");
-        std::fs::write(&path, "[recipe]\nid = 'phone'\nbase = 'phone'\n")
-            .unwrap_or_else(|e| panic!("{e}"));
-        let wrong = dir.join("wrong");
-        let mut p =
-            Page::open(&path, None, vec![wrong.clone()], vec![]).unwrap_or_else(|e| panic!("{e}"));
-        settle(&mut p);
-        assert!(!p.ready());
-        p.candidates.push(correct.clone());
-        p.check_base(vec![wrong.clone()]);
-        settle(&mut p);
-        assert_eq!(p.game, Some(correct));
-        assert!(p.ready());
-        p.game = Some(wrong.clone());
-        p.check_base(vec![wrong.clone()]);
-        settle(&mut p);
-        assert_eq!(p.game, Some(wrong));
-        assert!(
-            !p.ready(),
-            "an explicit wrong selection must not silently switch"
-        );
-        std::fs::remove_dir_all(dir).unwrap_or_else(|e| panic!("{e}"));
-    }
-
-    #[test]
-    fn standalone_base_found_past_the_game_tabs() {
-        let dir = std::env::temp_dir().join(format!("c2rs-recipe-base-{}", std::process::id()));
-        let game = |name: &str, data: &[u8]| {
-            let h = dir.join(name).join("HUNTDAT");
-            std::fs::create_dir_all(&h).unwrap_or_else(|e| panic!("{e}"));
-            std::fs::write(h.join("X.CAR"), data).unwrap_or_else(|e| panic!("{e}"));
-            dir.join(name)
-        };
-        let (vanilla, other, standalone) = (
-            game("vanilla", b"c2"),
-            game("other", b"zz"),
-            game("standalone", b"sa"),
-        );
-        std::fs::create_dir_all(dir.join("recipes/bases")).unwrap_or_else(|e| panic!("{e}"));
-        std::fs::write(
-            dir.join("recipes/bases/sa.toml"),
-            format!(
-                "[base]\nid = \"sa\"\n\n[files]\n\"HUNTDAT/X.CAR\" = \"{}\"\n",
-                recipe::sha256(b"sa")
-            ),
-        )
-        .unwrap_or_else(|e| panic!("{e}"));
-        let path = dir.join("recipes/sa.toml");
-        std::fs::write(
-            &path,
-            "[recipe]\nid = \"sa\"\nname = \"SA\"\nbase = \"sa\"\n",
-        )
-        .unwrap_or_else(|e| panic!("{e}"));
-        let mut p = Page::open(&path, None, vec![vanilla], vec![other, standalone.clone()])
-            .unwrap_or_else(|e| panic!("{e}"));
-        settle(&mut p);
-        let (got, status) = (p.game.clone(), p.base_status.clone());
-        std::fs::remove_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
-        assert_eq!(got, Some(standalone));
-        assert!(matches!(status, Status::Ok(_)), "{status:?}");
-    }
-
-    #[test]
-    fn entries_found_in_a_downloads_folder() {
-        let dir = std::env::temp_dir().join(format!("c2rs-recipe-page-{}", std::process::id()));
-        let huntdat = dir.join("downloads").join("Some Mod").join("HUNTDAT");
-        std::fs::create_dir_all(&huntdat).unwrap_or_else(|e| panic!("{e}"));
-        std::fs::write(huntdat.join("X.CAR"), b"abc").unwrap_or_else(|e| panic!("{e}"));
-        let r = format!(
-            "[recipe]\nid = \"t\"\nname = \"T\"\n\n[[mods]]\nid = \"some-mod\"\n\n\
-             [mods.files]\n\"HUNTDAT/X.CAR\" = \"{}\"\n",
-            recipe::sha256(b"abc")
-        );
-        let path = dir.join("t.toml");
-        std::fs::write(&path, r).unwrap_or_else(|e| panic!("{e}"));
-        let mut p =
-            Page::open(&path, None, Vec::new(), Vec::new()).unwrap_or_else(|e| panic!("{e}"));
-        settle(&mut p);
-        assert!(!p.ready());
-        p.scan(vec![dir.join("downloads")]);
-        settle(&mut p);
-        let used = p.to_use();
-        std::fs::remove_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
-        assert!(p.ready(), "{:?}", p.rows[0].status);
-        assert_eq!(
-            used.folders.get("some-mod").and_then(|f| f.file_name()),
-            Some(std::ffi::OsStr::new("Some Mod"))
-        );
-    }
-}
-
-#[cfg(test)]
-mod job_tests {
-    use super::*;
-
-    #[test]
-    fn recipe_checks_share_the_handle_and_failure_can_be_retried() {
-        let temp = crate::publish::tests::Temp::new();
-        let path = temp.0.join("recipe.toml");
-        std::fs::write(&path, "[recipe]\nid = 'test'\n").unwrap();
-        let mut p = Page::open(&path, None, vec![], vec![]).unwrap();
-        p.scan(vec![temp.0.clone()]);
-        // Use a real row check so an otherwise empty recipe has worker work.
-        p.rows.push(Row {
-            kind: "mod",
-            entry: RecipeMod {
-                id: "missing".into(),
-                ..Default::default()
-            },
-            game: false,
-            folder: None,
-            status: Status::Unset,
-        });
-        p.check_row(0, temp.0.join("missing"));
-        let mut handle = crate::jobs::Handle::default();
-        p.dispatch(&mut handle);
-        assert!(handle.start("replace page", vec![]).is_err());
-        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while handle.result().is_none() {
-            assert!(std::time::Instant::now() < until);
-            std::thread::yield_now();
-        }
-        assert!(handle.busy(), "undelivered recipe results protect the page");
-        match handle.poll() {
-            Some(Ok(crate::jobs::Completion::Recipe(messages))) => p.apply(messages),
-            _ => panic!("expected recipe checks"),
-        }
-        assert!(!p.working());
-        assert!(matches!(p.rows[0].status, Status::Bad(_)));
-        p.check_row(0, temp.0.join("missing"));
-        p.failed("worker stopped");
-        assert!(!p.working());
-        assert!(p.requests.is_empty());
-        p.check_row(0, temp.0.join("retry"));
-        assert!(p.working());
-    }
-}
+mod tests;

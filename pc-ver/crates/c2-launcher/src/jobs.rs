@@ -19,7 +19,6 @@ pub(crate) mod saving;
 /// Successful work delivered exactly once to the UI.
 pub(crate) enum Completion {
     Imported(PathBuf),
-    Balance(Box<c2_mods::balance::Balance>),
     /// The recipe editor's instance values (`balance::read_instance`).
     RecipeBalance(Box<c2_mods::balance::Balance>),
     Pinned(
@@ -30,6 +29,8 @@ pub(crate) enum Completion {
         )>,
     ),
     Recipe(Vec<crate::recipe_page::Msg>),
+    /// The editor's game folder and the base profile it matches.
+    BaseMatch(Box<(PathBuf, Option<String>)>),
     Addons(Vec<PathBuf>),
     Saved(Box<(c2_mods::recipe::Recipe, crate::config::RecipeUse)>),
     ApkBase {

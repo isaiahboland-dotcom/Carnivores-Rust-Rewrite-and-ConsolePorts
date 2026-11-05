@@ -1,85 +1,8 @@
-//! The Add-ons tab's standalone games, each with a "Pick parts" dropdown
-//! (owner request 2026-11-05): which of its areas, huntables and weapons
-//! are combined on PC (`c2_mods::standalone::Skip`, `c2-pc --skip`).
+//! "Pick parts" (owner request 2026-11-05): which of a game's areas,
+//! huntables and weapons an instance keeps (`c2_mods::standalone::Skip`,
+//! `c2-pc --skip`), for the base game and each standalone game in the
+//! instance editor.
 use super::*;
-
-impl Launcher {
-    /// Standalone games: whole games made from Carnivores 2, combined beside
-    /// the base on PC; a 3DS pack each.
-    pub(super) fn standalones_ui(&mut self, ui: &mut egui::Ui) {
-        heading(ui, "Standalone games");
-        help(
-            ui,
-            "Whole games made from Carnivores 2 (the folder you extracted). On PC each one's \
-             areas, animals and weapons are added beside the base game's, its animals on its \
-             own maps (\"Pick parts\" leaves some out); most need the Modder's Edition as a \
-             base overlay. On the 3DS each one is a pack of its own, whole.",
-        );
-        ui.add_space(6.0);
-        if ui.button("Add game folder...").clicked() {
-            if let Some(p) = rfd::FileDialog::new().pick_folder() {
-                if c2_mods::pack::find_game_root(&p).is_some() {
-                    if !self.cfg.standalones.iter().any(|s| s.path == p) {
-                        self.cfg.standalones.push(crate::config::AddOn {
-                            path: p,
-                            enabled: true,
-                            skip: Default::default(),
-                        });
-                        self.save();
-                    }
-                } else {
-                    self.ui.note = Some((
-                        "No game (HUNTDAT with _RES.TXT) in that folder.".into(),
-                        RED,
-                    ));
-                }
-            }
-        }
-        ui.add_space(6.0);
-        let mut changed = false;
-        let mut remove = None;
-        let parts = &mut self.ui.parts;
-        panel(ui, |ui| {
-            if self.cfg.standalones.is_empty() {
-                help(ui, "No standalone games yet.");
-            } else {
-                changed |= super::game::all_on_off(ui, &mut self.cfg.standalones);
-            }
-            for (i, a) in self.cfg.standalones.iter_mut().enumerate() {
-                ui.horizontal(|ui| {
-                    changed |= ui.checkbox(&mut a.enabled, "").changed();
-                    let name = RichText::new(a.name()).color(if a.enabled { TEXT } else { DIM });
-                    ui.label(name).on_hover_text(a.path.display().to_string());
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button("Remove").clicked() {
-                            remove = Some(i);
-                        }
-                    });
-                });
-                let p = parts
-                    .entry(a.path.clone())
-                    .or_insert_with(|| c2_mods::standalone::parts(&a.path));
-                if let Some(p) = p {
-                    ui.indent(("parts", i), |ui| {
-                        changed |= pick_parts(
-                            ui,
-                            egui::IdSalt::new(("pick-parts", i, &a.path)),
-                            p,
-                            &mut a.skip,
-                        )
-                    });
-                }
-            }
-        });
-        if let Some(i) = remove {
-            self.cfg.standalones.remove(i);
-            changed = true;
-        }
-        if changed {
-            self.save();
-        }
-    }
-}
 
 /// The dropdown for one standalone (`salt`: its id): whether a choice
 /// changed. Also the recipe editor's, for an instance's standalones.

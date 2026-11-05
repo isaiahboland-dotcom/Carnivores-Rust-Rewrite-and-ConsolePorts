@@ -3834,3 +3834,52 @@ was published under those numbers. The changelog and notes say so, so the gap do
 not look like missing history. Both workspaces and the shared path-package entries
 in all three lockfiles move to 0.4.0 with no dependency upgrades, following
 `docs/RELEASING.md`.
+
+## 2026-11-05 — Launcher: instances first, and launch protection
+
+Owner's report (PC and Steam Deck): an instance made for a standalone game
+(Anachronous) played the Android game. The instance had switched off, the
+base game on the Game tab was changed to the APK game, and the instance
+kept no game of its own: `RecipeUse::game` was `None` ("the Game tab's"),
+so it followed the new game. A base that didn't match the recipe's hashes
+was only a warning for desktop bases, so it played anyway. The editor
+showed the right base id from the recipe, the Game tab the wrong folder.
+
+Fixes:
+
+- The recipe page keeps the game it checked as the instance's own when the
+  instance is used (`recipe_page::Page::game`), so later changes elsewhere
+  never move it.
+- Launch protection: Play and the builds go on only when the game matches
+  the base the recipe names (its hash list), for desktop bases as well as
+  APK ones. **Use this game anyway** lets a different version of the same
+  game through on purpose (never for an APK base). This differs from
+  `c2-pc recipe verify`, which still only warns.
+- The editor checks the chosen folder against the base profiles
+  (`instances::match_base`, off the UI thread) and says which game it is.
+
+The owner also asked for the launcher to be reorganised around instances
+(no global game and add-on setup to get out of step with them):
+
+- Home: Instances (a box each: Play, Build, Options) and Settings only.
+  Options (also on right click): Edit, Clone, Fix missing, Delete; Play in
+  VR moved here from the removed Play tab.
+- Build asks for the platform, then shows only its page with Cancel. The
+  "Show the 3DS/Wii U section" settings and the first-launch question are
+  gone (`show_3ds` and `show_wiiu` stay in the config file, unused, so old
+  configs load).
+- Edit: Base game, Add-ons and Balance pages over one instance, with Save,
+  Save and exit, Discard changes and Cancel. The instance edited is the one
+  in use while editing, so the menu and rule choices shown are its own.
+- Fix missing checks the folders the instance was given, then searches the
+  mod and add-on folders (the old "search folders" setting) for its base
+  game and anything still missing.
+- New instance and Clone ask for a name in the window (no file dialog,
+  which is awkward in Steam's game mode). The old Game and Add-ons setup
+  can still be turned into an instance once ("Instance from the old
+  setup").
+- Instances from before that kept no game open with none chosen in the
+  editor, rather than the launcher's current game: that was the bug.
+- Archives can't be dropped on the editor (pins need folders); unpack them
+  first. The search for downloads still reads `.zip` files.
+

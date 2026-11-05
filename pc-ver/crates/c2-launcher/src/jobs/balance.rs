@@ -4,14 +4,6 @@ use std::path::PathBuf;
 use c2_mods::balance::Balance;
 use c2_mods::standalone::{Ambients, Skip};
 
-/// The game (base, overlays, add-ons) combined in memory, and its values.
-pub(crate) fn read(bases: Vec<PathBuf>, mods: Vec<PathBuf>) -> Result<super::Completion, String> {
-    let none = Skip::default();
-    Ok(super::Completion::Balance(Box::new(values(
-        &bases, &mods, &none,
-    )?)))
-}
-
 /// `skip`: the base game's own parts left out.
 fn values(bases: &[PathBuf], mods: &[PathBuf], skip: &Skip) -> Result<Balance, String> {
     let v = c2_mods::vanilla(bases).map_err(|e| e.to_string())?;

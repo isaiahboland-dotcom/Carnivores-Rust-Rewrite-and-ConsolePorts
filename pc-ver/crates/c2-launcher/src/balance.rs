@@ -20,11 +20,6 @@ pub fn path() -> PathBuf {
 pub struct Editor {
     /// The player's changes.
     pub edits: Balance,
-    /// The game's own values, and the folders they are for.
-    values: Option<Balance>,
-    for_game: Vec<PathBuf>,
-    loading: bool,
-    error: Option<String>,
     filter: String,
     /// The mobile game's values for this game's entries (written by the
     /// APK import, `mobile-values.toml`), offered where they differ.
@@ -131,43 +126,6 @@ impl Editor {
         }
         std::fs::create_dir_all(crate::config::data_dir()).map_err(|e| e.to_string())?;
         std::fs::write(&p, self.edits.to_toml()).map_err(|e| e.to_string())
-    }
-
-    /// A changed game is read only when the launcher's worker is available.
-    fn refresh(&mut self, bases: &[PathBuf], mods: &[PathBuf], handle: &mut crate::jobs::Handle) {
-        if self.loading || handle.busy() {
-            return;
-        }
-        let key: Vec<PathBuf> = bases.iter().chain(mods).cloned().collect();
-        if key == self.for_game || bases.is_empty() {
-            return;
-        }
-        let (bases, mods) = (bases.to_vec(), mods.to_vec());
-        match handle.start_task("Reading balance values", move |_| {
-            crate::jobs::balance::read(bases, mods)
-        }) {
-            Ok(()) => {
-                self.for_game = key;
-                self.loading = true;
-                self.values = None;
-                self.error = None;
-            }
-            Err(e) => self.error = Some(e),
-        }
-    }
-
-    pub(crate) fn loaded(&mut self, values: Balance) {
-        self.values = Some(values);
-        self.loading = false;
-        self.error = None;
-    }
-
-    pub(crate) fn failed(&mut self, error: &str) {
-        if self.loading {
-            self.error = Some(error.into());
-            self.values = None;
-        }
-        self.loading = false;
     }
 
     fn edits_mut(&mut self, list: List) -> &mut Vec<Item> {
@@ -349,41 +307,9 @@ impl Editor {
         .sum()
     }
 
-    /// The tab. Returns a note for the status line when saving failed.
-    pub fn ui(
-        &mut self,
-        ui: &mut egui::Ui,
-        bases: &[PathBuf],
-        mods: &[PathBuf],
-        handle: &mut crate::jobs::Handle,
-    ) -> Option<String> {
-        self.refresh(bases, mods, handle);
-        if bases.is_empty() {
-            ui.label(RichText::new("Set the game folder first (The game tab).").color(RED));
-            return None;
-        }
-        if let Some(e) = &self.error {
-            ui.label(RichText::new(format!("Can't read the game: {e}")).color(RED));
-            return None;
-        }
-        let Some(values) = self.values.clone() else {
-            ui.horizontal(|ui| {
-                ui.spinner();
-                ui.label("Reading the game (with the add-ons that are on)...");
-            });
-            return None;
-        };
-        if self.edit_ui(ui, &values) {
-            if let Err(e) = self.store() {
-                return Some(format!("Balance not saved: {e}"));
-            }
-        }
-        None
-    }
-
     /// The starting points and the lists, over the game's `values`:
-    /// whether a value changed. Used by the Balance tab and the instance
-    /// editor (`recipe_edit`), which keeps the edits in the recipe.
+    /// whether a value changed. Used by the instance editor
+    /// (`recipe_edit`), which keeps the edits in the recipe.
     pub(crate) fn edit_ui(&mut self, ui: &mut egui::Ui, values: &Balance) -> bool {
         let mut changed = false;
         ui.horizontal(|ui| {
@@ -565,45 +491,5 @@ mod tests {
         // Back to PC: nothing left to change.
         e.choose(List::Weapons, "Shotgun", &d[0].2, false);
         assert!(e.edits.weapons.is_empty());
-    }
-}
-
-#[cfg(test)]
-mod job_tests {
-    use super::*;
-
-    #[test]
-    fn reading_balance_waits_for_other_work_and_keeps_its_pending_result() {
-        let mut editor = Editor::default();
-        let mut handle = crate::jobs::Handle::default();
-        handle
-            .start_task("import", |_| Ok(crate::jobs::Completion::Recipe(vec![])))
-            .unwrap();
-        editor.refresh(&["first".into()], &[], &mut handle);
-        assert!(!editor.loading);
-        assert!(editor.for_game.is_empty());
-        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while handle.result().is_none() {
-            assert!(std::time::Instant::now() < until);
-            std::thread::yield_now();
-        }
-        handle
-            .poll()
-            .unwrap()
-            .unwrap_or_else(|_| panic!("import result"));
-        editor.refresh(&["first".into()], &[], &mut handle);
-        editor.refresh(&["second".into()], &[], &mut handle);
-        assert!(editor.loading);
-        assert_eq!(editor.for_game, vec![PathBuf::from("first")]);
-        assert!(handle.start("overlap", vec![]).is_err());
-        while handle.result().is_none() {
-            assert!(std::time::Instant::now() < until);
-            std::thread::yield_now();
-        }
-        assert!(handle.poll().unwrap().is_err());
-        editor.failed("synthetic missing game");
-        assert!(!editor.loading);
-        assert!(editor.error.is_some());
-        assert!(!handle.busy());
     }
 }

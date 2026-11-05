@@ -312,8 +312,8 @@ if [ ! -d "$GAME_DIR/HUNTDAT" ]; then
 
 Heads-up: $GAME_DIR has no HUNTDAT/ folder yet.
 Copy your own Carnivores 2 (or Carnivores: Ice Age) install into it — the
-folder that contains HUNTDAT/ — then launch the app and point the
-"The game" tab at:
+folder that contains HUNTDAT/ — then launch the app, make a New instance
+and choose this folder on its Base game page:
     $GAME_DIR
 Mods go in:
     $MODS_DIR/   (folders or .zip; extract .rar/.7z first)
@@ -335,9 +335,10 @@ cd "$RELEASE_DIR"
 exec ./c2-launcher "\$@"
 
 # In the launcher:
-#   "The game" tab  -> browse to $GAME_DIR  (the folder containing HUNTDAT/)
-#   "Add-ons" tab   -> add folders or .zip from $MODS_DIR, toggle + reorder
-#   "Play" tab      -> PLAY
+#   Settings        -> add $MODS_DIR as a mod and add-on folder
+#   New instance    -> Base game page: choose $GAME_DIR (the folder containing HUNTDAT/)
+#                      Add-ons page: add folders from $MODS_DIR, reorder; Save and exit
+#   Instance box    -> Play
 # The launcher remembers your add-on folder locally between launches; each
 # instance keeps its own saves under ~/.local/share/c2rs/ (survives SteamOS
 # updates).
@@ -378,9 +379,10 @@ Installed. Next steps:
        - or right-click "Carnivores (Rust rewrite)" in the Desktop Mode
          launcher -> "Add to Steam"
   3. Launch. In the GUI:
-       "The game" tab -> browse to $GAME_DIR
-       "Add-ons" tab  -> add folders/.zip from $MODS_DIR, toggle + reorder
-       "Play" tab     -> PLAY
+       Settings      -> add $MODS_DIR as a mod and add-on folder
+       New instance  -> Base game: choose $GAME_DIR; Add-ons: add folders
+                        from $MODS_DIR; Save and exit
+       Instance box  -> Play
      (The launcher remembers your add-on folder locally; instances keep
       their own saves.)
 

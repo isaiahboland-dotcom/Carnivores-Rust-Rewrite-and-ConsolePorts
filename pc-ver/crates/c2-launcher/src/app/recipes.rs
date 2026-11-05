@@ -16,9 +16,6 @@ impl Launcher {
                 p.scan(self.cfg.search_dirs());
                 p.dispatch(&mut self.job);
                 self.ui.recipe_page = Some(p);
-                if self.ui.tab != Tab::Instances {
-                    self.ui.tab = Tab::AddOns;
-                }
             }
             Err(e) => self.ui.note = Some((format!("Not a recipe: {e}"), RED)),
         }
@@ -41,14 +38,7 @@ impl Launcher {
         let games = self.recipe_game_with_overlays(&u);
         u.game = games.first().cloned();
         u.overlays = Some(games.into_iter().skip(1).collect());
-        let s = &p.recipe.settings;
-        self.cfg.remember_builds();
-        self.cfg.apply(s);
-        self.cfg.pictures = s.pictures;
-        self.cfg.tuning = s.tuning;
-        self.cfg.restore_builds(&u.path, &p.recipe.recipe.id);
-        self.ui.balance.edits = s.balance.clone().unwrap_or_default();
-        let _ = self.ui.balance.store();
+        self.take_settings(&p.recipe.settings, &u.path, &p.recipe.recipe.id);
         self.cfg.remember(&u);
         self.ui.note = Some((
             format!("Recipe '{}' in use: play and the builds go by it.", u.id()),
@@ -61,20 +51,18 @@ impl Launcher {
         }
     }
 
-    /// "Save as instance": the recipe in use with the choices made now, or
-    /// the setup (game, add-ons, standalones) as a new recipe, saved under
-    /// the recipes folder by default.
+    /// An instance from the old Game and Add-ons tabs' setup (game,
+    /// overlays, add-ons and standalone games, hashed off the UI thread),
+    /// saved under the recipes folder by default.
     pub(super) fn save_instance(&mut self) {
         if !self.can_start_operation() {
             return;
         }
         let dir = crate::config::recipes_dir();
         let _ = std::fs::create_dir_all(&dir);
-        let current = self.active_recipe().cloned();
-        let name = current.as_ref().map_or("my-instance".into(), |u| u.id());
         let Some(out) = rfd::FileDialog::new()
             .set_directory(&dir)
-            .set_file_name(format!("{name}.toml"))
+            .set_file_name("my-instance.toml")
             .add_filter("Recipe", &["toml"])
             .save_file()
         else {
@@ -83,44 +71,15 @@ impl Launcher {
         let stem = out
             .file_stem()
             .map_or(String::new(), |s| s.to_string_lossy().into_owned());
-        let Some(u) = current else {
-            let cfg = self.cfg.clone();
-            let id = crate::instances::id_from(&stem);
-            if let Err(e) = self.job.start_task("Saving instance", move |_| {
-                crate::jobs::saving::from_setup(cfg, out, id)
-            }) {
-                self.ui.note = Some((e, RED));
-                return;
-            }
-            self.ui.note = Some(("Saving the instance (hashing its files)...".into(), TEXT));
-            return;
-        };
-        let mut r = match c2_mods::recipe::Recipe::load(&u.path) {
-            Ok(r) => r,
-            Err(e) => {
-                self.ui.note = Some((format!("Not saved: {e}"), RED));
-                return;
-            }
-        };
-        // A recipe's patches are found beside it.
-        if !r.patches.is_empty() && out.parent() != u.path.parent() {
-            self.ui.note = Some((
-                "Not saved: the recipe has patches beside it; save it in the same folder.".into(),
-                RED,
-            ));
+        let cfg = self.cfg.clone();
+        let id = crate::instances::id_from(&stem);
+        if let Err(e) = self.job.start_task("Saving instance", move |_| {
+            crate::jobs::saving::from_setup(cfg, out, id)
+        }) {
+            self.ui.note = Some((e, RED));
             return;
         }
-        if out != u.path {
-            r.recipe.id = crate::instances::id_from(&stem);
-            r.recipe.name = stem;
-        }
-        r.settings = self.cfg.settings(&r.settings);
-        r.settings.balance = self
-            .ui
-            .balance
-            .file()
-            .map(|_| self.ui.balance.edits.clone());
-        self.write_instance(r, RecipeUse { path: out, ..u });
+        self.ui.note = Some(("Saving the instance (hashing its files)...".into(), TEXT));
     }
 
     pub(super) fn write_instance(&mut self, r: c2_mods::recipe::Recipe, u: RecipeUse) {
@@ -138,7 +97,7 @@ impl Launcher {
         }
     }
 
-    /// A "Save as instance" of the setup that finished.
+    /// An instance from the old setup, hashed.
     pub(super) fn saving_done(&mut self, mut r: c2_mods::recipe::Recipe, u: RecipeUse) {
         r.settings.balance = self
             .ui
@@ -148,74 +107,30 @@ impl Launcher {
         self.write_instance(r, u);
     }
 
-    pub(super) fn instances_tab(&mut self, ui: &mut egui::Ui) {
-        heading(ui, "Instances");
-        if self.ui.recipe_edit.is_some() {
-            self.recipe_edit_ui(ui);
-            return;
-        }
-        if self.ui.recipe_page.is_some() {
-            self.recipe_ui(ui);
-            return;
-        }
-        let busy = self.busy();
-        match self.ui.instances.ui(ui, &self.cfg, self.ui.mode, busy) {
-            crate::instances::Ask::Nothing => {}
-            crate::instances::Ask::Open(p) => self.open_recipe(p),
-            crate::instances::Ask::Start(p, destination) => {
-                self.open_recipe(p);
-                if let Some(page) = &mut self.ui.recipe_page {
-                    page.next = Some(destination);
-                }
-            }
-            crate::instances::Ask::Edit(p) => self.edit_recipe(&p),
-            crate::instances::Ask::Clone(p) => self.clone_recipe(&p),
-            crate::instances::Ask::Save => self.save_instance(),
-            crate::instances::Ask::Stop => {
-                self.cfg.recipe = None;
-                self.save();
-                self.ui.instances.refresh(&self.cfg);
-                self.ui.note = Some((
-                    "Recipe unloaded: play and the builds go by the Game and Add-ons tabs.".into(),
-                    TEXT,
-                ));
-            }
-        }
-    }
-
-    pub(super) fn edit_recipe(&mut self, path: &Path) {
-        if !self.can_start_operation() {
-            return;
-        }
-        match crate::recipe_edit::Editor::open(path) {
-            Ok(e) => self.ui.recipe_edit = Some(e),
-            Err(e) => self.ui.note = Some((format!("Not a recipe: {e}"), RED)),
-        }
-    }
-
-    /// "Clone...": the recipe saved under a new name (with the folders
+    /// Clone: the recipe saved beside it under `name` (with the folders
     /// given for it), then opened to edit.
-    pub(super) fn clone_recipe(&mut self, from: &Path) {
+    pub(super) fn clone_recipe(&mut self, from: &Path, name: &str) {
         if !self.can_start_operation() {
             return;
         }
-        let Some(to) = crate::recipe_edit::pick_copy_path(from) else {
+        let id = crate::instances::id_from(name);
+        let to = from.with_file_name(format!("{id}.toml"));
+        if to.exists() {
+            self.ui.note = Some((format!("Not cloned: {} exists already", to.display()), RED));
             return;
-        };
+        }
         let made = c2_mods::recipe::Recipe::load(from)
             .map_err(|e| e.to_string())
             .and_then(|r| {
-                let c = crate::recipe_edit::renamed_for(&r, &to);
-                if let Some(p) = crate::recipe_edit::save_problem(&c, from, &to) {
-                    return Err(p);
-                }
+                let mut c = crate::recipe_edit::renamed_for(&r, &to);
+                c.recipe.name = name.trim().to_string();
                 let old = std::fs::read_to_string(from).unwrap_or_default();
                 std::fs::write(&to, crate::recipe_edit::with_header(&old, &c.to_toml()))
                     .map_err(|e| e.to_string())
             });
         match made {
             Ok(()) => {
-                self.recipe_saved(from, &to, &[]);
+                self.recipe_saved(from, &to);
                 self.ui.note = Some((format!("Cloned to {}", to.display()), TEXT));
                 self.edit_recipe(&to);
             }
@@ -223,10 +138,9 @@ impl Launcher {
         }
     }
 
-    /// A recipe written to `to` from the one at `from` (the same path when
-    /// saved over it): the folders given for it (and `added`) are kept for
-    /// `to`, and the list shows it.
-    pub(super) fn recipe_saved(&mut self, from: &Path, to: &Path, added: &[(String, PathBuf)]) {
+    /// A recipe copied to `to` from the one at `from`: the folders given
+    /// for it are kept for `to`, and the list shows it.
+    pub(super) fn recipe_saved(&mut self, from: &Path, to: &Path) {
         let mut u = self.cfg.remembered(from).cloned().unwrap_or(RecipeUse {
             path: to.to_path_buf(),
             game: None,
@@ -241,16 +155,6 @@ impl Launcher {
                 .map(|(_, m, _)| m.id.clone())
                 .collect();
             u.folders.retain(|id, _| ids.contains(id));
-            for (id, dir) in added {
-                if ids.contains(id) {
-                    u.folders.insert(id.clone(), dir.clone());
-                }
-            }
-        }
-        if let Some(cur) = &mut self.cfg.recipe {
-            if cur.path == to {
-                cur.folders = u.folders.clone();
-            }
         }
         u.on = false;
         self.cfg.remember(&u);
@@ -258,121 +162,54 @@ impl Launcher {
         self.ui.instances.refresh(&self.cfg);
     }
 
-    /// The recipe editor; add-ons added there are read against the
-    /// recipe's game (as last given), else the Game tab's.
-    pub(super) fn recipe_edit_ui(&mut self, ui: &mut egui::Ui) {
-        let Some(e) = &self.ui.recipe_edit else {
-            return;
-        };
-        let (game, folders) = match self.cfg.remembered(&e.path) {
-            Some(u) => (
-                self.recipe_game_with_overlays(&u.clone()),
-                u.folders.clone(),
-            ),
-            None => (self.game_folders().0, Default::default()),
-        };
-        let Some(e) = &mut self.ui.recipe_edit else {
-            return;
-        };
-        if e.working() || e.reading() {
-            ui.ctx()
-                .request_repaint_after(std::time::Duration::from_millis(150));
-        }
-        let mut ask = crate::recipe_edit::Ask::Nothing;
-        // Its own reading of the instance's values leaves it usable.
-        let other_busy = (self.job.busy() && !e.reading())
-            || self.ui.recipe_page.as_ref().is_some_and(|p| p.working());
-        panel(ui, |ui| {
-            ui.add_enabled_ui(!other_busy && !e.working(), |ui| {
-                ask = e.ui(ui, &game, &folders, &mut self.job)
-            });
-        });
-        match ask {
-            crate::recipe_edit::Ask::Nothing => {}
-            crate::recipe_edit::Ask::Close => self.ui.recipe_edit = None,
-            crate::recipe_edit::Ask::Saved { from, to } => {
-                let added = std::mem::take(&mut e.added);
-                // The instance in use plays with its new balance.
-                let balance = e.recipe.settings.balance.clone();
-                if self.cfg.recipe.as_ref().is_some_and(|u| u.path == to) {
-                    self.ui.balance.edits = balance.unwrap_or_default();
-                    if let Err(err) = self.ui.balance.store() {
-                        self.ui.note = Some((format!("Balance not saved: {err}"), RED));
-                    }
-                }
-                self.recipe_saved(&from, &to, &added);
-            }
-        }
-    }
-
-    /// The recipe page while one is set up, else the recipe in use (or a
-    /// button to open one).
+    /// The recipe page: the instance's downloads and base game being
+    /// checked before Play, a build or Fix missing; what is missing and
+    /// why it can't go on yet.
     pub(super) fn recipe_ui(&mut self, ui: &mut egui::Ui) {
         let dirs = self.game_folders().0;
         let busy = self.busy();
-        if let Some(p) = &mut self.ui.recipe_page {
-            let mut ask = crate::recipe_page::Ask::Nothing;
-            let play = self.ui.mode == Mode::Full;
-            panel(ui, |ui| {
-                ui.add_enabled_ui(!busy, |ui| ask = p.ui(ui, &dirs, busy, play, &mut self.job));
-            });
-            match ask {
-                crate::recipe_page::Ask::Nothing => {}
-                crate::recipe_page::Ask::Use => self.use_recipe(false),
-                crate::recipe_page::Ask::Play => self.use_recipe(true),
-                crate::recipe_page::Ask::Close => self.ui.recipe_page = None,
-                crate::recipe_page::Ask::ChooseApk => {
-                    if let Some(apk) = rfd::FileDialog::new()
-                        .add_filter("Android app", &["apk"])
-                        .pick_file()
-                    {
-                        self.base_from_apk(apk, true);
-                    }
-                }
-            }
+        let Some(p) = &mut self.ui.recipe_page else {
             return;
-        }
-        let mut open = None;
-        let mut changed = false;
-        panel(ui, |ui| {
+        };
+        let path = p.path.clone();
+        if self.ui.fixing.is_some() {
             ui.horizontal(|ui| {
-                match &mut self.cfg.recipe {
-                    Some(r) => {
-                        changed |= ui
-                            .checkbox(&mut r.on, RichText::new("Recipe").color(SAND).strong())
-                            .on_hover_text(
-                                "On: play and the builds use the recipe instead of the lists below.",
-                            )
-                            .changed();
-                        ui.label(r.id()).on_hover_text(r.path.display().to_string());
-                        if ui.button("Edit").clicked() {
-                            open = Some(r.path.clone());
-                        }
-                        help(ui, "(Stop using: on the Instances page)");
-                    }
-                    None => {
-                        ui.label(RichText::new("Recipe").color(SAND).strong());
-                        help(ui, "none: drop a recipe (.toml) on the window, or");
-                    }
-                }
-                if ui.button("Open a recipe...").clicked() {
-                    open = rfd::FileDialog::new()
-                        .add_filter("Recipe", &["toml"])
-                        .pick_file();
-                }
+                ui.spinner();
+                ui.label("Fix missing: looking for the base game and downloads...");
             });
-            if self.active_recipe().is_some() {
-                help(
-                    ui,
-                    "While the recipe is on, the add-on list and the standalone games below aren't used.",
-                );
+        }
+        let mut ask = crate::recipe_page::Ask::Nothing;
+        let play = self.ui.mode == Mode::Full;
+        panel(ui, |ui| {
+            ui.add_enabled_ui(!busy, |ui| ask = p.ui(ui, &dirs, busy, play, &mut self.job));
+        });
+        let mut edit = false;
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(!busy, egui::Button::new("Edit the instance"))
+                .on_hover_text("Choose its base game and folders yourself.")
+                .clicked()
+            {
+                edit = true;
             }
         });
-        if changed {
-            self.save();
+        match ask {
+            crate::recipe_page::Ask::Nothing => {}
+            crate::recipe_page::Ask::Use => self.use_recipe(false),
+            crate::recipe_page::Ask::Play => self.use_recipe(true),
+            crate::recipe_page::Ask::Close => self.go_home(),
+            crate::recipe_page::Ask::ChooseApk => {
+                if let Some(apk) = rfd::FileDialog::new()
+                    .add_filter("Android app", &["apk"])
+                    .pick_file()
+                {
+                    self.base_from_apk(apk, true);
+                }
+            }
         }
-        if let Some(p) = open {
-            self.open_recipe(p);
+        if edit {
+            self.go_home();
+            self.edit_recipe(&path);
         }
     }
 }

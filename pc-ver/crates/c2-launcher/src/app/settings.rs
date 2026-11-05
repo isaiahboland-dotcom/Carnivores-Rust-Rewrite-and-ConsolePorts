@@ -110,33 +110,20 @@ impl Launcher {
         });
         ui.add_space(8.0);
         self.search_dirs_ui(ui);
-        if self.ui.mode == Mode::Full {
-            ui.add_space(8.0);
-            panel(ui, |ui| {
-                let mut wiiu = self.cfg.show_wiiu != Some(false);
-                if ui.checkbox(&mut wiiu, "Show the Wii U section").changed() {
-                    self.cfg.show_wiiu = Some(wiiu);
-                    self.save();
-                }
-                let mut on = self.cfg.show_3ds == Some(true);
-                if ui.checkbox(&mut on, "Show the 3DS section").changed() {
-                    self.cfg.show_3ds = Some(on);
-                    self.save();
-                }
-            });
-        }
     }
 
     /// Where instances' downloads are looked for.
     pub(super) fn search_dirs_ui(&mut self, ui: &mut egui::Ui) {
         let mut changed = false;
         panel(ui, |ui| {
-            ui.label(RichText::new("Search folders").color(GOLD));
+            ui.label(RichText::new("Mod and add-on folders").color(GOLD));
             help(
                 ui,
-                "Where an instance's downloads are looked for (each folder and the folders \
-                 and .zips in it, up to 4 folders down). With none added: source, source/mods, addons and \
-                 mods beside the recipes folder.",
+                "Where Play, the builds and Fix missing look for an instance's base game and \
+                 downloads (each folder and the folders and .zips in it, up to 4 folders down). \
+                 Add your mods folder and your add-ons folder here, then drop new downloads in \
+                 them. With none added: source, source/mods, addons and mods beside the \
+                 recipes folder.",
             );
             let mut remove = None;
             for (i, d) in self.cfg.search_dirs().iter().enumerate() {
@@ -170,31 +157,5 @@ impl Launcher {
         if changed {
             self.save();
         }
-    }
-
-    /// Full launcher, first start: show the 3DS section or not.
-    pub(super) fn first_launch(&mut self, ctx: &egui::Context) {
-        egui::Modal::new(egui::Id::unique("first-launch")).show(ctx, |ui| {
-            ui.set_width(420.0);
-            heading(ui, "Welcome");
-            ui.label(
-                "This launcher can also build the game for a Nintendo 3DS (homebrew). Show the \
-                 3DS options? You can change this in Settings.",
-            );
-            ui.add_space(10.0);
-            ui.horizontal(|ui| {
-                if ui
-                    .button(RichText::new("Show 3DS options").color(GOLD))
-                    .clicked()
-                {
-                    self.cfg.show_3ds = Some(true);
-                    self.save();
-                }
-                if ui.button("Keep them hidden").clicked() {
-                    self.cfg.show_3ds = Some(false);
-                    self.save();
-                }
-            });
-        });
     }
 }

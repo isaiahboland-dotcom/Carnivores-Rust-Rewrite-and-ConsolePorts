@@ -89,7 +89,7 @@ impl Launcher {
                 "The phone's values, from your APK import, under any changes you make below. \
                  Applies to playing on PC, the 3DS and the Wii U."
             } else {
-                "The phone's rules come with importing your APK (Add-ons tab)."
+                "The phone's rules come with importing animals from your APK (Add-ons page)."
             },
         );
         changed
@@ -175,8 +175,8 @@ impl Launcher {
                      APK, its pictures are the phone's already.",
                     g.display()
                 ),
-                None => "The phone's pictures need a game built from your APK (\"Use my APK as \
-                         the game...\" on the Game tab, or an Android recipe)."
+                None => "The phone's pictures need a game built from your APK (\"Build from my \
+                         APK...\" on an instance's Base game page, or an Android recipe)."
                     .into(),
             },
         );
@@ -215,25 +215,5 @@ impl Launcher {
         args.extend(self.balance_args());
         args.extend(self.menu_args());
         args
-    }
-
-    pub(super) fn balance_tab(&mut self, ui: &mut egui::Ui) {
-        heading(ui, "Balance");
-        help(
-            ui,
-            "Prices and scores of the game as set up (base, overlays and the add-ons that are \
-             on). Change any of them, to taste or to make add-ons fit together; the game's own \
-             files are never changed. Applies to playing on PC and to the 3DS add-ons pack (or \
-             the original game pack when there are no add-ons).",
-        );
-        ui.add_space(6.0);
-        if panel(ui, |ui| self.tuning_ui(ui)) {
-            self.save();
-        }
-        ui.add_space(6.0);
-        let (bases, mods) = self.game_folders();
-        if let Some(e) = self.ui.balance.ui(ui, &bases, &mods, &mut self.job) {
-            self.ui.note = Some((e, RED));
-        }
     }
 }

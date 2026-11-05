@@ -95,6 +95,13 @@ impl Extras {
         self.reading
     }
 
+    /// Reads the instance's values and parts again on the next frame.
+    pub(super) fn refresh_list(&mut self) {
+        self.read_for = None;
+        self.error = None;
+        self.parts.clear();
+    }
+
     pub(super) fn values_read(&mut self, values: Balance) {
         self.values = Some(values);
         self.reading = false;
@@ -185,7 +192,7 @@ impl Extras {
                 help(
                     ui,
                     &format!(
-                        "{}: its folder isn't known yet (use the instance once) to pick its parts.",
+                        "{}: no folder yet (Browse, or Fix missing) to pick its parts.",
                         m.id
                     ),
                 );
@@ -213,8 +220,8 @@ impl Extras {
         changed
     }
 
-    /// Starting points, prices and scores (a section that reads the
-    /// instance's game when opened).
+    /// Starting points, prices and scores (read from the instance's game
+    /// when shown, again after "Refresh list").
     pub(super) fn balance_ui(
         &mut self,
         ui: &mut egui::Ui,
@@ -226,64 +233,72 @@ impl Extras {
         let n = r.settings.balance.as_ref().map_or(0, |b| {
             b.areas.len() + b.animals.len() + b.weapons.len() + usize::from(b.start.is_some())
         });
-        let title = format!("Points and scores ({n} changed)");
-        egui::CollapsingHeader::new(RichText::new(title).color(if n > 0 { GOLD } else { SAND }))
-            .id_salt("recipe-edit-balance")
-            .show(ui, |ui| {
-                help(
-                    ui,
-                    "A new hunter's points, and the price and score of each area, animal and \
-                     weapon in this instance (its parts left out are not listed). Kept in the \
-                     recipe; used when the instance is played or built.",
-                );
-                let (inst, missing) = instance(r, game, folders);
-                let Some(inst) = inst else {
-                    ui.label(RichText::new("Set the game first (the Game tab).").color(RED));
-                    return;
-                };
-                if !missing.is_empty() {
-                    help(
-                        ui,
-                        &format!(
-                            "Not read (folder not known yet: use the instance once): {}",
-                            missing.join(", ")
-                        ),
-                    );
-                }
-                self.refresh(&inst, handle);
-                if let Some(e) = &self.error {
-                    ui.label(RichText::new(format!("Can't read the instance: {e}")).color(RED));
-                    if ui.small_button("Try again").clicked() {
-                        self.read_for = None;
-                        self.error = None;
-                    }
-                    return;
-                }
-                let Some(values) = self.values.clone() else {
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.label("Reading the instance's game...");
-                    });
-                    return;
-                };
-                if self.reading {
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        help(ui, "Reading the changed instance...");
-                    });
-                }
-                egui::ScrollArea::vertical()
-                    .max_height(420.0)
-                    .id_salt("recipe-edit-balance-rows")
-                    .show(ui, |ui| {
-                        panel(ui, |ui| {
-                            if self.balance.edit_ui(ui, &values) {
-                                let e = &self.balance.edits;
-                                r.settings.balance = (!e.is_empty()).then(|| e.clone());
-                            }
-                        });
-                    });
+        ui.horizontal_wrapped(|ui| {
+            ui.label(
+                RichText::new(format!("Points and scores ({n} changed)")).color(if n > 0 {
+                    GOLD
+                } else {
+                    SAND
+                }),
+            );
+            if ui
+                .add_enabled(!self.reading, egui::Button::new("Refresh list"))
+                .on_hover_text(
+                    "Read the areas, animals and weapons again from the base game and add-ons \
+                     as set up on the other pages.",
+                )
+                .clicked()
+            {
+                self.refresh_list();
+            }
+        });
+        help(
+            ui,
+            "A new hunter's points, and the price and score of each area, animal and weapon in \
+             this instance (its parts left out are not listed). Kept in the recipe; used when the \
+             instance is played or built.",
+        );
+        let (inst, missing) = instance(r, game, folders);
+        let Some(inst) = inst else {
+            ui.label(RichText::new("Choose the base game first (Base game page).").color(RED));
+            return;
+        };
+        if !missing.is_empty() {
+            help(
+                ui,
+                &format!(
+                    "Not read (no folder yet: Add-ons page or Fix missing): {}",
+                    missing.join(", ")
+                ),
+            );
+        }
+        self.refresh(&inst, handle);
+        if let Some(e) = &self.error {
+            ui.label(RichText::new(format!("Can't read the instance: {e}")).color(RED));
+            if ui.small_button("Try again").clicked() {
+                self.refresh_list();
+            }
+            return;
+        }
+        let Some(values) = self.values.clone() else {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label("Reading the instance's game...");
             });
+            return;
+        };
+        if self.reading {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                help(ui, "Reading the changed instance...");
+            });
+        }
+        panel(ui, |ui| {
+            if self.balance.edit_ui(ui, &values) {
+                let e = &self.balance.edits;
+                r.settings.balance = (!e.is_empty()).then(|| e.clone());
+            }
+        });
     }
 }
 

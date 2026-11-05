@@ -54,7 +54,7 @@ impl Launcher {
                     changed |= ui
                         .checkbox(
                             &mut t.addons_pack,
-                            format!("The recipe's pack ({id}.c2pk; recipe on, Add-ons tab)"),
+                            format!("The instance's pack ({id}.c2pk)"),
                         )
                         .changed();
                 }

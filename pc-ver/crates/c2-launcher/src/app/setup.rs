@@ -6,9 +6,9 @@ impl Launcher {
         if !self.can_start_operation() {
             return;
         }
-        let (bases, _) = self.game_folders();
+        let bases = self.import_bases();
         if bases.is_empty() {
-            self.ui.note = Some(("Set the game folder first (The game tab).".into(), RED));
+            self.ui.note = Some(("Choose the base game first (Base game page).".into(), RED));
             return;
         }
         let stem = apk
@@ -32,9 +32,9 @@ impl Launcher {
         if !self.can_start_operation() {
             return;
         }
-        let (bases, _) = self.game_folders();
+        let bases = self.import_bases();
         if bases.is_empty() {
-            self.ui.note = Some(("Set the game folder first (The game tab).".into(), RED));
+            self.ui.note = Some(("Choose the base game first (Base game page).".into(), RED));
             return;
         }
         self.cfg.ice_age = Some(ia.clone());
@@ -71,8 +71,23 @@ impl Launcher {
         }
     }
 
+    /// The game imports are read against: the edited instance's, else the
+    /// launcher's.
+    fn import_bases(&self) -> Vec<PathBuf> {
+        match &self.ui.recipe_edit {
+            Some(e) => e.draft.game_dirs(),
+            None => self.game_folders().0,
+        }
+    }
+
     pub(super) fn apk_base_done(&mut self, out: PathBuf, for_recipe: bool) {
-        if for_recipe {
+        if let Some(e) = self.ui.recipe_edit.as_mut().filter(|_| for_recipe) {
+            e.set_game(out);
+            self.ui.note = Some((
+                "The game built from your APK is the base game.".into(),
+                TEXT,
+            ));
+        } else if for_recipe {
             let dirs = self.game_folders().0;
             if let Some(p) = &mut self.ui.recipe_page {
                 p.game = Some(out);
@@ -80,8 +95,7 @@ impl Launcher {
                 p.dispatch(&mut self.job);
             }
         } else {
-            self.set_base(out.clone());
-            self.ui.base_text = out.display().to_string();
+            self.set_base(out);
         }
     }
 
@@ -99,15 +113,19 @@ impl Launcher {
         self.cfg.mobile_values = values.exists().then_some(values);
         self.ui.balance.mobile = cfg_mobile(&self.cfg);
         let n = dirs.len();
+        if let Some(e) = &mut self.ui.recipe_edit {
+            e.queue_pins(crate::recipe_edit::Kind::AddOn, dirs);
+            self.ui.note = Some((format!("{n} imported add-ons being added."), TEXT));
+            return;
+        }
         self.add_addons(dirs);
-        self.ui.note = Some((format!("{n} imported add-ons added (Add-ons tab)."), TEXT));
+        self.ui.note = Some((format!("{n} imported add-ons added."), TEXT));
     }
 
     pub(super) fn set_base(&mut self, p: PathBuf) {
         match describe_game(&p) {
             Some(kind) => {
                 self.ui.note = Some((format!("{kind} found."), TEXT));
-                self.ui.base_text = p.display().to_string();
                 self.cfg.base = Some(p);
                 self.save();
             }
