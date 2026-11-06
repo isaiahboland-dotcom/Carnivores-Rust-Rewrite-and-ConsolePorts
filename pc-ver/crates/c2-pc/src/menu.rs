@@ -331,7 +331,7 @@ enum Opt {
     ClearTrophies,
 }
 
-const GAME_OPTS: [Opt; 13] = [
+const GAME_OPTS: [Opt; 14] = [
     Opt::Slider("Aggressiveness", |s| &mut s.options.agres),
     Opt::Slider("Density", |s| &mut s.options.dens),
     Opt::Slider("Sensitivity", |s| &mut s.options.sens),
@@ -346,6 +346,9 @@ const GAME_OPTS: [Opt; 13] = [
     Opt::PcToggle("Multi ammo", |p| &mut p.multi_ammo),
     Opt::PcToggle("Advanced observer mode", |p| &mut p.advanced_observer),
     Opt::PcSlider("Survival starting budget", |p| &mut p.survival_budget),
+    Opt::PcToggle("Enable hardcore survival mode", |p| {
+        &mut p.hardcore_survival
+    }),
     Opt::ClearTrophies,
 ];
 
@@ -1645,13 +1648,17 @@ impl Menu {
         }
     }
 
-    /// APK-independent modes, with Classic hidden for standalone rosters.
+    /// APK-independent modes, with Classic hidden for standalone rosters
+    /// and Hardcore only when its setting is on.
     fn survival_modes(&self) -> Vec<SurvivalKind> {
         let mut v = Vec::new();
         if self.classic_survival {
             v.push(SurvivalKind::Classic);
         }
         v.push(SurvivalKind::Modded);
+        if self.pc.hardcore_survival != 0 {
+            v.push(SurvivalKind::Hardcore);
+        }
         v
     }
 
@@ -1666,10 +1673,11 @@ impl Menu {
         self.choice.survival = Some(kind);
         self.choice.observer = false;
         self.choice.focus = None;
+        let (_, weapon) = kind.weapon();
         self.choice.weapons = self.columns[2]
             .names
             .iter()
-            .position(|n| n.trim().eq_ignore_ascii_case("shotgun"))
+            .position(|n| n.trim().eq_ignore_ascii_case(weapon))
             .map_or(0, |i| 1u128 << i);
         self.choice.equip = 0;
         self.launch_hunt();
@@ -2027,6 +2035,7 @@ impl Menu {
                 let label = match k {
                     SurvivalKind::Classic => "CLASSIC",
                     SurvivalKind::Modded => "MODDED",
+                    SurvivalKind::Hardcore => "HARDCORE",
                 };
                 buttons.push((Self::pick_rect(i, modes.len()), label));
             }
@@ -2193,6 +2202,7 @@ impl Menu {
         let mode = c.survival.map_or("", |k| match k {
             SurvivalKind::Classic => "CLASSIC SURVIVAL",
             SurvivalKind::Modded => "MODDED SURVIVAL",
+            SurvivalKind::Hardcore => "HARDCORE SURVIVAL",
         });
         let mc = if on_mode {
             HOVER

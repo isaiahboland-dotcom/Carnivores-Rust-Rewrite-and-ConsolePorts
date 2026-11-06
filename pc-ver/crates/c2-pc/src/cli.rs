@@ -431,12 +431,13 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
                 night_vision: false,
                 flashlight: false,
                 observer: o.has("observer"),
-                // --survival classic|modded.
+                // --survival classic|modded|hardcore.
                 survival: match o.value("survival") {
                     None => None,
                     Some("classic") => Some(SurvivalKind::Classic),
                     Some("modded") => Some(SurvivalKind::Modded),
-                    Some(v) => bail!("--survival classic|modded, not {v:?}"),
+                    Some("hardcore") => Some(SurvivalKind::Hardcore),
+                    Some(v) => bail!("--survival classic|modded|hardcore, not {v:?}"),
                 },
                 reg: o.num("player", 0i32)?,
                 from_menu: false,

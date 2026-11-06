@@ -172,7 +172,12 @@ impl HuntView {
             }
             return;
         }
-        let mut y = 12.0 * scale;
+        // Under the survival's wave box (top left) when there is one.
+        let mut y = if self.hunt.survival.is_some() {
+            54.0
+        } else {
+            12.0
+        } * scale;
         for (owned, key, name, on) in [
             (self.setup.night_vision, "N", "Night vision", nv),
             (self.setup.flashlight, "L", "Flashlight", torch),

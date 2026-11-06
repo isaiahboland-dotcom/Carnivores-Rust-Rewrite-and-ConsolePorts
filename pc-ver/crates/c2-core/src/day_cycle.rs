@@ -8,6 +8,8 @@ const CYCLE_MS: u32 = HALF_CYCLE_MS * 2;
 #[derive(Debug, Clone, Copy)]
 pub struct DayCycle {
     elapsed: u32,
+    /// Held where it is: time played doesn't move it.
+    held: bool,
 }
 
 pub fn weights(time: TimeOfDay) -> [f32; 3] {
@@ -24,10 +26,23 @@ impl DayCycle {
                 TimeOfDay::Night => HALF_CYCLE_MS,
                 TimeOfDay::Dusk => 3 * QUARTER_MS,
             },
+            held: false,
         }
     }
+
+    /// Midnight that never ends (hardcore survival): full night, held.
+    pub fn endless_night() -> Self {
+        Self {
+            held: true,
+            ..Self::new(TimeOfDay::Night)
+        }
+    }
+
     /// Advance only by simulation time actually played, never wall time.
     pub fn advance(&mut self, ms: u32) {
+        if self.held {
+            return;
+        }
         self.elapsed = ((u64::from(self.elapsed) + u64::from(ms)) % u64::from(CYCLE_MS)) as u32;
     }
     /// Night runs from the dusk stop to the dawn stop (half the cycle).
@@ -67,6 +82,17 @@ mod tests {
             c.advance(CYCLE_MS);
             assert_eq!(c.weights(), weights(start));
         }
+    }
+    #[test]
+    fn endless_night_stays_full_night() {
+        let mut c = DayCycle::endless_night();
+        for _ in 0..10 {
+            assert!(c.is_night());
+            assert_eq!(c.weights(), weights(TimeOfDay::Night));
+            c.advance(QUARTER_MS);
+        }
+        c.advance(u32::MAX);
+        assert_eq!(c.weights(), weights(TimeOfDay::Night));
     }
     #[test]
     fn day_night_and_dawn_order() {

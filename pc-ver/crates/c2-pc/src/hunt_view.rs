@@ -235,26 +235,52 @@ enum Pick {
 const HOLD_TO_PICK: f32 = 0.35;
 
 impl HuntView {
+    /// A survival held at night (hardcore).
+    fn endless_night(setup: &HuntSetup) -> bool {
+        setup.survival.is_some_and(|k| k.endless_night())
+    }
+
+    /// The dynamic day cycle this hunt plays with, if any: the setting's,
+    /// from the hunt's time; hardcore survival's endless night whatever the
+    /// setting says.
+    fn day_cycle(setup: &HuntSetup) -> Option<c2_core::day_cycle::DayCycle> {
+        use c2_core::day_cycle::DayCycle;
+        if setup.trophy() {
+            None
+        } else if Self::endless_night(setup) {
+            Some(DayCycle::endless_night())
+        } else {
+            (setup.pc.dynamic_time != 0).then(|| DayCycle::new(setup.time))
+        }
+    }
+
     pub fn load(gpu: &Gpu, mut setup: HuntSetup) -> Result<Self> {
-        if setup.survival.is_some() {
+        if let Some(kind) = setup.survival {
             setup.map = setup
                 .map
                 .parent()
                 .and_then(|p| find_file(p, "AREA5.MAP"))
                 .ok_or_else(|| anyhow::anyhow!("Survival requires Mount Ravan (AREA5.MAP)"))?;
-            setup.time = TimeOfDay::Day;
+            // Hardcore: the night, the flashlight in hand.
+            let night = kind.endless_night();
+            setup.time = if night {
+                TimeOfDay::Night
+            } else {
+                TimeOfDay::Day
+            };
             setup.targets = c2_formats::bits::Bits::ALL;
             setup.observer = false;
             setup.double_ammo = false;
             setup.night_vision = false;
-            setup.flashlight = false;
+            setup.flashlight = night;
         }
         let mut view = AreaView::load(gpu, &setup.map, setup.time)?;
         view.narrow_flashlight = setup.pc.narrow_flashlight != 0;
         view.fly = false;
-        if setup.pc.dynamic_time != 0 && !setup.trophy() {
-            view.area.cycle = Some(c2_core::day_cycle::DayCycle::new(setup.time));
+        if let Some(c) = Self::day_cycle(&setup) {
+            view.area.cycle = Some(c);
             view.night_vision = Some(false);
+            view.flashlight = setup.flashlight && Self::endless_night(&setup);
         }
         let seed = setup.seed.unwrap_or_else(|| {
             SystemTime::now()
@@ -287,24 +313,25 @@ impl HuntView {
             }
             None => (load_res(&huntdat)?, None),
         };
-        if setup.survival.is_some() {
-            let shotgun = res
+        if let Some(kind) = setup.survival {
+            let (file, name) = kind.weapon();
+            let gun = res
                 .weapons
                 .iter()
                 .position(|w| {
                     w.file
                         .as_deref()
-                        .is_some_and(|f| f.eq_ignore_ascii_case("shotgun.car"))
+                        .is_some_and(|f| f.eq_ignore_ascii_case(file))
                 })
                 .or_else(|| {
                     res.weapons.iter().position(|w| {
                         w.name
                             .as_deref()
-                            .is_some_and(|n| n.trim().eq_ignore_ascii_case("shotgun"))
+                            .is_some_and(|n| n.trim().eq_ignore_ascii_case(name))
                     })
                 })
-                .ok_or_else(|| anyhow::anyhow!("Survival requires the shotgun"))?;
-            setup.weapons = 1u128 << shotgun;
+                .ok_or_else(|| anyhow::anyhow!("{} requires the {name}", kind.name()))?;
+            setup.weapons = 1u128 << gun;
         }
         let (mut species, cars) = load_species(&huntdat, &res)?;
         if let Some(t) = &mee {
@@ -584,7 +611,8 @@ impl HuntView {
             && setup.survival.is_none();
         let opts = HuntOptions {
             targets: setup.targets,
-            radar: o.radar != 0,
+            // Hardcore survival hunts with the radar.
+            radar: o.radar != 0 || Self::endless_night(setup),
             opt_agres: o.agres,
             opt_sens: o.sens,
             // ctViewR: 42 + OptViewR / 8 * 2 cells; 60 in the trophy room.
@@ -1355,12 +1383,12 @@ impl HuntView {
     fn restart(&mut self) {
         self.audio.stop_all();
         self.map_viewport = map_viewport::MapViewport::default();
-        self.view.flashlight = false;
+        self.view.flashlight = self.setup.flashlight && Self::endless_night(&self.setup);
         if self.view.night_vision.is_some() {
             self.view.night_vision = Some(false);
         }
         if self.view.area.cycle.is_some() {
-            self.view.area.cycle = Some(c2_core::day_cycle::DayCycle::new(self.setup.time));
+            self.view.area.cycle = Self::day_cycle(&self.setup);
         }
         self.seed = self.seed.wrapping_mul(1_103_515_245).wrapping_add(12345);
         let species = std::mem::take(&mut self.hunt.herd.species);

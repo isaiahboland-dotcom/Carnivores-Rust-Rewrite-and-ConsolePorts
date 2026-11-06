@@ -60,6 +60,10 @@ pub struct PcSettings {
     pub advanced_observer: i32,
     /// Starting survival points; zero derives the budget from menu prices.
     pub survival_budget: i32,
+    /// Hardcore survival offered beside Classic and Modded (1 = on; off by
+    /// default, not in the original): endless night, flashlight, radar,
+    /// rifle.
+    pub hardcore_survival: i32,
 }
 
 impl Default for PcSettings {
@@ -83,6 +87,7 @@ impl Default for PcSettings {
             half_tranq: 1,
             advanced_observer: 0,
             survival_budget: 0,
+            hardcore_survival: 0,
         }
     }
 }
@@ -126,6 +131,7 @@ impl PcSettings {
                 "advanced_observer" => s.advanced_observer = i32::from(v != 0),
                 "dynamic_time" => s.dynamic_time = i32::from(v != 0),
                 "survival_budget" => s.survival_budget = v.max(0),
+                "hardcore_survival" => s.hardcore_survival = i32::from(v != 0),
                 "secret_dinos" => s.secret_dinos = v.clamp(0, 255),
                 "all_huntable" => s.all_huntable = i32::from(v != 0),
                 _ => {}
@@ -137,7 +143,7 @@ impl PcSettings {
     pub fn store(&self) {
         let text = format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nfar_sprites = {}\n\
-             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\n",
+             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\n",
             self.render,
             self.fog,
             self.blood,
@@ -155,7 +161,8 @@ impl PcSettings {
             self.multi_ammo,
             self.half_tranq,
             self.advanced_observer,
-            self.survival_budget
+            self.survival_budget,
+            self.hardcore_survival
         );
         if let Some(dir) = path().parent() {
             let _ = std::fs::create_dir_all(dir);
@@ -188,6 +195,16 @@ mod tests {
         assert_eq!(
             PcSettings::parse("survival_budget = 5000").survival_budget,
             5000
+        );
+    }
+
+    #[test]
+    fn hardcore_survival_is_opt_in() {
+        assert_eq!(PcSettings::default().hardcore_survival, 0);
+        assert_eq!(PcSettings::parse("blood = 0\n").hardcore_survival, 0);
+        assert_eq!(
+            PcSettings::parse("hardcore_survival = 1\n").hardcore_survival,
+            1
         );
     }
 

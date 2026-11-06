@@ -29,6 +29,12 @@ fn budget_survival_filters_rosters_and_spends_without_touching_hunter_points() {
     assert_eq!(classic.roster, [(2, 18), (3, 25)]);
     let modded = SurvivalOptions::pick(&hunt, SurvivalKind::Modded, 6);
     assert_eq!(modded.roster, [(2, 18), (3, 25), (4, 12), (5, 0)]);
+    // Hardcore's waves are Modded's (only the night and the kit differ).
+    let hardcore = SurvivalOptions::pick(&hunt, SurvivalKind::Hardcore, 6);
+    assert_eq!(hardcore.roster, modded.roster);
+    assert!(SurvivalKind::Hardcore.endless_night() && !SurvivalKind::Modded.endless_night());
+    assert_eq!(SurvivalKind::Hardcore.weapon().0, "rifle.car");
+    assert!(!SurvivalKind::ALL.contains(&SurvivalKind::Hardcore));
     assert!(classic.budget_ready());
     assert_eq!(classic.initial_budget(), 36);
     assert_eq!(modded.initial_budget(), 10);

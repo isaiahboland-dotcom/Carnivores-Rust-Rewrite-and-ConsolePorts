@@ -1260,7 +1260,8 @@ impl Menu {
                     self.focus = Some(
                         match k {
                             SurvivalKind::Classic => "Stock animals; menu prices, +10% per wave",
-                            SurvivalKind::Modded => {
+                            // Not offered on the 3DS (PC only for now).
+                            SurvivalKind::Modded | SurvivalKind::Hardcore => {
                                 "All eligible animals; menu prices, +10% per wave"
                             }
                         }

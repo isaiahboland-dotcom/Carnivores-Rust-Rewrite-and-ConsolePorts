@@ -66,6 +66,11 @@ survival ravine, with a shotgun only. Waves come from the fixed approach;
 ordinary map wildlife is removed. Movement remains enabled.
 Console memory and wave limits still apply.
 
+**Hardcore survival** (PC; off by default, not part of the original game): turn on
+Game options > "Enable hardcore survival mode" and a third choice appears. It has
+Modded's waves, but at a night that never ends, as pitch black as the dynamic
+day cycle's midnight, with only the flashlight, the radar and the rifle.
+
 
 ---
 

@@ -9,6 +9,20 @@
   per hunt. Touch works in the menus.
 - `c2-pc play --max-picks N`: at most N animals and N weapons per hunt (Android uses 8).
 
+### Survival (PC)
+
+- **Hardcore survival**, off by default (Game options > "Enable hardcore survival mode"):
+  Modded's waves on Mount Ravan at a night that never ends, with the flashlight on, the
+  radar and the rifle. `c2-pc hunt ... --survival hardcore` starts one directly.
+
+### Launcher
+
+- `[recipe.skip]` leaves out the base game's own maps, animals and weapons beside add-ons
+  and standalone games too, so modded content can replace them (instance editor, Base game
+  page). Leaving out every area is refused.
+- An experimental **Advanced** tab in the instance editor, hidden unless Settings >
+  Experimental shows it. Empty for now.
+
 ## 0.4.3 — 2026-11-05
 
 Overhauled Launcher: it is now built around instances, and an instance can no longer play
