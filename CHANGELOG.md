@@ -23,6 +23,9 @@
 - **Map puts the gun away** (Options, on by default): pressing the map with a gun out puts it away and
   opens the map.
 - `c2-pc play --max-picks N`: at most N animals and N weapons per hunt (Android uses 8).
+- Fixed: in a game built from an APK, add-on maps, animals and weapons showed only their names in the
+  hunt setup's honeycomb. They now show their own menu picture, cut to the cell's shape (also on PC
+  with `--mobile-menu`).
 
 ### Survival (PC)
 

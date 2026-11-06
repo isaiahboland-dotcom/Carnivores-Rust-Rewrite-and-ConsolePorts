@@ -687,6 +687,9 @@ impl Menu {
         // Engine), else `_RES.TXT`; see `c2_formats::menu_txt`.
         let mut menu = menu_data(&huntdat)?;
         let menu_animals = menu.huntables.len();
+        // The phone's hunt setup cuts the pictures of items it has no art
+        // for (add-ons') to its cells: kept until that art is made.
+        hud.keep_pixels = kit.is_some();
         // The roaming add-ons' pictures (by menu slot): drawn from their
         // models, as they have none.
         let mut drawn: Vec<Option<usize>> = vec![None; menu_animals];
@@ -1046,11 +1049,12 @@ impl Menu {
         let mobile = (MOBILE_MENU.get().copied().unwrap_or(false) || kit.is_some()).then(|| {
             let mut art = mobile::Art::new(&mut hud, gpu);
             art.kit = kit.as_ref().map(|k| {
-                let n = |i: usize| cols.get(i).map_or(0, |c: &Column| c.names.len());
-                k.art(&mut hud, gpu, [n(0), n(1), n(2)])
+                let pics = |i: usize| cols.get(i).map_or(&[][..], |c: &Column| &c.pics[..]);
+                k.art(&mut hud, gpu, [pics(0), pics(1), pics(2)])
             });
             art
         });
+        hud.drop_pixels();
         let mut m = Self {
             mobile,
             mobile_page: 0,

@@ -12,6 +12,8 @@ use super::*;
 use c2_formats::mobile_ui::Sprite as KitSprite;
 use std::collections::BTreeMap;
 
+mod cutout;
+
 /// An RGBA picture.
 #[derive(Clone)]
 struct Pic {
@@ -614,10 +616,12 @@ impl Kit {
         Some(hud.add_image_filtered(gpu, size as u32, size as u32, &px, true))
     }
 
-    /// The hunt setup's art; `counts` the items on each page (maps,
-    /// animals, weapons), numbered as the phone's sprites (the weapons'
-    /// 7th is the photo camera, so the revolver is 8th).
-    pub(super) fn art(&self, hud: &mut Hud, gpu: &Gpu, counts: [usize; 3]) -> KitArt {
+    /// The hunt setup's art; `pics` the menu pictures of the items on each
+    /// page (maps, animals, weapons), numbered as the phone's sprites (the
+    /// weapons' 7th is the photo camera, so the revolver is 8th). An item
+    /// with no sprite (an add-on's) gets its picture cut to a cell, if
+    /// `hud` kept its pixels.
+    pub(super) fn art(&self, hud: &mut Hud, gpu: &Gpu, pics: [&[Option<usize>]; 3]) -> KitArt {
         let mut img = |n: &str| self.image(n, hud, gpu);
         let bg = img("menu_hunt_background");
         let cell = img("menu_hunt_cell_button");
@@ -639,12 +643,33 @@ impl Kit {
         .map(|n| img(&format!("icon_{n}")));
         let mut items: [Vec<(Option<usize>, Option<usize>)>; 3] = Default::default();
         for (page, kind) in ["area", "dino", "weapon"].iter().enumerate() {
-            for i in 0..counts[page] {
+            for i in 0..pics[page].len() {
                 let n = if page == 2 && i >= 6 { i + 2 } else { i + 1 };
                 items[page].push((
                     img(&format!("button_{kind}_active_{n}")),
                     img(&format!("button_{kind}_inactive_{n}")),
                 ));
+            }
+        }
+        if let Some(cell_pic) = self.sprite("menu_hunt_cell_button") {
+            for (page, list) in items.iter_mut().enumerate() {
+                for (item, pic) in list.iter_mut().zip(pics[page]) {
+                    if item.0.is_some() {
+                        continue;
+                    }
+                    let Some(id) = *pic else { continue };
+                    let Some((w, h)) = hud.image(id).map(|im| (im.w as usize, im.h as usize))
+                    else {
+                        continue;
+                    };
+                    let cut = hud
+                        .pixels(id)
+                        .and_then(|px| cutout::hex_cut(&cell_pic, w, h, px));
+                    if let Some(c) = cut {
+                        let id = hud.add_image_filtered(gpu, c.w as u32, c.h as u32, &c.px, true);
+                        *item = (Some(id), None);
+                    }
+                }
             }
         }
         let lamp_off = self.lamp_image("button_checkbox_wide_off", hud, gpu);

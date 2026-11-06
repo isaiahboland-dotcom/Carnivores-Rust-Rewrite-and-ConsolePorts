@@ -17,6 +17,8 @@ pub struct Image {
     pub w: u32,
     pub h: u32,
     group: wgpu::BindGroup,
+    /// The RGBA it was made from, while `Hud::keep_pixels` was on.
+    pixels: Option<Vec<u8>>,
 }
 
 pub struct Hud {
@@ -37,6 +39,9 @@ pub struct Hud {
     /// Per glyph (ASCII 32..128): first lit column and advance, for
     /// proportional text.
     metrics: Vec<(u8, u8)>,
+    /// Images added while on keep their pixels (`pixels`) until
+    /// `drop_pixels`, for pictures made from them after loading.
+    pub keep_pixels: bool,
 }
 
 /// An image placed on screen, in pixels.
@@ -225,6 +230,7 @@ impl Hud {
             font_smooth: None,
             white: None,
             metrics: font_metrics(),
+            keep_pixels: false,
         };
         let atlas = font_atlas();
         hud.font = Some(hud.add_image(gpu, FONT_COLS * 8, FONT_ROWS * 8, &atlas));
@@ -295,8 +301,27 @@ impl Hud {
                 },
             ],
         });
-        self.images.push(Image { w, h, group });
+        let pixels = self.keep_pixels.then(|| rgba.to_vec());
+        self.images.push(Image {
+            w,
+            h,
+            group,
+            pixels,
+        });
         self.images.len() - 1
+    }
+
+    /// An image's RGBA, if it was added while `keep_pixels` was on.
+    pub fn pixels(&self, id: usize) -> Option<&[u8]> {
+        self.images.get(id)?.pixels.as_deref()
+    }
+
+    /// Stops keeping pixels and frees those kept.
+    pub fn drop_pixels(&mut self) {
+        self.keep_pixels = false;
+        for im in &mut self.images {
+            im.pixels = None;
+        }
     }
 
     /// Text in the 8x8 font (`ddTextOut`); one sprite per glyph.
