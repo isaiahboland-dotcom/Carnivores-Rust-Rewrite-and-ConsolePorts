@@ -3928,3 +3928,28 @@ The owner chose v0.4.3 for the launcher release after v0.4.0, skipping 0.4.1 and
 Both workspaces and our own packages in all three lockfiles move to 0.4.3 (outside
 crates that happen to be at 0.4.0 are untouched), with no dependency upgrades,
 following `docs/RELEASING.md`.
+
+
+## 2026-11-06 — PC VR: guns in the hands, vanilla only
+
+The owner's design for VR hunts (full list in `pc-ver/crates/c2-vr/GAMEPLAN.md`,
+"Hands-on hunting"): guns float in the tracked hand with no arms, the right
+grip held equips, the right trigger fires, the off-hand trigger opens a map
+held in that hand, long guns need the off hand on the barrel to fire, and the
+sights snap to the eye. No recoil, sway or reloading in VR for now; a
+head-aimed gun when there are no controllers.
+
+- **Arms are skipped, not edited.** Each vanilla weapon `.CAR` keeps its
+  hands and sleeves as separate mesh pieces with their own bones, so VR
+  leaves those pieces out at load and uses the old hand's position as the
+  grip point. The game's files are untouched.
+- **Vanilla guns only.** Two-handed support, sight lines and grip points need
+  per-gun knowledge that modded models don't carry and can't be guessed
+  safely. Modded guns stay out of VR hunts until a per-gun VR config can be
+  dropped in beside a mod.
+- **The flat game is unchanged.** The VR shot comes from the muzzle through an
+  optional aim given to `c2-core`; with none, the eye ray and the original's
+  recoil apply as before.
+- **Which button is the support hand's:** the off hand's trigger is the map,
+  so supporting a long gun uses the off hand's grip (the controller's other
+  trigger).

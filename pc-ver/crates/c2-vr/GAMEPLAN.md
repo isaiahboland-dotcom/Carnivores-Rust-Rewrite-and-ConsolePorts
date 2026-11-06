@@ -173,3 +173,45 @@ and test save compatibility between modes before sharing saves.
 - Next: try the setup in the PS VR2 (text sharpness, D-pad); the weapon
   and shooting, calls, the HUD; the account; trophies in the trophy room.
 
+
+## Hands-on hunting (owner's design, 2026-11-06)
+
+The hunt aims at a hunting simulator: guns held in tracked hands, not the
+flat game's first-person weapon. Vanilla guns only for now; modded guns are
+left out of VR hunts until per-gun VR configs exist (below).
+
+- **Floating guns.** The game's own weapon `.CAR` files, drawn without the
+  arms. In every vanilla gun the hands and sleeves are separate mesh pieces
+  from the gun (their own bones; the rifle, shotgun and double barrel have
+  one hand, finger bones 1-23 plus a sleeve, and the pistol two); the
+  crossbow has none, and `SNIPER.CAR` is the scope overlay, not a gun. The
+  old hand's rest position gives each gun's grip point. Nothing is edited
+  or shipped: the pieces are skipped at load.
+- **Hands.** The gun sits in the right hand (the left with the lefty
+  option in the menu). Holding the right grip equips it, letting go puts
+  it away; the right trigger fires. The off hand's trigger opens and closes
+  the map.
+- **Two-handed guns** (shotgun, double barrel, rifle, crossbow) fire only
+  while the off hand supports the barrel: the off hand near the gun's
+  fore-end with its grip held. Aim then runs from the gun hand through the
+  support hand. The pistol is one-handed.
+- **Sights snap.** Raising the gun close to the dominant eye snaps its
+  sight line onto the eye, so the sights line up without fiddling.
+- **Shots** start at the muzzle along the gun, through an optional aim in
+  `c2-core`'s shot (the flat game keeps its eye ray, so PC parity holds).
+- **No recoil and no sway** in VR: nothing moves the view or the gun but the
+  player. **No reloading yet**: the gun stays at rest through the reload
+  animation.
+- **Handheld map** on the off hand: a small panel at the controller with the
+  PC map's picture, the hunter, the view circle and radar blips, drawn on the
+  CPU canvas the menus use.
+- **No controllers** (the PS VR2 under Monado, a gamepad): the gun floats in
+  front and aims with the head.
+- **Later:** gesture reloading; the sniper scope; binoculars as a held model
+  (the owner makes it); the flashlight in VR with dynamic time; per-gun VR
+  configs dropped in beside a mod (grip and fore-end points, sight line, one
+  or two hands, reload gestures), which let modded guns into VR hunts.
+- **Testing:** Monado's qwerty headset has simulated controllers, so each step
+  is checked there first. The owner's PS VR2 under Monado tracks the head
+  only; a headset run with hands needs Sense controller support in Monado,
+  SteamVR on Windows, or another headset.

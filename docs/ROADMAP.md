@@ -24,7 +24,7 @@ the Steam Deck and Windows, still need fresh runs. See the
 | Nintendo 3DS (M6–M8, M11) | Check far terrain seams, frustum/LOD behavior, memory and performance with large packs | Old and New 3DS hardware, including 56/76-cell view ranges and comfort settings |
 | Wii U | Validate survival, trophies, saves, pause/exit and modded packaging; improve jungle performance and reproducible cross-builds | Aroma hardware runs and clean-toolchain builds; portable C tests cover only host-testable code |
 | Windows | Follow up the owner VM run with native gameplay and portable distribution tests | CI builds/tests pass; VM log confirms software rendering, with input/performance comparisons pending. Fresh physical Windows machine, interactive launcher and complete hunt still needed |
-| PC VR (M17) | Audit constructor failure cleanup and Vulkan/device/session lifetimes; implement weapons and tune performance | Runtime diagnostics during scene replacement, session loss and shutdown, then headset hunts |
+| PC VR (M17) | Hands-on hunting with vanilla guns: floating guns in the hand (no arms), firing from the muzzle, two-handed support for long guns, sights that snap to the eye, a handheld map on the off hand, a head-aimed gamepad fallback; no recoil or reloading yet. Also: audit Vulkan/device/session lifetimes and tune performance | Monado's simulated controllers first, then headset hunts with tracked controllers; runtime diagnostics during scene replacement, session loss and shutdown |
 | PS5 / PS VR2 (M18) | Research a dedicated port | No port implementation or hardware compatibility claim yet |
 
 ## Implemented foundations
@@ -35,7 +35,9 @@ the Steam Deck and Windows, still need fresh runs. See the
 - M9–M16: Modder's Edition data, launchers, hunt options, profiles/trophies,
   survival, Ice Age, mobile conversion and standalone combinations are implemented
   with compatibility and platform testing still ongoing.
-- M17: OpenXR menus, movement and animals exist; weapons are not implemented.
+- M17: OpenXR menus, movement and animals exist; weapons are not implemented (design in
+  `pc-ver/crates/c2-vr/GAMEPLAN.md`, "Hands-on hunting"). Later: gesture reloading, a
+  held scope and binoculars, and per-gun VR configs so modded guns can join VR hunts.
 - M18: research only.
 
 ## Release maintenance
