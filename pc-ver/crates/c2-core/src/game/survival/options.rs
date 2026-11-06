@@ -68,9 +68,9 @@ pub enum SurvivalKind {
     Classic,
     /// All eligible installed animals.
     Modded,
-    /// Modded's waves at night that never ends, with the radar, the
-    /// flashlight and the rifle (not in the original or the mobile game; a
-    /// setting, off by default, unlocks it).
+    /// Modded's waves at night that never ends, with the radar and the
+    /// flashlight (not in the original or the mobile game; a setting, off by
+    /// default, unlocks it).
     Hardcore,
 }
 
@@ -89,14 +89,6 @@ impl SurvivalKind {
     /// Played at night with the dynamic darkness held there.
     pub fn endless_night(self) -> bool {
         self == Self::Hardcore
-    }
-
-    /// The weapon carried: by its model file, else by name.
-    pub fn weapon(self) -> (&'static str, &'static str) {
-        match self {
-            Self::Hardcore => ("rifle.car", "rifle"),
-            _ => ("shotgun.car", "shotgun"),
-        }
     }
 }
 

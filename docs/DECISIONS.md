@@ -4057,8 +4057,8 @@ falls back to Base game. It holds no options yet.
 
 Request: a hidden survival mode, like Modded but locked behind an in-game
 setting ("Enable hardcore survival mode", off by default since it is not
-in the original), played at endless dynamic-cycle night with the radar,
-the flashlight and the rifle.
+in the original), played at endless dynamic-cycle night with the radar
+and the flashlight.
 
 - `SurvivalKind::Hardcore`: Modded's roster and budget (`roster` already
   takes everything but Classic's stock filter). `SurvivalKind::ALL` stays
@@ -4070,10 +4070,10 @@ the flashlight and the rifle.
   time played never moves it. Restart keeps it held and the flashlight on.
 - The kit: the flashlight is carried and starts on (L toggles it, K the
   beam, as in any dynamic-time hunt); the radar is on whatever the save's
-  gear; the rifle (`RIFLE.CAR`, else a weapon named "Rifle") replaces the
-  shotgun. The rifle's power (4) is over the wave health cap (3), so a hit
-  is a kill, but it is one round between reloads, against the shotgun's
-  spread. Unlimited ammunition as in every survival.
+  gear; the shotgun, as in every survival. The rifle was tried first and
+  dropped the same day: its power (4) is over the wave health cap (3), so
+  every hit is a kill, which made the mode too easy. Unlimited ammunition
+  as in every survival.
 - PC only for now (`PcSettings::hardcore_survival`, `c2rs.cfg`). The 3DS
   and Wii U menus don't offer it; the 3DS menu's description match takes
   it with Modded so it compiles.

@@ -1673,11 +1673,10 @@ impl Menu {
         self.choice.survival = Some(kind);
         self.choice.observer = false;
         self.choice.focus = None;
-        let (_, weapon) = kind.weapon();
         self.choice.weapons = self.columns[2]
             .names
             .iter()
-            .position(|n| n.trim().eq_ignore_ascii_case(weapon))
+            .position(|n| n.trim().eq_ignore_ascii_case("shotgun"))
             .map_or(0, |i| 1u128 << i);
         self.choice.equip = 0;
         self.launch_hunt();

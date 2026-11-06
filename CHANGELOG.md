@@ -16,7 +16,7 @@
 
 - **Hardcore survival**, off by default (Game options > "Enable hardcore survival mode"):
   Modded's waves on Mount Ravan at a night that never ends, with the flashlight on, the
-  radar and the rifle. `c2-pc hunt ... --survival hardcore` starts one directly.
+  radar and the shotgun. `c2-pc hunt ... --survival hardcore` starts one directly.
 
 ### Launcher
 

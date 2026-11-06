@@ -316,25 +316,24 @@ impl HuntView {
             }
             None => (load_res(&huntdat)?, None),
         };
-        if let Some(kind) = setup.survival {
-            let (file, name) = kind.weapon();
-            let gun = res
+        if setup.survival.is_some() {
+            let shotgun = res
                 .weapons
                 .iter()
                 .position(|w| {
                     w.file
                         .as_deref()
-                        .is_some_and(|f| f.eq_ignore_ascii_case(file))
+                        .is_some_and(|f| f.eq_ignore_ascii_case("shotgun.car"))
                 })
                 .or_else(|| {
                     res.weapons.iter().position(|w| {
                         w.name
                             .as_deref()
-                            .is_some_and(|n| n.trim().eq_ignore_ascii_case(name))
+                            .is_some_and(|n| n.trim().eq_ignore_ascii_case("shotgun"))
                     })
                 })
-                .ok_or_else(|| anyhow::anyhow!("{} requires the {name}", kind.name()))?;
-            setup.weapons = 1u128 << gun;
+                .ok_or_else(|| anyhow::anyhow!("Survival requires the shotgun"))?;
+            setup.weapons = 1u128 << shotgun;
         }
         let (mut species, cars) = load_species(&huntdat, &res)?;
         if let Some(t) = &mee {

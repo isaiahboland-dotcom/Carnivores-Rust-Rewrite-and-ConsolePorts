@@ -33,7 +33,6 @@ fn budget_survival_filters_rosters_and_spends_without_touching_hunter_points() {
     let hardcore = SurvivalOptions::pick(&hunt, SurvivalKind::Hardcore, 6);
     assert_eq!(hardcore.roster, modded.roster);
     assert!(SurvivalKind::Hardcore.endless_night() && !SurvivalKind::Modded.endless_night());
-    assert_eq!(SurvivalKind::Hardcore.weapon().0, "rifle.car");
     assert!(!SurvivalKind::ALL.contains(&SurvivalKind::Hardcore));
     assert!(classic.budget_ready());
     assert_eq!(classic.initial_budget(), 36);

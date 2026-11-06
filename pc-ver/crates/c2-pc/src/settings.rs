@@ -61,8 +61,7 @@ pub struct PcSettings {
     /// Starting survival points; zero derives the budget from menu prices.
     pub survival_budget: i32,
     /// Hardcore survival offered beside Classic and Modded (1 = on; off by
-    /// default, not in the original): endless night, flashlight, radar,
-    /// rifle.
+    /// default, not in the original): endless night, flashlight, radar.
     pub hardcore_survival: i32,
 }
 
