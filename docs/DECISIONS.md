@@ -4080,8 +4080,11 @@ and the flashlight.
 - PC only for now (`PcSettings::hardcore_survival`, `c2rs.cfg`). The 3DS
   and Wii U menus don't offer it; the 3DS menu's description match takes
   it with Modded so it compiles.
-- The light labels ("L: Flashlight On") move below the survival's wave box
-  in any survival so they no longer overlap it.
+- HUD: the flashlight's "L: Flashlight On/Off" label (an early testing
+  aid) is gone; the beam shows whether it is on. The survival's wave box
+  sits under the weapon's rounds (top left) instead of over them, at the
+  lowest the rounds have reached since that weapon was drawn, so it
+  doesn't move up as shells are fired (`hunt_view/survival_hud.rs`).
 - Checked with `c2-pc hunt AREA5.MAP --survival hardcore --sim` screenshots
   on the stock game: night held, flashlight cone lit, wave 1 bought; an
   idle hunter was killed by a Velociraptor within 30 s.
