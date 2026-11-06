@@ -216,19 +216,31 @@ skip = { areas = [2], huntables = [1, 2], weapons = [1] }
 ```
 The 3DS and Wii U take each standalone whole, as a pack of its own.
 
-When the standalone game is the recipe's base (it is played on its own,
-no `[[standalones]]` beside it), its own parts are left out with
-`[recipe.skip]`, the same numbers; this applies on PC, the 3DS and the
-Wii U (the launcher's instance editor: "Pick parts" of the base game):
+The base game's own parts can be left out the same way, with
+`[recipe.skip]` (numbers from 1 in the base's menu order: the game with its
+overlays, so the Modder's Edition's list when it is one). This is how an
+instance swaps stock content for modded content: leave out a stock map,
+animal or weapon and let an add-on or a standalone game stand in for it.
+It works whatever the base is (Carnivores 2, the Modder's Edition, an APK
+build or a standalone game on its own), with add-ons and with standalone
+games combined beside it; it applies on PC, the 3DS and the Wii U. In the
+launcher: the instance editor's Base game page, "The base game's parts".
 ```toml
 [recipe]
-id = "anachronous"
-base = "anachronous"
+id = "my-instance"
+base = "c2-vanilla"
 
 [recipe.skip]
-areas = [2]
-huntables = [1]
+areas = [2]       # the second stock area
+huntables = [9]   # the T-Rex (the ninth stock animal)
+weapons = [1, 4]  # the pistol and the X-Bow
 ```
+What is kept is renumbered with no gaps; add-ons and standalone games come
+after it, so their own numbers move up by as many as were left out. At least
+one area must be left in the whole game (the build stops otherwise). A
+left-out animal's character goes with it, also an add-on's change to it.
+Files of left-out parts that carry no number (models) stay in the built
+folder, unused.
 
 In a recipe, `[[overlays]]` (the Modder's Edition release) and
 `[[standalones]]` are listed like mods, with their files' paths in each

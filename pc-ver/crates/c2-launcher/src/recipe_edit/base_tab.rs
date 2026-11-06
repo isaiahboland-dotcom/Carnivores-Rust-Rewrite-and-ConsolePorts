@@ -72,10 +72,10 @@ impl Editor {
             self.loose_overlays_ui(ui);
         }
         let game = self.draft.game_dirs();
-        if !game.is_empty() && self.recipe.standalones.is_empty() {
+        if !game.is_empty() {
             ui.add_space(6.0);
-            let (r, extras) = (&mut self.recipe, &mut self.extras);
-            panel(ui, |ui| extras.base_parts_ui(ui, r, &game));
+            let (r, extras, folders) = (&mut self.recipe, &mut self.extras, &self.draft.folders);
+            panel(ui, |ui| extras.base_parts_ui(ui, r, &game, folders));
         }
         ask
     }

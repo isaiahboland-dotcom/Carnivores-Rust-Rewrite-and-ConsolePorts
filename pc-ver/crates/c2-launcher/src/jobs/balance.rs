@@ -12,11 +12,7 @@ fn values(bases: &[PathBuf], mods: &[PathBuf], skip: &Skip) -> Result<Balance, S
         .map(|m| c2_mods::load_mod(&v, m).map_err(|e| format!("{}: {e}", m.display())))
         .collect::<Result<Vec<_>, _>>()?;
     let mut pack = c2_mods::build(bases, sources).map_err(|e| e.to_string())?;
-    if let Some(l) =
-        c2_mods::standalone::leave_out::layer(&pack.vfs, skip).map_err(|e| e.to_string())?
-    {
-        pack.vfs.push("left out", Box::new(l));
-    }
+    c2_mods::standalone::leave_out::push(&mut pack.vfs, skip).map_err(|e| e.to_string())?;
     c2_mods::balance::read(&pack.vfs).map_err(|e| e.to_string())
 }
 
@@ -26,7 +22,7 @@ fn values(bases: &[PathBuf], mods: &[PathBuf], skip: &Skip) -> Result<Balance, S
 pub(crate) struct Instance {
     /// The game, then its overlays.
     pub bases: Vec<PathBuf>,
-    /// The base game's own parts left out (no standalones beside it).
+    /// The base game's own parts left out.
     pub base_skip: Skip,
     /// Standalone games and what of each is left out.
     pub standalones: Vec<(PathBuf, Skip)>,
@@ -39,7 +35,8 @@ pub(crate) struct Instance {
 }
 
 /// The instance's values: its standalones combined (as Play does, with
-/// their parts left out), the add-ons over that.
+/// their parts left out), the add-ons over that, the base's own parts left
+/// out.
 pub(crate) fn read_instance(i: Instance) -> Result<super::Completion, String> {
     let values = if i.standalones.is_empty() {
         values(&i.bases, &i.mods, &i.base_skip)?
@@ -55,7 +52,9 @@ pub(crate) fn read_instance(i: Instance) -> Result<super::Completion, String> {
             skip,
         };
         let built = build(&i.bases, &games, &i.scratch, &o).map_err(|e| e.to_string())?;
-        let pack = add_ons(&i.scratch, &i.mods, &built, &o).map_err(|e| e.to_string())?;
+        let mut pack = add_ons(&i.scratch, &i.mods, &built, &o).map_err(|e| e.to_string())?;
+        c2_mods::standalone::leave_out::push(&mut pack.vfs, &i.base_skip)
+            .map_err(|e| e.to_string())?;
         c2_mods::balance::read(&pack.vfs).map_err(|e| e.to_string())?
     };
     Ok(super::Completion::RecipeBalance(Box::new(values)))

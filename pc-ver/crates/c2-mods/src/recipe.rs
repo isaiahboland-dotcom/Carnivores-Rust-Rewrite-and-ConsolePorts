@@ -149,9 +149,10 @@ pub struct Info {
     pub version: String,
     /// Expected base game: `bases/<base>.toml` next to the recipe lists its hashes.
     pub base: String,
-    /// The base game's own areas, huntables and weapons left out (a
-    /// standalone game as the base, `crate::standalone::leave_out`); only
-    /// when no standalones are combined beside it.
+    /// The base game's own areas, huntables and weapons left out
+    /// (`crate::standalone::leave_out`), numbered in the base's menu order
+    /// (the game with its overlays); applied over the built game, add-ons
+    /// and standalones combined beside it included.
     #[serde(skip_serializing_if = "crate::standalone::Skip::is_empty")]
     pub skip: crate::standalone::Skip,
 }

@@ -1,8 +1,9 @@
-//! The recipe editor's instance settings (owner request 2026-11-05): a new
-//! hunter's points and each area's, animal's and weapon's price and score
-//! (the recipe's `[settings.balance]`, edited as on the Balance tab), and
-//! the areas, animals and weapons of each standalone game left out (its
-//! entry's `skip`, picked as on the Add-ons tab).
+//! The recipe editor's instance settings: a new hunter's points and each
+//! area's, animal's and weapon's price and score (the recipe's
+//! `[settings.balance]`, edited as on the Balance tab), the areas, animals
+//! and weapons of the base game left out (`[recipe.skip]`, so add-ons or
+//! standalones can stand in for them), and those of each standalone game
+//! (its entry's `skip`, picked as on the Add-ons tab).
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -27,11 +28,30 @@ pub(super) struct Extras {
     error: Option<String>,
     /// Each standalone folder's parts (`None`: not a game).
     parts: HashMap<PathBuf, Option<Parts>>,
+    /// The base game's parts, and the folders (game, overlays) read.
+    base_parts: Option<(Vec<PathBuf>, Option<Parts>)>,
 }
 
 /// The game folder in `dir` (the folder as given, if none is found).
 fn root(dir: &Path) -> PathBuf {
     c2_mods::pack::find_game_root(dir).unwrap_or_else(|| dir.to_path_buf())
+}
+
+/// The base game Play builds on: `game` (the game, then its overlays), or
+/// the game and the recipe's own overlays when it lists them (those with a
+/// known folder).
+fn bases(r: &Recipe, game: &[PathBuf], folders: &BTreeMap<String, PathBuf>) -> Vec<PathBuf> {
+    match game.first() {
+        Some(first) if !r.overlays.is_empty() => std::iter::once(first.clone())
+            .chain(
+                r.overlays
+                    .iter()
+                    .filter_map(|m| folders.get(&m.id))
+                    .map(|d| root(d)),
+            )
+            .collect(),
+        _ => game.to_vec(),
+    }
 }
 
 /// The game `r` makes over `game` (the game, then its overlays) with the
@@ -50,18 +70,13 @@ pub(super) fn instance(
         }
         f
     };
-    let Some(first) = game.first() else {
+    if game.is_empty() {
         return (None, Vec::new());
-    };
-    // The recipe's own overlays, when it lists them, over the game.
-    let bases: Vec<PathBuf> = if r.overlays.is_empty() {
-        game.to_vec()
-    } else {
-        let overlays: Vec<PathBuf> = r.overlays.iter().filter_map(&mut found).collect();
-        std::iter::once(first.clone())
-            .chain(overlays.iter().map(|d| root(d)))
-            .collect()
-    };
+    }
+    r.overlays.iter().for_each(|m| {
+        found(m);
+    });
+    let bases = bases(r, game, folders);
     let standalones = r
         .standalones
         .iter()
@@ -100,6 +115,7 @@ impl Extras {
         self.read_for = None;
         self.error = None;
         self.parts.clear();
+        self.base_parts = None;
     }
 
     pub(super) fn values_read(&mut self, values: Balance) {
@@ -135,41 +151,60 @@ impl Extras {
         }
     }
 
-    /// The parts of the base game picked, when it is a game on its own
-    /// (no standalones beside it): whether a choice changed.
+    /// The parts of the base game picked (its own areas, animals and
+    /// weapons, left out so add-ons or standalones can stand in for them):
+    /// whether a choice changed.
     pub(super) fn base_parts_ui(
         &mut self,
         ui: &mut egui::Ui,
         r: &mut Recipe,
         game: &[PathBuf],
+        folders: &BTreeMap<String, PathBuf>,
     ) -> bool {
-        if !r.standalones.is_empty() {
-            if !r.recipe.skip.is_empty() {
-                help(
-                    ui,
-                    "The base game's parts picked are not used while standalone games are \
-                     combined beside it.",
-                );
-            }
+        let dirs = bases(r, game, folders);
+        if dirs.is_empty() {
             return false;
         }
-        let Some(dir) = game.first() else {
+        if self.base_parts.as_ref().is_none_or(|(d, _)| *d != dirs) {
+            let p = c2_mods::standalone::base_parts(&dirs);
+            self.base_parts = Some((dirs.clone(), p));
+        }
+        let Some((_, Some(p))) = &self.base_parts else {
             return false;
         };
-        let p = self
-            .parts
-            .entry(dir.clone())
-            .or_insert_with(|| c2_mods::standalone::parts(dir));
-        let Some(p) = p else {
-            return false;
-        };
-        ui.label(RichText::new("The base game").color(SAND).strong())
-            .on_hover_text(dir.display().to_string());
+        let tip = dirs
+            .iter()
+            .map(|d| d.display().to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        ui.label(RichText::new("The base game's parts").color(SAND).strong())
+            .on_hover_text(tip);
         help(
             ui,
-            "Untick its areas, animals or weapons to leave them out of this instance (PC and the \
-             3DS pack); what is kept is renumbered.",
+            "Untick its areas, animals or weapons to leave them out of this instance, and let \
+             add-ons or standalone games stand in for them. What is kept is renumbered; add-ons \
+             and standalone games come after it. Used on PC, in 3DS and Wii U packs.",
         );
+        let s = &r.recipe.skip;
+        let all_out = |n: usize, out: &[u32]| n > 0 && (1..=n as u32).all(|i| out.contains(&i));
+        let gone: Vec<&str> = [
+            ("areas", all_out(p.areas, &s.areas)),
+            ("animals", all_out(p.huntables.len(), &s.huntables)),
+            ("weapons", all_out(p.weapons.len(), &s.weapons)),
+        ]
+        .into_iter()
+        .filter_map(|(k, all)| all.then_some(k))
+        .collect();
+        if !gone.is_empty() {
+            ui.label(
+                RichText::new(format!(
+                    "All of the base game's {} are left out: add-ons or standalone games must \
+                     bring their own.",
+                    gone.join(" and ")
+                ))
+                .color(GOLD),
+            );
+        }
         crate::app::standalones::pick_parts(
             ui,
             egui::IdSalt::new("recipe-base-parts"),

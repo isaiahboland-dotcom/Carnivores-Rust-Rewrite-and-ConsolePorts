@@ -65,7 +65,7 @@ pub struct Options {
 
 pub mod leave_out;
 mod skip;
-pub use skip::{parts, Parts, Skip};
+pub use skip::{base_parts, parts, parts_in, Parts, Skip};
 
 /// One standalone game, read.
 struct Game {

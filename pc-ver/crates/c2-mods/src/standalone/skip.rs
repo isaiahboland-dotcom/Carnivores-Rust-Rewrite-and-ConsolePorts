@@ -103,6 +103,35 @@ pub fn parts(dir: &std::path::Path) -> Option<Parts> {
     })
 }
 
+/// [`Parts`] of the base game itself: `bases` (the game, then its
+/// overlays) read as one, as [`super::leave_out`] numbers them. `None` if
+/// there is no game there.
+pub fn base_parts(bases: &[std::path::PathBuf]) -> Option<Parts> {
+    let vfs = crate::vanilla(bases).ok()?;
+    parts_in(&vfs)
+}
+
+/// [`Parts`] of the game in `vfs`.
+pub fn parts_in(vfs: &c2_vfs::Vfs) -> Option<Parts> {
+    let read = |p: &str| {
+        vfs.resolve(p)?;
+        let data = vfs.read(p).ok()?;
+        c2_formats::res_txt::ResTxt::parse(&String::from_utf8_lossy(&data)).ok()
+    };
+    let res = read("HUNTDAT/_RES.TXT")?;
+    let menu = read("HUNTDAT/_MENU.TXT");
+    let gm = c2_formats::menu_txt::MenuData::from_res(menu.as_ref().unwrap_or(&res));
+    let has_map = |n: usize| vfs.resolve(&format!("HUNTDAT/AREAS/AREA{n}.MAP")).is_some();
+    Some(Parts {
+        areas: (1..=gm.areas.len()).take_while(|&n| has_map(n)).count(),
+        huntables: gm.huntables.iter().map(|h| h.name.clone()).collect(),
+        weapons: super::blocks(&res, "weapons")
+            .iter()
+            .map(|b| b.get(&["name"]).map(super::unquote).unwrap_or_default())
+            .collect(),
+    })
+}
+
 /// Takes the references to left-out areas (`areaN`, numbers from 1; the
 /// engine's `area0` is area 10) and huntable slots (`charN`, `callNo`,
 /// `fearCall`, `dontFear`: numbers from 0) out of `b`, recursively. A

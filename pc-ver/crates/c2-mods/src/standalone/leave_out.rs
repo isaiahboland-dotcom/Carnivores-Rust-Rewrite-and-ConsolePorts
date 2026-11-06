@@ -1,13 +1,15 @@
-//! Parts of the game itself left out (owner request 2026-11-05: an
-//! instance whose base is a standalone game picks its parts as one combined
-//! beside a base does, `Skip`). A layer of rewritten files over the built
-//! game, like a balance file: the areas, huntables and weapons left out go
-//! from `_RES.TXT` and `_MENU.TXT` (their blocks and `prices` lines), what
-//! is kept is renumbered with no gaps (conditions, calls, the map, menu and
-//! call files), and conditions that named only left-out parts go with them.
+//! Parts of the base game itself left out (`[recipe.skip]`: the stock
+//! game's, the Modder's Edition's or a standalone's used as the base, so
+//! add-ons or standalones can stand in for them). A layer of rewritten
+//! files over the built game, like a balance file: the areas, huntables and
+//! weapons left out go from `_RES.TXT` and `_MENU.TXT` (their blocks and
+//! `prices` lines), what is kept is renumbered with no gaps (conditions,
+//! calls, the map, menu and call files), and conditions that named only
+//! left-out parts go with them.
 //!
-//! Numbers are the game's own menu order, as [`super::parts`] lists them;
-//! add-ons' entries after the game's keep their places after the kept ones.
+//! Numbers are the game's own menu order, as [`super::base_parts`] lists them;
+//! add-ons' entries and standalone games combined beside it (they come
+//! after the base's) keep their places after the kept ones.
 
 use c2_formats::menu_txt::MenuData;
 use c2_formats::res_txt::{c_atoi, Block, ResTxt};
@@ -97,6 +99,11 @@ pub fn layer(vfs: &Vfs, skip: &Skip) -> Result<Option<MemBackend>> {
     let kept_areas = Skip::kept(&skip.areas, gm.areas.len());
     let kept_dinos = Skip::kept(&skip.huntables, gm.huntables.len());
     let kept_weapons = Skip::kept(&skip.weapons, gm.weapons.len());
+    if kept_areas.is_empty() {
+        return Err(super::fail(
+            "every area is left out: keep one, or combine a game that brings its own",
+        ));
+    }
     let area = |n: u32| new_number(&kept_areas, n);
     // Slots count from 0, the picker's numbers from 1.
     let slot = |n: u32| new_number(&kept_dinos, n + 1).map(|g| g - 1);
@@ -194,6 +201,17 @@ pub fn layer(vfs: &Vfs, skip: &Skip) -> Result<Option<MemBackend>> {
     Ok(Some(layer))
 }
 
+/// Pushes [`layer`] over `vfs`: whether anything was left out.
+pub fn push(vfs: &mut Vfs, skip: &Skip) -> Result<bool> {
+    match layer(vfs, skip)? {
+        Some(l) => {
+            vfs.push("left out", Box::new(l));
+            Ok(true)
+        }
+        None => Ok(false),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,5 +273,30 @@ prices {\n start = 100\n area = 10\n area = 20\n area = 30\n dino = 1\n dino = 2
         assert_eq!(v.read("HUNTDAT/MENU/DINO1.TGA").unwrap(), [12]);
         assert_eq!(v.read("HUNTDAT/MENU/DINO2.TGA").unwrap(), [13]);
         assert!(layer(&game(), &Skip::default()).unwrap().is_none());
+    }
+
+    #[test]
+    fn the_base_parts_are_read_from_the_whole_game() {
+        let p = crate::standalone::parts_in(&game()).expect("a game");
+        assert_eq!(p.areas, 3);
+        assert_eq!(p.huntables, ["A", "B", "C"]);
+        assert_eq!(p.weapons, ["P", "Q"]);
+    }
+
+    #[test]
+    fn some_area_must_be_kept() {
+        let all = Skip {
+            areas: vec![1, 2, 3],
+            ..Default::default()
+        };
+        assert!(layer(&game(), &all).is_err());
+        let mut v = game();
+        assert!(!push(&mut v, &Skip::default()).unwrap());
+        let one = Skip {
+            weapons: vec![2],
+            ..Default::default()
+        };
+        assert!(push(&mut v, &one).unwrap());
+        assert_eq!(crate::standalone::parts_in(&v).unwrap().weapons, ["P"]);
     }
 }
