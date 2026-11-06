@@ -39,6 +39,8 @@ pub(super) struct Touch {
     pick_tap: Option<(f32, f32)>,
     /// The stick pushed all the way.
     pub(super) run: bool,
+    /// The last call by touch (the ring spreading from its button).
+    called: Option<Instant>,
 }
 
 impl Touch {
@@ -46,6 +48,7 @@ impl Touch {
         *self = Self {
             on: self.on,
             picking: self.picking,
+            called: self.called,
             ..Self::default()
         };
     }
@@ -82,6 +85,9 @@ fn inside((px, py): (f32, f32), (x, y, w, h): (f32, f32, f32, f32)) -> bool {
 fn in_circle((px, py): (f32, f32), (x, y, d): (f32, f32, f32), slack: f32) -> bool {
     (px - x).hypot(py - y) <= d / 2.0 * slack
 }
+
+/// Seconds the call's ring takes to spread and fade.
+const RIPPLE: f32 = 0.7;
 
 /// The round buttons' size, as a share of the screen's height.
 const BUTTON: f32 = 0.14;
@@ -222,7 +228,10 @@ impl HuntView {
                 if id == f.id {
                     self.touch.hold = None;
                     match kind {
-                        Pick::Call => pad.press(A::Call),
+                        Pick::Call => {
+                            pad.press(A::Call);
+                            self.touch.called = Some(Instant::now());
+                        }
                         Pick::Weapon => self.pending.toggle_weapon = true,
                     }
                 }
@@ -383,6 +392,19 @@ impl HuntView {
         }
         let held = |kind| matches!(self.touch.hold, Some((_, k, _)) if k == kind);
         let a = if held(Pick::Call) { 1.0 } else { 0.85 };
+        // The phone's call: a gold ring spreads from the button and fades.
+        if let Some(t0) = self.touch.called {
+            let f = t0.elapsed().as_secs_f32() / RIPPLE;
+            if let (Some(id), true) = (t.call_circle, f < 1.0) {
+                let (x, y, d) = lay.call;
+                let d = d * (1.0 + 1.6 * f);
+                out.push(Sprite {
+                    size: Some([d, d]),
+                    color: [1.0, 1.0, 1.0, 1.0 - f],
+                    ..Sprite::new(id, x - d / 2.0, y - d / 2.0, 1.0)
+                });
+            }
+        }
         round(t.call, lay.call, a, "call", out);
         let ws = &self.hunt.weapons;
         let w = ws.target;

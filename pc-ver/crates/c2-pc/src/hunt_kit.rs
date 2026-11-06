@@ -48,6 +48,8 @@ pub struct TouchArt {
     pub fire: Option<usize>,
     pub binoculars: Option<usize>,
     pub call: Option<usize>,
+    /// The gold ring that spreads from the call button when calling.
+    pub call_circle: Option<usize>,
     /// One per weapon, as `pictures`.
     pub weapons: Vec<Option<usize>>,
 }
@@ -83,6 +85,7 @@ impl HuntKit {
             fire: img("game_alternative_fire"),
             binoculars: img("game_binoculars"),
             call: img("game_call"),
+            call_circle: img("game_call_circle"),
             weapons: (0..weapons)
                 .map(|i| img(&format!("game_weapon_button_{}", number(i))))
                 .collect(),
