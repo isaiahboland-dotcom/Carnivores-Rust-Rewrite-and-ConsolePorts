@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Android (new, untested on phones)
+
+- First Android build (`android-ver/`, `build-apk.sh`): the PC game in an APK. It needs a game built from
+  your own mobile APK as its base, plus optional add-ons. No standalones; at most 8 animals and 8 weapons
+  per hunt. Touch works in the menus.
+- `c2-pc play --max-picks N`: at most N animals and N weapons per hunt (Android uses 8).
+
 ## 0.4.3 — 2026-11-05
 
 Overhauled Launcher: it is now built around instances, and an instance can no longer play

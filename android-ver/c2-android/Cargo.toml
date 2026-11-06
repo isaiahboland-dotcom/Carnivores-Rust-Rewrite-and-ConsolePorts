@@ -1,0 +1,27 @@
+[package]
+name = "c2-android"
+description = "Android app: the PC frontend in a NativeActivity"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints.rust]
+# `android_main` is looked up by name (`#[no_mangle]`); nothing else is unsafe.
+unsafe_code = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+c2-pc = { path = "../../pc-ver/crates/c2-pc" }
+c2-mods = { path = "../../pc-ver/crates/c2-mods" }
+
+[target.'cfg(target_os = "android")'.dependencies]
+winit = { version = "0.30.13", features = ["android-native-activity"] }

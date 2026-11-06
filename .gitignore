@@ -56,3 +56,9 @@ bannertool (*)
 /screenshots/
 /pc-ver/(testing)/
 newest-mods-credits-etc
+
+# Android builds (android-ver/) and signing keys
+*.apk
+*.aab
+*.keystore
+*.jks

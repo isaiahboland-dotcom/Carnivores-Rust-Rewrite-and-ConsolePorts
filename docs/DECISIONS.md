@@ -3953,3 +3953,34 @@ head-aimed gun when there are no controllers.
 - **Which button is the support hand's:** the off hand's trigger is the map,
   so supporting a long gun uses the off hand's grip (the controller's other
   trigger).
+
+## 2026-11-06 — Android app: the PC frontend, APK bases only, 8 picks
+
+M19's first build (`android-ver/`). The owner's rules: the Android version
+needs a game built from the player's own mobile APK (Dinosaur Hunter or Ice
+Age) as its base, so it can use that game's touch menus and buttons; modded
+means that base plus add-ons (no standalones); at most 8 animals and 8
+weapons per hunt, because more is too hectic on a phone for now.
+
+- **Same frontend, not a new port.** `c2-pc` is now a library plus its
+  binary (`cli.rs` holds the command line), and `android-ver/c2-android` is a
+  `cdylib` with `android_main` that runs `c2-pc play`. wgpu, winit and kira
+  (AAudio) all target Android, so nothing is duplicated. It is a separate
+  workspace like `3ds-ver/`, so PC builds never compile it.
+- **No game data in the APK** (§2). The app reads `game/` and `addons/` from
+  its folder on the phone; `game/` must carry `from-apk.txt`, or the app
+  stops with a message in `c2rs.log`. Saves go under that folder too
+  (`XDG_DATA_HOME` is set there, since Android has no home).
+- **The cap is a general flag**, `--max-picks N` on `c2-pc play`; Android
+  passes 8. Unset on PC, so PC behaviour is unchanged. It counts animals and
+  weapons separately and refuses only new picks.
+- **Android lifecycle:** the window surface is dropped when the app is paused
+  and remade from the kept adapter on resume (`Gpu::window_target`), in the
+  colour format the pipelines were built for. If the GPU refuses wgpu's
+  default limits, the device is requested with the adapter's own.
+- **Touch, for now:** the first finger acts as the mouse. That works for the
+  menus, but the hunt still needs the mobile game's own controls (stick,
+  fire, weapon buttons). Back maps to Escape.
+- **Packaging without Gradle:** `build-apk.sh` uses only the NDK and SDK
+  build-tools (aapt2, zipalign, apksigner), with native libraries stored
+  uncompressed and 16 KiB aligned.

@@ -1,0 +1,22 @@
+# The Android port: `c2-android`, the PC frontend (`c2-pc`) hosted in a
+# NativeActivity. Shared crates come from ../pc-ver/crates by path.
+#
+#   ./build-apk.sh            # builds, packages and signs target/c2rs.apk
+[workspace]
+resolver = "2"
+members = ["c2-android"]
+
+[workspace.package]
+version = "0.4.3"
+edition = "2021"
+license = "MIT"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+# Phones read panics from the log file; keep the unwinding so they get there.
+panic = "unwind"

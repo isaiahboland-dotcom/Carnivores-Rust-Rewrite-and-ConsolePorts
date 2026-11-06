@@ -20,7 +20,8 @@ pub use crate::scene::MakeScene;
 struct Running {
     window: Arc<Window>,
     gpu: Gpu,
-    target: Target,
+    /// None while Android has taken the window away (paused).
+    target: Option<Target>,
     frame: Frame,
     scene: Box<dyn Scene>,
     input: Input,
@@ -51,8 +52,33 @@ struct App {
     error: Option<anyhow::Error>,
 }
 
+/// The Android activity, handed over by `android_main` before [`run`].
+#[cfg(target_os = "android")]
+static ANDROID_APP: std::sync::OnceLock<winit::platform::android::activity::AndroidApp> =
+    std::sync::OnceLock::new();
+
+#[cfg(target_os = "android")]
+pub fn set_android_app(app: winit::platform::android::activity::AndroidApp) {
+    let _ = ANDROID_APP.set(app);
+}
+
+#[cfg(not(target_os = "android"))]
+fn event_loop() -> Result<EventLoop<()>> {
+    Ok(EventLoop::new()?)
+}
+
+#[cfg(target_os = "android")]
+fn event_loop() -> Result<EventLoop<()>> {
+    use winit::platform::android::EventLoopBuilderExtAndroid;
+    let app = ANDROID_APP
+        .get()
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("no Android activity (set_android_app)"))?;
+    Ok(EventLoop::builder().with_android_app(app).build()?)
+}
+
 pub fn run(make: MakeScene) -> Result<()> {
-    let event_loop = EventLoop::new()?;
+    let event_loop = event_loop()?;
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = App {
         make: Some(make),
@@ -66,6 +92,15 @@ pub fn run(make: MakeScene) -> Result<()> {
 impl App {
     fn start(&mut self, el: &ActiveEventLoop) -> Result<()> {
         let Some(make) = self.make.take() else {
+            // Android: back from a pause with a new window under the old one.
+            if let Some(r) = &mut self.running {
+                if r.target.is_none() {
+                    r.target = Some(r.gpu.window_target(r.window.clone())?);
+                    let size = r.window.inner_size();
+                    r.frame = Frame::new(&r.gpu, (size.width, size.height));
+                    r.last = Instant::now();
+                }
+            }
             return Ok(());
         };
         let window = Arc::new(
@@ -88,7 +123,7 @@ impl App {
         self.running = Some(Running {
             window,
             gpu,
-            target,
+            target: Some(target),
             frame,
             scene,
             input,
@@ -118,6 +153,14 @@ impl ApplicationHandler for App {
         }
     }
 
+    /// Android takes the window (and its surface) away while paused.
+    fn suspended(&mut self, _el: &ActiveEventLoop) {
+        if let Some(r) = &mut self.running {
+            r.target = None;
+            r.input.release_all();
+        }
+    }
+
     fn device_event(
         &mut self,
         _el: &ActiveEventLoop,
@@ -138,6 +181,13 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => el.exit(),
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(k) = event.physical_key {
+                    // Android's back button is the game's Escape.
+                    #[cfg(target_os = "android")]
+                    let k = if k == KeyCode::BrowserBack {
+                        KeyCode::Escape
+                    } else {
+                        k
+                    };
                     let down = event.state == ElementState::Pressed;
                     // Escape releases a captured cursor first, then quits.
                     if k == KeyCode::Escape && down && !event.repeat && !r.scene.handles_escape() {
@@ -182,10 +232,14 @@ impl ApplicationHandler for App {
                     r.input.grabbed = grab(&r.window, true);
                 }
             }
-            WindowEvent::Touch(t) if t.phase == winit::event::TouchPhase::Started => {
-                r.input
-                    .taps
-                    .push((t.location.x as f32, t.location.y as f32));
+            WindowEvent::Touch(t) => {
+                let at = (t.location.x as f32, t.location.y as f32);
+                if t.phase == winit::event::TouchPhase::Started {
+                    r.input.taps.push(at);
+                }
+                // A phone has no mouse: the first finger down acts as one.
+                #[cfg(target_os = "android")]
+                crate::input::touch_as_mouse(&mut r.input, t.id, t.phase, at);
             }
             WindowEvent::Focused(false) if r.input.grabbed => {
                 r.input.grabbed = grab(&r.window, false);
@@ -197,7 +251,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::Resized(size) => {
-                if let Target::Window { surface, config } = &mut r.target {
+                if let Some(Target::Window { surface, config }) = &mut r.target {
                     config.width = size.width.max(1);
                     config.height = size.height.max(1);
                     surface.configure(&r.gpu.device, config);
@@ -213,7 +267,7 @@ impl ApplicationHandler for App {
                 r.scene.update(&r.gpu, dt, &r.input);
                 r.input.end_frame();
                 r.pad_cursor.after_frame(&mut r.input);
-                let Target::Window { surface, config } = &r.target else {
+                let Some(Target::Window { surface, config }) = &r.target else {
                     return;
                 };
                 let tex = match surface.get_current_texture() {

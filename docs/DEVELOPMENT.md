@@ -68,13 +68,15 @@ The original C++ source (made available on Assembla in 2013) is used **as a refe
 │       ├── c2-mods/           # manifests, recipes, resolver, merger
 │       ├── c2-core/           # game logic: world, AI, weapons, hunting, scoring, saves
 │       ├── c2-platform/       # traits: Renderer, Audio, Input, Fs, Clock
-│       ├── c2-pc/             # PC backend + binary
+│       ├── c2-pc/             # PC backend: library (also hosted by android-ver) + binary
 │       ├── c2-launcher/       # GUIs: c2-launcher, c2-3ds-builder, c2-wiiu-builder (egui)
 │       ├── c2-vr/             # PC VR (OpenXR) frontend, M17; plan in its GAMEPLAN.md
 │       ├── c2-pad/            # gamepads (gilrs) as the game's actions, for c2-pc and c2-vr
 │       └── c2-parity/         # parity harness vs the original game/data
 ├── 3ds-ver/                   # 3DS port (separate nightly workspace, from M6):
 │                              #   c2-3ds backend + c2-cook, reusing pc-ver/crates/*
+├── android-ver/               # Android app (M19, separate workspace): c2-android hosts c2-pc;
+│                              #   build-apk.sh packages it (README there)
 ├── wiiu-ver/                  # Wii U port: playable demo (perf-probe), C + Rust; old probes archived locally
 ├── psvr2-ver/                 # PS VR2 plan (research only)
 ├── recipes/                   # recipes: credits, links and hashes (no mod content!)
@@ -314,6 +316,7 @@ See [RELEASING.md](RELEASING.md) for the release process and the root
 | M16 | standalone games in the launcher |
 | M17 | PC VR |
 | M18 | PS VR2 |
+| M19 | Android (base game built from the user's own mobile APK) |
 
 ---
 

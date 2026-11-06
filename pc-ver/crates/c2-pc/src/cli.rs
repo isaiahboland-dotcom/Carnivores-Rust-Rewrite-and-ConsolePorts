@@ -1,0 +1,622 @@
+//! The `c2-pc` command line: `play` and the viewers and mod tools.
+
+use crate::{app, area_view, menu, mods_cli, save, scene};
+use crate::{hunt_view, model_view, settings};
+use std::path::PathBuf;
+
+use anyhow::{bail, Context, Result};
+use c2_core::area::TimeOfDay;
+use c2_core::game::SurvivalKind;
+
+const USAGE: &str = "usage:
+  c2-pc play  <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR...] [--balance FILE]
+              [--screen main|stats|hunt|options|credits|register|quit|loading]
+              [--script 'X,Y;'TEXT;enter;esc'] [--shot out.png]
+  c2-pc balance <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]...   (prints prices and scores as a balance file)
+  c2-pc mobile <APK> --base <GAME_DIR> [--overlay DIR]... --out <DIR>   (the mobile game's animals as add-ons)
+  c2-pc mobile <APK> --values                                         (its tuning values)
+  c2-pc mobile-base <APK> --out <DIR>   (the APK rebuilt as a game folder; so far areas, animals, weapons)
+  c2-pc iceage <ICE_AGE_DIR> --base <GAME_DIR> [--overlay DIR]... --out <DIR>
+                                        (Ice Age's animals and areas as add-ons beside C2's)
+  c2-pc combine <GAME_DIR>... --base <GAME_DIR> --overlay <ME_DIR> [--mod DIR]... [--ambients tied|random] --out <DIR>
+                                        (standalone games beside the base, add-ons over them)
+  c2-pc mod detect <MOD_DIR>... --base <GAME_DIR> [--write]
+  c2-pc mod build  <MOD_DIR>... --base <GAME_DIR> --out <DIR>
+  c2-pc recipe verify <RECIPE.toml> --base <GAME_DIR> [--overlay DIR]... --mods <DIR>...
+  c2-pc recipe build  <RECIPE.toml> --base <GAME_DIR> [--overlay DIR]... --mods <DIR>... --out <DIR>
+  c2-pc recipe new    <MOD_DIR>... --base <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... --id ID [--name NAME] [--base-id ID] [--out RECIPE.toml]
+  c2-pc recipe base   --base <GAME_DIR> [--id c2-vanilla|ice-age] [--out recipes/bases/c2-vanilla.toml]
+  c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
+  c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--models] [--shot out.png]
+  c2-pc hunt  <AREA.MAP|TROPHY.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all]
+              [--weapon N] [--bino] [--pause] [--exit] [--message TEXT] [--kill] [--plaque] [--pick] [--call] [--fill] [--die AI,MS[,NAME]] [--observer] [--player N] [--survival classic|modded]\n              [--shot out.png]
+
+model: drag to orbit, wheel zoom, [ ] next/prev file, N/P next/prev animation, Space pause
+area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distance
+play:  the menus; a hunt returns to them. --mod (repeatable) plays vanilla plus those add-on mods,
+       combined into the data dir (see MERGE_REPORT.md there); --balance applies a balance file's
+       prices and scores (see `c2-pc balance`); --menu-art GAME_DIR takes the menu frames from another
+       game (the original's, a mod's, Ice Age's); --mobile-menu the experimental
+       mobile layout of the hunt setup; --max-picks N at most N animals and N weapons per hunt
+mod:   detect prints (or --write saves) an inferred mod.toml; build writes a combined game folder
+hunt:  click to capture mouse; keys follow the player's bindings (default WASD move, mouse look,
+       LMB fire, E show/hide weapon, 1-6 choose weapon, Shift toggles run, X crouch, Space jump/swim,
+       arrows turn/look, B binoculars, Tab map, Alt call, C change call),
+       Pause/P pause, Esc exit prompt (Y leave and save, R restart); trophy room: R removes a trophy, Esc leaves";
+
+/// Flags followed by a value (`--flag VALUE`).
+const VALUE_FLAGS: &[&str] = &[
+    "anim",
+    "time",
+    "yaw",
+    "shot",
+    "cam",
+    "view",
+    "sim",
+    "ship",
+    "die",
+    "weapon",
+    "target",
+    "fire",
+    "screen",
+    "player",
+    "script",
+    "message",
+    "mod",
+    "base",
+    "out",
+    "recipe",
+    "mods",
+    "id",
+    "name",
+    "overlay",
+    "standalone",
+    "base-id",
+    "ambients",
+    "skip",
+    "balance",
+    "menu-art",
+    "save-instance",
+    "survival",
+    "max-picks",
+    // Older launchers' survival choices (read and ignored: survival is
+    // always Classic / Modded now).
+    "survival-modes",
+    "mobile-survival",
+];
+
+struct Opts {
+    positional: Vec<String>,
+    flags: Vec<(String, Option<String>)>,
+}
+
+impl Opts {
+    fn parse(args: impl Iterator<Item = String>) -> Self {
+        let mut o = Opts {
+            positional: Vec::new(),
+            flags: Vec::new(),
+        };
+        let mut it = args.peekable();
+        while let Some(a) = it.next() {
+            if let Some(f) = a.strip_prefix("--") {
+                let takes_value = VALUE_FLAGS.contains(&f);
+                let v = if takes_value { it.next() } else { None };
+                o.flags.push((f.to_string(), v));
+            } else {
+                o.positional.push(a);
+            }
+        }
+        o
+    }
+
+    fn has(&self, f: &str) -> bool {
+        self.flags.iter().any(|(k, _)| k == f)
+    }
+
+    /// Every value of a repeatable flag.
+    fn values(&self, f: &str) -> Vec<&str> {
+        self.flags
+            .iter()
+            .filter(|(k, _)| k == f)
+            .filter_map(|(_, v)| v.as_deref())
+            .collect()
+    }
+
+    fn value(&self, f: &str) -> Option<&str> {
+        self.flags
+            .iter()
+            .find(|(k, _)| k == f)
+            .and_then(|(_, v)| v.as_deref())
+    }
+
+    fn num<T: std::str::FromStr>(&self, f: &str, default: T) -> Result<T> {
+        match self.value(f) {
+            None => Ok(default),
+            Some(v) => v
+                .parse()
+                .map_err(|_| anyhow::anyhow!("--{f}: invalid value {v:?}")),
+        }
+    }
+}
+
+/// `--ambients tied|random`: where standalones' ambient animals live.
+fn ambients(o: &Opts) -> Result<c2_mods::standalone::Ambients> {
+    use c2_mods::standalone::Ambients;
+    Ok(match o.value("ambients") {
+        None | Some("tied") => Ambients::Tied,
+        Some("random") => Ambients::Random,
+        Some(v) => bail!("--ambients tied|random, not {v:?}"),
+    })
+}
+
+/// `--skip N=area2,dino1,weapon3` (repeatable): what of the `N`th
+/// `--standalone` (from 1) is left out.
+fn skips(o: &Opts, games: usize) -> Result<Vec<c2_mods::standalone::Skip>> {
+    let mut out = vec![c2_mods::standalone::Skip::default(); games];
+    for v in o.values("skip") {
+        let (n, what) = v.split_once('=').context("--skip N=area2,dino1,weapon3")?;
+        let slot = n
+            .trim()
+            .parse::<usize>()
+            .ok()
+            .and_then(|n| n.checked_sub(1))
+            .and_then(|i| out.get_mut(i))
+            .with_context(|| format!("--skip: no --standalone number {n}"))?;
+        *slot =
+            c2_mods::standalone::Skip::parse(what).map_err(|e| anyhow::anyhow!("--skip: {e}"))?;
+    }
+    Ok(out)
+}
+
+fn time_of_day(o: &Opts) -> TimeOfDay {
+    if o.has("night") {
+        TimeOfDay::Night
+    } else if o.has("dusk") {
+        TimeOfDay::Dusk
+    } else {
+        TimeOfDay::Day
+    }
+}
+
+/// Runs one `c2-pc` command (`arguments` without the program name).
+pub fn run(arguments: Vec<String>) -> Result<()> {
+    let mut args = arguments.into_iter();
+    let cmd = args.next().unwrap_or_default();
+    let o = Opts::parse(args);
+    let instance = o.value("save-instance").map(str::to_owned).or_else(|| {
+        o.value("recipe")
+            .and_then(|p| c2_mods::recipe::Recipe::load(std::path::Path::new(p)).ok())
+            .map(|r| r.recipe.id)
+    });
+    if let Some(id) = instance {
+        anyhow::ensure!(
+            !id.is_empty() && id.len() <= 100,
+            "Instance ID must be 1–100 bytes"
+        );
+        let _ = save::INSTANCE.set(id);
+    }
+    if cmd == "balance" {
+        let mods: Vec<PathBuf> = o
+            .values("mod")
+            .into_iter()
+            .flat_map(|m| c2_mods::expand_addons(std::path::Path::new(m)))
+            .collect();
+        return mods_cli::print_balance(
+            &mods_cli::bases(
+                o.positional.first().map(String::as_str),
+                &o.values("overlay"),
+            )?,
+            &mods,
+        );
+    }
+    if cmd == "mobile" {
+        let apk = o
+            .positional
+            .first()
+            .context("c2-pc mobile <APK> --base GAME --out DIR")?;
+        if o.has("values") {
+            for (k, v) in c2_mods::mobile::values(std::path::Path::new(apk))? {
+                println!("{k} {v:?}");
+            }
+            return Ok(());
+        }
+        let bases = mods_cli::bases(o.value("base"), &o.values("overlay"))?;
+        let out = PathBuf::from(o.value("out").context("--out DIR")?);
+        let base = c2_mods::vanilla(&bases)?;
+        let import = c2_mods::mobile::import(std::path::Path::new(apk), &base, &out)?;
+        for s in &import.skipped {
+            println!("not imported: {s}");
+        }
+        for a in import.added {
+            println!("{} (kind of the {}): {}", a.name, a.donor, a.dir.display());
+            for n in &a.notes {
+                println!("  {n}");
+            }
+        }
+        return Ok(());
+    }
+    if cmd == "mobile-base" {
+        let apk = o
+            .positional
+            .first()
+            .context("c2-pc mobile-base <APK> --out DIR")?;
+        let out = PathBuf::from(o.value("out").context("--out DIR")?);
+        let built = c2_mods::mobile_base::build(std::path::Path::new(apk), &out)?;
+        for a in built.areas {
+            println!("{}", a.display());
+        }
+        for a in built.animals {
+            println!("animal: {a}");
+        }
+        for w in built.weapons {
+            println!("weapon: {w}");
+        }
+        for n in built.notes {
+            println!("note: {n}");
+        }
+        return Ok(());
+    }
+    if cmd == "iceage" {
+        let ia = o
+            .positional
+            .first()
+            .context("c2-pc iceage <ICE_AGE_DIR> --base GAME --out DIR")?;
+        let bases = mods_cli::bases(o.value("base"), &o.values("overlay"))?;
+        let out = PathBuf::from(o.value("out").context("--out DIR")?);
+        let base = c2_mods::vanilla(&bases)?;
+        let import = c2_mods::ice_age::import(std::path::Path::new(ia), &base, &out)?;
+        for s in &import.skipped {
+            println!("not imported: {s}");
+        }
+        for d in import.added {
+            println!("{}", d.display());
+        }
+        return Ok(());
+    }
+    // Standalone games combined beside the base (README M16).
+    if cmd == "combine" {
+        let bases = mods_cli::bases(o.value("base"), &o.values("overlay"))?;
+        let out = PathBuf::from(o.value("out").context("--out DIR")?);
+        let games: Vec<PathBuf> = o.positional.iter().map(PathBuf::from).collect();
+        if games.is_empty() {
+            bail!("c2-pc combine GAME_DIR... --base GAME --overlay ME --out DIR");
+        }
+        let mods: Vec<PathBuf> = o
+            .values("mod")
+            .into_iter()
+            .flat_map(|m| c2_mods::expand_addons(std::path::Path::new(m)))
+            .collect();
+        let balance = o.value("balance").map(std::path::Path::new);
+        mods_cli::build_combined(
+            &bases,
+            &games,
+            &mods,
+            balance,
+            ambients(&o)?,
+            skips(&o, games.len())?,
+            &out,
+        )?;
+        println!(
+            "\nWritten to {}. Play: c2-pc play \"{}\"",
+            out.display(),
+            out.display()
+        );
+        return Ok(());
+    }
+    if cmd == "mod" {
+        return mods_cli::run(
+            &o.positional,
+            mods_cli::bases(o.value("base"), &o.values("overlay"))?,
+            o.value("out"),
+            o.has("write"),
+        );
+    }
+    if cmd == "recipe" {
+        let a = mods_cli::RecipeArgs {
+            bases: mods_cli::bases(o.value("base"), &o.values("overlay"))?,
+            mods: o.values("mods").into_iter().map(PathBuf::from).collect(),
+            out: o.value("out"),
+            id: o.value("id"),
+            name: o.value("name"),
+            base_id: o.value("base-id"),
+            standalones: o
+                .values("standalone")
+                .into_iter()
+                .map(PathBuf::from)
+                .collect(),
+        };
+        return mods_cli::run_recipe(&o.positional, &a);
+    }
+    let Some(path) = o.positional.first().map(PathBuf::from) else {
+        bail!("{USAGE}");
+    };
+    let shot = o.value("shot").map(PathBuf::from);
+
+    let make: app::MakeScene = match cmd.as_str() {
+        "model" => {
+            let files = model_view::list_models(&path)?;
+            let (anim, time, yaw) = (
+                o.num("anim", 0usize)?,
+                o.num("time", 0f32)?,
+                o.num("yaw", 0.6f32)?,
+            );
+            Box::new(move |g| {
+                Ok(
+                    Box::new(model_view::ModelView::new(g, files, anim, time, yaw))
+                        as Box<dyn scene::Scene>,
+                )
+            })
+        }
+        "hunt" => {
+            let time = time_of_day(&o);
+            // --weapon N (1-based): draw that weapon; --bino: binoculars up.
+            let weapon = o
+                .value("weapon")
+                .map(|v| v.parse::<usize>().map(|n| n.saturating_sub(1)))
+                .transpose()
+                .context("--weapon N")?;
+            let bino = o.has("bino");
+            let (pause, exit) = (o.has("pause"), o.has("exit"));
+            let message = o.value("message").map(str::to_owned);
+            let (kill, plaque) = (o.has("kill"), o.has("plaque"));
+            let (pick, call) = (o.has("pick"), o.has("call"));
+            let fill = o.has("fill");
+            let map = o.has("map");
+            let fire = o
+                .value("fire")
+                .map(str::parse::<u32>)
+                .transpose()
+                .context("--fire MS")?;
+            // --target AI[,AI...] or `all`: hunt targets (no menu yet). Calls,
+            // placement of T-Rex/Cerato and score depend on them.
+            let targets = match o.value("target") {
+                None => c2_formats::bits::Bits::NONE,
+                Some("all") => (10..30).collect(),
+                Some(v) => v
+                    .split(',')
+                    .map(|a| a.trim().parse::<u32>().map(|a| a as usize))
+                    .collect::<Result<Vec<_>, _>>()
+                    .context("--target AI[,AI...]")?
+                    .into_iter()
+                    .collect(),
+            };
+            // --ship AI,MS[,DIST]: bag an animal, wait, look at the ship.
+            let ship: Option<Vec<f32>> = o
+                .value("ship")
+                .map(|v| v.split(',').map(str::parse).collect::<Result<_, _>>())
+                .transpose()
+                .context("--ship AI,MS[,DIST]")?;
+            // --sim MS[,AI[,DIST[,AFTER]]]: fixed seed, run the AI, then watch an
+            // animal; AFTER ms more pass with the camera fixed (screenshots).
+            // --die AI,MS[,NAME]: an animal of that AI (named NAME) kills the
+            // hunter; MS more pass.
+            let die: Option<(i32, u32, Option<String>)> = match o.value("die") {
+                None => None,
+                Some(v) => {
+                    let mut p = v.splitn(3, ',');
+                    let ai = p
+                        .next()
+                        .unwrap_or_default()
+                        .trim()
+                        .parse()
+                        .context("--die AI,MS")?;
+                    let ms = p
+                        .next()
+                        .map(|s| s.trim().parse())
+                        .transpose()
+                        .context("--die AI,MS")?;
+                    Some((ai, ms.unwrap_or(3000), p.next().map(str::to_string)))
+                }
+            };
+            let sim: Option<Vec<f32>> = o
+                .value("sim")
+                .map(|v| v.split(',').map(str::parse).collect::<Result<_, _>>())
+                .transpose()
+                .context("--sim MS[,AI[,DIST]]")?;
+            let game_dir = path
+                .parent()
+                .and_then(|p| p.parent())
+                .and_then(|p| p.parent())
+                .unwrap_or(std::path::Path::new("."))
+                .to_path_buf();
+            let setup = hunt_view::HuntSetup {
+                game_dir,
+                map: path.clone(),
+                time,
+                seed: sim.as_ref().map(|_| 1),
+                targets,
+                // Without the menu, carry every weapon.
+                weapons: u128::MAX,
+                double_ammo: false,
+                night_vision: false,
+                flashlight: false,
+                observer: o.has("observer"),
+                // --survival classic|modded.
+                survival: match o.value("survival") {
+                    None => None,
+                    Some("classic") => Some(SurvivalKind::Classic),
+                    Some("modded") => Some(SurvivalKind::Modded),
+                    Some(v) => bail!("--survival classic|modded, not {v:?}"),
+                },
+                reg: o.num("player", 0i32)?,
+                from_menu: false,
+                pc: settings::PcSettings::load(),
+            };
+            Box::new(move |g| {
+                let mut h = hunt_view::HuntView::load(g, setup)?;
+                if let Some(s) = sim {
+                    let ai = s.get(1).copied().unwrap_or(12.0) as i32;
+                    let dist = s.get(2).copied().unwrap_or(1500.0);
+                    h.spectate(
+                        s[0] as u32,
+                        ai,
+                        dist,
+                        s.get(3).copied().unwrap_or(0.0) as u32,
+                    );
+                }
+                if let Some(w) = weapon {
+                    h.draw_weapon(w);
+                }
+                if bino {
+                    h.raise_binoculars();
+                }
+                // --pause, --exit, --message TEXT (screenshots).
+                h.show(pause, exit, message.as_deref());
+                // --kill, --plaque: a made-up kill's notice or plaque.
+                if kill || plaque {
+                    h.show_kill(plaque);
+                }
+                // --fill: the trophy room's stands all taken (in memory).
+                if fill {
+                    h.fill_trophies();
+                }
+                // --pick, --call: the weapon picker, the next call.
+                if pick || call {
+                    h.open_picker(call);
+                }
+                if map {
+                    h.open_map();
+                }
+                if let Some((ai, ms, name)) = &die {
+                    h.die_by(*ai, *ms, name.as_deref());
+                }
+                if let Some(ms) = fire {
+                    h.fire_and_wait(ms);
+                }
+                if let Some(v) = &ship {
+                    h.watch_ship(
+                        v[0] as i32,
+                        v[1] as u32,
+                        v.get(2).copied().unwrap_or(3000.0),
+                    );
+                }
+                Ok(Box::new(h) as Box<dyn scene::Scene>)
+            })
+        }
+        "play" => {
+            let screen = o.value("screen").map(str::to_owned);
+            // --menu-art DIR: the menu style (another game's menu frames).
+            if let Some(d) = o.value("menu-art") {
+                let _ = menu::MENU_ART.set(PathBuf::from(d));
+            }
+            // --mobile-menu: the experimental mobile layout of the hunt setup.
+            if o.has("mobile-menu") {
+                let _ = menu::MOBILE_MENU.set(true);
+            }
+            // --max-picks N: most animals (and most weapons) per hunt.
+            if let Some(n) = o.value("max-picks") {
+                let n = n
+                    .parse::<usize>()
+                    .ok()
+                    .filter(|&n| n > 0)
+                    .with_context(|| format!("--max-picks: {n:?} is not a positive number"))?;
+                let _ = menu::MAX_PICKS.set(n);
+            }
+            // --script: canvas clicks / typing / keys, applied before the shot.
+            let script = o.value("script").map(str::to_owned);
+            // --mod DIR (repeatable): play a combined game from the data dir.
+            let mods: Vec<PathBuf> = o
+                .values("mod")
+                .into_iter()
+                .flat_map(|m| c2_mods::expand_addons(std::path::Path::new(m)))
+                .collect();
+            let recipe = o.value("recipe").map(PathBuf::from);
+            // --overlay DIR (repeatable): files copied over the game first
+            // (the Modder's Edition release over the original game).
+            let overlays = o.values("overlay");
+            let bases = mods_cli::bases(o.positional.first().map(String::as_str), &overlays)?;
+            // --balance FILE: the player's prices and scores over the game.
+            let balance = o.value("balance").map(std::path::Path::new);
+            // Ice Age's hunters are its own.
+            if mods_cli::is_ice_age(&path) {
+                let _ = save::PROFILE.set("ice-age");
+            }
+            // --standalone DIR (repeatable): standalone games beside the base.
+            let standalones: Vec<PathBuf> = o
+                .values("standalone")
+                .into_iter()
+                .map(PathBuf::from)
+                .collect();
+            let path = if !standalones.is_empty() {
+                let out = mods_cli::combined_dir(&standalones, &mods);
+                mods_cli::build_combined(
+                    &bases,
+                    &standalones,
+                    &mods,
+                    balance,
+                    ambients(&o)?,
+                    skips(&o, standalones.len())?,
+                    &out,
+                )?;
+                out
+            } else if let Some(r) = recipe {
+                let mods: Vec<PathBuf> = o.values("mods").into_iter().map(PathBuf::from).collect();
+                let mods = mods_cli::mods_dirs(&c2_mods::recipe::Recipe::load(&r)?, &mods)?;
+                let out = mods_cli::recipe_pack_dir(&r);
+                mods_cli::build_recipe(&r, &bases, &mods, balance, &out)?;
+                out
+            } else if mods.is_empty()
+                && overlays.is_empty()
+                && balance.is_none()
+                && !mods_cli::is_ice_age(&path)
+            {
+                path
+            } else {
+                // Ice Age alone: its rules are rewritten (named after it).
+                let named = if mods_cli::is_ice_age(&path) {
+                    &bases[..]
+                } else {
+                    &bases[1..]
+                };
+                let out = mods_cli::pack_dir(named, &mods);
+                mods_cli::build_pack(&bases, &mods, balance, &out)?;
+                out
+            };
+            Box::new(move |g| {
+                let mut m = menu::Menu::new(g, &path, None)?;
+                if let Some(s) = &screen {
+                    m.show(s)?;
+                }
+                if let Some(s) = &script {
+                    m.script(g, s)?;
+                }
+                Ok(Box::new(m) as Box<dyn scene::Scene>)
+            })
+        }
+        "area" => {
+            let time = time_of_day(&o);
+            let cam = o
+                .value("cam")
+                .map(|c| {
+                    let v: Vec<f32> = c
+                        .split(',')
+                        .map(str::parse)
+                        .collect::<Result<_, _>>()
+                        .context("--cam X,Y,Z,YAW,PITCH")?;
+                    anyhow::ensure!(v.len() == 5, "--cam needs 5 numbers");
+                    Ok(v)
+                })
+                .transpose()?;
+            // 74 = ctViewR for the default OptViewR of 128 (Game.cpp: 42 + OptViewR/8*2).
+            let view = o.num("view", 74u32)?;
+            // --models: far objects as models too (no sprites).
+            let far_sprites = !o.has("models");
+            Box::new(move |g| {
+                let mut a = area_view::AreaView::load(g, &path, time)?;
+                a.far_sprites = far_sprites;
+                if let Some(c) = cam {
+                    a.cam.pos = glam::Vec3::new(c[0], c[1], c[2]);
+                    a.cam.yaw = c[3];
+                    a.cam.pitch = c[4];
+                }
+                a.radius = view.clamp(16, 512);
+                Ok(Box::new(a) as Box<dyn scene::Scene>)
+            })
+        }
+        _ => bail!("{USAGE}"),
+    };
+    match shot {
+        Some(out) => app::screenshot((1280, 720), &out, make),
+        None => app::run(make),
+    }
+}

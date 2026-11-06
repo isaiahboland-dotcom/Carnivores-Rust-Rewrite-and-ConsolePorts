@@ -564,6 +564,10 @@ pub static MENU_ART: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 /// The experimental mobile layout of the hunt setup (`--mobile-menu`).
 pub static MOBILE_MENU: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 
+/// Most animals, and most weapons, one hunt can take (`--max-picks N`; the
+/// Android build passes 8). Unset: no limit beyond the account.
+pub static MAX_PICKS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+
 /// Main menu button (ours, under the original's): survival.
 const SURVIVAL_BUTTON: Rect = (330.0, 518.0, 260.0, 30.0);
 
@@ -1570,6 +1574,20 @@ impl Menu {
             return;
         }
         let bit = 1u128.checked_shl(r as u32).unwrap_or(0);
+        // A full list takes no more (dropping a pick is always allowed).
+        let adding = match col {
+            1 => !self.choice.dinos.has(r),
+            2 => self.choice.weapons & bit == 0,
+            _ => false,
+        };
+        let count = match col {
+            1 => self.choice.dinos.count(),
+            _ => self.choice.weapons.count_ones() as usize,
+        };
+        if adding && MAX_PICKS.get().is_some_and(|&cap| count >= cap) {
+            self.choice.focus = Some((col, r));
+            return;
+        }
         let price = self.columns[col].prices[r];
         let old = self.choice.clone();
         match col {

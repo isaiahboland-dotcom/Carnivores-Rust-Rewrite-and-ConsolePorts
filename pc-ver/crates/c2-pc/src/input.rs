@@ -29,6 +29,38 @@ pub struct Input {
     pub last_pressed: Option<KeyCode>,
     /// The gamepads this frame (`c2_pad`; the hunt reads them).
     pub pad: c2_pad::Frame,
+    /// Android: the finger standing in for the mouse, and where it last was.
+    #[cfg(target_os = "android")]
+    touch: Option<(u64, (f32, f32))>,
+}
+
+/// Android: the first finger down is the mouse (left button held while it
+/// stays down; moving it drags, as the mouse does in the menus and to look).
+#[cfg(target_os = "android")]
+pub fn touch_as_mouse(input: &mut Input, id: u64, phase: winit::event::TouchPhase, at: (f32, f32)) {
+    use winit::event::TouchPhase;
+    match (phase, input.touch) {
+        (TouchPhase::Started, None) => {
+            input.touch = Some((id, at));
+            input.cursor = Some(at);
+            input.mouse_down = true;
+            input.dragging = true;
+            input.clicked = true;
+        }
+        (TouchPhase::Moved, Some((finger, last))) if finger == id => {
+            input.mouse_delta.0 += at.0 - last.0;
+            input.mouse_delta.1 += at.1 - last.1;
+            input.touch = Some((id, at));
+            input.cursor = Some(at);
+        }
+        (TouchPhase::Ended | TouchPhase::Cancelled, Some((finger, _))) if finger == id => {
+            input.touch = None;
+            input.cursor = Some(at);
+            input.mouse_down = false;
+            input.dragging = false;
+        }
+        _ => {}
+    }
 }
 
 impl Input {
@@ -70,5 +102,9 @@ impl Input {
         self.mouse_down = false;
         self.right_down = false;
         self.dragging = false;
+        #[cfg(target_os = "android")]
+        {
+            self.touch = None;
+        }
     }
 }

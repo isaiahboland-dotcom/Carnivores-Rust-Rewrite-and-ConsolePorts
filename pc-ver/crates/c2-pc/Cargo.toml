@@ -28,3 +28,7 @@ bytemuck.workspace = true
 pollster.workspace = true
 kira.workspace = true
 font8x8.workspace = true
+
+# Android (android-ver/): winit hosted by a NativeActivity.
+[target.'cfg(target_os = "android")'.dependencies]
+winit = { workspace = true, features = ["android-native-activity"] }
