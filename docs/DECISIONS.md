@@ -3778,6 +3778,7 @@ tabs do.
   (so the 3DS and Wii U packs too). Ignored when standalones are combined
   beside the base: their numbering would no longer be the base's alone.
   Left-out parts' own higher-numbered files stay in the pack, unread.
+  (Superseded 2026-11-06: "Leaving out the base game's parts", below.)
 
 ### A standalone that is on is not also an add-on (2026-11-05)
 
@@ -3981,6 +3982,48 @@ weapons per hunt, because more is too hectic on a phone for now.
 - **Touch, for now:** the first finger acts as the mouse. That works for the
   menus, but the hunt still needs the mobile game's own controls (stick,
   fire, weapon buttons). Back maps to Escape.
+- **One run per process** (found on the first device run, 2026-11-06): Android
+  can start the activity again in a process that already ran it; winit allows
+  one event loop per process and `tracing` one global logger. The app logs
+  once per process and exits the process when the game ends. Launch problems
+  (no `game/`, not APK-built) are shown on screen (`c2_pc::notice`), and the
+  soft keyboard opens while a scene takes text (`Scene::wants_text`: the
+  hunter registration).
 - **Packaging without Gradle:** `build-apk.sh` uses only the NDK and SDK
   build-tools (aapt2, zipalign, apksigner), with native libraries stored
   uncompressed and 16 KiB aligned.
+
+### Leaving out the base game's parts, beside add-ons and standalones (2026-11-06)
+
+Request: choose which of the base game's maps, animals and weapons an
+instance keeps, so modded content can supplement or replace them; in the
+recipe and on the instance editor's Base game page.
+
+- `[recipe.skip]` (above, 2026-11-05) now applies whatever is combined:
+  the `leave_out` layer goes over the finished game in `c2-pc recipe
+  build` (so Play), after the standalones are combined and the add-ons
+  merged. The base's parts come first in a combined game (`standalone::
+  build` appends each game's areas, slots and weapons after the base's),
+  so the base's numbers 1..N are the same there as in the base alone, and
+  everything after moves up by as many as were left out. Checked on
+  Carnivores 2 + the Modder's Edition, Carnivores Triassic beside it and
+  one add-on: leaving out area 1, the second animal and the first weapon
+  gives 12 of 13 areas, 18 of 19 huntables, 13 of 14 weapons; Triassic's
+  maps and the add-on's `area`/`char` conditions moved down by one.
+- Left-out animals are matched by name. The combiner renames a
+  standalone's or add-on's animal that shares a base animal's name
+  (`Name (Game)`, `Name (add-on)`), so only the base's own goes.
+- The picker reads the base as it is built: the game with its overlays
+  (`standalone::base_parts`, over `vanilla(bases)`), so a Modder's Edition
+  base lists the Modder's Edition's roster, not the stock `_RES.TXT`.
+  Before, it read only the first folder.
+- Leaving out every area of the whole game is refused at build time (the
+  hunt menu would have nothing to pick). Leaving out all of the base's
+  animals or weapons is allowed, with a note in the editor, since add-ons
+  or standalones may bring their own.
+- Consoles: `c2-cook --recipe` already applied `[recipe.skip]` to the
+  base + add-ons pack. A recipe with standalones is built with `c2-pc
+  recipe build` first, so its output carries the leave-out too.
+- Not done: putting a modded animal into the left-out one's slot (it is
+  added after the kept ones). Menu order is the only visible difference.
+

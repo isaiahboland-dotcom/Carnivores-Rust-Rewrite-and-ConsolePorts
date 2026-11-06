@@ -18,6 +18,10 @@ pub trait Scene {
     fn handles_escape(&self) -> bool {
         false
     }
+    /// The scene takes typed text now (Android shows its keyboard).
+    fn wants_text(&self) -> bool {
+        false
+    }
     /// The scene is done; close the window.
     fn wants_exit(&self) -> bool {
         false

@@ -17,6 +17,7 @@ mod keys;
 mod menu;
 mod model_view;
 mod mods_cli;
+mod notice;
 mod pad_cursor;
 mod png;
 pub mod portable;
@@ -29,6 +30,7 @@ mod weapons;
 
 #[cfg(target_os = "android")]
 pub use app::set_android_app;
+pub use notice::show as notice;
 
 /// Logs to stderr, `RUST_LOG` or the default filter.
 pub fn init_logging() {

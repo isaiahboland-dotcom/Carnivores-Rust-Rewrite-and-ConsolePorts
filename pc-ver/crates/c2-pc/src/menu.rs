@@ -2374,6 +2374,10 @@ impl Scene for Menu {
         "Carnivores 2 (c2rs)".into()
     }
 
+    fn wants_text(&self) -> bool {
+        matches!(self.screen, Screen::Register)
+    }
+
     fn update(&mut self, _gpu: &Gpu, _dt: f32, input: &Input) {
         let (s, ox, oy) = self.canvas();
         self.cursor = input.cursor.map(|(x, y)| ((x - ox) / s, (y - oy) / s));

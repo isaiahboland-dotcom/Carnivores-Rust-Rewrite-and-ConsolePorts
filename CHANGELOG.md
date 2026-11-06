@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-### Android (new, untested on phones)
+### Android (new; menus checked on a Retroid Pocket 5)
 
 - First Android build (`android-ver/`, `build-apk.sh`): the PC game in an APK. It needs a game built from
   your own mobile APK as its base, plus optional add-ons. No standalones; at most 8 animals and 8 weapons

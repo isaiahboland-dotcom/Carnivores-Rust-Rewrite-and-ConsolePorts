@@ -334,13 +334,7 @@ pub fn build_recipe(
     let mut pack = if r.standalones.is_empty() {
         let v = vanilla(bases)?;
         let (sources, opts) = c2_mods::recipe::prepare(recipe_path, &r, &found.mods, &v)?;
-        let mut pack = c2_mods::build_with(bases, sources, &opts)?;
-        // The base game's own parts left out (a standalone as the base).
-        if let Some(l) = c2_mods::standalone::leave_out::layer(&pack.vfs, &r.recipe.skip)? {
-            pack.vfs.push("left out", Box::new(l));
-            tracing::info!("left out of the game: {}", r.recipe.skip.to_arg());
-        }
-        pack
+        c2_mods::build_with(bases, sources, &opts)?
     } else {
         // Standalones combined beside the base; the add-ons over that.
         use c2_mods::standalone::{add_on_sources, build, Ambients, Options};
@@ -359,6 +353,11 @@ pub fn build_recipe(
         let (sources, opts) = c2_mods::recipe::prepare(recipe_path, &r, &found.mods, &v)?;
         add_on_sources(&games_dir, sources, &built, &o, &opts)?
     };
+    // The base game's own parts left out (they come first in the combined
+    // game, so the numbers hold with standalones and add-ons after them).
+    if c2_mods::standalone::leave_out::push(&mut pack.vfs, &r.recipe.skip)? {
+        tracing::info!("left out of the base game: {}", r.recipe.skip.to_arg());
+    }
     balance(&mut pack, balance_file)?;
     materialize(&pack, out).with_context(|| format!("writing {}", out.display()))?;
     tracing::info!(

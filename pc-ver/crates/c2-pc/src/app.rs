@@ -28,6 +28,9 @@ struct Running {
     last: Instant,
     pads: c2_pad::Pads,
     pad_cursor: PadCursor,
+    /// Android: the soft keyboard is shown ([`Scene::wants_text`]).
+    #[cfg(target_os = "android")]
+    keyboard: bool,
 }
 
 /// Captures (or releases) the cursor; returns whether it is now captured.
@@ -129,6 +132,8 @@ impl App {
             input,
             last: Instant::now(),
             pad_cursor,
+            #[cfg(target_os = "android")]
+            keyboard: false,
             pads: {
                 let pads = c2_pad::Pads::new();
                 for name in pads.names() {
@@ -265,6 +270,11 @@ impl ApplicationHandler for App {
                 r.input.pad = r.pads.poll();
                 r.pad_cursor.apply(&mut r.input, r.frame.size, dt);
                 r.scene.update(&r.gpu, dt, &r.input);
+                #[cfg(target_os = "android")]
+                if r.scene.wants_text() != r.keyboard {
+                    r.keyboard = r.scene.wants_text();
+                    r.window.set_ime_allowed(r.keyboard);
+                }
                 r.input.end_frame();
                 r.pad_cursor.after_frame(&mut r.input);
                 let Some(Target::Window { surface, config }) = &r.target else {

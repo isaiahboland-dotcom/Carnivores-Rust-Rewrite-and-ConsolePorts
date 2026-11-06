@@ -8,7 +8,8 @@ mobile APK** (Carnivores: Dinosaur Hunter or Carnivores: Ice Age), copied to the
 phone. A PC Carnivores 2 install or a standalone game is refused as the base: the
 phone's own menu art and touch buttons come from the mobile game.
 
-Status: builds, packages and signs. **Not yet run on a phone or emulator.**
+Status: runs on a Retroid Pocket 5 (Android 13, Adreno 650, Vulkan): menus in the phone layout, and
+hunter registration with the soft keyboard. Hunts are not yet checked on the device.
 
 ## Build
 
@@ -43,7 +44,9 @@ adb push addons  /sdcard/Android/data/io.github.c2rs/files/addons   # optional
 | `game/` | the game built from your mobile APK (required) |
 | `addons/` | add-on folders, combined over the game in name order (optional; prefix numbers to set the order) |
 | `c2rs/` | saves, settings and combined games, made by the app |
-| `c2rs.log` | the log, rewritten each start; check it when the app closes at once |
+| `c2rs.log` | the log, started fresh at each launch |
+
+With no `game/` (or one not built from an APK), the app says so on screen; tap to close.
 
 ## Limits on Android (for now)
 
@@ -53,7 +56,7 @@ adb push addons  /sdcard/Android/data/io.github.c2rs/files/addons   # optional
   hectic on a phone. A full list ignores further taps; unpicking always works.
 - **Touch:** the first finger acts as the mouse (tap = click, drag = look). The
   mobile game's own hunt controls (move stick, fire, weapon buttons) are not
-  done yet. Back acts as Escape.
+  done yet. Back acts as Escape. The soft keyboard opens for the hunter's name.
 - arm64 only; Android 8.0 (API 26) or later.
 
 ## Testing

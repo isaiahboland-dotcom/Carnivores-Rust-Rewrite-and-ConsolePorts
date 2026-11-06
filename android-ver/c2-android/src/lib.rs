@@ -67,7 +67,15 @@ fn has_entries(dir: &Path) -> bool {
 }
 
 /// Logs to `root/c2rs.log` (adb logcat shows nothing of `tracing`).
+///
+/// Once per process: Android can start the activity again in the same
+/// process, and a second subscriber would panic.
 fn init_logging(root: &Path) {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| start_log(root));
+}
+
+fn start_log(root: &Path) {
     let filter = tracing_subscriber::EnvFilter::new("info,wgpu_core=warn,wgpu_hal=warn,naga=warn");
     match std::fs::File::create(root.join("c2rs.log")) {
         Ok(f) => tracing_subscriber::fmt()
@@ -86,7 +94,18 @@ pub fn run(root: PathBuf) -> Result<()> {
     // `c2-pc`'s data folder is `$XDG_DATA_HOME/c2rs`; Android sets no home.
     std::env::set_var("XDG_DATA_HOME", &root);
     std::env::set_current_dir(&root)?;
-    let args = launch_args(&root)?;
+    let args = match launch_args(&root) {
+        Ok(args) => args,
+        // Nothing to play yet: say so on screen, not only in the log.
+        Err(e) => {
+            tracing::error!("{e:#}");
+            return c2_pc::notice(format!(
+                "c2rs can't start: {e:#}\n\nSee android-ver/README.md: build the game from your \
+                 own mobile APK on a PC, then copy it to the phone as {}.",
+                root.join(GAME_DIR).display()
+            ));
+        }
+    };
     tracing::info!("c2rs {}: {args:?}", env!("CARGO_PKG_VERSION"));
     c2_pc::cli::run(args)
 }
@@ -106,6 +125,8 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
     if let Err(e) = run(root) {
         tracing::error!("{e:#}");
     }
+    // One event loop per process (winit): end it, so the next start is new.
+    std::process::exit(0);
 }
 
 #[cfg(test)]
