@@ -8,6 +8,10 @@ use std::path::PathBuf;
 /// 104; the map is 1024 across).
 pub const MAX_RENDER_CELLS: i32 = 384;
 
+/// The farthest render distance with high-end view on: the whole map from
+/// anywhere on it.
+pub const HIGH_END_RENDER_CELLS: i32 = 1024;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PcSettings {
     /// Render distance slider, 0..=255: 0 = the original view range, 255 =
@@ -68,6 +72,11 @@ pub struct PcSettings {
     /// "Map puts the gun away" (1 = on, the default; not in the original,
     /// which opens the map only with the weapon put away).
     pub map_holsters: i32,
+    /// High-end view (1 = on; off by default, not in the original; on
+    /// Android, experimental): render distance up to
+    /// [`HIGH_END_RENDER_CELLS`] with the far ground in coarser levels, and
+    /// objects fading between model and sprite instead of switching.
+    pub high_end_view: i32,
 }
 
 impl Default for PcSettings {
@@ -93,6 +102,7 @@ impl Default for PcSettings {
             survival_budget: 0,
             hardcore_survival: 0,
             map_holsters: 1,
+            high_end_view: 0,
         }
     }
 }
@@ -140,6 +150,7 @@ impl PcSettings {
                 "survival_budget" => s.survival_budget = v.max(0),
                 "hardcore_survival" => s.hardcore_survival = i32::from(v != 0),
                 "map_holsters" => s.map_holsters = i32::from(v != 0),
+                "high_end_view" => s.high_end_view = i32::from(v != 0),
                 "secret_dinos" => s.secret_dinos = v.clamp(0, 255),
                 "all_huntable" => s.all_huntable = i32::from(v != 0),
                 _ => {}
@@ -151,7 +162,7 @@ impl PcSettings {
     pub fn store(&self) {
         let text = format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nmodel_distance = {}\n\
-             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\n",
+             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\n",
             self.render,
             self.fog,
             self.blood,
@@ -171,7 +182,8 @@ impl PcSettings {
             self.advanced_observer,
             self.survival_budget,
             self.hardcore_survival,
-            self.map_holsters
+            self.map_holsters,
+            self.high_end_view
         );
         if let Some(dir) = path().parent() {
             let _ = std::fs::create_dir_all(dir);
@@ -197,7 +209,12 @@ impl PcSettings {
         if self.fog != 0 {
             return view;
         }
-        view + (MAX_RENDER_CELLS - view).max(0) * self.render / 255
+        let max = if self.high_end_view != 0 {
+            HIGH_END_RENDER_CELLS
+        } else {
+            MAX_RENDER_CELLS
+        };
+        view + (max - view).max(0) * self.render / 255
     }
 }
 
@@ -287,6 +304,17 @@ mod tests {
         s.render = 255;
         assert_eq!(s.render_cells(74), MAX_RENDER_CELLS);
         s.fog = 1;
+        assert_eq!(s.render_cells(74), 74);
+    }
+
+    #[test]
+    fn high_end_view_is_opt_in_and_reaches_the_whole_map() {
+        let mut s = PcSettings::parse("render_distance = 255\n");
+        assert_eq!(s.high_end_view, 0);
+        assert_eq!(s.render_cells(74), MAX_RENDER_CELLS);
+        s = PcSettings::parse("render_distance = 255\nhigh_end_view = 1\n");
+        assert_eq!(s.render_cells(74), HIGH_END_RENDER_CELLS);
+        s.render = 0;
         assert_eq!(s.render_cells(74), 74);
     }
 }

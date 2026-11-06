@@ -38,6 +38,7 @@ struct VIn {
     @location(4) turns: f32,
     @location(5) light: f32,
     @location(6) layer: u32,
+    @location(7) dither: f32,
 };
 
 struct VOut {
@@ -47,6 +48,7 @@ struct VOut {
     @location(2) @interpolate(flat) layer: u32,
     @location(3) dist: f32,
     @location(4) world: vec3<f32>,
+    @location(5) @interpolate(flat) dither: f32,
 };
 
 fn transform(v: VIn) -> VOut {
@@ -67,6 +69,7 @@ fn transform(v: VIn) -> VOut {
         o.light = clamp(v.light + v.vlight[vt] / 255.0, 0.0, 1.0);
     }
     o.layer = v.layer;
+    o.dither = v.dither;
     o.dist = distance(p, g.cam_pos.xyz);
     return o;
 }
@@ -86,10 +89,29 @@ fn vs_near(v: VIn) -> VOut {
     return o;
 }
 
+// 4x4 ordered (Bayer) dither threshold in 0..1 for a pixel: the bits of
+// x ^ y and y interleaved, reversed.
+fn bayer(p: vec2<f32>) -> f32 {
+    let x = u32(p.x) & 3u;
+    let y = u32(p.y) & 3u;
+    let a = x ^ y;
+    let v = ((a & 1u) << 3u) | ((y & 1u) << 2u) | (((a >> 1u) & 1u) << 1u) | ((y >> 1u) & 1u);
+    return (f32(v) + 0.5) / 16.0;
+}
+
+// Instance::dither: a model handing over to its sprite (PC high-end view).
+fn dithered_out(i: VOut) -> bool {
+    if (i.dither == 0.0) {
+        return false;
+    }
+    let t = bayer(i.clip.xy);
+    return select(t >= -i.dither, (t < i.dither), (i.dither > 0.0));
+}
+
 @fragment
 fn fs_opaque(i: VOut) -> @location(0) vec4<f32> {
     let c = textureSample(tex, samp, i.uv, i.layer);
-    if (c.a < 0.5) {
+    if (c.a < 0.5 || dithered_out(i)) {
         discard;
     }
     return vec4<f32>(fogged(surface_light(c.rgb, i.light, i.world), i.dist), 1.0);
@@ -101,6 +123,9 @@ fn fs_opaque(i: VOut) -> @location(0) vec4<f32> {
 @fragment
 fn fs_blend(i: VOut) -> @location(0) vec4<f32> {
     let c = textureSample(tex, samp, i.uv, i.layer);
+    if (dithered_out(i)) {
+        discard;
+    }
     return vec4<f32>(fogged(surface_light(c.rgb, i.light, i.world), i.dist), c.a * (112.0 / 255.0));
 }
 

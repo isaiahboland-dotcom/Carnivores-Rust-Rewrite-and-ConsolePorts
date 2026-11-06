@@ -112,6 +112,7 @@ impl EffectsView {
             // GlassL = 255 - (2000 - FTime) / 38: faint, fading.
             let alpha = ((2000 - r.ftime) as f32 / 38.0).clamp(0.0, 255.0) / 255.0;
             insts.push([Instance {
+                dither: 0.0,
                 offset: r.pos,
                 turns: 0.0,
                 light: 250.0 / 255.0 * alpha,

@@ -3,15 +3,20 @@
 // rotation) and ProcessMapW (water quads).
 
 struct Params {
-    // Map cell of the window's top-left corner.
+    // Map cell of the finest level's top-left corner.
     origin: vec2<i32>,
-    // Window width in cells.
+    // Cells per side of each level (each level's cells are `1 << level`
+    // map cells across).
     width: u32,
     layers: u32,
     // RealTime in ms, for cloud shadows.
     time_ms: u32,
     clouds: u32,
-    _pad: vec2<u32>,
+    // Detail levels: 1 is the original's full-detail window. Past the
+    // first, each level is a square ring twice the size of the one inside
+    // it, its cells twice as large (PC high-end view only).
+    levels: u32,
+    _pad: u32,
 };
 
 // cells[i].x = height | light << 8 | water << 16 | water phase << 24
@@ -90,36 +95,101 @@ fn cloud_shadow(x: i32, y: i32) -> i32 {
     return clamp(db - 40, 0, 48);
 }
 
-fn window_cell(vid: u32) -> vec2<i32> {
-    let ci = vid / 6u;
-    return params.origin + vec2<i32>(i32(ci % params.width), i32(ci / params.width));
+// One cell of the window: its top-left map cell and its size in map cells.
+struct LodCell {
+    c: vec2<i32>,
+    step: i32,
+    level: u32,
+    ok: bool,
+};
+
+fn half_width() -> i32 {
+    return i32(params.width / 2u);
 }
 
-fn in_map(c: vec2<i32>) -> bool {
-    return c.x >= 0 && c.y >= 0 && c.x < MAP - 1 && c.y < MAP - 1;
+fn center() -> vec2<i32> {
+    return params.origin + vec2<i32>(half_width());
+}
+
+fn lod_cell(vid: u32) -> LodCell {
+    let per = params.width * params.width * 6u;
+    var o: LodCell;
+    o.level = vid / per;
+    let ci = (vid % per) / 6u;
+    o.step = 1 << o.level;
+    let first = center() - vec2<i32>(half_width() << o.level);
+    o.c = first + vec2<i32>(i32(ci % params.width), i32(ci / params.width)) * o.step;
+    o.ok = o.level < params.levels
+        && o.c.x >= 0 && o.c.y >= 0 && o.c.x + o.step <= MAP - 1 && o.c.y + o.step <= MAP - 1;
+    if (o.level > 0u) {
+        // The level inside draws this part.
+        let inner = half_width() << (o.level - 1u);
+        let r = o.c - center();
+        if (r.x >= -inner && r.x < inner && r.y >= -inner && r.y < inner) {
+            o.ok = false;
+        }
+    }
+    return o;
+}
+
+fn vertex_height(v: vec2<i32>) -> f32 {
+    let c = clamp(v, vec2<i32>(0), vec2<i32>(MAP - 1));
+    return f32(cell_at(c.x, c.y).x & 0xffu) * 64.0;
+}
+
+fn vertex_light(v: vec2<i32>) -> f32 {
+    let c = clamp(v, vec2<i32>(0), vec2<i32>(MAP - 1));
+    let vc = cell_at(c.x, c.y);
+    var light = dot(vec3<f32>(f32(vc.z & 255u), f32((vc.z >> 8u) & 255u), f32((vc.z >> 16u) & 255u)), g.daylight.xyz);
+    if (params.clouds != 0u) {
+        light = max(64.0, light - f32(cloud_shadow(c.x, c.y)));
+    }
+    return light;
+}
+
+// On a level's outer edge, the next level out has a vertex only every
+// other one of this level's: the ones between take the mean of their two
+// neighbours along the edge, so the two levels meet without gaps.
+fn edge_neighbour(v: vec2<i32>, l: LodCell) -> vec2<i32> {
+    if (l.level + 1u >= params.levels) {
+        return vec2<i32>(0);
+    }
+    let r = v - center();
+    let outer = half_width() << l.level;
+    if (abs(r.x) == outer && ((r.y >> l.level) & 1) != 0) {
+        return vec2<i32>(0, l.step);
+    }
+    if (abs(r.y) == outer && ((r.x >> l.level) & 1) != 0) {
+        return vec2<i32>(l.step, 0);
+    }
+    return vec2<i32>(0);
 }
 
 @vertex
 fn vs_ground(@builtin(vertex_index) vid: u32) -> VOut {
-    let c = window_cell(vid);
-    if (!in_map(c)) {
+    let l = lod_cell(vid);
+    if (!l.ok) {
         return degenerate();
     }
+    let c = l.c;
     let here = cell_at(c.x, c.y);
     let flags = here.y >> 16u;
     let d = corner(vid % 6u, (flags & FM_REVERSE) != 0u);
-    let v = c + d;
-    let vc = cell_at(v.x, v.y);
-    let p = vec3<f32>(f32(v.x) * 256.0, f32(vc.x & 0xffu) * 64.0, f32(v.y) * 256.0);
+    let v = c + d * l.step;
+    var h = vertex_height(v);
+    var light = vertex_light(v);
+    let e = edge_neighbour(v, l);
+    if (e.x != 0 || e.y != 0) {
+        h = (vertex_height(v - e) + vertex_height(v + e)) * 0.5;
+        light = (vertex_light(v - e) + vertex_light(v + e)) * 0.5;
+    }
+    let p = vec3<f32>(f32(v.x) * 256.0, h, f32(v.y) * 256.0);
     var o: VOut;
     o.clip = g.view_proj * vec4<f32>(p, 1.0);
     o.world = p;
+    // A larger cell stretches its top-left cell's texture over it.
     o.uv = mix(vec2<f32>(TC_MIN), vec2<f32>(TC_MAX), rotate_uv(vec2<f32>(d), flags & 3u));
-    var light = dot(vec3<f32>(f32(vc.z & 255u), f32((vc.z >> 8u) & 255u), f32((vc.z >> 16u) & 255u)), g.daylight.xyz);
-    if (params.clouds != 0u) {
-        light = max(64.0, light - f32(cloud_shadow(v.x, v.y)));
-    }
-    o.light = f32(light) / 255.0;
+    o.light = light / 255.0;
     o.layer = min(here.y & 0xffffu, params.layers - 1u);
     o.dist = distance(p, g.cam_pos.xyz);
     o.alpha = 1.0;
@@ -128,22 +198,24 @@ fn vs_ground(@builtin(vertex_index) vid: u32) -> VOut {
 
 @vertex
 fn vs_water(@builtin(vertex_index) vid: u32) -> VOut {
-    let c = window_cell(vid);
-    if (!in_map(c)) {
+    let l = lod_cell(vid);
+    if (!l.ok) {
         return degenerate();
     }
+    let c = l.c;
+    let s = l.step;
     // ProcessMapW: all four corners must be water cells.
     let w = (cell_at(c.x, c.y).x >> 16u) & 0xffu;
     if (w == 255u
-        || ((cell_at(c.x + 1, c.y).x >> 16u) & 0xffu) == 255u
-        || ((cell_at(c.x, c.y + 1).x >> 16u) & 0xffu) == 255u
-        || ((cell_at(c.x + 1, c.y + 1).x >> 16u) & 0xffu) == 255u
+        || ((cell_at(c.x + s, c.y).x >> 16u) & 0xffu) == 255u
+        || ((cell_at(c.x, c.y + s).x >> 16u) & 0xffu) == 255u
+        || ((cell_at(c.x + s, c.y + s).x >> 16u) & 0xffu) == 255u
         || w >= arrayLength(&waters)) {
         return degenerate();
     }
     let wt = waters[w];
     let d = corner(vid % 6u, false);
-    let v = c + d;
+    let v = c + d * s;
     let p = vec3<f32>(f32(v.x) * 256.0, wt.x, f32(v.y) * 256.0);
     var o: VOut;
     o.clip = g.view_proj * vec4<f32>(p, 1.0);

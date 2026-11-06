@@ -474,7 +474,13 @@ impl HuntView {
         if let Some(ms) = weapons.muzzle_ms() {
             hunt.weapons.muzzle_ms = ms;
         }
-        view.radius = hunt.opts.render_r.max(hunt.opts.view_r) as u32;
+        let drawn = if hunt.opts.render_r < crate::settings::MAX_RENDER_CELLS {
+            hunt.opts.render_r
+        } else {
+            setup.pc.render_cells(hunt.opts.view_r)
+        };
+        view.radius = drawn.max(hunt.opts.view_r) as u32;
+        view.high_end = setup.pc.high_end_view != 0;
         // Past the original range, fog only softens the far edge.
         if hunt.opts.render_r > hunt.opts.view_r {
             view.fog_start = 0.85;
@@ -655,7 +661,13 @@ impl HuntView {
         opts.render_r = if trophy {
             opts.view_r
         } else {
-            setup.pc.render_cells(opts.view_r)
+            // High-end view draws farther than this; the animals keep the
+            // standard maximum (ReplaceCharacterForward places them past
+            // it, which past the map's size would never succeed).
+            setup
+                .pc
+                .render_cells(opts.view_r)
+                .min(crate::settings::MAX_RENDER_CELLS)
         };
         let own_snow = area.snow;
         let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);

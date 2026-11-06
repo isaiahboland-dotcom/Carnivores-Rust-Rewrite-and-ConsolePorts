@@ -207,6 +207,7 @@ impl DinoAssets {
                     m.set_pose(gpu, v);
                 }
                 insts.push([Instance {
+                    dither: 0.0,
                     offset: ship.pos,
                     turns: ship.quarter_turns(),
                     light: 240.0 / 255.0,
@@ -226,6 +227,7 @@ impl DinoAssets {
 
 fn instance(c: &Character) -> Instance {
     Instance {
+        dither: 0.0,
         offset: c.pos,
         turns: pose::quarter_turns(c),
         light: CHAR_LIGHT,

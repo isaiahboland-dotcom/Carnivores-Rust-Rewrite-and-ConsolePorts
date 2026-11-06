@@ -4,9 +4,13 @@
 
 ### Video (PC)
 
-- **Model distance** slider (Video options), replacing the "Far sprites" switch: how far trees, bushes
+- **Foliage distance** slider (Video options), replacing the "Far sprites" switch: how far trees, bushes
   and rocks are drawn as models before their flat far sprite. Leftmost is the original's 24 cells;
   rightmost is models out to the render distance. A saved "Far sprites: Off" carries over as rightmost.
+- **High-end view** (Video options, off by default; experimental on Android): render distance up to the
+  whole map (1024 cells instead of 384), the far ground drawn in coarser levels so it stays affordable,
+  and objects fading from model to sprite instead of popping. Animals behave as at the old maximum.
+- `c2-pc area ... --high-end --foliage CELLS` previews both in the map viewer.
 
 ### Android (new; menus checked on a Retroid Pocket 5)
 

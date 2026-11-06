@@ -112,6 +112,9 @@ pub struct AreaView {
     /// Objects past this many cells as sprites ([`SPRITE_CELLS`], the
     /// original's look); `None`: models all the way.
     pub sprite_cells: Option<f32>,
+    /// High-end view: the far ground in coarser levels and objects fading
+    /// between model and sprite over [`FADE_CELLS`].
+    pub high_end: bool,
     pub cam: FlyCam,
     /// Free-fly controls; off when another scene drives the camera.
     pub fly: bool,
@@ -276,6 +279,7 @@ impl AreaView {
             chunks,
             sprites,
             sprite_cells: Some(SPRITE_CELLS),
+            high_end: false,
             cam,
             fly: true,
             zoom: 1.0,
@@ -324,7 +328,7 @@ impl Scene for AreaView {
             self.cam.update(dt, input);
         }
         if self.fly && (input.pressed(KeyCode::Equal) || input.pressed(KeyCode::NumpadAdd)) {
-            self.radius = (self.radius * 2).min(512);
+            self.radius = (self.radius * 2).min(1024);
         }
         if self.fly && (input.pressed(KeyCode::Minus) || input.pressed(KeyCode::NumpadSubtract)) {
             self.radius = (self.radius / 2).max(16);
@@ -398,6 +402,9 @@ impl Scene for AreaView {
     }
 }
 
+/// Cells over which high-end view fades an object from model to sprite.
+pub const FADE_CELLS: f32 = 4.0;
+
 /// Extra drawing hooked in after objects and before water.
 pub type ExtraDraw<'a> = dyn FnMut(&Gpu, &mut wgpu::RenderPass<'_>, &Globals) + 'a;
 
@@ -460,6 +467,7 @@ impl AreaView {
             gpu,
             center,
             self.radius,
+            self.high_end,
             self.area.rsc.textures.len() as u32,
             t.as_millis() as u32,
         );
@@ -470,9 +478,15 @@ impl AreaView {
         let mut per_sprite: Vec<Vec<Instance>> = vec![Vec::new(); self.sprites.len()];
         // Sprites stand upright, turned to the camera.
         let facing = self.cam.yaw / std::f32::consts::FRAC_PI_2;
-        let sprite_d2 = self
-            .sprite_cells
-            .map_or(f32::INFINITY, |c| (c * CELL).powi(2));
+        let sprite_from = self.sprite_cells.map_or(f32::INFINITY, |c| c * CELL);
+        let sprite_d2 = sprite_from * sprite_from;
+        // The original switches outright (its crossfade in `_RenderObject`
+        // is commented out); high-end view fades.
+        let fade_end2 = if self.high_end {
+            (sprite_from + FADE_CELLS * CELL).powi(2)
+        } else {
+            0.0
+        };
         let n_models = self.models.len() as u32;
         let r = self.radius as i32;
         let r2 = (r * r) as f32 * CELL * CELL;
@@ -492,9 +506,15 @@ impl AreaView {
                         continue;
                     }
                     let m = usize::from(p.model);
-                    if d.length_squared() > sprite_d2
-                        && self.sprites.get(m).is_some_and(Option::is_some)
-                    {
+                    let d2 = d.length_squared();
+                    let has_sprite = self.sprites.get(m).is_some_and(Option::is_some);
+                    // In the fade band: model and sprite share the pixels.
+                    let fade = if has_sprite && d2 > sprite_d2 && d2 < fade_end2 {
+                        ((d2.sqrt() - sprite_from) / (FADE_CELLS * CELL)).clamp(1e-3, 1.0)
+                    } else {
+                        0.0
+                    };
+                    if has_sprite && d2 > sprite_d2 {
                         per_sprite[m].push(Instance {
                             offset: p.pos,
                             turns: facing,
@@ -504,10 +524,13 @@ impl AreaView {
                                 *sprite_light
                             },
                             layer: n_models + u32::from(p.model),
+                            dither: -fade,
                         });
-                        continue;
+                        if fade == 0.0 {
+                            continue;
+                        }
                     }
-                    per_model[usize::from(p.model)].push(Instance {
+                    per_model[m].push(Instance {
                         offset: p.pos,
                         turns: f32::from(p.quarter_turns),
                         light: if self.area.cycle.is_some() && *light >= 0.0 {
@@ -516,6 +539,7 @@ impl AreaView {
                             *light
                         },
                         layer: u32::from(p.model),
+                        dither: fade,
                     });
                 }
             }

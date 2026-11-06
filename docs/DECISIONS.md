@@ -4107,13 +4107,15 @@ change: taking a weapon out already closes the map. Off in `c2-core` by
 default, so the 3DS, the Wii U and the parity harness keep the original's
 rule until they offer the setting.
 
-## 2026-11-06 — PC "Model distance" slider replaces "Far sprites"
+## 2026-11-06 — PC "Foliage distance" slider replaces "Far sprites"
 
 The original switches an object from its model to its far sprite at
 `ctViewRM` cells (`Game.cpp`: 24). A debug key in the original moves it
 from 4 to 60 cells (`Hunt2.cpp: ChangeViewR`). The PC had only an on/off
 switch: sprites at 24 cells, or models all the way. Video options now have a
-**Model distance** slider (`model_distance` in `c2rs.cfg`, 0..=255):
+**Foliage distance** slider (`model_distance` in `c2rs.cfg`, 0..=255). Every
+map object counts as foliage: trees, bushes and rocks are all RSC objects, and
+the game has no separate class for plants.
 - 0 is the original's 24 cells (the default).
 - In between, the slider runs linearly from 24 cells to the hunt's render
   distance (`PcSettings::model_cells`).
@@ -4123,3 +4125,40 @@ An old `far_sprites = 0` reads as 255, so a saved "off" keeps its look. The
 slider has no lower setting than the original's; the PC has no need to cut
 below it. The 3DS's separate `object_view` cull (objects past it as sprites
 or not drawn) stays 3DS-only; the PC never used it.
+
+## 2026-11-06 — PC "High-end view" (off by default; experimental on Android)
+
+A Video option for strong hardware, `high_end_view` in `c2rs.cfg`. Off, the
+hunt draws as before (screenshots of the default and the old maximum match
+the previous build's, apart from the animated clouds). On:
+- **Render distance** reaches 1024 cells (`HIGH_END_RENDER_CELLS`), the
+  whole map from anywhere on it, instead of 384.
+- **The ground in detail levels** (`render/terrain.rs: window`,
+  `shaders/terrain.wgsl: lod_cell`). Within 128 cells (`LOD_FINE_CELLS`)
+  every cell is drawn, as the original does. Each level out is a square
+  ring twice as wide, made of cells twice as large: at 1024 cells, 4 levels,
+  about 1.6 M vertices against 3.5 M for the old 384-cell window at full
+  detail. The levels are centred on the coarsest grid (8 cells), so the
+  full-detail square moves in 8-cell steps. Where two levels meet, the finer
+  level's in-between edge vertices take the mean of their neighbours along
+  the edge, so there are no gaps. A larger cell stretches its top-left
+  cell's texture over itself. Water uses the same levels.
+- **Objects fade from model to sprite** over 4 cells (`FADE_CELLS`) instead
+  of switching outright, with a 4x4 ordered dither (`Instance::dither`), so
+  no sorting is needed. The original's own crossfade is commented out in
+  `Render3DFX.cpp: _RenderObject` (its `GlassL` band at `ctViewRM`), so this
+  is not original behaviour and stays behind the option.
+- **The animals keep the 384-cell rules.** `ReplaceCharacterForward` places
+  an animal past `render_r` and `small.rs`/`huntable.rs` move it there once it
+  is 20 cells farther. With `render_r` at 1024, every spot would be off the
+  map, so animals would never be moved ahead of the hunter. The hunt's
+  `render_r` is capped at `MAX_RENDER_CELLS`; only the drawing goes
+  farther.
+- The depth buffer is 32-bit float with standard Z and a near plane of
+  16: at 1024 cells the depth step at the far edge is about two cells, so
+  far shorelines may flicker. Reverse Z would fix this if it shows.
+- Android shows it as "High-end view (experimental)": the same code, but
+  phones vary far more than PCs.
+
+Viewer: `c2-pc area MAP --view 1024 --high-end --foliage CELLS`.
+

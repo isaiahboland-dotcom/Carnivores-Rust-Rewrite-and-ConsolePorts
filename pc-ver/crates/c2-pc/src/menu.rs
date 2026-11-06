@@ -353,15 +353,23 @@ const GAME_OPTS: [Opt; 15] = [
     Opt::ClearTrophies,
 ];
 
-const VIDEO_OPTS: [Opt; 8] = [
+/// Experimental on Android: phones vary far more than PCs.
+const HIGH_END_VIEW: &str = if cfg!(target_os = "android") {
+    "High-end view (experimental)"
+} else {
+    "High-end view"
+};
+
+const VIDEO_OPTS: [Opt; 9] = [
     Opt::Slider("View range", |s| &mut s.options.view_r),
     Opt::PcSlider("Render distance", |p| &mut p.render),
     Opt::Slider("Brightness", |s| &mut s.options.brightness),
-    Opt::PcSlider("Model distance", |p| &mut p.model_distance),
+    Opt::PcSlider("Foliage distance", |p| &mut p.model_distance),
     Opt::PcToggle("Mobile radar", |p| &mut p.map_mobile),
     Opt::PcToggle("Map: where you look", |p| &mut p.map_heading),
     Opt::PcToggle("Map zoom / pan", |p| &mut p.map_zoom),
     Opt::PcToggle("Teleport (map)", |p| &mut p.teleport),
+    Opt::PcToggle(HIGH_END_VIEW, |p| &mut p.high_end_view),
 ];
 
 const MOUSE_OPTS: [Opt; 3] = [
@@ -397,7 +405,7 @@ const ACTIONS: [(&str, KeyField); 17] = [
 ];
 
 const GAME_PANEL: Rect = (48.0, 76.0, 324.0, 190.0);
-const VIDEO_PANEL: Rect = (48.0, 346.0, 324.0, 190.0);
+const VIDEO_PANEL: Rect = (48.0, 346.0, 324.0, 200.0);
 const KEYS_PANEL: Rect = (432.0, 76.0, 320.0, 460.0);
 const OPT_ROW: f32 = 22.0;
 const SLIDER_X: f32 = 220.0;

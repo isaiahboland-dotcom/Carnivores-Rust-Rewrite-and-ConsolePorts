@@ -305,6 +305,11 @@ pub struct Instance {
     pub turns: f32,
     pub light: f32,
     pub layer: u32,
+    /// Screen-door fade, 0 = solid. `d` in 0..1 keeps a pixel where the
+    /// dither pattern is at least `d` (fading out); `-d` keeps the rest
+    /// (fading in), so a model at `d` and its sprite at `-d` cover each
+    /// pixel once.
+    pub dither: f32,
 }
 
 /// One model on the GPU: faces expanded to unshared vertices (opaque first,
@@ -540,8 +545,8 @@ fn model_buffers() -> [Option<wgpu::VertexBufferLayout<'static>>; 2] {
 
 const VERTEX_ATTRS: [wgpu::VertexAttribute; 3] =
     wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32x4];
-const INSTANCE_ATTRS: [wgpu::VertexAttribute; 4] =
-    wgpu::vertex_attr_array![3 => Float32x3, 4 => Float32, 5 => Float32, 6 => Uint32];
+const INSTANCE_ATTRS: [wgpu::VertexAttribute; 5] =
+    wgpu::vertex_attr_array![3 => Float32x3, 4 => Float32, 5 => Float32, 6 => Uint32, 7 => Float32];
 
 impl ModelRenderer {
     /// `textures`: one 256x256 RGBA8 texture per model, indexed by `Instance::layer`.
@@ -732,201 +737,8 @@ impl ModelRenderer {
     }
 }
 
-// ---------------------------------------------------------------- terrain
-
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct TerrainParams {
-    origin: [i32; 2],
-    width: u32,
-    layers: u32,
-    time_ms: u32,
-    clouds: u32,
-    pad: [u32; 2],
-}
-
-pub struct TerrainRenderer {
-    ground: wgpu::RenderPipeline,
-    water: wgpu::RenderPipeline,
-    group: wgpu::BindGroup,
-    params: wgpu::Buffer,
-    width: u32,
-}
-
-impl TerrainRenderer {
-    pub fn new(gpu: &Gpu, globals: &Globals, area: &c2_core::area::Area) -> Self {
-        let m = &area.map;
-
-        let cells: Vec<[u32; 4]> = (0..m.height.len())
-            .map(|i| {
-                let size = c2_formats::map::MAP_SIZE;
-                let phase = area.water_phase(i % size, i / size);
-                [
-                    u32::from(m.height[i])
-                        | u32::from(area.light_map()[i]) << 8
-                        | u32::from(m.water[i]) << 16
-                        | u32::from(phase) << 24,
-                    u32::from(m.texture1[i]) | u32::from(m.flags[i]) << 16,
-                    u32::from(m.light[0][i])
-                        | u32::from(m.light[1][i]) << 8
-                        | u32::from(m.light[2][i]) << 16,
-                    0,
-                ]
-            })
-            .collect();
-        let mut waters: Vec<[f32; 4]> = area
-            .rsc
-            .waters
-            .iter()
-            .map(|w| {
-                let level = w.level as f32 * c2_core::H_SCALE;
-                [level, w.texture_index as f32, w.transp.clamp(0.0, 1.0), 0.0]
-            })
-            .collect();
-        if waters.is_empty() {
-            waters.push([0.0; 4]); // storage buffers can't be empty
-        }
-        let rgba: Vec<Vec<u8>> = area
-            .rsc
-            .textures
-            .iter()
-            .map(|t| c2_core::color::image_to_rgba8(t, false))
-            .collect();
-        let fallback = [255u8; 128 * 128 * 4];
-        let mut layers: Vec<&[u8]> = rgba.iter().map(Vec::as_slice).collect();
-        if layers.is_empty() {
-            layers.push(&fallback);
-        }
-        let view = gpu.texture_array("terrain textures", 128, 128, &layers);
-        let sampler = gpu.sampler(true, false);
-        let mut sky_map = area.rsc.sky_map.clone();
-        sky_map.resize(128 * 128, 0);
-
-        let mk = |label, contents: &[u8], usage| {
-            gpu.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some(label),
-                    contents,
-                    usage,
-                })
-        };
-        let storage = wgpu::BufferUsages::STORAGE;
-        let cell_buf = mk("cells", bytemuck::cast_slice(&cells), storage);
-        let water_buf = mk("waters", bytemuck::cast_slice(&waters), storage);
-        let sky_buf = mk("sky map", &sky_map, storage);
-        let params = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("terrain params"),
-            size: std::mem::size_of::<TerrainParams>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let [t0, t1] = texture_entries(3);
-        let layout = gpu
-            .device
-            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("terrain"),
-                entries: &[
-                    storage_entry(0),
-                    storage_entry(1),
-                    uniform_entry(2, wgpu::ShaderStages::VERTEX),
-                    t0,
-                    t1,
-                    storage_entry(5),
-                ],
-            });
-        let group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("terrain"),
-            layout: &layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: cell_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: water_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: params.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: sky_buf.as_entire_binding(),
-                },
-            ],
-        });
-        let pl = pipeline_layout(gpu, "terrain", &[&globals.layout, &layout]);
-        let module = shader(gpu, "terrain", include_str!("shaders/terrain.wgsl"));
-        let desc = |label, vs, blend| PipelineDesc {
-            label,
-            module: &module,
-            layout: &pl,
-            vs,
-            fs: "fs",
-            buffers: &[],
-            blend,
-        };
-        let ground = pipeline(gpu, desc("ground", "vs_ground", Blend::Opaque));
-        let water = pipeline(gpu, desc("water", "vs_water", Blend::Alpha));
-        Self {
-            ground,
-            water,
-            group,
-            params,
-            width: 0,
-        }
-    }
-
-    /// Sets the square window of cells to draw, centred on `center` cell.
-    pub fn set_window(
-        &mut self,
-        gpu: &Gpu,
-        center: (i32, i32),
-        radius: u32,
-        layers: u32,
-        time_ms: u32,
-    ) {
-        self.width = radius * 2;
-        let p = TerrainParams {
-            origin: [center.0 - radius as i32, center.1 - radius as i32],
-            width: self.width,
-            layers: layers.max(1),
-            time_ms,
-            // Game.cpp sets Clouds = TRUE; there is no option to turn it off.
-            clouds: 1,
-            pad: [0; 2],
-        };
-        gpu.queue
-            .write_buffer(&self.params, 0, bytemuck::bytes_of(&p));
-    }
-
-    fn vertex_count(&self) -> u32 {
-        self.width * self.width * 6
-    }
-
-    pub fn draw_ground(&self, pass: &mut wgpu::RenderPass<'_>, globals: &Globals) {
-        pass.set_pipeline(&self.ground);
-        pass.set_bind_group(0, &globals.group, &[]);
-        pass.set_bind_group(1, &self.group, &[]);
-        pass.draw(0..self.vertex_count(), 0..1);
-    }
-
-    pub fn draw_water(&self, pass: &mut wgpu::RenderPass<'_>, globals: &Globals) {
-        pass.set_pipeline(&self.water);
-        pass.set_bind_group(0, &globals.group, &[]);
-        pass.set_bind_group(1, &self.group, &[]);
-        pass.draw(0..self.vertex_count(), 0..1);
-    }
-}
+mod terrain;
+pub use terrain::TerrainRenderer;
 
 #[cfg(test)]
 #[path = "render_time_tests.rs"]

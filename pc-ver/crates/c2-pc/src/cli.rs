@@ -27,7 +27,7 @@ const USAGE: &str = "usage:
   c2-pc recipe new    <MOD_DIR>... --base <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... --id ID [--name NAME] [--base-id ID] [--out RECIPE.toml]
   c2-pc recipe base   --base <GAME_DIR> [--id c2-vanilla|ice-age] [--out recipes/bases/c2-vanilla.toml]
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
-  c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--models] [--shot out.png]
+  c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--models] [--foliage CELLS] [--high-end] [--shot out.png]
   c2-pc hunt  <AREA.MAP|TROPHY.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all]
               [--weapon N] [--bino] [--pause] [--exit] [--message TEXT] [--kill] [--plaque] [--pick] [--call] [--fill] [--die AI,MS[,NAME]] [--observer] [--player N] [--survival classic|modded]\n              [--touch] [--shot out.png]   (--touch: an APK game's phone buttons, as after a touch)
 
@@ -52,6 +52,7 @@ const VALUE_FLAGS: &[&str] = &[
     "shot",
     "cam",
     "view",
+    "foliage",
     "sim",
     "ship",
     "die",
@@ -602,17 +603,24 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
             let view = o.num("view", 74u32)?;
             // --models: far objects as models too (no sprites).
             let models = o.has("models");
+            // --foliage CELLS: objects as models out to CELLS; --high-end:
+            // the far ground in levels and the model/sprite fade.
+            let foliage = o.value("foliage").map(str::parse::<f32>).transpose()?;
+            let high_end = o.has("high-end");
             Box::new(move |g| {
                 let mut a = area_view::AreaView::load(g, &path, time)?;
                 if models {
                     a.sprite_cells = None;
+                } else if let Some(c) = foliage {
+                    a.sprite_cells = Some(c);
                 }
+                a.high_end = high_end;
                 if let Some(c) = cam {
                     a.cam.pos = glam::Vec3::new(c[0], c[1], c[2]);
                     a.cam.yaw = c[3];
                     a.cam.pitch = c[4];
                 }
-                a.radius = view.clamp(16, 512);
+                a.radius = view.clamp(16, 1024);
                 Ok(Box::new(a) as Box<dyn scene::Scene>)
             })
         }

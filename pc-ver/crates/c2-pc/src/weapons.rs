@@ -291,6 +291,7 @@ impl WeaponAssets {
             .iter()
             .map(|(w, _)| {
                 [Instance {
+                    dither: 0.0,
                     offset: [0.0; 3],
                     turns: 0.0,
                     light: 210.0 / 255.0,
@@ -352,6 +353,7 @@ impl WeaponAssets {
                     .collect();
                 m.set_pose(gpu, &world);
                 let inst = [Instance {
+                    dither: 0.0,
                     offset: [0.0; 3],
                     turns: 0.0,
                     light: 192.0 / 255.0,
@@ -400,6 +402,7 @@ impl WeaponAssets {
         model.set_pose(gpu, &world);
         self.aim_point = world.last().copied();
         let inst = [Instance {
+            dither: 0.0,
             offset: [0.0; 3],
             turns: 0.0,
             light,
@@ -433,6 +436,7 @@ impl WeaponAssets {
             _ => None,
         };
         let flash_inst = [Instance {
+            dither: 0.0,
             offset: [0.0; 3],
             turns: 0.0,
             light,

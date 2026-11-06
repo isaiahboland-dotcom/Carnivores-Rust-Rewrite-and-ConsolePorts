@@ -245,6 +245,7 @@ impl Scene for ModelView {
             },
         );
         let inst = [Instance {
+            dither: 0.0,
             offset: [0.0; 3],
             turns: 0.0,
             light: 1.0,
