@@ -38,11 +38,16 @@ pub(super) fn cycle(lit: Lit, owned: Lit) -> Lit {
 
 /// The round buttons' places (centre x, y and diameter in pixels): down
 /// the right edge, under the ammunition count.
-pub(super) fn button_places(screen: (u32, u32), lights: &[Light]) -> Vec<(Light, (f32, f32, f32))> {
+/// `top`: where the first starts instead (under the phone's touch buttons).
+pub(super) fn button_places(
+    screen: (u32, u32),
+    lights: &[Light],
+    top: Option<f32>,
+) -> Vec<(Light, (f32, f32, f32))> {
     let (sw, sh) = (screen.0 as f32, screen.1 as f32);
     let d = (sh * 0.085).max(36.0);
     let x = sw - 12.0 - d / 2.0;
-    let y0 = 12.0 + sh * 0.06 + d / 2.0;
+    let y0 = top.unwrap_or(12.0 + sh * 0.06) + d / 2.0;
     lights
         .iter()
         .enumerate()
@@ -90,7 +95,8 @@ impl HuntView {
         if self.kit.is_none() || quiet || self.picker.is_some() {
             return Vec::new();
         }
-        button_places(self.screen, &self.owned_lights())
+        let top = self.touch.on.then(|| super::touch::light_top(self.screen));
+        button_places(self.screen, &self.owned_lights(), top)
     }
 
     /// Keys, the pad and the buttons. True when a tap or click landed on a
@@ -152,7 +158,7 @@ impl HuntView {
     }
 
     /// The phone screen's round buttons, or the PC's "N: Night vision Off"
-    /// lines.
+    /// line (the flashlight has none: its beam shows whether it is on).
     pub(super) fn draw_lights(&self, sprites: &mut Vec<Sprite>, scale: f32) {
         if self.view.area.cycle.is_none() || self.hunt.death.is_some() {
             return;
@@ -172,24 +178,15 @@ impl HuntView {
             }
             return;
         }
-        // Under the survival's wave box (top left) when there is one.
-        let mut y = if self.hunt.survival.is_some() {
-            54.0
-        } else {
-            12.0
-        } * scale;
-        for (owned, key, name, on) in [
-            (self.setup.night_vision, "N", "Night vision", nv),
-            (self.setup.flashlight, "L", "Flashlight", torch),
-        ] {
-            if owned {
-                let label = format!("{key}: {name} {}", if on { "On" } else { "Off" });
-                sprites.extend(
-                    self.hud
-                        .label(12.0 * scale, y, 9.0 * scale, [1.0; 4], &label),
-                );
-                y += 14.0 * scale;
-            }
+        if self.setup.night_vision {
+            let label = format!("N: Night vision {}", if nv { "On" } else { "Off" });
+            sprites.extend(self.hud.label(
+                12.0 * scale,
+                12.0 * scale,
+                9.0 * scale,
+                [1.0; 4],
+                &label,
+            ));
         }
     }
 }
@@ -220,7 +217,7 @@ mod tests {
 
     #[test]
     fn buttons_stack_down_the_right_edge() {
-        let b = button_places((1280, 720), &[Light::Vision, Light::Torch]);
+        let b = button_places((1280, 720), &[Light::Vision, Light::Torch], None);
         let (_, (x0, y0, d)) = b[0];
         let (_, (x1, y1, _)) = b[1];
         assert!(x0 + d / 2.0 <= 1280.0 && x0 > 1100.0);

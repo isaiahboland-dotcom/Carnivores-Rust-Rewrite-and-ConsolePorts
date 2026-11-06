@@ -4002,11 +4002,14 @@ weapons per hunt, because more is too hectic on a phone for now.
   a touch, and hides them when a pad or a key is used, as controller-friendly
   phone games do. The PC never shows them unless a touchscreen is used. The
   buttons act as a virtual pad (`Scene::before_update`), so the hunt reads
-  them as pad actions and taps no longer fire. Our choices where the phone
-  game's exact layout isn't known: weapons as a row of buttons (tap to draw,
-  tap again to holster, rather than the picker); holding the call changes it;
-  the stick pushed all the way runs; no jump or crouch buttons yet. The
-  "menu" tab is now tappable (Escape).
+  them as pad actions and taps no longer fire. The layout follows the owner's
+  screenshots of the mobile game: compass (map) top left, binoculars under it
+  replaced by fire while a weapon is in hand, stick bottom left, call top
+  right and the weapon in use under it; a tap calls or draws / holsters,
+  holding opens the hexagon picker (slide, let go; off the hexagons cancels).
+  The "menu" tab opens the hunt menu, whose hexagons take taps; the phone's
+  in-hunt Options are left out (options stay in the main menu, owner). Ours:
+  the stick pushed all the way runs; no jump or crouch buttons yet.
 - **Packaging without Gradle:** `build-apk.sh` uses only the NDK and SDK
   build-tools (aapt2, zipalign, apksigner), with native libraries stored
   uncompressed and 16 KiB aligned.

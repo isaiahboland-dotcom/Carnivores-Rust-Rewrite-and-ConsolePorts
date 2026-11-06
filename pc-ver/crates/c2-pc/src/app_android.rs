@@ -89,6 +89,9 @@ pub fn run(app: AndroidApp, make: MakeScene) -> Result<()> {
                     }
                     MainEvent::TerminateWindow { .. } => st.window_gone = true,
                     MainEvent::LostFocus | MainEvent::Pause => st.input.release_all(),
+                    // A keyboard asked for before the window had focus is
+                    // ignored: ask again.
+                    MainEvent::GainedFocus => st.keyboard = false,
                     MainEvent::Destroy => st.quit = true,
                     _ => {}
                 }
@@ -165,10 +168,12 @@ fn frame(app: &AndroidApp, r: &mut Running, st: &mut State, dt: f32) -> Result<b
     r.scene.update(&r.gpu, dt, &st.input);
     if r.scene.wants_text() != st.keyboard {
         st.keyboard = r.scene.wants_text();
+        // Asked for explicitly: an implicit keyboard is closed again by the
+        // focus changes while the activity starts.
         if st.keyboard {
-            app.show_soft_input(true);
+            app.show_soft_input(false);
         } else {
-            app.hide_soft_input(true);
+            app.hide_soft_input(false);
         }
     }
     st.input.end_frame();

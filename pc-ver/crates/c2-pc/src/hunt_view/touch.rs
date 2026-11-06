@@ -1,16 +1,17 @@
 //! The phone's hunt buttons, for a game built from the player's APK, while
 //! the last input was a touch (`Input::touch_mode`; a key or a pad hides
-//! them, as controller-friendly phone games do). Drawn with the phone
-//! game's own pictures (`HuntKit::touch`):
+//! them, as controller-friendly phone games do). The mobile game's layout
+//! and pictures (`HuntKit::touch`), from the owner's screenshots of it:
 //!
-//! - the move stick, bottom left (pushed all the way: run);
-//! - a drag anywhere else looks around;
-//! - fire, bottom right, and a small second fire button over the stick;
-//! - one button per carried weapon: a tap takes it out, a tap on the one in
-//!   hand puts it away;
-//! - binoculars; the call (a tap calls, holding it changes the call);
-//! - the compass opens the map (and closes it again); the "menu" tab is
-//!   Escape.
+//! - the compass, top left, opens the map (and closes it again);
+//! - under it the binoculars, or fire while a weapon is in hand;
+//! - the move stick, bottom left (pushed all the way: run); a drag
+//!   anywhere else looks around;
+//! - the call, top right: a tap calls, holding opens the call picker;
+//! - under it the weapon in use: a tap takes it out or puts it away,
+//!   holding opens the weapon picker (slide to a hexagon and let go);
+//! - the "menu" tab is the hunt menu (Restart, Resume, Escape!), whose
+//!   hexagons take taps; a tap ends a pause.
 //!
 //! The buttons become pad actions (`c2_pad::Frame`), so the hunt reads them
 //! as it reads a pad, and the first finger stops acting as the mouse (a tap
@@ -28,30 +29,37 @@ pub(super) struct Touch {
     /// The knob's offset from the stick's centre, in pixels.
     knob: (f32, f32),
     look: Option<(u64, (f32, f32))>,
-    fire: Vec<u64>,
-    /// The call button held: since when, and whether holding changed the call.
-    call: Option<(u64, Instant, bool)>,
+    fire: Option<u64>,
+    /// The weapon or call button held: which, since when.
+    hold: Option<(u64, Pick, Instant)>,
+    /// The finger holding a picker open, where it is, and whether it left.
+    picking: Option<(u64, (f32, f32))>,
+    pick_lifted: Option<(f32, f32)>,
+    /// A tap with the picker open (not by holding).
+    pick_tap: Option<(f32, f32)>,
     /// The stick pushed all the way.
     pub(super) run: bool,
 }
 
 impl Touch {
     fn release(&mut self) {
-        let on = self.on;
-        *self = Self::default();
-        self.on = on;
+        *self = Self {
+            on: self.on,
+            picking: self.picking,
+            ..Self::default()
+        };
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Control {
     Stick,
-    Fire,
-    Binoculars,
+    /// Binoculars, or fire with a weapon in hand.
+    Left,
     Call,
+    Weapon,
     Compass,
     Tab,
-    Weapon(usize),
     /// The light buttons (read by `lights`).
     Light,
 }
@@ -59,18 +67,13 @@ enum Control {
 /// Places in screen pixels: circles are (centre x, y, diameter).
 struct Layout {
     stick: (f32, f32, f32),
-    fire: (f32, f32, f32, f32),
-    alt_fire: (f32, f32, f32),
-    binoculars: (f32, f32, f32),
+    left: (f32, f32, f32),
     call: (f32, f32, f32),
+    weapon: (f32, f32, f32),
     compass: (f32, f32, f32, f32),
     tab: (f32, f32, f32, f32),
-    weapons: Vec<(usize, (f32, f32, f32))>,
     lights: Vec<(f32, f32, f32)>,
 }
-
-/// The fire button's picture is 216 x 136.
-const FIRE_ASPECT: f32 = 216.0 / 136.0;
 
 fn inside((px, py): (f32, f32), (x, y, w, h): (f32, f32, f32, f32)) -> bool {
     px >= x && px <= x + w && py >= y && py <= y + h
@@ -80,45 +83,29 @@ fn in_circle((px, py): (f32, f32), (x, y, d): (f32, f32, f32), slack: f32) -> bo
     (px - x).hypot(py - y) <= d / 2.0 * slack
 }
 
+/// The round buttons' size, as a share of the screen's height.
+const BUTTON: f32 = 0.14;
+
+/// Where the light buttons go while the touch buttons show: down the right
+/// edge, under the weapon button.
+pub(super) fn light_top(screen: (u32, u32)) -> f32 {
+    let sh = screen.1 as f32;
+    sh * 0.35 + sh * BUTTON * 0.75
+}
+
 impl Layout {
-    fn new(screen: (u32, u32), weapons: &[usize], lights: Vec<(f32, f32, f32)>) -> Self {
+    fn new(screen: (u32, u32), lights: Vec<(f32, f32, f32)>) -> Self {
         let (sw, sh) = (screen.0 as f32, screen.1 as f32);
-        let m = sh * 0.035;
+        let d = sh * BUTTON;
         let r = sh * 0.16;
-        let stick = (m + r + sh * 0.04, sh - m - r - sh * 0.02, r * 2.0);
-        let fh = sh * 0.22;
-        let fw = fh * FIRE_ASPECT;
-        let fire = (sw - m - fw, sh - m - fh, fw, fh);
-        let alt_fire = (stick.0 + r * 1.3, stick.1 - r * 1.35, sh * 0.13);
-        let d = sh * 0.12;
-        let above = fire.1 - d * 0.7;
-        let binoculars = (fire.0 + d * 0.5, above, d);
-        let call = (fire.0 + fw - d * 0.5, above, d);
-        // Weapons along the bottom, left of the fire button, four to a row,
-        // in the weapons' order from the left.
-        let wd = sh * 0.115;
-        let n = weapons.len();
-        let weapons = weapons
-            .iter()
-            .enumerate()
-            .map(|(i, &w)| {
-                let row_len = (n - i / 4 * 4).min(4);
-                let from_right = (row_len - 1 - i % 4) as f32;
-                let row = (i / 4) as f32;
-                let x = fire.0 - m - wd / 2.0 - from_right * wd * 1.12;
-                let y = sh - m - wd / 2.0 - row * wd * 1.12;
-                (w, (x, y, wd))
-            })
-            .collect();
+        let right = sw - sh * 0.035 - d / 2.0;
         Self {
-            stick,
-            fire,
-            alt_fire,
-            binoculars,
-            call,
+            stick: (sh * 0.22, sh * 0.70, r * 2.0),
+            left: (sh * 0.035 + d / 2.0 + sh * 0.02, sh * 0.33, d),
+            call: (right, sh * 0.145, d),
+            weapon: (right, sh * 0.35, d),
             compass: HuntKit::compass_rect(screen),
             tab: HuntKit::tab_rect(screen),
-            weapons,
             lights,
         }
     }
@@ -143,52 +130,57 @@ impl Layout {
         if !full {
             return None;
         }
-        if inside(p, self.fire) || in_circle(p, self.alt_fire, 1.15) {
-            return Some(Control::Fire);
-        }
-        if in_circle(p, self.binoculars, 1.15) {
-            return Some(Control::Binoculars);
-        }
-        if in_circle(p, self.call, 1.15) {
-            return Some(Control::Call);
-        }
-        self.weapons
-            .iter()
-            .find(|&&(_, b)| in_circle(p, b, 1.08))
-            .map(|&(w, _)| Control::Weapon(w))
+        [
+            (self.left, Control::Left),
+            (self.call, Control::Call),
+            (self.weapon, Control::Weapon),
+        ]
+        .into_iter()
+        .find(|&(b, _)| in_circle(p, b, 1.2))
+        .map(|(_, c)| c)
     }
 }
 
 impl HuntView {
-    /// Something over the hunt takes taps as clicks (its own buttons).
-    fn touch_popup(&self) -> bool {
-        let h = &self.hunt;
-        h.paused || h.show_exit() || h.death.is_some() || self.picker.is_some()
-    }
-
-    /// The full set (fire, weapons, calls), not just walking and looking
-    /// (the trophy room, observing).
+    /// The full set (weapons, calls), not just walking and looking (the
+    /// trophy room, observing).
     fn touch_full(&self) -> bool {
         !self.hunt.opts.trophy && !self.hunt.opts.observer
     }
 
     fn touch_layout(&self) -> Layout {
-        let weapons = if self.touch_full() {
-            self.carried()
-        } else {
-            Vec::new()
-        };
         let lights = self.light_buttons().into_iter().map(|(_, b)| b).collect();
-        Layout::new(self.screen, &weapons, lights)
+        Layout::new(self.screen, lights)
+    }
+
+    /// A weapon in hand (the left button fires).
+    fn touch_armed(&self) -> bool {
+        self.hunt.weapons.pose().is_some() && !self.hunt.bin_mode
     }
 
     /// The touches as pad actions, before the hunt reads its input.
     pub(super) fn touch_input(&mut self, input: &mut Input) {
-        self.touch.on = self.kit.is_some() && input.touch_mode && !self.touch_popup();
-        if !self.touch.on {
+        let live = self.kit.is_some() && input.touch_mode;
+        if !live {
+            self.touch.on = false;
             self.touch.release();
+            self.touch.picking = None;
             return;
         }
+        if self.picker.is_some() {
+            self.touch.on = false;
+            self.touch_picking(input);
+            return;
+        }
+        self.touch.picking = None;
+        let h = &self.hunt;
+        if h.show_exit() || h.paused || h.death.is_some() {
+            self.touch.on = false;
+            self.touch.release();
+            self.touch_menu(input);
+            return;
+        }
+        self.touch.on = true;
         use c2_pad::Action as A;
         let lay = self.touch_layout();
         let map = self.hunt.map_mode;
@@ -200,19 +192,14 @@ impl HuntView {
             used |= hit.is_some();
             match hit {
                 Some(Control::Stick) => self.touch.stick = Some(f.id),
-                Some(Control::Fire) => self.touch.fire.push(f.id),
-                Some(Control::Binoculars) => pad.press(A::Binoculars),
-                Some(Control::Call) => self.touch.call = Some((f.id, Instant::now(), false)),
+                Some(Control::Left) if self.touch_armed() => self.touch.fire = Some(f.id),
+                Some(Control::Left) => pad.press(A::Binoculars),
+                Some(Control::Call) => self.touch.hold = Some((f.id, Pick::Call, Instant::now())),
+                Some(Control::Weapon) => {
+                    self.touch.hold = Some((f.id, Pick::Weapon, Instant::now()));
+                }
                 Some(Control::Compass) => pad.press(A::Map),
                 Some(Control::Tab) => pad.press(A::Exit),
-                Some(Control::Weapon(w)) => {
-                    let ws = &self.hunt.weapons;
-                    if ws.current == w && ws.pose().is_some() {
-                        self.pending.toggle_weapon = true;
-                    } else {
-                        self.pending.select_weapon = Some(w);
-                    }
-                }
                 Some(Control::Light) => {}
                 None if self.touch.look.is_none() && !map => {
                     self.touch.look = Some((f.id, f.at));
@@ -227,20 +214,29 @@ impl HuntView {
             if self.touch.look.is_some_and(|(id, _)| id == f.id) {
                 self.touch.look = None;
             }
-            self.touch.fire.retain(|&id| id != f.id);
-            if let Some((id, _, changed)) = self.touch.call {
+            if self.touch.fire == Some(f.id) {
+                self.touch.fire = None;
+            }
+            // Let go before the picker opened: a tap.
+            if let Some((id, kind, _)) = self.touch.hold {
                 if id == f.id {
-                    if !changed {
-                        pad.press(A::Call);
+                    self.touch.hold = None;
+                    match kind {
+                        Pick::Call => pad.press(A::Call),
+                        Pick::Weapon => self.pending.toggle_weapon = true,
                     }
-                    self.touch.call = None;
                 }
             }
         }
-        if let Some((_, since, changed)) = &mut self.touch.call {
-            if !*changed && since.elapsed().as_secs_f32() >= HOLD_TO_PICK {
-                *changed = true;
-                self.pending.change_call = true;
+        // Held long enough: the picker opens, the finger holding it.
+        if let Some((id, kind, since)) = self.touch.hold {
+            if since.elapsed().as_secs_f32() >= HOLD_TO_PICK {
+                self.touch.hold = None;
+                let at = input.fingers.iter().find(|f| f.id == id).map(|f| f.at);
+                self.open_pick(kind, true);
+                if self.picker.is_some() {
+                    self.touch.picking = at.map(|at| (id, at));
+                }
             }
         }
         // In the map the pointer pans and picks as before.
@@ -273,13 +269,67 @@ impl HuntView {
                 self.touch.look = Some((id, f.at));
             }
         }
-        pad.hold(A::Fire, !self.touch.fire.is_empty());
+        pad.hold(A::Fire, self.touch.fire.is_some());
         // The first finger no longer acts as the mouse here.
         input.clicked = false;
         input.mouse_down = false;
         input.dragging = false;
         input.mouse_delta = look;
         input.pad.merge(&pad);
+    }
+
+    /// The picker open: the finger holding it slides over its hexagons, or
+    /// (opened by a key) a tap picks one.
+    fn touch_picking(&mut self, input: &mut Input) {
+        self.touch.pick_tap = input.fingers.iter().find(|f| f.new).map(|f| f.at);
+        if let Some((id, _)) = self.touch.picking {
+            if let Some(f) = input.fingers.iter().find(|f| f.id == id) {
+                self.touch.picking = Some((id, f.at));
+            } else if let Some(f) = input.lifted.iter().find(|f| f.id == id) {
+                self.touch.picking = None;
+                self.touch.pick_lifted = Some(f.at);
+            }
+        }
+        input.clicked = false;
+    }
+
+    /// The finger holding the picker open (it picks when let go).
+    pub(super) fn touch_holds_picker(&self) -> bool {
+        self.touch.picking.is_some()
+    }
+
+    /// The picker's touch this frame, for `n` hexagons: the row under the
+    /// finger, and whether to pick it now; `Err` closes it unpicked (let go
+    /// off the hexagons).
+    pub(super) fn touch_pick(&mut self, n: usize) -> Result<(Option<usize>, bool), ()> {
+        let places = HuntKit::hex_places(self.screen, n);
+        let under = |p: (f32, f32)| places.iter().position(|&r| inside(p, r));
+        if let Some(at) = self.touch.pick_lifted.take() {
+            return under(at).map(|r| (Some(r), true)).ok_or(());
+        }
+        if let Some(at) = self.touch.pick_tap.take() {
+            return under(at).map(|r| (Some(r), true)).ok_or(());
+        }
+        Ok((self.touch.picking.and_then(|(_, at)| under(at)), false))
+    }
+
+    /// The hunt menu's hexagons and the pause, by touch.
+    fn touch_menu(&mut self, input: &mut Input) {
+        let Some(tap) = input.fingers.iter().find(|f| f.new).map(|f| f.at) else {
+            return;
+        };
+        input.clicked = false;
+        if self.hunt.show_exit() {
+            let places = HuntKit::menu_places(self.screen, 3);
+            match places.iter().position(|&r| inside(tap, r)) {
+                Some(0) => self.restart(),
+                Some(1) => self.hunt.exit_prompt = false,
+                Some(2) => self.hunt.confirm_exit(),
+                _ => {}
+            }
+        } else if self.hunt.paused {
+            self.hunt.toggle_pause();
+        }
     }
 
     /// The buttons over the hunt.
@@ -290,23 +340,18 @@ impl HuntView {
         }
         let lay = self.touch_layout();
         let t = &k.touch;
-        let pic = |id: Option<usize>,
-                   (x, y, w, h): (f32, f32, f32, f32),
-                   a: f32,
-                   out: &mut Vec<Sprite>| {
+        let round = |id: Option<usize>,
+                     (x, y, d): (f32, f32, f32),
+                     a: f32,
+                     label: &str,
+                     out: &mut Vec<Sprite>| {
             if let Some(id) = id {
                 out.push(Sprite {
-                    size: Some([w, h]),
+                    size: Some([d, d]),
                     color: [1.0, 1.0, 1.0, a],
-                    ..Sprite::new(id, x, y, 1.0)
+                    ..Sprite::new(id, x - d / 2.0, y - d / 2.0, 1.0)
                 });
-                true
             } else {
-                false
-            }
-        };
-        let round = |id, (x, y, d): (f32, f32, f32), a, label: &str, out: &mut Vec<Sprite>| {
-            if !pic(id, (x - d / 2.0, y - d / 2.0, d, d), a, out) {
                 k.disc_at((x, y, d), [0.95, 0.86, 0.25, a * 0.8], out);
                 k.centred_text((x, y), (d * 0.3).round(), [0.1, 0.1, 0.1, a], label, out);
             }
@@ -318,50 +363,36 @@ impl HuntView {
             return;
         }
         let (sx, sy, sd) = lay.stick;
-        let held = self.touch.stick.is_some();
-        let a = if held { 0.95 } else { 0.7 };
+        let a = if self.touch.stick.is_some() {
+            0.95
+        } else {
+            0.7
+        };
         round(t.stick, (sx, sy, sd), a, "", out);
-        let kd = sd * 0.43;
-        round(
-            t.knob,
-            (sx + self.touch.knob.0, sy + self.touch.knob.1, kd),
-            a,
-            "",
-            out,
-        );
+        let (kx, ky) = self.touch.knob;
+        round(t.knob, (sx + kx, sy + ky, sd * 0.43), a, "", out);
         if !self.touch_full() {
             return;
         }
-        let firing = !self.touch.fire.is_empty();
-        let a = if firing { 1.0 } else { 0.8 };
-        if !pic(t.fire, lay.fire, a, out) {
-            let (x, y, w, h) = lay.fire;
-            round(None, (x + w / 2.0, y + h / 2.0, h), a, "fire", out);
+        if self.touch_armed() {
+            let a = if self.touch.fire.is_some() { 1.0 } else { 0.85 };
+            round(t.fire, lay.left, a, "fire", out);
+        } else {
+            let a = if self.hunt.bin_mode { 1.0 } else { 0.85 };
+            round(t.binoculars, lay.left, a, "bino", out);
         }
-        round(t.alt_fire, lay.alt_fire, a, "fire", out);
-        let bino = self.hunt.bin_mode;
-        round(
-            t.binoculars,
-            lay.binoculars,
-            if bino { 1.0 } else { 0.8 },
-            "bino",
-            out,
-        );
-        let calling = self.touch.call.is_some();
-        round(
-            t.call,
-            lay.call,
-            if calling { 1.0 } else { 0.8 },
-            "call",
-            out,
-        );
+        let held = |kind| matches!(self.touch.hold, Some((_, k, _)) if k == kind);
+        let a = if held(Pick::Call) { 1.0 } else { 0.85 };
+        round(t.call, lay.call, a, "call", out);
         let ws = &self.hunt.weapons;
-        for &(w, place) in &lay.weapons {
-            let in_hand = ws.current == w && ws.pose().is_some();
-            let label = (w + 1).to_string();
-            let id = t.weapons.get(w).copied().flatten();
-            round(id, place, if in_hand { 1.0 } else { 0.55 }, &label, out);
-        }
+        let w = ws.target;
+        let a = if held(Pick::Weapon) || ws.pose().is_some() {
+            1.0
+        } else {
+            0.7
+        };
+        let id = t.weapons.get(w).copied().flatten();
+        round(id, lay.weapon, a, &(w + 1).to_string(), out);
     }
 }
 
@@ -371,33 +402,24 @@ mod tests {
 
     #[test]
     fn controls_do_not_overlap_and_the_middle_looks() {
-        let lay = Layout::new((1920, 1080), &[0, 1, 2, 3, 4, 5, 6, 7], Vec::new());
+        let lay = Layout::new((1920, 1080), Vec::new());
         assert_eq!(lay.hit((960.0, 540.0), false, true), None);
-        let (sx, sy, _) = lay.stick;
-        assert_eq!(lay.hit((sx, sy), false, true), Some(Control::Stick));
-        let (fx, fy, fw, fh) = lay.fire;
-        assert_eq!(
-            lay.hit((fx + fw / 2.0, fy + fh / 2.0), false, true),
-            Some(Control::Fire)
-        );
-        for &(w, (x, y, _)) in &lay.weapons {
-            assert_eq!(lay.hit((x, y), false, true), Some(Control::Weapon(w)));
+        for (b, c) in [
+            (lay.stick, Control::Stick),
+            (lay.left, Control::Left),
+            (lay.call, Control::Call),
+            (lay.weapon, Control::Weapon),
+        ] {
+            assert_eq!(lay.hit((b.0, b.1), false, true), Some(c));
         }
-        let (bx, by, _) = lay.binoculars;
-        assert_eq!(lay.hit((bx, by), false, true), Some(Control::Binoculars));
-        let (cx, cy, _) = lay.call;
-        assert_eq!(lay.hit((cx, cy), false, true), Some(Control::Call));
-        // The leftmost weapon stays clear of the stick.
-        let left = lay.weapons.iter().map(|&(_, (x, _, d))| x - d / 2.0);
-        let left = left.fold(f32::MAX, f32::min);
-        assert!(left > sx + lay.stick.2 / 2.0 * 1.3);
+        // The light buttons start under the weapon button.
+        assert!(light_top((1920, 1080)) > lay.weapon.1 + lay.weapon.2 / 2.0);
     }
 
     #[test]
     fn the_map_takes_only_the_compass_and_the_tab() {
-        let lay = Layout::new((1920, 1080), &[0], Vec::new());
-        let (sx, sy, _) = lay.stick;
-        assert_eq!(lay.hit((sx, sy), true, true), None);
+        let lay = Layout::new((1920, 1080), Vec::new());
+        assert_eq!(lay.hit((lay.stick.0, lay.stick.1), true, true), None);
         let (x, y, w, h) = lay.compass;
         assert_eq!(
             lay.hit((x + w / 2.0, y + h / 2.0), true, true),

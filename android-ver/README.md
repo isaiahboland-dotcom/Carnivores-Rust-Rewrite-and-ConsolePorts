@@ -54,13 +54,13 @@ With no `game/` (or one not built from an APK), the app says so on screen; tap t
   add-ons. Standalone games are not offered.
 - **At most 8 animals and 8 weapons** per hunt (`--max-picks 8`). More gets too
   hectic on a phone. A full list ignores further taps; unpicking always works.
-- **Touch:** in the menus the first finger acts as the mouse. In a hunt the
-  mobile game's own buttons show: the move stick (pushed all the way: run), drag
-  anywhere else to look, fire (and a small second fire over the stick), one
-  button per carried weapon (tap: take it out; tap the one in hand: put it
-  away), binoculars, the call (tap: call; hold: change the call), the compass
-  (opens and closes the map) and the "menu" tab (the exit prompt). No jump or
-  crouch buttons yet. Back acts as Escape; the soft keyboard opens for the
+- **Touch:** in the menus the first finger acts as the mouse. A hunt has the
+  mobile game's own buttons in its places: the compass (map), binoculars under
+  it (fire there while a weapon is in hand), the move stick (pushed all the way:
+  run; drag anywhere else to look), the call top right and the weapon under it
+  (tap: call / take out or put away; hold: the hexagon picker, slide and let
+  go), and the "menu" tab (Restart, Resume, Escape!, all tappable). Options stay
+  in the main menu. No jump or crouch buttons yet. Back acts as Escape; the soft keyboard opens for the
   hunter's name.
 - **Controllers** (built-in like the Retroid's, or Bluetooth): the PC's pad
   layout (`c2-pad`). The on-screen buttons hide as soon as a pad, or a key, is

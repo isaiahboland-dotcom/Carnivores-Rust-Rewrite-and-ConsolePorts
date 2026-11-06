@@ -39,6 +39,7 @@ mod extras;
 mod lights;
 mod map;
 mod map_viewport;
+mod survival_hud;
 mod touch;
 
 /// A key's name as the bindings show it.
@@ -197,6 +198,9 @@ pub struct HuntView {
     sounds: SoundBank,
     /// Modder's Edition data: the hunt's spawn tables (`None`: original data).
     mee: Option<c2_formats::mee::Tables>,
+    /// The weapon whose rounds are drawn top left, and the lowest they
+    /// reached on screen since (the survival box stays under them).
+    ammo_low: (usize, f32),
 }
 
 /// The Modder's Edition hunt conditions for `setup` (area from the map
@@ -525,6 +529,7 @@ impl HuntView {
             effects,
             sounds,
             mee,
+            ammo_low: (usize::MAX, 0.0),
         })
     }
 
@@ -1047,6 +1052,9 @@ impl HuntView {
 
     /// The key that picks `kind` is down.
     fn pick_held(&self, input: &Input, kind: Pick) -> bool {
+        if self.touch_holds_picker() {
+            return true;
+        }
         match kind {
             Pick::Weapon => input.held(self.pick_key()),
             Pick::Call => keys::held(input, self.hunt.room.options.keys.change_call),
@@ -1210,8 +1218,16 @@ impl HuntView {
         if let Some(d) = digit {
             row = d;
         }
+        // By touch: the hexagon under the finger, picked when it lets go.
+        let Ok((touched, tap)) = self.touch_pick(n) else {
+            self.picker = None;
+            return;
+        };
+        if let Some(r) = touched {
+            row = r;
+        }
         let let_go = self.picker_held && !self.pick_held(input, kind);
-        if digit.is_some() || input.pressed(KeyCode::Enter) || let_go {
+        if digit.is_some() || input.pressed(KeyCode::Enter) || let_go || tap {
             let pick = list.get(row).copied();
             match kind {
                 Pick::Weapon => {
@@ -2026,7 +2042,9 @@ impl Scene for HuntView {
                 }
             }
         }
+        let ammo_start = sprites.len();
         sprites.extend(self.weapons.hud_sprites(&self.hud, &self.hunt, scale));
+        let ammo_end = self.ammo_bottom(&sprites[ammo_start..]);
         // The last kill: a box in the bottom right.
         if let Some((name, score, range, tranq, _, night_bonus)) = &self.kill {
             let us = self.hunt.room.options.sys != 0;
@@ -2080,34 +2098,7 @@ impl Scene for HuntView {
                 }
             }
         }
-        // A survival: the wave and kills (top left), and its messages.
-        if let Some(s) = &self.hunt.survival {
-            let px = 8.0 * scale;
-            let wave = if s.wave == 0 {
-                "Get ready".to_string()
-            } else {
-                format!("Wave {}", s.wave)
-            };
-            let lines = [wave, format!("Kills: {}", self.hunt.kills.len())];
-            let (x, y) = (12.0 * scale, 12.0 * scale);
-            let w = lines
-                .iter()
-                .map(|l| self.hud.label_width(px, l))
-                .fold(0.0, f32::max)
-                + 16.0 * scale;
-            sprites.extend(self.hud.rect(x, y, w, 36.0 * scale, [0.0, 0.0, 0.0, 0.7]));
-            for (i, l) in lines.iter().enumerate() {
-                let ly = y + (6.0 + 12.0 * i as f32) * scale;
-                let c = [0.95, 0.85, 0.2, 1.0];
-                sprites.extend(self.hud.label(x + 8.0 * scale, ly, px, c, l));
-            }
-            if let Some((m, _)) = &self.message {
-                let w = self.hud.label_width(px * 2.0, m);
-                let (x, y) = ((screen.0 as f32 - w) / 2.0, screen.1 as f32 * 0.25);
-                let c = [0.95, 0.85, 0.2, 1.0];
-                sprites.extend(self.hud.label(x, y, px * 2.0, c, m));
-            }
-        }
+        self.draw_survival(&mut sprites, ammo_end, screen, scale);
         // A teleport under way: its countdown, centre top.
         if let Some((_, ms)) = self.hunt.teleport.pending {
             let px = 16.0 * scale.max(1.0).round();

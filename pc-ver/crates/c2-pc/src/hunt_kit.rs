@@ -44,9 +44,8 @@ pub struct TouchArt {
     /// The move stick's ring and knob.
     pub stick: Option<usize>,
     pub knob: Option<usize>,
+    /// The round fire button (the binoculars' place while armed).
     pub fire: Option<usize>,
-    /// The small second fire button (for the other thumb).
-    pub alt_fire: Option<usize>,
     pub binoculars: Option<usize>,
     pub call: Option<usize>,
     /// One per weapon, as `pictures`.
@@ -81,8 +80,7 @@ impl HuntKit {
         let touch = TouchArt {
             stick: img("movement_controller"),
             knob: img("movement_controller_center"),
-            fire: img("game_fire"),
-            alt_fire: img("game_alternative_fire"),
+            fire: img("game_alternative_fire"),
             binoculars: img("game_binoculars"),
             call: img("game_call"),
             weapons: (0..weapons)
@@ -400,6 +398,41 @@ impl HuntKit {
         f.sprites(out, o, (x, y), px, color, text);
     }
 
+    /// The pickers' `n` hexagons (x, y, w, h): rows near the top, the second
+    /// row shifted half a cell.
+    pub fn hex_places(screen: (u32, u32), n: usize) -> Vec<(f32, f32, f32, f32)> {
+        let (sw, sh) = (screen.0 as f32, screen.1 as f32);
+        if n == 0 {
+            return Vec::new();
+        }
+        let (w, h) = (sh * 0.223, sh * 0.25);
+        let (sx, sy) = (sh * 0.247, sh * 0.212);
+        let per = n.div_ceil(2).max(2).min(n);
+        let rows = n.div_ceil(per);
+        let span = (per - 1) as f32 * sx + w + if rows > 1 { sx / 2.0 } else { 0.0 };
+        let x0 = (sw - span) / 2.0;
+        (0..n)
+            .map(|i| {
+                let (r, c) = (i / per, i % per);
+                let x = x0 + c as f32 * sx + if r % 2 == 1 { sx / 2.0 } else { 0.0 };
+                (x, sh * 0.098 + r as f32 * sy, w, h)
+            })
+            .collect()
+    }
+
+    /// The hunt menu's `n` hexagons (x, y, w, h), in the phone's places:
+    /// three along the top, the way out between and under them.
+    pub fn menu_places(screen: (u32, u32), n: usize) -> Vec<(f32, f32, f32, f32)> {
+        let (sw, sh) = (screen.0 as f32, screen.1 as f32);
+        let (w, h) = (sh * 0.2, sh * 0.174);
+        let places = [(-0.174, 0.056), (0.17, 0.056), (0.0, 0.168), (0.514, 0.056)];
+        places
+            .iter()
+            .take(n)
+            .map(|&(dx, y)| (sw / 2.0 + dx * sh - w / 2.0, y * sh - h / 2.0, w, h))
+            .collect()
+    }
+
     /// Hexagons in rows near the top (the weapon and call pickers): each
     /// picture, the picked one ringed.
     pub fn hexes(
@@ -409,21 +442,7 @@ impl HuntKit {
         items: &[(Option<usize>, bool)],
         out: &mut Vec<Sprite>,
     ) {
-        let (sw, sh) = (screen.0 as f32, screen.1 as f32);
-        let n = items.len();
-        if n == 0 {
-            return;
-        }
-        let (w, h) = (sh * 0.223, sh * 0.25);
-        let (sx, sy) = (sh * 0.247, sh * 0.212);
-        let per = n.div_ceil(2).max(2).min(n);
-        let rows = n.div_ceil(per);
-        let span = (per - 1) as f32 * sx + w + if rows > 1 { sx / 2.0 } else { 0.0 };
-        let x0 = (sw - span) / 2.0;
-        for (i, &(pic, on)) in items.iter().enumerate() {
-            let (r, c) = (i / per, i % per);
-            let x = x0 + c as f32 * sx + if r % 2 == 1 { sx / 2.0 } else { 0.0 };
-            let y = sh * 0.098 + r as f32 * sy;
+        for (&(pic, on), (x, y, w, h)) in items.iter().zip(Self::hex_places(screen, items.len())) {
             if let Some((id, _, _)) = Self::size(hud, self.cell) {
                 out.push(Sprite {
                     size: Some([w, h]),
@@ -459,13 +478,10 @@ impl HuntKit {
         items: &[(&str, &str)],
         out: &mut Vec<Sprite>,
     ) {
-        let (sw, sh) = (screen.0 as f32, screen.1 as f32);
-        let (w, h) = (sh * 0.2, sh * 0.174);
-        // The phone's places: three along the top, the way out between and
-        // under them.
-        let places = [(-0.174, 0.056), (0.17, 0.056), (0.0, 0.168), (0.514, 0.056)];
-        for (&(label, key), (dx, y)) in items.iter().zip(places) {
-            let (x, y) = (sw / 2.0 + dx * sh - w / 2.0, y * sh - h / 2.0);
+        let sh = screen.1 as f32;
+        for (&(label, key), (x, y, w, h)) in
+            items.iter().zip(Self::menu_places(screen, items.len()))
+        {
             if let Some((id, _, _)) = Self::size(hud, self.menu_cell) {
                 out.push(Sprite {
                     size: Some([w, h]),
