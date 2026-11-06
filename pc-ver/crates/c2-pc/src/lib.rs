@@ -2,6 +2,10 @@
 //! A library so the Android build (`android-ver/`) can host the same game.
 
 mod app;
+#[cfg(target_os = "android")]
+mod app_android;
+#[cfg(not(target_os = "android"))]
+mod app_desktop;
 mod area_view;
 mod audio;
 mod camera;

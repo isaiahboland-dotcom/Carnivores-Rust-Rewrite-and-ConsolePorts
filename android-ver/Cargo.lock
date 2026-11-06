@@ -301,6 +301,7 @@ dependencies = [
 name = "c2-pc"
 version = "0.4.3"
 dependencies = [
+ "android-activity",
  "anyhow",
  "bytemuck",
  "c2-core",
@@ -314,6 +315,7 @@ dependencies = [
  "kira",
  "png",
  "pollster",
+ "raw-window-handle",
  "toml",
  "tracing",
  "tracing-subscriber",

@@ -22,7 +22,36 @@
 //! | − / Select | exit prompt (VR: quit) |
 //! | right stick click | VR: recenter (standing height here, the menu in front); PC hunt: next light (off, flashlight, night vision) |
 
-use gilrs::{Axis, Button, EventType, Gilrs, GilrsBuilder};
+//!
+//! `gilrs` reads the pads on PC; it has no Android backend, so the Android
+//! app feeds its pads' buttons and sticks in itself ([`Pads::button`],
+//! [`Pads::sticks`]).
+
+#[cfg(not(target_os = "android"))]
+mod gilrs_pads;
+
+/// A pad button, by position (Nintendo-style names are the table's).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Button {
+    /// Face buttons: bottom, right, left, top.
+    South,
+    East,
+    West,
+    North,
+    /// Bumpers and triggers.
+    L1,
+    R1,
+    L2,
+    R2,
+    Select,
+    Start,
+    LeftThumb,
+    RightThumb,
+    DPadUp,
+    DPadDown,
+    DPadLeft,
+    DPadRight,
+}
 
 /// SDL-format mappings for pads `gilrs`'s database lacks (more can come from
 /// `SDL_GAMECONTROLLERCONFIG`, which gilrs also reads). Without one, a pad's
@@ -64,10 +93,10 @@ const ACTIONS: usize = 16;
 /// The layout: which button does what.
 fn action(b: Button) -> Option<Action> {
     Some(match b {
-        Button::LeftTrigger2 => Action::Draw,
-        Button::RightTrigger2 => Action::Fire,
-        Button::LeftTrigger => Action::Binoculars,
-        Button::RightTrigger => Action::Map,
+        Button::L2 => Action::Draw,
+        Button::R2 => Action::Fire,
+        Button::L1 => Action::Binoculars,
+        Button::R1 => Action::Map,
         Button::East => Action::Jump,
         Button::South => Action::Run,
         Button::North => Action::Call,
@@ -80,7 +109,6 @@ fn action(b: Button) -> Option<Action> {
         Button::DPadLeft => Action::Reload,
         Button::DPadRight => Action::Rack,
         Button::LeftThumb => Action::FireMode,
-        _ => return None,
     })
 }
 
@@ -88,7 +116,7 @@ fn action(b: Button) -> Option<Action> {
 const DEADZONE: f32 = 0.15;
 
 /// `v` with a round deadzone, rescaled so just past it is near zero.
-fn dead(v: [f32; 2]) -> [f32; 2] {
+pub fn dead(v: [f32; 2]) -> [f32; 2] {
     let len = (v[0] * v[0] + v[1] * v[1]).sqrt();
     if len < DEADZONE {
         return [0.0, 0.0];
@@ -112,6 +140,32 @@ pub struct Frame {
 }
 
 impl Frame {
+    /// `a` held, and pressed if it wasn't (on-screen buttons acting as a pad).
+    pub fn hold(&mut self, a: Action, down: bool) {
+        let i = a as usize;
+        self.pressed[i] |= down && !self.held[i];
+        self.held[i] |= down;
+    }
+
+    /// `a` pressed this frame (a tap), held for the frame too.
+    pub fn press(&mut self, a: Action) {
+        self.pressed[a as usize] = true;
+        self.held[a as usize] = true;
+    }
+
+    /// `other`'s buttons too, and its sticks where they are pushed further.
+    pub fn merge(&mut self, other: &Frame) {
+        for i in 0..ACTIONS {
+            self.held[i] |= other.held[i];
+            self.pressed[i] |= other.pressed[i];
+        }
+        for (mine, theirs) in [(&mut self.walk, other.walk), (&mut self.look, other.look)] {
+            if theirs[0].abs() + theirs[1].abs() > mine[0].abs() + mine[1].abs() {
+                *mine = theirs;
+            }
+        }
+    }
+
     pub fn held(&self, a: Action) -> bool {
         self.held[a as usize]
     }
@@ -132,10 +186,16 @@ impl Frame {
 
 /// Every connected pad, read as one.
 pub struct Pads {
-    gilrs: Option<Gilrs>,
+    #[cfg(not(target_os = "android"))]
+    gilrs: gilrs_pads::GilrsPads,
     held: [bool; ACTIONS],
+    /// Went down since the last poll.
+    pressed: [bool; ACTIONS],
     /// D-pad left, right, down, up held.
     dpad: [bool; 4],
+    /// Sticks fed in by the frontend (Android), before the deadzone.
+    walk: [f32; 2],
+    look: [f32; 2],
 }
 
 impl Default for Pads {
@@ -148,66 +208,82 @@ impl Pads {
     /// No pad support (no input devices, no udev) means no pads, not an
     /// error: the game plays on without them.
     pub fn new() -> Self {
-        let gilrs = GilrsBuilder::new().add_mappings(MAPPINGS).build().ok();
         Self {
-            gilrs,
+            #[cfg(not(target_os = "android"))]
+            gilrs: gilrs_pads::GilrsPads::new(),
             held: [false; ACTIONS],
+            pressed: [false; ACTIONS],
             dpad: [false; 4],
+            walk: [0.0; 2],
+            look: [0.0; 2],
         }
     }
 
     /// The connected pads' names.
     pub fn names(&self) -> Vec<String> {
-        self.gilrs
-            .as_ref()
-            .map(|g| g.gamepads().map(|(_, p)| p.name().to_string()).collect())
-            .unwrap_or_default()
+        #[cfg(not(target_os = "android"))]
+        return self.gilrs.names();
+        #[cfg(target_os = "android")]
+        Vec::new()
     }
 
-    /// Reads the pads' events since the last call.
-    pub fn poll(&mut self) -> Frame {
-        let mut f = Frame::default();
-        let Some(g) = self.gilrs.as_mut() else {
-            return f;
+    /// A button went down or up.
+    pub fn button(&mut self, b: Button, down: bool) {
+        let d = match b {
+            Button::DPadLeft => Some(0),
+            Button::DPadRight => Some(1),
+            Button::DPadDown => Some(2),
+            Button::DPadUp => Some(3),
+            _ => None,
         };
-        while let Some(ev) = g.next_event() {
-            let (b, down) = match ev.event {
-                EventType::ButtonPressed(b, _) => (b, true),
-                EventType::ButtonReleased(b, _) => (b, false),
-                _ => continue,
-            };
-            let d = match b {
-                Button::DPadLeft => Some(0),
-                Button::DPadRight => Some(1),
-                Button::DPadDown => Some(2),
-                Button::DPadUp => Some(3),
-                _ => None,
-            };
-            if let Some(d) = d {
-                self.dpad[d] = down;
-            }
-            if let Some(a) = action(b) {
-                if down && !self.held[a as usize] {
-                    f.pressed[a as usize] = true;
-                }
-                self.held[a as usize] = down;
-            }
+        if let Some(d) = d {
+            self.dpad[d] = down;
         }
-        f.held = self.held;
+        if let Some(a) = action(b) {
+            let i = a as usize;
+            self.pressed[i] |= down && !self.held[i];
+            self.held[i] = down;
+        }
+    }
+
+    /// The sticks now (x right, y up, -1..1), from the frontend.
+    pub fn sticks(&mut self, walk: [f32; 2], look: [f32; 2]) {
+        self.walk = walk;
+        self.look = look;
+    }
+
+    /// This frame's state: the buttons since the last call, the sticks now.
+    pub fn poll(&mut self) -> Frame {
+        #[cfg(not(target_os = "android"))]
+        let (walk, look) = {
+            let mut events = Vec::new();
+            let sticks = self.gilrs.poll(&mut events);
+            for (b, down) in events {
+                self.button(b, down);
+            }
+            sticks
+        };
+        #[cfg(target_os = "android")]
+        let (walk, look) = ([0.0; 2], [0.0; 2]);
+        let mut f = Frame {
+            held: self.held,
+            pressed: std::mem::take(&mut self.pressed),
+            ..Frame::default()
+        };
         let axis = |neg: bool, pos: bool| i8::from(pos) - i8::from(neg);
         f.dpad = [
             axis(self.dpad[0], self.dpad[1]),
             axis(self.dpad[2], self.dpad[3]),
         ];
-        for (_, pad) in g.gamepads() {
-            let walk = dead([pad.value(Axis::LeftStickX), pad.value(Axis::LeftStickY)]);
-            let look = dead([pad.value(Axis::RightStickX), pad.value(Axis::RightStickY)]);
-            for (sum, v) in [(&mut f.walk, walk), (&mut f.look, look)] {
-                if v[0].abs() + v[1].abs() > sum[0].abs() + sum[1].abs() {
-                    *sum = v;
-                }
+        let stronger = |a: [f32; 2], b: [f32; 2]| {
+            if b[0].abs() + b[1].abs() > a[0].abs() + a[1].abs() {
+                b
+            } else {
+                a
             }
-        }
+        };
+        f.walk = stronger(walk, dead(self.walk));
+        f.look = stronger(look, dead(self.look));
         f
     }
 }
@@ -226,12 +302,26 @@ mod tests {
     }
 
     #[test]
+    fn fed_buttons_press_once_and_hold() {
+        let mut p = Pads::new();
+        p.button(Button::R2, true);
+        let f = p.poll();
+        assert!(f.pressed(Action::Fire) && f.held(Action::Fire));
+        let f = p.poll();
+        assert!(!f.pressed(Action::Fire) && f.held(Action::Fire));
+        p.button(Button::R2, false);
+        p.button(Button::DPadUp, true);
+        let f = p.poll();
+        assert!(!f.held(Action::Fire) && f.dpad == [0, 1] && f.held(Action::Crouch));
+    }
+
+    #[test]
     fn every_action_has_a_button() {
         let buttons = [
-            Button::LeftTrigger2,
-            Button::RightTrigger2,
-            Button::LeftTrigger,
-            Button::RightTrigger,
+            Button::L2,
+            Button::R2,
+            Button::L1,
+            Button::R1,
             Button::East,
             Button::South,
             Button::North,

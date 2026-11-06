@@ -15,10 +15,15 @@ pub trait Scene {
         false
     }
     /// The scene uses Escape itself (otherwise it releases the cursor / quits).
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     fn handles_escape(&self) -> bool {
         false
     }
+    /// Rewrites this frame's input before [`Scene::update`] (the hunt's
+    /// on-screen touch buttons become pad actions).
+    fn before_update(&mut self, _input: &mut Input) {}
     /// The scene takes typed text now (Android shows its keyboard).
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
     fn wants_text(&self) -> bool {
         false
     }

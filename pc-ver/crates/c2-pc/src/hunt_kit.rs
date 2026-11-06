@@ -35,6 +35,22 @@ pub struct HuntKit {
     pub map: Option<usize>,
     /// A round button (our own drawing, tinted): night vision, flashlight.
     disc: usize,
+    /// The phone's touch buttons (`hunt_view::touch`).
+    pub touch: TouchArt,
+}
+
+/// The phone's on-screen hunt buttons, from its `GUI` atlas.
+pub struct TouchArt {
+    /// The move stick's ring and knob.
+    pub stick: Option<usize>,
+    pub knob: Option<usize>,
+    pub fire: Option<usize>,
+    /// The small second fire button (for the other thumb).
+    pub alt_fire: Option<usize>,
+    pub binoculars: Option<usize>,
+    pub call: Option<usize>,
+    /// One per weapon, as `pictures`.
+    pub weapons: Vec<Option<usize>>,
 }
 
 /// The phone's yellow (the hunt's words, buttons, rings).
@@ -62,6 +78,17 @@ impl HuntKit {
         let pictures = (0..weapons)
             .map(|i| img(&format!("button_weapon_active_{}", number(i))))
             .collect();
+        let touch = TouchArt {
+            stick: img("movement_controller"),
+            knob: img("movement_controller_center"),
+            fire: img("game_fire"),
+            alt_fire: img("game_alternative_fire"),
+            binoculars: img("game_binoculars"),
+            call: img("game_call"),
+            weapons: (0..weapons)
+                .map(|i| img(&format!("game_weapon_button_{}", number(i))))
+                .collect(),
+        };
         Some(Self {
             binoculars: img("binoculars_sight"),
             cross: img("binoculars_crosshair"),
@@ -84,8 +111,54 @@ impl HuntKit {
             compass,
             map,
             disc,
+            touch,
             kit,
         })
+    }
+
+    /// The compass's place (x, y, w, h) on the hunt screen, its label above
+    /// included (a tap there opens the map).
+    pub fn compass_rect(screen: (u32, u32)) -> (f32, f32, f32, f32) {
+        let sh = screen.1 as f32;
+        let (rw, rh) = (sh * 0.16, sh * 0.095);
+        (12.0, 0.0, rw, 12.0 + sh * 0.03 + rh)
+    }
+
+    /// The "menu" tab's place at the top middle (a tap is Escape).
+    pub fn tab_rect(screen: (u32, u32)) -> (f32, f32, f32, f32) {
+        let (sw, sh) = (screen.0 as f32, screen.1 as f32);
+        let (tw, th) = (sh * 0.15, sh * 0.046);
+        ((sw - tw) / 2.0, 0.0, tw, th)
+    }
+
+    /// The disc picture, tinted, at centre (x, y) and diameter `d`.
+    pub fn disc_at(&self, (x, y, d): (f32, f32, f32), color: [f32; 4], out: &mut Vec<Sprite>) {
+        out.push(Sprite {
+            color,
+            size: Some([d, d]),
+            ..Sprite::new(self.disc, x - d / 2.0, y - d / 2.0, 1.0)
+        });
+    }
+
+    /// Text in the phone's heading face, centred on (x, y).
+    pub fn centred_text(
+        &self,
+        (x, y): (f32, f32),
+        px: f32,
+        color: [f32; 4],
+        text: &str,
+        out: &mut Vec<Sprite>,
+    ) {
+        if let Some(f) = &self.kit.heading {
+            Self::outlined(
+                f,
+                out,
+                (x - f.width(px, text) / 2.0, y - px / 2.0),
+                px,
+                color,
+                text,
+            );
+        }
     }
 
     fn size(hud: &Hud, id: Option<usize>) -> Option<(usize, f32, f32)> {

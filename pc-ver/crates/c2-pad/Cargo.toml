@@ -9,5 +9,6 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
-[dependencies]
+# gilrs has no Android backend; the Android app feeds pads in itself.
+[target.'cfg(not(target_os = "android"))'.dependencies]
 gilrs.workspace = true

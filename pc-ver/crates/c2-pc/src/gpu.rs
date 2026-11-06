@@ -93,12 +93,11 @@ fn device(adapter: &wgpu::Adapter) -> Result<(wgpu::Device, wgpu::Queue)> {
 fn surface_config(
     adapter: &wgpu::Adapter,
     surface: &wgpu::Surface<'static>,
-    window: &Window,
+    size: (u32, u32),
     format: Option<wgpu::TextureFormat>,
 ) -> Result<wgpu::SurfaceConfiguration> {
-    let size = window.inner_size();
     let mut config = surface
-        .get_default_config(adapter, size.width.max(1), size.height.max(1))
+        .get_default_config(adapter, size.0.max(1), size.1.max(1))
         .ok_or_else(|| anyhow!("surface not supported by adapter"))?;
     // The original lights and fogs raw 16-bit colour values, so keep the maths
     // in that space: non-sRGB surface and textures, no gamma conversion.
@@ -115,13 +114,31 @@ fn surface_config(
 }
 
 impl Gpu {
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     pub fn for_window(
         display: winit::event_loop::OwnedDisplayHandle,
         window: Arc<Window>,
     ) -> Result<(Self, Target)> {
-        let instance = instance(Some(display));
+        let size = window.inner_size();
+        Self::for_surface(instance(Some(display)), window, (size.width, size.height))
+    }
+
+    /// A device and a surface on any window (Android's `NativeWindow`).
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    pub fn for_native(
+        target: impl Into<wgpu::SurfaceTarget<'static>>,
+        size: (u32, u32),
+    ) -> Result<(Self, Target)> {
+        Self::for_surface(instance(None), target, size)
+    }
+
+    fn for_surface(
+        instance: wgpu::Instance,
+        target: impl Into<wgpu::SurfaceTarget<'static>>,
+        size: (u32, u32),
+    ) -> Result<(Self, Target)> {
         let surface = instance
-            .create_surface(window.clone())
+            .create_surface(target)
             .context("creating window surface")?;
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
@@ -132,7 +149,7 @@ impl Gpu {
         .context("no suitable GPU adapter")?;
         tracing::info!("GPU: {:?}", adapter.get_info().name);
         let (device, queue) = device(&adapter)?;
-        let config = surface_config(&adapter, &surface, &window, None)?;
+        let config = surface_config(&adapter, &surface, size, None)?;
         surface.configure(&device, &config);
         let max_layers = device.limits().max_texture_array_layers;
         Ok((
@@ -150,12 +167,16 @@ impl Gpu {
 
     /// A surface on a new window (Android: the window is replaced after each
     /// pause), in the colour format the pipelines were built for.
-    pub fn window_target(&self, window: Arc<Window>) -> Result<Target> {
+    pub fn new_surface(
+        &self,
+        target: impl Into<wgpu::SurfaceTarget<'static>>,
+        size: (u32, u32),
+    ) -> Result<Target> {
         let surface = self
             .instance
-            .create_surface(window.clone())
+            .create_surface(target)
             .context("creating window surface")?;
-        let config = surface_config(&self.adapter, &surface, &window, Some(self.color_format))?;
+        let config = surface_config(&self.adapter, &surface, size, Some(self.color_format))?;
         anyhow::ensure!(
             config.format == self.color_format,
             "the new window has no {:?} surface",

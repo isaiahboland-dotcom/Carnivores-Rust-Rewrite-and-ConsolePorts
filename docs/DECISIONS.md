@@ -3989,6 +3989,24 @@ weapons per hunt, because more is too hectic on a phone for now.
   (no `game/`, not APK-built) are shown on screen (`c2_pc::notice`), and the
   soft keyboard opens while a scene takes text (`Scene::wants_text`: the
   hunter registration).
+- **Android's own event loop** (2026-11-06, after the owner's first hunts on
+  a Retroid Pocket 5): winit's Android layer gives pad buttons as unnamed
+  keys and turns analog sticks into touches (the left stick only), and
+  `gilrs` has no Android backend. The app now runs its loop on
+  `android-activity` itself (`c2-pc/src/app_android.rs`; the PC keeps winit
+  in `app_desktop.rs`) and feeds pads into `c2-pad`, which has its own
+  positional buttons now (gilrs only off Android). Android's A is the bottom
+  button.
+- **The phone's hunt buttons, only while touching.** An APK game's hunt shows
+  the mobile game's own buttons (its `GUI` sprites) while the last input was
+  a touch, and hides them when a pad or a key is used, as controller-friendly
+  phone games do. The PC never shows them unless a touchscreen is used. The
+  buttons act as a virtual pad (`Scene::before_update`), so the hunt reads
+  them as pad actions and taps no longer fire. Our choices where the phone
+  game's exact layout isn't known: weapons as a row of buttons (tap to draw,
+  tap again to holster, rather than the picker); holding the call changes it;
+  the stick pushed all the way runs; no jump or crouch buttons yet. The
+  "menu" tab is now tappable (Escape).
 - **Packaging without Gradle:** `build-apk.sh` uses only the NDK and SDK
   build-tools (aapt2, zipalign, apksigner), with native libraries stored
   uncompressed and 16 KiB aligned.

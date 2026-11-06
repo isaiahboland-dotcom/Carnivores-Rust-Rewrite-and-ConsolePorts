@@ -39,6 +39,7 @@ mod extras;
 mod lights;
 mod map;
 mod map_viewport;
+mod touch;
 
 /// A key's name as the bindings show it.
 fn keys_name(k: KeyCode) -> String {
@@ -163,6 +164,8 @@ pub struct HuntView {
     run: bool,
     /// Crouching from the gamepad (D-pad up toggles it).
     pad_crouch: bool,
+    /// The phone's on-screen buttons (`touch`).
+    touch: touch::Touch,
     /// The pad was used more lately than the keys and mouse (which hints
     /// to show).
     pad_last: bool,
@@ -505,6 +508,7 @@ impl HuntView {
             acc_ms: 0.0,
             run: false,
             pad_crouch: false,
+            touch: touch::Touch::default(),
             pad_last: false,
             pending: HuntInput::default(),
             events: Vec::new(),
@@ -720,7 +724,7 @@ impl HuntView {
             look_down: held(k.down),
             crouch: held(k.crouch) || self.pad_crouch,
             jump: held(k.jump) || pad.held(c2_pad::Action::Jump),
-            run: self.run,
+            run: self.run || self.touch.run,
             mouse,
             mouse_sens: o.mouse_sens as f32,
         }
@@ -2423,7 +2427,7 @@ impl Scene for HuntView {
             };
             let y = screen.1 as f32 - 28.0 * scale;
             self.hint_bar(&mut sprites, screen, scale, y, true, hint);
-        } else if self.setup.pc.hints != 0 && self.hunt.death.is_none() {
+        } else if self.setup.pc.hints != 0 && self.hunt.death.is_none() && !self.touch.on {
             let k = &self.hunt.room.options.keys;
             let pick = format!("1-6 / {}", keys_name(self.pick_key()));
             let keyboard = [
@@ -2453,8 +2457,13 @@ impl Scene for HuntView {
             let y = screen.1 as f32 - 28.0 * scale;
             self.hint_bar(&mut sprites, screen, scale, y, false, &rows);
         }
+        self.draw_touch(&mut sprites);
         self.draw_lights(&mut sprites, scale);
         self.hud.draw(gpu, pass, screen, &sprites);
+    }
+
+    fn before_update(&mut self, input: &mut Input) {
+        self.touch_input(input);
     }
 
     fn grab_cursor(&self) -> bool {

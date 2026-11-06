@@ -29,6 +29,9 @@ pollster.workspace = true
 kira.workspace = true
 font8x8.workspace = true
 
-# Android (android-ver/): winit hosted by a NativeActivity.
+# Android (android-ver/): the game's own loop on the activity (app_android.rs);
+# winit still needs an activity backend to build there, and gives the key types.
 [target.'cfg(target_os = "android")'.dependencies]
 winit = { workspace = true, features = ["android-native-activity"] }
+android-activity = { version = "0.6.1", features = ["native-activity"] }
+raw-window-handle = "0.6"

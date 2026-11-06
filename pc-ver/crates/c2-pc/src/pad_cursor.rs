@@ -78,6 +78,7 @@ impl PadCursor {
     }
 
     /// The mouse moved: the arrow goes, and the pad carries on from here.
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     pub fn mouse_moved(&mut self, x: f32, y: f32) {
         self.pos = Some((x, y));
         self.shown = false;

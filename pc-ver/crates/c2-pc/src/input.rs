@@ -29,41 +29,90 @@ pub struct Input {
     pub last_pressed: Option<KeyCode>,
     /// The gamepads this frame (`c2_pad`; the hunt reads them).
     pub pad: c2_pad::Frame,
+    /// Fingers on the screen now, in the order they came down.
+    pub fingers: Vec<Finger>,
+    /// Fingers lifted this frame (where they left).
+    pub lifted: Vec<Finger>,
+    /// The last input was a touch: the phone's on-screen buttons show. A key,
+    /// a pad or the mouse wheel hides them again.
+    pub touch_mode: bool,
     /// Android: the finger standing in for the mouse, and where it last was.
     #[cfg(target_os = "android")]
     touch: Option<(u64, (f32, f32))>,
 }
 
-/// Android: the first finger down is the mouse (left button held while it
-/// stays down; moving it drags, as the mouse does in the menus and to look).
-#[cfg(target_os = "android")]
-pub fn touch_as_mouse(input: &mut Input, id: u64, phase: winit::event::TouchPhase, at: (f32, f32)) {
-    use winit::event::TouchPhase;
-    match (phase, input.touch) {
-        (TouchPhase::Started, None) => {
-            input.touch = Some((id, at));
-            input.cursor = Some(at);
-            input.mouse_down = true;
-            input.dragging = true;
-            input.clicked = true;
-        }
-        (TouchPhase::Moved, Some((finger, last))) if finger == id => {
-            input.mouse_delta.0 += at.0 - last.0;
-            input.mouse_delta.1 += at.1 - last.1;
-            input.touch = Some((id, at));
-            input.cursor = Some(at);
-        }
-        (TouchPhase::Ended | TouchPhase::Cancelled, Some((finger, _))) if finger == id => {
-            input.touch = None;
-            input.cursor = Some(at);
-            input.mouse_down = false;
-            input.dragging = false;
-        }
-        _ => {}
-    }
+/// A finger on the screen.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Finger {
+    pub id: u64,
+    pub at: (f32, f32),
+    /// Where it came down.
+    pub start: (f32, f32),
+    /// Came down this frame.
+    pub new: bool,
 }
 
 impl Input {
+    /// A touch event: the finger list, and (Android) the first finger as the
+    /// mouse (tap = click, drag = drag, as the menus and mouse-look use it).
+    pub fn touch(&mut self, id: u64, phase: winit::event::TouchPhase, at: (f32, f32)) {
+        use winit::event::TouchPhase;
+        self.touch_mode = true;
+        match phase {
+            TouchPhase::Started => {
+                self.taps.push(at);
+                self.fingers.retain(|f| f.id != id);
+                self.fingers.push(Finger {
+                    id,
+                    at,
+                    start: at,
+                    new: true,
+                });
+            }
+            TouchPhase::Moved => {
+                if let Some(f) = self.fingers.iter_mut().find(|f| f.id == id) {
+                    f.at = at;
+                }
+            }
+            TouchPhase::Ended | TouchPhase::Cancelled => {
+                if let Some(i) = self.fingers.iter().position(|f| f.id == id) {
+                    let mut f = self.fingers.remove(i);
+                    f.at = at;
+                    self.lifted.push(f);
+                }
+            }
+        }
+        #[cfg(target_os = "android")]
+        self.touch_as_mouse(id, phase, at);
+    }
+
+    #[cfg(target_os = "android")]
+    fn touch_as_mouse(&mut self, id: u64, phase: winit::event::TouchPhase, at: (f32, f32)) {
+        use winit::event::TouchPhase;
+        match (phase, self.touch) {
+            (TouchPhase::Started, None) => {
+                self.touch = Some((id, at));
+                self.cursor = Some(at);
+                self.mouse_down = true;
+                self.dragging = true;
+                self.clicked = true;
+            }
+            (TouchPhase::Moved, Some((finger, last))) if finger == id => {
+                self.mouse_delta.0 += at.0 - last.0;
+                self.mouse_delta.1 += at.1 - last.1;
+                self.touch = Some((id, at));
+                self.cursor = Some(at);
+            }
+            (TouchPhase::Ended | TouchPhase::Cancelled, Some((finger, _))) if finger == id => {
+                self.touch = None;
+                self.cursor = Some(at);
+                self.mouse_down = false;
+                self.dragging = false;
+            }
+            _ => {}
+        }
+    }
+
     pub fn held(&self, k: KeyCode) -> bool {
         self.held.contains(&k)
     }
@@ -74,6 +123,10 @@ impl Input {
     }
 
     pub fn key(&mut self, k: KeyCode, down: bool) {
+        // A key means keyboard play (Escape too can be a phone's Back).
+        if down && k != KeyCode::Escape {
+            self.touch_mode = false;
+        }
         if down {
             if self.held.insert(k) {
                 self.pressed.insert(k);
@@ -91,6 +144,10 @@ impl Input {
         self.clicked = false;
         self.right_clicked = false;
         self.taps.clear();
+        self.lifted.clear();
+        for f in &mut self.fingers {
+            f.new = false;
+        }
         self.typed.clear();
         self.last_pressed = None;
     }
@@ -102,6 +159,7 @@ impl Input {
         self.mouse_down = false;
         self.right_down = false;
         self.dragging = false;
+        self.fingers.clear();
         #[cfg(target_os = "android")]
         {
             self.touch = None;

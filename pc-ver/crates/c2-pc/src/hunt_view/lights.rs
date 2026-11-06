@@ -84,7 +84,7 @@ impl HuntView {
     }
 
     /// The round buttons, when this hunt shows them.
-    fn light_buttons(&self) -> Vec<(Light, (f32, f32, f32))> {
+    pub(super) fn light_buttons(&self) -> Vec<(Light, (f32, f32, f32))> {
         let h = &self.hunt;
         let quiet = h.paused || h.show_exit() || h.map_mode || h.opts.trophy;
         if self.kit.is_none() || quiet || self.picker.is_some() {
