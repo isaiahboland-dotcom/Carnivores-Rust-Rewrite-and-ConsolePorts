@@ -1,5 +1,6 @@
-//! Editing an instance (owner, 2026-11-05): the Base game, Add-ons and
-//! Balance pages (`crate::recipe_edit`), with Save, Save and exit, Discard
+//! Editing an instance: the Base game, Add-ons and Balance pages
+//! (`crate::recipe_edit`), and the experimental Advanced page when Settings
+//! shows it, with Save, Save and exit, Discard
 //! changes and Cancel at the bottom. While it is edited the instance is the
 //! one in use, so the menu and rule choices shown are its own.
 use super::*;
@@ -87,6 +88,9 @@ impl Launcher {
 
     pub(super) fn edit_tab(&mut self, ui: &mut egui::Ui) {
         self.sync_edit();
+        if self.ui.tab == Tab::Advanced && !self.cfg.show_advanced {
+            self.ui.tab = Tab::BaseGame;
+        }
         let busy = self.busy();
         let Some(e) = &mut self.ui.recipe_edit else {
             self.go_home();
@@ -117,6 +121,17 @@ impl Launcher {
                         self.base_from_apk(apk, true);
                     }
                 }
+            }
+            Tab::Advanced => {
+                heading(ui, "Advanced");
+                panel(ui, |ui| {
+                    ui.label(RichText::new("Experimental").color(GOLD));
+                    help(
+                        ui,
+                        "Experimental instance options will be added here. They may change or \
+                         go away between versions. Hide this tab in Settings.",
+                    );
+                });
             }
             Tab::AddOns => {
                 heading(ui, "Add-ons");

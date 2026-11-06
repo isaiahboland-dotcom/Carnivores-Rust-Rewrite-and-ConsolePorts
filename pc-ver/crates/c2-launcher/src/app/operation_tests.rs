@@ -59,6 +59,7 @@ fn all_tabs_render_without_game_data() {
         Tab::BaseGame,
         Tab::AddOns,
         Tab::Balance,
+        Tab::Advanced,
         Tab::Build,
         Tab::Windows,
         Tab::ThreeDs,
@@ -89,7 +90,7 @@ fn editing_an_instance_shows_its_pages_and_cancel_restores_it() {
     );
     // No game yet: nothing is read (no job writes to the data folder).
     let ctx = egui::Context::default();
-    for tab in [Tab::BaseGame, Tab::AddOns, Tab::Balance] {
+    for tab in [Tab::BaseGame, Tab::AddOns, Tab::Balance, Tab::Advanced] {
         app.ui.tab = tab;
         let mut output = ctx.run_ui(Default::default(), |ui| {
             egui::CentralPanel::default().show(ui, |ui| app.page(ui));
@@ -155,4 +156,29 @@ fn an_instance_never_takes_the_old_game_tabs_folder() {
     // No game of its own: none lent.
     app.cfg.recipe = Some(used(recipe("none", ""), None));
     assert!(app.recipe_game(app.active_recipe().unwrap()).is_empty());
+}
+
+#[test]
+fn the_advanced_tab_is_hidden_until_enabled_in_settings() {
+    let t = crate::publish::tests::Temp::new();
+    let path = t.0.join("inst.toml");
+    std::fs::write(&path, "[recipe]\nid = 'inst'\nname = 'Inst'\n").unwrap();
+    let mut app = launcher();
+    assert!(!app.cfg.show_advanced, "off by default");
+    app.edit_recipe(&path);
+    let ctx = egui::Context::default();
+    let show = |app: &mut Launcher| {
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            egui::CentralPanel::default().show(ui, |ui| app.page(ui));
+        });
+        output.textures_delta.clear();
+    };
+    // Hidden: the editor goes back to its first page.
+    app.ui.tab = Tab::Advanced;
+    show(&mut app);
+    assert_eq!(app.ui.tab, Tab::BaseGame);
+    app.cfg.show_advanced = true;
+    app.ui.tab = Tab::Advanced;
+    show(&mut app);
+    assert_eq!(app.ui.tab, Tab::Advanced);
 }

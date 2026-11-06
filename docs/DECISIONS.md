@@ -4027,3 +4027,11 @@ recipe and on the instance editor's Base game page.
 - Not done: putting a modded animal into the left-out one's slot (it is
   added after the kept ones). Menu order is the only visible difference.
 
+### Experimental Advanced tab in the instance editor (2026-11-06)
+
+A place for instance options still being tried out, kept out of the
+regular pages. It is a fourth editor tab after Balance, shown only when
+`Config::show_advanced` is on (Settings > Experimental; off by default,
+saved in the launcher's config, not in recipes). Opening a hidden tab
+falls back to Base game. It holds no options yet.
+

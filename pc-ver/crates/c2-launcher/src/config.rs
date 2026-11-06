@@ -236,6 +236,9 @@ pub struct Config {
     pub show_3ds: Option<bool>,
     /// None preserves the previously visible Wii U section.
     pub show_wiiu: Option<bool>,
+    /// The instance editor's experimental Advanced tab shown (Settings;
+    /// off by default).
+    pub show_advanced: bool,
     pub windows_out: Option<PathBuf>,
     pub three_ds: ThreeDs,
     pub wiiu: WiiU,
@@ -762,6 +765,7 @@ mod tests {
             }],
             show_3ds: Some(true),
             show_wiiu: Some(false),
+            show_advanced: true,
             ..Default::default()
         };
         let t = toml::to_string_pretty(&c).unwrap_or_default();

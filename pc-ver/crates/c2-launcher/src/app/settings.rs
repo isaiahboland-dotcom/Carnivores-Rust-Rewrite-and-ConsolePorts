@@ -64,6 +64,23 @@ impl Launcher {
         });
         ui.add_space(8.0);
         self.search_dirs_ui(ui);
+        ui.add_space(8.0);
+        if panel(ui, |ui| {
+            ui.label(RichText::new("Experimental").color(GOLD));
+            let changed = ui
+                .checkbox(
+                    &mut self.cfg.show_advanced,
+                    "Show the Advanced tab in the instance editor",
+                )
+                .changed();
+            help(
+                ui,
+                "Options still being tried out. They may change or go away between versions.",
+            );
+            changed
+        }) {
+            self.save();
+        }
     }
 
     /// Where instances' downloads are looked for.

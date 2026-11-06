@@ -36,6 +36,8 @@ enum Tab {
     BaseGame,
     AddOns,
     Balance,
+    /// Experimental options, shown when enabled in Settings.
+    Advanced,
     /// Building an instance: the platform, then its page.
     Build,
     Windows,
@@ -45,7 +47,10 @@ enum Tab {
 
 impl Tab {
     fn editing(self) -> bool {
-        matches!(self, Tab::BaseGame | Tab::AddOns | Tab::Balance)
+        matches!(
+            self,
+            Tab::BaseGame | Tab::AddOns | Tab::Balance | Tab::Advanced
+        )
     }
 
     fn building(self) -> bool {
@@ -533,7 +538,7 @@ impl Launcher {
         match self.ui.tab {
             Tab::Instances => self.instances_tab(ui),
             Tab::Settings => self.settings_tab(ui),
-            Tab::BaseGame | Tab::AddOns | Tab::Balance => self.edit_tab(ui),
+            Tab::BaseGame | Tab::AddOns | Tab::Balance | Tab::Advanced => self.edit_tab(ui),
             Tab::Build => self.build_pick_tab(ui),
             Tab::Windows => self.windows_tab(ui),
             Tab::ThreeDs => self.three_ds_tab(ui),
@@ -567,6 +572,9 @@ impl Launcher {
                 // The Wii U reads the game's files as they are: no balance yet.
                 if self.ui.mode != Mode::WiiU {
                     t.push((Tab::Balance, "Balance"));
+                }
+                if self.cfg.show_advanced {
+                    t.push((Tab::Advanced, "Advanced"));
                 }
                 t
             } else if self.ui.tab.building() {
