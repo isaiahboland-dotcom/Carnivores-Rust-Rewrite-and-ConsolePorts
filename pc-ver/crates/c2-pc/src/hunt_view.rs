@@ -646,6 +646,7 @@ impl HuntView {
             notice_k: 1.0,
             stealth: false,
             teleport: setup.pc.teleport != 0,
+            map_holsters: setup.pc.map_holsters != 0,
             auto_chamber: false,
             dynamic_night: None,
             night_vision_active: false,

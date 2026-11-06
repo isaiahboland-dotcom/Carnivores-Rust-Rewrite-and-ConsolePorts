@@ -331,7 +331,7 @@ enum Opt {
     ClearTrophies,
 }
 
-const GAME_OPTS: [Opt; 14] = [
+const GAME_OPTS: [Opt; 15] = [
     Opt::Slider("Aggressiveness", |s| &mut s.options.agres),
     Opt::Slider("Density", |s| &mut s.options.dens),
     Opt::Slider("Sensitivity", |s| &mut s.options.sens),
@@ -343,6 +343,7 @@ const GAME_OPTS: [Opt; 14] = [
         &mut p.secret_dinos
     }),
     Opt::PcToggle("Dynamic time", |p| &mut p.dynamic_time),
+    Opt::PcToggle("Map puts the gun away", |p| &mut p.map_holsters),
     Opt::PcToggle("Multi ammo", |p| &mut p.multi_ammo),
     Opt::PcToggle("Advanced observer mode", |p| &mut p.advanced_observer),
     Opt::PcSlider("Survival starting budget", |p| &mut p.survival_budget),

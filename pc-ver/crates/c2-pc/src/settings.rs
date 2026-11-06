@@ -63,6 +63,9 @@ pub struct PcSettings {
     /// Hardcore survival offered beside Classic and Modded (1 = on; off by
     /// default, not in the original): endless night, flashlight, radar.
     pub hardcore_survival: i32,
+    /// "Map puts the gun away" (1 = on, the default; not in the original,
+    /// which opens the map only with the weapon put away).
+    pub map_holsters: i32,
 }
 
 impl Default for PcSettings {
@@ -87,6 +90,7 @@ impl Default for PcSettings {
             advanced_observer: 0,
             survival_budget: 0,
             hardcore_survival: 0,
+            map_holsters: 1,
         }
     }
 }
@@ -131,6 +135,7 @@ impl PcSettings {
                 "dynamic_time" => s.dynamic_time = i32::from(v != 0),
                 "survival_budget" => s.survival_budget = v.max(0),
                 "hardcore_survival" => s.hardcore_survival = i32::from(v != 0),
+                "map_holsters" => s.map_holsters = i32::from(v != 0),
                 "secret_dinos" => s.secret_dinos = v.clamp(0, 255),
                 "all_huntable" => s.all_huntable = i32::from(v != 0),
                 _ => {}
@@ -142,7 +147,7 @@ impl PcSettings {
     pub fn store(&self) {
         let text = format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nfar_sprites = {}\n\
-             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\n",
+             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\n",
             self.render,
             self.fog,
             self.blood,
@@ -161,7 +166,8 @@ impl PcSettings {
             self.half_tranq,
             self.advanced_observer,
             self.survival_budget,
-            self.hardcore_survival
+            self.hardcore_survival,
+            self.map_holsters
         );
         if let Some(dir) = path().parent() {
             let _ = std::fs::create_dir_all(dir);

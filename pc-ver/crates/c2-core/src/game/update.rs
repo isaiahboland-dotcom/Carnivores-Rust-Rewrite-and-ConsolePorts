@@ -91,14 +91,7 @@ impl Hunt {
             self.calls(input, dt, out);
             #[cfg(feature = "hunt-diagnostics")]
             self.prof.mark(0);
-            if input.toggle_map
-                && !self.opts.trophy
-                && self.health > 0
-                && !self.bin_mode
-                && self.weapons.state == WeaponState::Hidden
-            {
-                self.map_mode = !self.map_mode;
-            }
+            self.map_input(input, out);
             if self.weapons.state != WeaponState::Hidden || self.bin_mode {
                 self.map_mode = false;
             }
@@ -271,6 +264,37 @@ impl Hunt {
         }
         if self.player.swim && self.takt & 31 == 0 {
             self.effects.ring(area, cx, cz, 1.5);
+        }
+    }
+}
+
+impl Hunt {
+    /// The map key: the map on or off with the weapon put away (the
+    /// original's rule); with `map_holsters`, pressed with a weapon out it
+    /// puts the weapon away and opens once it is.
+    fn map_input(&mut self, input: &HuntInput, out: &mut Vec<GameEvent>) {
+        let can = !self.opts.trophy && self.health > 0 && !self.bin_mode;
+        // Taking a weapon out (again) forgets the map asked for.
+        if !can || input.toggle_weapon || input.select_weapon.is_some() {
+            self.map_pending = false;
+        }
+        if input.toggle_map && can {
+            if self.weapons.state == WeaponState::Hidden {
+                self.map_mode = !self.map_mode;
+                self.map_pending = false;
+            } else if self.opts.map_holsters {
+                self.map_pending = !self.map_pending;
+            }
+        }
+        if self.map_pending {
+            match self.weapons.state {
+                WeaponState::Hidden => {
+                    self.map_mode = true;
+                    self.map_pending = false;
+                }
+                WeaponState::Ready if self.weapons.ftime == 0 => self.hide_weapon(out),
+                _ => {}
+            }
         }
     }
 }

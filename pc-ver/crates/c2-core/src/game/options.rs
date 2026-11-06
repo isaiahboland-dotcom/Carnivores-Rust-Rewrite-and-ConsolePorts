@@ -22,6 +22,10 @@ pub struct HuntOptions {
     /// Multi ammo's "Half tranq" (not in the original): each weapon's load
     /// is split between lethal rounds and darts ([`crate::game::Weapons::split_tranq`]).
     pub half_tranq: bool,
+    /// "Map puts the gun away" (a setting, not in the original, which opens
+    /// the map only with the weapon put away): the map pressed with a weapon
+    /// out puts it away, and the map opens once it is.
+    pub map_holsters: bool,
     /// Observer mode (`-observ`): no weapons or calls, animals ignore you.
     pub observer: bool,
     /// Advanced observer mode (a setting; with `observer`): unlimited
@@ -83,6 +87,7 @@ impl Default for HuntOptions {
             scent: false,
             tranq: false,
             half_tranq: false,
+            map_holsters: false,
             observer: false,
             free_observer: false,
             trophy: false,

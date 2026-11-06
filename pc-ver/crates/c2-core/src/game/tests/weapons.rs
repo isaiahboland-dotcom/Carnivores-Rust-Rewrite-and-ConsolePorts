@@ -363,3 +363,42 @@ fn shoot(h: &mut Hunt, area: &Area, car: &Car, ev: &mut Vec<GameEvent>) {
     weapon_ticks(h, area, &cars, fire, 1, ev);
     weapon_ticks(h, area, &cars, HuntInput::default(), 12, ev);
 }
+
+#[test]
+fn the_map_puts_the_gun_away_only_when_asked() {
+    for holsters in [false, true] {
+        let (area, mut h, _) = setup(false);
+        h.opts.map_holsters = holsters;
+        let mut ev = Vec::new();
+        let tick = |h: &mut Hunt, input: HuntInput, n: usize, ev: &mut Vec<GameEvent>| {
+            for _ in 0..n {
+                h.tick(&area, &[], &input, 10, ev);
+            }
+        };
+        let press = |weapon: bool| HuntInput {
+            toggle_weapon: weapon,
+            toggle_map: !weapon,
+            ..Default::default()
+        };
+        tick(&mut h, press(true), 1, &mut ev);
+        tick(&mut h, HuntInput::default(), 40, &mut ev);
+        assert_eq!(h.weapons.state, WeaponState::Ready);
+        tick(&mut h, press(false), 1, &mut ev);
+        tick(&mut h, HuntInput::default(), 40, &mut ev);
+        if holsters {
+            assert_eq!(h.weapons.state, WeaponState::Hidden);
+            assert!(h.map_mode, "the map opens once the gun is away");
+        } else {
+            // The original: no map with a weapon out.
+            assert_eq!(h.weapons.state, WeaponState::Ready);
+            assert!(!h.map_mode);
+            continue;
+        }
+        // The gun again: the map closes as it comes out.
+        tick(&mut h, press(true), 1, &mut ev);
+        assert!(!h.map_mode);
+        tick(&mut h, HuntInput::default(), 40, &mut ev);
+        assert_eq!(h.weapons.state, WeaponState::Ready);
+        assert!(!h.map_pending);
+    }
+}

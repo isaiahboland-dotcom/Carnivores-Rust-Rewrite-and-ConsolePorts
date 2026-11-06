@@ -92,11 +92,12 @@ impl HuntView {
     pub(super) fn light_buttons(&self) -> Vec<(Light, (f32, f32, f32))> {
         let h = &self.hunt;
         let quiet = h.paused || h.show_exit() || h.map_mode || h.opts.trophy;
-        if self.kit.is_none() || quiet || self.picker.is_some() {
+        // Touch buttons, like the rest (a pad or the keys: N, L, the stick).
+        if self.kit.is_none() || quiet || self.picker.is_some() || !self.touch.on {
             return Vec::new();
         }
-        let top = self.touch.on.then(|| super::touch::light_top(self.screen));
-        button_places(self.screen, &self.owned_lights(), top)
+        let top = super::touch::light_top(self.screen);
+        button_places(self.screen, &self.owned_lights(), Some(top))
     }
 
     /// Keys, the pad and the buttons. True when a tap or click landed on a

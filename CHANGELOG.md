@@ -10,6 +10,8 @@
 - Android hunts: the mobile game's touch buttons (move stick, look, fire, weapons, binoculars, call,
   map, menu), shown while touching and hidden while a controller is used. Controllers work, built-in
   ones included.
+- **Map puts the gun away** (Options, on by default): pressing the map with a gun out puts it away and
+  opens the map.
 - `c2-pc play --max-picks N`: at most N animals and N weapons per hunt (Android uses 8).
 
 ### Survival (PC)

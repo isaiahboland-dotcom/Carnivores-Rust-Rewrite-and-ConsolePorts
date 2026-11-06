@@ -4010,6 +4010,11 @@ weapons per hunt, because more is too hectic on a phone for now.
   The "menu" tab opens the hunt menu, whose hexagons take taps; the phone's
   in-hunt Options are left out (options stay in the main menu, owner). Ours:
   the stick pushed all the way runs; no jump or crouch buttons yet.
+- **The light buttons are touch buttons too** (owner, 2026-11-06): the nv /
+  light discs show only while touching, like the rest, placed under the
+  weapon button. With a pad or the keys they hide (N, L and the pad's right
+  stick click switch the lights). Before, they showed whatever the input
+  and jumped to a new place when a touch began, so a tap there hit the call.
 - **Packaging without Gradle:** `build-apk.sh` uses only the NDK and SDK
   build-tools (aapt2, zipalign, apksigner), with native libraries stored
   uncompressed and 16 KiB aligned.
@@ -4089,3 +4094,15 @@ and the flashlight.
   on the stock game: night held, flashlight cone lit, wave 1 bought; an
   idle hunter was killed by a Velociraptor within 30 s.
 
+## 2026-11-06 — "Map puts the gun away" (setting, on by default on PC)
+
+The original opens the map only with the weapon put away (`MapMode` is
+refused while a weapon is out), so a hunter with a gun drawn has to put it
+away first. The owner asked for the map button to do that itself, on PC as
+on the phone: with **Map puts the gun away** on (`map_holsters` in
+`c2rs.cfg`; `HuntOptions::map_holsters` in `c2-core`), the map pressed with a
+weapon out puts it away and the map opens once it is. Pressing the map again
+while it waits, or taking a weapon out, cancels it. Map to gun needed no
+change: taking a weapon out already closes the map. Off in `c2-core` by
+default, so the 3DS, the Wii U and the parity harness keep the original's
+rule until they offer the setting.

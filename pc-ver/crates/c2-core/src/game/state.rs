@@ -89,6 +89,8 @@ pub struct Hunt {
     pub bin_power: f32,
     /// The map is showing (`MapMode`).
     pub map_mode: bool,
+    /// The map waits for the weapon to be put away (`map_holsters`).
+    pub map_pending: bool,
     /// Particles, blood trails and water rings.
     pub effects: crate::effects::Effects,
     /// Tick timings, when a clock is set (`prof.clock`).
@@ -170,6 +172,7 @@ impl Hunt {
             bin_mode: false,
             bin_power: 2.5,
             map_mode: false,
+            map_pending: false,
             effects: Default::default(),
             prof: Default::default(),
             target_call: (10..MAX_CALL)

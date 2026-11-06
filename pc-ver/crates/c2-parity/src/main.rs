@@ -677,6 +677,7 @@ fn tick_bench(game: &Path, area_n: u32) -> Result<()> {
         scent: false,
         tranq: false,
         half_tranq: false,
+        map_holsters: false,
         free_observer: false,
         observer: false,
         trophy: false,
