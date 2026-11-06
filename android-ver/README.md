@@ -27,6 +27,25 @@ The script picks the newest NDK, build-tools and platform under `ANDROID_HOME`
 
 ## Put a game on the phone
 
+### From the launcher
+
+Save an instance whose base game is built from your APK (add-ons and a balance
+are fine), then **Build** > **Android**. Put `c2rs.apk` (from
+`build-apk.sh`) in the launcher's tools folder, or leave it in `android-ver/target/`
+when running the launcher from this tree.
+
+- **Build Android package** writes `<output>/<instance>/`: `c2rs.apk` and `files/`
+  (`game/`, plus `balance.toml` if the instance has a balance). Install the APK,
+  start it once, then copy the contents of `files/` to
+  `Android/data/io.github.c2rs/files/`.
+- **Build and install over adb** does that on the connected device (USB debugging
+  on; adb from the tools folder, `PATH` or `$ANDROID_HOME/platform-tools`). The game
+  is pushed as `game.new` and swapped in for `game/` only when complete. Saves
+  (`c2rs/`), `addons/` and any other folders are left alone. Close the game first:
+  installing the APK stops it.
+
+### By hand
+
 1. Build the base game from your APK on the PC, using the launcher (**Build from my
    APK…**) or `c2-pc mobile-base YOUR.apk --out game`. The folder has a `HUNTDAT/`
    and a `from-apk.txt`.
@@ -43,6 +62,7 @@ adb push addons  /sdcard/Android/data/io.github.c2rs/files/addons   # optional
 |---|---|
 | `game/` | the game built from your mobile APK (required) |
 | `addons/` | add-on folders, combined over the game in name order (optional; prefix numbers to set the order) |
+| `balance.toml` | prices and scores, as the launcher's balance editor writes them (optional) |
 | `c2rs/` | saves, settings and combined games, made by the app |
 | `c2rs.log` | the log, started fresh at each launch |
 

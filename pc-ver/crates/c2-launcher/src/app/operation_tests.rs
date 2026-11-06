@@ -35,6 +35,8 @@ fn all_entry_points_keep_the_current_job_and_pending_result() {
     app.build_3ds();
     app.build_wiiu();
     app.build_windows();
+    app.build_android();
+    app.install_android();
     app.save_instance();
     app.open_recipe("missing.toml".into());
     app.edit_recipe(Path::new("missing.toml"));
@@ -62,6 +64,7 @@ fn all_tabs_render_without_game_data() {
         Tab::Advanced,
         Tab::Build,
         Tab::Windows,
+        Tab::Android,
         Tab::ThreeDs,
         Tab::WiiU,
     ] {
@@ -181,4 +184,27 @@ fn the_advanced_tab_is_hidden_until_enabled_in_settings() {
     app.ui.tab = Tab::Advanced;
     show(&mut app);
     assert_eq!(app.ui.tab, Tab::Advanced);
+}
+
+#[test]
+fn android_warns_about_a_base_game_not_built_from_an_apk() {
+    let app = launcher();
+    let t = crate::publish::tests::Temp::new();
+    let (pc, apk) = (t.0.join("pc-game"), t.0.join("apk-game"));
+    std::fs::create_dir_all(pc.join("HUNTDAT")).unwrap();
+    std::fs::create_dir_all(&apk).unwrap();
+    std::fs::write(apk.join(c2_mods::mobile_base::SOURCE_APK), "sha256:0").unwrap();
+    let used = |game: Option<PathBuf>| RecipeUse {
+        path: t.0.join("r.toml"),
+        game,
+        overlays: None,
+        folders: Default::default(),
+        on: true,
+    };
+    let problem = app
+        .android_base_problem(&used(Some(pc)))
+        .unwrap_or_default();
+    assert!(problem.contains("pc-game"), "{problem}");
+    assert!(app.android_base_problem(&used(None)).is_some());
+    assert!(app.android_base_problem(&used(Some(apk))).is_none());
 }

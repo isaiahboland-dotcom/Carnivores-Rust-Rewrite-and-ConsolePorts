@@ -70,6 +70,7 @@ pub enum Destination {
     /// The same game in a headset (`c2-vr`, a first draft).
     PlayVr,
     Windows,
+    Android,
     ThreeDs,
     WiiU,
 }
@@ -80,6 +81,7 @@ impl Destination {
         match mode {
             crate::Mode::Full => &[
                 (Self::Windows, "Windows"),
+                (Self::Android, "Android"),
                 (Self::ThreeDs, "3DS"),
                 (Self::WiiU, "Wii U"),
             ],
@@ -295,6 +297,7 @@ mod tests {
             all,
             [
                 Destination::Windows,
+                Destination::Android,
                 Destination::ThreeDs,
                 Destination::WiiU
             ]

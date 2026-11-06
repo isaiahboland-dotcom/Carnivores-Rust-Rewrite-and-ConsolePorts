@@ -12,6 +12,7 @@ use crate::jobs::{is_archive, Job, Step};
 use crate::theme::*;
 use crate::{find_tool, Mode};
 
+mod android;
 mod builds;
 mod edit;
 mod home;
@@ -41,6 +42,7 @@ enum Tab {
     /// Building an instance: the platform, then its page.
     Build,
     Windows,
+    Android,
     ThreeDs,
     WiiU,
 }
@@ -54,7 +56,10 @@ impl Tab {
     }
 
     fn building(self) -> bool {
-        matches!(self, Tab::Build | Tab::Windows | Tab::ThreeDs | Tab::WiiU)
+        matches!(
+            self,
+            Tab::Build | Tab::Windows | Tab::Android | Tab::ThreeDs | Tab::WiiU
+        )
     }
 }
 
@@ -463,6 +468,7 @@ impl eframe::App for Launcher {
                     Tab::Instances
                 }
                 crate::instances::Destination::Windows => Tab::Windows,
+                crate::instances::Destination::Android => Tab::Android,
                 crate::instances::Destination::ThreeDs => Tab::ThreeDs,
                 crate::instances::Destination::WiiU => Tab::WiiU,
             };
@@ -541,6 +547,7 @@ impl Launcher {
             Tab::BaseGame | Tab::AddOns | Tab::Balance | Tab::Advanced => self.edit_tab(ui),
             Tab::Build => self.build_pick_tab(ui),
             Tab::Windows => self.windows_tab(ui),
+            Tab::Android => self.android_tab(ui),
             Tab::ThreeDs => self.three_ds_tab(ui),
             Tab::WiiU => self.wiiu_tab(ui),
         }
@@ -581,6 +588,7 @@ impl Launcher {
                 let name = self.active_recipe().map(|r| r.id()).unwrap_or_default();
                 let platform = match self.ui.tab {
                     Tab::Windows => "Windows",
+                    Tab::Android => "Android",
                     Tab::ThreeDs => "3DS",
                     Tab::WiiU => "Wii U",
                     _ => "",

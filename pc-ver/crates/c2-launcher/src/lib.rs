@@ -5,6 +5,7 @@
 //! run as programs; this only gathers the choices (the balance editor reads
 //! the game's prices and scores itself, with `c2-mods`).
 
+mod android;
 mod app;
 mod balance;
 mod cia;
@@ -76,6 +77,7 @@ pub fn find_tool(name: &str, tools: Option<&std::path::Path>) -> Option<PathBuf>
             dirs.push(root.join("3ds-ver/target/release"));
             dirs.push(root.join("3ds-ver/target/armv6k-nintendo-3ds/release"));
             dirs.push(root.join("wiiu-ver/perf-probe/build"));
+            dirs.push(root.join("android-ver/target"));
             dirs.push(root.to_path_buf());
         }
     }

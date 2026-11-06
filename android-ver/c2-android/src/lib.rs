@@ -10,6 +10,8 @@
 //!   buttons come from it.
 //! - `addons/` (optional): add-on folders, combined over the game in name
 //!   order. Standalone games are not offered on Android.
+//! - `balance.toml` (optional): prices and scores (`c2-pc play --balance`),
+//!   as the launcher's Android package writes it.
 //!
 //! Saves, settings and combined games go to `files/c2rs/`, the log to
 //! `files/c2rs.log`.
@@ -25,6 +27,7 @@ pub const MAX_PICKS: usize = 8;
 /// The game folder, beside the add-ons, in the app's files folder.
 pub const GAME_DIR: &str = "game";
 pub const ADDONS_DIR: &str = "addons";
+pub const BALANCE_FILE: &str = "balance.toml";
 
 /// The `c2-pc` arguments for the files in `root`; an error says what is
 /// missing.
@@ -52,6 +55,10 @@ pub fn launch_args(root: &Path) -> Result<Vec<String>> {
     let addons = root.join(ADDONS_DIR);
     if has_entries(&addons) {
         args.extend(["--mod".into(), path_arg(&addons)]);
+    }
+    let balance = root.join(BALANCE_FILE);
+    if balance.is_file() {
+        args.extend(["--balance".into(), path_arg(&balance)]);
     }
     Ok(args)
 }
@@ -173,6 +180,9 @@ mod tests {
         std::fs::create_dir_all(root.join(ADDONS_DIR).join("some-addon"))?;
         let modded = launch_args(&root)?;
         assert!(modded.contains(&"--mod".to_string()));
+        assert!(!modded.contains(&"--balance".to_string()));
+        std::fs::write(root.join(BALANCE_FILE), "")?;
+        assert!(launch_args(&root)?.contains(&"--balance".to_string()));
         Ok(())
     }
 }

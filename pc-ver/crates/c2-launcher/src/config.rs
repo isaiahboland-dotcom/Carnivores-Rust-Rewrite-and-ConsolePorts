@@ -240,6 +240,8 @@ pub struct Config {
     /// off by default).
     pub show_advanced: bool,
     pub windows_out: Option<PathBuf>,
+    /// Where Android packages are written (one folder per instance).
+    pub android_out: Option<PathBuf>,
     pub three_ds: ThreeDs,
     pub wiiu: WiiU,
     /// Where `c2-pc`, `c2-cook` and `c2-3ds.3dsx` are, if not beside the
@@ -284,6 +286,7 @@ pub struct Config {
 #[serde(default)]
 pub struct InstanceBuilds {
     pub windows_out: Option<PathBuf>,
+    pub android_out: Option<PathBuf>,
     pub three_ds: ThreeDs,
     pub wiiu: WiiU,
 }
@@ -452,6 +455,7 @@ impl Config {
                 r.path.clone(),
                 InstanceBuilds {
                     windows_out: self.windows_out.clone(),
+                    android_out: self.android_out.clone(),
                     three_ds: self.three_ds.clone(),
                     wiiu: self.wiiu.clone(),
                 },
@@ -468,6 +472,7 @@ impl Config {
             .cloned()
             .unwrap_or_else(|| InstanceBuilds {
                 windows_out: self.windows_out.clone(),
+                android_out: self.android_out.clone(),
                 three_ds: ThreeDs {
                     name: install_name(id),
                     out: self.three_ds.out.clone(),
@@ -489,6 +494,7 @@ impl Config {
                 },
             });
         self.windows_out = saved.windows_out;
+        self.android_out = saved.android_out;
         self.three_ds = saved.three_ds;
         self.wiiu = saved.wiiu;
     }
@@ -662,6 +668,7 @@ mod tests {
         c.three_ds.cia = true;
         c.wiiu.out = Some("wii u sd".into());
         c.windows_out = Some("windows output".into());
+        c.android_out = Some("android output".into());
         c.remember_builds();
         let expected = c.instance_builds[&first].clone();
         c.restore_builds(&second, "second");
@@ -678,6 +685,7 @@ mod tests {
         assert_eq!(back.three_ds, expected.three_ds);
         assert_eq!(back.wiiu, expected.wiiu);
         assert_eq!(back.windows_out, expected.windows_out);
+        assert_eq!(back.android_out, expected.android_out);
         back.restore_builds(&second, "second");
         assert_eq!(back.three_ds.out, Some("second sd".into()));
         let legacy: Config = toml::from_str("show_wiiu = false").expect("legacy config");

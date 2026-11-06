@@ -88,17 +88,41 @@ impl Launcher {
         ui.label(RichText::new("What platform are you building this for?").size(18.0));
         ui.add_space(10.0);
         let mut pick = None;
+        // Android takes only a game built from a mobile APK.
+        let android_problem = self
+            .cfg
+            .remembered(&path)
+            .and_then(|r| self.android_base_problem(r));
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(12.0, 12.0);
             for &(d, label) in Destination::builds(self.ui.mode) {
-                let b = egui::Button::new(RichText::new(label).size(22.0).color(GOLD).strong())
+                let warn = d == Destination::Android && android_problem.is_some();
+                let text = if warn {
+                    format!("{label}\n(needs an APK base)")
+                } else {
+                    label.to_string()
+                };
+                let b = egui::Button::new(RichText::new(text).size(22.0).color(GOLD).strong())
                     .fill(GREEN)
                     .min_size(egui::vec2(200.0, 120.0));
-                if ui.add_enabled(!self.busy(), b).clicked() {
+                let mut resp = ui.add_enabled(!self.busy(), b);
+                if let Some(p) = android_problem.as_ref().filter(|_| warn) {
+                    resp = resp.on_hover_text(p);
+                }
+                if resp.clicked() {
                     pick = Some(d);
                 }
             }
         });
+        if let Some(p) = &android_problem {
+            if Destination::builds(self.ui.mode)
+                .iter()
+                .any(|(d, _)| *d == Destination::Android)
+            {
+                ui.add_space(6.0);
+                help(ui, &format!("Android: {p}"));
+            }
+        }
         if let Some(d) = pick {
             self.start(path, d);
         }
