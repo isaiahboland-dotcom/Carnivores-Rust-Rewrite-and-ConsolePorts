@@ -20,9 +20,11 @@ pub struct PcSettings {
     pub blood: i32,
     /// The death camera (1 = on); off: a black screen and the prompt.
     pub death_anim: i32,
-    /// Far objects as their sprites (1 = on, as the original); off: as
-    /// models all the way.
-    pub far_sprites: i32,
+    /// Model distance slider, 0..=255: how far objects (trees, bushes,
+    /// rocks) are drawn as models before their far sprite takes over.
+    /// 0 = the original's 24 cells (`ctViewRM`), 255 = models out to the
+    /// render distance, no sprites.
+    pub model_distance: i32,
     /// The map shows which way the hunter looks (1 = on; not in the
     /// original, the 3DS map's tick).
     pub map_heading: i32,
@@ -75,7 +77,7 @@ impl Default for PcSettings {
             fog: 0,
             blood: 1,
             death_anim: 1,
-            far_sprites: 1,
+            model_distance: 0,
             map_heading: 0,
             map_mobile: 0,
             map_zoom: 0,
@@ -122,7 +124,9 @@ impl PcSettings {
                 "fog" => s.fog = i32::from(v != 0),
                 "blood" => s.blood = i32::from(v != 0),
                 "death_animation" => s.death_anim = i32::from(v != 0),
-                "far_sprites" => s.far_sprites = i32::from(v != 0),
+                "model_distance" => s.model_distance = v.clamp(0, 255),
+                // The old on/off switch: off meant models all the way.
+                "far_sprites" if v == 0 => s.model_distance = 255,
                 "map_heading" => s.map_heading = i32::from(v != 0),
                 "map_mobile" => s.map_mobile = i32::from(v != 0),
                 "map_zoom" => s.map_zoom = i32::from(v != 0),
@@ -146,13 +150,13 @@ impl PcSettings {
 
     pub fn store(&self) {
         let text = format!(
-            "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nfar_sprites = {}\n\
+            "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nmodel_distance = {}\n\
              map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\n",
             self.render,
             self.fog,
             self.blood,
             self.death_anim,
-            self.far_sprites,
+            self.model_distance,
             self.map_heading,
             self.map_mobile,
             self.map_zoom,
@@ -175,6 +179,17 @@ impl PcSettings {
         if let Err(e) = std::fs::write(path(), text) {
             tracing::warn!("saving settings: {e}");
         }
+    }
+
+    /// Cells out to which objects are models, given the cells drawn
+    /// (`render`); `None`: models all the way, no sprites.
+    pub fn model_cells(&self, render: i32) -> Option<f32> {
+        if self.model_distance >= 255 {
+            return None;
+        }
+        let base = c2_core::model::SPRITE_CELLS;
+        let span = (render as f32 - base).max(0.0);
+        Some(base + span * self.model_distance as f32 / 255.0)
     }
 
     /// Cells to draw, given the original view range `view` (cells).
@@ -247,6 +262,22 @@ mod tests {
         assert_eq!((d.multi_ammo, d.half_tranq, d.advanced_observer), (0, 1, 0));
         let s = PcSettings::parse("multi_ammo = 1\nhalf_tranq = 0\nadvanced_observer = 1\n");
         assert_eq!((s.multi_ammo, s.half_tranq, s.advanced_observer), (1, 0, 1));
+    }
+
+    #[test]
+    fn model_distance_defaults_to_the_original_and_reads_the_old_switch() {
+        let d = PcSettings::default();
+        assert_eq!(d.model_cells(74), Some(c2_core::model::SPRITE_CELLS));
+        assert_eq!(PcSettings::parse("far_sprites = 1\n").model_distance, 0);
+        assert_eq!(PcSettings::parse("far_sprites = 0\n").model_cells(74), None);
+        let s = PcSettings::parse("model_distance = 255\n");
+        assert_eq!(s.model_cells(74), None);
+        let half = PcSettings {
+            model_distance: 128,
+            ..d
+        };
+        let c = half.model_cells(384).unwrap_or(0.0);
+        assert!(c > 200.0 && c < 210.0, "{c}");
     }
 
     #[test]

@@ -4106,3 +4106,20 @@ while it waits, or taking a weapon out, cancels it. Map to gun needed no
 change: taking a weapon out already closes the map. Off in `c2-core` by
 default, so the 3DS, the Wii U and the parity harness keep the original's
 rule until they offer the setting.
+
+## 2026-11-06 — PC "Model distance" slider replaces "Far sprites"
+
+The original switches an object from its model to its far sprite at
+`ctViewRM` cells (`Game.cpp`: 24). A debug key in the original moves it
+from 4 to 60 cells (`Hunt2.cpp: ChangeViewR`). The PC had only an on/off
+switch: sprites at 24 cells, or models all the way. Video options now have a
+**Model distance** slider (`model_distance` in `c2rs.cfg`, 0..=255):
+- 0 is the original's 24 cells (the default).
+- In between, the slider runs linearly from 24 cells to the hunt's render
+  distance (`PcSettings::model_cells`).
+- 255 means models all the way, no sprites.
+
+An old `far_sprites = 0` reads as 255, so a saved "off" keeps its look. The
+slider has no lower setting than the original's; the PC has no need to cut
+below it. The 3DS's separate `object_view` cull (objects past it as sprites
+or not drawn) stays 3DS-only; the PC never used it.

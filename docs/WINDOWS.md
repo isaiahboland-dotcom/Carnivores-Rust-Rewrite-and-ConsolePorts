@@ -150,7 +150,7 @@ Reproduce the issue in a hunt for about a minute, then exit normally. The log
 captures startup/GPU selection, warnings, errors and any panic backtrace. It is
 not a per-frame performance trace and does not record raw mouse deltas. For
 performance comparison, record the smoothed FPS shown in the hunt window title,
-resolution, map/time of day, render distance, fog, far sprites and active mods.
+resolution, map/time of day, render distance, fog, model distance and active mods.
 Use the same scene/settings where possible; the rewrite enables VSync, so FPS
 alone may reflect the display's refresh limit rather than available headroom.
 

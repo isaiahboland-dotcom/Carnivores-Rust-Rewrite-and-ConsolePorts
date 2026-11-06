@@ -109,8 +109,9 @@ pub struct AreaView {
     /// Placements bucketed by chunk, with their precomputed light (negative:
     /// ground-lit, per vertex) and their sprite's.
     chunks: Vec<Vec<(Placement, f32, f32)>>,
-    /// Objects past [`SPRITE_CELLS`] as sprites (the original's look).
-    pub far_sprites: bool,
+    /// Objects past this many cells as sprites ([`SPRITE_CELLS`], the
+    /// original's look); `None`: models all the way.
+    pub sprite_cells: Option<f32>,
     pub cam: FlyCam,
     /// Free-fly controls; off when another scene drives the camera.
     pub fly: bool,
@@ -274,7 +275,7 @@ impl AreaView {
             renderer,
             chunks,
             sprites,
-            far_sprites: true,
+            sprite_cells: Some(SPRITE_CELLS),
             cam,
             fly: true,
             zoom: 1.0,
@@ -469,7 +470,9 @@ impl AreaView {
         let mut per_sprite: Vec<Vec<Instance>> = vec![Vec::new(); self.sprites.len()];
         // Sprites stand upright, turned to the camera.
         let facing = self.cam.yaw / std::f32::consts::FRAC_PI_2;
-        let sprite_d2 = (SPRITE_CELLS * CELL).powi(2);
+        let sprite_d2 = self
+            .sprite_cells
+            .map_or(f32::INFINITY, |c| (c * CELL).powi(2));
         let n_models = self.models.len() as u32;
         let r = self.radius as i32;
         let r2 = (r * r) as f32 * CELL * CELL;
@@ -489,8 +492,7 @@ impl AreaView {
                         continue;
                     }
                     let m = usize::from(p.model);
-                    if self.far_sprites
-                        && d.length_squared() > sprite_d2
+                    if d.length_squared() > sprite_d2
                         && self.sprites.get(m).is_some_and(Option::is_some)
                     {
                         per_sprite[m].push(Instance {

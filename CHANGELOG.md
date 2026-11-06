@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Video (PC)
+
+- **Model distance** slider (Video options), replacing the "Far sprites" switch: how far trees, bushes
+  and rocks are drawn as models before their flat far sprite. Leftmost is the original's 24 cells;
+  rightmost is models out to the render distance. A saved "Far sprites: Off" carries over as rightmost.
+
 ### Android (new; menus checked on a Retroid Pocket 5)
 
 - First Android build (`android-ver/`, `build-apk.sh`): the PC game in an APK. It needs a game built from

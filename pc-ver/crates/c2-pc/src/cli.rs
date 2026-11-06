@@ -601,10 +601,12 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
             // 74 = ctViewR for the default OptViewR of 128 (Game.cpp: 42 + OptViewR/8*2).
             let view = o.num("view", 74u32)?;
             // --models: far objects as models too (no sprites).
-            let far_sprites = !o.has("models");
+            let models = o.has("models");
             Box::new(move |g| {
                 let mut a = area_view::AreaView::load(g, &path, time)?;
-                a.far_sprites = far_sprites;
+                if models {
+                    a.sprite_cells = None;
+                }
                 if let Some(c) = cam {
                     a.cam.pos = glam::Vec3::new(c[0], c[1], c[2]);
                     a.cam.yaw = c[3];
