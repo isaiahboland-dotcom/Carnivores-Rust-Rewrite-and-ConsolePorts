@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Predation (all platforms; experimental)
+
+- **Carnivores hunt herbivores**, an advanced instance setting (recipe editor > Advanced, or
+  `[settings.predation]` in a recipe), off by default. Carnivores chase and kill animals below them on
+  the food chain (hunt-menu price, one apex, or a custom drag-and-drop order), and the prey runs from
+  them. Options: hunter-first or prey-first, carnivore-on-carnivore fights (10% price margin, face-offs
+  when closer), per-animal diet, scavenger and defensive tags. A predator's kill is no trophy.
+  Experimental everywhere (marked so in the launcher): maps where many animals spawn close together
+  can get chaotic. Least tested on 3DS, Wii U, Android and VR.
+- A predator eating its kill stops when shot, alarmed or when it notices you; unpriced carnivores
+  (e.g. roaming add-ons) no longer hunt each other; prey stops fleeing a predator that is eating,
+  resting or chasing something else, and grazes unless it comes very close.
+- An animal chasing or fleeing another no longer alarms its pack against you: pack members stay calm
+  while one hunts, and a herd fleeing a predator runs from the predator, not from you. A far-off chase
+  is no longer heard as if it were next to you.
+- Observer hunts no longer apply your saved camouflage, scent or tranquilizer (the radar stays; the
+  save keeps them for your next hunt).
+- `c2-parity predation AREA.MAP [seconds] [prey]`: a headless run of an area's animals with predation
+  on, reporting kills and step cost.
+
 ### Video (PC)
 
 - **Foliage distance** slider (Video options), replacing the "Far sprites" switch: how far trees, bushes
@@ -22,6 +42,9 @@
   objects draw first. About 47 -> 55 fps at the same settings; higher view settings are now playable.
 - **Resolution** option (Video options, 50-100%): draws fewer pixels and lets the phone scale up.
 - The frame rate is logged to `c2rs.log` every 5 seconds.
+- Standalone games beside the mobile base: `c2-pc combine` now takes a base built from an APK (it has no
+  `_MENU.TXT`; its `_RES.TXT` serves as the menu) and keeps its `from-apk.txt`, so the combined game plays
+  on Android. Combined on the PC and copied as the app's `game/` (`android-ver/README.md`).
 - Android hunts: the mobile game's touch buttons (move stick, look, fire, weapons, binoculars, call,
   map, menu), shown while touching and hidden while a controller is used. Controllers work, built-in
   ones included.
@@ -31,6 +54,10 @@
 - Launcher: **Build > Android** packages a saved instance (APK-built base) as `c2rs.apk` plus the
   app's `files/` folder, and can install both over adb. The game is swapped in only once fully
   pushed; saves are kept. The app reads an optional `files/balance.toml`.
+- Launcher, Android: **Name on the phone** per instance. Empty, the instance installs as the shared
+  `c2rs` app; named, it becomes an app of its own (`io.github.c2rs.<name>`) with its own files and saves,
+  so a vanilla and a standalone instance can be installed on one device. Needs the Android SDK's build
+  tools: the APK is relabelled with `aapt2` and signed with the debug key.
 - Fixed: in a game built from an APK, add-on maps, animals and weapons showed only their names in the
   hunt setup's honeycomb. They now show their own menu picture, cut to the cell's shape (also on PC
   with `--mobile-menu`).

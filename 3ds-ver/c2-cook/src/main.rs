@@ -463,6 +463,10 @@ fn merged_game(a: &Args, game: &Path) -> Result<Vfs> {
         let mut vfs = c2_mods::build_with(game, sources, &opts)?.vfs;
         // The base game's own parts left out.
         c2_mods::standalone::leave_out::push(&mut vfs, &recipe.recipe.skip)?;
+        // Predation (an advanced instance setting): `_PREDATION.TXT`.
+        if let Some(p) = &recipe.settings.predation {
+            p.push(&mut vfs);
+        }
         return Ok(vfs);
     }
     let game = &bases[..];
@@ -1152,6 +1156,9 @@ fn main() -> Result<()> {
     c.copy(&vfs, "HUNTDAT/_RES.TXT")?;
     if vfs.resolve("HUNTDAT/_MENU.TXT").is_some() {
         c.copy(&vfs, "HUNTDAT/_MENU.TXT")?;
+    }
+    if vfs.resolve(c2_formats::predation::PATH).is_some() {
+        c.copy(&vfs, c2_formats::predation::PATH)?;
     }
     for (file, tx) in [("SHIP2A.CAR", "SHIP"), ("WCIRCLE2.CAR", "RING")] {
         let path = format!("HUNTDAT/{file}");

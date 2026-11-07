@@ -1666,11 +1666,10 @@ impl Menu {
             c.equip = 0;
         }
         let time = [TimeOfDay::Dusk, TimeOfDay::Day, TimeOfDay::Night][c.time];
-        let (targets, weapons) = if c.observer {
-            (Bits::NONE, 0)
-        } else {
-            (c.dinos.up(10), c.weapons)
-        };
+        // An observer's picked animals are placed and shown on the radar;
+        // with none picked, the original's random mix.
+        let targets = c.dinos.up(10);
+        let weapons = if c.observer { 0 } else { c.weapons };
         let map = self.areas[c.area].clone();
         let double = !c.observer && c.equip & 8 != 0;
         self.start(map, time, targets, weapons, double, c.observer);
@@ -1716,9 +1715,8 @@ impl Menu {
     /// Keeps the accessory choice in the save, as the original does.
     fn save_equipment(&mut self) {
         let e = self.choice.equip;
-        let observer = self.choice.observer;
         if let Some(s) = self.me_mut() {
-            let on = |bit: u32| i32::from(!observer && e & bit != 0);
+            let on = |bit: u32| i32::from(e & bit != 0);
             s.options.camo = on(1);
             s.options.radar = on(2);
             s.options.scent = on(4);

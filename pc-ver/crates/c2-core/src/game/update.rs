@@ -119,6 +119,8 @@ impl Hunt {
             dt,
             real_time: self.real_time,
             hunter: hv,
+            target: Default::default(),
+            struck: None,
             opt_agres: self.opts.opt_agres,
             tranq: self.opts.tranq,
             view_r: self.opts.view_r,

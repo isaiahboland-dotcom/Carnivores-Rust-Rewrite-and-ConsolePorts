@@ -130,8 +130,8 @@ pub fn animate_old(
         let targetdx = c.tgx - c.pos[0];
         let targetdz = c.tgz - c.pos[2];
         let tdist = (targetdx * targetdx + targetdz * targetdz).sqrt();
-        let playerdx = ctx.hunter.x - c.pos[0] - c.lookx * 108.0;
-        let playerdz = ctx.hunter.z - c.pos[2] - c.lookz * 108.0;
+        let playerdx = ctx.target.view.x - c.pos[0] - c.lookx * 108.0;
+        let playerdz = ctx.target.view.z - c.pos[2] - c.lookz * 108.0;
         let pdist = (playerdx * playerdx + playerdz * playerdz).sqrt();
         if rethink < MAX_RETHINK {
             if pdist > ((ctx.render_r + 20) * 256) as f32 && c.replace_forward_in(sp, ctx, w.group)
@@ -235,7 +235,7 @@ pub fn animate(
     let area = ctx.area;
     let depth = |x: f32, z: f32| area.land_up_h(x, z) - area.land_height(x, z);
     let attack_dist = (128 * m.aggress + ctx.opt_agres / 8) as f32;
-    let attackable = depth(ctx.hunter.x, ctx.hunter.z) <= 550.0;
+    let attackable = depth(ctx.target.view.x, ctx.target.view.z) <= 550.0;
     let mut auto_correct = false;
 
     let mut rethink = 0;
@@ -245,8 +245,8 @@ pub fn animate(
         let targetdx = c.tgx - c.pos[0];
         let targetdz = c.tgz - c.pos[2];
         let tdist = (targetdx * targetdx + targetdz * targetdz).sqrt();
-        let playerdx = ctx.hunter.x - c.pos[0] - c.lookx * 108.0;
-        let playerdz = ctx.hunter.z - c.pos[2] - c.lookz * 108.0;
+        let playerdx = ctx.target.view.x - c.pos[0] - c.lookx * 108.0;
+        let playerdz = ctx.target.view.z - c.pos[2] - c.lookz * 108.0;
         let pdist = (playerdx * playerdx + playerdz * playerdz).sqrt();
         let done = (targetdx, targetdz, pdist);
         if c.state == 2 || (c.state == 0 && w.pack.as_ref().is_some_and(|p| p.alert_prev)) {
@@ -263,7 +263,7 @@ pub fn animate(
         if eating(c) {
             break done;
         }
-        if !ctx.hunter.alive {
+        if !ctx.target.view.alive {
             c.state = 0;
         }
         if c.state != 0 {
@@ -271,10 +271,10 @@ pub fn animate(
             let mut flee = pdist > attack_dist
                 || !attackable
                 || m.aggress <= 0
-                || !c.aware_hunter
+                || !ctx.target.aware
                 || (m.defensive && !c.damaged)
                 || (m.fear_shot && c.damaged)
-                || (m.fear_hear_shot && c.heard_shot);
+                || (m.fear_hear_shot && ctx.target.heard_shot);
             if !flee {
                 if let Some(p) = w.pack.as_deref_mut() {
                     p.attack = true;
@@ -289,8 +289,8 @@ pub fn animate(
                     c.retarget(sp, ctx.area, ctx.rng, 2048.0, w.group);
                     continue;
                 } else if !flee {
-                    c.tgx = ctx.hunter.x;
-                    c.tgz = ctx.hunter.z;
+                    c.tgx = ctx.target.view.x;
+                    c.tgz = ctx.target.view.z;
                     c.tgtime = 0;
                     if let Some(p) = w.pack.as_deref_mut() {
                         p.alert = true;
@@ -317,7 +317,7 @@ pub fn animate(
             }
             if m.kill_dist > 0
                 && pdist < m.kill_dist as f32
-                && (ctx.hunter.y - c.pos[1] - 120.0).abs() < 256.0
+                && (ctx.target.view.y - c.pos[1] - 120.0).abs() < 256.0
             {
                 kill_now(c, index, m, ctx, on_water);
             }

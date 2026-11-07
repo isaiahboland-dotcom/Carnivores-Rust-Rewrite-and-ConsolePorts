@@ -494,3 +494,65 @@ fn left_out_parts_are_not_combined_and_the_rest_closes_up() {
     assert_eq!(menu.huntables.len(), 2);
     assert_eq!(menu.weapons.len(), 1);
 }
+
+#[test]
+fn a_base_without_menu_txt_uses_its_res_txt_as_the_menu() {
+    // As a game built from a mobile APK: `_RES.TXT` lists the areas itself.
+    let base = tmp("apk-base");
+    write(
+        &base,
+        &[
+            ("HUNTDAT/_RES.TXT", BASE_RES.as_bytes()),
+            ("HUNTDAT/hunter.car", &model(&["stand"])),
+            ("HUNTDAT/velo.car", &model(&["run", "walk", "die"])),
+            ("HUNTDAT/WEAPONS/pistol.car", b"pistol"),
+            ("HUNTDAT/AREAS/AREA1.MAP", b"base map"),
+            ("HUNTDAT/AREAS/AREA1.RSC", b"base rsc"),
+        ],
+    );
+    let a = tmp("apk-game").join("Game A");
+    write(
+        &a,
+        &[
+            ("HUNTDAT/_RES.TXT", A_RES.as_bytes()),
+            ("HUNTDAT/raptor_a.car", &model(&["run"])),
+            ("HUNTDAT/raptor_snow.car", &model(&["run"])),
+            ("HUNTDAT/WEAPONS/bow.car", b"bow"),
+            ("HUNTDAT/AREAS/AREA1.MAP", b"a map"),
+            ("HUNTDAT/AREAS/AREA1.RSC", b"a rsc"),
+        ],
+    );
+    let out = tmp("apk-out");
+    let o = Options {
+        ambients: Ambients::Tied,
+        skip: vec![],
+    };
+    let built = build(std::slice::from_ref(&base), &[a], &out, &o).expect("build");
+    assert_eq!(built.base_areas, 1);
+    let menu = ResTxt::parse(
+        &std::fs::read_to_string(out.join("HUNTDAT/_MENU.TXT")).expect("a _MENU.TXT"),
+    )
+    .expect("parse");
+    let m = c2_formats::menu_txt::MenuData::from_res(&menu);
+    assert_eq!(m.areas.len(), 2);
+    assert_eq!(m.huntables.len(), 2);
+    assert_eq!(m.weapons.len(), 2);
+    assert!(out.join("HUNTDAT/AREAS/AREA2.MAP").is_file());
+
+    // Without areas in its `_RES.TXT` either, it still needs a menu file.
+    let bare = tmp("bare-base");
+    write(
+        &bare,
+        &[(
+            "HUNTDAT/_RES.TXT",
+            A_RES.replace("area = 30\n", "").as_bytes(),
+        )],
+    );
+    let err = build(&[bare.clone()], &[], &tmp("bare-out"), &o)
+        .err()
+        .map(|e| e.to_string());
+    assert!(err.unwrap_or_default().contains("_MENU.TXT"));
+    for d in [base, out, bare] {
+        let _ = std::fs::remove_dir_all(d);
+    }
+}

@@ -36,7 +36,7 @@ pub fn animate(c: &mut Character, index: usize, sp: &Species, ctx: &mut Ctx<'_>)
         let targetdx = c.tgx - c.pos[0];
         let targetdz = c.tgz - c.pos[2];
         let tdist = (targetdx * targetdx + targetdz * targetdz).sqrt();
-        let (_, _, pdist) = c.to_hunter(&ctx.hunter);
+        let (_, _, pdist) = c.to_hunter(&ctx.target.view);
         if pdist > (ctx.render_r + 20) as f32 * 256.0 && c.replace_forward(ctx) {
             continue;
         }

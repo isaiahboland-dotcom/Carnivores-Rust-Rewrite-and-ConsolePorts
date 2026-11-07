@@ -189,6 +189,47 @@ Unset values keep the launcher's choice. The launcher lists every recipe
 under `recipes/`, any folder deep. `recipes/instances/testing/` is ignored
 by git, for your own.
 
+### Predation (carnivores hunt herbivores)
+
+An advanced instance setting, off unless the recipe turns it on (launcher:
+the recipe editor's Advanced tab). Not part of the original game, and
+experimental everywhere: on maps where many animals spawn close together,
+chases and fights pile up and get chaotic. It is tested on PC; on the 3DS,
+Wii U, Android and VR it may also cause lag or game-breaking bugs.
+```toml
+[settings.predation]
+enabled = true
+priority = "prey"            # "hunter" (default): animals only while not after you
+carnivore_fights = true      # carnivores hunt carnivores at least 10% cheaper
+apex = "T-Rex"               # one animal above every other; the rest by price
+# chain = ["T-Rex", "Spinosaurus", "Velociraptor"]   # or the whole order, top first
+
+[[settings.predation.animals]]
+name = "Velociraptor"
+scavenger = true             # eats once from dead herbivores it senses, then runs
+
+[[settings.predation.animals]]
+name = "Triceratops"
+diet = "herbivore"           # or "carnivore"; omitted: from its AI
+defensive = true             # charges carnivores below it for 5-10 s
+```
+- The food chain is the hunt-menu price (with any balance edits), unless
+  `apex` or `chain` is given. Animals not in `chain` rank below it, by price.
+- A carnivore hunts herbivores at or below it. Within 10% of each other, the
+  cheaper carnivore backs off; at the same price they ignore each other
+  (so do two unpriced ones, such as roaming add-ons). Two after one prey:
+  the clearly higher one, else the closer one.
+- Animals notice each other by their own sight, smell and hearing values, so
+  keen prey can run before a predator sees it. Prey runs from a predator
+  that is after it, or one ready to hunt nearby (16 cells); one that is
+  eating, resting or chasing something else scares it only within 4 cells.
+- A predator eating a kill stops when it is shot, hears a shot or notices
+  the hunter.
+- A body left by a predator is not a trophy and scores nothing.
+- Names are `_RES.TXT` names, case ignored. The built game gets
+  `HUNTDAT/_PREDATION.TXT`, which every platform reads; survival and the
+  trophy room ignore it.
+
 ### Standalone games
 Whole games made from Carnivores 2 (most need the Modder's Edition as the
 overlay) are combined beside the base: each keeps its own areas, animals

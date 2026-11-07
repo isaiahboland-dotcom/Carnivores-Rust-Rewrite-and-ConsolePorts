@@ -50,8 +50,8 @@ pub fn animate(
         let targetdx = c.tgx - c.pos[0];
         let targetdz = c.tgz - c.pos[2];
         let tdist = (targetdx * targetdx + targetdz * targetdz).sqrt();
-        let playerdx = ctx.hunter.x - c.pos[0] - c.lookx * 108.0;
-        let playerdz = ctx.hunter.z - c.pos[2] - c.lookz * 108.0;
+        let playerdx = ctx.target.view.x - c.pos[0] - c.lookx * 108.0;
+        let playerdz = ctx.target.view.z - c.pos[2] - c.lookz * 108.0;
         let pdist = (playerdx * playerdx + playerdz * playerdz).sqrt();
         let palpha = find_vector_alpha(playerdx, playerdz);
         let done = (targetdx, targetdz, pdist);
@@ -63,8 +63,8 @@ pub fn animate(
             c.state = 1;
             c.phase = m.walk;
             c.ftime = 0;
-            c.tgx = ctx.hunter.x;
-            c.tgz = ctx.hunter.z;
+            c.tgx = ctx.target.view.x;
+            c.tgz = ctx.target.view.z;
             continue;
         }
         if c.state != 0 {
@@ -79,8 +79,8 @@ pub fn animate(
 
         if c.state != 0 {
             c.idle_group = None;
-            c.tgx = ctx.hunter.x;
-            c.tgz = ctx.hunter.z;
+            c.tgx = ctx.target.view.x;
+            c.tgz = ctx.target.view.z;
             c.tgtime = 0;
             // Noticed it (2: saw or heard, 3: smelt): face it, then look
             // or sniff before the chase.
@@ -97,7 +97,7 @@ pub fn animate(
                 }
                 c.state = 1;
             }
-            if ctx.hunter.alive {
+            if ctx.target.view.alive {
                 try_kill(c, index, m, ctx, pdist, on_water);
             }
         }

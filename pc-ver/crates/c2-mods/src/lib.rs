@@ -12,6 +12,7 @@ pub mod mobile;
 pub mod mobile_base;
 pub mod pack;
 pub mod patch;
+pub mod predation;
 pub mod recipe;
 pub mod res_merge;
 pub mod resolve;

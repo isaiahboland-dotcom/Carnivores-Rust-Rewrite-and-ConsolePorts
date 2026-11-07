@@ -93,6 +93,8 @@ impl Hunt {
                 c.afraid_time = ((10.0 + (range - l) / 256.0) as i32) * 1024;
                 c.state = 2;
                 c.no_find_cnt = 0;
+                // Read only by predation's hunter-first priority.
+                c.aware_hunter = true;
             }
         }
     }
@@ -122,7 +124,10 @@ impl Hunt {
                 !crate::dino::mee::ai_info(c.ai).sniffer
                     || (c.ai == ai::TREX && (c.afraid_time != 0 || c.state == 1))
             } else {
-                c.ai < 10 || c.afraid_time != 0 || c.state == 1
+                // A predator chasing an animal still notices the hunter
+                // (predation, a setting).
+                let hunting = matches!(c.predation.goal, crate::dino::predation::Goal::Hunt(_));
+                c.ai < 10 || (!hunting && (c.afraid_time != 0 || c.state == 1))
             };
             if c.health == 0 || skip {
                 continue;
@@ -181,6 +186,11 @@ impl Hunt {
             if k_res < 1.0 {
                 k_res = k_res.min(kr);
                 let c = &mut self.herd.chars[i];
+                if !mee && matches!(c.predation.goal, crate::dino::predation::Goal::Hunt(_)) {
+                    // Noticed while chasing an animal: predation decides.
+                    c.aware_hunter = true;
+                    continue;
+                }
                 c.afraid_time = (1.0 / (k_res + 0.1) * 10.0 * 1000.0) as i32;
                 if !mee || c.state == 0 {
                     c.state = 2;

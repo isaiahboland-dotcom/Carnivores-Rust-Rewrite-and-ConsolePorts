@@ -57,6 +57,17 @@ fn parse<T>(
     })
 }
 
+/// The predation settings (`_PREDATION.TXT`, a setting not in the
+/// original) resolved for `species`, whose menu prices must be set
+/// (`game::price_species`). `None` when the file is missing or changes
+/// nothing. Survival and the trophy room leave it off.
+pub fn predation(
+    vfs: &Vfs,
+    species: &[Species],
+) -> Option<alloc::boxed::Box<crate::dino::predation::run::Predators>> {
+    crate::dino::predation::load(&vfs.read(c2_formats::predation::PATH).ok()?, species)
+}
+
 pub fn res(vfs: &Vfs) -> Result<ResData, LoadError> {
     parse(vfs, "HUNTDAT/_RES.TXT", |d| {
         Ok(ResTxt::parse(&String::from_utf8_lossy(d))?.to_data())

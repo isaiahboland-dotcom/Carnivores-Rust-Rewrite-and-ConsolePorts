@@ -24,7 +24,7 @@ use super::huntable::World;
 use super::mee::{ai_info, mee_ai, MeeInfo};
 use super::{
     angle_difference, check_place_collision_fish, corrected_alpha, delta_func, find_vector_alpha,
-    hunt, in_region, sgn, wrap_angle, Character, Ctx, DinoEvent, Species, CS_ON_WATER, PI,
+    hunt, in_region, sgn, wrap_angle, Character, Ctx, Species, CS_ON_WATER, PI,
 };
 use crate::area::Area;
 use crate::rng::MsRand;
@@ -167,7 +167,7 @@ pub fn animate(
     let land = |x: f32, z: f32| area.land_height(x, z);
     // `tv`: a `switch` without `break` in the original, so always 5024.
     let tv = 5024.0;
-    let h = ctx.hunter;
+    let h = ctx.target.view;
     let in_water = up(h.x, h.z) - land(h.x, h.z) > 0.0;
     let ao = if m.danger_fish { ctx.opt_agres } else { 0 };
     let reach = (ctx.view_r * m.aggress + ao / a.agress_multi.max(1)) as f32;
@@ -304,14 +304,14 @@ pub fn animate(
                     c.bend = 0.0;
                 }
             }
-            if c.lure.is_none() && m.kill_dist > 0 && pdist < m.kill_dist as f32 * c.scale {
+            if ctx.target.strikes() && m.kill_dist > 0 && pdist < m.kill_dist as f32 * c.scale {
                 let mut kill_alt = c.spc_depth.max(256.0);
                 if a.jumper && c.phase == m.jump {
                     kill_alt += 80.0;
                 }
                 if (h.y - c.pos[1]).abs() < kill_alt + 20.0 * c.scale {
                     let (kind, scream) = match kill {
-                        Some(k) => {
+                        Some(k) if ctx.target.is_hunter() => {
                             c.vspeed /= 8.0;
                             c.state = 1;
                             c.phase = k.anim;
@@ -320,16 +320,13 @@ pub fn animate(
                             }
                             (k.hunter_anim, k.scream)
                         }
+                        Some(k) => (k.hunter_anim, k.scream),
                         None => {
                             c.state = 0;
                             (hunt::EAT, true)
                         }
                     };
-                    ctx.events.push(DinoEvent::KillHunter {
-                        index,
-                        kind,
-                        scream,
-                    });
+                    ctx.strike(index, kind, scream);
                     c.aquatic_idle = false;
                 }
             }

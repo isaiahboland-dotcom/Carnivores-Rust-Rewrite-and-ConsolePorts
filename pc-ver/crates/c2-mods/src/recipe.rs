@@ -95,6 +95,9 @@ pub struct Settings {
     /// editor, `crate::balance`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub balance: Option<crate::balance::Balance>,
+    /// Carnivores hunt herbivores (an advanced setting, `crate::predation`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub predation: Option<crate::predation::Predation>,
 }
 
 impl Settings {

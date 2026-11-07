@@ -44,6 +44,8 @@ pub struct Roster {
     pub species: Vec<Species>,
     /// Per species; `None` if its `.CAR` didn't load.
     pub cars: Vec<Option<(Car, PreparedModel)>>,
+    /// `_PREDATION.TXT` (an instance setting), when the game has one.
+    pub predation: Option<Vec<u8>>,
 }
 
 impl Roster {
@@ -86,7 +88,26 @@ impl Roster {
                 (c, p)
             }));
         }
-        Ok(Self { species, cars })
+        // Menu prices: predation ranks the animals by them.
+        let menu = huntdat
+            .iter()
+            .find_map(|d| find_file(d, "_MENU.TXT"))
+            .or_else(|| find_file(dir, "_RES.TXT"))
+            .and_then(|p| std::fs::read(p).ok())
+            .and_then(|d| ResTxt::parse(&String::from_utf8_lossy(&d)).ok())
+            .map(|r| c2_formats::menu_txt::MenuData::from_res(&r));
+        if let Some(menu) = &menu {
+            c2_core::game::price_species(&mut species, menu);
+        }
+        let predation = huntdat
+            .iter()
+            .find_map(|d| find_file(d, "_PREDATION.TXT"))
+            .and_then(|p| std::fs::read(p).ok());
+        Ok(Self {
+            species,
+            cars,
+            predation,
+        })
     }
 
     /// The prepared models, a texture layer each (`animals::Animals`).
@@ -132,6 +153,10 @@ impl HuntWorld {
             demo_index: None,
             ..Default::default()
         };
+        herd.predation = roster
+            .predation
+            .as_deref()
+            .and_then(|b| c2_core::dino::predation::load(b, &herd.species));
         let room = c2_core::profile::new_player("", 0, 0);
         herd.place(
             area,

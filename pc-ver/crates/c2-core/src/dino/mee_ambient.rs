@@ -57,8 +57,8 @@ pub fn animate(
         let targetdx = c.tgx - c.pos[0];
         let targetdz = c.tgz - c.pos[2];
         let tdist = (targetdx * targetdx + targetdz * targetdz).sqrt();
-        let playerdx = ctx.hunter.x - c.pos[0];
-        let playerdz = ctx.hunter.z - c.pos[2];
+        let playerdx = ctx.target.view.x - c.pos[0];
+        let playerdz = ctx.target.view.z - c.pos[2];
         let pdist = (playerdx * playerdx + playerdz * playerdz).sqrt();
         let done = (targetdx, targetdz, pdist);
         water_flag(c, m, ctx);

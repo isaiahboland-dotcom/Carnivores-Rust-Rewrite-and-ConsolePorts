@@ -19,7 +19,7 @@ use alloc::{
 
 use super::{
     angle_difference, corrected_alpha, delta_func, find_vector_alpha, hunt, sgn, wrap_angle,
-    Character, Ctx, DinoEvent, Species, CS_ON_WATER, PI,
+    Character, Ctx, Species, CS_ON_WATER, PI,
 };
 
 // REX_*
@@ -29,7 +29,7 @@ const SCREAM: usize = 2;
 const SWIM: usize = 3;
 const SEE: usize = 4;
 const SEE1: usize = 5;
-const SMEL: usize = 6;
+pub(super) const SMEL: usize = 6;
 const SMEL1: usize = 7;
 pub const DIE: usize = 8;
 const EAT: usize = 9;
@@ -46,8 +46,8 @@ pub fn animate(c: &mut Character, index: usize, sp: &Species, ctx: &mut Ctx<'_>)
         let targetdx = c.tgx - c.pos[0];
         let targetdz = c.tgz - c.pos[2];
         let tdist = (targetdx * targetdx + targetdz * targetdz).sqrt();
-        let playerdx = ctx.hunter.x - c.pos[0] - c.lookx * 108.0;
-        let playerdz = ctx.hunter.z - c.pos[2] - c.lookz * 108.0;
+        let playerdx = ctx.target.view.x - c.pos[0] - c.lookx * 108.0;
+        let playerdz = ctx.target.view.z - c.pos[2] - c.lookz * 108.0;
         let pdist = (playerdx * playerdx + playerdz * playerdz).sqrt();
         let palpha = find_vector_alpha(playerdx, playerdz);
         if c.state == 5 {
@@ -55,8 +55,8 @@ pub fn animate(c: &mut Character, index: usize, sp: &Species, ctx: &mut Ctx<'_>)
             c.state = 1;
             c.phase = WALK;
             c.ftime = 0;
-            c.tgx = ctx.hunter.x;
-            c.tgz = ctx.hunter.z;
+            c.tgx = ctx.target.view.x;
+            c.tgz = ctx.target.view.z;
             continue;
         }
         if area.land_up_h(c.pos[0], c.pos[2]) - area.land_height(c.pos[0], c.pos[2])
@@ -68,12 +68,12 @@ pub fn animate(c: &mut Character, index: usize, sp: &Species, ctx: &mut Ctx<'_>)
         }
 
         if c.phase != EAT {
-            if !ctx.hunter.alive {
+            if !ctx.target.view.alive {
                 c.state = 0;
             }
             if c.state != 0 {
-                c.tgx = ctx.hunter.x;
-                c.tgz = ctx.hunter.z;
+                c.tgx = ctx.target.view.x;
+                c.tgz = ctx.target.view.z;
                 c.tgtime = 0;
                 // Facing the hunter after being alerted: look or sniff.
                 if c.state > 1 && angle_difference(c.alpha, palpha) < 0.4 {
@@ -85,17 +85,17 @@ pub fn animate(c: &mut Character, index: usize, sp: &Species, ctx: &mut Ctx<'_>)
                     c.state = 1;
                     c.rspeed = 0.0;
                 }
-                if c.lure.is_none() && pdist < 380.0 && (ctx.hunter.y - c.pos[1]).abs() < 256.0 {
-                    c.vspeed /= 8.0;
-                    c.state = 1;
-                    c.phase = EAT;
-                    if ctx.hunter.alive {
-                        ctx.events.push(DinoEvent::KillHunter {
-                            index,
-                            kind: hunt::KILL,
-                            scream: true,
-                        });
+                if ctx.target.strikes()
+                    && pdist < 380.0
+                    && (ctx.target.view.y - c.pos[1]).abs() < 256.0
+                {
+                    // Lifting the body is staged for the hunter alone.
+                    if ctx.target.is_hunter() {
+                        c.vspeed /= 8.0;
+                        c.state = 1;
+                        c.phase = EAT;
                     }
+                    ctx.strike(index, hunt::KILL, true);
                     c.bend = 0.0;
                 }
             }

@@ -718,13 +718,25 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
     let mut report = String::from("# Combined game\n\n");
     let mut res = ResTxt::parse(&String::from_utf8_lossy(&vfs.read("HUNTDAT/_RES.TXT")?))?;
     let base_res = res.clone();
-    let menu_path = vfs
-        .resolve("huntdat/_menu.txt")
-        .map(|r| r.path.clone())
-        .ok_or_else(|| {
-            fail("the base has no _MENU.TXT: give the Modder's Edition as an overlay")
-        })?;
-    let mut menu = ResTxt::parse(&String::from_utf8_lossy(&vfs.read(&menu_path)?))?;
+    // The base's menu: its `_MENU.TXT`, or its `_RES.TXT` when that lists
+    // the areas itself (a game built from a mobile APK; the game reads its
+    // menu from there too, `menu_txt`). The combined menu is then written
+    // as a new `_MENU.TXT`.
+    let (menu_path, mut menu) = match vfs.resolve("huntdat/_menu.txt") {
+        Some(r) => {
+            let p = r.path.clone();
+            let m = ResTxt::parse(&String::from_utf8_lossy(&vfs.read(&p)?))?;
+            (p, m)
+        }
+        None if !MenuData::from_res(&res).areas.is_empty() => {
+            ("HUNTDAT/_MENU.TXT".to_string(), res.clone())
+        }
+        None => {
+            return Err(fail(
+                "the base has no _MENU.TXT: give the Modder's Edition as an overlay",
+            ))
+        }
+    };
     let base_menu = MenuData::from_res(&menu);
     let (mut n_dinos, mut n_weapons, mut n_areas) = (
         base_menu.huntables.len(),

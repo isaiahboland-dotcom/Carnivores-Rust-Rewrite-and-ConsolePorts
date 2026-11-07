@@ -18,6 +18,7 @@ impl Hunt {
             return;
         }
         self.herd.chars.remove(index);
+        self.herd.forget(index);
         self.ship.character_removed(index);
         if let Some(d) = &mut self.herd.demo_index {
             if *d > index {

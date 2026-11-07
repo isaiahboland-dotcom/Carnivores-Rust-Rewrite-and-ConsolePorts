@@ -747,8 +747,8 @@ impl Menu {
                 .get(self.area)
                 .map_or("AREA1".into(), |a| a.0.clone()),
             time: TIMES[self.time].0,
-            targets: if self.observer { Bits::NONE } else { targets },
-            roamers: if self.observer { Vec::new() } else { roamers },
+            targets,
+            roamers,
             silent_calls: Vec::new(),
             weapons: if self.observer {
                 Bits::NONE
@@ -871,11 +871,7 @@ impl Menu {
 
     /// Keeps the accessory choice in the save, as the original does.
     fn store_equipment(&mut self) {
-        let e = if self.observer {
-            Bits::NONE
-        } else {
-            self.picked_equip
-        };
+        let e = self.picked_equip;
         let o = &mut self.save.options;
         o.camo = i32::from(e.has(0));
         o.radar = i32::from(e.has(1));
@@ -2103,7 +2099,15 @@ impl Menu {
         if self.trophy() {
             list(&mut c, gpu, "Your trophies", Vec::new());
         } else if self.observer {
-            list(&mut c, gpu, "Observer: just watch", Vec::new());
+            // The picked animals are placed (no prices: observing is free).
+            let dinos = self
+                .dinos
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| self.picked_dinos.has(*i))
+                .map(|(_, d)| (d.1.name.clone(), 0, WHITE))
+                .collect();
+            list(&mut c, gpu, "Observer: just watch", dinos);
         } else {
             let pick = |items: &[Item], mask: Bits| -> Vec<(String, i32, Rgba)> {
                 items

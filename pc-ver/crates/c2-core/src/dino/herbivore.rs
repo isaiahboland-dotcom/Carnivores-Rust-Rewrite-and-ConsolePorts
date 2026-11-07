@@ -17,7 +17,7 @@ use alloc::{
 
 use super::{
     ai, corrected_alpha, delta_func, find_vector_alpha, hunt, sgn, wrap_angle, Character, Ctx,
-    DinoEvent, Species, CS_ON_WATER, PI,
+    Species, CS_ON_WATER, PI,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -166,8 +166,8 @@ pub fn animate(
         let tdist = (targetdx * targetdx + targetdz * targetdz).sqrt();
         // Tric measures from its horns, 300 units ahead.
         let head = if p.defensive { 300.0 * c.scale } else { 0.0 };
-        let playerdx = ctx.hunter.x - c.pos[0] - c.lookx * head;
-        let playerdz = ctx.hunter.z - c.pos[2] - c.lookz * head;
+        let playerdx = ctx.target.view.x - c.pos[0] - c.lookx * head;
+        let playerdz = ctx.target.view.z - c.pos[2] - c.lookz * head;
         let pdist = (playerdx * playerdx + playerdz * playerdz).sqrt();
 
         // Alarmed: run away (or, for Tric, charge when close).
@@ -183,8 +183,8 @@ pub fn animate(
             // A survival wave's comes all the way (the mobile game's
             // Chasmosaurus waves).
             if p.defensive && (pdist <= 256.0 * 16.0 + (ctx.opt_agres / 8) as f32 || c.wave > 0) {
-                c.tgx = ctx.hunter.x;
-                c.tgz = ctx.hunter.z;
+                c.tgx = ctx.target.view.x;
+                c.tgz = ctx.target.view.z;
             } else {
                 let l = pdist.max(1e-6);
                 c.tgx = c.pos[0] - playerdx / l * 2048.0;
@@ -194,17 +194,13 @@ pub fn animate(
         }
 
         if p.defensive
-            && c.lure.is_none()
-            && ctx.hunter.alive
+            && ctx.target.strikes()
+            && ctx.target.view.alive
             && pdist < 300.0
-            && (ctx.hunter.y - c.pos[1] - 160.0).abs() < 256.0
+            && (ctx.target.view.y - c.pos[1] - 160.0).abs() < 256.0
         {
             c.state = 0;
-            ctx.events.push(DinoEvent::KillHunter {
-                index,
-                kind: hunt::EAT,
-                scream: true,
-            });
+            ctx.strike(index, hunt::EAT, true);
         }
 
         // Explore.

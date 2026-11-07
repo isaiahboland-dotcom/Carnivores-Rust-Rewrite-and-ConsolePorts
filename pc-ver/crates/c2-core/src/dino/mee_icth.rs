@@ -124,8 +124,10 @@ pub fn animate(
         let targetdx = c.tgx - c.pos[0];
         let targetdz = c.tgz - c.pos[2];
         let tdist = (targetdx * targetdx + targetdz * targetdz).sqrt();
-        let pdist = ((ctx.hunter.x - c.pos[0]).powi(2) + (ctx.hunter.z - c.pos[2]).powi(2)).sqrt();
-        let pdist_up = (pdist * pdist + (ctx.hunter.y - c.pos[1]).powi(2)).sqrt();
+        let pdist = ((ctx.target.view.x - c.pos[0]).powi(2)
+            + (ctx.target.view.z - c.pos[2]).powi(2))
+        .sqrt();
+        let pdist_up = (pdist * pdist + (ctx.target.view.y - c.pos[1]).powi(2)).sqrt();
         let ground = area.land_height(c.pos[0], c.pos[2]);
         c.state_f = if up(c) - ground > 20.0 {
             c.state_f | CS_ON_WATER

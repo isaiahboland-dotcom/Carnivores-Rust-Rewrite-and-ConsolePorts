@@ -672,6 +672,22 @@ impl HuntView {
         let own_snow = area.snow;
         let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
         if !trophy && setup.survival.is_none() {
+            // Predation (an instance setting): `_PREDATION.TXT`, when the
+            // recipe turns it on.
+            let huntdat = setup
+                .map
+                .parent()
+                .and_then(|p| p.parent())
+                .unwrap_or(Path::new("."));
+            hunt.herd.predation = find_file(
+                huntdat,
+                c2_formats::predation::PATH.trim_start_matches("HUNTDAT/"),
+            )
+            .and_then(|p| std::fs::read(p).ok())
+            .and_then(|b| c2_core::dino::predation::load(&b, &hunt.herd.species));
+            if hunt.herd.predation.is_some() {
+                tracing::info!("predation on");
+            }
             let secret: Vec<bool> = (0..hunt.herd.species.len())
                 .map(|ctype| {
                     let c = c2_core::dino::Character {

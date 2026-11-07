@@ -108,6 +108,22 @@ impl Default for HuntOptions {
     }
 }
 
+impl HuntOptions {
+    /// The options a hunt runs with. An observer carries none of the saved
+    /// accessories that act on the hunter or his kills (camouflage, scent,
+    /// tranquilizer); the radar stays, to show the picked animals. The save
+    /// keeps the hunter's loadout for his next hunt.
+    pub fn for_hunt(mut self) -> Self {
+        if self.observer {
+            self.camo = false;
+            self.scent = false;
+            self.tranq = false;
+            self.half_tranq = false;
+        }
+        self
+    }
+}
+
 /// Call ids are `10 + menu slot` (the original's AI number); one past the
 /// last the target set (`Bits`) can hold.
 pub const MAX_CALL: i32 = Bits::LEN as i32;

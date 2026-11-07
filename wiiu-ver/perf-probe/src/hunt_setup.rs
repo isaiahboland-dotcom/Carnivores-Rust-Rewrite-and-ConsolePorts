@@ -325,6 +325,11 @@ pub fn load(install: Option<&Install>, choice: &HuntChoice, room: &Save, seed: u
     }
     let mut hunt = new_hunt(&area, species, infos, anims, choice, rules.tables.as_ref(), targets, &roamers, room, seed, install.rules.menu.survival_budget)?;
     hunt.area_no = c2_formats::mee::area_of(&area_file).map_or(0, |n| n as i32);
+    // Predation (an instance setting, experimental here): the install's
+    // `_PREDATION.TXT`, when its recipe turns it on.
+    if !trophy && choice.mode != MODE_SURVIVAL {
+        hunt.herd.predation = load::predation(&install.vfs, &hunt.herd.species);
+    }
     // Snow of the area's own (the phone's Ice Age areas).
     if let (None, Some(s), false) = (&hunt.effects.snow, area.snow, trophy) {
         hunt.effects.snow = Some(c2_core::effects::Snowfall::new(s, SNOW_MAX));

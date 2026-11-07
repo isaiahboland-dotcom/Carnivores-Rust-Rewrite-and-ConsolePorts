@@ -4162,6 +4162,190 @@ the previous build's, apart from the animated clouds). On:
 
 Viewer: `c2-pc area MAP --view 1024 --high-end --foliage CELLS`.
 
+
+## 2026-11-06 — Observer mode places the picked animals and keeps the radar
+
+Observer mode used to drop the picked animals and the accessories at launch
+(PC `menu.rs: launch_hunt` and `save_equipment`, 3DS `menu.rs: setup` and
+`store_equipment`, `hunt.rs: load`, VR `menus.rs`). The hunt then placed the
+original's random mix of the first huntables, the radar was off, and nothing
+the player picked was placed or shown on the map. The menus still let the
+player pick animals and accessories for free in observer mode, so the picks
+looked like they were being used.
+
+The original game takes `din=` (`TargetDino`) and `-observ` separately
+(`Game.cpp`), so an observer's hunt with picked animals places those animals
+and colours them on the radar like any other hunt. Observer mode now keeps the
+picked animals as targets and saves the accessories as picked; it still carries
+no weapons. With no animals picked, the hunt still places the random mix. The
+Wii U setup already worked this way. The 3DS summary lists the animals under
+"Observer: just watch". This replaces the observer line in "PC VR: the hunt
+setup on the panel" (2026-10-29).
+
+
+## 2026-11-06 — Predation: carnivores hunt herbivores (an opt-in setting)
+
+Not in the original game, where every animal reacts only to the hunter. An
+advanced instance setting, off unless a recipe's `[settings.predation]`
+turns it on (`docs/MODDING.md`). The launcher writes it into the built game
+as `HUNTDAT/_PREDATION.TXT`, so PC, Android, VR, 3DS and Wii U read the same
+file; survival and the trophy room leave it off. PC is the tested platform;
+the launcher labels the others experimental.
+
+How it works (`c2-core/src/dino/predation*`):
+- **No new AI per family.** Each step, an animal with a goal is shown a
+  different "hunter" (as survival's `lure` does): its prey, a point far
+  beyond what it flees, or, for AIs that run from the hunter, the target
+  mirrored through the animal so it runs toward it. The original's and the
+  Modder's Edition's AIs then chase, flee and kill as they do the hunter.
+  A `KillHunter` from a steered animal is taken back and becomes the kill of
+  its target, which plays its own death; the predator then eats for 12 s
+  and rests 30 s. (Replaced by an explicit target: "Predation phase 2:
+  explicit AI targets" above.)
+- **Kill clips are for the hunter only.** The step that "kills the hunter"
+  switches the AI to its hunter-kill clip; for a kill of another animal the
+  pose from before that step is put back and the clip picked separately:
+  - Carnivores eat with the ground-feeding clip the Velociraptor and
+    Allosaurus kill the hunter with: the original AIs' `eat` clip, or a
+    dialect kill type with `hunterAnim = 0` (HUNT_EAT) that is not
+    `hunterSync` or `carryCorpse`. Kills staged around the hunter's body
+    (the T-Rex lift; add-ons such as Suchomimus, Sigilmassosaurus,
+    Carcharodontosaurus, Manospondylus) are skipped; a species with only
+    those sniffs at the body (T-Rex `SMEL`, the dialect's first
+    `smellAnim`).
+  - Herbivores gore and run on, as the original's Chasmosaurus does with
+    the hunter: no kill clip and no eating, even where a dialect herbivore
+    has a kill type.
+- **Chases stay in range.** Raptor-family AIs give up on a hunter past
+  `ctViewR * 128`, and animals sense each other farther than that, so a
+  chasing AI is shown a point at most 10 cells along the way.
+- **Triceratops** (the original's defensive AI charges within
+  `256 * 16 + OptAgres / 8` and runs beyond) is steered by distance: shown
+  the target when near, the mirrored point when far.
+- **Senses** follow `CheckAfraid` without its look traces (too costly for
+  every pair, especially on the 3DS); the distance is doubled instead, for
+  the cover they would find. A running animal can also be heard. Goals are
+  re-picked every 300 ms. Measured on stock Area 1 (25 animals): 0.04 ms per
+  step on PC.
+- **Hunter first** (the default): a carnivore that has noticed the hunter
+  drops its prey. `CheckAfraid` now also checks a stock carnivore chasing
+  prey (it skipped any animal already alarmed), only marking it aware; and
+  `MakeNoise` marks stock animals aware too (read by nothing else).
+- **Roles** come from the AI unless tagged: the original's raptor, Allosaurus,
+  Spinosaurus, Ceratosaurus and T-Rex AIs and the dialect's carnivore AIs are
+  carnivores, other huntables herbivores; flyers, fish, ambients and
+  brachiosaurs take no part.
+- **No trophy**: kills are recorded only from the hunter's shots, so a body
+  left by a predator scores nothing. The face-off between carnivores within
+  10% of each other has the cheaper one run off; no roar clip is played yet,
+  since the original's carnivores other than T-Rex have none.
+
+
+## 2026-11-06 — Predation review fixes (phase 1) and observer accessories
+
+Four isolated fixes from the predation code review, each with a regression
+test that fails without it (`dino/predation/tests/regressions.rs`,
+`game/tests/session.rs`):
+
+- **Feeding ends when alarmed.** A kill leaves the predator calm (state 0,
+  unaware), so `predation::step::feeding` now stops the meal when the state
+  is set or the hunter is noticed: a shot (`Hunt::damage`), a heard shot
+  (`make_noise`) or `CheckAfraid`. Before, the 12 s meal skipped the AI
+  entirely and a feeding animal was a free kill.
+- **Equal prices never fight.** Carnivore fights and `Rules::outranks` used
+  `cb <= ca * 0.9`, true for 0 vs 0, so unpriced carnivores (roaming
+  add-ons, ambient carnivores) hunted each other and each outranked the
+  other. The comparison now also requires `cb < ca`, matching the doc and
+  the launcher tooltip.
+- **Prey stops fleeing a predator that has lost interest.** Prey kept
+  `Goal::Flee` while the predator lived within 8192 units, and steering
+  renewed its fear each step. How close a predator must be to scare
+  (`menace` in `predation/run.rs`) now depends on what it is doing: any
+  distance when after this animal, 4096 when ready to hunt, 1024 when
+  eating, resting or chasing another animal; fleeing stops at twice that
+  (at most 8192). A herd can graze near a predator that is eating.
+- **Observer hunts drop the saved accessories.** Since observer mode keeps
+  the saved accessories (entry above: the radar), the hunt applied camo,
+  scent and the tranquilizer to an observer too. `HuntOptions::for_hunt`,
+  called by `Hunt::new`, clears those three (and half tranq) in observer
+  mode on every platform; the radar stays and the save keeps the loadout.
+
+`c2-parity predation`, 600 s, same seed: Area 1 10 -> 11 kills, Area 3
+4 -> 4; step cost unchanged (0.035-0.042 ms average).
+
+
+## 2026-11-06 — Predation phase 2: explicit AI targets
+
+Predation used to steer an AI by overwriting `ctx.hunter` with the prey,
+then undoing part of it afterwards: removing the `KillHunter` event,
+restoring the pose, and swapping `aware_hunter`/`heard_shot` back. The rest
+leaked. Pack alarm and attack flags raised by a member chasing prey made its
+packmates charge the real hunter. Sounds were filtered by distance to the
+prey rather than to the player. A pack member fleeing a predator alarmed
+the others, who then fled from the hunter's position.
+
+Now (`c2-core/src/dino/mod.rs: Target`, `herd.rs: target_of`):
+- `Ctx::hunter` is always the player: sounds and re-placement use it.
+  `Ctx::target` is what the AI chases or flees, of kind `Hunter`,
+  `Waypoint` (survival's `lure`), `Animal(n)` (a predation hunt or charge)
+  or `Place` (a body to scavenge, or a point beyond what it flees). It
+  carries what the animal knows of it (`aware`, `heard_shot`); for the
+  player these are `aware_hunter`/`heard_shot`, so the AIs read them from
+  the target.
+- Every AI's kill goes through `Ctx::strike`: a `KillHunter` event for the
+  player, `Ctx::struck` for an animal target, nothing for a waypoint or a
+  place (replacing the `lure.is_none()` checks). The hunter-kill clip (and
+  its slowdown) is played only on the player, so no pose restore is needed.
+  The herd hands `struck` to `Predators::finish`, which counts it only on
+  the animal the AI was steered at.
+- Pack flags are written only when the target is the player or a waypoint
+  (`Target::alarms_pack`); otherwise the AI gets a copy of the pack, so it
+  still reads the pack's state but its writes are dropped. A pack member
+  fleeing a predator passes its `Flee` goal to packmates with no goal of
+  their own (`Predators::flee_as_packs`), so the pack runs from the
+  predator.
+- Still in place: `CheckAfraid`'s case for stock carnivores chasing prey.
+  Steering still alarms an animal (`state`, `afraid_time`), which would
+  otherwise stop `CheckAfraid` from looking at it for the player.
+
+Tests (`dino/predation/tests/targets.rs`), stock and dialect AIs: a far
+chase makes no sound for the player, a dialect kill strikes the prey with no
+hunter kill or kill clip, a hunting pack member raises no pack flag, and a
+dialect herd flees the predator, not the hunter. Each one fails with its
+part of the change reverted. `c2-parity predation`, 600 s: Area 1 10 kills,
+Area 3 5 (phase 1: 11 and 4); no hunter kills; step cost unchanged.
+
+
+## 2026-11-06 — Standalones beside the mobile base on Android
+
+Request: try a standalone modded game in the Android app, with the game
+built from the Dinosaur Hunter APK as its base. Until now Android took the
+APK base plus add-ons only.
+
+- **The combiner takes an APK-built base.** `standalone::build` needed a
+  `_MENU.TXT` (the Modder's Edition's), which an APK-built base has not.
+  Such a base lists its areas, prices and roster in `_RES.TXT`, which the
+  game already reads as its menu when there is no `_MENU.TXT`
+  (`menu_txt`). The combiner now does the same: with no `_MENU.TXT` and
+  areas in `_RES.TXT`, that serves as the base menu and the combined menu is
+  written as a new `_MENU.TXT`. A base with neither still asks for the
+  Modder's Edition.
+- **Combined on the PC, not on the phone.** `play --standalone` rebuilds
+  the combined game at each start; that is fine on PC but not for a
+  500 MB game on a phone. So the app keeps one `game/` folder, and
+  `c2-pc combine` makes it. The combined game keeps the base's
+  `from-apk.txt` and `mobile-survival.txt` (the app requires the first;
+  the 3DS cook takes the second), so no change to the app's launch rules.
+- **Checked** with Carnivores Anachronous beside Dinosaur Hunter: 12 areas
+  (the base's 7, then Anachronous's 5), 28 huntables, 15 weapons. On PC
+  with the app's arguments (`--mobile-menu --max-picks 8`) the three hunt
+  setup pages list all of them (animals paged, 1 / 2), and a simulated
+  hunt on area 8 renders with the phone's buttons. On the Retroid Pocket 5
+  the app starts on the combined game and lists the Anachronous animals.
+- **Known gap:** the standalone's areas, animals and weapons show as names
+  in the hexagons; the phone menu draws only pictures of the mobile game's
+  kind. Long names are cut off.
+
 ## 2026-11-06 — Android rendering performance (GPU-bound on a Retroid Pocket 5)
 
 Hunts on the Retroid Pocket 5 (Adreno 650, 1920x1080) stayed playable only
@@ -4230,3 +4414,29 @@ replaces the launch arguments, e.g. `area`, a map path, `--view`, `384`;
 `c2-pc hunt --seed N` gives the same landing and animals each run (random
 hunts vary by about 15%). The APK is `profileable` from the shell, so
 `simpleperf record --app io.github.c2rs` samples it.
+
+## 2026-11-06 — Android: one app per named instance
+
+Android keys an app by its package name, and the app's files folder
+(`Android/data/<package>/files/`) follows it, so a second instance used to
+replace the first. The launcher's Android tab now takes a name per instance
+(`InstanceBuilds::android_name`). Empty keeps the shared `io.github.c2rs`;
+a name gives `io.github.c2rs.<segment>`, the segment being the name
+lower-cased, letters and digits kept, every other run turned into one `_`,
+leading digits dropped (a package segment starts with a letter).
+
+How the APK is renamed: the manifest (`android-ver/AndroidManifest.xml`,
+included in the launcher) has its `package` and `android:label` replaced,
+`aapt2 link` builds a fresh APK from it, the engine library is copied in
+from `c2rs.apk` as a raw zip entry (still stored, so Android maps it from
+the APK), then `zipalign -P 16 4` and `apksigner` with the debug key, the
+same steps as `build-apk.sh`. Patching the binary manifest inside the APK
+was the alternative; it still needs re-signing, so the SDK is required
+either way, and re-linking from the source manifest is simpler to keep
+right. The native code takes its files folder from the activity, so
+nothing in the engine knows the package.
+
+The same debug key signs every variant, so updates install over each
+other. Renaming an instance later makes another app; the old one stays
+until uninstalled.
+

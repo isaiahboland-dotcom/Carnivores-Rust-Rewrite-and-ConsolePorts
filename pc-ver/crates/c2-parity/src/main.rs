@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
+mod predation_sim;
 mod strstr;
 
 use anyhow::{bail, Context, Result};
@@ -330,6 +331,8 @@ fn dinos_sim(map_path: &Path, seconds: u32) -> Result<()> {
             dt: 10,
             real_time: (t * 10) as i32,
             hunter,
+            target: Default::default(),
+            struck: None,
             opt_agres: 128,
             tranq: false,
             view_r: 74,
@@ -546,6 +549,8 @@ fn mee_sim(game: &Path, area_n: u32, seconds: u32, picked: &str) -> Result<()> {
             dt: 10,
             real_time: (t * 10) as i32,
             hunter,
+            target: Default::default(),
+            struck: None,
             opt_agres: 128,
             tranq: false,
             view_r: 74,
@@ -805,6 +810,14 @@ fn find_ci(dir: &Path, name: &str) -> Option<std::path::PathBuf> {
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("predation") {
+        let path = args
+            .get(1)
+            .context("usage: c2-parity predation <AREA.MAP> [seconds] [prey]")?;
+        let secs = args.get(2).map(|s| s.parse()).transpose()?.unwrap_or(120);
+        let prey = args.get(3).is_some_and(|s| s == "prey");
+        return predation_sim::run(Path::new(path), secs, prey);
+    }
     if args.first().map(String::as_str) == Some("dinos") {
         let path = args
             .get(1)

@@ -60,7 +60,7 @@ pub fn animate(
         let targetdx = c.tgx - c.pos[0];
         let targetdz = c.tgz - c.pos[2];
         let tdist = (targetdx * targetdx + targetdz * targetdz).sqrt();
-        let (playerdx, playerdz) = (ctx.hunter.x - c.pos[0], ctx.hunter.z - c.pos[2]);
+        let (playerdx, playerdz) = (ctx.target.view.x - c.pos[0], ctx.target.view.z - c.pos[2]);
         let pdist = (playerdx * playerdx + playerdz * playerdz).sqrt();
         if rethink < MAX_RETHINK {
             if pdist > ((ctx.render_r + 20) * 256) as f32 && c.replace_forward_in(sp, ctx, w.group)
@@ -115,7 +115,8 @@ pub fn animate(
         break (targetdx, targetdz);
     };
     c.tgalpha = corrected_alpha(find_vector_alpha(targetdx, targetdz), c.alpha);
-    let pdist = ((ctx.hunter.x - c.pos[0]).powi(2) + (ctx.hunter.z - c.pos[2]).powi(2)).sqrt();
+    let pdist =
+        ((ctx.target.view.x - c.pos[0]).powi(2) + (ctx.target.view.z - c.pos[2]).powi(2)).sqrt();
     if wary && c.state != 0 && pdist > m.weave_range && !m.dont_weave {
         c.tgalpha +=
             (c.tgalpha_offset + ctx.real_time as f32 / 1024.0).sin() / a.tga_increment.max(1e-3);

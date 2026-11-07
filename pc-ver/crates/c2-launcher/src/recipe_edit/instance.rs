@@ -293,10 +293,31 @@ impl Extras {
              this instance (its parts left out are not listed). Kept in the recipe; used when the \
              instance is played or built.",
         );
+        let Some(values) = self.read_values(ui, r, game, folders, handle) else {
+            return;
+        };
+        panel(ui, |ui| {
+            if self.balance.edit_ui(ui, &values) {
+                let e = &self.balance.edits;
+                r.settings.balance = (!e.is_empty()).then(|| e.clone());
+            }
+        });
+    }
+
+    /// The instance's areas, animals and weapons with their values, read
+    /// off the UI thread (showing progress or errors until they are).
+    pub(super) fn read_values(
+        &mut self,
+        ui: &mut egui::Ui,
+        r: &Recipe,
+        game: &[PathBuf],
+        folders: &BTreeMap<String, PathBuf>,
+        handle: &mut crate::jobs::Handle,
+    ) -> Option<Balance> {
         let (inst, missing) = instance(r, game, folders);
         let Some(inst) = inst else {
             ui.label(RichText::new("Choose the base game first (Base game page).").color(RED));
-            return;
+            return None;
         };
         if !missing.is_empty() {
             help(
@@ -313,14 +334,14 @@ impl Extras {
             if ui.small_button("Try again").clicked() {
                 self.refresh_list();
             }
-            return;
+            return None;
         }
         let Some(values) = self.values.clone() else {
             ui.horizontal(|ui| {
                 ui.spinner();
                 ui.label("Reading the instance's game...");
             });
-            return;
+            return None;
         };
         if self.reading {
             ui.horizontal(|ui| {
@@ -328,12 +349,7 @@ impl Extras {
                 help(ui, "Reading the changed instance...");
             });
         }
-        panel(ui, |ui| {
-            if self.balance.edit_ui(ui, &values) {
-                let e = &self.balance.edits;
-                r.settings.balance = (!e.is_empty()).then(|| e.clone());
-            }
-        });
+        Some(values)
     }
 }
 

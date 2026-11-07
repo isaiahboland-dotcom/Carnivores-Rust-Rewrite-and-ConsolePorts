@@ -480,11 +480,7 @@ fn new_hunt(
     let (infos, anims): (Vec<_>, Vec<_>) = weapon_info.iter().cloned().unzip();
     let weapons = Weapons::new(infos, anims, carried, setup.double_ammo);
     let opts = HuntOptions {
-        targets: if setup.observer {
-            Bits::NONE
-        } else {
-            setup.targets
-        },
+        targets: setup.targets,
         radar: o.radar != 0,
         opt_agres: o.agres,
         opt_sens: o.sens,
@@ -502,6 +498,9 @@ fn new_hunt(
         scent: o.scent != 0,
         tranq: o.tranq != 0 && !setup.half_tranq,
         half_tranq: o.tranq != 0 && setup.half_tranq,
+        // The PC's "Map puts the gun away" setting; the 3DS map is on the
+        // bottom screen.
+        map_holsters: false,
         free_observer: setup.observer && setup.free_observer,
         observer: setup.observer,
         trophy,
@@ -640,6 +639,11 @@ impl Game {
         );
         if let Some(s) = &mut hunt.survival {
             s.opts.starting_budget = menu_rules.menu.survival_budget;
+        }
+        // Predation (an instance setting, experimental here): the pack's
+        // `_PREDATION.TXT`, when its recipe turns it on.
+        if !setup.trophy() && setup.survival.is_none() {
+            hunt.herd.predation = load::predation(vfs, &hunt.herd.species);
         }
         // A dialect game's tables can place a dozen ambients or more:
         // the setting's cap, as the original's placement has.

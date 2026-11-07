@@ -58,3 +58,40 @@ fn pause_freezes_and_health_recovers() {
     h.press_escape();
     assert!(!h.paused && !h.exit_prompt);
 }
+
+/// An observer's hunt drops the saved camouflage, scent and tranquilizer
+/// but keeps the radar; a normal hunt keeps them all.
+#[test]
+fn observer_hunt_masks_the_saved_accessories() {
+    use crate::dino::Herd;
+    use crate::game::HuntOptions;
+    use crate::rng::MsRand;
+    let (area, h, _) = setup(false);
+    let saved = HuntOptions {
+        camo: true,
+        scent: true,
+        tranq: true,
+        half_tranq: true,
+        radar: true,
+        ..Default::default()
+    };
+    for observer in [false, true] {
+        let opts = HuntOptions { observer, ..saved };
+        let hunt = Hunt::new(
+            &area,
+            h.player.clone(),
+            Herd::default(),
+            h.weapons.clone(),
+            MsRand::new(1),
+            opts,
+            super::support::blank_save(),
+        );
+        let o = hunt.opts;
+        assert_eq!(
+            (o.camo, o.scent, o.tranq, o.half_tranq),
+            (!observer, !observer, !observer, !observer),
+            "observer {observer}"
+        );
+        assert!(o.radar, "the radar stays (observer {observer})");
+    }
+}

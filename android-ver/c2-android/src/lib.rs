@@ -6,10 +6,11 @@
 //!
 //! - `game/`: a game built from their own mobile APK (Dinosaur Hunter or Ice
 //!   Age; `c2-pc mobile-base APK --out game`, or the launcher's "Build from my
-//!   APK"). Only such a game is accepted: the phone's own menus and touch
-//!   buttons come from it.
+//!   APK"), or that game with standalones combined beside it on the PC
+//!   (`c2-pc combine`, which keeps its `from-apk.txt`). Only such a game is
+//!   accepted: the phone's own menus and touch buttons come from it.
 //! - `addons/` (optional): add-on folders, combined over the game in name
-//!   order. Standalone games are not offered on Android.
+//!   order.
 //! - `balance.toml` (optional): prices and scores (`c2-pc play --balance`),
 //!   as the launcher's Android package writes it.
 //!

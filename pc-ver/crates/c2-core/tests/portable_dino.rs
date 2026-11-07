@@ -72,6 +72,8 @@ fn shared_herbivore_ai_flees_a_nearby_hunter() {
             dt: 10,
             real_time: t * 10,
             hunter,
+            target: Default::default(),
+            struck: None,
             opt_agres: 128,
             tranq: false,
             view_r: 74,

@@ -128,6 +128,7 @@ impl Hunt {
             alpha: rng.r_rand(1024) as f32 * 2.0 * PI / 1024.0,
             speed: 10.0,
         };
+        let opts = opts.for_hunt();
         let ship = Ship::new(area, (player.x, player.z));
         let mut weapons = weapons;
         if opts.half_tranq && !opts.observer && !opts.trophy {

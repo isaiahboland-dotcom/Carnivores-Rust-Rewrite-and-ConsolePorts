@@ -99,6 +99,16 @@ pub fn build_combined(
         balance(&mut pack, balance_file)?;
         materialize(&pack, out).with_context(|| format!("writing {}", out.display()))?;
     }
+    // A base built from a mobile APK stays marked as one (the Android app
+    // goes by it), with its Survive waves (the 3DS cook takes them).
+    for name in [
+        c2_mods::mobile_base::SOURCE_APK,
+        c2_mods::mobile::MOBILE_SURVIVAL,
+    ] {
+        if let Some(src) = bases.first().map(|b| b.join(name)).filter(|p| p.is_file()) {
+            std::fs::copy(&src, out.join(name)).with_context(|| format!("copying {name}"))?;
+        }
+    }
     Ok(())
 }
 
@@ -359,6 +369,11 @@ pub fn build_recipe(
         tracing::info!("left out of the base game: {}", r.recipe.skip.to_arg());
     }
     balance(&mut pack, balance_file)?;
+    if let Some(p) = &r.settings.predation {
+        if p.push(&mut pack.vfs) {
+            pack.notes.push("predation settings applied".into());
+        }
+    }
     materialize(&pack, out).with_context(|| format!("writing {}", out.display()))?;
     tracing::info!(
         "built {} — see {}",

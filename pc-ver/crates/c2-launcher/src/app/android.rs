@@ -29,6 +29,24 @@ impl Launcher {
                     }
                 }
             });
+            ui.horizontal(|ui| {
+                ui.label("Name on the phone:");
+                let edit = egui::TextEdit::singleline(&mut self.cfg.android_name)
+                    .hint_text(crate::android::LABEL)
+                    .desired_width(200.0);
+                if ui.add(edit).changed() {
+                    self.save();
+                }
+                let package = crate::android::app_package(&self.cfg.android_name);
+                ui.label(RichText::new(format!("-> {package}")).color(DIM));
+            });
+            help(
+                ui,
+                "Empty: the shared c2rs app (each install replaces the last). A name makes the \
+                 instance an app of its own, installed beside the others with its own saves; \
+                 changing the name later makes another app. Needs the Android SDK's build \
+                 tools (the APK is relabelled and signed with the debug key).",
+            );
         });
         ui.add_space(8.0);
         let problem = self
@@ -79,7 +97,7 @@ impl Launcher {
                  once, then copy the contents of files/ to Android/data/{}/files/ on the device. \
                  Over adb (USB debugging on), the game is pushed beside the old one and swapped \
                  in when complete; saves and other folders there are kept.",
-                crate::android::PACKAGE
+                crate::android::app_package(&self.cfg.android_name)
             ),
         );
     }
@@ -186,17 +204,34 @@ impl Launcher {
             .find(|p| p[0] == "--balance")
             .map(|p| PathBuf::from(&p[1]));
         let package = out.clone();
+        // A name: the APK relabelled as an app of its own.
+        let label = self.cfg.android_name.trim().to_string();
+        let app = crate::android::app_package(&label);
+        let sdk = if label.is_empty() {
+            None
+        } else {
+            Some(crate::android::rename::find_sdk()?)
+        };
+        let renamed = work.with_extension("apk-build");
+        let app_id = app.clone();
         let mut steps = vec![
             Step::Run { program: pc, args },
             Step::Task(Box::new(move |job| {
-                crate::android::package(&work, &base, &apk, balance.as_deref(), &out)
+                let apk = match &sdk {
+                    Some(sdk) => {
+                        job.log(format!("Naming the app \"{label}\" ({app_id})"));
+                        crate::android::rename::renamed_apk(sdk, &apk, &label, &app_id, &renamed)?
+                    }
+                    None => apk,
+                };
+                crate::android::package(&work, &base, &apk, balance.as_deref(), &app_id, &out)
                     .map_err(|e| e.to_string())?;
                 job.log(format!("Android package ready: {}", out.display()));
                 Ok(())
             })),
         ];
         if let Some(adb) = adb {
-            steps.extend(crate::android::install_steps(&adb, &package));
+            steps.extend(crate::android::install_steps(&adb, &package, &app));
         }
         Ok(steps)
     }

@@ -23,7 +23,7 @@ use c2_formats::mee::SpawnGroup;
 use super::mee::{ai_info, mee_ai, IdleGroup, MeeInfo};
 use super::{
     ai, angle_difference, corrected_alpha, delta_func, find_vector_alpha, hunt, sgn, wrap_angle,
-    Character, Ctx, DinoEvent, Pack, Species, CS_ON_WATER, PI,
+    Character, Ctx, Pack, Species, CS_ON_WATER, PI,
 };
 use crate::rng::MsRand;
 
@@ -64,7 +64,7 @@ pub fn animate(
     if c.state == 0 && w.pack.as_ref().is_some_and(|p| p.alert_prev) {
         alert_init = true;
     }
-    if alert_init && (ctx.hunter.alive || a.carnivore) {
+    if alert_init && (ctx.target.view.alive || a.carnivore) {
         if !a.carnivore {
             new_phase = true;
         }
@@ -97,8 +97,8 @@ pub fn animate(
             _ if a.carnivore => 108.0,
             _ => 0.0,
         };
-        let playerdx = ctx.hunter.x - c.pos[0] - c.lookx * head;
-        let playerdz = ctx.hunter.z - c.pos[2] - c.lookz * head;
+        let playerdx = ctx.target.view.x - c.pos[0] - c.lookx * head;
+        let playerdz = ctx.target.view.z - c.pos[2] - c.lookz * head;
         let pdist = (playerdx * playerdx + playerdz * playerdz).sqrt();
         let done = (targetdx, targetdz, pdist);
 
@@ -107,7 +107,7 @@ pub fn animate(
         if eating(c) {
             break done;
         }
-        if !ctx.hunter.alive {
+        if !ctx.target.view.alive {
             c.state = 0;
         }
 
@@ -125,10 +125,10 @@ pub fn animate(
             let mut flee = c.wave == 0
                 && (pdist > a_dist
                     || m.aggress <= 0
-                    || !c.aware_hunter
+                    || !ctx.target.aware
                     || (m.defensive && !c.damaged)
                     || (m.fear_shot && c.damaged)
-                    || (m.fear_hear_shot && c.heard_shot));
+                    || (m.fear_hear_shot && ctx.target.heard_shot));
             if !flee {
                 if let Some(p) = w.pack.as_deref_mut() {
                     p.attack = true;
@@ -162,8 +162,8 @@ pub fn animate(
                     c.state = 0;
                 }
             } else {
-                c.tgx = ctx.hunter.x;
-                c.tgz = ctx.hunter.z;
+                c.tgx = ctx.target.view.x;
+                c.tgz = ctx.target.view.z;
                 c.tgtime = 0;
                 if a.carnivore {
                     if let Some(p) = w.pack.as_deref_mut() {
@@ -172,7 +172,7 @@ pub fn animate(
                 }
             }
             if a.jumper
-                && c.lure.is_none()
+                && ctx.target.strikes()
                 && !on_water
                 && pdist < 1324.0 * c.scale
                 && pdist > 900.0 * c.scale
@@ -470,11 +470,15 @@ pub(super) fn try_kill(
     pdist: f32,
     on_water: bool,
 ) {
-    if c.lure.is_some() || !ctx.hunter.alive || m.kill_dist <= 0 || pdist >= m.kill_dist as f32 {
+    if !ctx.target.strikes()
+        || !ctx.target.view.alive
+        || m.kill_dist <= 0
+        || pdist >= m.kill_dist as f32
+    {
         return;
     }
     let kill_alt = m.water_level.max(256) as f32;
-    if (ctx.hunter.y - c.pos[1]).abs() >= kill_alt + 20.0 {
+    if (ctx.target.view.y - c.pos[1]).abs() >= kill_alt + 20.0 {
         return;
     }
     kill_now(c, index, m, ctx, on_water);
@@ -489,12 +493,14 @@ pub(super) fn kill_now(
     ctx: &mut Ctx<'_>,
     on_water: bool,
 ) {
-    // Survival substitutes a navigation waypoint for the hunter while
-    // steering around obstacles. Reaching that waypoint is never a kill.
-    if c.lure.is_some() || !ctx.hunter.alive {
+    // A survival waypoint or a place is never struck.
+    if !ctx.target.strikes() || !ctx.target.view.alive {
         return;
     }
+    // Kill clips are staged with the hunter's body: another animal is
+    // struck without one.
     let (kind, scream) = match m.kill(c.kill_type) {
+        Some(k) if !ctx.target.is_hunter() => (k.hunter_anim, k.scream),
         Some(k) if !on_water && k.anim != usize::MAX => {
             c.vspeed /= 8.0;
             c.state = 1;
@@ -510,11 +516,7 @@ pub(super) fn kill_now(
             (hunt::EAT, true)
         }
     };
-    ctx.events.push(DinoEvent::KillHunter {
-        index,
-        kind,
-        scream,
-    });
+    ctx.strike(index, kind, scream);
 }
 
 /// A calm animal's heading: keep near the pack leader, else roam to a new
@@ -699,7 +701,7 @@ pub fn animate_dead(c: &mut Character, index: usize, sp: &Species, m: &MeeInfo, 
 #[cfg(test)]
 mod tests {
     use super::super::mee::{DeathType, IdleGroup, KillType};
-    use super::super::{DinoInfo, Herd, HunterView};
+    use super::super::{DinoEvent, DinoInfo, Herd, HunterView};
     use super::*;
     use crate::area::Area;
     use crate::rng::MsRand;
@@ -803,6 +805,8 @@ mod tests {
                 dt: 10,
                 real_time: t * 10,
                 hunter: h,
+                target: Default::default(),
+                struck: None,
                 opt_agres: 128,
                 tranq: false,
                 view_r: 74,

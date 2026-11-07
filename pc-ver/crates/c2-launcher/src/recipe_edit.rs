@@ -11,6 +11,7 @@ mod base_tab;
 pub use base_tab::BaseAsk;
 mod entries;
 mod instance;
+mod predation;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -415,6 +416,14 @@ impl Editor {
         let game = self.draft.game_dirs();
         self.extras
             .balance_ui(ui, &mut self.recipe, &game, &self.draft.folders, handle)
+    }
+
+    /// The Advanced page's "Carnivores hunt herbivores": whether a setting
+    /// changed.
+    pub fn predation_ui(&mut self, ui: &mut egui::Ui, handle: &mut crate::jobs::Handle) -> bool {
+        let game = self.draft.game_dirs();
+        self.extras
+            .predation_ui(ui, &mut self.recipe, &game, &self.draft.folders, handle)
     }
 
     /// Reads the instance's areas, animals and weapons again (after its

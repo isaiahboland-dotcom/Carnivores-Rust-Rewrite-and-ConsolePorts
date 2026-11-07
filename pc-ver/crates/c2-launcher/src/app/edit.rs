@@ -124,14 +124,14 @@ impl Launcher {
             }
             Tab::Advanced => {
                 heading(ui, "Advanced");
-                panel(ui, |ui| {
-                    ui.label(RichText::new("Experimental").color(GOLD));
-                    help(
-                        ui,
-                        "Experimental instance options will be added here. They may change or \
-                         go away between versions. Hide this tab in Settings.",
-                    );
-                });
+                help(
+                    ui,
+                    "Experimental instance options. They may change or go away between \
+                     versions. Hide this tab in Settings.",
+                );
+                if let Some(e) = &mut self.ui.recipe_edit {
+                    panel(ui, |ui| e.predation_ui(ui, &mut self.job));
+                }
             }
             Tab::AddOns => {
                 heading(ui, "Add-ons");

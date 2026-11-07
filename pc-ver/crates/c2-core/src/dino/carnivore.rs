@@ -17,7 +17,7 @@ use alloc::{
 
 use super::{
     ai, angle_difference, corrected_alpha, delta_func, find_vector_alpha, hunt, sgn, wrap_angle,
-    Character, Ctx, DinoEvent, Species, CS_ON_WATER, PI,
+    Character, Ctx, Species, CS_ON_WATER, PI,
 };
 
 /// Marks a phase the species doesn't have.
@@ -203,8 +203,8 @@ pub fn animate(
         } else {
             p.head
         };
-        let playerdx = ctx.hunter.x - c.pos[0] - c.lookx * head;
-        let playerdz = ctx.hunter.z - c.pos[2] - c.lookz * head;
+        let playerdx = ctx.target.view.x - c.pos[0] - c.lookx * head;
+        let playerdz = ctx.target.view.z - c.pos[2] - c.lookz * head;
         let pdist = (playerdx * playerdx + playerdz * playerdz).sqrt();
         if c.state == 2 {
             match p.alert_mode {
@@ -238,7 +238,7 @@ pub fn animate(
         }
 
         if c.phase != p.eat {
-            if !ctx.hunter.alive {
+            if !ctx.target.view.alive {
                 c.state = 0;
             }
             if c.state != 0 {
@@ -261,13 +261,13 @@ pub fn animate(
                         c.state = 0;
                     }
                 } else {
-                    c.tgx = ctx.hunter.x;
-                    c.tgz = ctx.hunter.z;
+                    c.tgx = ctx.target.view.x;
+                    c.tgz = ctx.target.view.z;
                     c.tgtime = 0;
                 }
 
                 if p.jump != NONE
-                    && c.lure.is_none()
+                    && ctx.target.strikes()
                     && c.state_f & CS_ON_WATER == 0
                     && pdist < 1324.0 * c.scale
                     && pdist > 900.0 * c.scale
@@ -276,22 +276,17 @@ pub fn animate(
                     c.phase = p.jump;
                 }
 
-                if c.lure.is_none()
+                if ctx.target.strikes()
                     && pdist < p.eat_dist
-                    && (ctx.hunter.y - c.pos[1] - p.eat_dy).abs() < 256.0
+                    && (ctx.target.view.y - c.pos[1] - p.eat_dy).abs() < 256.0
                 {
-                    if c.state_f & CS_ON_WATER == 0 {
+                    // The kill clip is staged with the hunter's body.
+                    if c.state_f & CS_ON_WATER == 0 && ctx.target.is_hunter() {
                         c.vspeed /= 8.0;
                         c.state = 1;
                         c.phase = p.eat;
                     }
-                    if ctx.hunter.alive {
-                        ctx.events.push(DinoEvent::KillHunter {
-                            index,
-                            kind: hunt::EAT,
-                            scream: true,
-                        });
-                    }
+                    ctx.strike(index, hunt::EAT, true);
                 }
             }
             if c.state == 0 {

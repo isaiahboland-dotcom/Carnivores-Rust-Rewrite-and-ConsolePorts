@@ -678,16 +678,12 @@ impl Menus {
                 let Some(map) = self.maps.get(self.area).cloned() else {
                     return Action::None;
                 };
-                // `c2-pc menu.rs: launch_hunt`: an observer's hunt has no
-                // targets (the original places a random mix).
+                // `c2-pc menu.rs: launch_hunt`: an observer's picks are
+                // placed too (none picked: the original's random mix).
                 return Action::Hunt(Launch {
                     map,
                     time: [TimeOfDay::Dusk, TimeOfDay::Day, TimeOfDay::Night][self.time],
-                    targets: if self.observer {
-                        Bits::NONE
-                    } else {
-                        self.dinos_picked.up(10)
-                    },
+                    targets: self.dinos_picked.up(10),
                     observer: self.observer,
                 });
             }

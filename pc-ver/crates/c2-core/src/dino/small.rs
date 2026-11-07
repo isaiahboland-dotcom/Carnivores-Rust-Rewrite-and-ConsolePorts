@@ -104,7 +104,7 @@ pub fn animate(c: &mut Character, index: usize, sp: &Species, ctx: &mut Ctx<'_>,
         let targetdx = c.tgx - c.pos[0];
         let targetdz = c.tgz - c.pos[2];
         let tdist = (targetdx * targetdx + targetdz * targetdz).sqrt();
-        let (playerdx, playerdz, pdist) = c.to_hunter(&ctx.hunter);
+        let (playerdx, playerdz, pdist) = c.to_hunter(&ctx.target.view);
 
         // Run away.
         if c.state != 0 {
