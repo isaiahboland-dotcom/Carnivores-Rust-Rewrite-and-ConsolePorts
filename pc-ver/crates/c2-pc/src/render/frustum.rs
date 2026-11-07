@@ -50,7 +50,7 @@ mod tests {
     use super::*;
 
     fn looking_down_neg_z() -> Frustum {
-        let view = Mat4::look_to_rh(Vec3::ZERO, Vec3::NEG_Z, Vec3::Y);
+        let view = glam::camera::rh::view::look_to_mat4(Vec3::ZERO, Vec3::NEG_Z, Vec3::Y);
         let proj = crate::camera::projection(16.0 / 9.0, 10_000.0, 1.0);
         Frustum::new(proj * view)
     }

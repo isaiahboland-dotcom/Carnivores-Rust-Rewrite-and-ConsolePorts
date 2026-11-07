@@ -17,7 +17,10 @@ fn fill_grows_with_the_placed_mix_and_trims() {
     let at = (MID + 200.0 * 256.0, MID);
     bench::fill(&mut h, &area, at, &mut rng, 30);
     assert_eq!(bench::population(&h), 30);
-    assert!(h.chars.iter().all(|c| c.ctype == RAPTOR || c.ctype == STEGO));
+    assert!(h
+        .chars
+        .iter()
+        .all(|c| c.ctype == RAPTOR || c.ctype == STEGO));
     let raptors = h.chars.iter().filter(|c| c.ctype == RAPTOR).count();
     assert!((14..=16).contains(&raptors), "{raptors} raptors of 30");
     for c in &h.chars[2..] {
@@ -31,7 +34,11 @@ fn fill_grows_with_the_placed_mix_and_trims() {
 #[test]
 fn gather_brings_the_living_close() {
     let area = Area::flat(10);
-    let mut h = herd(&fights(), &area, &[(RAPTOR, 0.0), (STEGO, 2000.0), (ALLO, 4000.0)]);
+    let mut h = herd(
+        &fights(),
+        &area,
+        &[(RAPTOR, 0.0), (STEGO, 2000.0), (ALLO, 4000.0)],
+    );
     h.chars[2].health = 0;
     let dead_at = h.chars[2].pos;
     let at = (MID + 100.0 * 256.0, MID + 100.0 * 256.0);
@@ -53,12 +60,26 @@ fn measure_counts_steps_and_thinks() {
         t += 7;
         t
     };
-    let s = bench::measure(&mut h, &area, hunter(&area), &mut MsRand::new(5), 3, &mut clock);
+    let s = bench::measure(
+        &mut h,
+        &area,
+        hunter(&area),
+        &mut MsRand::new(5),
+        3,
+        &mut clock,
+    );
     assert_eq!((s.animals, s.steps, s.thinks), (2, 150, 10));
     assert_eq!((s.step_mean_us, s.step_worst_us), (7, 7));
     assert_eq!((s.think_mean_us, s.think_worst_us), (7, 7));
     h.predation = None;
-    let s = bench::measure(&mut h, &area, hunter(&area), &mut MsRand::new(5), 1, &mut clock);
+    let s = bench::measure(
+        &mut h,
+        &area,
+        hunter(&area),
+        &mut MsRand::new(5),
+        1,
+        &mut clock,
+    );
     assert_eq!((s.thinks, s.think_worst_us), (0, 0));
 }
 
@@ -70,7 +91,11 @@ fn the_scan_finds_the_nearer_prey_and_a_tie_keeps_the_first() {
         prey: true,
         body: false,
     };
-    for (a, b, want) in [(1800.0, 1200.0, 2), (1200.0, 1800.0, 1), (1500.0, 1500.0, 1)] {
+    for (a, b, want) in [
+        (1800.0, 1200.0, 2),
+        (1200.0, 1800.0, 1),
+        (1500.0, 1500.0, 1),
+    ] {
         let h = herd(&fights(), &area, &[(RAPTOR, 0.0), (STEGO, a), (STEGO, -b)]);
         let rules = &h.predation.as_ref().unwrap().rules;
         let s = Scan::new(0, &h.chars, &h.species, rules, 74, wants);

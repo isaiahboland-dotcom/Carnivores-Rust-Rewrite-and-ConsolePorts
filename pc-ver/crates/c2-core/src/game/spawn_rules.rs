@@ -23,10 +23,7 @@ pub fn species_named(species: &[Species], name: &str) -> Option<usize> {
 /// second one so named).
 pub fn index_named<'a>(names: impl Iterator<Item = &'a str> + Clone, name: &str) -> Option<usize> {
     let name = name.trim();
-    let (base, nth) = match name
-        .rsplit_once(" #")
-        .map(|(a, k)| (a, k.parse::<usize>()))
-    {
+    let (base, nth) = match name.rsplit_once(" #").map(|(a, k)| (a, k.parse::<usize>())) {
         Some((a, Ok(k))) if k >= 1 => (a.trim(), k),
         _ => (name, 1),
     };
