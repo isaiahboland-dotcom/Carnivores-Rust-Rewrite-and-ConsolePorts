@@ -309,7 +309,9 @@ struct Column {
     order: Vec<usize>,
 }
 
-const ROW_H: f32 = 19.0;
+/// The original's list rows: 16 px apart from the box's first row, y 382
+/// (`MenuHunt[..].Rect.top + 16 * i`; clicks `(y - top) / 16`).
+const ROW_H: f32 = 16.0;
 
 impl Column {
     /// Rows that fit in the box.
@@ -1368,7 +1370,7 @@ impl Menu {
             return None;
         }
         let _ = x;
-        let r = ((y - c.rect.1 - 4.0) / ROW_H).floor();
+        let r = ((y - c.rect.1 - 6.0) / ROW_H).floor();
         if r < 0.0 || r as usize >= c.visible() {
             return None;
         }

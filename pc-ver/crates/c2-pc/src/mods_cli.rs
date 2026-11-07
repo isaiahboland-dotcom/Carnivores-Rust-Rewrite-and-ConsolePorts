@@ -469,7 +469,10 @@ pub fn run_recipe(args: &[String], a: &RecipeArgs<'_>) -> Result<()> {
             write_new(a.out, &r.to_toml())
         }
         "base" => {
-            let v = vanilla(bases)?;
+            // The files as they are on disk: a hash list must not record the
+            // engine's compatibility layers (`pack::vanilla`), which
+            // `check_base` (over `vanilla_files`) would then never match.
+            let v = c2_mods::pack::vanilla_files(bases)?;
             let b = c2_mods::recipe::base_profile(
                 a.id.unwrap_or("c2-vanilla"),
                 a.name

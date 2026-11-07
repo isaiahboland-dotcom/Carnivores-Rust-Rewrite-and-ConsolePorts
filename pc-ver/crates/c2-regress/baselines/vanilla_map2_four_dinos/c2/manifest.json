@@ -1,6 +1,6 @@
 {
   "build": {
-    "commit": "1e39f8695225",
+    "commit": "c1751015c87b",
     "dirty": true,
     "profile": "release",
     "version": "0.4.3"
@@ -135,9 +135,9 @@
     ]
   },
   "scenario": {
-    "file_sha256": "5c525480db0f49be547ac228ed07852d7d63c13a959f9a9331ca9a81367f6d57",
+    "file_sha256": "cea79917f767088db245258abac7d21372e0bb09eab73d163ae4984fd6f70211",
     "id": "vanilla_map2_four_dinos",
-    "version": 1
+    "version": 2
   },
   "seed": 20261107,
   "settings": {

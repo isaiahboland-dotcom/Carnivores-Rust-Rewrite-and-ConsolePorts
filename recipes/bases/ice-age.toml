@@ -243,6 +243,7 @@ note = "SHA-256 of every HUNTDAT file of the owner's Carnivores: Ice Age install
 "HUNTDAT/Wcircle2.car" = "sha256:f7c056da9aa6a0b6ba51201520f86d00ebbe65a3ea08d2c1ca1d6f6e9d970758"
 "HUNTDAT/Wind.car" = "sha256:fb6eb26562cbb3aee8a30f272202c497a8f77a30e5bdd1449a4e4e0675ee5568"
 "HUNTDAT/Wolf.car" = "sha256:9d29b4287ee3712d87ad0b1d6c5ab9b33955b5b5265515036897a30282250390"
-"HUNTDAT/_RES.TXT" = "sha256:f86e1517764b4c1b7182982a86404b6dca16b9cab21e476dce83382c4d82c217"
+# Was f86e1517...c217 until 2026-11-07; the installed file (dated 2000-10-19) is the vanilla one.
+"HUNTDAT/_RES.TXT" = "sha256:3ebc87a70039c323db5b37132a177133c89e9a5ccae5e8bccab6af9b43cdc507"
 "HUNTDAT/binocul.3df" = "sha256:508c6e5d38afba47dea9ea10eaccb9cbc68e90183181fb359202e79b1cd48514"
 "HUNTDAT/moon.3df" = "sha256:b154705bade54371d27a81a6a641c696d6eb2236a0187a4a5eb2ac58beab8fc6"

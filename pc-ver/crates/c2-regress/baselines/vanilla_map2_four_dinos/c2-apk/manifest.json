@@ -1,0 +1,368 @@
+{
+  "build": {
+    "commit": "c1751015c87b",
+    "dirty": true,
+    "profile": "release",
+    "version": "0.4.3"
+  },
+  "content": {
+    "files": [
+      {
+        "path": "HUNTDAT/_RES.TXT",
+        "sha256": "9946a0cb182b4bf131cd3fd626a19f4f3916818a3c4d27c6433d2ddf0463a046"
+      },
+      {
+        "path": "HUNTDAT/AREAS/AREA2.MAP",
+        "sha256": "6754c322a2f2c137ec98fb92a979c28be38f4f7150f6b7174678519e9a2c0818"
+      },
+      {
+        "path": "HUNTDAT/AREAS/AREA2.RSC",
+        "sha256": "2f178d830b123c8852490c6fbc30148bb79902f5501807712c46abc70c5e640a"
+      },
+      {
+        "path": "HUNTDAT/hunter1.car",
+        "sha256": "68bb5dd3d33937c35f78b0eebcab7e1b53de57cf8cc6fb2f8a89608e8cc827be"
+      },
+      {
+        "path": "HUNTDAT/mosh.car",
+        "sha256": "60b2abe52b4d0caf8d064a3836acff5e7c830debaabf0440ba60068bc27082a0"
+      },
+      {
+        "path": "HUNTDAT/gall.car",
+        "sha256": "34eef665bf27574fe0d9b8fdbb0e6321679766545798e942f424b84b810273de"
+      },
+      {
+        "path": "HUNTDAT/dimor2.car",
+        "sha256": "31ec2aed1b52ea31778b9d659dc97a9c08f8d9b5e9336a9a54a9807c88512b94"
+      },
+      {
+        "path": "HUNTDAT/ptera.car",
+        "sha256": "9b28a44fe50656cbf98b2b7659ffac67a5d41f8526b7a403a7f2400035cf3d47"
+      },
+      {
+        "path": "HUNTDAT/dimet.car",
+        "sha256": "ddfa581c09b7920c9a0d2c03e088fc63a2011cd05d0e7ab372c41b9a70109f87"
+      },
+      {
+        "path": "HUNTDAT/brachi1.car",
+        "sha256": "31129535ef6abd40da6a1c3fcc20d9627446c093551e843691f146980055f474"
+      },
+      {
+        "path": "HUNTDAT/par2.car",
+        "sha256": "d4d67dcbba4a335384307452f4afab2c5b608f8c3453f983faaa00d167e27d63"
+      },
+      {
+        "path": "HUNTDAT/ankylo1.car",
+        "sha256": "0b2d075b8b2d2ad749a42cceaa965f09226b4bea0684347f04820d9ae140befa"
+      },
+      {
+        "path": "HUNTDAT/stego.car",
+        "sha256": "2d0a66900f4ffb3bbe415abd4b916c6e674ec6c11d56c9414b299ee7616c2457"
+      },
+      {
+        "path": "HUNTDAT/allo.car",
+        "sha256": "a5d99d05f0827e09f445dd87e50f5c0c4962a7255636c9c524cde24d9919f9eb"
+      },
+      {
+        "path": "HUNTDAT/chasmosa.car",
+        "sha256": "122d3036e6eaf3f8f115ba5ad3413077a3e523372751d880b58dd3baf0f89ef8"
+      },
+      {
+        "path": "HUNTDAT/velo2.car",
+        "sha256": "abc94825ce4da3e5806baafe53d7adf9003e6d6324190b66cca3f61737a65aa2"
+      },
+      {
+        "path": "HUNTDAT/spino.car",
+        "sha256": "be1bb19f7e7d2054710d1941f8bd7deaef2f27d5be93175d9357cfecf44e015f"
+      },
+      {
+        "path": "HUNTDAT/cerato1.car",
+        "sha256": "0085d8d311d4fc15e494f108b9651c78fe69637e5d73848e6d693c99678af740"
+      },
+      {
+        "path": "HUNTDAT/tirex.car",
+        "sha256": "3981e9db05f21df342a4ba450a4c0b38d06c9105af22b4363eabe1bf3195e403"
+      },
+      {
+        "path": "HUNTDAT/pach.car",
+        "sha256": "a1713f58715708a7ae702736d85984ae0a81c5f2fd95b2584417b746382d2a00"
+      },
+      {
+        "path": "HUNTDAT/amargasaurus.car",
+        "sha256": "09d00e8c8377b1d5f6a936292418a44f7ab45e2d26b8dd2208f6de53ea40f9bf"
+      },
+      {
+        "path": "HUNTDAT/oviraptor.car",
+        "sha256": "980b83d1f261632d2decdddfe90231e8072665cfb8da0ba3ca484b2e31593594"
+      },
+      {
+        "path": "HUNTDAT/troodon.car",
+        "sha256": "db14c0a2a41bea15088d11a064c0029c75d2a79b568c71a996c4078d2113f26e"
+      },
+      {
+        "path": "HUNTDAT/utahraptor.car",
+        "sha256": "b30dce0ccc696067c158a7490d704fc5e3556c8c4c66a5c5104f51d1a793a08e"
+      },
+      {
+        "path": "HUNTDAT/carnotaurus.car",
+        "sha256": "5e11982d8c1429bef0b19c4a3b8111e51b15b727b972bda093193882318957a8"
+      },
+      {
+        "path": "HUNTDAT/gigantoraptor.car",
+        "sha256": "72837023eb469dc615ac98355c31c4f7cb53f21b866d8b11974249224fab9c57"
+      },
+      {
+        "path": "HUNTDAT/coelophysis.car",
+        "sha256": "20c085524735a62f8b113a91d0e890c122ad35cd4755c9443361182a69931f60"
+      },
+      {
+        "path": "HUNTDAT/iguanodon.car",
+        "sha256": "2f4a4d79e992570f03c599aaab540171e048b82c840bddf1d157b1a1c06c0b21"
+      },
+      {
+        "path": "HUNTDAT/WEAPONS/pistol.car",
+        "sha256": "b0ead618f44bf8c9e94e951a1c4f322b62d28f16360efc6572fdc4a577328dd3"
+      },
+      {
+        "path": "HUNTDAT/WEAPONS/shotgun.car",
+        "sha256": "160c00ca9ce4fd34a0274d9800e0a0aad19c0d7228d615cdbe8c03a4d4c6271d"
+      },
+      {
+        "path": "HUNTDAT/WEAPONS/dbsgun.car",
+        "sha256": "36f457f1e60dbd7051550359a38e2b54344a22f0c7f34b7e5ebe4951d75ac9f5"
+      },
+      {
+        "path": "HUNTDAT/WEAPONS/x_bow.car",
+        "sha256": "5d7451eaabddda6821ed6594f6016e6f460c88778997b939f720c95bd6c33539"
+      },
+      {
+        "path": "HUNTDAT/WEAPONS/rifle.car",
+        "sha256": "e412d667fa023badb2d055dab80d11dbb8880fdf0cf571dfe54d7437ad91f594"
+      },
+      {
+        "path": "HUNTDAT/WEAPONS/sniper.car",
+        "sha256": "06b5cd3975415bdcaaafbaffa61dd46f26a2b149869a03bb2d6efc1128d8de6b"
+      },
+      {
+        "path": "HUNTDAT/WEAPONS/revolver.car",
+        "sha256": "43a2aedb4ea17dbb0ca742113f4b0945a553f7dc55f1e5879bb976bf1d1fe69f"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/BINOCULARS.PNG",
+        "sha256": "ae77124d152cac5cf59a1638b33f4697e40bcded22cc1f8f6a979160bc9e25e0"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/BUTTON_CLOSE.PNG",
+        "sha256": "b316e3623b72f1e1279b315cac623f00c4b58e2c4ba76bba8bc829cd07c67006"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/CCRA14.FNT",
+        "sha256": "1bffea4739d2ae756819e310a0b6c2b856ff84dd732ce8d06688d9dc4553ab8c"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/CCRA14.PNG",
+        "sha256": "3aad73b53933c2a09ce1c107dbeebeab4d14d16cf419decc54f6f81c8b492de9"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/COMPAS.PNG",
+        "sha256": "11241925c695c976e87e008027c1d1b4b1b5a5cf77e293a830c0d4e19283d2aa"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/GAME.TXT",
+        "sha256": "2500b3797b08d4d289f3c4ae44fedb93ab7b2f07c2b95d3552858f0526c6a9fa"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/GUI.PNG",
+        "sha256": "b484c3eb00ed57726db97bf499b5af35bd6518e6fa6db23552a762ffe8b3feea"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/GUI_02.PNG",
+        "sha256": "18e36a8de95c83b03f9ed79a9e0c41bb2f1787102ce9e326804b6eee149dda0b"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/GUI_03.PNG",
+        "sha256": "cf841aff476abed0405f3a576593dd32a930a1acba91d4c0aedcd66246206d0f"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/GUI_04.PNG",
+        "sha256": "297124daf3a35269d063915fd22277943278a5607643e92e43ff5ce325cc9e93"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/ICON.PNG",
+        "sha256": "486b0f95c6e122de07146f4af403a55bc7539d2beac7a6690e550cd9178c7419"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/LITH18.FNT",
+        "sha256": "3bce64c76f1ecc240a1d9b37513846d02946bb8a23603a898646eb5e6d58eb38"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/LITH18_HD.PNG",
+        "sha256": "3c66de2769dde0340fd23c8762dfdf10e9247dc95d8950d0a27059a6f6d6e66a"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA1_DAWN.PNG",
+        "sha256": "84d4cd7e96751f83575416b14cbacb018f50cb62f6515db24dffc495d5a3ffb4"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA1_DAY.PNG",
+        "sha256": "3aebba5edfe1fda532e24a134b5f66a10ccac47017ccf42c058e974eea043776"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA1_NIGHT.PNG",
+        "sha256": "79979a5e8b791b5724a4a9c0afb55ff9a934244da0695c38d06652b8058c7fff"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA2_DAWN.PNG",
+        "sha256": "004e6ebc0844a746a837b02db31ce9f0fdc6b3fa90e443c971f4a602c0fe47db"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA2_DAY.PNG",
+        "sha256": "ef79c83f2c41228d6d388d4a115126b940b33fcd843b38080b130b9270684cda"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA2_NIGHT.PNG",
+        "sha256": "7eb27363d1b5816140698d308666e9ed40ed20ea7f18991f37f43ac7bf90e489"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA3_DAWN.PNG",
+        "sha256": "b8aff99ed5792d04a5d06add947dcd9fd2dd4e985f5608daa806ffc01fe1105a"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA3_DAY.PNG",
+        "sha256": "7f810def015e0292019ffc15cf67162167d2633abeeaf831e80bbbe128029689"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA3_NIGHT.PNG",
+        "sha256": "e37e68a7c8e7376dd0b52ddb088600acec0c1f458cdda2135183f6426a507f33"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA4_DAWN.PNG",
+        "sha256": "e27a4eeae0b48a8fe985ec15133396bb057ef31d894f7f50aa12b4881bc4fc5b"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA4_DAY.PNG",
+        "sha256": "923ac8712937a3db5de7c7f58edd8b5cb67dcc43b211922acf1b0f522e85719e"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA4_NIGHT.PNG",
+        "sha256": "3da4782f4cdbf4833c2934f140c0667bd73d572247ce1c58c3e12617187c9fb2"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA5_DAWN.PNG",
+        "sha256": "692ede3194e2274afb6ed78e91b4b0bda6f3b3d497603941876e8b8d85cceadd"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA5_DAY.PNG",
+        "sha256": "97c6713bc82ffd39f3d248a45f4ca8ba3e29ea41f033b734e7467b4ea3005122"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA5_NIGHT.PNG",
+        "sha256": "8c46133adca4a03382234c4e63ce5739ff9c817db595ba9f331bcaa7c4e7c433"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA6_DAWN.PNG",
+        "sha256": "10fdce4f4c4d53a81e98de8e0d640e6afef92467cf42f4a6415f518f4a3722f6"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA6_DAY.PNG",
+        "sha256": "33f10d6bb88f6c58caf36d7d2b12d35319827fefac0ded4c7f3ed09bd4eaa8ae"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA6_NIGHT.PNG",
+        "sha256": "e789865a96354da76dee3411a5c127a642517d910faf3c92357f36eb19640fd4"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA7_DAWN.PNG",
+        "sha256": "841ba74e980213e546c5206439ecc5a8add4b0b530921a0f20a1fc9bd42752ac"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA7_DAY.PNG",
+        "sha256": "5d9105b0d08200addfffdf9774b7c5347e187bfd68615b0b479a75d19aac5bfa"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MAPS/AREA7_NIGHT.PNG",
+        "sha256": "2920d36523e6711507e990a067b91fd05162e37f14e19e2e5f1115bd296ee50d"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MENU_01.PNG",
+        "sha256": "7a5b79b85e2935e04bbe0ebcbb21cc943165778efc58d4ce408e4fb14162ed8d"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/MENU_02.PNG",
+        "sha256": "c89e9bc149d2d42724a8be22979e9ea768a42eb082c6bbb62af899c9c5f42a0c"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/OFS13.FNT",
+        "sha256": "400dea25d81d16dc3d515d3a36ae74b1958a68f5b04e68a5325b728109147c74"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/OFS15.FNT",
+        "sha256": "0dad5ceec875ff4ecce08ce4a9411cfaeda2ca1a56e01060ccf45dd876b6facd"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/OFS26.PNG",
+        "sha256": "f90a434f51f923071dfdd79046f196ae9493c2bbc5da709d1eca4d21bcd9bb41"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/OFS30.PNG",
+        "sha256": "2762385cd8aeda30912ea438b3cf634cbb45a7dd57e4d1d120a2b40f456c33b6"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/POPUP_BACKGROUDS_01.PNG",
+        "sha256": "fa1dfe6e5021fbcd829a37d61178e24950e71f65c6579db15648d2ae2fd9b93a"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/SAVE_LOAD.PNG",
+        "sha256": "681075d971c53bb95548d6f992a8bb12dabe73ac2d0492013524fb20ae513397"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/SPRITES.CFG",
+        "sha256": "57ff9f2938f14b603b6bcc1f929aa39ad73f2d2a4c569b8b8a35d67aa0ae6ea9"
+      },
+      {
+        "path": "HUNTDAT/MOBILE/VIEWFINDER.PNG",
+        "sha256": "b72c51d798cda761432df8519c5535a50ae433cb14e3f9cbc4bf5a473adc89e4"
+      }
+    ],
+    "sha256": "a4023bf6f2b7e02920e726c5cf47579c05374375b93daf0bd5ded90a3acc5d52"
+  },
+  "game": {
+    "area": "AREA2",
+    "id": "c2-apk",
+    "name": "Carnivores: Dinosaur Hunter (Android 2.0.1, rebuilt with c2-pc mobile-base)"
+  },
+  "hardware": {
+    "arch": "x86_64",
+    "machine": "reference machine (not identified)",
+    "os": "linux"
+  },
+  "mode": "headless+render",
+  "platform": "pc-linux",
+  "published": {
+    "files_verified": 79,
+    "note": "Scores only: no screenshots, logs or machine details. Performance figures are from one reference machine.",
+    "vanilla_hash_list": "pc-ver/crates/c2-regress/hash-lists/dinosaur-hunter-apk-2.0.1.toml"
+  },
+  "renderer": {
+    "backend": "Vulkan",
+    "resolution": [
+      960,
+      540
+    ]
+  },
+  "scenario": {
+    "file_sha256": "cea79917f767088db245258abac7d21372e0bb09eab73d163ae4984fd6f70211",
+    "id": "vanilla_map2_four_dinos",
+    "version": 2
+  },
+  "seed": 20261107,
+  "settings": {
+    "inject": null,
+    "repeats": 5,
+    "settle_ticks": 30,
+    "tick_ms": 10,
+    "time_of_day": "day",
+    "timeout_ticks": 600,
+    "warmup_ticks": 500
+  }
+}

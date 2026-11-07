@@ -1,0 +1,87 @@
+# Canonical gameplay regression scenario (docs/REGRESSION.md).
+#
+# Bump `version` whenever anything below changes what a run does; runs of
+# different versions are never compared for performance or visuals.
+
+[scenario]
+id = "vanilla_map2_four_dinos"
+version = 2
+seed = 20261107
+# 10 ms ticks: 5 s of warm-up, 0.3 s on each open screen, 6 s per wait.
+warmup_ticks = 500
+settle_ticks = 30
+timeout_ticks = 600
+
+[view]
+# The area's first landing (`Area::landings[0]`), looking north, level.
+landing = 0
+yaw_deg = 0.0
+pitch_deg = 0.0
+
+[anchor]
+# Animals 12 cells out, 27 degrees right of the line of fire, so every
+# screenshot shows them and no shot can hit one.
+distance = 3072.0
+bearing_deg = 27.0
+fire_clearance_deg = 4.0
+# (right, forward) from the anchor, in the anchor's frame, in species
+# order: the two large carnivores on the side away from the line of fire.
+offsets = [[350.0, 900.0], [350.0, 0.0], [-350.0, 900.0], [-350.0, 0.0]]
+
+[[game]]
+id = "c1"
+name = "Carnivores"
+status = "unsupported"
+reason = "The engine has no Carnivores 1 loader (docs/DEVELOPMENT.md section 1 lists it as a non-goal)."
+
+[[game]]
+id = "c2"
+name = "Carnivores 2"
+status = "supported"
+# HUNTDAT/AREAS/AREA2.MAP and .RSC: the second area in the hunt menu.
+area = "AREA2"
+# T-Rex, Allosaurus, Stegosaurus, Chasmosaurus by _RES.TXT AI number.
+# Carnivores 2 has no Triceratops; Chasmosaurus is its ceratopsian.
+species = ["ai:18", "ai:13", "ai:12", "ai:14"]
+weapons = 6
+
+[[game]]
+id = "ice-age"
+name = "Carnivores: Ice Age"
+status = "supported"
+# Area 4: from area 2's first landing, terrain hid some of the animals.
+area = "AREA4"
+# Mammoth, Smilodon, Bear, Woolly rhinoceros by _RES.TXT AI number: the
+# four largest huntable animals, widest first (the far slots). They are up
+# to twice the Carnivores 2 animals' radius, so they stand 20 cells out.
+species = ["ai:17", "ai:16", "ai:18", "ai:13"]
+weapons = 6
+anchor_distance = 5120.0
+
+[[game]]
+id = "c2-apk"
+name = "Carnivores: Dinosaur Hunter (Android 2.0.1, rebuilt with c2-pc mobile-base)"
+status = "supported"
+# Same animals as "c2"; the rebuilt _RES.TXT keeps their AI numbers. The
+# phone's table adds a seventh weapon (Revolver). HUNTDAT/MOBILE holds the
+# phone's HUD, so the render pass draws it.
+area = "AREA2"
+species = ["ai:18", "ai:13", "ai:12", "ai:14"]
+weapons = 7
+
+[[game]]
+id = "ice-age-apk"
+name = "Carnivores: Ice Age (Android 2.0.1, rebuilt with c2-pc mobile-base)"
+status = "supported"
+# Same animals as "ice-age"; AI numbers checked against the rebuilt
+# _RES.TXT. Seven weapons (Revolver added). Area 4, as "ice-age".
+area = "AREA4"
+species = ["ai:17", "ai:16", "ai:18", "ai:13"]
+weapons = 7
+anchor_distance = 5120.0
+
+[[game]]
+id = "fallen-kings"
+name = "Carnivores Fallen Kings (Beta 3.35, standalone)"
+status = "planned"
+reason = "Modder's Edition data. Not yet baselined; runs stay local until a reference baseline is set up."

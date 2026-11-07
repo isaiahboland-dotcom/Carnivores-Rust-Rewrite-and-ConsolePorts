@@ -4511,3 +4511,146 @@ backend twice.
   kept by the balance file. The Balance tab now shows it in the weapons'
   third column, which was empty.
 
+
+## 2026-11-07 — Gameplay regression scenarios (`c2-regress`)
+
+- The script lives in `c2_core::scenario` (no I/O, `portable-hunt`), so the
+  3DS and Wii U apps can later run the same stages. The CLI, recordings and
+  reports are a new crate, `c2-regress`, rather than more subcommands in
+  `c2-parity`, whose `main.rs` is near the file-size limit.
+- Rendering reuses `HuntView` through `c2-pc regress` (a child module,
+  `hunt_view/regress.rs`) instead of a second renderer. It swaps in the
+  scenario's hunt, built from the same species and weapons, and drives
+  `HuntView::step` one tick per frame. Headless and rendered checkpoint
+  hashes match.
+- Test mode pins positions between ticks (`Hold`) instead of adding a
+  gameplay option. Normal play is unchanged, and AI, animation and sound
+  logic still run. Shots go straight ahead with every animal at least 4°
+  off that line (checked at set-up), so nothing is hurt.
+- Carnivores 1 is reported unsupported: it is a non-goal (§1) with no
+  loader. Carnivores 2 has no Triceratops, so the scenario uses
+  Chasmosaurus with T-Rex, Allosaurus and Stegosaurus.
+- The original has no change-gun or change-call screen. The original's
+  call switch shows an icon for 2048 ms, and that icon is the core's
+  "call icon" stage. The pickers are PC additions and are checked in the
+  render pass only; headless reports them unsupported.
+- The PDF writer is ours (~200 lines): images go in as their PNG zlib
+  stream with `/Predictor 15`, so it needs no PDF or compression crate.
+  `serde_json` was added (with `itoa` and `zmij`): five JSON outputs and
+  reading them back for comparisons.
+- No video recording: it would need an encoder dependency.
+- Fixed while verifying: a test in `render/frustum.rs` used glam's
+  deprecated `Mat4::look_to_rh`, which failed `clippy -D warnings`; it now
+  calls `glam::camera::rh::view::look_to_mat4`.
+- Reference baselines are published from the vanilla games: this engine on
+  the retail Carnivores 2 and Ice Age data (the original executables cannot
+  be scripted). Only scores go in the repository (manifest, metrics,
+  events). Screenshots are renders of the game's art and stay local, as do
+  logs and machine names. `publish` checks every file the run read against
+  `recipes/bases/*.toml`.
+- Performance in a published baseline is reference only: contributors'
+  machines differ, so it never warns. State hashes are compared but can
+  differ across OS or CPU architecture from floating-point maths alone.
+- `recipes/bases/ice-age.toml`: the `_RES.TXT` hash was updated to the
+  installed file (dated 2000-10-19), confirmed as the vanilla one; the other
+  242 files already matched.
+- Original-engine baselines go through the shipped executables under Wine
+  with an injected hook (`c2-regress/original/`), not a rebuild of the
+  released source: Ice Age's source was never released, and the shipped
+  C2 is a later build than that source. The hook is C (a 32-bit Windows
+  DLL and launcher, built with clang/lld against Wine's headers), because
+  the Rust toolchain here has no 32-bit Windows target installed.
+- The original's hunt is started directly (`v_soft.ren` with the menu's
+  command line), not through its menus: the menus only write the choices
+  and start that program. The software renderer is used because it does
+  not depend on the GPU or driver. Checks come from screenshots (ammo
+  display, open/closed frames) until the shipped builds' memory layout is
+  worked out.
+
+## 2026-11-07 — Wind indicator, compass, setup-list rows
+
+Found by comparing the original engine's regression screenshots with ours.
+
+- **Wind and compass** (`c2-pc/src/hunt_view/gauges.rs`), from `Hunt2.cpp`
+  after the binoculars: `WIND.CAR` posed at `Wind.speed * 50` ms of its
+  first animation and turned by `CameraAlpha - Wind.alpha`, at
+  `(-10, -37, -96)`; `COMPAS.3DF` turned by `CameraAlpha`, at
+  `(8, -38, -96)`; light 192. The original moves the projection centre to
+  `(W/5, H - 10H/23)` and `(W - W/5, same)` while keeping the camera scale;
+  we keep our projection and shift each vertex in camera space so it lands
+  at the same screen point at the same depth. Skipped with binoculars or
+  scope (`BINMODE || OPTICMODE`), in the trophy room, during the death
+  camera (`DemoPoint.DemoTime`), and while Caps Lock is toggled on
+  (`KeyboardState[VK_CAPITAL] & 1`); our Caps Lock press toggles a flag,
+  since the window system does not report the lock state. Games built from
+  the APK keep the phone kit's compass and wind (see the APK hunt HUD
+  entry) and do not get these.
+- **Hunt-setup rows**: 16 px (`MenuHunt[..].Rect.top + 16 * i`, clicks
+  `(y - top) / 16`, Modder's Edition `Menu.cpp`), was 19 px. Text still
+  starts at y 382; the click test now measures from that row top. The VR
+  menu, which copies these boxes, uses the same rows (10 instead of 8).
+
+## 2026-11-07 — APK-built bases in the regression scenario
+
+- The Android games run as the scenario's `c2-apk` and `ice-age-apk` on
+  the folder `c2-pc mobile-base` builds. Species and the weapon count were
+  checked against the rebuilt `_RES.TXT`: the four animals of each game
+  keep their PC AI numbers, and both tables add a seventh weapon
+  (Revolver). Scenario `version` stays 1: the C2 and Ice Age runs are
+  unchanged, and the comparison keys on the version, not the file's hash.
+- Hash lists for the rebuilt folders are kept apart from the launcher's
+  (`pc-ver/crates/c2-regress/hash-lists/`, not `recipes/bases/`). The
+  launcher's APK bases record only the APK hash (`BaseInfo::apk`, `files`
+  empty), and `check_base` would flag every `mobile-base` change as a
+  modified game if they listed files. The rebuild was checked to be
+  byte-identical across two builds, which is what makes a file list of it
+  meaningful. The lists also carry the APK's hash.
+- `Game::load` adds every `HUNTDAT/MOBILE/` file to the run's content
+  hashes: the render pass draws them, and only APK-built folders have
+  that directory, so the PC content hashes are unchanged.
+- `c2-pc recipe base` now hashes `pack::vanilla_files`, not
+  `pack::vanilla`. The latter adds compatibility layers (Ice Age's
+  rewritten rules), and `check_base` already compared against
+  `vanilla_files`. Regenerating `c2-vanilla.toml` and `ice-age.toml` with
+  the fix gives the same hashes. The APK-built Ice Age folder triggers the
+  rewrite, so its `_RES.TXT` was the one file affected.
+- `c2-regress publish` names the hash list by its path from the
+  repository root (was: its last three path components), and refuses a
+  list outside the repository, because the published-baselines test has to
+  find it.
+
+## 2026-11-07 — Regression scenario version 2: Ice Age on area 4
+
+- Ice Age and `ice-age-apk` run on `AREA4`: from its first landing, at
+  yaw 0 and 20 cells, all four animals stand on open ground in view. On
+  `AREA2` terrain hid some of them. Carnivores 2 and `c2-apk` stay on
+  `AREA2`.
+- A changed area changes what a run does, so `version` is now 2 and all
+  four published baselines were re-run (x5, identical) and re-published.
+  The scenario id stays `vanilla_map2_four_dinos`, so recording and
+  baseline paths do not move.
+- The original Ice Age under Wine also passes every stage on area 4 (the
+  runner takes the area from the scenario).
+
+## 2026-11-07 — Modder's Edition data in the regression runner
+
+- The runner resolves a Modder's Edition `_RES.TXT` the way the PC hunt
+  does (`HuntView::load`): `c2_core::mee::read_picked_anywhere` for the
+  scenario's area, by day, with no menu slots picked, then
+  `c2_core::mee::tune` on the species. The render pass already loaded the
+  dialect through `HuntView`, so both passes see the same characters and
+  their checkpoint hashes match. Stock data is read as before.
+- Such games repeat names and AI numbers, so their species are locked by
+  character index. `c2-regress species --game DIR --area AREA` lists the
+  characters as the runner loads them (index, AI after tuning, model,
+  name).
+- Set-up refuses an animal whose model is `blank.car`. Dialect games give
+  an animal that placeholder on maps it does not live on; placed, it
+  would pass every check while invisible.
+- Game sections may override `[view] landing` and `yaw_deg`, like
+  `anchor_distance`, for areas whose first landing hides the animals.
+- The scenario stays at version 2: the new keys are optional, and the
+  Carnivores 2, Ice Age and both APK runs are unchanged (checkpoint state
+  hashes identical to the published baselines).
+- Fallen Kings stays `planned` in the public scenario until it has a
+  reference baseline; its runs are kept local.

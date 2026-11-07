@@ -52,8 +52,8 @@ const AREAS_RECT: Rect = (12.0, 376.0, 182.0, 170.0);
 const DINOS_RECT: Rect = (210.0, 376.0, 184.0, 170.0);
 const WEAPONS_RECT: Rect = (410.0, 376.0, 184.0, 170.0);
 const EQUIP_RECT: Rect = (610.0, 376.0, 184.0, 170.0);
-const ROW_H: f32 = 19.0;
-const ROWS: usize = 8;
+const ROW_H: f32 = 16.0;
+const ROWS: usize = 10;
 const EQUIPMENT: [&str; 4] = ["Camouflage", "Radar", "Cover Scent", "Double Ammo"];
 /// The info panel's text width.
 const INFO_W: f32 = 340.0;

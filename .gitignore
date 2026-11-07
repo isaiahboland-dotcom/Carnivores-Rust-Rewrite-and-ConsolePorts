@@ -55,6 +55,9 @@ bannertool (*)
 # Local screenshots, test packs, probes and temporary investigation files
 /screenshots/
 /pc-ver/(testing)/
+
+# Gameplay regression recordings (docs/REGRESSION.md): made from your game files
+regression-sim-recordings/
 newest-mods-credits-etc
 
 # Android builds (android-ver/) and signing keys

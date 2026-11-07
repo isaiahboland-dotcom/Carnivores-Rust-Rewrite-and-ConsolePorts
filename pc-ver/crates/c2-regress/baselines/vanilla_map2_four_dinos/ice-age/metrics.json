@@ -2,57 +2,57 @@
   "checkpoints": [
     {
       "name": "warmup",
-      "state_hash": "9ca46cb3fce02f80",
+      "state_hash": "03f0af3166553053",
       "tick": 500
     },
     {
       "name": "weapon_01_pistol_fire",
-      "state_hash": "feafb98e0840bb12",
+      "state_hash": "dc5c7d64f7290fe3",
       "tick": 560
     },
     {
       "name": "weapon_02_shotgun_fire",
-      "state_hash": "24f58bd36f9c56a4",
+      "state_hash": "36e5a78d3bacb3e7",
       "tick": 715
     },
     {
       "name": "weapon_03_db_shotgun_fire",
-      "state_hash": "6d3e7a9d498da4d2",
+      "state_hash": "2c219b8335e7535a",
       "tick": 880
     },
     {
       "name": "weapon_04_x_bow_fire",
-      "state_hash": "be9d88eb410dedb5",
+      "state_hash": "6ba07950d6852d7d",
       "tick": 1075
     },
     {
       "name": "weapon_05_rifle_fire",
-      "state_hash": "3265196a9cd61a94",
+      "state_hash": "309a98677601b442",
       "tick": 1280
     },
     {
       "name": "weapon_06_sniper_rifle_fire",
-      "state_hash": "1bb1dcdba44ce9c9",
+      "state_hash": "2c8e44a7d1fedae3",
       "tick": 1406
     },
     {
       "name": "binoculars_open",
-      "state_hash": "54329e2b9490e0e1",
+      "state_hash": "6847fac773de538d",
       "tick": 1505
     },
     {
       "name": "map_open",
-      "state_hash": "59eed6982390edc7",
+      "state_hash": "bcb2715112c84740",
       "tick": 1539
     },
     {
       "name": "call_icon_open",
-      "state_hash": "74176b606d57a1d2",
+      "state_hash": "ecd5052e71d89dc6",
       "tick": 1545
     },
     {
       "name": "end",
-      "state_hash": "45c2fa5ece0afe8f",
+      "state_hash": "06ea48ef2ecf65f3",
       "tick": 1749
     }
   ],
@@ -75,7 +75,7 @@
       "Bear",
       "Wooly rhinoceros"
     ],
-    "map": "AREA2",
+    "map": "AREA4",
     "panics": 0,
     "setup_error": null,
     "shots_total": 6,
@@ -90,21 +90,21 @@
     "weapons_fired_once": 6
   },
   "memory": {
-    "peak_bytes": 67313664,
-    "process_bytes": 67313664
+    "peak_bytes": 62185472,
+    "process_bytes": 62185472
   },
   "render": {
     "frames": {
-      "average_fps": 3494.4830343137824,
+      "average_fps": 3593.3622097215384,
       "frame_time": {
-        "max_ms": 2.7627,
-        "mean_ms": 0.2861653612796468,
-        "median_ms": 0.271,
-        "p95_ms": 0.3681,
-        "p99_ms": 0.4633,
+        "max_ms": 2.1805,
+        "mean_ms": 0.27829089906232785,
+        "median_ms": 0.267,
+        "p95_ms": 0.3369,
+        "p99_ms": 0.3715,
         "samples": 1813
       },
-      "one_percent_low_fps": 1135.1525203539152
+      "one_percent_low_fps": 1271.1056500646146
     },
     "gpu_memory": {
       "unavailable": "wgpu reports no GPU memory use"
@@ -112,7 +112,7 @@
     "gpu_time": {
       "unavailable": "no GPU timestamp queries; frame time includes the GPU wait"
     },
-    "process_peak_bytes": 431816704,
+    "process_peak_bytes": 420945920,
     "resolution": [
       960,
       540
@@ -121,87 +121,87 @@
   "result": "passed",
   "simulation": {
     "ai_update": {
-      "max_ms": 0.061921000480651855,
-      "mean_ms": 0.0063884866772152445,
-      "median_ms": 0.006000000052154064,
-      "p95_ms": 0.007980999536812305,
-      "p99_ms": 0.010579999536275864,
+      "max_ms": 0.025160999968647957,
+      "mean_ms": 0.005991468609780874,
+      "median_ms": 0.005810000002384186,
+      "p95_ms": 0.007110000122338533,
+      "p99_ms": 0.009209999814629556,
       "samples": 8745
     },
     "sections": {
       "afraid": {
-        "max_ms": 0.08891099691390991,
-        "mean_ms": 0.002469250661422706,
+        "max_ms": 0.12358099967241289,
+        "mean_ms": 0.00012626254923371177,
         "median_ms": 0.00007000000186963007,
-        "p95_ms": 0.024469999596476555,
-        "p99_ms": 0.040001001209020615,
+        "p95_ms": 0.00009999999747378752,
+        "p99_ms": 0.00009999999747378752,
         "samples": 8745
       },
       "dinos": {
-        "max_ms": 0.061921000480651855,
-        "mean_ms": 0.0063884866772152445,
-        "median_ms": 0.006000000052154064,
-        "p95_ms": 0.007980999536812305,
-        "p99_ms": 0.010579999536275864,
+        "max_ms": 0.025160999968647957,
+        "mean_ms": 0.005991468609780874,
+        "median_ms": 0.005810000002384186,
+        "p95_ms": 0.007110000122338533,
+        "p99_ms": 0.009209999814629556,
         "samples": 8745
       },
       "events": {
-        "max_ms": 0.0002500000118743628,
-        "mean_ms": 0.00003395288651389096,
+        "max_ms": 0.0004100000078324229,
+        "mean_ms": 0.0000343871918218245,
         "median_ms": 0.000029999999242136255,
         "p95_ms": 0.000039999998989515007,
-        "p99_ms": 0.00004099999932805076,
+        "p99_ms": 0.00004999999873689376,
         "samples": 8745
       },
       "fx": {
-        "max_ms": 0.003269999986514449,
-        "mean_ms": 0.00012751812340670786,
+        "max_ms": 0.001069999998435378,
+        "mean_ms": 0.00017190554499892536,
         "median_ms": 0.000039999998989515007,
-        "p95_ms": 0.0005699999746866524,
-        "p99_ms": 0.0006099999882280827,
+        "p95_ms": 0.000859999970998615,
+        "p99_ms": 0.0008999999845400453,
         "samples": 8745
       },
       "player": {
-        "max_ms": 0.021379999816417698,
-        "mean_ms": 0.002892671336551405,
-        "median_ms": 0.0028699999675154686,
-        "p95_ms": 0.0029800001066178083,
-        "p99_ms": 0.0030300000216811895,
+        "max_ms": 0.007369999773800373,
+        "mean_ms": 0.002931283931037557,
+        "median_ms": 0.0029100000392645597,
+        "p95_ms": 0.0030300000216811895,
+        "p99_ms": 0.003229999914765358,
         "samples": 8745
       },
       "ship": {
-        "max_ms": 0.0004100000078324229,
-        "mean_ms": 0.00003634305225721914,
+        "max_ms": 0.0005300000193528831,
+        "mean_ms": 0.00003658822092149828,
         "median_ms": 0.000039999998989515007,
         "p95_ms": 0.000039999998989515007,
         "p99_ms": 0.000039999998989515007,
         "samples": 8745
       },
       "weapon": {
-        "max_ms": 0.19140300154685977,
-        "mean_ms": 0.0003164840474415893,
-        "median_ms": 0.00005999999848427251,
-        "p95_ms": 0.00007999999797903001,
+        "max_ms": 0.2240229994058609,
+        "mean_ms": 0.00036207775536530826,
+        "median_ms": 0.00004999999873689376,
+        "p95_ms": 0.00007000000186963007,
         "p99_ms": 0.00009000000136438757,
         "samples": 8745
       }
     },
     "tick_duration": {
-      "max_ms": 0.201603,
-      "mean_ms": 0.012328661863922306,
-      "median_ms": 0.009261,
-      "p95_ms": 0.03347,
-      "p99_ms": 0.05178,
+      "max_ms": 0.234283,
+      "mean_ms": 0.009717985020011448,
+      "median_ms": 0.0091,
+      "p95_ms": 0.01091,
+      "p99_ms": 0.01369,
       "samples": 8745
     },
     "tick_ms": 10,
     "ticks_per_run": 1749,
     "wall_ms_per_run": [
-      21.849536,
-      21.743345,
-      21.744204,
-      21.717134,
-      21.680373
+      17.491724,
+      17.092289,
+      17.088999,
+      17.083499,
+      17.092629000000002
     ]
   },
   "ui": {

@@ -27,6 +27,7 @@ mod notice;
 mod pad_cursor;
 mod png;
 pub mod portable;
+mod regress;
 mod render;
 mod save;
 mod scene;

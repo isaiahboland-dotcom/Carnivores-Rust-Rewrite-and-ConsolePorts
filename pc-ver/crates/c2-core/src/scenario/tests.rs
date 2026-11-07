@@ -1,0 +1,310 @@
+//! Synthetic scenario runs: no game data, a flat area, triangle animals.
+
+use super::*;
+use crate::area::Area;
+use crate::dino::{DinoInfo, Species};
+use crate::game::{GameEvent, WeaponAnims, WeaponInfo};
+#[cfg(not(feature = "std"))]
+use alloc::{string::String, vec, vec::Vec};
+use c2_formats::car::{Animation, Car};
+use c2_formats::sav::{Save, TrophyItem};
+
+fn car() -> Car {
+    Car {
+        name_raw: [0; 32],
+        mesh: Default::default(),
+        animations: (0..16)
+            .map(|_| Animation {
+                name_raw: [0; 32],
+                kps: 2,
+                frames: 2,
+                data: vec![0; 6],
+            })
+            .collect(),
+        sounds: vec![],
+        anim_sounds: None,
+        trailing: Vec::new(),
+    }
+}
+
+fn species(ai: i32, name: &str) -> Species {
+    let info = DinoInfo {
+        name: name.into(),
+        file: String::new(),
+        ai,
+        health0: 5,
+        mass: 1.0,
+        length: 1.0,
+        radius: 256.0,
+        base_score: 1.0,
+        smell_k: 1.0,
+        hear_k: 1.0,
+        look_k: 1.0,
+        sh_delta: 0.0,
+        scale0: 1000,
+        scale_a: 0,
+        danger_call: false,
+        runs_as: None,
+    };
+    Species::new(info, &car())
+}
+
+fn roster() -> Vec<Species> {
+    vec![
+        species(0, "Hunter"),
+        species(12, "Stego"),
+        species(13, "Allo"),
+        species(14, "Chasmo"),
+        species(18, "TRex"),
+    ]
+}
+
+fn weapon(name: &str, shots: i32) -> WeaponInfo {
+    WeaponInfo {
+        name: name.into(),
+        file: String::new(),
+        pic: String::new(),
+        power: 1.0,
+        prec: 1.8,
+        loud: 1.0,
+        rate: 1.0,
+        shots,
+        reload: 0,
+        trace_c: 0,
+        optic: false,
+        fall: false,
+        mee: None,
+    }
+}
+
+fn save() -> Save {
+    Save {
+        player_name_raw: [0; 128],
+        reg_number: 0,
+        score: 0,
+        rank: 0,
+        last: Default::default(),
+        total: Default::default(),
+        bodies: [TrophyItem::default(); 24],
+        options: Default::default(),
+    }
+}
+
+fn scenario() -> Scenario {
+    Scenario {
+        id: "synthetic".into(),
+        version: 1,
+        seed: 7,
+        landing: 0,
+        cell: Some((500, 500)),
+        yaw: 0.0,
+        pitch: 0.0,
+        anchor_distance: 3000.0,
+        anchor_bearing: 0.5,
+        offsets: vec![[-300.0, 0.0], [300.0, 0.0], [-300.0, 600.0], [300.0, 600.0]],
+        species: [18, 13, 12, 14].map(SpeciesRef::Ai).to_vec(),
+        fire_clearance: 0.05,
+        warmup_ticks: 50,
+        settle_ticks: 5,
+        timeout_ticks: 300,
+    }
+}
+
+struct Run {
+    director: Director,
+    hashes: Vec<(String, u64)>,
+    ticks: u32,
+}
+
+fn run_with(s: &Scenario, weapons: Vec<WeaponInfo>, sabotage: Option<u32>) -> Run {
+    let area = Area::flat(10);
+    let names: Vec<String> = weapons.iter().map(|w| w.name.clone()).collect();
+    let anims = vec![WeaponAnims::uniform(100); weapons.len()];
+    let mut b = build(&area, roster(), weapons, anims, s, save()).expect("builds");
+    let model = car();
+    let cars: Vec<Option<&Car>> = (0..5).map(|_| Some(&model)).collect();
+    let mut d = Director::new(s, &names);
+    let mut fe = Headless;
+    let mut hashes = Vec::new();
+    let mut out: Vec<GameEvent> = Vec::new();
+    while !d.done() {
+        if d.tick() > s.max_ticks(names.len()) {
+            d.abort("tick ceiling");
+            break;
+        }
+        if sabotage == Some(d.tick()) {
+            b.hunt.herd.chars[1].health = 0;
+        }
+        let plan = d.plan(&b.hunt, &mut fe);
+        b.hunt.tick(&area, &cars, &plan.input, TICK_MS, &mut out);
+        out.clear();
+        let lost = b.hold.apply(&mut b.hunt, &area);
+        for c in d.observe(&b.hunt, &mut fe, &lost) {
+            hashes.push((c, state_hash(&b.hunt)));
+        }
+    }
+    Run {
+        ticks: d.tick(),
+        director: d,
+        hashes,
+    }
+}
+
+fn status<'a>(r: &'a Run, stage: &str) -> &'a Status {
+    &r.director
+        .stages
+        .iter()
+        .find(|s| s.name == stage)
+        .expect("stage ran")
+        .status
+}
+
+fn three_guns() -> Vec<WeaponInfo> {
+    vec![
+        weapon("Pistol", 8),
+        weapon("Shotgun", 6),
+        weapon("Rifle", 10),
+    ]
+}
+
+#[test]
+fn every_stage_passes_or_is_reported_unsupported() {
+    let r = run_with(&scenario(), three_guns(), None);
+    assert!(!r.director.failed(), "{:#?}", r.director.stages);
+    for stage in [
+        "spawn",
+        "warmup",
+        "weapon_01_pistol",
+        "weapon_02_shotgun",
+        "weapon_03_rifle",
+        "binoculars",
+        "map",
+        "call_icon",
+        "animals_present",
+    ] {
+        assert_eq!(status(&r, stage), &Status::Passed, "{stage}");
+    }
+    for stage in ["weapon_picker", "call_picker"] {
+        assert!(
+            matches!(status(&r, stage), Status::Unsupported(_)),
+            "{stage}"
+        );
+    }
+    let fired = r
+        .director
+        .events
+        .iter()
+        .filter(|e| e.name == "fired_once" && e.ok == Some(true))
+        .count();
+    assert_eq!(fired, 3);
+    let caps: Vec<&str> = r.hashes.iter().map(|h| h.0.as_str()).collect();
+    assert!(caps.contains(&"weapon_02_shotgun_fire"));
+    assert!(caps.contains(&"map_open"));
+    assert_eq!(caps.last(), Some(&"end"));
+}
+
+#[test]
+fn runs_are_deterministic() {
+    let a = run_with(&scenario(), three_guns(), None);
+    let b = run_with(&scenario(), three_guns(), None);
+    assert_eq!(a.hashes, b.hashes);
+    assert_eq!(a.ticks, b.ticks);
+    assert_eq!(a.director.events, b.director.events);
+    let mut s = scenario();
+    s.seed = 8;
+    let c = run_with(&s, three_guns(), None);
+    assert_ne!(a.hashes, c.hashes, "the seed reaches the state");
+}
+
+#[test]
+fn a_lost_animal_fails_the_run() {
+    let r = run_with(&scenario(), three_guns(), Some(80));
+    assert!(r.director.failed());
+    assert!(matches!(status(&r, "animals_present"), Status::Failed(_)));
+}
+
+#[test]
+fn an_empty_weapon_times_out_and_the_script_goes_on() {
+    let mut s = scenario();
+    s.timeout_ticks = 30;
+    let r = run_with(&s, vec![weapon("Pistol", 8), weapon("Empty", 0)], None);
+    assert!(matches!(status(&r, "weapon_02_empty"), Status::Failed(m) if m.contains("timeout")));
+    assert_eq!(status(&r, "weapon_01_pistol"), &Status::Passed);
+    assert_eq!(status(&r, "map"), &Status::Passed);
+}
+
+#[test]
+fn injected_faults_are_caught() {
+    assert_eq!(Inject::parse("drop-shot:1"), Ok(Inject::DropShot(1)));
+    assert!(Inject::parse("drop-shot").is_err());
+    assert!(Inject::parse("melt:1").is_err());
+    let area = Area::flat(10);
+    let s = scenario();
+    let guns = three_guns();
+    let names: Vec<String> = guns.iter().map(|w| w.name.clone()).collect();
+    let anims = vec![WeaponAnims::uniform(100); guns.len()];
+    let mut b = build(&area, roster(), guns, anims, &s, save()).expect("builds");
+    let model = car();
+    let cars: Vec<Option<&Car>> = (0..5).map(|_| Some(&model)).collect();
+    let mut d = Director::new(&s, &names);
+    let inject = Inject::DropShot(1);
+    let mut out = Vec::new();
+    while !d.done() {
+        let mut plan = d.plan(&b.hunt, &mut Headless);
+        inject.adjust_plan(&mut plan, &b.hunt);
+        b.hunt.tick(&area, &cars, &plan.input, TICK_MS, &mut out);
+        let lost = b.hold.apply(&mut b.hunt, &area);
+        d.observe(&b.hunt, &mut Headless, &lost);
+    }
+    let failed: Vec<&str> = d
+        .stages
+        .iter()
+        .filter(|s| matches!(s.status, Status::Failed(_)))
+        .map(|s| s.name.as_str())
+        .collect();
+    assert_eq!(failed, ["weapon_02_shotgun"]);
+}
+
+#[test]
+fn bad_setups_are_refused() {
+    let area = Area::flat(10);
+    let try_build = |s: &Scenario| {
+        build(
+            &area,
+            roster(),
+            vec![weapon("Pistol", 8)],
+            vec![WeaponAnims::uniform(100)],
+            s,
+            save(),
+        )
+        .err()
+    };
+    let mut s = scenario();
+    s.species[2] = SpeciesRef::Ai(16);
+    assert!(matches!(try_build(&s), Some(SetupError::MissingSpecies(_))));
+    let mut s = scenario();
+    s.anchor_bearing = 0.0;
+    assert!(matches!(
+        try_build(&s),
+        Some(SetupError::InLineOfFire { .. })
+    ));
+    let mut s = scenario();
+    s.offsets.pop();
+    assert!(matches!(try_build(&s), Some(SetupError::WrongCount { .. })));
+    let mut s = scenario();
+    s.cell = None;
+    s.landing = 9;
+    assert!(matches!(try_build(&s), Some(SetupError::NoLanding(9))));
+    // A Modder's Edition placeholder model counts as none.
+    let mut blank = roster();
+    blank[1].info.file = "ANIMALS/blank.car".into();
+    let r = build(
+        &area,
+        blank,
+        vec![weapon("Pistol", 8)],
+        vec![WeaponAnims::uniform(100)],
+        &scenario(),
+        save(),
+    );
+    assert!(matches!(r.err(), Some(SetupError::NoModel(_))));
+}

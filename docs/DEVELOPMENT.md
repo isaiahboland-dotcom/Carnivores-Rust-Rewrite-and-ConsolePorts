@@ -72,6 +72,7 @@ The original C++ source (made available on Assembla in 2013) is used **as a refe
 │       ├── c2-launcher/       # GUIs: c2-launcher, c2-3ds-builder, c2-wiiu-builder (egui)
 │       ├── c2-vr/             # PC VR (OpenXR) frontend, M17; plan in its GAMEPLAN.md
 │       ├── c2-pad/            # gamepads (gilrs) as the game's actions, for c2-pc and c2-vr
+│       ├── c2-regress/        # gameplay regression scenarios: runner, recordings, reports
 │       └── c2-parity/         # parity harness vs the original game/data
 ├── 3ds-ver/                   # 3DS port (separate nightly workspace, from M6):
 │                              #   c2-3ds backend + c2-cook, reusing pc-ver/crates/*
@@ -197,6 +198,11 @@ c2-cook --game source/c2-original --recipe recipes/my-pack.toml --mods source/mo
       --mod ADDON --mod ADDON... --target o3ds --out modded.c2pk
   ```
 - `c2-cook --check PACK.c2pk` loads a pack the way the 3DS does and plays a short hunt per animal on the PC.
+
+### `c2-regress`
+Scripted gameplay regression scenarios ([REGRESSION.md](REGRESSION.md)). The script itself is
+`c2_core::scenario` (no I/O, also builds for the consoles); `c2-regress` runs it headless, starts
+`c2-pc regress` for screenshots and frame times, and compares runs against approved baselines.
 
 ### `c2-parity`
 Keeps the rewrite honest.

@@ -22,6 +22,12 @@ comparison.
 |---|---|---|
 | `vanilla_map2_four_dinos/c2/` | Carnivores 2 | `recipes/bases/c2-vanilla.toml` (all 25 files the scenario reads) |
 | `vanilla_map2_four_dinos/ice-age/` | Carnivores: Ice Age | `recipes/bases/ice-age.toml` (all 22 files the scenario reads) |
+| `vanilla_map2_four_dinos/c2-apk/` | Dinosaur Hunter (Android 2.0.1), rebuilt with `c2-pc mobile-base` | `pc-ver/crates/c2-regress/hash-lists/dinosaur-hunter-apk-2.0.1.toml` (79 files, the phone HUD included) |
+| `vanilla_map2_four_dinos/ice-age-apk/` | Ice Age (Android 2.0.1), likewise | `pc-ver/crates/c2-regress/hash-lists/ice-age-apk-2.0.1.toml` (64 files) |
+
+For the APK games, build the game folder first
+(`c2-pc mobile-base <APK> --out <DIR>`) and pass it as `--game` with
+`--game-id c2-apk` or `ice-age-apk`.
 
 Each holds `manifest.json` (scenario, game content hashes, seed, settings,
 build), `metrics.json` (stage results, weapons fired, animals, UI screens,
@@ -58,6 +64,10 @@ change), re-run on the vanilla games and publish:
 ./target/release/c2-regress run ... --repeat 5 --label vanilla-baseline
 ./target/release/c2-regress publish <run folder> --hash-list ../recipes/bases/c2-vanilla.toml
 ```
+
+APK baselines also need re-publishing when `c2-pc mobile-base` output
+changes: regenerate their hash lists first (`docs/REGRESSION.md`, APK-built
+bases).
 
 `publish` refuses runs that failed, carry a deliberate fault (`--inject`),
 or read any game file that is not in the hash list with the same hash.

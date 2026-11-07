@@ -191,6 +191,11 @@ impl Gpu {
         Ok(Target::Window { surface, config })
     }
 
+    /// The adapter in use (recorded with regression runs).
+    pub fn adapter_info(&self) -> wgpu::AdapterInfo {
+        self.adapter.get_info()
+    }
+
     pub fn offscreen(size: (u32, u32)) -> Result<(Self, Target)> {
         let instance = instance(None);
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {

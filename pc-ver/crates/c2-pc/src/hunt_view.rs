@@ -36,9 +36,11 @@ use c2_core::ship::ship_sound;
 use c2_core::sound::SoundCmd;
 
 mod extras;
+mod gauges;
 mod lights;
 mod map;
 mod map_viewport;
+mod regress;
 mod survival_hud;
 mod touch;
 
@@ -138,6 +140,10 @@ pub struct HuntView {
     map_at: (f32, f32),
     /// The phone game's hunt screen (an APK-built game).
     kit: Option<HuntKit>,
+    /// The original's wind indicator and compass (not with the kit, which
+    /// has its own), and Caps Lock's toggle that hides them.
+    gauges: Option<gauges::Gauges>,
+    gauges_hidden: bool,
     /// The map's tick for where the hunter looks (PC setting).
     map_heading: bool,
     /// The map drawn as the mobile game's (PC setting).
@@ -373,6 +379,10 @@ impl HuntView {
             kit_map.as_deref(),
         );
         weapons.hide_scoped = kit.is_some();
+        let gauges = kit
+            .is_none()
+            .then(|| gauges::Gauges::load(gpu, view.globals(), &huntdat))
+            .flatten();
         weapons.hide_binoculars = kit.as_ref().is_some_and(HuntKit::has_binocular_mask);
         let exit_img = menu_pic(&mut hud, gpu, &huntdat, "EXIT.TGA");
         let plaque_img = menu_pic(
@@ -503,6 +513,8 @@ impl HuntView {
             map_heading: setup.pc.map_heading != 0,
             map_mobile: setup.pc.map_mobile != 0 || kit.is_some(),
             kit,
+            gauges,
+            gauges_hidden: false,
             map_cursor: None,
             screen: (1280, 720),
             map_viewport: map_viewport::MapViewport::default(),
@@ -1774,6 +1786,10 @@ impl Scene for HuntView {
         }
         let light_tapped = self.update_lights(input);
         self.update_extras(input);
+        // `KeyboardState[VK_CAPITAL] & 1`: Caps Lock's toggle hides them.
+        if input.pressed(KeyCode::CapsLock) {
+            self.gauges_hidden = !self.gauges_hidden;
+        }
         let k = self.hunt.room.options.keys;
         let pressed = |vk| keys::pressed(input, vk);
         self.weapon_flash = (self.weapon_flash - dt).max(0.0);
@@ -2053,6 +2069,8 @@ impl Scene for HuntView {
             &self.hunt,
             &mut self.effects,
         );
+        let shown = gauges::Gauges::shown(hunt, self.gauges_hidden);
+        let mut gauges = self.gauges.as_mut().filter(|_| shown);
         let eye = self.view.cam.pos.to_array();
         let view = self.view.cam.view();
         let max = self.view.radius as f32 * c2_core::CELL;
@@ -2064,6 +2082,9 @@ impl Scene for HuntView {
                     dinos.draw(gpu, pass, globals, &hunt.herd, &hunt.ship, seen);
                     effects.draw(gpu, pass, globals, &hunt.effects);
                     weapons.draw_rounds(gpu, pass, globals, hunt);
+                    if let Some(g) = gauges.as_mut() {
+                        g.draw(gpu, pass, globals, hunt, view, aspect);
+                    }
                     weapons.draw(gpu, pass, globals, hunt, view, light, aspect);
                 });
         }

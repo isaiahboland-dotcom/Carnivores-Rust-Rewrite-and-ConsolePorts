@@ -34,6 +34,8 @@ pub mod profile;
 pub mod record;
 pub mod rng;
 #[cfg(any(feature = "std", feature = "portable-hunt"))]
+pub mod scenario;
+#[cfg(any(feature = "std", feature = "portable-hunt"))]
 pub mod ship;
 #[cfg(any(feature = "std", feature = "portable-hunt"))]
 pub mod sound;

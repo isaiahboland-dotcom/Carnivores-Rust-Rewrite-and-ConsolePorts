@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### Gameplay regression scenarios (PC; developer tool)
+
+- `c2-regress` runs a versioned, deterministic scenario (`vanilla_map2_four_dinos`): area 2, a fixed
+  seed and view, four pinned animals, every weapon fired once, binoculars, map, call switch and the
+  PC's pickers. It records the manifest, metrics, events, tick and frame times, logs and checkpoint
+  screenshots, compares runs with approved baselines (functional, visual, performance) and builds an
+  HTML report and a side-by-side screenshot PDF. Carnivores 2 and Ice Age run on PC; Carnivores 1 is
+  reported unsupported; the consoles are planned. See `docs/REGRESSION.md`.
+- Published reference baselines from the vanilla Carnivores 2 and Ice Age data (scores only, verified
+  against the base hash lists): compare a pull request's runs with `--baseline published`.
+- The Android Dinosaur Hunter and Ice Age games (2.0.1) as scenario games (`c2-apk`, `ice-age-apk`), run
+  on a folder rebuilt with `c2-pc mobile-base`. Their screenshots cover the phone HUD (compass, wind,
+  binocular mask, scope, painted map). Published baselines for both, verified against hash lists of
+  the rebuilt folders.
+- Scenario version 2: Ice Age (and its APK build) runs on area 4, where all four animals are in view
+  from the first landing; on area 2, terrain hid some of them. All four baselines re-published.
+- The scenario runner loads Modder's Edition data as the PC hunt does; such games pick species by
+  character index. `c2-regress species` lists a game's characters for picking them. Game sections
+  can override the landing and view direction, and set-up refuses an animal whose model is a
+  `blank.car` placeholder.
+- `c2-pc recipe base` hashes the game's files as they are on disk, without the engine's compatibility
+  layers. Ice Age data built from the APK got its rewritten `_RES.TXT` hashed instead, so the list
+  never matched the folder. The existing PC lists are unchanged.
+
+### Parity fixes from the original-engine comparison (PC, VR)
+
+- The hunt view now shows the original's wind indicator (bottom left) and compass (bottom right) on
+  every game not built from the APK, which keeps its own. Hidden with binoculars or scope up, in the
+  trophy room, during the death camera, and while Caps Lock is toggled on, as in the original.
+- Hunt-setup lists use the original's 16 px rows (was 19 px), so ten rows fit in each box.
+
 ### Instance rules (launcher Advanced tab; PC, Android, 3DS, Wii U)
 
 - The Advanced tab (Settings, off by default) now gathers what a modpack maker fine-tunes. Nothing set

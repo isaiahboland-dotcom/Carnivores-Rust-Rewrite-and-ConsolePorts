@@ -1,6 +1,6 @@
 {
   "build": {
-    "commit": "1e39f8695225",
+    "commit": "c1751015c87b",
     "dirty": true,
     "profile": "release",
     "version": "0.4.3"
@@ -12,12 +12,12 @@
         "sha256": "3ebc87a70039c323db5b37132a177133c89e9a5ccae5e8bccab6af9b43cdc507"
       },
       {
-        "path": "HUNTDAT/AREAS/AREA2.MAP",
-        "sha256": "15dd1d763e4ac281ac40734d0558251a7c2657532791b2c123b66bac447e8360"
+        "path": "HUNTDAT/AREAS/AREA4.MAP",
+        "sha256": "012cf233963602935adc8c183bd1cfff138b387f65ca1db9a6626f3ec790a854"
       },
       {
-        "path": "HUNTDAT/AREAS/AREA2.RSC",
-        "sha256": "cf4416b2ae6748ee459b242cafddca1a76e88cbee3fa25802801faecf7032182"
+        "path": "HUNTDAT/AREAS/AREA4.RSC",
+        "sha256": "240d86ae921a9bfaedc2bd7e96c9af58843399fa05e6b63d6fd7c5f905f08c2e"
       },
       {
         "path": "HUNTDAT/hunter1.car",
@@ -96,10 +96,10 @@
         "sha256": "3c792357ea86462f71b305a4a845b71fcbe5b13cc2f8cdf20281184266e86ff6"
       }
     ],
-    "sha256": "b62ad70371410219e564902a701a00efbc5f8cee525ead34196702a3e71a11df"
+    "sha256": "5f17564d45551b0dcc00200ff1e248e4b0b09528dbdccbdf281d55ce6c4b2682"
   },
   "game": {
-    "area": "AREA2",
+    "area": "AREA4",
     "id": "ice-age",
     "name": "Carnivores: Ice Age"
   },
@@ -123,9 +123,9 @@
     ]
   },
   "scenario": {
-    "file_sha256": "5c525480db0f49be547ac228ed07852d7d63c13a959f9a9331ca9a81367f6d57",
+    "file_sha256": "cea79917f767088db245258abac7d21372e0bb09eab73d163ae4984fd6f70211",
     "id": "vanilla_map2_four_dinos",
-    "version": 1
+    "version": 2
   },
   "seed": 20261107,
   "settings": {

@@ -1,0 +1,8 @@
+--target=i686-pc-windows-msvc
+-ffreestanding
+-isystem
+/usr/include/wine/msvcrt
+-isystem
+/usr/include/wine/windows
+-D_WIN32
+-DWIN32_LEAN_AND_MEAN

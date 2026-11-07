@@ -81,6 +81,12 @@ const VALUE_FLAGS: &[&str] = &[
     "save-instance",
     "survival",
     "max-picks",
+    // c2-pc regress (started by c2-regress run).
+    "scenario",
+    "game-id",
+    "game",
+    "size",
+    "inject",
     // Older launchers' survival choices (read and ignored: survival is
     // always Classic / Modded now).
     "survival-modes",
@@ -304,6 +310,17 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
             out.display()
         );
         return Ok(());
+    }
+    if cmd == "regress" {
+        let need = |k: &str| o.value(k).with_context(|| format!("regress needs --{k}"));
+        return crate::regress::run(&crate::regress::Args {
+            scenario: need("scenario")?,
+            game_id: need("game-id")?,
+            game: need("game")?,
+            out: need("out")?,
+            size: o.value("size").unwrap_or("960x540"),
+            inject: o.value("inject"),
+        });
     }
     if cmd == "mod" {
         return mods_cli::run(

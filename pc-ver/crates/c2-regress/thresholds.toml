@@ -1,0 +1,23 @@
+# Provisional comparison thresholds (docs/REGRESSION.md). Copy and pass
+# with --thresholds to change them; baselines are never updated by a run.
+
+[performance]
+# Warn when the candidate is slower than the baseline by more than:
+median_frame_time_pct = 10.0
+p95_frame_time_pct = 15.0
+peak_memory_pct = 15.0
+
+[visual]
+# A pixel differs when any channel is more than `tolerance` apart; a
+# checkpoint fails when more than `max_differing_ratio` of its pixels do.
+tolerance = 24
+max_differing_ratio = 0.01
+
+# Regions to ignore, in fractions of the picture. `checkpoint = "*"` for
+# every checkpoint. Example (left commented out): the ammo strip.
+# [[visual.mask]]
+# checkpoint = "*"
+# x = 0.0
+# y = 0.0
+# w = 0.1
+# h = 0.08

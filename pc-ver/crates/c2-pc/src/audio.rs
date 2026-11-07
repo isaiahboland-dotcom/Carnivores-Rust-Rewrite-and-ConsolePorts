@@ -109,6 +109,20 @@ impl Audio {
         }
     }
 
+    /// No output device: sounds are worked out but not played
+    /// (regression runs).
+    pub fn silent() -> Self {
+        Self {
+            manager: None,
+            voices: Vec::new(),
+            ambient: None,
+            ambient_volume: 0.0,
+            engine: None,
+            cam: [0.0; 3],
+            alpha: 0.0,
+        }
+    }
+
     fn start(&mut self, clip: &Clip, gains: (f32, f32), looped: bool) -> Option<StaticSoundHandle> {
         let m = self.manager.as_mut()?;
         let (vol, pan) = volume_pan(gains.0, gains.1);

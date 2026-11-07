@@ -52,6 +52,12 @@ impl Prof {
         }
     }
 
+    /// The last finished tick's time per section, ms (all zero when not
+    /// timing).
+    pub fn last_tick(&self) -> [f32; SECTIONS.len()] {
+        self.this_tick
+    }
+
     pub fn reset_worst(&mut self) {
         self.worst = [0.0; SECTIONS.len()];
     }
