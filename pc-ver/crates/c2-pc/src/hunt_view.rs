@@ -38,6 +38,7 @@ use c2_core::sound::SoundCmd;
 mod extras;
 mod gauges;
 mod lights;
+pub(crate) use lights::bought as lights_bought;
 mod map;
 mod map_viewport;
 mod regress;

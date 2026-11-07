@@ -4,8 +4,8 @@
 
 ## 0.5.1 — 2026-11-07
 
-A launcher fix: standalone instances could play Carnivores 2's animals. Notes:
-`docs/releases/v0.5.1.md`.
+Two fixes: standalone instances could play Carnivores 2's animals, and observer mode
+dropped the night vision and flashlight. Notes: `docs/releases/v0.5.1.md`.
 
 ### Launcher
 
@@ -21,6 +21,13 @@ A launcher fix: standalone instances could play Carnivores 2's animals. Notes:
   played, edited or built. An overlay given to the instance on purpose (one that differs
   from the Game tab's) is kept. Carnivores 2 instances that combine standalones still take
   the Game tab's overlays, as before.
+
+### Hunt (PC, Android)
+
+- Night vision and the flashlight work in observer mode. The menu left them out of every
+  observer hunt, though the gear page let you pick them, so N, L, the pad's stick click and
+  the phone's light buttons did nothing. Camouflage, scent and the tranquilizer are still
+  left out of observer hunts.
 
 ## 0.5.0 — 2026-11-07
 

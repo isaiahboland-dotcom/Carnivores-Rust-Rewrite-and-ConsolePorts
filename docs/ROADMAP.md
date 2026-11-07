@@ -8,7 +8,8 @@ validated. Game and mod assets must come from the player's own copies.
 ## Current milestone: v0.5.1
 
 v0.5.1 fixes standalone instances (such as Carnivores Triassic) playing Carnivores 2's
-animals after taking the old Game tab's overlays ([v0.5.1 notes](releases/v0.5.1.md)).
+animals after taking the old Game tab's overlays, and restores night vision and the
+flashlight in observer mode ([v0.5.1 notes](releases/v0.5.1.md)).
 v0.5.0 brought:
 
 Gameplay regression scenarios (`c2-regress`) with published vanilla baselines, used to

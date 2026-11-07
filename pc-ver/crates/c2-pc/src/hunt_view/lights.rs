@@ -3,7 +3,8 @@
 //! through off, flashlight, night vision (only the ones bought). On the
 //! phone's hunt screen (an APK-built game) each has a round yellow button,
 //! "nv" or "light", that a tap or a click switches. One light at a time:
-//! turning one on turns the other off, and its button greys.
+//! turning one on turns the other off, and its button greys. Observer hunts
+//! keep them: they act on nothing but the view.
 use super::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -14,6 +15,16 @@ pub(super) enum Light {
 
 /// The lights on: (night vision, flashlight).
 pub(super) type Lit = (bool, bool);
+
+/// The lights a hunt takes from the gear page's picks (`equip` bits 16:
+/// night vision, 32: flashlight), only in dynamic-time hunts. Observer mode
+/// keeps them, unlike camouflage, scent and the tranquilizer.
+pub(crate) fn bought(dynamic_time: bool, equip: u32) -> (bool, bool) {
+    (
+        dynamic_time && equip & 16 != 0,
+        dynamic_time && equip & 32 != 0,
+    )
+}
 
 /// `which` switched; the other goes off when it comes on.
 pub(super) fn toggle((nv, torch): Lit, which: Light) -> Lit {
@@ -195,6 +206,17 @@ impl HuntView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_gear_pages_lights_reach_the_hunt() {
+        assert_eq!(bought(true, 16 | 32), (true, true));
+        assert_eq!(bought(true, 32 | 2), (false, true));
+        assert_eq!(
+            bought(false, 16 | 32),
+            (false, false),
+            "no dynamic time, no lights"
+        );
+    }
 
     #[test]
     fn one_light_at_a_time() {

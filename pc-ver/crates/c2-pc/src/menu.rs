@@ -1750,6 +1750,8 @@ impl Menu {
         let Some(reg) = self.me().map(|s| s.reg_number) else {
             return;
         };
+        let (night_vision, flashlight) =
+            crate::hunt_view::lights_bought(self.pc.dynamic_time != 0, self.choice.equip);
         self.launch = Some(HuntSetup {
             game_dir: self.game_dir.clone(),
             map,
@@ -1763,8 +1765,8 @@ impl Menu {
             reg,
             from_menu: true,
             pc: self.pc,
-            night_vision: self.pc.dynamic_time != 0 && !observer && self.choice.equip & 16 != 0,
-            flashlight: self.pc.dynamic_time != 0 && !observer && self.choice.equip & 32 != 0,
+            night_vision,
+            flashlight,
         });
         self.shown_loading = false;
         self.screen = Screen::Loading;
