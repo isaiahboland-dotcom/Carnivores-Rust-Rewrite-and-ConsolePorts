@@ -360,6 +360,10 @@ const HIGH_END_VIEW: &str = if cfg!(target_os = "android") {
     "High-end view"
 };
 
+/// The Android-only Resolution row (the phone scales the frame up).
+pub const RESOLUTION: &str = "Resolution";
+
+#[cfg(not(target_os = "android"))]
 const VIDEO_OPTS: [Opt; 9] = [
     Opt::Slider("View range", |s| &mut s.options.view_r),
     Opt::PcSlider("Render distance", |p| &mut p.render),
@@ -370,6 +374,20 @@ const VIDEO_OPTS: [Opt; 9] = [
     Opt::PcToggle("Map zoom / pan", |p| &mut p.map_zoom),
     Opt::PcToggle("Teleport (map)", |p| &mut p.teleport),
     Opt::PcToggle(HIGH_END_VIEW, |p| &mut p.high_end_view),
+];
+
+#[cfg(target_os = "android")]
+const VIDEO_OPTS: [Opt; 10] = [
+    Opt::Slider("View range", |s| &mut s.options.view_r),
+    Opt::PcSlider("Render distance", |p| &mut p.render),
+    Opt::Slider("Brightness", |s| &mut s.options.brightness),
+    Opt::PcSlider("Foliage distance", |p| &mut p.model_distance),
+    Opt::PcToggle("Mobile radar", |p| &mut p.map_mobile),
+    Opt::PcToggle("Map: where you look", |p| &mut p.map_heading),
+    Opt::PcToggle("Map zoom / pan", |p| &mut p.map_zoom),
+    Opt::PcToggle("Teleport (map)", |p| &mut p.teleport),
+    Opt::PcToggle(HIGH_END_VIEW, |p| &mut p.high_end_view),
+    Opt::PcSlider(RESOLUTION, |p| &mut p.render_scale),
 ];
 
 const MOUSE_OPTS: [Opt; 3] = [

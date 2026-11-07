@@ -12,6 +12,8 @@
         android:extractNativeLibs="false"
         android:appCategory="game"
         android:isGame="true">
+        <!-- Lets simpleperf sample the game from adb (Android 10+); nothing else. -->
+        <profileable android:shell="true" />
         <activity
             android:name="android.app.NativeActivity"
             android:exported="true"

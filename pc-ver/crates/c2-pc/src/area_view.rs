@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Context, Result};
-use c2_core::area::{Area, Placement, TimeOfDay};
+use c2_core::area::{Area, ObjectLight, Placement, TimeOfDay};
 use c2_core::model::{pose_object, sprite_mesh, vertex_lights, PreparedModel, SPRITE_CELLS};
 use c2_core::CELL;
 use c2_formats::rsc::object_flags;
@@ -16,9 +16,13 @@ use crate::camera::{projection, FlyCam};
 use crate::gpu::Gpu;
 use crate::input::Input;
 use crate::render::{
-    FrameParams, Globals, GpuModel, Instance, ModelRenderer, SkyRenderer, TerrainRenderer,
+    FrameParams, Frustum, Globals, GpuModel, Instance, ModelRenderer, SkyRenderer, TerrainRenderer,
 };
 use crate::scene::Scene;
+
+/// A placement, its light (negative: ground-lit), its sprite's light, and
+/// its light without the time of day (for dynamic time).
+type PlacedObject = (Placement, f32, f32, Option<ObjectLight>);
 
 const CHUNK: usize = 32;
 const CHUNKS: usize = map::MAP_SIZE / CHUNK;
@@ -107,8 +111,15 @@ pub struct AreaView {
     sprites: Vec<Option<GpuModel>>,
     renderer: ModelRenderer,
     /// Placements bucketed by chunk, with their precomputed light (negative:
-    /// ground-lit, per vertex) and their sprite's.
-    chunks: Vec<Vec<(Placement, f32, f32)>>,
+    /// ground-lit, per vertex), their sprite's, and their light without the
+    /// time of day (for dynamic time).
+    chunks: Vec<Vec<PlacedObject>>,
+    /// Each frame's instances per model and per sprite, kept between frames.
+    per_model: Vec<Vec<Instance>>,
+    per_sprite: Vec<Vec<Instance>>,
+    /// Each chunk's objects' bounds (min, max), for frustum culling; min
+    /// above max: no objects.
+    chunk_bounds: Vec<(Vec3, Vec3)>,
     /// Objects past this many cells as sprites ([`SPRITE_CELLS`], the
     /// original's look); `None`: models all the way.
     pub sprite_cells: Option<f32>,
@@ -232,9 +243,30 @@ impl AreaView {
                 .collect::<Vec<_>>(),
         );
 
+        // How far each object reaches from its placement, model or sprite.
+        let reach: Vec<f32> = prepared
+            .iter()
+            .zip(&sprite_prep)
+            .map(|(m, s)| {
+                let far = |m: &PreparedModel| {
+                    m.positions
+                        .iter()
+                        .map(|p| Vec3::from(*p).length())
+                        .fold(0.0, f32::max)
+                };
+                far(m).max(s.as_ref().map_or(0.0, far))
+            })
+            .collect();
         let mut chunks = vec![Vec::new(); CHUNKS * CHUNKS];
+        let mut chunk_bounds = vec![(Vec3::INFINITY, Vec3::NEG_INFINITY); CHUNKS * CHUNKS];
         for p in area.placements() {
             let c = usize::from(p.cell.1) / CHUNK * CHUNKS + usize::from(p.cell.0) / CHUNK;
+            let r = Vec3::splat(reach.get(usize::from(p.model)).copied().unwrap_or(0.0));
+            let b = &mut chunk_bounds[c];
+            *b = (
+                b.0.min(Vec3::from(p.pos) - r),
+                b.1.max(Vec3::from(p.pos) + r),
+            );
             let ground = area
                 .rsc
                 .objects
@@ -242,7 +274,8 @@ impl AreaView {
                 .is_some_and(|o| o.info.flags & object_flags::GROUND_LIGHT != 0);
             let l = if ground { -1.0 } else { area.object_light(&p) };
             let s = area.sprite_light(&p);
-            chunks[c].push((p, l, s));
+            let terms = area.object_light_terms(&p);
+            chunks[c].push((p, l, s, terms));
         }
 
         let (lx, ly) = area.landings.first().copied().unwrap_or((512, 512));
@@ -277,6 +310,9 @@ impl AreaView {
             models,
             renderer,
             chunks,
+            per_model: Vec::new(),
+            per_sprite: Vec::new(),
+            chunk_bounds,
             sprites,
             sprite_cells: Some(SPRITE_CELLS),
             high_end: false,
@@ -301,6 +337,12 @@ impl AreaView {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Whether `frustum` may see any object of chunk (`cx`, `cy`).
+    fn chunk_seen(&self, frustum: &Frustum, cx: usize, cy: usize) -> bool {
+        let (min, max) = self.chunk_bounds[cy * CHUNKS + cx];
+        min.cmple(max).all() && frustum.sees_box(min, max)
     }
 
     fn cam_cell(&self) -> (i32, i32) {
@@ -398,15 +440,21 @@ impl Scene for AreaView {
 
     fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, screen: (u32, u32)) {
         let aspect = screen.0.max(1) as f32 / screen.1.max(1) as f32;
-        self.draw_with(gpu, pass, aspect, &mut |_, _, _| {});
+        self.draw_with(gpu, pass, aspect, &mut |_, _, _, _| {});
     }
 }
+
+/// Android draws the ground past 128 cells (`render::terrain::LOD_FINE_CELLS`)
+/// in coarser levels even without high-end view: full detail out there
+/// costs a phone's GPU far more than it shows (docs/DECISIONS.md). Nearer,
+/// including the original's whole view range, it is drawn as before.
+const GROUND_LEVELS_ALWAYS: bool = cfg!(target_os = "android");
 
 /// Cells over which high-end view fades an object from model to sprite.
 pub const FADE_CELLS: f32 = 4.0;
 
 /// Extra drawing hooked in after objects and before water.
-pub type ExtraDraw<'a> = dyn FnMut(&Gpu, &mut wgpu::RenderPass<'_>, &Globals) + 'a;
+pub type ExtraDraw<'a> = dyn FnMut(&Gpu, &mut wgpu::RenderPass<'_>, &Globals, &Frustum) + 'a;
 
 impl AreaView {
     fn ambient(&self) -> f32 {
@@ -428,11 +476,13 @@ impl AreaView {
         let view = self.cam.view();
         let time = self.area.time;
         let t = self.start.elapsed();
+        let proj = projection(aspect, far * 1.5, self.zoom);
+        let frustum = Frustum::new(proj * view);
         self.globals.write(
             gpu,
             &FrameParams {
                 view,
-                proj: projection(aspect, far * 1.5, self.zoom),
+                proj,
                 eye: self.cam.pos,
                 fog_rgb: self.clear_color().map(|c| c as f32),
                 fog: (far * self.fog_start, far),
@@ -467,15 +517,25 @@ impl AreaView {
             gpu,
             center,
             self.radius,
-            self.high_end,
+            self.high_end || GROUND_LEVELS_ALWAYS,
             self.area.rsc.textures.len() as u32,
             t.as_millis() as u32,
+            &frustum,
         );
         self.terrain.draw_ground(pass, &self.globals);
 
         // Collect object instances within the view radius, grouped by model.
-        let mut per_model: Vec<Vec<Instance>> = vec![Vec::new(); self.models.len()];
-        let mut per_sprite: Vec<Vec<Instance>> = vec![Vec::new(); self.sprites.len()];
+        let mut per_model = std::mem::take(&mut self.per_model);
+        let mut per_sprite = std::mem::take(&mut self.per_sprite);
+        per_model.resize_with(self.models.len(), Vec::new);
+        per_sprite.resize_with(self.sprites.len(), Vec::new);
+        per_model
+            .iter_mut()
+            .chain(&mut per_sprite)
+            .for_each(Vec::clear);
+        // Dynamic time: every object's light follows the time weights.
+        let cycling = self.area.cycle.is_some();
+        let weights = self.area.time_weights();
         // Sprites stand upright, turned to the camera.
         let facing = self.cam.yaw / std::f32::consts::FRAC_PI_2;
         let sprite_from = self.sprite_cells.map_or(f32::INFINITY, |c| c * CELL);
@@ -498,50 +558,61 @@ impl AreaView {
             (((center.0 + r).max(0) as usize) / CHUNK).min(CHUNKS - 1),
             (((center.1 + r).max(0) as usize) / CHUNK).min(CHUNKS - 1),
         );
+        // Nearest chunks first: what they cover fails the depth test
+        // before the far ones are shaded (sprites discard, so the GPU can't
+        // reject them early otherwise).
+        let mut seen: Vec<(f32, usize)> = Vec::new();
         for cy in c0y..=c1y {
             for cx in c0x..=c1x {
-                for (p, light, sprite_light) in &self.chunks[cy * CHUNKS + cx] {
-                    let d = Vec3::from(p.pos) - self.cam.pos;
-                    if d.x * d.x + d.z * d.z > r2 {
+                if self.chunk_seen(&frustum, cx, cy) {
+                    let mid = (Vec3::new(cx as f32, 0.0, cy as f32) + 0.5) * (CHUNK as f32 * CELL);
+                    let d = (mid - self.cam.pos) * Vec3::new(1.0, 0.0, 1.0);
+                    seen.push((d.length_squared(), cy * CHUNKS + cx));
+                }
+            }
+        }
+        seen.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+        for &(_, chunk) in &seen {
+            for (p, light, sprite_light, terms) in &self.chunks[chunk] {
+                let d = Vec3::from(p.pos) - self.cam.pos;
+                if d.x * d.x + d.z * d.z > r2 {
+                    continue;
+                }
+                let m = usize::from(p.model);
+                let d2 = d.length_squared();
+                let has_sprite = self.sprites.get(m).is_some_and(Option::is_some);
+                // In the fade band: model and sprite share the pixels.
+                let fade = if has_sprite && d2 > sprite_d2 && d2 < fade_end2 {
+                    ((d2.sqrt() - sprite_from) / (FADE_CELLS * CELL)).clamp(1e-3, 1.0)
+                } else {
+                    0.0
+                };
+                if has_sprite && d2 > sprite_d2 {
+                    per_sprite[m].push(Instance {
+                        offset: p.pos,
+                        turns: facing,
+                        light: if cycling {
+                            c2_core::area::sprite_light(*terms, weights)
+                        } else {
+                            *sprite_light
+                        },
+                        layer: n_models + u32::from(p.model),
+                        dither: -fade,
+                    });
+                    if fade == 0.0 {
                         continue;
                     }
-                    let m = usize::from(p.model);
-                    let d2 = d.length_squared();
-                    let has_sprite = self.sprites.get(m).is_some_and(Option::is_some);
-                    // In the fade band: model and sprite share the pixels.
-                    let fade = if has_sprite && d2 > sprite_d2 && d2 < fade_end2 {
-                        ((d2.sqrt() - sprite_from) / (FADE_CELLS * CELL)).clamp(1e-3, 1.0)
-                    } else {
-                        0.0
-                    };
-                    if has_sprite && d2 > sprite_d2 {
-                        per_sprite[m].push(Instance {
-                            offset: p.pos,
-                            turns: facing,
-                            light: if self.area.cycle.is_some() {
-                                self.area.sprite_light(p)
-                            } else {
-                                *sprite_light
-                            },
-                            layer: n_models + u32::from(p.model),
-                            dither: -fade,
-                        });
-                        if fade == 0.0 {
-                            continue;
-                        }
-                    }
-                    per_model[m].push(Instance {
-                        offset: p.pos,
-                        turns: f32::from(p.quarter_turns),
-                        light: if self.area.cycle.is_some() && *light >= 0.0 {
-                            self.area.object_light(p)
-                        } else {
-                            *light
-                        },
-                        layer: u32::from(p.model),
-                        dither: fade,
-                    });
                 }
+                per_model[m].push(Instance {
+                    offset: p.pos,
+                    turns: f32::from(p.quarter_turns),
+                    light: match terms {
+                        Some(t) if cycling => t.at(weights),
+                        _ => *light,
+                    },
+                    layer: u32::from(p.model),
+                    dither: fade,
+                });
             }
         }
         let batches: Vec<(&GpuModel, &[Instance])> = self
@@ -557,7 +628,9 @@ impl AreaView {
             )
             .collect();
         self.renderer.draw(gpu, pass, &self.globals, &batches);
-        extra(gpu, pass, &self.globals);
+        drop(batches);
+        (self.per_model, self.per_sprite) = (per_model, per_sprite);
+        extra(gpu, pass, &self.globals, &frustum);
         self.terrain.draw_water(pass, &self.globals);
     }
 }

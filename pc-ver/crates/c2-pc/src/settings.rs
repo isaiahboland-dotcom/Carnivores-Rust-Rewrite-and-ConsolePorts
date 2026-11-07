@@ -3,6 +3,21 @@
 //! death camera.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+/// The last loaded or stored resolution slider, for the frame loop.
+static RENDER_SCALE: AtomicU32 = AtomicU32::new(255);
+
+/// The resolution scale the settings last loaded or stored ask for (see
+/// [`PcSettings::resolution_scale`]).
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub fn resolution_scale() -> f32 {
+    scale_of(RENDER_SCALE.load(Ordering::Relaxed) as i32)
+}
+
+fn scale_of(slider: i32) -> f32 {
+    0.5 + 0.5 * slider.clamp(0, 255) as f32 / 255.0
+}
 
 /// The farthest render distance, in cells (the original's longest view is
 /// 104; the map is 1024 across).
@@ -77,6 +92,10 @@ pub struct PcSettings {
     /// [`HIGH_END_RENDER_CELLS`] with the far ground in coarser levels, and
     /// objects fading between model and sprite instead of switching.
     pub high_end_view: i32,
+    /// Resolution slider, 0..=255 (Android only, not in the original): the
+    /// frame is drawn at [`PcSettings::resolution_scale`] of the screen's
+    /// pixels and the phone scales it up. 255 = every pixel.
+    pub render_scale: i32,
 }
 
 impl Default for PcSettings {
@@ -103,6 +122,7 @@ impl Default for PcSettings {
             hardcore_survival: 0,
             map_holsters: 1,
             high_end_view: 0,
+            render_scale: 255,
         }
     }
 }
@@ -116,10 +136,20 @@ impl PcSettings {
     /// original) if there are none or they can't be read.
     pub fn load() -> Self {
         let s = Self::default();
-        let Ok(text) = std::fs::read_to_string(path()) else {
-            return s;
-        };
-        Self::parse(&text)
+        let s = std::fs::read_to_string(path()).map_or(s, |text| Self::parse(&text));
+        s.publish();
+        s
+    }
+
+    /// Makes the settings the frame loop reads ([`resolution_scale`]) these.
+    fn publish(&self) {
+        RENDER_SCALE.store(self.render_scale as u32, Ordering::Relaxed);
+    }
+
+    /// The share of the screen's pixels the frame is drawn at, per side:
+    /// 50% to 100%.
+    pub fn resolution_scale(&self) -> f32 {
+        scale_of(self.render_scale)
     }
 
     fn parse(text: &str) -> Self {
@@ -151,6 +181,7 @@ impl PcSettings {
                 "hardcore_survival" => s.hardcore_survival = i32::from(v != 0),
                 "map_holsters" => s.map_holsters = i32::from(v != 0),
                 "high_end_view" => s.high_end_view = i32::from(v != 0),
+                "render_scale" => s.render_scale = v.clamp(0, 255),
                 "secret_dinos" => s.secret_dinos = v.clamp(0, 255),
                 "all_huntable" => s.all_huntable = i32::from(v != 0),
                 _ => {}
@@ -160,9 +191,10 @@ impl PcSettings {
     }
 
     pub fn store(&self) {
+        self.publish();
         let text = format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nmodel_distance = {}\n\
-             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\n",
+             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\n",
             self.render,
             self.fog,
             self.blood,
@@ -183,7 +215,8 @@ impl PcSettings {
             self.survival_budget,
             self.hardcore_survival,
             self.map_holsters,
-            self.high_end_view
+            self.high_end_view,
+            self.render_scale
         );
         if let Some(dir) = path().parent() {
             let _ = std::fs::create_dir_all(dir);
@@ -295,6 +328,15 @@ mod tests {
         };
         let c = half.model_cells(384).unwrap_or(0.0);
         assert!(c > 200.0 && c < 210.0, "{c}");
+    }
+
+    #[test]
+    fn resolution_defaults_to_every_pixel_and_halves_at_most() {
+        let d = PcSettings::parse("blood = 1\n");
+        assert_eq!(d.render_scale, 255);
+        assert_eq!(d.resolution_scale(), 1.0);
+        let low = PcSettings::parse("render_scale = 0\n");
+        assert_eq!(low.resolution_scale(), 0.5);
     }
 
     #[test]

@@ -10,7 +10,8 @@ use c2_formats::res_txt::{ResData, ResTxt};
 
 use crate::area_view::find_file;
 use crate::gpu::Gpu;
-use crate::render::{Globals, GpuModel, Instance, ModelRenderer};
+use crate::render::{Frustum, Globals, GpuModel, Instance, ModelRenderer};
+use glam::Vec3;
 
 /// `RenderCharacterPost` draws characters with a fixed light of 210.
 const CHAR_LIGHT: f32 = 210.0 / 255.0;
@@ -29,6 +30,10 @@ pub struct DinoAssets {
     models: Vec<Option<(usize, GpuModel)>>,
     /// Shared by successive animal/ship uploads; no pose is retained after upload.
     pose: Vec<[f32; 3]>,
+    /// How far each car's rest pose reaches from its origin, padded for
+    /// the animations ([`model_reach`]); the ship's.
+    reach: Vec<f32>,
+    ship_reach: f32,
 }
 
 /// Reads `HUNTDAT/_RES.TXT`.
@@ -121,12 +126,19 @@ impl DinoAssets {
             let m = GpuModel::new(gpu, &p, Vec::new());
             ((c, p), m)
         });
+        let reach = cars
+            .iter()
+            .map(|c| c.as_ref().map_or(0.0, |(_, p)| model_reach(p)))
+            .collect();
+        let ship_reach = ship.as_ref().map_or(0.0, |((_, p), _)| model_reach(p));
         Self {
             cars,
             ship,
             renderer,
             models: Vec::new(),
             pose: Vec::new(),
+            reach,
+            ship_reach,
         }
     }
 
@@ -142,8 +154,7 @@ impl DinoAssets {
             .map_or(1, |a| c2_core::model::car_anim_duration_ms(a).max(1) as i32)
     }
 
-    /// Poses and draws every character within `max_dist` of `eye`, and the ship.
-    #[allow(clippy::too_many_arguments)]
+    /// Poses and draws every character `seen` takes in, and the ship.
     pub fn draw(
         &mut self,
         gpu: &Gpu,
@@ -151,8 +162,7 @@ impl DinoAssets {
         globals: &Globals,
         herd: &Herd,
         ship: &Ship,
-        eye: [f32; 3],
-        max_dist: f32,
+        seen: Seen<'_>,
     ) {
         self.models.truncate(herd.chars.len());
         for (i, c) in herd.chars.iter().enumerate() {
@@ -173,19 +183,19 @@ impl DinoAssets {
                 }
             }
         }
-        let near =
-            |p: [f32; 3]| (p[0] - eye[0]).powi(2) + (p[2] - eye[2]).powi(2) <= max_dist * max_dist;
+        let near = |p: [f32; 3], reach: f32| seen.sees(p, reach);
         let mut insts: Vec<[Instance; 1]> = Vec::new();
         let mut models: Vec<&GpuModel> = Vec::new();
         for (i, c) in herd.chars.iter().enumerate() {
-            if !near(c.pos) {
-                continue;
-            }
             let (Some(Some((_, m))), Some(Some((car, _)))) =
                 (self.models.get(i), self.cars.get(c.ctype))
             else {
                 continue;
             };
+            // Not posed either when out of sight: the pose only feeds the GPU.
+            if !near(c.pos, self.reach.get(c.ctype).copied().unwrap_or(0.0)) {
+                continue;
+            }
             let anims = herd.species.get(c.ctype).map_or(&[][..], |s| s.anims());
             if let Some(v) = pose::pose_into(c, car, anims, &mut self.pose) {
                 m.set_pose(gpu, v);
@@ -195,7 +205,7 @@ impl DinoAssets {
         }
         // The ship: landing animation at FTime, light 240 (RenderShip).
         if let Some(((car, _), m)) = &self.ship {
-            if ship.state != -1 && near(ship.pos) {
+            if ship.state != -1 && near(ship.pos, self.ship_reach) {
                 if let Some(v) = car.animations.first().and_then(|a| {
                     c2_core::model::pose_car_into(
                         a,
@@ -223,6 +233,35 @@ impl DinoAssets {
             .collect();
         self.renderer.draw(gpu, pass, globals, &batches);
     }
+}
+
+/// What the camera takes in: characters within `max` of `eye` (on the
+/// ground plane) that `frustum` may see.
+#[derive(Clone, Copy)]
+pub struct Seen<'a> {
+    pub eye: [f32; 3],
+    pub max: f32,
+    pub frustum: &'a Frustum,
+}
+
+impl Seen<'_> {
+    fn sees(&self, p: [f32; 3], reach: f32) -> bool {
+        let (dx, dz) = (p[0] - self.eye[0], p[2] - self.eye[2]);
+        let r = Vec3::splat(reach);
+        dx * dx + dz * dz <= self.max * self.max
+            && self.frustum.sees_box(Vec3::from(p) - r, Vec3::from(p) + r)
+    }
+}
+
+/// A rest pose's farthest vertex from the origin, doubled plus a cell:
+/// room for animations that reach further (a lunge, a raised neck).
+fn model_reach(p: &PreparedModel) -> f32 {
+    let rest = p
+        .positions
+        .iter()
+        .map(|v| Vec3::from(*v).length())
+        .fold(0.0, f32::max);
+    rest * 2.0 + c2_core::CELL
 }
 
 fn instance(c: &Character) -> Instance {

@@ -87,6 +87,28 @@ With no `game/` (or one not built from an APK), the app says so on screen; tap t
   used, and come back on the next touch.
 - arm64 only; Android 8.0 (API 26) or later.
 
+## Performance
+
+The Video options' **Resolution** (Android only, 50-100%) draws fewer pixels and
+lets the phone scale the picture up. On a Retroid Pocket 5 the GPU sets the pace;
+see `docs/DECISIONS.md` (Android rendering performance) for what was measured.
+
+- `c2rs.log` gets a line every 5 seconds: frames per second, the game's own time
+  per frame and the time spent waiting on the GPU and the display.
+- `files/args.txt` (one argument per line) replaces the launch arguments, for
+  repeatable measurements, e.g. the map viewer at a fixed view:
+
+  ```text
+  area
+  /storage/emulated/0/Android/data/io.github.c2rs/files/game/HUNTDAT/AREAS/AREA2.MAP
+  --view
+  384
+  ```
+
+  or a hunt that lands the same way each run (`hunt`, the map, `--seed`, `6`).
+  Delete the file to play normally.
+- The APK is profileable from adb: `simpleperf record --app io.github.c2rs`.
+
 ## Testing
 
 - Host: `cargo test` (launch rules: needs an APK-built game, the 8-pick limit, add-ons

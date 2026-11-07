@@ -19,6 +19,7 @@ mod hunt_view;
 mod input;
 mod keys;
 mod menu;
+mod mips;
 mod model_view;
 mod mods_cli;
 mod notice;

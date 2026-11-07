@@ -53,6 +53,16 @@ struct Running {
     frame: Frame,
     scene: Box<dyn Scene>,
     pad_cursor: PadCursor,
+    /// The window's own size; frames are drawn at `scale` of it.
+    window: (u32, u32),
+    scale: f32,
+}
+
+/// The frame size for a window of `size` at resolution `scale`: Android
+/// scales a smaller swapchain up to the window itself.
+fn scaled(size: (u32, u32), scale: f32) -> (u32, u32) {
+    let s = |v: u32| ((v as f32 * scale).round() as u32).clamp(1, v.max(1));
+    (s(size.0), s(size.1))
 }
 
 #[derive(Default)]
@@ -68,13 +78,20 @@ struct State {
     triggers: [bool; 2],
     /// The hat (D-pad as axes): x, y.
     hat: [i8; 2],
+    /// Touches are in the window's pixels; frames in this share of them.
+    scale: f32,
 }
 
 pub fn run(app: AndroidApp, make: MakeScene) -> Result<()> {
     let mut make = Some(make);
     let mut running: Option<Running> = None;
-    let mut st = State::default();
+    let mut st = State {
+        // Loaded here too, so the first frame is already at its size.
+        scale: crate::settings::PcSettings::load().resolution_scale(),
+        ..State::default()
+    };
     let mut last = Instant::now();
+    let mut stats = FrameStats::default();
     while !st.quit {
         // Block while there is nothing to draw; otherwise just drain events.
         let wait = running
@@ -106,21 +123,22 @@ pub fn run(app: AndroidApp, make: MakeScene) -> Result<()> {
         }
         if std::mem::take(&mut st.window_changed) {
             if let Some(w) = app.native_window().map(Window) {
-                let size = w.size();
+                let window = w.size();
+                let size = scaled(window, st.scale);
                 match &mut running {
                     // The same window resized: the surface takes the new size.
-                    Some(Running {
-                        gpu,
-                        target: Some(Target::Window { surface, config }),
-                        frame,
-                        ..
-                    }) => {
-                        (config.width, config.height) = size;
-                        surface.configure(&gpu.device, config);
-                        *frame = Frame::new(gpu, size);
+                    Some(
+                        r @ Running {
+                            target: Some(Target::Window { .. }),
+                            ..
+                        },
+                    ) => {
+                        r.window = window;
+                        r.resize();
                     }
                     // A new window after a pause (the old surface is gone).
                     Some(r) => {
+                        r.window = window;
                         r.target = Some(r.gpu.new_surface(w, size)?);
                         r.frame = Frame::new(&r.gpu, size);
                     }
@@ -134,6 +152,8 @@ pub fn run(app: AndroidApp, make: MakeScene) -> Result<()> {
                             target: Some(target),
                             gpu,
                             scene,
+                            window,
+                            scale: st.scale,
                         });
                     }
                 }
@@ -144,18 +164,89 @@ pub fn run(app: AndroidApp, make: MakeScene) -> Result<()> {
         if r.target.is_none() {
             continue;
         }
+        // The Resolution option changed.
+        let scale = crate::settings::resolution_scale();
+        if scale != r.scale {
+            st.scale = scale;
+            r.scale = scale;
+            r.resize();
+            st.input.release_all();
+        }
         let now = Instant::now();
         let dt = (now - last).as_secs_f32().min(0.25);
         last = now;
-        if frame(&app, r, &mut st, dt)? {
+        stats.add(dt);
+        if frame(&app, r, &mut st, dt, &mut stats)? {
             break;
         }
     }
     Ok(())
 }
 
+impl Running {
+    /// Remakes the surface and depth buffer for the window at `scale`.
+    fn resize(&mut self) {
+        let size = scaled(self.window, self.scale);
+        if let Some(Target::Window { surface, config }) = &mut self.target {
+            (config.width, config.height) = size;
+            surface.configure(&self.gpu.device, config);
+        }
+        self.frame = Frame::new(&self.gpu, size);
+        tracing::info!("frame size {}x{}", size.0, size.1);
+    }
+}
+
+/// Frame times, logged every few seconds (c2rs.log): the phone has no
+/// title bar to show them in.
+#[derive(Default)]
+struct FrameStats {
+    frames: u32,
+    total: f32,
+    worst: f32,
+    /// The game's own work: updating, recording and submitting the frame
+    /// (not waiting for the GPU or the display).
+    cpu: f32,
+    /// Waiting for a swapchain image: long when the GPU sets the pace.
+    wait: f32,
+    /// Handing the frame to the display (Android may hold it here instead).
+    present: f32,
+}
+
+impl FrameStats {
+    const EVERY_S: f32 = 5.0;
+
+    fn cpu(&mut self, t: Duration) {
+        self.cpu += t.as_secs_f32();
+    }
+
+    fn add(&mut self, dt: f32) {
+        self.frames += 1;
+        self.total += dt;
+        self.worst = self.worst.max(dt);
+        if self.total >= Self::EVERY_S {
+            tracing::info!(
+                "frames: {:.1} fps, {:.1} ms average, {:.1} ms worst, {:.1} ms CPU, {:.1} ms acquire, {:.1} ms present",
+                self.frames as f32 / self.total,
+                self.total * 1000.0 / self.frames as f32,
+                self.worst * 1000.0,
+                self.cpu * 1000.0 / self.frames as f32,
+                self.wait * 1000.0 / self.frames as f32,
+                self.present * 1000.0 / self.frames as f32
+            );
+            *self = Self::default();
+        }
+    }
+}
+
 /// Updates and draws one frame; true when the game is over.
-fn frame(app: &AndroidApp, r: &mut Running, st: &mut State, dt: f32) -> Result<bool> {
+fn frame(
+    app: &AndroidApp,
+    r: &mut Running,
+    st: &mut State,
+    dt: f32,
+    stats: &mut FrameStats,
+) -> Result<bool> {
+    let start = Instant::now();
     // No cursor to capture, but the hunt owns the pointer as on PC (so the
     // pad's menu pointer stays out of it).
     st.input.grabbed = r.scene.grab_cursor();
@@ -181,6 +272,8 @@ fn frame(app: &AndroidApp, r: &mut Running, st: &mut State, dt: f32) -> Result<b
     let Some(Target::Window { surface, config }) = &r.target else {
         return Ok(false);
     };
+    let updated = start.elapsed();
+    let acquire = Instant::now();
     let tex = match surface.get_current_texture() {
         wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
         wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
@@ -190,6 +283,8 @@ fn frame(app: &AndroidApp, r: &mut Running, st: &mut State, dt: f32) -> Result<b
         _ => return Ok(false),
     };
     let view = tex.texture.create_view(&Default::default());
+    stats.wait += acquire.elapsed().as_secs_f32();
+    let drawing = Instant::now();
     let pointer = &mut r.pad_cursor;
     render_with(
         &r.gpu,
@@ -198,7 +293,10 @@ fn frame(app: &AndroidApp, r: &mut Running, st: &mut State, dt: f32) -> Result<b
         &r.frame,
         &mut |gpu, pass, size| pointer.draw(gpu, pass, size),
     );
+    stats.cpu(updated + drawing.elapsed());
+    let presenting = Instant::now();
     r.gpu.queue.present(tex);
+    stats.present += presenting.elapsed().as_secs_f32();
     if r.scene.wants_exit() {
         return Ok(true);
     }
@@ -308,8 +406,10 @@ fn motion(st: &mut State, m: &MotionEvent) -> InputStatus {
         MotionAction::Cancel => TouchPhase::Cancelled,
         _ => return InputStatus::Unhandled,
     };
+    let k = st.scale;
     let mut touch = |p: android_activity::input::Pointer<'_>| {
-        st.input.touch(p.pointer_id() as u64, phase, (p.x(), p.y()));
+        st.input
+            .touch(p.pointer_id() as u64, phase, (p.x() * k, p.y() * k));
     };
     match phase {
         TouchPhase::Started | TouchPhase::Ended => touch(m.pointer_at_index(m.pointer_index())),

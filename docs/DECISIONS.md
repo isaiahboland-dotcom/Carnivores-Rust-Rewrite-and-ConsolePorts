@@ -4162,3 +4162,71 @@ the previous build's, apart from the animated clouds). On:
 
 Viewer: `c2-pc area MAP --view 1024 --high-end --foliage CELLS`.
 
+## 2026-11-06 — Android rendering performance (GPU-bound on a Retroid Pocket 5)
+
+Hunts on the Retroid Pocket 5 (Adreno 650, 1920x1080) stayed playable only
+with the view sliders at their lowest. Measured on the device with the new
+frame log (`c2rs.log`, every 5 s), the limit was the GPU: the game thread
+is about a quarter busy. Changes, with their effect on the Retroid:
+
+- **Frustum culling** (`render/frustum.rs`), all platforms. The ground and
+  water are drawn as 16x16-cell chunks, instanced, and only the chunks the
+  camera can see are sent; water only where a chunk has water. Object
+  chunks and animals outside the view are skipped too (animals are not
+  posed either: the pose only feeds the GPU). The picture is unchanged
+  (PC screenshots byte-identical before and after). Area view at 200
+  cells: 20 -> 45 fps.
+- **Ground levels past 128 cells always on Android**, independent of
+  High-end view (`area_view.rs`, `GROUND_LEVELS_ALWAYS`). Full detail out
+  there cost the most and shows little; within 128 cells, which includes
+  the original's whole view range (42-104), the ground is as before. The
+  PC keeps this behind High-end view. Area view at 300 cells: 43 -> 60 fps.
+- **Mip levels for the ground's and models' textures, Android only**
+  (`mips.rs`, `gpu::WORLD_MIPS`). The original builds them too
+  (`MIPMAP = TRUE`; `CreateMipMapMT` halves the textures and the D3D
+  renderer switches to the half-size one past 10 cells for the ground and
+  12 for models). The levels use the original's rule: a block's coverage
+  is its top-left texel's, its colour the average with clear texels
+  counted as the top-left one, so far foliage stays as dense. The GPU
+  picks a level per pixel (nearest level) rather than per object by
+  distance. Not on the PC yet, to keep its look unchanged; offering it
+  there would follow the original. Hunt at the owner's settings: about
+  47 -> 53 fps.
+- **Object chunks drawn nearest first**, all platforms. Sprites and leaves
+  discard, so the GPU can't reject hidden pixels before shading them
+  unless something nearer already wrote depth. Only the draw order
+  changes; on PC 7 pixels of 921,600 differed across 7 views (equal-depth
+  overlaps). Hunt at render distance 255, sprites from 24 cells: 42 -> 60
+  fps on the run measured.
+- **Less CPU per frame.** Dynamic time lit every object each frame with
+  map lookups; the light is now split into the parts that never change
+  (`ObjectLight`, stored per object at load) and one blend per frame, the
+  same formula and results. Instances go straight into the upload buffer
+  (one copy instead of two), and the per-model lists are reused between
+  frames. On this driver the frame waits in `present` for the GPU, so CPU
+  and GPU time add up and CPU savings count.
+- **Resolution option, Android only** (Video options, 50-100% per side,
+  `render_scale` in `c2rs.cfg`). The swapchain is made smaller and the
+  phone scales it up; touches are scaled to match. Not in the original.
+  It helps less than expected (a hunt gains 5-8 fps at 50%): pixel fill is
+  not the main cost.
+
+Overall: a hunt at the owner's settings went from about 47 to 54-58 fps,
+at the highest render distance from about 40 to 45-55 depending on the
+landing spot; the map viewer holds 60 fps at every render distance on the
+five stock areas.
+
+Tried and not kept: Mailbox present mode (slightly slower) and a swapchain
+latency of 1 or 3 (no repeatable change).
+
+Still open: the ground's vertex work is the remaining cost (on a heavy
+landing, skipping the ground alone reaches 60 fps). Each cell computes six
+unshared vertices; options are fewer full-detail cells on Android or
+sharing vertices, which needs the per-cell texture and rotation moved to
+the fragment shader.
+
+Measuring: `files/args.txt` in the app's folder (one argument per line)
+replaces the launch arguments, e.g. `area`, a map path, `--view`, `384`;
+`c2-pc hunt --seed N` gives the same landing and animals each run (random
+hunts vary by about 15%). The APK is `profileable` from the shell, so
+`simpleperf record --app io.github.c2rs` samples it.

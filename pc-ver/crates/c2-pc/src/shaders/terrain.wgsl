@@ -111,20 +111,23 @@ fn center() -> vec2<i32> {
     return params.origin + vec2<i32>(half_width());
 }
 
-fn lod_cell(vid: u32) -> LodCell {
-    let per = params.width * params.width * 6u;
+// Cell `vid / 6` of a drawn chunk: `chunk` is its top-left map cell and
+// its level (render/terrain.rs culls chunks; cells outside the level's
+// ring or the map are dropped here).
+fn lod_cell(vid: u32, chunk: vec4<i32>) -> LodCell {
+    let ci = vid / 6u;
     var o: LodCell;
-    o.level = vid / per;
-    let ci = (vid % per) / 6u;
+    o.level = u32(chunk.z);
     o.step = 1 << o.level;
-    let first = center() - vec2<i32>(half_width() << o.level);
-    o.c = first + vec2<i32>(i32(ci % params.width), i32(ci / params.width)) * o.step;
+    o.c = chunk.xy + vec2<i32>(i32(ci % 16u), i32(ci / 16u)) * o.step;
+    let r = o.c - center();
+    let outer = half_width() << o.level;
     o.ok = o.level < params.levels
+        && r.x >= -outer && r.x < outer && r.y >= -outer && r.y < outer
         && o.c.x >= 0 && o.c.y >= 0 && o.c.x + o.step <= MAP - 1 && o.c.y + o.step <= MAP - 1;
     if (o.level > 0u) {
         // The level inside draws this part.
         let inner = half_width() << (o.level - 1u);
-        let r = o.c - center();
         if (r.x >= -inner && r.x < inner && r.y >= -inner && r.y < inner) {
             o.ok = false;
         }
@@ -166,8 +169,8 @@ fn edge_neighbour(v: vec2<i32>, l: LodCell) -> vec2<i32> {
 }
 
 @vertex
-fn vs_ground(@builtin(vertex_index) vid: u32) -> VOut {
-    let l = lod_cell(vid);
+fn vs_ground(@builtin(vertex_index) vid: u32, @location(0) chunk: vec4<i32>) -> VOut {
+    let l = lod_cell(vid, chunk);
     if (!l.ok) {
         return degenerate();
     }
@@ -197,8 +200,8 @@ fn vs_ground(@builtin(vertex_index) vid: u32) -> VOut {
 }
 
 @vertex
-fn vs_water(@builtin(vertex_index) vid: u32) -> VOut {
-    let l = lod_cell(vid);
+fn vs_water(@builtin(vertex_index) vid: u32, @location(0) chunk: vec4<i32>) -> VOut {
+    let l = lod_cell(vid, chunk);
     if (!l.ok) {
         return degenerate();
     }

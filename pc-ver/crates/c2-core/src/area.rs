@@ -8,6 +8,9 @@ use c2_formats::rsc::{object_flags, Rsc};
 
 use crate::{CELL, H_SCALE};
 
+mod object_light;
+pub use object_light::{sprite_light, ObjectLight};
+
 /// `FMap` flags (`Hunt.h: fm*`).
 pub mod cell_flags {
     /// Bits 0-1: terrain texture rotation (`TDirection`).
@@ -333,48 +336,6 @@ impl Area {
                     quarter_turns: ((self.map.flags[i] >> cell_flags::OBJ_DIR_SHIFT) & 3) as u8,
                 })
             })
-    }
-
-    /// Object brightness 0..1, `renderd3d.cpp: _RenderObject`.
-    pub fn object_light(&self, p: &Placement) -> f32 {
-        let Some(o) = self.rsc.objects.get(usize::from(p.model)) else {
-            return 0.5;
-        };
-        let l = self.light_at(idx(usize::from(p.cell.0), usize::from(p.cell.1))) as u8;
-        // Ground-lit objects take the light of the ground under each vertex
-        // (CalcModelGroundLight: 128 + LandLt - 128); here, under the object
-        // (the PC lights them per vertex, `ground_light`).
-        if o.info.flags & object_flags::GROUND_LIGHT != 0 {
-            return self.ground_light(p.pos[0], p.pos[2]) / 255.0;
-        }
-        let (x, y) = (usize::from(p.cell.0), usize::from(p.cell.1));
-        let l = if o.info.flags & object_flags::DEF_LIGHT != 0 {
-            o.info.default_light
-        } else {
-            let r = self
-                .random_map
-                .get((y & 31) * 32 + (x & 31))
-                .copied()
-                .unwrap_or(0);
-            -(r >> 5) + i32::from(l >> 1) + 96
-        };
-        l.clamp(64, 192) as f32 / 255.0
-    }
-
-    /// The light of a far object's sprite: its light less 16
-    /// (`RenderBMPModel(.., mlight-16)`; ground-lit ones from 128).
-    pub fn sprite_light(&self, p: &Placement) -> f32 {
-        let ground = self
-            .rsc
-            .objects
-            .get(usize::from(p.model))
-            .is_some_and(|o| o.info.flags & object_flags::GROUND_LIGHT != 0);
-        let l = if ground {
-            128.0 / 255.0
-        } else {
-            self.object_light(p)
-        };
-        (l - 16.0 / 255.0).max(0.0)
     }
 
     /// `Game.cpp: GetLandLt2`: the ground light at (x, z), 0..255, bilinear

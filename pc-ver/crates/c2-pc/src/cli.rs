@@ -29,7 +29,7 @@ const USAGE: &str = "usage:
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
   c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--models] [--foliage CELLS] [--high-end] [--shot out.png]
   c2-pc hunt  <AREA.MAP|TROPHY.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all]
-              [--weapon N] [--bino] [--pause] [--exit] [--message TEXT] [--kill] [--plaque] [--pick] [--call] [--fill] [--die AI,MS[,NAME]] [--observer] [--player N] [--survival classic|modded]\n              [--touch] [--shot out.png]   (--touch: an APK game's phone buttons, as after a touch)
+              [--weapon N] [--bino] [--pause] [--exit] [--message TEXT] [--kill] [--plaque] [--pick] [--call] [--fill] [--die AI,MS[,NAME]] [--observer] [--player N] [--survival classic|modded] [--seed N]\n              [--touch] [--shot out.png]   (--touch: an APK game's phone buttons, as after a touch)
 
 model: drag to orbit, wheel zoom, [ ] next/prev file, N/P next/prev animation, Space pause
 area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distance
@@ -54,6 +54,7 @@ const VALUE_FLAGS: &[&str] = &[
     "view",
     "foliage",
     "sim",
+    "seed",
     "ship",
     "die",
     "weapon",
@@ -424,7 +425,11 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
                 game_dir,
                 map: path.clone(),
                 time,
-                seed: sim.as_ref().map(|_| 1),
+                // --seed N: the same landing and animals each run (benchmarks).
+                seed: match o.value("seed") {
+                    Some(v) => Some(v.parse().context("--seed N")?),
+                    None => sim.as_ref().map(|_| 1),
+                },
                 targets,
                 // Without the menu, carry every weapon.
                 weapons: u128::MAX,

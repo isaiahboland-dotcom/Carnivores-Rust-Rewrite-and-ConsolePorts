@@ -1,4 +1,5 @@
 //! Terrain and water, built in the vertex shader from per-cell data.
+use super::frustum::Frustum;
 use super::*;
 
 // ---------------------------------------------------------------- terrain
@@ -37,13 +38,59 @@ pub fn window(center: (i32, i32), radius: u32, lod: bool) -> (u32, (i32, i32), u
     (LOD_FINE_CELLS, (snap(center.0), snap(center.1)), levels)
 }
 
+/// Cells per side of a drawn chunk of ground, in its level's cells.
+pub const CHUNK_CELLS: i32 = 16;
+const CHUNK_VERTICES: u32 = (CHUNK_CELLS * CHUNK_CELLS * 6) as u32;
+/// Map cells per side of a [`Blocks`] entry.
+const BLOCK: usize = 16;
+const BLOCKS: usize = c2_formats::map::MAP_SIZE / BLOCK;
+
+/// Per 16x16 map cells: the highest ground and whether any cell has
+/// water, to cull chunks without looking at every cell.
+struct Blocks {
+    top: Vec<f32>,
+    water: Vec<bool>,
+}
+
+impl Blocks {
+    fn new(m: &c2_formats::map::Map) -> Self {
+        let mut top = vec![0.0f32; BLOCKS * BLOCKS];
+        let mut water = vec![false; BLOCKS * BLOCKS];
+        let size = c2_formats::map::MAP_SIZE;
+        for i in 0..m.height.len().min(size * size) {
+            let b = (i / size / BLOCK) * BLOCKS + (i % size) / BLOCK;
+            top[b] = top[b].max(f32::from(m.height[i]) * c2_core::H_SCALE);
+            water[b] |= m.water[i] != 255;
+        }
+        Self { top, water }
+    }
+
+    /// Highest ground and any water over map cells `min..=max`.
+    fn over(&self, min: (i32, i32), max: (i32, i32)) -> (f32, bool) {
+        let last = BLOCKS as i32 - 1;
+        let b = |v: i32| (v.max(0) as usize / BLOCK).min(last as usize);
+        let (mut top, mut water) = (0.0f32, false);
+        for by in b(min.1)..=b(max.1) {
+            for bx in b(min.0)..=b(max.0) {
+                top = top.max(self.top[by * BLOCKS + bx]);
+                water |= self.water[by * BLOCKS + bx];
+            }
+        }
+        (top, water)
+    }
+}
+
 pub struct TerrainRenderer {
     ground: wgpu::RenderPipeline,
     water: wgpu::RenderPipeline,
     group: wgpu::BindGroup,
     params: wgpu::Buffer,
-    width: u32,
-    levels: u32,
+    blocks: Blocks,
+    /// Visible chunks (x, y, level, 0): the ground's, then the water's.
+    chunks: Vec<[i32; 4]>,
+    ground_chunks: u32,
+    instances: wgpu::Buffer,
+    capacity: usize,
 }
 
 impl TerrainRenderer {
@@ -90,7 +137,7 @@ impl TerrainRenderer {
         if layers.is_empty() {
             layers.push(&fallback);
         }
-        let view = gpu.texture_array("terrain textures", 128, 128, &layers);
+        let view = gpu.world_texture_array("terrain textures", 128, 128, &layers);
         let sampler = gpu.sampler(true, false);
         let mut sky_map = area.rsc.sky_map.clone();
         sky_map.resize(128 * 128, 0);
@@ -159,29 +206,49 @@ impl TerrainRenderer {
         });
         let pl = pipeline_layout(gpu, "terrain", &[&globals.layout, &layout]);
         let module = shader(gpu, "terrain", include_str!("../shaders/terrain.wgsl"));
+        let buffers = [Some(wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<[i32; 4]>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &wgpu::vertex_attr_array![0 => Sint32x4],
+        })];
         let desc = |label, vs, blend| PipelineDesc {
             label,
             module: &module,
             layout: &pl,
             vs,
             fs: "fs",
-            buffers: &[],
+            buffers: &buffers,
             blend,
         };
         let ground = pipeline(gpu, desc("ground", "vs_ground", Blend::Opaque));
         let water = pipeline(gpu, desc("water", "vs_water", Blend::Alpha));
+        let capacity = 1024;
         Self {
             ground,
             water,
             group,
             params,
-            width: 0,
-            levels: 1,
+            blocks: Blocks::new(m),
+            chunks: Vec::new(),
+            ground_chunks: 0,
+            instances: Self::instance_buffer(gpu, capacity),
+            capacity,
         }
+    }
+
+    fn instance_buffer(gpu: &Gpu, n: usize) -> wgpu::Buffer {
+        gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("ground chunks"),
+            size: (n * std::mem::size_of::<[i32; 4]>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
     }
 
     /// Sets the square window of cells to draw, centred on `center` cell;
     /// with `lod`, past [`LOD_FINE_CELLS`] in coarser levels (see [`window`]).
+    /// Only the chunks of it that `frustum` may see are drawn.
+    #[allow(clippy::too_many_arguments)]
     pub fn set_window(
         &mut self,
         gpu: &Gpu,
@@ -190,13 +257,12 @@ impl TerrainRenderer {
         lod: bool,
         layers: u32,
         time_ms: u32,
+        frustum: &Frustum,
     ) {
         let (half, center, levels) = window(center, radius, lod);
-        self.width = half * 2;
-        self.levels = levels;
         let p = TerrainParams {
             origin: [center.0 - half as i32, center.1 - half as i32],
-            width: self.width,
+            width: half * 2,
             layers: layers.max(1),
             time_ms,
             // Game.cpp sets Clouds = TRUE; there is no option to turn it off.
@@ -206,24 +272,83 @@ impl TerrainRenderer {
         };
         gpu.queue
             .write_buffer(&self.params, 0, bytemuck::bytes_of(&p));
+        self.cull(center, half as i32, levels, frustum);
+        if self.chunks.len() > self.capacity {
+            self.capacity = self.chunks.len().next_power_of_two();
+            self.instances = Self::instance_buffer(gpu, self.capacity);
+        }
+        if !self.chunks.is_empty() {
+            gpu.queue
+                .write_buffer(&self.instances, 0, bytemuck::cast_slice(&self.chunks));
+        }
     }
 
-    fn vertex_count(&self) -> u32 {
-        self.width * self.width * 6 * self.levels
+    /// Fills `chunks` with the visible ground chunks of each level, then the
+    /// visible chunks with water.
+    fn cull(&mut self, center: (i32, i32), half: i32, levels: u32, frustum: &Frustum) {
+        let map = c2_formats::map::MAP_SIZE as i32;
+        let per_side = (half * 2 + CHUNK_CELLS - 1) / CHUNK_CELLS;
+        let mut water = Vec::new();
+        self.chunks.clear();
+        for level in 0..levels as i32 {
+            let step = 1 << level;
+            let span = CHUNK_CELLS * step;
+            let first = (center.0 - (half << level), center.1 - (half << level));
+            let inner = if level > 0 { half << (level - 1) } else { 0 };
+            for ky in 0..per_side {
+                for kx in 0..per_side {
+                    let o = (first.0 + kx * span, first.1 + ky * span);
+                    let rel = (o.0 - center.0, o.1 - center.1);
+                    let inside = |v: i32| v >= -inner && v + span <= inner;
+                    if level > 0 && inside(rel.0) && inside(rel.1) {
+                        continue; // the level inside draws all of it
+                    }
+                    let end = (o.0 + span, o.1 + span);
+                    if end.0 <= 0 || end.1 <= 0 || o.0 >= map - 1 || o.1 >= map - 1 {
+                        continue;
+                    }
+                    let (top, wet) = self.blocks.over(o, end);
+                    let cell = c2_core::CELL;
+                    let min = Vec3::new(o.0 as f32 * cell, 0.0, o.1 as f32 * cell);
+                    let max = Vec3::new(end.0 as f32 * cell, top, end.1 as f32 * cell);
+                    if !frustum.sees_box(min, max) {
+                        continue;
+                    }
+                    self.chunks.push([o.0, o.1, level, 0]);
+                    if wet {
+                        water.push([o.0, o.1, level, 0]);
+                    }
+                }
+            }
+        }
+        self.ground_chunks = self.chunks.len() as u32;
+        self.chunks.extend(water);
     }
 
     pub fn draw_ground(&self, pass: &mut wgpu::RenderPass<'_>, globals: &Globals) {
-        pass.set_pipeline(&self.ground);
-        pass.set_bind_group(0, &globals.group, &[]);
-        pass.set_bind_group(1, &self.group, &[]);
-        pass.draw(0..self.vertex_count(), 0..1);
+        self.draw(pass, globals, &self.ground, 0..self.ground_chunks);
     }
 
     pub fn draw_water(&self, pass: &mut wgpu::RenderPass<'_>, globals: &Globals) {
-        pass.set_pipeline(&self.water);
+        let all = self.chunks.len() as u32;
+        self.draw(pass, globals, &self.water, self.ground_chunks..all);
+    }
+
+    fn draw(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        globals: &Globals,
+        pipeline: &wgpu::RenderPipeline,
+        chunks: std::ops::Range<u32>,
+    ) {
+        if chunks.is_empty() {
+            return;
+        }
+        pass.set_pipeline(pipeline);
         pass.set_bind_group(0, &globals.group, &[]);
         pass.set_bind_group(1, &self.group, &[]);
-        pass.draw(0..self.vertex_count(), 0..1);
+        pass.set_vertex_buffer(0, self.instances.slice(..));
+        pass.draw(0..CHUNK_VERTICES, chunks);
     }
 }
 

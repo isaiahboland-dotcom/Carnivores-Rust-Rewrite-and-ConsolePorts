@@ -2035,8 +2035,9 @@ impl Scene for HuntView {
         let black = hunt.death.is_some() && !hunt.opts.death_anim;
         if !black {
             self.view
-                .draw_with(gpu, pass, aspect, &mut |gpu, pass, globals| {
-                    dinos.draw(gpu, pass, globals, &hunt.herd, &hunt.ship, eye, max);
+                .draw_with(gpu, pass, aspect, &mut |gpu, pass, globals, frustum| {
+                    let seen = crate::dinos::Seen { eye, max, frustum };
+                    dinos.draw(gpu, pass, globals, &hunt.herd, &hunt.ship, seen);
                     effects.draw(gpu, pass, globals, &hunt.effects);
                     weapons.draw_rounds(gpu, pass, globals, hunt);
                     weapons.draw(gpu, pass, globals, hunt, view, light, aspect);

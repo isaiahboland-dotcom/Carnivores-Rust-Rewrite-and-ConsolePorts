@@ -7,6 +7,11 @@ use winit::window::Window;
 
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
+/// The ground's and models' textures get mip levels (`mips.rs`): on Android,
+/// where reading full-size textures for far, small surfaces costs the GPU
+/// the most (docs/DECISIONS.md). The PC keeps its single level for now.
+pub const WORLD_MIPS: bool = cfg!(target_os = "android");
+
 pub struct Gpu {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -280,16 +285,44 @@ impl Gpu {
         height: u32,
         layers: &[&[u8]],
     ) -> wgpu::TextureView {
+        self.texture_array_with(label, width, height, layers, false)
+    }
+
+    /// [`Gpu::texture_array`] for the world's ground and models: with mip
+    /// levels where [`WORLD_MIPS`] (see `mips.rs`).
+    pub fn world_texture_array(
+        &self,
+        label: &str,
+        width: u32,
+        height: u32,
+        layers: &[&[u8]],
+    ) -> wgpu::TextureView {
+        self.texture_array_with(label, width, height, layers, WORLD_MIPS)
+    }
+
+    fn texture_array_with(
+        &self,
+        label: &str,
+        width: u32,
+        height: u32,
+        layers: &[&[u8]],
+        mips: bool,
+    ) -> wgpu::TextureView {
         let n = (layers.len() as u32).clamp(1, self.max_layers);
         let size = wgpu::Extent3d {
             width,
             height,
             depth_or_array_layers: n,
         };
+        let levels = if mips {
+            crate::mips::levels(width, height)
+        } else {
+            1
+        };
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some(label),
             size,
-            mip_level_count: 1,
+            mip_level_count: levels,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
@@ -297,34 +330,53 @@ impl Gpu {
             view_formats: &[],
         });
         for (i, data) in layers.iter().take(n as usize).enumerate() {
-            self.queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &tex,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d {
-                        x: 0,
-                        y: 0,
-                        z: i as u32,
-                    },
-                    aspect: wgpu::TextureAspect::All,
-                },
-                data,
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(width * 4),
-                    rows_per_image: Some(height),
-                },
-                wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-            );
+            let mut level: std::borrow::Cow<[u8]> = (*data).into();
+            let (mut w, mut h) = (width, height);
+            for mip in 0..levels {
+                if mip > 0 {
+                    level = crate::mips::half(&level, w as usize, h as usize).into();
+                    (w, h) = ((w / 2).max(1), (h / 2).max(1));
+                }
+                self.write_layer(&tex, mip, i as u32, &level, (w, h));
+            }
         }
         tex.create_view(&wgpu::TextureViewDescriptor {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             ..Default::default()
         })
+    }
+
+    fn write_layer(
+        &self,
+        tex: &wgpu::Texture,
+        mip: u32,
+        layer: u32,
+        data: &[u8],
+        size: (u32, u32),
+    ) {
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: tex,
+                mip_level: mip,
+                origin: wgpu::Origin3d {
+                    x: 0,
+                    y: 0,
+                    z: layer,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
+            data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(size.0 * 4),
+                rows_per_image: Some(size.1),
+            },
+            wgpu::Extent3d {
+                width: size.0,
+                height: size.1,
+                depth_or_array_layers: 1,
+            },
+        );
     }
 
     pub fn sampler(&self, linear: bool, repeat: bool) -> wgpu::Sampler {
@@ -343,6 +395,9 @@ impl Gpu {
             address_mode_v: a,
             mag_filter: f,
             min_filter: f,
+            // One level per pixel, as the original switches textures
+            // outright; textures without levels are unaffected.
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         })
     }

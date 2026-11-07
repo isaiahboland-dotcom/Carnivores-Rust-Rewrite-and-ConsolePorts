@@ -1160,6 +1160,9 @@ impl Menu {
                             v.to_string()
                         };
                         label(out, &format!("{n}: {count}"));
+                    } else if n == super::RESOLUTION {
+                        let pct = (pc.resolution_scale() * 100.0).round();
+                        label(out, &format!("{n}: {pct}%"));
                     } else {
                         label(out, n);
                     }

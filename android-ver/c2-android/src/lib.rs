@@ -63,6 +63,18 @@ pub fn launch_args(root: &Path) -> Result<Vec<String>> {
     Ok(args)
 }
 
+/// Development arguments file in the files folder (see [`run`]).
+pub const DEV_ARGS_FILE: &str = "args.txt";
+
+/// One argument per non-empty line, trimmed.
+fn dev_args(text: &str) -> Vec<String> {
+    text.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
 fn path_arg(p: &Path) -> String {
     p.to_string_lossy().into_owned()
 }
@@ -101,7 +113,12 @@ pub fn run(root: PathBuf) -> Result<()> {
     // `c2-pc`'s data folder is `$XDG_DATA_HOME/c2rs`; Android sets no home.
     std::env::set_var("XDG_DATA_HOME", &root);
     std::env::set_current_dir(&root)?;
-    let args = match launch_args(&root) {
+    // Development: `files/args.txt` (one argument per line) replaces the
+    // arguments, e.g. a fixed `area` view for frame-time measurements.
+    let dev_args = std::fs::read_to_string(root.join(DEV_ARGS_FILE))
+        .ok()
+        .map(|t| dev_args(&t));
+    let args = match dev_args.map_or_else(|| launch_args(&root), Ok) {
         Ok(args) => args,
         // Nothing to play yet: say so on screen, not only in the log.
         Err(e) => {
@@ -145,6 +162,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         let _ = std::fs::create_dir_all(&d);
         d
+    }
+
+    #[test]
+    fn dev_args_take_one_argument_per_line() {
+        let args = dev_args("area\n  /x/AREA2.MAP \n\n--view\n384\n");
+        assert_eq!(args, ["area", "/x/AREA2.MAP", "--view", "384"]);
     }
 
     #[test]

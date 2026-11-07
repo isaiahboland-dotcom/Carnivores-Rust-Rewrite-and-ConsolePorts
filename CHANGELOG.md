@@ -17,6 +17,11 @@
 - First Android build (`android-ver/`, `build-apk.sh`): the PC game in an APK. It needs a game built from
   your own mobile APK as its base, plus optional add-ons. No standalones; at most 8 animals and 8 weapons
   per hunt. Touch works in the menus.
+- **Faster hunts on phones** (measured on a Retroid Pocket 5): only what the camera can see is drawn,
+  the ground past 128 cells uses coarser levels, textures get mip levels as in the original, and near
+  objects draw first. About 47 -> 55 fps at the same settings; higher view settings are now playable.
+- **Resolution** option (Video options, 50-100%): draws fewer pixels and lets the phone scale up.
+- The frame rate is logged to `c2rs.log` every 5 seconds.
 - Android hunts: the mobile game's touch buttons (move stick, look, fire, weapons, binoculars, call,
   map, menu), shown while touching and hidden while a controller is used. Controllers work, built-in
   ones included.

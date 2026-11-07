@@ -422,8 +422,6 @@ pub struct ModelRenderer {
     tex_layout: wgpu::BindGroupLayout,
     textures: wgpu::BindGroup,
     instances: wgpu::Buffer,
-    /// CPU staging storage retained between frames, like the GPU buffer.
-    instance_data: Vec<Instance>,
     capacity: usize,
 }
 
@@ -618,7 +616,7 @@ impl ModelRenderer {
         ground: &[u8],
     ) -> Self {
         let size = MODEL_TEXTURE_SIZE as u32;
-        let view = gpu.texture_array("model textures", size, size, textures);
+        let view = gpu.world_texture_array("model textures", size, size, textures);
         let [t0, t1] = texture_entries(0);
         let tex_layout = gpu
             .device
@@ -674,7 +672,6 @@ impl ModelRenderer {
             tex_layout,
             textures: group,
             instances,
-            instance_data: Vec::new(),
             capacity,
         }
     }
@@ -705,15 +702,21 @@ impl ModelRenderer {
             self.capacity = total.next_power_of_two();
             self.instances = Self::instance_buffer(gpu, self.capacity);
         }
-        self.instance_data.clear();
-        self.instance_data.reserve(total);
-        self.instance_data
-            .extend(batches.iter().flat_map(|(_, i)| i.iter().copied()));
-        gpu.queue.write_buffer(
-            &self.instances,
-            0,
-            bytemuck::cast_slice(&self.instance_data),
-        );
+        // Straight into the upload staging, batch by batch: no gathered copy.
+        let stride = std::mem::size_of::<Instance>();
+        let Some(size) = wgpu::BufferSize::new((total * stride) as u64) else {
+            return;
+        };
+        let Some(mut dst) = gpu.queue.write_buffer_with(&self.instances, 0, size) else {
+            return;
+        };
+        let mut at = 0;
+        for (_, inst) in batches {
+            let bytes: &[u8] = bytemuck::cast_slice(inst);
+            dst.slice(at..at + bytes.len()).copy_from_slice(bytes);
+            at += bytes.len();
+        }
+        drop(dst);
         pass.set_bind_group(0, &globals.group, &[]);
         pass.set_bind_group(1, &self.textures, &[]);
         pass.set_vertex_buffer(1, self.instances.slice(..));
@@ -737,6 +740,8 @@ impl ModelRenderer {
     }
 }
 
+mod frustum;
+pub use frustum::Frustum;
 mod terrain;
 pub use terrain::TerrainRenderer;
 
