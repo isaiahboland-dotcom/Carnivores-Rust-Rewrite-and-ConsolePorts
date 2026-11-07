@@ -815,6 +815,12 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
         let game_vfs = crate::pack::vanilla(core::slice::from_ref(dir))?;
         let data = game_vfs.read("HUNTDAT/_RES.TXT")?;
         let mut g_res = ResTxt::parse(&String::from_utf8_lossy(&data))?;
+        // Its menu as its own engine shows it. Converting moves the
+        // original's AI 6 animal (the brachiosaur's slot) to the base's
+        // brachiosaur AI, 30 or 34, which would count it as a huntable: one
+        // slot more at the front, and every name off by one against its
+        // picture (`DINOn.TGA`) and price.
+        let own_menu = g_res.clone();
         // Made for the original engine (or another without spawn tables:
         // nothing of it would be placed).
         let spawns = g_res
@@ -840,7 +846,7 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
             name,
             menu: match find_ci(&root, "_MENU.TXT") {
                 Some(p) => read_res(&p)?,
-                None => g_res.clone(),
+                None => own_menu,
             },
             res: g_res,
             root,

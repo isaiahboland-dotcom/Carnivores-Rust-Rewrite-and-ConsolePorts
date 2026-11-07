@@ -548,11 +548,102 @@ fn a_base_without_menu_txt_uses_its_res_txt_as_the_menu() {
             A_RES.replace("area = 30\n", "").as_bytes(),
         )],
     );
-    let err = build(&[bare.clone()], &[], &tmp("bare-out"), &o)
+    let err = build(std::slice::from_ref(&bare), &[], &tmp("bare-out"), &o)
         .err()
         .map(|e| e.to_string());
     assert!(err.unwrap_or_default().contains("_MENU.TXT"));
     for d in [base, out, bare] {
+        let _ = std::fs::remove_dir_all(d);
+    }
+}
+
+/// An original-engine game with an AI 6 animal (the original's brachiosaur
+/// slot) before its huntables: converted to the base's brachiosaur AI (30),
+/// it must not take a menu slot, or every name shifts one slot against its
+/// picture and price.
+#[test]
+fn an_original_games_ai_6_animal_takes_no_menu_slot() {
+    let base_res = BASE_RES.replace(
+        "{\n name = 'Raptor'\n file = 'velo.car'",
+        "{\n name = 'Brachiosaurus'\n file = 'brachio.car'\n ai = 30\n walkAnim = 0\n}\n\
+         {\n name = 'Raptor'\n file = 'velo.car'",
+    );
+    let base = tmp("ai6-base");
+    write(
+        &base,
+        &[
+            ("HUNTDAT/_RES.TXT", base_res.as_bytes()),
+            ("HUNTDAT/_MENU.TXT", BASE_MENU.as_bytes()),
+            ("HUNTDAT/hunter.car", &model(&["stand"])),
+            ("HUNTDAT/velo.car", &model(&["run", "walk", "die"])),
+            ("HUNTDAT/brachio.car", &model(&["walk"])),
+            ("HUNTDAT/WEAPONS/pistol.car", b"pistol"),
+            ("HUNTDAT/AREAS/AREA1.MAP", b"base map"),
+            ("HUNTDAT/AREAS/AREA1.RSC", b"base rsc"),
+        ],
+    );
+    let g_res = "weapons {\n{\n name = 'Rifle'\n file = 'rifle.car'\n power = 4\n}\n}\n\
+characters {\n{\n name = 'Hunter'\n file = 'hunter.car'\n ai = 0\n}\n\
+{\n name = 'Sauropod'\n file = 'sauro.car'\n ai = 6\n}\n\
+{\n name = 'Small'\n file = 'small.car'\n ai = 15\n}\n\
+{\n name = 'Tall'\n file = 'tall.car'\n ai = 15\n}\n}\n\
+prices {\n start = 100\n area = 50\n dino = 60\n dino = 65\n weapon = 9\n}\n.\n";
+    let g = tmp("ai6-games").join("Game C");
+    write(
+        &g,
+        &[
+            ("HUNTDAT/_RES.TXT", g_res.as_bytes()),
+            ("HUNTDAT/sauro.car", &model(&["walk"])),
+            ("HUNTDAT/small.car", &model(&["run"])),
+            ("HUNTDAT/tall.car", &model(&["run"])),
+            ("HUNTDAT/WEAPONS/rifle.car", b"rifle"),
+            ("HUNTDAT/AREAS/AREA1.MAP", b"c map"),
+            ("HUNTDAT/AREAS/AREA1.RSC", b"c rsc"),
+            ("HUNTDAT/MENU/PICS/DINO1.TGA", b"small pic"),
+            ("HUNTDAT/MENU/PICS/DINO2.TGA", b"tall pic"),
+        ],
+    );
+    let out = tmp("ai6-out");
+    let o = Options {
+        ambients: Ambients::Tied,
+        skip: vec![],
+    };
+    build(
+        std::slice::from_ref(&base),
+        std::slice::from_ref(&g),
+        &out,
+        &o,
+    )
+    .expect("build");
+    let h = out.join("HUNTDAT");
+    let m = c2_formats::menu_txt::MenuData::from_res(
+        &ResTxt::parse(&std::fs::read_to_string(h.join("_MENU.TXT")).expect("menu"))
+            .expect("parse"),
+    );
+    let names: Vec<_> = m.huntables.iter().map(|d| d.name.as_str()).collect();
+    assert_eq!(names, ["Raptor", "Small", "Tall"]);
+    let prices: Vec<_> = m.huntables.iter().map(|d| d.price).collect();
+    assert_eq!(prices, [20, 60, 65]);
+    assert_eq!(
+        std::fs::read(h.join("MENU/PICS/DINO2.TGA")).ok(),
+        Some(b"small pic".to_vec())
+    );
+    assert_eq!(
+        std::fs::read(h.join("MENU/PICS/DINO3.TGA")).ok(),
+        Some(b"tall pic".to_vec())
+    );
+    // The sauropod still roams, as the base's brachiosaur kind.
+    let res =
+        ResTxt::parse(&std::fs::read_to_string(h.join("_RES.TXT")).expect("res")).expect("parse");
+    let sauro = res
+        .section("characters")
+        .expect("characters")
+        .blocks
+        .iter()
+        .find(|c| c.get(&["name"]).is_some_and(|n| n.contains("Sauropod")))
+        .expect("sauropod kept");
+    assert_eq!(sauro.get(&["ai"]), Some("30"));
+    for d in [base, g, out] {
         let _ = std::fs::remove_dir_all(d);
     }
 }
