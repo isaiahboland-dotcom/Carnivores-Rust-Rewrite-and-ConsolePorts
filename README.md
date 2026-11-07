@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner1.webp"
+  <img src="https://raw.githubusercontent.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/main/assets/banner1.webp"
        alt="Carnivores Rust Rewrite gameplay"
        width="100%">
 </p>
