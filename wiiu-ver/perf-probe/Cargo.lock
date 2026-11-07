@@ -24,7 +24,7 @@ dependencies = [
 
 [[package]]
 name = "c2-core"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "c2-formats",
  "c2-vfs",
@@ -33,7 +33,7 @@ dependencies = [
 
 [[package]]
 name = "c2-formats"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "libm",
  "thiserror",
@@ -41,7 +41,7 @@ dependencies = [
 
 [[package]]
 name = "c2-vfs"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "c2-formats",
  "thiserror",

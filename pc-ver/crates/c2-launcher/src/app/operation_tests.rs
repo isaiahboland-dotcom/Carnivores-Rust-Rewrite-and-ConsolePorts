@@ -161,6 +161,55 @@ fn an_instance_never_takes_the_old_game_tabs_folder() {
     assert!(app.recipe_game(app.active_recipe().unwrap()).is_empty());
 }
 
+/// A standalone instance (Triassic) took the Game tab's Modder's Edition
+/// overlay: Carnivores 2's animals in its hunt menu and hunts, and in the
+/// editor's Advanced lists. Only Carnivores 2 instances take those overlays.
+#[test]
+fn a_standalone_instance_never_takes_the_game_tabs_overlays() {
+    let t = crate::publish::tests::Temp::new();
+    let dir = |name: &str| {
+        let g = t.0.join(name);
+        std::fs::create_dir_all(g.join("HUNTDAT")).unwrap();
+        g
+    };
+    let (triassic, c2, mee) = (dir("triassic"), dir("c2"), dir("mee"));
+    let recipe = |name: &str, base: &str, extra: &str| {
+        let p = t.0.join(format!("{name}.toml"));
+        std::fs::write(
+            &p,
+            format!("[recipe]\nid = '{name}'\nbase = '{base}'\n{extra}"),
+        )
+        .unwrap();
+        p
+    };
+    let mut app = launcher();
+    app.cfg.overlays = vec![mee.clone()];
+    let used = |path: PathBuf, game: &Path, overlays: Option<Vec<PathBuf>>| RecipeUse {
+        path,
+        game: Some(game.to_path_buf()),
+        overlays,
+        on: true,
+        ..Default::default()
+    };
+    let tri = recipe("tri", "carnivores-triassic", "");
+    // The Game tab on the same folder: still not inherited.
+    app.cfg.base = Some(triassic.clone());
+    let u = used(tri.clone(), &triassic, None);
+    assert_eq!(app.recipe_game_with_overlays(&u), vec![triassic.clone()]);
+    // A copy saved into the instance by an earlier version: dropped.
+    let u = used(tri.clone(), &triassic, Some(vec![mee.clone()]));
+    assert_eq!(app.recipe_game_with_overlays(&u), vec![triassic.clone()]);
+    // An overlay the instance was given on purpose: kept.
+    let own = dir("patch");
+    let u = used(tri, &triassic, Some(vec![own.clone()]));
+    assert_eq!(app.recipe_game_with_overlays(&u), [triassic, own]);
+    // A Carnivores 2 instance combining standalones still takes them.
+    app.cfg.base = Some(c2.clone());
+    let combo = recipe("combo", "c2-vanilla", "[[standalones]]\nid = 'tri'\n");
+    let u = used(combo, &c2, None);
+    assert_eq!(app.recipe_game_with_overlays(&u), [c2, mee]);
+}
+
 #[test]
 fn the_advanced_tab_is_hidden_until_enabled_in_settings() {
     let t = crate::publish::tests::Temp::new();

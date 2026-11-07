@@ -5,7 +5,11 @@ build instructions and milestone definitions live in [DEVELOPMENT.md](DEVELOPMEN
 Implementation does not imply that every platform or combination of mods has been
 validated. Game and mod assets must come from the player's own copies.
 
-## Current milestone: v0.5.0
+## Current milestone: v0.5.1
+
+v0.5.1 fixes standalone instances (such as Carnivores Triassic) playing Carnivores 2's
+animals after taking the old Game tab's overlays ([v0.5.1 notes](releases/v0.5.1.md)).
+v0.5.0 brought:
 
 Gameplay regression scenarios (`c2-regress`) with published vanilla baselines, used to
 validate fixes and optimizations before they are merged ([REGRESSION.md](REGRESSION.md)).

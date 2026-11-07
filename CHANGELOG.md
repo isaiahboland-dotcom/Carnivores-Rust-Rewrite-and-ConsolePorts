@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 0.5.1 — 2026-11-07
+
+A launcher fix: standalone instances could play Carnivores 2's animals. Notes:
+`docs/releases/v0.5.1.md`.
+
+### Launcher
+
+- An instance on a standalone base (Carnivores Triassic, Triassic MEE, JPHL and the other
+  non-Carnivores 2 bases) no longer takes the overlays set on the old Game tab. Those are
+  Carnivores 2 releases such as the Modder's Edition; copied over a standalone, their
+  `_RES.TXT` replaced the game's animals with Carnivores 2's. The hunt menu showed
+  Carnivores 2 names over the standalone's pictures, Carnivores 2 animals spawned, and the
+  editor's Advanced lists (predation, spawn rules, base game parts) and Balance page listed
+  Carnivores 2's animals. Opening or saving such an instance in the editor, or using it
+  from the recipe page, saved those overlays into it.
+- Instances that already have the Game tab's overlays saved into them drop them when
+  played, edited or built. An overlay given to the instance on purpose (one that differs
+  from the Game tab's) is kept. Carnivores 2 instances that combine standalones still take
+  the Game tab's overlays, as before.
+
 ## 0.5.0 — 2026-11-07
 
 Regression scenarios for validating changes, instance rules, experimental predation, the first

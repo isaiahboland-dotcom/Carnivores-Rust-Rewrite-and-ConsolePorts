@@ -241,17 +241,28 @@ impl Launcher {
     /// game that combines standalones and names no overlay of its own takes
     /// the Game tab's overlays over that game (combining needs the Modder's
     /// Edition; the recipe page only finds the base game). Reads the recipe.
+    ///
+    /// The Game tab's overlays are Carnivores 2 releases (the Modder's
+    /// Edition), so a recipe on another base never takes them: copied over
+    /// a standalone such as Triassic, their `_RES.TXT` replaced the game's
+    /// animals with Carnivores 2's while its menu pictures stayed. Copies of
+    /// them saved into such an instance by earlier versions are dropped too.
     pub(super) fn recipe_game_with_overlays(&self, r: &RecipeUse) -> Vec<PathBuf> {
         let mut g = self.recipe_game(r);
         if let Ok(rc) = c2_mods::recipe::Recipe::load(&r.path) {
             let apk = c2_mods::recipe::load_base(&r.path, &rc)
                 .is_some_and(|base| !base.base.apk.is_empty());
+            let c2_base = matches!(rc.recipe.base.as_str(), "" | "c2-vanilla");
+            let inherited =
+                !self.cfg.overlays.is_empty() && r.overlays.as_ref() == Some(&self.cfg.overlays);
             if apk {
                 // A phone game's own converted rules must not be replaced
                 // by an unrelated desktop overlay from the Game tab.
                 g.truncate(1);
-            } else if !rc.overlays.is_empty() {
+            } else if !rc.overlays.is_empty() || (!c2_base && inherited) {
                 g.truncate(1);
+            } else if !c2_base {
+                // Its own game (and any overlays it was given) as it is.
             } else if r.overlays.is_none()
                 && r.game.is_some()
                 && (r.game == self.cfg.base || !rc.standalones.is_empty())

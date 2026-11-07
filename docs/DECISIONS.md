@@ -1,5 +1,25 @@
 # Decisions and deviations
 
+## 2026-11-07 — Game tab overlays only for Carnivores 2 instances; v0.5.1
+
+An instance with no overlays of its own took the old Game tab's overlays when
+its game was the Game tab's game or it combined standalones
+(`Launcher::recipe_game_with_overlays`). Those overlays are Carnivores 2
+releases shipped as changed files (the Modder's Edition). Over a standalone
+base, their `_RES.TXT` won and the game ran Carnivores 2's roster with the
+standalone's menu pictures. The editor, the recipe page's "use" and Play all
+resolve the game through that function, and the first two save the result
+into the instance, so the overlays became part of it.
+
+Now only recipes on the `c2-vanilla` base, or with no base named, take the
+Game tab's overlays. On any other base, overlays identical to the Game tab's
+are treated as copies saved by earlier versions and dropped; any other
+overlay is kept as the instance's own. A later change to the Game tab's
+overlays would leave an old copy in place; the editor's Base game page lists
+it under "Unpinned overlays" with a remove button.
+
+v0.5.1 is a patch release: one fix, no features.
+
 ## 2026-11-07 — Regression scenarios as the check for fixes and optimizations; v0.5.0
 
 Changes to gameplay, AI, rendering, loading or performance are validated with
