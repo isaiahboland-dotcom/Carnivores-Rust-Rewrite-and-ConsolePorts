@@ -16,6 +16,7 @@ pub mod predation;
 pub mod recipe;
 pub mod res_merge;
 pub mod resolve;
+pub mod rules;
 pub mod standalone;
 mod triassic;
 

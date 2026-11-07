@@ -137,6 +137,8 @@ impl PcSettings {
     pub fn load() -> Self {
         let s = Self::default();
         let s = std::fs::read_to_string(path()).map_or(s, |text| Self::parse(&text));
+        // The settings the game's instance fixes (not stored, see `store`).
+        let s = crate::instance_rules::apply(s, &crate::instance_rules::get());
         s.publish();
         s
     }
@@ -192,31 +194,40 @@ impl PcSettings {
 
     pub fn store(&self) {
         self.publish();
+        // A setting the instance fixes keeps the player's own value here.
+        let rules = crate::instance_rules::get();
+        let s = if rules.locks.is_empty() {
+            *self
+        } else {
+            let own = std::fs::read_to_string(path())
+                .map_or_else(|_| Self::default(), |t| Self::parse(&t));
+            crate::instance_rules::unapply(*self, &own, &rules)
+        };
         let text = format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nmodel_distance = {}\n\
              map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\n",
-            self.render,
-            self.fog,
-            self.blood,
-            self.death_anim,
-            self.model_distance,
-            self.map_heading,
-            self.map_mobile,
-            self.map_zoom,
-            self.teleport,
-            self.hints,
-            self.all_huntable,
-            self.secret_dinos,
-            self.dynamic_time,
-            self.narrow_flashlight,
-            self.multi_ammo,
-            self.half_tranq,
-            self.advanced_observer,
-            self.survival_budget,
-            self.hardcore_survival,
-            self.map_holsters,
-            self.high_end_view,
-            self.render_scale
+            s.render,
+            s.fog,
+            s.blood,
+            s.death_anim,
+            s.model_distance,
+            s.map_heading,
+            s.map_mobile,
+            s.map_zoom,
+            s.teleport,
+            s.hints,
+            s.all_huntable,
+            s.secret_dinos,
+            s.dynamic_time,
+            s.narrow_flashlight,
+            s.multi_ammo,
+            s.half_tranq,
+            s.advanced_observer,
+            s.survival_budget,
+            s.hardcore_survival,
+            s.map_holsters,
+            s.high_end_view,
+            s.render_scale
         );
         if let Some(dir) = path().parent() {
             let _ = std::fs::create_dir_all(dir);

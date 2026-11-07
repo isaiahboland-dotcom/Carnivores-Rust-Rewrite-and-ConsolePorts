@@ -700,6 +700,14 @@ impl HuntView {
                 .collect();
             hunt.herd
                 .cap_population(setup.pc.secret_dinos.max(0) as usize, |ct| secret[ct]);
+            // The instance's spawn rules (`_RULES.TXT`), after the cap: its
+            // extra animals always come.
+            let rules = crate::instance_rules::read(huntdat);
+            if !rules.is_empty() {
+                let stem = setup.map.file_stem().unwrap_or_default().to_string_lossy();
+                let extra = hunt.apply_spawn_rules(area, &rules, &stem);
+                tracing::info!(area = %stem, extra, "instance spawn rules");
+            }
         }
         // The area's snow (Ice Age).
         hunt.effects.snow = mee

@@ -408,6 +408,31 @@ fn split_number(key: &str) -> (&str, usize) {
     }
 }
 
+/// Each area's name (as [`read`] lists it) and its map's file name
+/// without extension (`area3`, or a `.c2map`'s), for `_RULES.TXT`.
+pub(crate) fn area_maps(vfs: &Vfs) -> Result<Vec<(String, String)>, ModError> {
+    let g = Game::read(vfs)?;
+    let mut n = 0;
+    Ok(g.areas
+        .iter()
+        .map(|f| {
+            let stem = match &f.at {
+                At::C2map(path) => vfs
+                    .read(path)
+                    .ok()
+                    .and_then(|d| c2_formats::menu_txt::parse_c2map(&String::from_utf8_lossy(&d)))
+                    .map(|a| a.project)
+                    .unwrap_or_default(),
+                _ => {
+                    n += 1;
+                    format!("area{n}")
+                }
+            };
+            (f.key.clone(), stem)
+        })
+        .collect())
+}
+
 /// The game's current prices and scores, every field filled in.
 pub fn read(vfs: &Vfs) -> Result<Balance, ModError> {
     let g = Game::read(vfs)?;

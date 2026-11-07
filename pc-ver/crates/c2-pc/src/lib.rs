@@ -17,6 +17,7 @@ mod hud;
 mod hunt_kit;
 mod hunt_view;
 mod input;
+mod instance_rules;
 mod keys;
 mod menu;
 mod mips;

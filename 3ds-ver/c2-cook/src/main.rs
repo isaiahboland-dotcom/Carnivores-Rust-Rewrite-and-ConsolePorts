@@ -467,6 +467,8 @@ fn merged_game(a: &Args, game: &Path) -> Result<Vfs> {
         if let Some(p) = &recipe.settings.predation {
             p.push(&mut vfs);
         }
+        // Times of day, locked settings and spawn rules: `_RULES.TXT`.
+        recipe.settings.rules.push(&mut vfs)?;
         return Ok(vfs);
     }
     let game = &bases[..];
@@ -1157,8 +1159,10 @@ fn main() -> Result<()> {
     if vfs.resolve("HUNTDAT/_MENU.TXT").is_some() {
         c.copy(&vfs, "HUNTDAT/_MENU.TXT")?;
     }
-    if vfs.resolve(c2_formats::predation::PATH).is_some() {
-        c.copy(&vfs, c2_formats::predation::PATH)?;
+    for p in [c2_formats::predation::PATH, c2_formats::rules::PATH] {
+        if vfs.resolve(p).is_some() {
+            c.copy(&vfs, p)?;
+        }
     }
     for (file, tx) in [("SHIP2A.CAR", "SHIP"), ("WCIRCLE2.CAR", "RING")] {
         let path = format!("HUNTDAT/{file}");

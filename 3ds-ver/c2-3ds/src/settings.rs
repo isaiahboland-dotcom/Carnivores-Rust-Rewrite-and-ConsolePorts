@@ -152,6 +152,12 @@ fn path() -> String {
 
 impl Settings {
     pub fn load() -> Self {
+        let rules = crate::instance_rules::get();
+        crate::instance_rules::apply(Self::read(), &rules)
+    }
+
+    /// The settings file as the player left it.
+    fn read() -> Self {
         let mut s = Self::default();
         let Ok(text) = std::fs::read_to_string(path()) else {
             return s;
@@ -198,6 +204,13 @@ impl Settings {
     }
 
     pub fn store(&self) -> std::io::Result<()> {
+        // A setting the instance fixes keeps the player's own value here.
+        let rules = crate::instance_rules::get();
+        let s = if rules.locks.is_empty() {
+            *self
+        } else {
+            crate::instance_rules::unapply(*self, &Self::read(), &rules)
+        };
         std::fs::write(
             path(),
             format!(
@@ -205,25 +218,25 @@ impl Settings {
                  friendly = {}\nstealth_crouch = {}\nrandom_ambients = {}\ncrouch_button = {}\ngyro_aim = {}\n\
                  hunter = {}\nmap_mobile = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\n\
                  test_points = {}\ntree_sprites = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\n",
-                self.run_pct,
-                i32::from(self.ambient),
-                i32::from(self.blood),
-                i32::from(self.death_anim),
-                i32::from(self.friendly),
-                i32::from(self.stealth),
-                i32::from(self.random_ambients),
-                self.crouch_key.key(),
-                self.gyro_pct,
-                self.hunter,
-                i32::from(self.map_mobile),
-                i32::from(self.teleport),
-                i32::from(self.hints),
-                i32::from(self.all_huntable),
-                i32::from(self.test_points),
-                i32::from(self.tree_sprites),
-                i32::from(self.multi_ammo),
-                i32::from(self.half_tranq),
-                i32::from(self.free_observer)
+                s.run_pct,
+                i32::from(s.ambient),
+                i32::from(s.blood),
+                i32::from(s.death_anim),
+                i32::from(s.friendly),
+                i32::from(s.stealth),
+                i32::from(s.random_ambients),
+                s.crouch_key.key(),
+                s.gyro_pct,
+                s.hunter,
+                i32::from(s.map_mobile),
+                i32::from(s.teleport),
+                i32::from(s.hints),
+                i32::from(s.all_huntable),
+                i32::from(s.test_points),
+                i32::from(s.tree_sprites),
+                i32::from(s.multi_ammo),
+                i32::from(s.half_tranq),
+                i32::from(s.free_observer)
             ),
         )
     }

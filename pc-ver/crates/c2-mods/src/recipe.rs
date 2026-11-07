@@ -98,6 +98,10 @@ pub struct Settings {
     /// Carnivores hunt herbivores (an advanced setting, `crate::predation`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub predation: Option<crate::predation::Predation>,
+    /// Times of day, settings fixed by the instance and spawn rules (the
+    /// Advanced tab, `crate::rules`).
+    #[serde(skip_serializing_if = "crate::rules::Rules::is_empty")]
+    pub rules: crate::rules::Rules,
 }
 
 impl Settings {

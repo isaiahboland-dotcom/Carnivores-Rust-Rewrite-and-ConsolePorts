@@ -15,6 +15,7 @@ mod mee_weapon;
 mod observer;
 mod options;
 mod session;
+mod spawn_rules;
 mod state;
 mod survival;
 mod teleport;
@@ -31,6 +32,7 @@ pub use events::{GameEvent, HuntKill};
 pub use mee_weapon::{Aqua, MeeWeapon};
 pub use options::{HuntInput, HuntOptions, MAX_CALL};
 pub use session::Outcome;
+pub use spawn_rules::{index_named, species_named};
 pub use state::{Hunt, Wind, MAX_HEALTH};
 pub use survival::{
     classic_identity, dangerous, dangerous_ai, is_trex, price_species, roster, wave_budget, Arena,

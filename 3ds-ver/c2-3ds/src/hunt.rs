@@ -600,7 +600,27 @@ impl Game {
             pick(&all, 4, seed)
         });
         let natives = setup.native_roamers(&info, &rules);
+        // The instance's secret animals for this area (`_RULES.TXT`) are
+        // loaded too: each takes memory like a pick.
+        let inst = load::rules(vfs);
+        let hunting = !setup.trophy() && setup.survival.is_none();
+        let names: Vec<String> = rules
+            .res
+            .characters
+            .iter()
+            .map(|d| c2_core::dino::DinoInfo::from_def(d).name)
+            .collect();
+        let secrets: Vec<usize> = if hunting {
+            inst.secrets_on(&setup.area)
+                .filter_map(|s| c2_core::game::index_named(names.iter().map(String::as_str), &s.name))
+                .collect()
+        } else {
+            Vec::new()
+        };
         let (mut species, cars) = load::species_with(vfs, &rules.res, &|i| {
+            if secrets.contains(&i) {
+                return true;
+            }
             if setup.trophy() {
                 return trophies.contains(&i) || rules.roles.get(i) == Some(&Role::Hunter);
             }
@@ -638,7 +658,8 @@ impl Game {
             room,
         );
         if let Some(s) = &mut hunt.survival {
-            s.opts.starting_budget = menu_rules.menu.survival_budget;
+            s.opts.starting_budget =
+                crate::instance_rules::survival_budget(menu_rules.menu.survival_budget);
         }
         // Predation (an instance setting, experimental here): the pack's
         // `_PREDATION.TXT`, when its recipe turns it on.
@@ -651,6 +672,11 @@ impl Game {
             let max = usize::try_from(setup.max_ambient).unwrap_or(0);
             hunt.herd
                 .cap_placed(max, |ct| rules.roles.get(ct) == Some(&Role::Ambient));
+        }
+        // The instance's spawn rules, after the caps: its extra animals
+        // always come.
+        if hunting && !inst.is_empty() {
+            hunt.apply_spawn_rules(&area, &inst, &setup.area);
         }
         // Shots carry and animals out of sight are re-placed past what is
         // drawn, which can be farther than `view_r`.

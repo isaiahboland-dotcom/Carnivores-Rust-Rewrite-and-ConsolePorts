@@ -1,10 +1,11 @@
 //! The instance editor (owner, 2026-11-02: "an edit option in the gui and
 //! also a clone option so people can easily tweak a recipe"; reworked
 //! 2026-11-05 into pages): Base game (`base_tab`: the instance's name, its
-//! game folder checked against the recipe's base hashes, pinned overlays
-//! and the base game's parts), Add-ons (`entries`: standalone games and
-//! add-ons, each with its folder, load order and parts) and Balance
-//! (`instance`). The recipe (shareable: credits, links, hashes) is written
+//! game folder checked against the recipe's base hashes and pinned
+//! overlays), Add-ons (`entries`: standalone games and add-ons, each with
+//! its folder, load order and parts), Balance (`instance`) and, when
+//! Settings shows it, Advanced (the base game's parts, `rules` and
+//! `predation`). The recipe (shareable: credits, links, hashes) is written
 //! over its file on save; the folders (`Draft`) are kept by the launcher.
 
 mod base_tab;
@@ -12,6 +13,7 @@ pub use base_tab::BaseAsk;
 mod entries;
 mod instance;
 mod predation;
+mod rules;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -418,12 +420,26 @@ impl Editor {
             .balance_ui(ui, &mut self.recipe, &game, &self.draft.folders, handle)
     }
 
-    /// The Advanced page's "Carnivores hunt herbivores": whether a setting
-    /// changed.
-    pub fn predation_ui(&mut self, ui: &mut egui::Ui, handle: &mut crate::jobs::Handle) -> bool {
+    /// The Advanced page: the base game's parts, the instance rules
+    /// (`rules`) and "Carnivores hunt herbivores" (`predation`), a panel
+    /// each.
+    pub fn advanced_ui(&mut self, ui: &mut egui::Ui, handle: &mut crate::jobs::Handle) {
+        use crate::app::panel;
         let game = self.draft.game_dirs();
-        self.extras
-            .predation_ui(ui, &mut self.recipe, &game, &self.draft.folders, handle)
+        let (r, extras, folders) = (&mut self.recipe, &mut self.extras, &self.draft.folders);
+        if game.is_empty() {
+            ui.label(RichText::new("Choose the base game first (Base game page).").color(RED));
+        } else {
+            panel(ui, |ui| extras.base_parts_ui(ui, r, &game, folders));
+        }
+        for section in [rules::times_ui, rules::locks_ui] {
+            ui.add_space(6.0);
+            panel(ui, |ui| section(ui, &mut r.settings.rules));
+        }
+        ui.add_space(6.0);
+        panel(ui, |ui| extras.spawn_ui(ui, r, &game, folders, handle));
+        ui.add_space(6.0);
+        panel(ui, |ui| extras.predation_ui(ui, r, &game, folders, handle));
     }
 
     /// Reads the instance's areas, animals and weapons again (after its

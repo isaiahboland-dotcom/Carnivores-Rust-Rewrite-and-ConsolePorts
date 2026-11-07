@@ -214,9 +214,40 @@ pub const FX_FILES: [&str; 11] = [
 /// Loads the hunt `choice` picks, with the hunter's trophies `room`.
 /// Errors: -1 no install, -2 area, -10 nothing to hunt, -11 no landing,
 /// -12 no room for an animal, -13 no weapon, -24 no affordable survival attacker.
+/// `c` with the instance's locked settings at their values and its time of
+/// day one that is offered (`_RULES.TXT`).
+pub fn apply_locks(c: &mut HuntChoice, r: &c2_formats::rules::Rules) {
+    use c2_formats::rules::Lock;
+    for &(l, v) in &r.locks {
+        let f = match l {
+            Lock::AllHuntable => &mut c.all_huntable,
+            Lock::MobileRadar => &mut c.map_mobile,
+            Lock::Teleport => &mut c.teleport,
+            Lock::DynamicTime => &mut c.dynamic_time,
+            Lock::MultiAmmo => &mut c.multi_ammo,
+            Lock::AdvancedObserver => &mut c.free_observer,
+            Lock::SecretDinos | Lock::SurvivalBudget => continue,
+        };
+        *f = u32::from(v != 0);
+    }
+    c.time = r.allowed_time(c.time as usize) as u32;
+}
+
+/// The survival's starting points: the instance's, when it fixes more
+/// than zero, else the menu's.
+fn survival_budget(install: &Install) -> u32 {
+    match install.inst.lock(c2_formats::rules::Lock::SurvivalBudget) {
+        Some(v) if v > 0 => v as u32,
+        _ => install.rules.menu.survival_budget,
+    }
+}
+
 pub fn load(install: Option<&Install>, choice: &HuntChoice, room: &Save, seed: u32) -> Result<Loaded, i32> {
     let install = install.ok_or(-1)?;
     let mut fixed = *choice;
+    if choice.mode == MODE_HUNT {
+        apply_locks(&mut fixed, &install.inst);
+    }
     if choice.mode == MODE_SURVIVAL {
         fixed.area = install.areas.iter().position(|a| a.file.eq_ignore_ascii_case("AREA5")).ok_or(-2)? as u32;
         let shotgun = install.weapons.iter().position(|n| n.trim().eq_ignore_ascii_case("shotgun")).ok_or(-13)?;
@@ -281,6 +312,19 @@ pub fn load(install: Option<&Install>, choice: &HuntChoice, room: &Save, seed: u
             budget = budget.saturating_sub(1);
         }
     }
+    // The instance's secret animals for this area (`_RULES.TXT`), before
+    // roamers and ambient animals, while model slots last.
+    let hunting = !trophy && choice.mode == MODE_HUNT;
+    if hunting {
+        let names: Vec<String> = rules.res.characters.iter().map(|d| c2_core::dino::DinoInfo::from_def(d).name).collect();
+        for s in install.inst.secrets_on(&area_file) {
+            let Some(i) = c2_core::game::index_named(names.iter().map(String::as_str), &s.name) else { continue };
+            if !keep[i] && budget > 0 {
+                keep[i] = true;
+                budget -= 1;
+            }
+        }
+    }
     for &i in &natives {
         if budget > 0 {
             keep[i] = true;
@@ -323,12 +367,16 @@ pub fn load(install: Option<&Install>, choice: &HuntChoice, room: &Save, seed: u
     if infos.is_empty() && !carried.is_empty() {
         return Err(-13);
     }
-    let mut hunt = new_hunt(&area, species, infos, anims, choice, rules.tables.as_ref(), targets, &roamers, room, seed, install.rules.menu.survival_budget)?;
+    let mut hunt = new_hunt(&area, species, infos, anims, choice, rules.tables.as_ref(), targets, &roamers, room, seed, survival_budget(install))?;
     hunt.area_no = c2_formats::mee::area_of(&area_file).map_or(0, |n| n as i32);
     // Predation (an instance setting, experimental here): the install's
     // `_PREDATION.TXT`, when its recipe turns it on.
     if !trophy && choice.mode != MODE_SURVIVAL {
         hunt.herd.predation = load::predation(&install.vfs, &hunt.herd.species);
+    }
+    // The instance's spawn rules: picked animals capped, secret ones added.
+    if hunting && !install.inst.is_empty() {
+        hunt.apply_spawn_rules(&area, &install.inst, &area_file);
     }
     // Snow of the area's own (the phone's Ice Age areas).
     if let (None, Some(s), false) = (&hunt.effects.snow, area.snow, trophy) {

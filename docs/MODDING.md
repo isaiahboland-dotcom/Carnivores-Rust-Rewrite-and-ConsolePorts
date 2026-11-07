@@ -230,6 +230,56 @@ defensive = true             # charges carnivores below it for 5-10 s
   `HUNTDAT/_PREDATION.TXT`, which every platform reads; survival and the
   trophy room ignore it.
 
+### Instance rules (times of day, locked settings, spawn rules)
+
+Also on the recipe editor's Advanced tab (Settings > "Show the Advanced tab
+in the instance editor"), with the base game's parts (`[recipe.skip]`).
+Nothing set: the game plays as it was.
+```toml
+[settings.rules]
+times = ["day", "night"]         # times of day the hunt menu offers; empty: all three
+hidden = ["T-Rex"]               # in the game, but not in the hunt menu
+
+[settings.rules.locks]           # fixed, and removed from the in-game settings
+dynamic_time = false
+advanced_observer = false
+multi_ammo = true
+mobile_radar = true
+teleport = false
+all_huntable = false
+secret_dinos = 4                 # unpicked huntables per map (0: none)
+survival_budget = 500            # starting survival points (0: from menu prices)
+
+[[settings.rules.areas]]
+area = "Vengar Peninsula"        # the area's name, as the balance editor lists it
+max_huntable = 3                 # at most 3 of the picked animals spawn here
+
+[[settings.rules.secrets]]
+animal = "T-Rex"                 # an unpicked animal that always spawns...
+count = 2                        # ...this many times, at random spots
+areas = ["Vengar Peninsula"]     # empty: every area
+```
+- A hardcore instance: hide the carnivores from the hunt menu and give each
+  area its own as secrets. Players pick herbivores and track the carnivores
+  down.
+- At least one time of day stays. Survival keeps its own time.
+- A locked setting never overwrites the player's own value in the settings
+  file, which every game shares; other instances still get the player's own.
+- Secrets are placed where the original places its animals, at least 40
+  cells from the hunter, after the game's own secret dinos are counted, so
+  they always come. The area caps count the picked animals only.
+- Areas and animals are named, not numbered, so the rules survive add-ons
+  being reordered. `Raptor #2` is the second animal named Raptor. Names the
+  built game doesn't have are skipped.
+- The built game gets `HUNTDAT/_RULES.TXT` (areas by map name, `AREA3`).
+  PC, Android, 3DS and Wii U read it. The 3DS and Wii U lock only the
+  settings they have: mobile map, teleport, all dinos, multi ammo, advanced
+  observer and a survival budget above 0, plus dynamic time on the Wii U.
+  Secret dinos per map is PC and Android only. On the 3DS each secret animal is loaded
+  like a pick and takes memory; on the Wii U it takes a model slot, if one
+  is free.
+- Ammo per weapon is on the Balance tab (`shots` in `[settings.balance]`).
+
 ### Standalone games
 Whole games made from Carnivores 2 (most need the Modder's Edition as the
 overlay) are combined beside the base: each keeps its own areas, animals

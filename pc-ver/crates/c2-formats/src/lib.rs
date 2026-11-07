@@ -34,6 +34,7 @@ pub mod portrait;
 pub mod predation;
 pub mod res_txt;
 pub mod rsc;
+pub mod rules;
 pub mod sav;
 pub mod tga;
 pub mod three_df;

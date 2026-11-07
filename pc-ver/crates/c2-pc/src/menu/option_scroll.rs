@@ -26,6 +26,18 @@ impl Scroll {
         }
     }
 }
+/// `opts` without the rows whose setting the instance fixes
+/// (`crate::instance_rules`).
+pub(super) fn shown(opts: &[Opt]) -> Vec<Opt> {
+    opts.iter()
+        .copied()
+        .filter(|o| match o {
+            Opt::PcToggle(n, _) | Opt::PcSlider(n, _) => !crate::instance_rules::hides(n),
+            _ => true,
+        })
+        .collect()
+}
+
 pub(super) fn visible_rows(opts: &[Opt], panel: Rect, first: usize) -> Vec<(Opt, Rect)> {
     let mut rows = Vec::new();
     let mut y = panel.1;
@@ -57,12 +69,13 @@ impl Menu {
         } else {
             GAME_PANEL
         };
+        let opts = shown(&GAME_OPTS);
         let max = if mobile {
-            GAME_OPTS.len().saturating_sub(9)
+            opts.len().saturating_sub(9)
         } else {
             let mut height = 0.0;
             let mut count = 0;
-            for o in GAME_OPTS.iter().rev() {
+            for o in opts.iter().rev() {
                 height += if matches!(
                     o,
                     Opt::PcSlider(
@@ -79,7 +92,7 @@ impl Menu {
                 }
                 count += 1;
             }
-            GAME_OPTS.len().saturating_sub(count)
+            opts.len().saturating_sub(count)
         };
         let x = panel.0 + panel.2 + 2.0;
         (

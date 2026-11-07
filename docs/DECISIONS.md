@@ -4470,3 +4470,44 @@ step. Console figures are still to be measured; see
 Still O(n²): a spatial grid would cut it further, but at 60 animals the
 pass is a small part of the step, so it waits for console numbers that
 call for it.
+
+
+## 2026-11-07 — Instance rules: `_RULES.TXT`
+
+The Advanced tab's times of day, locked settings and spawn rules are one
+recipe section, `[settings.rules]` (`c2_mods::rules`), written into the
+built game as `HUNTDAT/_RULES.TXT` (`c2_formats::rules`), as predation is.
+Every platform reads the same file, so a rule is never implemented per
+backend twice.
+
+- Areas are keyed by map name (`area3`, a `.c2map`'s project) in the file
+  and by area title in the recipe. The build resolves titles against the
+  built game (`balance::area_maps`), after the base game's parts are left
+  out and add-ons are numbered, so renumbering never points a rule at the
+  wrong area. Animals are matched by name; `X #2` is the second one so
+  named, as the balance editor lists them.
+- Spawn rules run once placement is done (`Hunt::apply_spawn_rules`). The
+  picked animals are capped per area (`cap_population`, whole packs kept).
+  Then each secret animal is placed as the original's main population is
+  (`PlaceCharacters`: anywhere within ±500 cells of the centre, at least 40
+  from the hunter, `check_place_collision_p`). On PC this happens after the
+  "secret dinos" cap, so a rule's animals always come.
+- `hide NAME` was added beyond the request's list. Leaving a huntable out
+  of the base game removes its character, so it could no longer spawn as a
+  secret. The "herbivores to pick, carnivores to track" instance needs
+  animals that are in the game but not in the menu.
+- Locks are applied when settings load and undone when they are stored.
+  `c2rs.cfg` (PC) and the 3DS settings file are shared by every game, so a
+  locked value must not replace the player's own. The Wii U's settings
+  file belongs to its app (one pack), so its locks are applied to the
+  choice directly.
+- The settings rows a lock hides are matched by label (PC), button (3DS)
+  or row id (Wii U). Only the eight listed settings can be locked.
+- The base game's parts picker moved from the Base game page to Advanced,
+  as asked: the Advanced tab gathers what a modpack maker configures, and
+  stays hidden by default. Existing `[recipe.skip]` lists still apply with
+  the tab hidden.
+- Ammo is the weapon's `shots` (`WeapInfo.Shots`, `Resources.cpp`), already
+  kept by the balance file. The Balance tab now shows it in the weapons'
+  third column, which was empty.
+

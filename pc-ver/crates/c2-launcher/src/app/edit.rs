@@ -1,6 +1,5 @@
 //! Editing an instance: the Base game, Add-ons and Balance pages
-//! (`crate::recipe_edit`), and the experimental Advanced page when Settings
-//! shows it, with Save, Save and exit, Discard
+//! (`crate::recipe_edit`), and the Advanced page when Settings shows it, with Save, Save and exit, Discard
 //! changes and Cancel at the bottom. While it is edited the instance is the
 //! one in use, so the menu and rule choices shown are its own.
 use super::*;
@@ -126,11 +125,12 @@ impl Launcher {
                 heading(ui, "Advanced");
                 help(
                     ui,
-                    "Experimental instance options. They may change or go away between \
-                     versions. Hide this tab in Settings.",
+                    "Fine-tuning for modpack makers: what of the base game is kept, the times \
+                     of day, settings fixed for players, spawn rules and experimental options. \
+                     Nothing set here, the game plays as it was. Hide this tab in Settings.",
                 );
                 if let Some(e) = &mut self.ui.recipe_edit {
-                    panel(ui, |ui| e.predation_ui(ui, &mut self.job));
+                    e.advanced_ui(ui, &mut self.job);
                 }
             }
             Tab::AddOns => {

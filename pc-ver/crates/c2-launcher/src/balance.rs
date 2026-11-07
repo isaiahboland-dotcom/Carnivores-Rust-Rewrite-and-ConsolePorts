@@ -369,6 +369,40 @@ impl Editor {
         changed
     }
 
+    /// A weapon's ammo (`shots` in `_RES.TXT`): whether it changed.
+    fn ammo_ui(&mut self, ui: &mut egui::Ui, it: &Item, edit: Option<&Item>) -> bool {
+        let Some(game) = it.shots.map(|v| v.round() as i32) else {
+            ui.label(RichText::new("-").color(DIM))
+                .on_hover_text("The game doesn't set this weapon's ammo.");
+            return false;
+        };
+        let mut v = edit
+            .and_then(|e| e.shots)
+            .map_or(game, |v| v.round() as i32);
+        let r = ui
+            .add(egui::DragValue::new(&mut v).range(1..=999))
+            .on_hover_text(format!(
+                "Rounds carried into a hunt; Double Ammo adds a second load. game: {game}"
+            ));
+        if !r.changed() {
+            return false;
+        }
+        let l = self.edits_mut(List::Weapons);
+        let i = match l.iter().position(|e| e.name.eq_ignore_ascii_case(&it.name)) {
+            Some(i) => i,
+            None => {
+                l.push(Item {
+                    name: it.name.clone(),
+                    ..Default::default()
+                });
+                l.len() - 1
+            }
+        };
+        l[i].shots = (v != game).then_some(v as f32);
+        l.retain(Item::changes);
+        true
+    }
+
     fn list_ui(&mut self, ui: &mut egui::Ui, list: List, title: &str, items: &[Item]) -> bool {
         let f = self.filter.trim().to_ascii_lowercase();
         let shown: Vec<&Item> = items
@@ -389,7 +423,12 @@ impl Editor {
                     ui.label(RichText::new("Name").color(DIM));
                     ui.label(RichText::new("Price").color(DIM));
                     ui.label(
-                        RichText::new(if list == List::Animals { "Score" } else { "" }).color(DIM),
+                        RichText::new(match list {
+                            List::Animals => "Score",
+                            List::Weapons => "Ammo",
+                            List::Areas => "",
+                        })
+                        .color(DIM),
                     );
                     ui.label("");
                     ui.end_row();
@@ -419,29 +458,40 @@ impl Editor {
                                 );
                             }
                         }
-                        match it.score {
-                            Some(game) => {
-                                let mut v = edit.as_ref().and_then(|e| e.score).unwrap_or(game);
-                                let r = ui
-                                    .add(
-                                        egui::DragValue::new(&mut v)
-                                            .range(0.0..=100_000.0)
-                                            .speed(0.1)
-                                            .max_decimals(1),
-                                    )
-                                    .on_hover_text(format!("game: {game}"));
-                                if r.changed() {
-                                    self.set(list, &it.name, None, Some((v != game).then_some(v)));
-                                    changed = true;
+                        if list == List::Weapons {
+                            changed |= self.ammo_ui(ui, it, edit.as_ref());
+                        } else {
+                            match it.score {
+                                Some(game) => {
+                                    let mut v = edit.as_ref().and_then(|e| e.score).unwrap_or(game);
+                                    let r = ui
+                                        .add(
+                                            egui::DragValue::new(&mut v)
+                                                .range(0.0..=100_000.0)
+                                                .speed(0.1)
+                                                .max_decimals(1),
+                                        )
+                                        .on_hover_text(format!("game: {game}"));
+                                    if r.changed() {
+                                        self.set(
+                                            list,
+                                            &it.name,
+                                            None,
+                                            Some((v != game).then_some(v)),
+                                        );
+                                        changed = true;
+                                    }
                                 }
-                            }
-                            None => {
-                                ui.label("");
+                                None => {
+                                    ui.label("");
+                                }
                             }
                         }
                         if is_edited {
                             if ui.small_button("Reset").clicked() {
-                                self.set(list, &it.name, Some(None), Some(None));
+                                let name = it.name.clone();
+                                self.edits_mut(list)
+                                    .retain(|i| !i.name.eq_ignore_ascii_case(&name));
                                 changed = true;
                             }
                         } else {

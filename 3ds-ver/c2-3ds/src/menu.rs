@@ -65,6 +65,22 @@ const QUIT: [f32; 4] = [60.0, 186.0, 200.0, 30.0];
 const CLEAR_TROPHIES: [f32; 4] = [16.0, 78.0, 140.0, 24.0];
 /// Settings: "All dinos huntable" (a modded game's roaming add-ons listed).
 const ALL_HUNTABLE: [f32; 4] = [164.0, 78.0, 140.0, 24.0];
+/// Whether the settings button `r` is hidden: the pack's instance rules
+/// fix its setting (`crate::instance_rules`).
+fn rect_locked(r: [f32; 4]) -> bool {
+    use c2_formats::rules::Lock;
+    [
+        (MAP_STYLE, Lock::MobileRadar),
+        (TELEPORT, Lock::Teleport),
+        (ALL_HUNTABLE, Lock::AllHuntable),
+        (MULTI_AMMO, Lock::MultiAmmo),
+        (FREE_OBSERVER, Lock::AdvancedObserver),
+    ]
+    .into_iter()
+    .find(|(rect, _)| *rect == r)
+    .is_some_and(|(_, l)| crate::instance_rules::locked(l))
+}
+
 /// The original's game options (`Options > Game`), 0..=255, kept in the
 /// save: bars for aggressiveness, density and sensitivity.
 const GAME_OPTS: [(&str, f32); 3] = [
@@ -305,6 +321,9 @@ pub struct Menu {
     time: usize,
     /// Bits by position in `dinos`, `weapons`, `equip`.
     picked_dinos: Bits,
+    /// Animals the pack's instance rules keep off the menu (last in
+    /// `dinos`).
+    hidden_dinos: Bits,
     picked_weapons: Bits,
     picked_equip: Bits,
     observer: bool,
@@ -354,6 +373,8 @@ impl Menu {
     pub fn new(vfs: &Vfs, info: PackInfo) -> anyhow::Result<Self> {
         let rules = Rules::load(vfs)?;
         let menu = &rules.menu;
+        // Before the settings load: the pack's instance may fix some.
+        let inst = crate::instance_rules::load(vfs);
         let settings = Settings::load();
         crate::save::use_hunter(settings.hunter);
         let save = unstick(crate::save::load(menu.start_points()), &menu);
@@ -414,12 +435,25 @@ impl Menu {
         dinos.truncate(Bits::LEN);
         // Cheapest first, left to right and top to bottom (equal prices
         // keep their order: the game's, then add-ons).
+        // Animals the instance keeps off the menu go last, hidden (`hide`).
+        let names: Vec<String> = menu.huntables.iter().map(|d| d.name.clone()).collect();
+        let hide = |d: &(Pick, Item)| match &d.0 {
+            Pick::Slot(k) => inst.hides(&names, *k),
+            Pick::Roamer(_) => inst.hides(std::slice::from_ref(&d.1.name), 0),
+        };
         dinos.sort_by_key(|d| {
             (
+                hide(d),
                 !settings.all_huntable && matches!(d.0, Pick::Roamer(_)),
                 d.1.price,
             )
         });
+        let mut hidden_dinos = Bits::NONE;
+        for (i, d) in dinos.iter().enumerate() {
+            if hide(d) {
+                hidden_dinos.set(i);
+            }
+        }
         // Classic needs the stock animals (exact name and root model).
         let classic_survival = neutral
             .res
@@ -555,8 +589,9 @@ impl Menu {
             weapons,
             equip,
             area: 0,
-            time: 1,
+            time: inst.allowed_time(1),
             picked_dinos: Bits::NONE,
+            hidden_dinos,
             picked_weapons: Bits::NONE,
             picked_equip,
             observer: false,
@@ -746,7 +781,7 @@ impl Menu {
                 .areas
                 .get(self.area)
                 .map_or("AREA1".into(), |a| a.0.clone()),
-            time: TIMES[self.time].0,
+            time: TIMES[crate::instance_rules::get().allowed_time(self.time)].0,
             targets,
             roamers,
             silent_calls: Vec::new(),
@@ -980,7 +1015,11 @@ impl Menu {
             Step::Animals => match self
                 .dinos
                 .iter()
-                .filter(|d| self.settings.all_huntable || !matches!(d.0, Pick::Roamer(_)))
+                .enumerate()
+                .filter(|(i, d)| {
+                    !self.hidden_dinos.has(*i)
+                        && (self.settings.all_huntable || !matches!(d.0, Pick::Roamer(_)))
+                })
                 .count()
             {
                 n @ 0..=15 => lay(n, 5, 32.0, 210.0),
@@ -1153,17 +1192,17 @@ impl Menu {
                     s.blood = !s.blood;
                 } else if inside(DEATH_ANIM, x, y) {
                     s.death_anim = !s.death_anim;
-                } else if inside(MAP_STYLE, x, y) {
+                } else if inside(MAP_STYLE, x, y) && !rect_locked(MAP_STYLE) {
                     s.map_mobile = !s.map_mobile;
-                } else if inside(TELEPORT, x, y) {
+                } else if inside(TELEPORT, x, y) && !rect_locked(TELEPORT) {
                     s.teleport = !s.teleport;
                     self.focus = Some("Tap the map in a hunt; 5 s, then a minute".into());
                 } else if inside(HINTS, x, y) {
                     s.hints = !s.hints;
-                } else if inside(MULTI_AMMO, x, y) {
+                } else if inside(MULTI_AMMO, x, y) && !rect_locked(MULTI_AMMO) {
                     s.multi_ammo = !s.multi_ammo;
                     self.focus = Some("Tranq asks: half lethal/half darts, or all".into());
-                } else if inside(FREE_OBSERVER, x, y) {
+                } else if inside(FREE_OBSERVER, x, y) && !rect_locked(FREE_OBSERVER) {
                     s.free_observer = !s.free_observer;
                     self.focus = Some("Observe: teleport, fly, stop time".into());
                 } else if inside(TEST_PTS, x, y) {
@@ -1173,7 +1212,7 @@ impl Menu {
                     } else {
                         "Points: the hunter's score".into()
                     });
-                } else if inside(ALL_HUNTABLE, x, y) {
+                } else if inside(ALL_HUNTABLE, x, y) && !rect_locked(ALL_HUNTABLE) {
                     s.all_huntable = !s.all_huntable;
                     self.focus = Some(if s.all_huntable {
                         "Add-ons that roam are in the list".into()
@@ -1187,7 +1226,9 @@ impl Menu {
                     self.area = i;
                     let a = &self.areas[i].1;
                     self.focus = Some(format!("{}  {} pts", a.name, a.price));
-                } else if let Some(t) = hit(&Self::time_cells()) {
+                } else if let Some(t) = hit(&Self::time_cells())
+                    .filter(|&t| crate::instance_rules::get().time_allowed(t))
+                {
                     self.time = t;
                 }
             }
@@ -1610,7 +1651,12 @@ impl Menu {
                     let afford = it.price <= self.points();
                     Self::draw_hex_item(&mut c, gpu, cell, it, i == self.area, afford);
                 }
+                let rules = crate::instance_rules::get();
                 for (i, cell) in Self::time_cells().into_iter().enumerate() {
+                    // A time of day the instance doesn't offer isn't shown.
+                    if !rules.time_allowed(i) {
+                        continue;
+                    }
                     let (cx, cy, r) = cell;
                     if i == self.time {
                         c.hex(cx, cy, r + 3.0, GOLD);
@@ -1810,7 +1856,11 @@ impl Menu {
             (MULTI_AMMO, s.multi_ammo, "Multi ammo"),
             (FREE_OBSERVER, s.free_observer, "Adv observer"),
         ];
-        for (r, on, _) in toggles {
+        let toggles: Vec<_> = toggles
+            .into_iter()
+            .filter(|t| !rect_locked(t.0))
+            .collect();
+        for &(r, on, _) in &toggles {
             c.rect(r, if on { [60, 110, 60, 255] } else { PANEL });
         }
         c.rect(CROUCH_KEY, PANEL);
@@ -1855,7 +1905,7 @@ impl Menu {
                 &pct,
             );
         }
-        for (r, on, name) in toggles {
+        for &(r, on, name) in &toggles {
             let t = format!("{name}: {}", if on { "ON" } else { "OFF" });
             c.text_c(
                 gpu,

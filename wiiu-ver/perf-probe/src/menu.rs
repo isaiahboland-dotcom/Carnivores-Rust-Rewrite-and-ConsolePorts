@@ -188,6 +188,20 @@ const SETUP: [Page; 3] = [Page::Area, Page::Animals, Page::Gear];
 const BACK: Rect = rect(32.0, 648.0, 200.0, 60.0);
 const NEXT: Rect = rect(1048.0, 648.0, 200.0, 60.0);
 const INFO: Rect = rect(800.0, 100.0, 448.0, 524.0);
+/// The instance lock behind a settings row (`c2_formats::rules`).
+fn lock_of(id: Id) -> Option<c2_formats::rules::Lock> {
+    use c2_formats::rules::Lock;
+    Some(match id {
+        Id::AllHuntable => Lock::AllHuntable,
+        Id::MapMobile => Lock::MobileRadar,
+        Id::Teleport => Lock::Teleport,
+        Id::DynamicTime => Lock::DynamicTime,
+        Id::MultiAmmo => Lock::MultiAmmo,
+        Id::FreeObserver => Lock::AdvancedObserver,
+        _ => return None,
+    })
+}
+
 const SETTINGS_ROWS: [Id; 12] = [Id::RunSpeed, Id::Ambient, Id::AllHuntable, Id::Blood, Id::DeathCam, Id::Units, Id::MapMobile, Id::Teleport, Id::Hints, Id::DynamicTime, Id::MultiAmmo, Id::FreeObserver];
 
 const SQRT3: f32 = 1.732_050_8;
@@ -352,7 +366,7 @@ impl Menu {
     }
     /// The animals listed: roamers too with "All dinos huntable" on.
     fn animal_count(&self) -> usize {
-        self.install.as_ref().map_or(0, |i| if self.choice.all_huntable != 0 { i.animals.len() } else { i.menu_animals })
+        self.install.as_ref().map_or(0, |i| if self.choice.all_huntable != 0 { i.animals.len() - i.hidden } else { i.menu_animals })
     }
     fn weapon_count(&self) -> usize {
         self.install.as_ref().map_or(0, |i| i.weapons.len())
@@ -393,6 +407,15 @@ impl Menu {
         if c.weapons == 0 && weapons > 0 {
             c.weapons = 1;
         }
+        // The instance's rules: its locked settings and times of day.
+        if let Some(i) = &self.install {
+            crate::hunt_setup::apply_locks(c, &i.inst);
+        }
+    }
+
+    /// The instance rules in force (empty without an install).
+    fn inst(&self) -> Option<&c2_formats::rules::Rules> {
+        self.install.as_ref().map(|i| &i.inst)
     }
 
     pub fn open_title(&mut self) {
@@ -547,6 +570,10 @@ impl Menu {
                     v.push((Id::Area(i), r));
                 }
                 for i in 0..3 {
+                    // Only the times of day the instance offers.
+                    if self.inst().is_some_and(|r| !r.time_allowed(i)) {
+                        continue;
+                    }
                     v.push((Id::Time(i), rect(74.0 + i as f32 * 228.0, 516.0, 212.0, 100.0)));
                 }
             }
@@ -574,7 +601,9 @@ impl Menu {
                 }
             }
             Page::Settings => {
-                for (i, id) in SETTINGS_ROWS.into_iter().enumerate() {
+                // Settings the instance fixes aren't shown.
+                let rows = SETTINGS_ROWS.into_iter().filter(|&id| !lock_of(id).is_some_and(|l| self.inst().is_some_and(|r| r.is_locked(l))));
+                for (i, id) in rows.enumerate() {
                     v.push((id, rect(200.0, 96.0 + i as f32 * 40.0, 880.0, 36.0)));
                 }
             }

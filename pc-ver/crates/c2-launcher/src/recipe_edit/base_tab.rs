@@ -1,8 +1,8 @@
 //! The editor's Base game page: the instance's name, the game it is built
 //! on (any Carnivores 2 game folder, one built from the player's APK, or a
 //! standalone mod on its own), checked against the base profiles' hashes
-//! so a wrong game is shown before it is played; the pinned overlays and
-//! the base game's parts.
+//! so a wrong game is shown before it is played, and the pinned overlays.
+//! The base game's parts are picked on the Advanced page.
 
 use super::*;
 use crate::app::{help, panel};
@@ -71,12 +71,7 @@ impl Editor {
             ui.add_space(6.0);
             self.loose_overlays_ui(ui);
         }
-        let game = self.draft.game_dirs();
-        if !game.is_empty() {
-            ui.add_space(6.0);
-            let (r, extras, folders) = (&mut self.recipe, &mut self.extras, &self.draft.folders);
-            panel(ui, |ui| extras.base_parts_ui(ui, r, &game, folders));
-        }
+        // The base game's parts are picked on the Advanced page.
         ask
     }
 

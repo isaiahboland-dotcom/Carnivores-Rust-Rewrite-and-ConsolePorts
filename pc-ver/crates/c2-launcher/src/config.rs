@@ -236,8 +236,8 @@ pub struct Config {
     pub show_3ds: Option<bool>,
     /// None preserves the previously visible Wii U section.
     pub show_wiiu: Option<bool>,
-    /// The instance editor's experimental Advanced tab shown (Settings;
-    /// off by default).
+    /// The instance editor's Advanced tab shown (Settings; off by
+    /// default).
     pub show_advanced: bool,
     pub windows_out: Option<PathBuf>,
     /// Where Android packages are written (one folder per instance).

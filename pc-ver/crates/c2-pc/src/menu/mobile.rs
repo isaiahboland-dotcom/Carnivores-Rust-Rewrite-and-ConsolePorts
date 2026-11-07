@@ -241,12 +241,15 @@ impl Menu {
     fn mobile_side(&self) -> Vec<(String, bool)> {
         let c = &self.choice;
         match self.mobile_page {
-            0 => vec![
-                ("Dawn".into(), c.time == 0),
-                ("Day".into(), c.time == 1),
-                ("Night".into(), c.time == 2),
-                ("Observer".into(), c.observer),
-            ],
+            0 => {
+                // The times of day the instance offers, then Observer.
+                let mut v: Vec<(String, bool)> = offered_times()
+                    .into_iter()
+                    .map(|t| (["Dawn", "Day", "Night"][t].into(), c.time == t))
+                    .collect();
+                v.push(("Observer".into(), c.observer));
+                v
+            }
             2 => {
                 let eq = &self.columns[3];
                 let price = |i: usize| eq.prices.get(i).copied().unwrap_or(0);
@@ -317,9 +320,10 @@ impl Menu {
             return;
         }
         let hit = self.side_rects().into_iter().position(|r| inside(p, r));
+        let times = offered_times();
         match (self.mobile_page, hit) {
-            (0, Some(t @ 0..=2)) => self.choice.time = t,
-            (0, Some(3)) => self.toggle_observer(),
+            (0, Some(t)) if t < times.len() => self.choice.time = times[t],
+            (0, Some(t)) if t == times.len() => self.toggle_observer(),
             (2, Some(0)) => self.toggle_tranq(),
             // Radar, cover scent, camouflage: equipment bits 1, 2, 0.
             (2, Some(b @ 1..=3)) => self.pick(3, [1, 2, 0][b - 1]),
@@ -755,6 +759,7 @@ impl Menu {
             put(out, &mut y, &cur);
         }
         // The toggles: plank, lamp, picture.
+        let offered = offered_times();
         let icons = if page == 2 {
             &k.icons[4..]
         } else {
@@ -766,7 +771,13 @@ impl Menu {
             .zip(self.mobile_side())
             .enumerate()
         {
-            let icon = icons.get(index).and_then(|i| i.as_ref());
+            // Page one's icons follow the times of day offered.
+            let slot = if page == 2 {
+                index
+            } else {
+                *offered.get(index).unwrap_or(&3)
+            };
+            let icon = icons.get(slot).and_then(|i| i.as_ref());
             let tint = if inside(self.cursor, r) {
                 [1.3, 1.3, 1.25, 1.0]
             } else {
@@ -867,13 +878,19 @@ impl Menu {
 
     fn kit_all_rows(&self) -> Vec<KitRow> {
         match self.opt_tab {
-            0 => GAME_OPTS.iter().map(|&o| KitRow::Opt(o)).collect(),
+            0 => option_scroll::shown(&GAME_OPTS)
+                .into_iter()
+                .map(KitRow::Opt)
+                .collect(),
             1 => MOUSE_OPTS
                 .iter()
                 .map(|&o| KitRow::Opt(o))
                 .chain((0..ACTIONS.len()).map(KitRow::Key))
                 .collect(),
-            _ => VIDEO_OPTS.iter().map(|&o| KitRow::Opt(o)).collect(),
+            _ => option_scroll::shown(&VIDEO_OPTS)
+                .into_iter()
+                .map(KitRow::Opt)
+                .collect(),
         }
     }
 
@@ -1245,4 +1262,10 @@ impl Menu {
             1.0,
         );
     }
+}
+
+/// The times of day the instance offers (0 dawn, 1 day, 2 night).
+fn offered_times() -> Vec<usize> {
+    let r = crate::instance_rules::get();
+    (0..3).filter(|&t| r.time_allowed(t)).collect()
 }

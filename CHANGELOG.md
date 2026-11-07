@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Instance rules (launcher Advanced tab; PC, Android, 3DS, Wii U)
+
+- The Advanced tab (Settings, off by default) now gathers what a modpack maker fine-tunes. Nothing set
+  there, the game plays as it was. Recipes keep it all (`[settings.rules]`, `docs/MODDING.md`).
+  - **The base game's parts**: which of its areas, animals and weapons are kept (moved here from the
+    Base game page).
+  - **Times of day**: drop dawn, day or night from the hunt menu; one always stays.
+  - **Locked settings**: dynamic time, advanced observer mode, multi ammo, mobile radar, teleport, all
+    dinos huntable, secret dinos per map and the survival starting budget can be fixed at a value and
+    removed from the in-game settings. The player's own values in the shared settings file are kept.
+  - **Spawn rules**: at most so many picked animals per area; secret animals (which, how many, on which
+    areas) that always spawn at random spots; and animals kept off the hunt menu that still roam as
+    secrets, e.g. herbivores to pick and each area's carnivores to track down.
+- **Ammo** per weapon on the Balance tab, for the base game's weapons and add-ons', with the game's value
+  on hover.
+
 ### Predation (all platforms; experimental)
 
 - **Carnivores hunt herbivores**, an advanced instance setting (recipe editor > Advanced, or

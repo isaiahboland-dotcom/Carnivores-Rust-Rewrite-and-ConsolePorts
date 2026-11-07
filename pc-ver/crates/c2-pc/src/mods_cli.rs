@@ -374,6 +374,9 @@ pub fn build_recipe(
             pack.notes.push("predation settings applied".into());
         }
     }
+    if r.settings.rules.push(&mut pack.vfs)? {
+        pack.notes.push("instance rules applied".into());
+    }
     materialize(&pack, out).with_context(|| format!("writing {}", out.display()))?;
     tracing::info!(
         "built {} — see {}",

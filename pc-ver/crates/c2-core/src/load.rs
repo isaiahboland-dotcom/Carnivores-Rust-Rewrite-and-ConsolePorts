@@ -68,6 +68,14 @@ pub fn predation(
     crate::dino::predation::load(&vfs.read(c2_formats::predation::PATH).ok()?, species)
 }
 
+/// The instance's rules (`_RULES.TXT`, not in the original): times of
+/// day, locked settings and spawn rules. Empty when the file is missing.
+pub fn rules(vfs: &Vfs) -> c2_formats::rules::Rules {
+    vfs.read(c2_formats::rules::PATH)
+        .map(|b| c2_formats::rules::Rules::parse(&b))
+        .unwrap_or_default()
+}
+
 pub fn res(vfs: &Vfs) -> Result<ResData, LoadError> {
     parse(vfs, "HUNTDAT/_RES.TXT", |d| {
         Ok(ResTxt::parse(&String::from_utf8_lossy(d))?.to_data())

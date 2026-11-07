@@ -4,6 +4,7 @@ mod ammo_kinds;
 mod combat;
 mod death;
 mod session;
+mod spawn_rules;
 mod support;
 mod survival;
 mod trophies;

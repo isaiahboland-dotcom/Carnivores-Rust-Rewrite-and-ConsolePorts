@@ -618,6 +618,8 @@ impl Menu {
             ),
         };
         let data = load_res(&huntdat).context("reading the game data (is this a game folder?)")?;
+        // Before the settings load: the instance may fix some.
+        crate::instance_rules::load(&huntdat);
         let classic_survival = data
             .characters
             .iter()
@@ -1142,6 +1144,8 @@ impl Menu {
     /// The animal list by "All dinos huntable": off, the roaming add-ons
     /// aren't listed (or picked); they roam their own maps only.
     fn offer_animals(&mut self) {
+        // The times of day the instance offers.
+        self.choice.time = crate::instance_rules::get().allowed_time(self.choice.time);
         self.columns[3].order = (0..if self.pc.dynamic_time != 0 { 6 } else { 4 }).collect();
         if self.pc.dynamic_time == 0 {
             self.choice.equip &= 15;
@@ -1150,6 +1154,9 @@ impl Menu {
         let first = self.menu_animals;
         if let Some(c) = self.columns.get_mut(1) {
             c.order = animal_order(&c.names, first, all);
+            // Animals the instance keeps off the menu (`hide`).
+            let rules = crate::instance_rules::get();
+            c.order.retain(|&i| !rules.hides(&c.names, i));
             c.order
                 .sort_by_key(|&i| c.prices.get(i).copied().unwrap_or(0));
             c.scroll = c.scroll.min(c.order.len().saturating_sub(c.visible()));
@@ -1562,7 +1569,9 @@ impl Menu {
             return;
         }
         match region {
-            1..=3 => self.choice.time = region as usize - 1,
+            1..=3 if crate::instance_rules::get().time_allowed(region as usize - 1) => {
+                self.choice.time = region as usize - 1
+            }
             4 => {
                 self.pc.fog = i32::from(self.pc.fog == 0);
                 self.pc.store();
@@ -1665,6 +1674,9 @@ impl Menu {
             c.dinos = Bits::ALL;
             c.equip = 0;
         }
+        if c.survival.is_none() {
+            c.time = crate::instance_rules::get().allowed_time(c.time);
+        }
         let time = [TimeOfDay::Dusk, TimeOfDay::Day, TimeOfDay::Night][c.time];
         // An observer's picked animals are placed and shown on the radar;
         // with none picked, the original's random mix.
@@ -1759,7 +1771,11 @@ impl Menu {
     /// The option rows of each panel with their rectangles.
     fn option_rows(&self) -> Vec<(Opt, Rect)> {
         let mut out = Vec::new();
-        for (panel, opts) in [(GAME_PANEL, &GAME_OPTS[..]), (VIDEO_PANEL, &VIDEO_OPTS[..])] {
+        let (game, video) = (
+            option_scroll::shown(&GAME_OPTS),
+            option_scroll::shown(&VIDEO_OPTS),
+        );
+        for (panel, opts) in [(GAME_PANEL, &game[..]), (VIDEO_PANEL, &video[..])] {
             let first = if panel == GAME_PANEL {
                 self.game_scroll.first
             } else {
@@ -2143,7 +2159,10 @@ impl Menu {
 
     fn draw_setup(&self, out: &mut Vec<Sprite>, region: u8) {
         let on_mode = inside(self.cursor, MODE_RECT) && self.choice.survival.is_some();
-        let region = if on_mode { 0 } else { region };
+        // A time of day the instance doesn't offer doesn't light up.
+        let barred = (1..=3).contains(&region)
+            && !crate::instance_rules::get().time_allowed(region as usize - 1);
+        let region = if on_mode || barred { 0 } else { region };
         let c = &self.choice;
         let mut lit = vec![region, c.time as u8 + 1];
         if self.tranq() {

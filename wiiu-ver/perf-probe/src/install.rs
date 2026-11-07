@@ -283,6 +283,11 @@ pub struct Install {
     pub animals: Vec<Animal>,
     /// The menu's own animals (the first in `animals`); roamers follow.
     pub menu_animals: usize,
+    /// Animals the instance keeps off the menu (`_RULES.TXT` `hide`), the
+    /// last in `animals`.
+    pub hidden: usize,
+    /// The install's instance rules (`c2_formats::rules`).
+    pub inst: c2_formats::rules::Rules,
     pub weapons: Vec<String>,
     pub trophy_room: bool,
 }
@@ -363,8 +368,16 @@ impl Install {
         animals.truncate(MAX_ANIMALS);
         // Roamers after the menu's own, so "All dinos huntable" off shows
         // the first ones only.
-        animals.sort_by_key(|a| (matches!(a.pick, Pick::Roamer(_)), a.price));
-        let menu_animals = animals.iter().filter(|a| matches!(a.pick, Pick::Slot(_))).count();
+        // Animals the instance keeps off the menu go last of all.
+        let inst = c2_core::load::rules(&vfs);
+        let names: Vec<String> = menu.huntables.iter().map(|d| d.name.clone()).collect();
+        let hide = |a: &Animal| match &a.pick {
+            Pick::Slot(k) => inst.hides(&names, *k),
+            Pick::Roamer(_) => inst.hides(core::slice::from_ref(&a.name), 0),
+        };
+        animals.sort_by_key(|a| (hide(a), matches!(a.pick, Pick::Roamer(_)), a.price));
+        let hidden = animals.iter().filter(|a| hide(a)).count();
+        let menu_animals = animals.iter().filter(|a| matches!(a.pick, Pick::Slot(_)) && !hide(a)).count();
         let weapons = neutral
             .res
             .weapons
@@ -373,7 +386,7 @@ impl Install {
             .map(|(i, w)| menu.weapons.get(i).map(|m| m.name.clone()).filter(|n| !n.is_empty()).or_else(|| w.name.clone()).unwrap_or_else(|| format!("Weapon {}", i + 1)))
             .take(MAX_WEAPONS)
             .collect();
-        Some(Install { classic_survival, vfs, rules, info, areas, animals, menu_animals, weapons, trophy_room })
+        Some(Install { classic_survival, vfs, rules, info, areas, animals, menu_animals, hidden, inst, weapons, trophy_room })
     }
 
     /// The picked animals (bits by position in `animals`) as hunt targets

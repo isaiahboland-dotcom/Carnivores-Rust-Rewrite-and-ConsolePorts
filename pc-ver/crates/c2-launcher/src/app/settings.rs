@@ -66,7 +66,7 @@ impl Launcher {
         self.search_dirs_ui(ui);
         ui.add_space(8.0);
         if panel(ui, |ui| {
-            ui.label(RichText::new("Experimental").color(GOLD));
+            ui.label(RichText::new("Advanced").color(GOLD));
             let changed = ui
                 .checkbox(
                     &mut self.cfg.show_advanced,
@@ -75,7 +75,9 @@ impl Launcher {
                 .changed();
             help(
                 ui,
-                "Options still being tried out. They may change or go away between versions.",
+                "For modpack makers: the base game's parts, times of day, settings fixed for \
+                 players, spawn rules, and experimental options that may change between \
+                 versions.",
             );
             changed
         }) {

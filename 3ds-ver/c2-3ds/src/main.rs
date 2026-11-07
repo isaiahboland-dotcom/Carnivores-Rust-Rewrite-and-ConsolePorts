@@ -13,6 +13,7 @@ mod hunt;
 mod menu;
 mod rules;
 mod save;
+mod instance_rules;
 mod settings;
 mod shot;
 mod sound;
