@@ -28,6 +28,19 @@ cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace --all-features
 ```
 
+## Gameplay regression scenarios
+
+Unit tests do not show whether a change altered how the game plays. For any
+change to gameplay, AI, rendering, file loading or performance, including
+AI-assisted fixes and optimizations, run the regression scenario before and
+after the change and compare the two, as described in
+[Validating a change](docs/REGRESSION.md#validating-a-change). An optimization
+or refactor must leave the checkpoint state hashes unchanged; a bug fix that
+changes them must say which ones and why. Include the results in the pull
+request.
+
+## Console builds
+
 Console builds need separate toolchains. Follow the [3DS guide](docs/3DS.md)
 or the [Wii U build instructions](README.md#wii-u-from-the-command-line-demo)
 for nightly Rust and devkitPro setup. State which hardware or emulator you tested.

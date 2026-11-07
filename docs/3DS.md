@@ -224,7 +224,7 @@ bench 20,40,60 30   # the herd alone, 30 s per count, predation on and off
 - Vanilla, o3ds: pack 136 MiB. Loading peak 23 MiB in every area. Linear
   for a hunt with 2 animals and 2 weapons: 12 to 17.5 MiB, mostly sounds
   (the area's ambience, and every ambient animal's).
-- **Hardware (owner, 2026-10-18)**: Old 3DS / Old 2DS, single-area o3ds
+- **Hardware (2026-10-18)**: Old 3DS / Old 2DS, single-area o3ds
   pack: loads, ~58 fps, heap 15.1 MiB in use while hunting.
 - Out of memory shows a message (press START) instead of crashing.
 

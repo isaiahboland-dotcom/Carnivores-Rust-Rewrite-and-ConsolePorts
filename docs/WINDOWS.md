@@ -1,8 +1,8 @@
 # Windows builds and instance packages
 
-Windows x64 is the current Windows build target. CI builds/tests pass. The owner
-reports the rewrite running in a Windows VM with 4 vCPUs and 8 GB RAM, with the
-original game feeling slightly smoother. The supplied log selects **Microsoft
+Windows x64 is the current Windows build target. CI builds/tests pass. The rewrite has
+run in a Windows VM with 4 vCPUs and 8 GB RAM, with the original game feeling
+slightly smoother. The supplied log selects **Microsoft
 Basic Render Driver**, Microsoft's WARP software renderer, and reports an
 unusable OpenGL 1.1 context (3.3+ required by that backend). The hunt loads and
 saves are logged without errors; no FPS or frame-time measurements were captured.

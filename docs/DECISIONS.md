@@ -1,5 +1,24 @@
 # Decisions and deviations
 
+## 2026-11-07 — Regression scenarios as the check for fixes and optimizations; v0.5.0
+
+Changes to gameplay, AI, rendering, loading or performance are validated with
+the regression scenario against a baseline from the base commit
+(`docs/REGRESSION.md`, "Validating a change"). An optimization or refactor
+must leave every checkpoint state hash unchanged; a fix that changes them
+lists which and why. `c2-regress compare` does not compare those hashes (an
+animal that moves but stays alive passes), so the check is a documented
+manual `diff` of `metrics.json` checkpoints for now. The pull request template
+asks for these results.
+
+The README's Windows install, PC command line, 3DS settings and build, `.cia`
+and Wii U build sections were dropped with the launcher rewrite while seven
+links still pointed at them. They are restored, updated for instances and
+**Build > Platform**.
+
+The release after v0.4.3 is v0.5.0, not v0.4.4: it adds features (regression
+scenarios, instance rules, predation, the Android build), not only fixes.
+
 ## 2026-11-03 — Split survival configuration, navigation and wave updates
 
 The 996-line `game/survival.rs` combines mode configuration and species

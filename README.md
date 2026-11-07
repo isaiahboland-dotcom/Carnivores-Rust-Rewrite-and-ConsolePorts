@@ -5,7 +5,7 @@ A fan-made, ground-up Rust rewrite of **Carnivores 2** (Action Forms, 1999), wit
 You need your own copy of Carnivores 2: this project contains **no game files and no mod files**, only
 code, documentation and recipes (lists of credits, download links and file hashes).
 
-**v0.4.3:** [Release notes](docs/releases/v0.4.3.md) · [Changelog](CHANGELOG.md) · [Public roadmap](docs/ROADMAP.md)
+**v0.5.0:** [Release notes](docs/releases/v0.5.0.md) · [Changelog](CHANGELOG.md) · [Public roadmap](docs/ROADMAP.md)
 
 ---
 
@@ -46,7 +46,7 @@ the 3DS's PICA200 GPU and the Wii U's PowerPC CPU.
 |---|---|---|
 | **PC** (Linux; Windows experimental) | Playable, feature-rich | The full original game, plus add-ons, Modder's Edition games, standalone games, Carnivores: Ice Age, animals from the mobile games, survival mode and a balance editor. Bugs mostly show up when a lot of mods and add-ons are used at once. Working on smaller bugs and optional quality of life features |
 | **Nintendo 3DS** (homebrew) | Nearly complete | Full hunts, touch menus, bottom-screen map, sound, saves, trophy room, add-on and standalone packs, `.cia` installs. Tested on real 3DS and 2DS hardware. Optional settings help with the handheld controls (see [below](#3ds-settings-for-handheld-play)). Like PC, bugs mostly come from packing in too many add-ons or mods. |
-| **Wii U** (homebrew) | Demo, being optimized | Stock Carnivores 2 only: an HD menu (TV and GamePad) with dawn/day/night and all the original gear and options, all five maps, the nine animals, six weapons, calls, radar, GamePad map. Runs on a real Wii U under Aroma (`.wuhb`) and exits to the HOME menu cleanly. A steady 30 FPS in open areas; 20-25 FPS in thick jungle, where the GPU is the limit (owner hardware measurements). New and not yet tested on the console: survival, the trophy room, saved trophies and score (the PC's save format), the PC's kill notice and trophy plaque, the hunter record, and an exit prompt and pause. New: any game as its own Wii U Menu entry: add-ons, the Modder's Edition and standalone games such as Triassic and Mandibles. |
+| **Wii U** (homebrew) | Demo, being optimized | Stock Carnivores 2 only: an HD menu (TV and GamePad) with dawn/day/night and all the original gear and options, all five maps, the nine animals, six weapons, calls, radar, GamePad map. Runs on a real Wii U under Aroma (`.wuhb`) and exits to the HOME menu cleanly. A steady 30 FPS in open areas; 20-25 FPS in thick jungle, where the GPU is the limit (measured on hardware). New and not yet tested on the console: survival, the trophy room, saved trophies and score (the PC's save format), the PC's kill notice and trophy plaque, the hunter record, and an exit prompt and pause. New: any game as its own Wii U Menu entry: add-ons, the Modder's Edition and standalone games such as Triassic and Mandibles. |
 | **PC VR** (OpenXR) | Early first draft | Menus and the hunt setup on a panel, walking the areas, animals that hunt you. No weapons yet. Tested with a PS VR2 on Linux through Monado. |
 | **Android** | First build: menus run, tested on android device. Controller and touch controls work | The PC game in an APK, for a game built from your own mobile APK (Dinosaur Hunter or Ice Age), plus add-ons and standalones combined beside it on the PC; at most 8 animals and 8 weapons per hunt. See [`android-ver/README.md`](android-ver/README.md). |
 | **PS5 / PS VR2** | Not started | Research notes only (`psvr2-ver/gameplan.md`). Mainly looking at an optimized PSVR2 setup since the PS5 CFW community is already working on translation layers for PC games to run |
@@ -147,6 +147,190 @@ other tab.
 folder's files don't match the base game the recipe names (its SHA-256 hashes). Use the right folder, or
 tick **Use this game anyway** when it is another version of the same game.
 
+---
+
+## Windows installation
+
+1. Use a **64-bit Windows** system with working graphics/audio drivers. In a VM,
+   install its guest graphics drivers/tools and enable 3D acceleration if available;
+   compatibility depends on the graphics API exposed by that VM.
+2. Open the [Windows workflow](https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/actions/workflows/windows.yml),
+   choose a successful run for the revision you want, and download the
+   **c2rs-windows-x64** artifact (GitHub sign-in may be required). Extract the ZIP.
+   The executables are under `pc-ver/target/x86_64-pc-windows-msvc/release/`.
+3. Keep `c2-launcher.exe` and `c2-pc.exe` together. Open `c2-launcher.exe`, make a
+   **New instance** with your own game folder (the one containing `HUNTDAT`) as its
+   base game, then use **Play**. The download contains no game assets. A generated portable instance can instead be started
+   by double-clicking its `c2-pc.exe`; keep its whole folder together.
+
+Downloaded builds need **no Rust, Visual Studio build tools or devkitPro**.
+Builds importing `VCRUNTIME140.dll` (including the inspected VM test executable)
+need Microsoft's [Visual C++ x64 runtime](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist).
+The CI configuration requests static C runtime linking; runtime dependencies must
+still be verified for the executable being distributed. Graphics driver support
+is required; original-game wrapper/ReShade DLLs are not dependencies.
+Saves and settings are under `%APPDATA%\c2rs`.
+
+To compile your own executables, you also need stable Rust (MSVC), Git if cloning,
+and Visual Studio Build Tools with **Desktop development with C++** and a Windows
+SDK. The [Windows guide](docs/WINDOWS.md) has PowerShell build commands,
+packaging instructions and [diagnostic log capture](docs/WINDOWS.md#capture-a-diagnostic-log).
+
+Windows remains experimental: CI and a VM run are evidence of progress, while
+native hardware gameplay and broader compatibility testing are pending.
+
+---
+
+## PC from the command line
+
+```sh
+cd pc-ver
+cargo run --release -p c2-pc -- play PATH/TO/Carnivores2
+```
+
+Register a hunter (or pick one copied from your install), then Hunt, Options, Trophy, Statistics and
+Credits, as in the original. Your game folder is never written to. Saves go to
+`~/.local/share/c2rs/` (the first run copies your game's saves).
+
+PC game options support mouse-wheel scrolling and up/down arrows. **Dynamic time**
+adds an optional 60-minute day/night cycle, starting at the chosen time. Wii U
+has an experimental version; 3DS does not. See [timing and limitations](docs/DYNAMIC_TIME.md).
+
+With mods:
+
+```sh
+cargo run --release -p c2-pc -- play GAME --mod ADDON_DIR --mod ADDON.zip              # add-ons
+cargo run --release -p c2-pc -- play GAME --overlay "PATH/Carnivores 2" --mod ADDON    # on the Modder's Edition
+cargo run --release -p c2-pc -- play GAME --standalone GAME_DIR                         # a standalone game beside the base
+cargo run --release -p c2-pc -- play GAME --recipe ../recipes/c2-mee-addons.toml --mods DOWNLOADS --overlay "PATH/Carnivores 2"
+```
+
+**Controls:** keyboard and mouse follow your bindings (Options > Controls). A gamepad works too: left
+stick moves, right stick looks, ZL draws, ZR fires, L binoculars, R map, A jump, B run, X call, Y next
+weapon, D-pad up crouch / down change call, + pause, − exit. In the menus, the left stick moves a pointer,
+A clicks, B goes back, and the right stick or D-pad scrolls lists.
+Enable **Map zoom / pan** under **Options > Video** (off by default).
+With the PC map open, use the wheel to zoom at the pointer, right-drag to pan,
+and Home to restore the full map. Dynamic-time equipment uses N for night vision
+and L for the flashlight (one at a time; the right stick click on a pad, or the
+round nv / light buttons on the Android screen); select it under Equipment before the hunt.
+Dynamic-time night kills earn +20% while night vision is off; using the
+flashlight keeps that bonus. **K** switches the flashlight's beam between wide and a narrow one that
+reaches farther (remembered for the next hunt).
+**Multi ammo** (Options > Game, off by default): picking the tranquilizer asks **Half tranq** (each
+weapon's rounds split between lethal rounds and darts; **T** swaps them, and the other kind loads when one
+runs out; the top-left HUD shows "lethal:" and "tranq:" rows) or **Full tranq** (darts only, as the
+original). **Advanced observer mode** (Options > Game): in observer hunts, teleport by the map with no
+wait or cooldown, **F** flies (jump rises, crouch sinks), **T** stops time for camera shots.
+
+**PC VR** (early): `cargo run --release -p c2-vr -- play GAME` with an OpenXR runtime running (SteamVR,
+Monado, WiVRn). `c2-vr check` tells you which runtime it found. Plan and status:
+`pc-ver/crates/c2-vr/GAMEPLAN.md`.
+
+More: [docs/MODDING.md](docs/MODDING.md) (mods, recipes, balance files, standalone games) and
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) (viewers, debug modes, design).
+
+---
+
+## 3DS settings for handheld play
+
+Aiming and moving on a 3DS can feel awkward when a fast predator is on you, so the 3DS version has some
+optional settings to make it easier (Settings on the title screen):
+
+- **3DS friendly**: animals notice and chase you from a shorter distance (60% of the original's, within
+  42 cells), so a far-off animal isn't a few pixels you have to snipe. Off by default: animals use the
+  phone game's full 76 cells.
+- **Dinosaur run speed**: a slider from 50% to 100% that slows every species by the same amount, so the
+  differences between them stay. 100% is the original speed.
+
+With both left at their defaults, the hunt plays as the original does at the mobile game's view range
+(76 cells). The New 3DS draws all of it; the Old 3DS draws 56 cells, so there an animal can notice you
+from just past the fog.
+
+## Nintendo 3DS from the command line
+
+Needs devkitPro (devkitARM, libctru, citro3d), Rust nightly with `rust-src` (selected by
+`3ds-ver/rust-toolchain.toml`), `cargo-3ds` (`cargo install cargo-3ds`) and libclang. Details:
+[docs/3DS.md](docs/3DS.md).
+
+```sh
+cd 3ds-ver
+
+# 1. Cook your game into a pack (runs on the PC). Use --target n3ds for a New 3DS.
+cargo run --release -p c2-cook -- --game PATH/TO/Carnivores2 --target o3ds --out c2rs.c2pk
+#    add-ons:  --overlay "PATH/Carnivores 2" --mod ADDON --mod ADDON ...   (or --recipe R.toml --mods DIR)
+
+# 2. Build the app.
+export DEVKITPRO=/opt/devkitpro DEVKITARM=/opt/devkitpro/devkitARM
+cargo 3ds build --release -p c2-3ds        # -> target/armv6k-nintendo-3ds/release/c2-3ds.3dsx
+
+# 3. Optional: check a pack on the PC the way the 3DS loads it.
+cargo run --release -p c2-cook -- --check c2rs.c2pk
+```
+
+On the SD card, put `c2-3ds.3dsx` in `/3ds/` and the pack(s) in `/3ds/c2rs/`. Start it from the Homebrew
+Launcher; with more than one pack, it asks which to play. Each pack keeps its own saves. Packs are made
+from your own files: keep them to yourself.
+
+The launcher's **Build > 3DS** does all of this for you, and installs under a name of your choosing
+(`sdmc:/3ds/<name>/`), so several installs can sit side by side.
+
+### `.cia` builds (optional)
+
+A `.cia` installs the game to the home menu (with FBI or a similar title manager). It needs two tools that
+are **not part of this project**; download them yourself:
+- **makerom**, from Project_CTR: <https://github.com/3DSGuy/Project_CTR/releases>
+- **bannertool**: <https://github.com/Steveice10/bannertool/releases>
+
+Put them beside the launcher or in its tools folder (on Linux and macOS, `chmod +x makerom bannertool`),
+then use **Build > 3DS**, or (from `pc-ver/target/release/`):
+
+```sh
+c2-3ds-builder --cia NAME --tools DIR --out SD_DIR [--target o3ds|n3ds] [--icon PNG] [--banner PNG] [--sound WAV]
+```
+
+Each install name gets its own title ID and reads its packs from `sdmc:/3ds/NAME/`. The icon (48x48),
+banner (256x128) and banner sound are your own. Without them, they're made from the game's own menu picture.
+
+---
+
+## Wii U from the command line (demo)
+
+The Wii U version is a demo, tested in Cemu and on a real Wii U under Aroma. It's a C
+frontend on devkitPro's WUT with the shared Rust code linked in. You need:
+
+- Rust nightly with `rust-src`
+- Docker, for the `devkitpro/devkitppc` image
+- the third-party tools fetched into `wiiu-ver/tools/`, as described in
+  [wiiu-ver/tools/README.md](wiiu-ver/tools/README.md)
+
+From the repository root:
+
+```sh
+cargo +nightly build --release \
+  --manifest-path wiiu-ver/perf-probe/Cargo.toml \
+  --target wiiu-ver/perf-probe/powerpc-wiiu.json \
+  -Z json-target-spec -Z build-std=core,alloc,compiler_builtins
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$(pwd)/wiiu-ver/perf-probe:/src" -w /src devkitpro/devkitppc \
+  sh -c '/opt/devkitpro/devkitPPC/bin/powerpc-eabi-objcopy --remove-section .note.GNU-stack target/powerpc-wiiu/release/libc2_wiiu_terrain_probe.a target/wiiu-terrain.a && /opt/devkitpro/portlibs/wiiu/bin/powerpc-eabi-cmake -S . -B build && cmake --build build'
+
+# An install on the SD card: a game (as c2-cook takes it) and its own Wii U Menu entry.
+# It finds c2-cook, the app and wuhbtool in this tree's builds, $DEVKITPRO/tools/bin or PATH (or --tools DIR).
+cargo run --release --manifest-path pc-ver/Cargo.toml -p c2-launcher --bin c2-wiiu-builder -- \
+  --install carnivores-triassic \
+  --title "Carnivores Triassic" --sd SD -- --game "PATH/TO/Carnivores Triassic"
+```
+
+Everything after `--` goes to `c2-cook` (`--game`, `--overlay`, `--mods`, `--recipe`, `--balance`). Add
+`--rpx` for a Homebrew Launcher build instead of a `.wuhb` (it reads `wiiu/apps/carnivores-probe/`).
+To run it in Cemu, cook into Cemu's SD card (`c2-cook --target wiiu --out
+~/.local/share/Cemu/sdcard/wiiu/apps/carnivores-probe ...`) and start the `.rpx`. Hardware frame-time captures and session results are kept locally in the ignored
+`wiiu-ver/perf-probe/hardware-logs/` directory. Controls and the current state: [wiiu-ver/perf-probe/README.md](wiiu-ver/perf-probe/README.md);
+the plan: [docs/WIIU.md](docs/WIIU.md) and [wiiu-ver/gameplan.md](wiiu-ver/gameplan.md).
+
+---
+
 ## Recipes: sharing a mod setup
 
 A recipe (`recipes/*.toml`) describes a modded game **without containing any of it**. Each mod is listed
@@ -197,16 +381,38 @@ To make your own from mods you have (it pins every file they use):
 
 ---
 
+## Testing changes
+
+Much of this code is written with AI assistance, so every change is checked against the game's
+actual behaviour, not only against unit tests:
+
+- **Unit tests** (`cargo test --workspace` in `pc-ver/`, run by CI) use synthetic data only.
+- **Gameplay regression scenarios** (`c2-regress`) play a scripted, deterministic hunt on your own
+  game files: load an area, place four animals, fire every weapon once, open the binoculars, map and
+  pickers. Each run records functional results, per-checkpoint simulation hashes, screenshots and
+  timings, and compares them with a baseline from before the change and with the published vanilla
+  baselines in `pc-ver/crates/c2-regress/baselines/`. An optimization must leave the hashes unchanged;
+  a fix that changes them has to say why.
+- **Original-engine runs** play the same script in the original Carnivores 2 and Ice Age under Wine,
+  for a side-by-side comparison.
+
+How to run them and what they do and do not prove: [docs/REGRESSION.md](docs/REGRESSION.md#validating-a-change).
+Contribution rules: [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
 ## Repository layout
 
 | | |
 |---|---|
-| `pc-ver/` | Cargo workspace (stable Rust): the shared crates (`c2-formats`, `c2-vfs`, `c2-mods`, `c2-core`), the PC game (`c2-pc`), the launchers, PC VR (`c2-vr`), gamepads, and the parity tools |
+| `pc-ver/` | Cargo workspace (stable Rust): the shared crates (`c2-formats`, `c2-vfs`, `c2-mods`, `c2-core`), the PC game (`c2-pc`), the launchers, PC VR (`c2-vr`), gamepads, the parity tools and the regression runner (`c2-regress`) |
 | `3ds-ver/` | the 3DS app (`c2-3ds`) and the pack cooker (`c2-cook`); nightly, reuses `pc-ver/crates` |
 | `wiiu-ver/` | the Wii U port: a series of probes for testing and the playable demo (`perf-probe`) |
+| `android-ver/` | the Android APK build of the PC game ([README](android-ver/README.md)) |
+| `steamdeck/` | Steam Deck install script for the launcher |
 | `psvr2-ver/` | PS VR2 research notes |
 | `recipes/` | mod recipes: credits, links and hashes only |
-| `docs/` | [MODDING](docs/MODDING.md), [3DS](docs/3DS.md), [WIIU](docs/WIIU.md), [FORMATS](docs/FORMATS.md) (file formats), [DECISIONS](docs/DECISIONS.md) (every design choice and deviation), [DEVELOPMENT](docs/DEVELOPMENT.md) (spec and conventions) |
+| `docs/` | [MODDING](docs/MODDING.md), [3DS](docs/3DS.md), [WIIU](docs/WIIU.md), [WINDOWS](docs/WINDOWS.md), [FORMATS](docs/FORMATS.md) (file formats), [REGRESSION](docs/REGRESSION.md) (gameplay regression scenarios), [ROADMAP](docs/ROADMAP.md), [RELEASING](docs/RELEASING.md), [SECURITY-HARDENING](docs/SECURITY-HARDENING.md), [DECISIONS](docs/DECISIONS.md) (every design choice and deviation), [DEVELOPMENT](docs/DEVELOPMENT.md) (spec and conventions) |
 | `source/` | **gitignored**: your own game, mods and reference material (see DEVELOPMENT.md) |
 
 ---

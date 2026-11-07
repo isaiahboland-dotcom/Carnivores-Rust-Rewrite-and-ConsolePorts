@@ -7,6 +7,83 @@ repository. Recordings, screenshots and reports stay local
 (`regression-sim-recordings/` is gitignored) because they are made from the
 player's own game files.
 
+## Validating a change
+
+Much of this project's code is written with AI assistance. A fix or an
+optimization can compile, pass the unit tests and still change how the game
+behaves. The scenarios exist to catch that before it is merged. Use them for
+every change to gameplay, AI, rendering, file loading or performance-sensitive
+code, whoever wrote it.
+
+### What a passing run proves, and what it does not
+
+| Check | Catches | Strength |
+|---|---|---|
+| Functional (fails the comparison) | The map not loading, animals missing or dead, a weapon not firing exactly once, a screen that no longer opens, timeouts, panics, set-up errors | Strong, on any machine |
+| Determinism (`--repeat 3` or more) | A change that makes the simulation depend on timing, threads or uninitialised state | Strong, on any machine |
+| Checkpoint state hashes (manual, below) | Any change at all to the simulation: the hunter, the weapon, every animal's pose, the random stream, at every checkpoint | Strongest; only meaningful between runs on the same platform |
+| Visual (fails the comparison) | A rendering change larger than the tolerance | Only against your own baseline, same GPU and driver. Published baselines have no screenshots |
+| Performance (warns) | Slower frames or ticks, more memory | Only between runs on the same machine and settings. Published figures are reference only |
+
+The comparison does **not** compare checkpoint state hashes between the
+baseline and the candidate: a change that moves an animal but keeps all four
+alive still passes. For an optimization or refactor that must not change
+behaviour, compare the hashes yourself (step 4 below).
+
+Not covered by any scenario: the menus and hunt setup, the launcher, mod
+merging and recipes, combined packs, sound, save files, animals hunting the
+player over time, Modder's Edition games beyond loading, and every console
+build. Changes there still need the unit tests and a hand-played check, as
+described in the pull request.
+
+### Steps
+
+1. **Before the change**, on the base commit, record your own baseline (same
+   machine, same game folder):
+   ```sh
+   cd pc-ver
+   cargo build --release -p c2-pc -p c2-regress
+   ./target/release/c2-regress run --scenario crates/c2-regress/scenarios/vanilla_map2_four_dinos.toml \
+       --game-id c2 --game <DIR> --repeat 5 --label before
+   ```
+2. **After the change**, rebuild both binaries and run against it:
+   ```sh
+   cargo build --release -p c2-pc -p c2-regress
+   ./target/release/c2-regress run --scenario crates/c2-regress/scenarios/vanilla_map2_four_dinos.toml \
+       --game-id c2 --game <DIR> --repeat 5 --label after --baseline <BEFORE_RUN_DIR>
+   ```
+   Exit code 0 is required. Also run `--baseline published` to check against
+   the public reference.
+3. **Read `report.html`** of the candidate: every stage passed,
+   `determinism.identical: true`, and the screenshots look right.
+4. **Compare the state hashes**:
+   ```sh
+   diff <(jq -c '.checkpoints[]' <BEFORE_RUN_DIR>/metrics.json) \
+        <(jq -c '.checkpoints[]' <AFTER_RUN_DIR>/metrics.json)
+   ```
+   - An optimization, refactor or cleanup must give **no output**: the same
+     checkpoints at the same ticks with the same hashes. Any difference
+     means behaviour changed; find out why before merging.
+   - A bug fix that changes behaviour on purpose will differ. Say which
+     checkpoints changed and why in the pull request, and check the
+     screenshots for those checkpoints.
+5. **Performance claims**: with `--repeat 3` or more on both runs, on the same
+   machine, the comparison's performance section gives the change in median
+   and p95 tick and frame times. Quote those figures; do not quote a single
+   run or a different machine.
+6. Repeat for every game the change can affect: Ice Age (`--game-id ice-age`)
+   and the APK-built bases (`c2-apk`, `ice-age-apk`) when the change touches
+   their code paths (mobile HUD, conversion, `HUNTDAT/MOBILE`).
+
+When a change breaks a scenario on purpose (a new stage, a new check, a
+different layout), bump the scenario's `version` and make new baselines
+([Making and approving a baseline](#making-and-approving-a-baseline)). Never
+edit a baseline to make a candidate pass.
+
+To confirm the checks still catch problems after changing the runner itself,
+run with `--inject` ([Deliberate faults](#deliberate-faults)): each fault must
+make the comparison fail.
+
 ## Pieces
 
 | Where | What |
@@ -272,7 +349,7 @@ headless run of the canonical scenario on Carnivores 2.
 | PC, Linux: Dinosaur Hunter and Ice Age APKs (phone HUD) | **Implemented and run**: both pass, 7 weapons, 14 screenshots, headless x5 identical. |
 | PC, Windows | Should build as on Linux; not run. Process memory is unavailable there. |
 | PC: Fallen Kings | **Planned** (no reference baseline yet). |
-| Original engines (Wine): Carnivores 2, Ice Age | **Implemented and run**: `--engine original`; see above. |
+| Original engines (Wine): Carnivores 2, Ice Age | **Implemented and run**: `--engine original`; see [Original engines](#original-engines). |
 | 3DS (Azahar) | **Planned.** `c2_core::scenario` builds for the consoles' `portable-hunt` target, so the 3DS app can run the same script. How Azahar would start it, read its log and capture screens has not been investigated yet. `c2-cook --check` already plays cooked packs headless on the PC. |
 | Wii U (Cemu) | **Planned.** Same core module; Cemu's automation and logging not yet investigated. |
 | Android | **Planned.** The app hosts `c2-pc`, so `c2-pc regress` is the likely route; storage paths and adb collection not yet worked out. |

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.5.0 — 2026-11-07
+
+Regression scenarios for validating changes, instance rules, experimental predation, the first
+Android build, a high-end view and hardcore survival. Notes: `docs/releases/v0.5.0.md`.
+
 ### Gameplay regression scenarios (PC; developer tool)
 
 - `c2-regress` runs a versioned, deterministic scenario (`vanilla_map2_four_dinos`): area 2, a fixed
@@ -10,6 +15,9 @@
   screenshots, compares runs with approved baselines (functional, visual, performance) and builds an
   HTML report and a side-by-side screenshot PDF. Carnivores 2 and Ice Age run on PC; Carnivores 1 is
   reported unsupported; the consoles are planned. See `docs/REGRESSION.md`.
+- Documented how to use the scenarios to validate fixes and optimizations, AI-assisted ones included
+  (`docs/REGRESSION.md`, "Validating a change"), with what a passing run does and does not prove.
+  `CONTRIBUTING.md` and a new pull request template ask for the results.
 - Published reference baselines from the vanilla Carnivores 2 and Ice Age data (scores only, verified
   against the base hash lists): compare a pull request's runs with `--baseline published`.
 - The Android Dinosaur Hunter and Ice Age games (2.0.1) as scenario games (`c2-apk`, `ice-age-apk`), run
@@ -79,12 +87,12 @@
   and objects fading from model to sprite instead of popping. Animals behave as at the old maximum.
 - `c2-pc area ... --high-end --foliage CELLS` previews both in the map viewer.
 
-### Android (new; menus checked on a Retroid Pocket 5)
+### Android (new; menus checked on an Android handheld)
 
 - First Android build (`android-ver/`, `build-apk.sh`): the PC game in an APK. It needs a game built from
   your own mobile APK as its base, plus optional add-ons. No standalones; at most 8 animals and 8 weapons
   per hunt. Touch works in the menus.
-- **Faster hunts on phones** (measured on a Retroid Pocket 5): only what the camera can see is drawn,
+- **Faster hunts on phones** (measured on one Android handheld): only what the camera can see is drawn,
   the ground past 128 cells uses coarser levels, textures get mip levels as in the original, and near
   objects draw first. About 47 -> 55 fps at the same settings; higher view settings are now playable.
 - **Resolution** option (Video options, 50-100%): draws fewer pixels and lets the phone scale up.
@@ -121,7 +129,7 @@
   and standalone games too, so modded content can replace them (instance editor, Base game
   page). Leaving out every area is refused.
 - An experimental **Advanced** tab in the instance editor, hidden unless Settings >
-  Experimental shows it. Empty for now.
+  Experimental shows it (its contents: Instance rules and Predation, above).
 
 ## 0.4.3 — 2026-11-05
 
