@@ -1,0 +1,152 @@
+{
+  "build": {
+    "commit": "1e39f8695225",
+    "dirty": true,
+    "profile": "release",
+    "version": "0.4.3"
+  },
+  "content": {
+    "files": [
+      {
+        "path": "HUNTDAT/_RES.TXT",
+        "sha256": "099aa748041f0278ab9510b1d7d5905ea54862b70bf50ff10d61924449ac3cb9"
+      },
+      {
+        "path": "HUNTDAT/AREAS/AREA2.MAP",
+        "sha256": "6267b2c6b5565647e21a708fda58044edefdbd508dfa738788f290b78dbea435"
+      },
+      {
+        "path": "HUNTDAT/AREAS/AREA2.RSC",
+        "sha256": "e616c390834d60073c34b7e577b7eeb3a771aa7c996ef2e0a0f82612ae1fe122"
+      },
+      {
+        "path": "HUNTDAT/hunter1.car",
+        "sha256": "9dc4a24acc3d0199a31e64e6fe1c4c296e83198e88e452d25b80b1d1aeabc9cc"
+      },
+      {
+        "path": "HUNTDAT/mosh.car",
+        "sha256": "84b8bc39cd59d7b18a9db6a8a45e7fc0f07ff3c7a3c1112a3394c15075706c31"
+      },
+      {
+        "path": "HUNTDAT/gall.car",
+        "sha256": "2fa87881e1204d0fc341d56a8eff68aaa8ffd2a87e3b7aecabb794f2bb38ab04"
+      },
+      {
+        "path": "HUNTDAT/dimor2.car",
+        "sha256": "81b0f5a39bf45628d9966e468ef0374db7e6073d344a4eb8cd00f9058c8db657"
+      },
+      {
+        "path": "HUNTDAT/ptera.car",
+        "sha256": "221bf68fb4519d7a8651a231f577f21bda850679f9de21ac598d922ce8047432"
+      },
+      {
+        "path": "HUNTDAT/dimet.car",
+        "sha256": "77d780134e1bfc80e1835270d67e3ece2ad24a6cb8821c4a2474cbf6eb32ff81"
+      },
+      {
+        "path": "HUNTDAT/brachi1.car",
+        "sha256": "51f7c4e33cccef3adfb8d010ab940c18c82d2f820bd0db9bf9278427ebdfc4f3"
+      },
+      {
+        "path": "HUNTDAT/par2.car",
+        "sha256": "e69a912154c5f38ff9251045a1960842f490d6eba35d653963d5203b060ec4fc"
+      },
+      {
+        "path": "HUNTDAT/ankylo1.car",
+        "sha256": "4f417767728627a28544094340c4b5e50193d1f8a17a2e97ab38fe4fff647fd2"
+      },
+      {
+        "path": "HUNTDAT/stego.car",
+        "sha256": "980d8052fe7bf06ceeefa027b59268d7062a607b5a8c3d12de9246f1a301a2f6"
+      },
+      {
+        "path": "HUNTDAT/allo.car",
+        "sha256": "5f49e298640a74c9037d6b646c743961927d8e2a6bf7deaa2f7583c574167081"
+      },
+      {
+        "path": "HUNTDAT/chasmosa.car",
+        "sha256": "bc42bd9149e53c6a68193bac64a671273319f0f5a237920d534421d91e44bc98"
+      },
+      {
+        "path": "HUNTDAT/velo2.car",
+        "sha256": "1f60bfa678daae7784a0cf427f19c1ec06a1a4720cc39842cc5b40e1240f3bdc"
+      },
+      {
+        "path": "HUNTDAT/spino.car",
+        "sha256": "dc6efca12a609e05e411256a040a4e601f2a58ff37a4aa271e55e6064e14b072"
+      },
+      {
+        "path": "HUNTDAT/cerato1.car",
+        "sha256": "84e77955e50f87bba6e671fae81c910646cf6ed3ad3b76b853f069e497611a67"
+      },
+      {
+        "path": "HUNTDAT/tirex.car",
+        "sha256": "6fb9f2854af2d4c3ceffc6fdf803aa6cb388cdc64fffcab19d6ae0eb5e719864"
+      },
+      {
+        "path": "HUNTDAT/WEAPONS/pistol.car",
+        "sha256": "e8672c08e3c54b227df540b2eb1ee1ddf75715524572afaf52528ccbbc092f79"
+      },
+      {
+        "path": "HUNTDAT/WEAPONS/shotgun.car",
+        "sha256": "1ce2ae738cab2ed59b7d986e40f24ec71153e383e0f1c7e2bb5e35ed32200999"
+      },
+      {
+        "path": "HUNTDAT/WEAPONS/dbsgun.car",
+        "sha256": "e92d7d1a81826e13593a805ad5963d4491c74687bcee9c72396b2b295d93db43"
+      },
+      {
+        "path": "HUNTDAT/WEAPONS/x_bow.car",
+        "sha256": "3af520b9e1b0d3af126d842551d7e45904148dd0c637e2654233dfd186cb8696"
+      },
+      {
+        "path": "HUNTDAT/WEAPONS/rifle.car",
+        "sha256": "b37064e02ab53823aef10a49c9437d81f40420f7dff67013a6708b9f59ed7305"
+      },
+      {
+        "path": "HUNTDAT/WEAPONS/sniper.car",
+        "sha256": "fea65db71f1f19fb67422357691e9bed81d4c868429f87b6016dec9a5dacf11f"
+      }
+    ],
+    "sha256": "0db713da989dab9a0aeda02bb2e4f85021e619d2b08a03e5550e240096300486"
+  },
+  "game": {
+    "area": "AREA2",
+    "id": "c2",
+    "name": "Carnivores 2"
+  },
+  "hardware": {
+    "arch": "x86_64",
+    "machine": "reference machine (not identified)",
+    "os": "linux"
+  },
+  "mode": "headless+render",
+  "platform": "pc-linux",
+  "published": {
+    "files_verified": 25,
+    "note": "Scores only: no screenshots, logs or machine details. Performance figures are from one reference machine.",
+    "vanilla_hash_list": "recipes/bases/c2-vanilla.toml"
+  },
+  "renderer": {
+    "backend": "Vulkan",
+    "resolution": [
+      960,
+      540
+    ]
+  },
+  "scenario": {
+    "file_sha256": "5c525480db0f49be547ac228ed07852d7d63c13a959f9a9331ca9a81367f6d57",
+    "id": "vanilla_map2_four_dinos",
+    "version": 1
+  },
+  "seed": 20261107,
+  "settings": {
+    "inject": null,
+    "repeats": 5,
+    "settle_ticks": 30,
+    "tick_ms": 10,
+    "time_of_day": "day",
+    "timeout_ticks": 600,
+    "warmup_ticks": 500
+  }
+}

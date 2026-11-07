@@ -1,0 +1,140 @@
+{
+  "build": {
+    "commit": "1e39f8695225",
+    "dirty": true,
+    "profile": "release",
+    "version": "0.4.3"
+  },
+  "content": {
+    "files": [
+      {
+        "path": "HUNTDAT/_RES.TXT",
+        "sha256": "3ebc87a70039c323db5b37132a177133c89e9a5ccae5e8bccab6af9b43cdc507"
+      },
+      {
+        "path": "HUNTDAT/AREAS/AREA2.MAP",
+        "sha256": "15dd1d763e4ac281ac40734d0558251a7c2657532791b2c123b66bac447e8360"
+      },
+      {
+        "path": "HUNTDAT/AREAS/AREA2.RSC",
+        "sha256": "cf4416b2ae6748ee459b242cafddca1a76e88cbee3fa25802801faecf7032182"
+      },
+      {
+        "path": "HUNTDAT/hunter1.car",
+        "sha256": "47efb0a422ab54a70bdfc21e6dd97a1a2c6181e5f03a58201310850acd560b0e"
+      },
+      {
+        "path": "HUNTDAT/pig1.car",
+        "sha256": "527a53f370e0aaadf1e49ac68b7d8f4cbf135976b3dc11d9547743c33f069265"
+      },
+      {
+        "path": "HUNTDAT/archeo.car",
+        "sha256": "e32d3ae46893b8d11a95430cc660f8b8b17b62d5db279a4277339ddb0f7573db"
+      },
+      {
+        "path": "HUNTDAT/bronto.car",
+        "sha256": "b268acebe533469a00f16c673ad10b1834d4b077cc92989059ae2e659e7f58da"
+      },
+      {
+        "path": "HUNTDAT/hog.car",
+        "sha256": "0e5d2d25be48a10eacbe08f7106b16cec19185031ab5d706df70ae47adeef49e"
+      },
+      {
+        "path": "HUNTDAT/wolf.car",
+        "sha256": "9d29b4287ee3712d87ad0b1d6c5ab9b33955b5b5265515036897a30282250390"
+      },
+      {
+        "path": "HUNTDAT/Rhino.car",
+        "sha256": "e6d71bb673f0664f3d75ca50cced0487be7368323687e771ed3e36e922c5f728"
+      },
+      {
+        "path": "HUNTDAT/diatr.car",
+        "sha256": "49ffe4b7757781d65bc98312b7029aaff5abb1fa6f1e606ebcd90ff3302ed6c0"
+      },
+      {
+        "path": "HUNTDAT/deer.car",
+        "sha256": "ef37b4ef8a21ae6d1be34f0b64bb0379aa25359fe34720fa78b62ff18c9b8831"
+      },
+      {
+        "path": "HUNTDAT/smilo.car",
+        "sha256": "a9f37a3ce35f22bc9d64ac3c4e37a00effaaf8ef7aca430905a2fb2fc27cb361"
+      },
+      {
+        "path": "HUNTDAT/mamm.car",
+        "sha256": "ec41ddd95f022bb8b18e5ca7dc218b3cf4275ba89acfa3832c7dac1aa217f7a9"
+      },
+      {
+        "path": "HUNTDAT/bear.car",
+        "sha256": "6d4d0878b8461364cb68dd25f81487c2e9291487c3237153230654361d5762d6"
+      },
+      {
+        "path": "HUNTDAT/bigfoot.car",
+        "sha256": "03b27c6feb6c06284168bff8fc485f2d5dd61035b4d5bff6a167e0f982ce559e"
+      },
+      {
+        "path": "HUNTDAT/WEAPONS/pistol.car",
+        "sha256": "1500b4b5d45a26917ff4a54e8d4085be719c8ab0e5e158baacce3e4c4e9a82f2"
+      },
+      {
+        "path": "HUNTDAT/WEAPONS/shotgun.car",
+        "sha256": "9293afb2469d86bf65c141188a22c4481115cea1e02c69b14e31f79db8eedf45"
+      },
+      {
+        "path": "HUNTDAT/WEAPONS/dbsgun.car",
+        "sha256": "57087dbd4e5643e8ed6e8e849c545ec28648b317701a8d0f8803fd5b2f8a5523"
+      },
+      {
+        "path": "HUNTDAT/WEAPONS/x_bow.car",
+        "sha256": "d985715dc7543e921ea6a8dcf03e2781bc1a0ae53a1c07c85141adc4c4d68d89"
+      },
+      {
+        "path": "HUNTDAT/WEAPONS/rifle.car",
+        "sha256": "466a2798ee2f73dbd08747b53c2eaea9ce71c118e13a205cc435434302b141c2"
+      },
+      {
+        "path": "HUNTDAT/WEAPONS/sniper.car",
+        "sha256": "3c792357ea86462f71b305a4a845b71fcbe5b13cc2f8cdf20281184266e86ff6"
+      }
+    ],
+    "sha256": "b62ad70371410219e564902a701a00efbc5f8cee525ead34196702a3e71a11df"
+  },
+  "game": {
+    "area": "AREA2",
+    "id": "ice-age",
+    "name": "Carnivores: Ice Age"
+  },
+  "hardware": {
+    "arch": "x86_64",
+    "machine": "reference machine (not identified)",
+    "os": "linux"
+  },
+  "mode": "headless+render",
+  "platform": "pc-linux",
+  "published": {
+    "files_verified": 22,
+    "note": "Scores only: no screenshots, logs or machine details. Performance figures are from one reference machine.",
+    "vanilla_hash_list": "recipes/bases/ice-age.toml"
+  },
+  "renderer": {
+    "backend": "Vulkan",
+    "resolution": [
+      960,
+      540
+    ]
+  },
+  "scenario": {
+    "file_sha256": "5c525480db0f49be547ac228ed07852d7d63c13a959f9a9331ca9a81367f6d57",
+    "id": "vanilla_map2_four_dinos",
+    "version": 1
+  },
+  "seed": 20261107,
+  "settings": {
+    "inject": null,
+    "repeats": 5,
+    "settle_ticks": 30,
+    "tick_ms": 10,
+    "time_of_day": "day",
+    "timeout_ticks": 600,
+    "warmup_ticks": 500
+  }
+}

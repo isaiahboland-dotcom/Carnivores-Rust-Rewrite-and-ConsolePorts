@@ -1,0 +1,166 @@
+{"detail":"","kind":"stage_start","name":"spawn","ok":null,"source":"headless","stage":"spawn","tick":0,"time_ms":0}
+{"detail":"4 alive of 4 placed, 4 expected","kind":"verify","name":"animal_count","ok":true,"source":"headless","stage":"spawn","tick":0,"time_ms":0}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"headless","stage":"spawn","tick":0,"time_ms":0}
+{"detail":"","kind":"stage_start","name":"warmup","ok":null,"source":"headless","stage":"warmup","tick":0,"time_ms":0}
+{"detail":"","kind":"checkpoint","name":"warmup","ok":null,"source":"headless","stage":"warmup","tick":500,"time_ms":5000}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"headless","stage":"warmup","tick":500,"time_ms":5000}
+{"detail":"","kind":"stage_start","name":"weapon_01_pistol","ok":null,"source":"headless","stage":"weapon_01_pistol","tick":500,"time_ms":5000}
+{"detail":"","kind":"action","name":"select_weapon 0","ok":null,"source":"headless","stage":"weapon_01_pistol","tick":500,"time_ms":5000}
+{"detail":"","kind":"action","name":"fire","ok":null,"source":"headless","stage":"weapon_01_pistol","tick":545,"time_ms":5450}
+{"detail":"shots fired 1, rounds 16 -> 15","kind":"verify","name":"fired_once","ok":true,"source":"headless","stage":"weapon_01_pistol","tick":546,"time_ms":5460}
+{"detail":"","kind":"checkpoint","name":"weapon_01_pistol_fire","ok":null,"source":"headless","stage":"weapon_01_pistol","tick":560,"time_ms":5600}
+{"detail":"","kind":"action","name":"hide_weapon","ok":null,"source":"headless","stage":"weapon_01_pistol","tick":575,"time_ms":5750}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"headless","stage":"weapon_01_pistol","tick":610,"time_ms":6100}
+{"detail":"","kind":"stage_start","name":"weapon_02_shotgun","ok":null,"source":"headless","stage":"weapon_02_shotgun","tick":610,"time_ms":6100}
+{"detail":"","kind":"action","name":"select_weapon 1","ok":null,"source":"headless","stage":"weapon_02_shotgun","tick":610,"time_ms":6100}
+{"detail":"","kind":"action","name":"fire","ok":null,"source":"headless","stage":"weapon_02_shotgun","tick":655,"time_ms":6550}
+{"detail":"shots fired 1, rounds 14 -> 13","kind":"verify","name":"fired_once","ok":true,"source":"headless","stage":"weapon_02_shotgun","tick":656,"time_ms":6560}
+{"detail":"","kind":"checkpoint","name":"weapon_02_shotgun_fire","ok":null,"source":"headless","stage":"weapon_02_shotgun","tick":715,"time_ms":7150}
+{"detail":"","kind":"action","name":"hide_weapon","ok":null,"source":"headless","stage":"weapon_02_shotgun","tick":775,"time_ms":7750}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"headless","stage":"weapon_02_shotgun","tick":820,"time_ms":8200}
+{"detail":"","kind":"stage_start","name":"weapon_03_db_shotgun","ok":null,"source":"headless","stage":"weapon_03_db_shotgun","tick":820,"time_ms":8200}
+{"detail":"","kind":"action","name":"select_weapon 2","ok":null,"source":"headless","stage":"weapon_03_db_shotgun","tick":820,"time_ms":8200}
+{"detail":"","kind":"action","name":"fire","ok":null,"source":"headless","stage":"weapon_03_db_shotgun","tick":865,"time_ms":8650}
+{"detail":"shots fired 1, rounds 12 -> 11","kind":"verify","name":"fired_once","ok":true,"source":"headless","stage":"weapon_03_db_shotgun","tick":866,"time_ms":8660}
+{"detail":"","kind":"checkpoint","name":"weapon_03_db_shotgun_fire","ok":null,"source":"headless","stage":"weapon_03_db_shotgun","tick":880,"time_ms":8800}
+{"detail":"","kind":"action","name":"hide_weapon","ok":null,"source":"headless","stage":"weapon_03_db_shotgun","tick":895,"time_ms":8950}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"headless","stage":"weapon_03_db_shotgun","tick":940,"time_ms":9400}
+{"detail":"","kind":"stage_start","name":"weapon_04_x_bow","ok":null,"source":"headless","stage":"weapon_04_x_bow","tick":940,"time_ms":9400}
+{"detail":"","kind":"action","name":"select_weapon 3","ok":null,"source":"headless","stage":"weapon_04_x_bow","tick":940,"time_ms":9400}
+{"detail":"","kind":"action","name":"fire","ok":null,"source":"headless","stage":"weapon_04_x_bow","tick":1000,"time_ms":10000}
+{"detail":"shots fired 1, rounds 12 -> 11","kind":"verify","name":"fired_once","ok":true,"source":"headless","stage":"weapon_04_x_bow","tick":1001,"time_ms":10010}
+{"detail":"","kind":"checkpoint","name":"weapon_04_x_bow_fire","ok":null,"source":"headless","stage":"weapon_04_x_bow","tick":1075,"time_ms":10750}
+{"detail":"","kind":"action","name":"hide_weapon","ok":null,"source":"headless","stage":"weapon_04_x_bow","tick":1150,"time_ms":11500}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"headless","stage":"weapon_04_x_bow","tick":1220,"time_ms":12200}
+{"detail":"","kind":"stage_start","name":"weapon_05_rifle","ok":null,"source":"headless","stage":"weapon_05_rifle","tick":1220,"time_ms":12200}
+{"detail":"","kind":"action","name":"select_weapon 4","ok":null,"source":"headless","stage":"weapon_05_rifle","tick":1220,"time_ms":12200}
+{"detail":"","kind":"action","name":"fire","ok":null,"source":"headless","stage":"weapon_05_rifle","tick":1265,"time_ms":12650}
+{"detail":"shots fired 1, rounds 14 -> 13","kind":"verify","name":"fired_once","ok":true,"source":"headless","stage":"weapon_05_rifle","tick":1266,"time_ms":12660}
+{"detail":"","kind":"checkpoint","name":"weapon_05_rifle_fire","ok":null,"source":"headless","stage":"weapon_05_rifle","tick":1280,"time_ms":12800}
+{"detail":"","kind":"action","name":"hide_weapon","ok":null,"source":"headless","stage":"weapon_05_rifle","tick":1295,"time_ms":12950}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"headless","stage":"weapon_05_rifle","tick":1340,"time_ms":13400}
+{"detail":"","kind":"stage_start","name":"weapon_06_sniper_rifle","ok":null,"source":"headless","stage":"weapon_06_sniper_rifle","tick":1340,"time_ms":13400}
+{"detail":"","kind":"action","name":"select_weapon 5","ok":null,"source":"headless","stage":"weapon_06_sniper_rifle","tick":1340,"time_ms":13400}
+{"detail":"","kind":"action","name":"fire","ok":null,"source":"headless","stage":"weapon_06_sniper_rifle","tick":1368,"time_ms":13680}
+{"detail":"shots fired 1, rounds 14 -> 13","kind":"verify","name":"fired_once","ok":true,"source":"headless","stage":"weapon_06_sniper_rifle","tick":1369,"time_ms":13690}
+{"detail":"","kind":"checkpoint","name":"weapon_06_sniper_rifle_fire","ok":null,"source":"headless","stage":"weapon_06_sniper_rifle","tick":1406,"time_ms":14060}
+{"detail":"","kind":"action","name":"hide_weapon","ok":null,"source":"headless","stage":"weapon_06_sniper_rifle","tick":1443,"time_ms":14430}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"headless","stage":"weapon_06_sniper_rifle","tick":1473,"time_ms":14730}
+{"detail":"","kind":"stage_start","name":"binoculars","ok":null,"source":"headless","stage":"binoculars","tick":1473,"time_ms":14730}
+{"detail":"","kind":"action","name":"press_binoculars","ok":null,"source":"headless","stage":"binoculars","tick":1473,"time_ms":14730}
+{"detail":"","kind":"verify","name":"binoculars_open","ok":true,"source":"headless","stage":"binoculars","tick":1475,"time_ms":14750}
+{"detail":"","kind":"checkpoint","name":"binoculars_open","ok":null,"source":"headless","stage":"binoculars","tick":1505,"time_ms":15050}
+{"detail":"","kind":"action","name":"press_binoculars","ok":null,"source":"headless","stage":"binoculars","tick":1505,"time_ms":15050}
+{"detail":"","kind":"verify","name":"binoculars_closed","ok":true,"source":"headless","stage":"binoculars","tick":1507,"time_ms":15070}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"headless","stage":"binoculars","tick":1507,"time_ms":15070}
+{"detail":"","kind":"stage_start","name":"map","ok":null,"source":"headless","stage":"map","tick":1507,"time_ms":15070}
+{"detail":"","kind":"action","name":"press_map","ok":null,"source":"headless","stage":"map","tick":1507,"time_ms":15070}
+{"detail":"","kind":"verify","name":"map_open","ok":true,"source":"headless","stage":"map","tick":1509,"time_ms":15090}
+{"detail":"","kind":"checkpoint","name":"map_open","ok":null,"source":"headless","stage":"map","tick":1539,"time_ms":15390}
+{"detail":"","kind":"action","name":"press_map","ok":null,"source":"headless","stage":"map","tick":1539,"time_ms":15390}
+{"detail":"","kind":"verify","name":"map_closed","ok":true,"source":"headless","stage":"map","tick":1541,"time_ms":15410}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"headless","stage":"map","tick":1541,"time_ms":15410}
+{"detail":"","kind":"stage_start","name":"call_icon","ok":null,"source":"headless","stage":"call_icon","tick":1541,"time_ms":15410}
+{"detail":"","kind":"action","name":"press_call_icon","ok":null,"source":"headless","stage":"call_icon","tick":1541,"time_ms":15410}
+{"detail":"","kind":"verify","name":"call_icon_open","ok":true,"source":"headless","stage":"call_icon","tick":1543,"time_ms":15430}
+{"detail":"","kind":"action","name":"press_call_icon","ok":null,"source":"headless","stage":"call_icon","tick":1543,"time_ms":15430}
+{"detail":"call 12 -> 13","kind":"verify","name":"call_changed","ok":true,"source":"headless","stage":"call_icon","tick":1545,"time_ms":15450}
+{"detail":"","kind":"checkpoint","name":"call_icon_open","ok":null,"source":"headless","stage":"call_icon","tick":1545,"time_ms":15450}
+{"detail":"","kind":"verify","name":"call_icon_closed","ok":true,"source":"headless","stage":"call_icon","tick":1749,"time_ms":17490}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"headless","stage":"call_icon","tick":1749,"time_ms":17490}
+{"detail":"","kind":"stage_start","name":"weapon_picker","ok":null,"source":"headless","stage":"weapon_picker","tick":1749,"time_ms":17490}
+{"detail":"this frontend has no weapon_picker screen","kind":"stage_end","name":"unsupported","ok":true,"source":"headless","stage":"weapon_picker","tick":1749,"time_ms":17490}
+{"detail":"","kind":"stage_start","name":"call_picker","ok":null,"source":"headless","stage":"call_picker","tick":1749,"time_ms":17490}
+{"detail":"this frontend has no call_picker screen","kind":"stage_end","name":"unsupported","ok":true,"source":"headless","stage":"call_picker","tick":1749,"time_ms":17490}
+{"detail":"","kind":"stage_start","name":"animals_present","ok":null,"source":"headless","stage":"animals_present","tick":1749,"time_ms":17490}
+{"detail":"4 alive of 4 placed, 4 expected","kind":"verify","name":"animal_count","ok":true,"source":"headless","stage":"animals_present","tick":1749,"time_ms":17490}
+{"detail":"","kind":"checkpoint","name":"end","ok":null,"source":"headless","stage":"animals_present","tick":1749,"time_ms":17490}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"headless","stage":"animals_present","tick":1749,"time_ms":17490}
+{"detail":"","kind":"stage_start","name":"spawn","ok":null,"source":"pc-render","stage":"spawn","tick":0,"time_ms":0}
+{"detail":"4 alive of 4 placed, 4 expected","kind":"verify","name":"animal_count","ok":true,"source":"pc-render","stage":"spawn","tick":0,"time_ms":0}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"pc-render","stage":"spawn","tick":0,"time_ms":0}
+{"detail":"","kind":"stage_start","name":"warmup","ok":null,"source":"pc-render","stage":"warmup","tick":0,"time_ms":0}
+{"detail":"","kind":"checkpoint","name":"warmup","ok":null,"source":"pc-render","stage":"warmup","tick":500,"time_ms":5000}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"pc-render","stage":"warmup","tick":500,"time_ms":5000}
+{"detail":"","kind":"stage_start","name":"weapon_01_pistol","ok":null,"source":"pc-render","stage":"weapon_01_pistol","tick":500,"time_ms":5000}
+{"detail":"","kind":"action","name":"select_weapon 0","ok":null,"source":"pc-render","stage":"weapon_01_pistol","tick":500,"time_ms":5000}
+{"detail":"","kind":"action","name":"fire","ok":null,"source":"pc-render","stage":"weapon_01_pistol","tick":545,"time_ms":5450}
+{"detail":"shots fired 1, rounds 16 -> 15","kind":"verify","name":"fired_once","ok":true,"source":"pc-render","stage":"weapon_01_pistol","tick":546,"time_ms":5460}
+{"detail":"","kind":"checkpoint","name":"weapon_01_pistol_fire","ok":null,"source":"pc-render","stage":"weapon_01_pistol","tick":560,"time_ms":5600}
+{"detail":"","kind":"action","name":"hide_weapon","ok":null,"source":"pc-render","stage":"weapon_01_pistol","tick":575,"time_ms":5750}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"pc-render","stage":"weapon_01_pistol","tick":610,"time_ms":6100}
+{"detail":"","kind":"stage_start","name":"weapon_02_shotgun","ok":null,"source":"pc-render","stage":"weapon_02_shotgun","tick":610,"time_ms":6100}
+{"detail":"","kind":"action","name":"select_weapon 1","ok":null,"source":"pc-render","stage":"weapon_02_shotgun","tick":610,"time_ms":6100}
+{"detail":"","kind":"action","name":"fire","ok":null,"source":"pc-render","stage":"weapon_02_shotgun","tick":655,"time_ms":6550}
+{"detail":"shots fired 1, rounds 14 -> 13","kind":"verify","name":"fired_once","ok":true,"source":"pc-render","stage":"weapon_02_shotgun","tick":656,"time_ms":6560}
+{"detail":"","kind":"checkpoint","name":"weapon_02_shotgun_fire","ok":null,"source":"pc-render","stage":"weapon_02_shotgun","tick":715,"time_ms":7150}
+{"detail":"","kind":"action","name":"hide_weapon","ok":null,"source":"pc-render","stage":"weapon_02_shotgun","tick":775,"time_ms":7750}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"pc-render","stage":"weapon_02_shotgun","tick":820,"time_ms":8200}
+{"detail":"","kind":"stage_start","name":"weapon_03_db_shotgun","ok":null,"source":"pc-render","stage":"weapon_03_db_shotgun","tick":820,"time_ms":8200}
+{"detail":"","kind":"action","name":"select_weapon 2","ok":null,"source":"pc-render","stage":"weapon_03_db_shotgun","tick":820,"time_ms":8200}
+{"detail":"","kind":"action","name":"fire","ok":null,"source":"pc-render","stage":"weapon_03_db_shotgun","tick":865,"time_ms":8650}
+{"detail":"shots fired 1, rounds 12 -> 11","kind":"verify","name":"fired_once","ok":true,"source":"pc-render","stage":"weapon_03_db_shotgun","tick":866,"time_ms":8660}
+{"detail":"","kind":"checkpoint","name":"weapon_03_db_shotgun_fire","ok":null,"source":"pc-render","stage":"weapon_03_db_shotgun","tick":880,"time_ms":8800}
+{"detail":"","kind":"action","name":"hide_weapon","ok":null,"source":"pc-render","stage":"weapon_03_db_shotgun","tick":895,"time_ms":8950}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"pc-render","stage":"weapon_03_db_shotgun","tick":940,"time_ms":9400}
+{"detail":"","kind":"stage_start","name":"weapon_04_x_bow","ok":null,"source":"pc-render","stage":"weapon_04_x_bow","tick":940,"time_ms":9400}
+{"detail":"","kind":"action","name":"select_weapon 3","ok":null,"source":"pc-render","stage":"weapon_04_x_bow","tick":940,"time_ms":9400}
+{"detail":"","kind":"action","name":"fire","ok":null,"source":"pc-render","stage":"weapon_04_x_bow","tick":1000,"time_ms":10000}
+{"detail":"shots fired 1, rounds 12 -> 11","kind":"verify","name":"fired_once","ok":true,"source":"pc-render","stage":"weapon_04_x_bow","tick":1001,"time_ms":10010}
+{"detail":"","kind":"checkpoint","name":"weapon_04_x_bow_fire","ok":null,"source":"pc-render","stage":"weapon_04_x_bow","tick":1075,"time_ms":10750}
+{"detail":"","kind":"action","name":"hide_weapon","ok":null,"source":"pc-render","stage":"weapon_04_x_bow","tick":1150,"time_ms":11500}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"pc-render","stage":"weapon_04_x_bow","tick":1220,"time_ms":12200}
+{"detail":"","kind":"stage_start","name":"weapon_05_rifle","ok":null,"source":"pc-render","stage":"weapon_05_rifle","tick":1220,"time_ms":12200}
+{"detail":"","kind":"action","name":"select_weapon 4","ok":null,"source":"pc-render","stage":"weapon_05_rifle","tick":1220,"time_ms":12200}
+{"detail":"","kind":"action","name":"fire","ok":null,"source":"pc-render","stage":"weapon_05_rifle","tick":1265,"time_ms":12650}
+{"detail":"shots fired 1, rounds 14 -> 13","kind":"verify","name":"fired_once","ok":true,"source":"pc-render","stage":"weapon_05_rifle","tick":1266,"time_ms":12660}
+{"detail":"","kind":"checkpoint","name":"weapon_05_rifle_fire","ok":null,"source":"pc-render","stage":"weapon_05_rifle","tick":1280,"time_ms":12800}
+{"detail":"","kind":"action","name":"hide_weapon","ok":null,"source":"pc-render","stage":"weapon_05_rifle","tick":1295,"time_ms":12950}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"pc-render","stage":"weapon_05_rifle","tick":1340,"time_ms":13400}
+{"detail":"","kind":"stage_start","name":"weapon_06_sniper_rifle","ok":null,"source":"pc-render","stage":"weapon_06_sniper_rifle","tick":1340,"time_ms":13400}
+{"detail":"","kind":"action","name":"select_weapon 5","ok":null,"source":"pc-render","stage":"weapon_06_sniper_rifle","tick":1340,"time_ms":13400}
+{"detail":"","kind":"action","name":"fire","ok":null,"source":"pc-render","stage":"weapon_06_sniper_rifle","tick":1368,"time_ms":13680}
+{"detail":"shots fired 1, rounds 14 -> 13","kind":"verify","name":"fired_once","ok":true,"source":"pc-render","stage":"weapon_06_sniper_rifle","tick":1369,"time_ms":13690}
+{"detail":"","kind":"checkpoint","name":"weapon_06_sniper_rifle_fire","ok":null,"source":"pc-render","stage":"weapon_06_sniper_rifle","tick":1406,"time_ms":14060}
+{"detail":"","kind":"action","name":"hide_weapon","ok":null,"source":"pc-render","stage":"weapon_06_sniper_rifle","tick":1443,"time_ms":14430}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"pc-render","stage":"weapon_06_sniper_rifle","tick":1473,"time_ms":14730}
+{"detail":"","kind":"stage_start","name":"binoculars","ok":null,"source":"pc-render","stage":"binoculars","tick":1473,"time_ms":14730}
+{"detail":"","kind":"action","name":"press_binoculars","ok":null,"source":"pc-render","stage":"binoculars","tick":1473,"time_ms":14730}
+{"detail":"","kind":"verify","name":"binoculars_open","ok":true,"source":"pc-render","stage":"binoculars","tick":1475,"time_ms":14750}
+{"detail":"","kind":"checkpoint","name":"binoculars_open","ok":null,"source":"pc-render","stage":"binoculars","tick":1505,"time_ms":15050}
+{"detail":"","kind":"action","name":"press_binoculars","ok":null,"source":"pc-render","stage":"binoculars","tick":1505,"time_ms":15050}
+{"detail":"","kind":"verify","name":"binoculars_closed","ok":true,"source":"pc-render","stage":"binoculars","tick":1507,"time_ms":15070}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"pc-render","stage":"binoculars","tick":1507,"time_ms":15070}
+{"detail":"","kind":"stage_start","name":"map","ok":null,"source":"pc-render","stage":"map","tick":1507,"time_ms":15070}
+{"detail":"","kind":"action","name":"press_map","ok":null,"source":"pc-render","stage":"map","tick":1507,"time_ms":15070}
+{"detail":"","kind":"verify","name":"map_open","ok":true,"source":"pc-render","stage":"map","tick":1509,"time_ms":15090}
+{"detail":"","kind":"checkpoint","name":"map_open","ok":null,"source":"pc-render","stage":"map","tick":1539,"time_ms":15390}
+{"detail":"","kind":"action","name":"press_map","ok":null,"source":"pc-render","stage":"map","tick":1539,"time_ms":15390}
+{"detail":"","kind":"verify","name":"map_closed","ok":true,"source":"pc-render","stage":"map","tick":1541,"time_ms":15410}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"pc-render","stage":"map","tick":1541,"time_ms":15410}
+{"detail":"","kind":"stage_start","name":"call_icon","ok":null,"source":"pc-render","stage":"call_icon","tick":1541,"time_ms":15410}
+{"detail":"","kind":"action","name":"press_call_icon","ok":null,"source":"pc-render","stage":"call_icon","tick":1541,"time_ms":15410}
+{"detail":"","kind":"verify","name":"call_icon_open","ok":true,"source":"pc-render","stage":"call_icon","tick":1543,"time_ms":15430}
+{"detail":"","kind":"action","name":"press_call_icon","ok":null,"source":"pc-render","stage":"call_icon","tick":1543,"time_ms":15430}
+{"detail":"call 12 -> 13","kind":"verify","name":"call_changed","ok":true,"source":"pc-render","stage":"call_icon","tick":1545,"time_ms":15450}
+{"detail":"","kind":"checkpoint","name":"call_icon_open","ok":null,"source":"pc-render","stage":"call_icon","tick":1545,"time_ms":15450}
+{"detail":"","kind":"verify","name":"call_icon_closed","ok":true,"source":"pc-render","stage":"call_icon","tick":1749,"time_ms":17490}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"pc-render","stage":"call_icon","tick":1749,"time_ms":17490}
+{"detail":"","kind":"stage_start","name":"weapon_picker","ok":null,"source":"pc-render","stage":"weapon_picker","tick":1749,"time_ms":17490}
+{"detail":"","kind":"action","name":"open_weapon_picker","ok":null,"source":"pc-render","stage":"weapon_picker","tick":1749,"time_ms":17490}
+{"detail":"","kind":"verify","name":"weapon_picker_open","ok":true,"source":"pc-render","stage":"weapon_picker","tick":1750,"time_ms":17500}
+{"detail":"","kind":"checkpoint","name":"weapon_picker_open","ok":null,"source":"pc-render","stage":"weapon_picker","tick":1780,"time_ms":17800}
+{"detail":"","kind":"action","name":"close_weapon_picker","ok":null,"source":"pc-render","stage":"weapon_picker","tick":1780,"time_ms":17800}
+{"detail":"","kind":"verify","name":"weapon_picker_closed","ok":true,"source":"pc-render","stage":"weapon_picker","tick":1781,"time_ms":17810}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"pc-render","stage":"weapon_picker","tick":1781,"time_ms":17810}
+{"detail":"","kind":"stage_start","name":"call_picker","ok":null,"source":"pc-render","stage":"call_picker","tick":1781,"time_ms":17810}
+{"detail":"","kind":"action","name":"open_call_picker","ok":null,"source":"pc-render","stage":"call_picker","tick":1781,"time_ms":17810}
+{"detail":"","kind":"verify","name":"call_picker_open","ok":true,"source":"pc-render","stage":"call_picker","tick":1782,"time_ms":17820}
+{"detail":"","kind":"checkpoint","name":"call_picker_open","ok":null,"source":"pc-render","stage":"call_picker","tick":1812,"time_ms":18120}
+{"detail":"","kind":"action","name":"close_call_picker","ok":null,"source":"pc-render","stage":"call_picker","tick":1812,"time_ms":18120}
+{"detail":"","kind":"verify","name":"call_picker_closed","ok":true,"source":"pc-render","stage":"call_picker","tick":1813,"time_ms":18130}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"pc-render","stage":"call_picker","tick":1813,"time_ms":18130}
+{"detail":"","kind":"stage_start","name":"animals_present","ok":null,"source":"pc-render","stage":"animals_present","tick":1813,"time_ms":18130}
+{"detail":"4 alive of 4 placed, 4 expected","kind":"verify","name":"animal_count","ok":true,"source":"pc-render","stage":"animals_present","tick":1813,"time_ms":18130}
+{"detail":"","kind":"checkpoint","name":"end","ok":null,"source":"pc-render","stage":"animals_present","tick":1813,"time_ms":18130}
+{"detail":"","kind":"stage_end","name":"passed","ok":true,"source":"pc-render","stage":"animals_present","tick":1813,"time_ms":18130}
