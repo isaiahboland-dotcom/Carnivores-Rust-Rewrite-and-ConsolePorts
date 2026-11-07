@@ -4,6 +4,8 @@
        width="100%">
 </p>
 
+*Actual gameplay captured from the Rust reimplementation of Carnivores 2 1998. Not footage from the original PC release.*
+
 # Carnivores Classic, rebuilt in Rust for PC, 3DS and beyond
 
 A fan-made, ground-up Rust rewrite of **Carnivores 2** (Action Forms, 1999), with a mod system that can combine community mods automatically, and ports to the **Nintendo 3DS**, the **Wii U**(work in progress) and **PC VR** (work in progress).
