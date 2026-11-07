@@ -28,7 +28,9 @@ use c2_formats::predation::{Diet, Predation, Priority};
 
 use super::{ai, mee, CarnivoreParams, HerbivoreParams, Species};
 
+pub mod bench;
 pub mod run;
+mod scan;
 pub mod step;
 #[cfg(test)]
 mod tests;

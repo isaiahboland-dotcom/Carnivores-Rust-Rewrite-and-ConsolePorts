@@ -6,6 +6,7 @@
 
 #![feature(alloc_error_hook)]
 
+mod bench;
 mod draw2d;
 mod gpu;
 mod hunt;
@@ -559,9 +560,27 @@ fn hunt(
     // 2D, and waiting for the GPU / vsync.
     let mut ms = [0.0f32; 4];
     let ms_of = |t0: u64| ((ticks() - t0) as f64 / TICKS_PER_SEC * 1000.0) as f32;
+    // Frame times for the test script's `prof` (`bench.rs`).
+    let mut frames = bench::Frames::default();
+    let mut sequence: Option<bench::Sequence> = None;
     while io.apt.main_loop() {
         let frame = io.frame;
         let (held, down) = io.keys();
+        // Paused, X: the bench sequence (`bench.rs`), unpaused.
+        if game.hunt.paused && down.contains(KeyPad::X) && sequence.is_none() {
+            sequence = Some(bench::Sequence::new(frame));
+            game.hunt.paused = false;
+        }
+        let cmd = io.script.as_ref().and_then(|s| s.bench(frame)).cloned();
+        if let Some(cmd) = cmd.or_else(|| sequence.as_mut().and_then(|s| s.poll(frame))) {
+            if let Some(m) = bench::run(&cmd, &mut game, &mut frames) {
+                message = Some((m, frame + 240));
+            }
+            if matches!(cmd, bench::Cmd::Done) {
+                sequence = None;
+            }
+            last = ticks();
+        }
         if let Some([x, z, a, b]) = io.script.as_ref().and_then(|s| s.cam(frame)) {
             let p = &mut game.hunt.player;
             p.x = x;
@@ -621,6 +640,7 @@ fn hunt(
         let now = ticks();
         let dt = ((now - last) as f64 / TICKS_PER_SEC) as f32;
         last = now;
+        let frame_ms = dt * 1000.0;
         if dt > 0.0 {
             fps = fps * 0.9 + (1.0 / dt) * 0.1;
         }
@@ -728,6 +748,7 @@ fn hunt(
             for (a, b) in ms.iter_mut().zip([m_upd, m_draw, m_ui, m_wait]) {
                 *a = *a * 0.95 + b * 0.05;
             }
+            frames.add(frame_ms, [m_upd, m_draw, m_ui, m_wait]);
         }
 
         if let Some(m) = io.screenshot(held, down) {

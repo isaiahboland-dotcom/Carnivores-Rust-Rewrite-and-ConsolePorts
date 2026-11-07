@@ -4440,3 +4440,33 @@ The same debug key signs every variant, so updates install over each
 other. Renaming an instance later makes another app; the old one stays
 until uninstalled.
 
+
+## 2026-11-07 — Predation phase 3: one scan per animal
+
+`Predators::think` (every 300 ms) walked the herd up to five times per
+animal: the first animal charging it, then `nearest()` for predator, rival,
+prey and body, each pair with a square root in `senses()`. Now
+`predation/scan.rs` (`Scan::new`) makes one pass per animal. It notes the
+first charger and checks each pair's relations once. Only the kinds the
+animal's goal can turn to are considered (`Wants`: charging only for
+defensive herbivores, prey only for carnivores not busy with the player,
+bodies only for scavengers). The nearest per kind is chosen by squared
+distance, and an animal clearly beyond the senses' reach (`kr > 3`, with a
+1% margin on the squared distance) is dropped before the square root.
+`senses()` itself is unchanged and still decides at the boundary. Ties keep
+the earlier animal, as `min_by` did, so goals are bit-identical.
+`c2-parity predation` kill logs and end-state digests match the previous
+build on Areas 1–5, both priorities, at the stock population and at 20, 40
+and 60 animals.
+
+The cost is measured by `predation/bench.rs` (`fill`, `gather`, `measure`),
+shared by `c2-parity predation --count`, `android-ver/bench-predation.sh`
+and the 3DS (SELECT then X in a hunt, or the `animals` / `prof` / `bench`
+script commands, written to `bench.txt`). On a desktop PC, a 60-animal
+`think()` went from 27 µs mean / 48 µs worst to 15 / 26, about 10% of a herd
+step. Console figures are still to be measured; see
+`docs/PREDATION-PERF.md`.
+
+Still O(n²): a spatial grid would cut it further, but at 60 animals the
+pass is a small part of the step, so it waits for console numbers that
+call for it.

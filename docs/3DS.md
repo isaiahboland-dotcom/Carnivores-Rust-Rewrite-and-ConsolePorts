@@ -109,6 +109,7 @@ saving.
 | turning the console (stealth crouch, while crouched) | aim (gyroscope) |
 | A / B at the leave prompt | yes / no |
 | SELECT | pause (shows fps, memory, and ms per part of a frame) |
+| X while paused | run the predation bench (see Measuring on the console) |
 | L + SELECT | screenshot to `/3ds/c2rs/shots/` |
 | START | leave the hunt (A = yes saves and returns to the menu) |
 
@@ -166,6 +167,20 @@ press a
 wait 150
 shot weapon
 quit
+```
+
+## Measuring on the console
+In a hunt, SELECT (pause) then X runs the predation bench: 20, 40 and 60
+animals, placed and then gathered about the player, with frame times for
+each, then the herd stepped alone. Use an observer hunt (its health
+refills). Results are appended to `bench.txt` beside the packs; method and
+figures are in [PREDATION-PERF.md](PREDATION-PERF.md). The parts are also
+test-script commands, for use once a script has reached a hunt:
+```
+animals 60          # make the main population 60 (as the game places them)
+animals 60 12       # ... and move them within 12 cells of the player
+prof NAME           # a line of frame times since the last command
+bench 20,40,60 30   # the herd alone, 30 s per count, predation on and off
 ```
 
 ## How it draws

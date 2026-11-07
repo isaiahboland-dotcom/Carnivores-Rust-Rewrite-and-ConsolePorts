@@ -45,7 +45,13 @@ impl Herd {
 
     /// Adds a character, unless its species has no model (a cooked pack
     /// with only some species, or a `.CAR` that failed to load).
-    fn spawn(&mut self, ctype: usize, pos: [f32; 3], rng: &mut MsRand, opt_agres: i32) -> bool {
+    pub(crate) fn spawn(
+        &mut self,
+        ctype: usize,
+        pos: [f32; 3],
+        rng: &mut MsRand,
+        opt_agres: i32,
+    ) -> bool {
         // No model, or (dialect data) an AI family not implemented yet.
         if self
             .species

@@ -10,12 +10,18 @@
 //! shot NAME           # save shots/NAME.tga
 //! cam X Z ALPHA BETA   # put the hunter there (world units, radians), paused
 //! tap X Y             # tap the bottom screen at pixel (X, Y)
+//! animals 60 [CELLS]  # in a hunt: 60 animals, or 60 within CELLS of you
+//! prof NAME           # in a hunt: frame times since the last command
+//! bench 20,40,60 [S]  # in a hunt: the herd alone, S seconds per count
 //! quit
 //! ```
+//! The last three write to `bench.txt` (`bench.rs`).
 
 use std::io::Write;
 
 use ctru::prelude::KeyPad;
+
+use crate::bench::Cmd;
 
 /// Writes the top screen (400x240) as a TGA, and the bottom one (320x240)
 /// next to it as `<name>_b.tga`.
@@ -69,6 +75,7 @@ enum Step {
     /// Put the hunter at world (x, z) looking (alpha, beta) and pause.
     Cam([f32; 4]),
     Tap(f32, f32),
+    Bench(crate::bench::Cmd),
     Quit,
 }
 
@@ -117,6 +124,20 @@ impl Script {
                 "press" => (Step::Press(keys(a.unwrap_or(""))), 2),
                 "shot" => (Step::Shot(a.unwrap_or("shot").to_string()), 1),
                 "quit" => (Step::Quit, 1),
+                "animals" => {
+                    let near = b.and_then(|v| v.parse().ok());
+                    (Step::Bench(Cmd::Animals(n(a) as usize, near)), 1)
+                }
+                "prof" => (Step::Bench(Cmd::Prof(a.unwrap_or("prof").to_string())), 1),
+                "bench" => {
+                    let counts = a
+                        .unwrap_or("20,40,60")
+                        .split(',')
+                        .filter_map(|v| v.trim().parse().ok())
+                        .collect();
+                    let secs = b.and_then(|v| v.parse().ok()).unwrap_or(60);
+                    (Step::Bench(Cmd::Herd(counts, secs)), 1)
+                }
                 "tap" => {
                     let n = |s: Option<&str>| s.and_then(|v| v.parse().ok()).unwrap_or(0.0);
                     (Step::Tap(n(a), n(b)), 2)
@@ -172,6 +193,13 @@ impl Script {
     pub fn tap(&self, frame: u32) -> Option<(f32, f32)> {
         match self.current(frame) {
             Some((at, Step::Tap(x, y))) if *at == frame => Some((*x, *y)),
+            _ => None,
+        }
+    }
+
+    pub fn bench(&self, frame: u32) -> Option<&Cmd> {
+        match self.current(frame) {
+            Some((at, Step::Bench(c))) if *at == frame => Some(c),
             _ => None,
         }
     }

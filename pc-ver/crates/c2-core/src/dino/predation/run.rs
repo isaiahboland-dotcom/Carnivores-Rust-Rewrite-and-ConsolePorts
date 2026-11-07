@@ -10,9 +10,7 @@
 //! A hunted or charged animal is an [`TargetKind::Animal`] target, which the
 //! AI strikes without its hunter-kill clip; the rest are places.
 //!
-//! Senses follow `CheckAfraid` (`wildlife.rs`) without its look traces,
-//! which are too costly for every pair: the distance is doubled instead, for
-//! the cover they would find. Hearing is added for a running animal.
+//! What an animal senses around it is found in one pass ([`Scan`]).
 
 #[cfg(not(feature = "std"))]
 #[allow(unused_imports)]
@@ -23,14 +21,15 @@ use alloc::{vec, vec::Vec};
 
 use c2_formats::predation::Priority;
 
-use super::{Drive, Kind, Rel, Role, Rules};
+use super::scan::{dist2, Scan, Wants};
+use super::{Drive, Kind, Role, Rules};
 use crate::dino::mee::KillType;
 use crate::dino::{
     ai, hunt, trex, CarnivoreParams, Character, Ctx, HunterView, Species, Target, TargetKind,
 };
 
 /// How often goals are re-picked, ms.
-const THINK_MS: i32 = 300;
+pub const THINK_MS: i32 = 300;
 /// A predator gives up a chase this many cells beyond its view.
 const CHASE_CELLS: f32 = 1.5;
 /// A charge lasts 5 to 10 seconds; then charging rests for 20.
@@ -136,49 +135,6 @@ impl Steer {
 pub struct Predators {
     pub rules: Rules,
     since: i32,
-}
-
-fn dist2(a: &Character, b: &Character) -> f32 {
-    let (dx, dz) = (a.pos[0] - b.pos[0], a.pos[2] - b.pos[2]);
-    dx * dx + dz * dz
-}
-
-/// Whether `o` notices `t` (alive), or smells `t`'s body.
-fn senses(o: &Character, t: &Character, sp: &Species, view_r: i32) -> bool {
-    let d = [
-        t.pos[0] - o.pos[0],
-        t.pos[1] - o.pos[1],
-        t.pos[2] - o.pos[2],
-    ];
-    let rl = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-    let kr = 2.0 * rl / 256.0 / (32.0 + view_r as f32 / 2.0);
-    if kr > 3.0 {
-        return false;
-    }
-    if rl <= 0.0 {
-        return true;
-    }
-    let klook = -(o.lookx * d[0] + o.lookz * d[2]) / rl;
-    let face = (klook + 3.0) / 3.0;
-    let i = &sp.info;
-    if t.health == 0 {
-        return kr * 0.75 / i.smell_k.max(1e-3) < 1.0;
-    }
-    let mut k_look = kr * face * 0.7;
-    if klook > 0.3 {
-        k_look *= 2.0;
-    }
-    if klook > 0.8 {
-        k_look *= 2.0;
-    }
-    k_look /= i.look_k.max(1e-3);
-    let k_smell = kr * face / i.smell_k.max(1e-3);
-    let k_hear = if t.state != 0 {
-        kr * 2.0 / i.hear_k.max(1e-3)
-    } else {
-        f32::INFINITY
-    };
-    k_look.min(k_smell).min(k_hear) < 1.0
 }
 
 /// The clip a carnivore eats a kill with: the ground-feeding one the
@@ -317,27 +273,8 @@ impl Predators {
     }
 
     /// Whether `c` takes no part right now.
-    fn idle(c: &Character) -> bool {
+    pub(super) fn idle(c: &Character) -> bool {
         c.health == 0 || c.state_f == 0xff || c.wave > 0 || c.lure.is_some()
-    }
-
-    /// The nearest other character that `pred` holds of, and `i` senses.
-    fn nearest(
-        &self,
-        i: usize,
-        chars: &[Character],
-        species: &[Species],
-        view_r: i32,
-        pred: impl Fn(usize, &Character) -> bool,
-    ) -> Option<usize> {
-        let c = &chars[i];
-        let sp = species.get(c.ctype)?;
-        chars
-            .iter()
-            .enumerate()
-            .filter(|&(j, t)| j != i && t.state_f != 0xff && pred(j, t) && senses(c, t, sp, view_r))
-            .min_by(|a, b| dist2(c, a.1).total_cmp(&dist2(c, b.1)))
-            .map(|(j, _)| j)
     }
 
     fn pick(&self, i: usize, chars: &[Character], species: &[Species], ctx: &Ctx<'_>) -> Goal {
@@ -356,11 +293,12 @@ impl Predators {
                 .is_some_and(|x| x.health != 0 && !Self::idle(x))
         };
         let r = &self.rules;
-        let vr = ctx.view_r;
+        // A carnivore after the player, with the hunter first, neither
+        // hunts nor scavenges.
+        let busy = r.priority == Priority::Hunter && c.aware_hunter && c.state != 0;
+        let near = Scan::new(i, chars, species, r, ctx.view_r, Wants::for_kind(k, busy));
         // Being charged, or a predator (or a bigger rival) close by.
-        if let Some(j) =
-            (0..chars.len()).find(|&j| alive(j) && chars[j].predation.goal == Goal::Charge(i))
-        {
+        if let Some(j) = near.charger {
             return Goal::Flee(j);
         }
         if let Goal::Flee(j) = t.goal {
@@ -369,15 +307,10 @@ impl Predators {
                 return t.goal;
             }
         }
-        if let Some(j) = self.nearest(i, chars, species, vr, |j, x| {
-            let m = menace(i, x);
-            alive(j) && r.rel(x.ctype, c.ctype) == Rel::Hunts && dist2(c, x) < m * m
-        }) {
+        if let Some(j) = near.predator() {
             return Goal::Flee(j);
         }
-        if let Some(j) = self.nearest(i, chars, species, vr, |j, x| {
-            alive(j) && r.rel(c.ctype, x.ctype) == Rel::Yields
-        }) {
+        if let Some(j) = near.yielder() {
             let p = chars[j].pos;
             return Goal::Run([p[0], p[2]]);
         }
@@ -392,29 +325,22 @@ impl Predators {
             return Goal::None;
         }
         if k.defensive {
-            if let Some(j) = self.nearest(i, chars, species, vr, |j, x| {
-                alive(j) && r.rel(c.ctype, x.ctype) == Rel::Charges
-            }) {
+            if let Some(j) = near.charged() {
                 return Goal::Charge(j);
             }
         }
-        if k.role == Role::Carnivore {
-            let busy = r.priority == Priority::Hunter && c.aware_hunter && c.state != 0;
-            if !busy {
-                let give_up = vr as f32 * 256.0 * CHASE_CELLS;
-                if let Goal::Hunt(j) = t.goal {
-                    if alive(j) && dist2(c, &chars[j]) < give_up * give_up {
-                        return t.goal;
-                    }
-                }
-                if let Some(j) = self.nearest(i, chars, species, vr, |j, x| {
-                    alive(j) && r.rel(c.ctype, x.ctype) == Rel::Hunts
-                }) {
-                    return Goal::Hunt(j);
+        if k.role == Role::Carnivore && !busy {
+            let give_up = ctx.view_r as f32 * 256.0 * CHASE_CELLS;
+            if let Goal::Hunt(j) = t.goal {
+                if alive(j) && dist2(c, &chars[j]) < give_up * give_up {
+                    return t.goal;
                 }
             }
+            if let Some(j) = near.prey() {
+                return Goal::Hunt(j);
+            }
         }
-        if k.scavenger && !(r.priority == Priority::Hunter && c.aware_hunter && c.state != 0) {
+        if k.scavenger && !busy {
             let body = |j: usize, x: &Character| {
                 x.health == 0
                     && !x.predation.eaten
@@ -426,7 +352,7 @@ impl Predators {
                     return t.goal;
                 }
             }
-            if let Some(j) = self.nearest(i, chars, species, vr, body) {
+            if let Some(j) = near.body() {
                 return Goal::Scavenge(j);
             }
         }
@@ -587,7 +513,7 @@ impl Predators {
 /// How close predator `x` must be for character `i` to run from it: any
 /// distance when it is after `i`, [`CALM_FLEE_RANGE`] while it eats, rests
 /// or chases another animal, else [`FLEE_RANGE`].
-fn menace(i: usize, x: &Character) -> f32 {
+pub(super) fn menace(i: usize, x: &Character) -> f32 {
     let t = &x.predation;
     match t.goal {
         Goal::Hunt(n) | Goal::Charge(n) if n == i => f32::INFINITY,

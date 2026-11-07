@@ -435,5 +435,6 @@ fn a_charging_herbivore_gores_without_its_kill_clip() {
     assert_eq!(h.chars[1].predation.eat_phase, None);
 }
 
+mod bench;
 mod regressions;
 mod targets;
