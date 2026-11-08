@@ -364,6 +364,7 @@ impl Launcher {
             return;
         }
         self.cfg.remembered.retain(|u| u.path != path);
+        self.cfg.accepted_bases.remove(path);
         self.cfg.instance_builds.remove(path);
         self.cfg.playtime.remove(path);
         if self.cfg.recipe.as_ref().is_some_and(|u| u.path == path) {

@@ -71,6 +71,7 @@ impl Launcher {
                     r,
                     game,
                     &crate::config::data_dir().join("recipes"),
+                    self.cfg.base_accepted(&r.path, r.game.as_deref()),
                 ) {
                     Ok(input) => input,
                     Err(e) => {
@@ -184,6 +185,7 @@ impl Launcher {
                 r,
                 &games,
                 &crate::config::data_dir().join("recipes"),
+                self.cfg.base_accepted(&r.path, r.game.as_deref()),
             ) else {
                 return Vec::new();
             };
@@ -286,6 +288,7 @@ impl Launcher {
                 r,
                 &games,
                 &crate::config::data_dir().join("recipes"),
+                self.cfg.base_accepted(&r.path, r.game.as_deref()),
             ) {
                 Ok(input) => input,
                 Err(e) => {

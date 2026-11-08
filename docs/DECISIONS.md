@@ -4740,3 +4740,30 @@ Found by comparing the original engine's regression screenshots with ours.
 - `Predators::settle` now drops the goal of a dead actor before anything
   else. Picking goals less often stays as it is (it keeps the scans cheap).
 
+## 2026-11-07 — Launch protection fails closed; "Use this game anyway" is kept
+
+Source audit findings L1 and L2 (v0.5.0).
+
+- A recipe that names a base whose hash list is missing, malformed or lists
+  nothing used to show "not checked" or "ok (0 files)" and play. It now
+  blocks Play and the builds, with no override: the fix is to restore
+  `recipes/bases/<id>.toml`, or to remove `base` from the recipe, which means
+  any game. `c2_mods::recipe::read_base` is the strict loader; `load_base`
+  stays lenient for callers that only read a base's details (APK, file count).
+  A list with neither files nor `apk` is a parse error, since `Base` is
+  `#[serde(default)]` and a misspelt `[files]` table parsed as empty.
+- `c2-pc play --recipe`, `recipe build` and `recipe verify` now fail on a
+  base mismatch instead of printing and going on. `--accept-base` lets a
+  differing (non-APK) game through; it never covers a missing or broken list
+  or a game not built from the recipe's APK. This replaces the 2026-11-05 note
+  that `recipe verify` only warns.
+- The launcher runs c2-pc for Play, Android and combined console builds, so
+  it passes `--accept-base` when the player ticked **Use this game anyway**.
+  The choice is saved per instance (`Config::accepted_bases`: instance ->
+  game folder) and applies only while the instance uses that folder; a
+  different folder is checked afresh, and a game that matches clears it. It
+  lives apart from `RecipeUse` because several paths rebuild that from
+  scratch (the editor, Fix missing, cloning).
+- c2-cook (3DS, Wii U) takes the game as given and does not check base
+  hashes; the launcher's recipe page is the check before those builds.
+

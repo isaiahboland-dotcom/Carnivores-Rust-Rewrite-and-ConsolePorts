@@ -190,6 +190,7 @@ impl Launcher {
             args.extend(["--overlay".into(), overlay.display().to_string()]);
         }
         args.extend(r.mods_args());
+        args.extend(self.cfg.accept_base_args(r));
         args.extend(["--out".into(), work.display().to_string()]);
         let out = self
             .cfg

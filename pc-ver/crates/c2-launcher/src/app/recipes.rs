@@ -16,6 +16,7 @@ impl Launcher {
         let candidates = self.base_candidates();
         match crate::recipe_page::Page::open(&path, self.cfg.remembered(&path), dirs, candidates) {
             Ok(mut p) => {
+                p.set_accepted(self.cfg.accepted_bases.get(&path).cloned());
                 p.scan(self.cfg.search_dirs());
                 p.dispatch(&mut self.job);
                 self.ui.recipe_page = Some(p);
@@ -41,6 +42,15 @@ impl Launcher {
         let games = self.recipe_game_with_overlays(&u);
         u.game = games.first().cloned();
         u.overlays = Some(games.into_iter().skip(1).collect());
+        // "Use this game anyway" kept for this game folder only.
+        match (p.base_accepted_game(), &u.game) {
+            (Some(_), Some(g)) => {
+                self.cfg.accepted_bases.insert(u.path.clone(), g.clone());
+            }
+            _ => {
+                self.cfg.accepted_bases.remove(&u.path);
+            }
+        }
         self.take_settings(&p.recipe.settings, &u.path, &p.recipe.recipe.id);
         self.cfg.remember(&u);
         self.ui.note = Some((

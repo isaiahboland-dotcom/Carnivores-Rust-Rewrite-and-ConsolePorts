@@ -268,6 +268,11 @@ pub struct Config {
     /// The folders each recipe was last given, so an instance plays again
     /// without being set up again.
     pub remembered: Vec<RecipeUse>,
+    /// Instance -> the game folder the player chose to use although its
+    /// files differ from the recipe's base ("Use this game anyway"), so
+    /// the choice isn't asked again each launch. Only that folder: another
+    /// game is checked afresh.
+    pub accepted_bases: BTreeMap<PathBuf, PathBuf>,
     /// Local output paths and packaging choices, separate from shareable recipes.
     pub instance_builds: BTreeMap<PathBuf, InstanceBuilds>,
     /// Where an instance's downloads are looked for, besides the ones it
@@ -445,6 +450,21 @@ impl Config {
             .iter()
             .chain(&self.remembered)
             .find(|u| u.path == path)
+    }
+
+    /// Whether the player accepted `game` for the instance at `path`
+    /// although it differs from the recipe's base.
+    pub fn base_accepted(&self, path: &Path, game: Option<&Path>) -> bool {
+        game.is_some_and(|g| self.accepted_bases.get(path).is_some_and(|a| a == g))
+    }
+
+    /// `--accept-base` for c2-pc when the instance's game was accepted.
+    pub fn accept_base_args(&self, u: &RecipeUse) -> Vec<String> {
+        if self.base_accepted(&u.path, u.game.as_deref()) {
+            vec!["--accept-base".into()]
+        } else {
+            Vec::new()
+        }
     }
 
     /// Remembers a recipe's folders (the newest kept).

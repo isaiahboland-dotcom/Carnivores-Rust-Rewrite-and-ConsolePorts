@@ -201,52 +201,75 @@ pub fn run(args: &[String], bases: Vec<PathBuf>, out: Option<&str>, write: bool)
 }
 
 /// Verifies a recipe; returns the located mods, printing a report.
+/// `accept_base`: the player chose to use a game whose files differ from
+/// the recipe's base (another version of it); a missing or broken hash
+/// list and a game not built from the recipe's APK are never accepted.
 fn verify(
     recipe_path: &Path,
     r: &c2_mods::recipe::Recipe,
     bases: &[PathBuf],
     mods_dirs: &[PathBuf],
+    accept_base: bool,
 ) -> Result<Verified> {
-    use c2_mods::recipe::{check_apk, check_base, load_base, locate};
+    use c2_mods::recipe::{check_apk, check_base, locate, read_base};
     let v = c2_mods::pack::vanilla_files(bases)?;
     println!(
         "recipe {} — {} {}",
         r.recipe.id, r.recipe.name, r.recipe.version
     );
-    let apk = load_base(recipe_path, r).and_then(|b| {
-        let game = bases.first()?;
-        check_apk(&b, game)
-    });
-    match load_base(recipe_path, r) {
-        Some(_) if apk == Some(true) => {
-            println!("  base '{}': ok (built from that APK)", r.recipe.base);
+    let name = &r.recipe.base;
+    let base_problem = match read_base(recipe_path, r) {
+        Err(e) => {
+            println!("  base '{name}': {e}");
+            Some(format!(
+                "Recipe '{}': {e}. Restore the hash list, or remove `base` from the recipe to allow any game.",
+                r.recipe.id
+            ))
         }
-        Some(_) if apk == Some(false) => println!(
-            "  base '{}': not built from that APK (c2-pc mobile-base APK --out DIR; another version differs)",
-            r.recipe.base
-        ),
-        Some(b) => {
-            let (missing, bad) = check_base(&b, &v);
-            if missing.is_empty() && bad.is_empty() {
-                println!("  base '{}': ok ({} files)", r.recipe.base, b.files.len());
-            } else {
+        Ok(None) => None,
+        Ok(Some(b)) => match bases.first().and_then(|g| check_apk(&b, g)) {
+            Some(true) => {
+                println!("  base '{name}': ok (built from that APK)");
+                None
+            }
+            Some(false) => {
                 println!(
-                    "  base '{}': {} missing, {} different (a different game version or edited files)",
-                    r.recipe.base,
-                    missing.len(),
-                    bad.len()
+                    "  base '{name}': not built from that APK (c2-pc mobile-base APK --out DIR; another version differs)"
                 );
-                for p in missing.iter().chain(&bad).take(10) {
-                    println!("    {p}");
+                Some(format!(
+                    "Recipe '{}' needs its own converted APK base. Select or build that APK on the recipe page; the current game is not the APK recorded by this recipe.",
+                    r.recipe.id
+                ))
+            }
+            None => {
+                let (missing, bad) = check_base(&b, &v);
+                if missing.is_empty() && bad.is_empty() {
+                    println!("  base '{name}': ok ({} files)", b.files.len());
+                    None
+                } else {
+                    println!(
+                        "  base '{name}': {} missing, {} different (a different game version or edited files)",
+                        missing.len(),
+                        bad.len()
+                    );
+                    for p in missing.iter().chain(&bad).take(10) {
+                        println!("    {p}");
+                    }
+                    if accept_base {
+                        println!("    used anyway (--accept-base)");
+                        None
+                    } else {
+                        Some(format!(
+                            "The game isn't recipe '{}''s base '{name}' ({} missing, {} different). Choose the right game, or pass --accept-base if it is another version of the same game.",
+                            r.recipe.id,
+                            missing.len(),
+                            bad.len()
+                        ))
+                    }
                 }
             }
-        }
-        None if r.recipe.base.is_empty() => {}
-        None => println!(
-            "  base '{}': no hash list found, not checked",
-            r.recipe.base
-        ),
-    }
+        },
+    };
     let found = locate(r, mods_dirs);
     let overlays = c2_mods::recipe::locate_games(&r.overlays, mods_dirs);
     let games = c2_mods::recipe::locate_games(&r.standalones, mods_dirs);
@@ -280,6 +303,7 @@ fn verify(
         mods: found,
         overlays,
         games,
+        base_problem,
     })
 }
 
@@ -288,6 +312,8 @@ pub struct Verified {
     pub mods: Vec<c2_mods::recipe::Located>,
     pub overlays: Vec<c2_mods::recipe::Located>,
     pub games: Vec<c2_mods::recipe::Located>,
+    /// Why the game can't be used as the recipe's base, if it can't.
+    pub base_problem: Option<String>,
 }
 
 impl Verified {
@@ -321,15 +347,12 @@ pub fn build_recipe(
     mods_dirs: &[PathBuf],
     balance_file: Option<&Path>,
     out: &Path,
+    accept_base: bool,
 ) -> Result<()> {
     let r = c2_mods::recipe::Recipe::load(recipe_path)?;
-    let found = verify(recipe_path, &r, bases, mods_dirs)?;
-    if let Some(base) = c2_mods::recipe::load_base(recipe_path, &r) {
-        anyhow::ensure!(
-            bases.first().and_then(|g| c2_mods::recipe::check_apk(&base, g)) != Some(false),
-            "Recipe '{}' needs its own converted APK base. Select or build that APK on the recipe page; the current game is not the APK recorded by this recipe.",
-            r.recipe.id
-        );
+    let found = verify(recipe_path, &r, bases, mods_dirs, accept_base)?;
+    if let Some(e) = &found.base_problem {
+        bail!("{e}");
     }
 
     // The recipe's own overlays, when it lists them, over the given game.
@@ -413,6 +436,9 @@ pub struct RecipeArgs<'a> {
     pub base_id: Option<&'a str>,
     /// `recipe new --standalone DIR`: standalone games to pin.
     pub standalones: Vec<PathBuf>,
+    /// `--accept-base`: use a game whose files differ from the recipe's
+    /// base (another version of it).
+    pub accept_base: bool,
 }
 
 /// `c2-pc recipe verify|build|new|base ...`.
@@ -426,8 +452,10 @@ pub fn run_recipe(args: &[String], a: &RecipeArgs<'_>) -> Result<()> {
         "verify" => {
             let p = first()?;
             let r = c2_mods::recipe::Recipe::load(&p)?;
-            let found = verify(&p, &r, bases, &mods_dirs(&r, &a.mods)?)?;
-            if found.complete() {
+            let found = verify(&p, &r, bases, &mods_dirs(&r, &a.mods)?, a.accept_base)?;
+            if let Some(e) = &found.base_problem {
+                bail!("{e}")
+            } else if found.complete() {
                 println!("everything matches; `recipe build` will work");
                 Ok(())
             } else {
@@ -438,7 +466,14 @@ pub fn run_recipe(args: &[String], a: &RecipeArgs<'_>) -> Result<()> {
             let p = first()?;
             let r = c2_mods::recipe::Recipe::load(&p)?;
             let out = PathBuf::from(a.out.context("--out DIR is required")?);
-            build_recipe(&p, bases, &mods_dirs(&r, &a.mods)?, None, &out)
+            build_recipe(
+                &p,
+                bases,
+                &mods_dirs(&r, &a.mods)?,
+                None,
+                &out,
+                a.accept_base,
+            )
         }
         "new" => {
             let id = a.id.context("--id ID is required")?;
@@ -512,5 +547,55 @@ fn write_new(out: Option<&str>, text: &str) -> Result<()> {
             eprintln!("wrote {}", p.display());
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A game whose one data file differs from the recipe's base `sa`;
+    /// `with_list`: whether `bases/sa.toml` exists.
+    fn fixture(name: &str, with_list: bool) -> (PathBuf, PathBuf, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("c2rs-cli-{name}-{}", std::process::id()));
+        let h = dir.join("game/HUNTDAT");
+        std::fs::create_dir_all(&h).expect("game");
+        std::fs::write(h.join("X.CAR"), b"zz").expect("file");
+        if with_list {
+            std::fs::create_dir_all(dir.join("bases")).expect("bases");
+            let list = format!(
+                "[base]\nid = \"sa\"\n\n[files]\n\"HUNTDAT/X.CAR\" = \"{}\"\n",
+                c2_mods::recipe::sha256(b"sa")
+            );
+            std::fs::write(dir.join("bases/sa.toml"), list).expect("list");
+        }
+        let recipe = dir.join("sa.toml");
+        std::fs::write(&recipe, "[recipe]\nid = \"sa\"\nbase = \"sa\"\n").expect("recipe");
+        (dir.clone(), recipe, dir.join("game"))
+    }
+
+    fn problem(recipe: &Path, game: &Path, accept: bool) -> Option<String> {
+        let r = c2_mods::recipe::Recipe::load(recipe).expect("load");
+        verify(recipe, &r, &[game.to_path_buf()], &[], accept)
+            .expect("verify")
+            .base_problem
+    }
+
+    #[test]
+    fn a_different_game_is_refused_unless_accepted() {
+        let (dir, recipe, game) = fixture("mismatch", true);
+        let refused = problem(&recipe, &game, false);
+        let accepted = problem(&recipe, &game, true);
+        std::fs::remove_dir_all(&dir).expect("clean");
+        assert!(refused.is_some_and(|e| e.contains("--accept-base")));
+        assert_eq!(accepted, None);
+    }
+
+    #[test]
+    fn a_missing_hash_list_is_refused_even_when_accepted() {
+        let (dir, recipe, game) = fixture("nolist", false);
+        let refused = problem(&recipe, &game, true);
+        std::fs::remove_dir_all(&dir).expect("clean");
+        assert!(refused.is_some_and(|e| e.contains("not found")));
     }
 }

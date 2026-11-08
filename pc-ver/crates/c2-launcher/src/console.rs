@@ -13,7 +13,15 @@ pub struct RecipeInput {
 }
 
 impl RecipeInput {
-    pub fn new(recipe: &RecipeUse, games: &[PathBuf], work: &Path) -> Result<Self, String> {
+    /// `accept_base`: the player chose to use this game although it
+    /// differs from the recipe's base (`--accept-base` for the c2-pc
+    /// merge; the console cookers take the game as given).
+    pub fn new(
+        recipe: &RecipeUse,
+        games: &[PathBuf],
+        work: &Path,
+        accept_base: bool,
+    ) -> Result<Self, String> {
         let source = c2_mods::recipe::Recipe::load(&recipe.path).map_err(|e| e.to_string())?;
         let base = games.first().ok_or("Set the instance's base game first.")?;
         let overlays: Vec<String> = games
@@ -41,6 +49,9 @@ impl RecipeInput {
             ];
             args.extend(overlays);
             args.extend(recipe.mods_args());
+            if accept_base {
+                args.push("--accept-base".into());
+            }
             args.extend(["--out".into(), game.display().to_string()]);
             Ok(Self {
                 game,
@@ -87,7 +98,7 @@ mod tests {
             ..Default::default()
         };
         let games = [PathBuf::from("base game"), PathBuf::from("engine overlay")];
-        let direct = RecipeInput::new(&recipe, &games, &dir).expect("direct input");
+        let direct = RecipeInput::new(&recipe, &games, &dir, false).expect("direct input");
         assert_eq!(direct.game, games[0]);
         assert!(direct.prepare(None).expect("no merge needed").is_empty());
         assert!(direct
@@ -103,7 +114,7 @@ mod tests {
             ..Default::default()
         });
         std::fs::write(&recipe.path, source.to_toml()).expect("combined fixture");
-        let combined = RecipeInput::new(&recipe, &games, &dir).expect("combined input");
+        let combined = RecipeInput::new(&recipe, &games, &dir, false).expect("combined input");
         assert_eq!(combined.game, dir.join("test-instance"));
         assert!(combined.extra.is_empty());
         assert!(combined.prepare(None).is_err());
@@ -111,7 +122,7 @@ mod tests {
         assert!(
             matches!(&steps[..], [Step::Run { args, .. }] if args.windows(2).any(|a| a == ["--overlay", "engine overlay"]))
         );
-        assert!(RecipeInput::new(&recipe, &[], &dir).is_err());
+        assert!(RecipeInput::new(&recipe, &[], &dir, false).is_err());
         std::fs::remove_dir_all(dir).expect("clean fixture");
     }
 }

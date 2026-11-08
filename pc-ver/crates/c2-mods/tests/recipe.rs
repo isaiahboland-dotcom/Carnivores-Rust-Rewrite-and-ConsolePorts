@@ -312,3 +312,43 @@ fn pinned_collection_keeps_each_animals_donor_art_separate() {
     assert!(!out.join("HUNTDAT/UNPINNED.CAR").exists());
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// Launch protection fails closed: a recipe naming a base whose hash list
+/// is missing, malformed or lists nothing is an error, never "not checked".
+#[test]
+fn a_missing_or_broken_hash_list_is_an_error() {
+    use c2_mods::recipe::{load_base, read_base};
+    let root = tmp("strict-base");
+    write(
+        &root,
+        &[
+            ("bases/bad.toml", b"[base\nid = "),
+            (
+                "bases/empty.toml",
+                b"[base]\nid = \"empty\"\n\n[file]\n\"A\" = \"x\"\n",
+            ),
+            (
+                "bases/apk.toml",
+                b"[base]\nid = \"apk\"\napk = \"sha256:00\"\n",
+            ),
+            (
+                "bases/ok.toml",
+                b"[base]\nid = \"ok\"\n\n[files]\n\"A\" = \"x\"\n",
+            ),
+        ],
+    );
+    let recipe = root.join("r.toml");
+    let named = |base: &str| {
+        Recipe::parse(&format!("[recipe]\nid = \"r\"\nbase = \"{base}\"\n")).expect("parse")
+    };
+    for base in ["gone", "bad", "empty"] {
+        let r = named(base);
+        assert!(read_base(&recipe, &r).is_err(), "{base} must not pass");
+        assert!(load_base(&recipe, &r).is_none());
+    }
+    assert!(read_base(&recipe, &named("apk")).is_ok_and(|b| b.is_some()));
+    assert!(read_base(&recipe, &named("ok")).is_ok_and(|b| b.is_some_and(|b| b.files.len() == 1)));
+    let any = Recipe::parse("[recipe]\nid = \"r\"\n").expect("parse");
+    assert_eq!(read_base(&recipe, &any), Ok(None), "no base: any game");
+    let _ = std::fs::remove_dir_all(&root);
+}

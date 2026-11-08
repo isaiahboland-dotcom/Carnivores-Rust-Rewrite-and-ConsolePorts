@@ -17,6 +17,9 @@ use crate::pack::{load_loose, mod_root, open_root, BuildOptions, ModSource};
 use crate::res_merge::diff;
 use crate::ModError;
 
+mod base;
+pub use base::*;
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Recipe {
@@ -225,32 +228,6 @@ pub struct Resolve {
 pub struct PatchRef {
     pub target: String,
     pub patch: String,
-}
-
-/// A base game's file list (`recipes/bases/*.toml`).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct Base {
-    pub base: BaseInfo,
-    pub files: BTreeMap<String, String>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct BaseInfo {
-    pub id: String,
-    pub note: String,
-    /// Who made the game and where it is downloaded (a standalone game as
-    /// the base).
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub credit: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub url: String,
-    /// `sha256:<hex>` of the APK the base is built from (README M17): the
-    /// game folder `mobile_base::build` made from it records the same in
-    /// [`crate::mobile_base::SOURCE_APK`]. `files` is then empty.
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub apk: String,
 }
 
 impl Recipe {
@@ -673,84 +650,6 @@ fn locate_among(list: &[RecipeMod], cands: &[Cand]) -> Vec<Located> {
                 })
         })
         .collect()
-}
-
-/// The base profile `bases/<base>.toml` beside the recipe or a folder above it, if any.
-pub fn load_base(recipe_path: &Path, r: &Recipe) -> Option<Base> {
-    if r.recipe.base.is_empty() {
-        return None;
-    }
-    // Beside the recipe, or beside a folder above it (a recipe in
-    // `recipes/instances/...` uses `recipes/bases/`).
-    let name = format!("{}.toml", r.recipe.base);
-    let text = recipe_path
-        .ancestors()
-        .skip(1)
-        .take(8)
-        .find_map(|d| std::fs::read_to_string(d.join("bases").join(&name)).ok())?;
-    toml::from_str(&text).ok()
-}
-
-/// For a base built from an APK (`apk` set): whether the game folder `game`
-/// was built from that APK (`None` for other bases).
-pub fn check_apk(base: &Base, game: &Path) -> Option<bool> {
-    if base.base.apk.is_empty() {
-        return None;
-    }
-    let got = std::fs::read_to_string(game.join(crate::mobile_base::SOURCE_APK)).ok();
-    Some(got.is_some_and(|g| g.trim().eq_ignore_ascii_case(base.base.apk.trim())))
-}
-
-/// `sha256:<hex>` of a file, read in pieces (APKs are hundreds of MiB).
-pub fn sha256_file(path: &Path) -> std::io::Result<String> {
-    use std::io::Read;
-    let mut f = std::fs::File::open(path)?;
-    let mut h = Sha256::new();
-    let mut buf = vec![0u8; 1 << 20];
-    loop {
-        let n = f.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        h.update(&buf[..n]);
-    }
-    let mut s = String::from("sha256:");
-    for b in h.finalize() {
-        s.push_str(&format!("{b:02x}"));
-    }
-    Ok(s)
-}
-
-/// Base files missing or different in the user's game: `(missing, mismatched)`.
-pub fn check_base(base: &Base, vanilla: &Vfs) -> (Vec<String>, Vec<String>) {
-    let (mut missing, mut mismatched) = (Vec::new(), Vec::new());
-    for (path, want) in &base.files {
-        match vanilla.read(path) {
-            Err(_) => missing.push(path.clone()),
-            Ok(d) => {
-                if !sha256(&d).eq_ignore_ascii_case(want) {
-                    mismatched.push(path.clone());
-                }
-            }
-        }
-    }
-    (missing, mismatched)
-}
-
-/// A base profile listing every data file of `vanilla`.
-pub fn base_profile(id: &str, note: &str, vanilla: &Vfs) -> Result<Base, ModError> {
-    let mut files = BTreeMap::new();
-    for (_, r) in vanilla.files() {
-        files.insert(r.path.clone(), sha256(&vanilla.read(&r.path)?));
-    }
-    Ok(Base {
-        base: BaseInfo {
-            id: id.into(),
-            note: note.into(),
-            ..Default::default()
-        },
-        files,
-    })
 }
 
 /// A recipe for these mods (as loaded), pinning every file they use.

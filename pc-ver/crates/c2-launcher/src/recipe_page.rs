@@ -69,6 +69,9 @@ pub struct Page {
     pub path: PathBuf,
     pub recipe: Recipe,
     base: Option<Base>,
+    /// The recipe names a base whose hash list is missing or broken: the
+    /// game can't be checked, so it is never played (no "anyway").
+    base_error: Option<String>,
     /// The recipe's own game folder; `None`: the Game tab's game with its
     /// overlays.
     pub game: Option<PathBuf>,
@@ -91,6 +94,9 @@ pub struct Page {
     /// The player chose to play a game whose files differ from the
     /// recipe's base (another version of it).
     pub accept_base: bool,
+    /// The game folder the player accepted before (kept by the launcher):
+    /// the box starts ticked for that folder only.
+    accepted_for: Option<PathBuf>,
     requests: Vec<crate::jobs::recipe::Check>,
 }
 
@@ -121,7 +127,10 @@ impl Page {
         candidates: Vec<PathBuf>,
     ) -> Result<Self, String> {
         let r = Recipe::load(path).map_err(|e| e.to_string())?;
-        let base = recipe::load_base(path, &r);
+        let (base, base_error) = match recipe::read_base(path, &r) {
+            Ok(b) => (b, None),
+            Err(e) => (None, Some(e)),
+        };
         let used = used.filter(|u| u.path == path);
         let rows = recipe::entries(&r)
             .map(|(kind, m, game)| Row {
@@ -136,6 +145,7 @@ impl Page {
             path: path.to_path_buf(),
             recipe: r,
             base,
+            base_error,
             game: used.and_then(|u| u.game.clone()),
             rows,
             base_status: Status::Unset,
@@ -145,6 +155,7 @@ impl Page {
             candidates,
             fallback: None,
             accept_base: false,
+            accepted_for: None,
             requests: Vec::new(),
         };
         for i in 0..p.rows.len() {
@@ -181,9 +192,23 @@ impl Page {
         self.accept_base && !self.is_apk_base() && self.base_differs()
     }
 
-    /// The game was checked and isn't the recipe's base.
+    /// The game was checked and isn't the recipe's base (not a missing
+    /// or broken hash list: that is never accepted).
     pub fn base_differs(&self) -> bool {
-        matches!(self.base_status, Status::Bad(_))
+        matches!(self.base_status, Status::Bad(_)) && self.base_error.is_none()
+    }
+
+    /// Whether the player's "Use this game anyway" applies to the game
+    /// as it will be used (kept by the launcher for that folder).
+    pub fn base_accepted_game(&self) -> Option<PathBuf> {
+        self.base_accepted().then(|| self.game()).flatten()
+    }
+
+    /// The game folder accepted earlier for this instance: ticked again
+    /// when it is still the game in use.
+    pub fn set_accepted(&mut self, game: Option<PathBuf>) {
+        self.accepted_for = game;
+        self.accept_base = self.accepted_for.is_some() && self.accepted_for == self.game();
     }
 
     /// The instance's game as it will be used: its own, else the one it was
@@ -227,19 +252,23 @@ impl Page {
             Some(g) => vec![g.clone()],
             None => game_dirs,
         };
-        self.accept_base = false;
         self.fallback = match &self.game {
             None => dirs.first().map(|g| crate::config::game_root(g)),
             Some(_) => None,
         };
+        self.accept_base = self.accepted_for.is_some() && self.accepted_for == self.game();
         let no_game = || Status::Bad("no game folder: pick one with Edit, Base game".into());
+        if let Some(e) = &self.base_error {
+            // Launch protection fails closed: a game that can't be checked
+            // is not played.
+            self.base_status = Status::Bad(format!("can't check the game: {e}"));
+            return;
+        }
         let Some(base) = self.base.clone() else {
             self.base_status = if dirs.is_empty() {
                 no_game()
-            } else if self.recipe.recipe.base.is_empty() {
-                Status::Ok("any".into())
             } else {
-                Status::Ok("no hash list beside the recipe: not checked".into())
+                Status::Ok("any".into())
             };
             return;
         };
@@ -470,6 +499,16 @@ impl Page {
                 ui.label(RichText::new(shown).color(SAND));
                 self.base_status.show(ui);
             });
+            if self.base_error.is_some() {
+                ui.label(
+                    RichText::new(
+                        "This instance's base game hash list is missing or broken, so its game \
+                         can't be checked. Restore the list under recipes/bases/, or remove \
+                         `base` from the recipe to allow any game.",
+                    )
+                    .color(RED),
+                );
+            }
             if self.base_differs() && !self.is_apk_base() {
                 ui.label(
                     RichText::new(

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Launcher and command line
+
+- An instance whose base game hash list is missing, broken or empty no longer plays unchecked.
+  The recipe page explains how to fix it.
+- **Use this game anyway** is remembered per instance for that game folder, so it isn't asked
+  again on every launch.
+- `c2-pc play --recipe`, `recipe build` and `recipe verify` stop when the game differs from the
+  recipe's base; `--accept-base` allows another version of the same game.
+
 ### Hunt (PC, Android)
 
 - With predation on, a carnivore that finished (or was interrupted in) a meal no longer stands

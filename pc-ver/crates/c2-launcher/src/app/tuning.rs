@@ -192,6 +192,7 @@ impl Launcher {
             }
             args.extend(["--recipe".to_string(), r.path.display().to_string()]);
             args.extend(r.mods_args());
+            args.extend(self.cfg.accept_base_args(r));
         } else {
             if let Some(b) = &self.cfg.base {
                 args.push(b.display().to_string());

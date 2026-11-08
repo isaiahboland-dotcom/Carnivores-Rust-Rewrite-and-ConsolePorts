@@ -153,7 +153,9 @@ other tab.
 
 **Launch protection:** each instance keeps its own game folder, and Play and the builds stop when that
 folder's files don't match the base game the recipe names (its SHA-256 hashes). Use the right folder, or
-tick **Use this game anyway** when it is another version of the same game.
+tick **Use this game anyway** when it is another version of the same game; the instance remembers that
+choice for that folder. A recipe whose base game hash list (`recipes/bases/`) is missing or broken is not
+played at all: restore the list, or remove `base` from the recipe to allow any game.
 
 ---
 

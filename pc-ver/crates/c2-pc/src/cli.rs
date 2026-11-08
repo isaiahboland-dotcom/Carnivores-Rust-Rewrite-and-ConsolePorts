@@ -9,7 +9,7 @@ use c2_core::area::TimeOfDay;
 use c2_core::game::SurvivalKind;
 
 const USAGE: &str = "usage:
-  c2-pc play  <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR...] [--balance FILE]
+  c2-pc play  <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR... [--accept-base]] [--balance FILE]
               [--screen main|stats|hunt|options|credits|register|quit|loading]
               [--script 'X,Y;'TEXT;enter;esc'] [--shot out.png]
   c2-pc balance <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]...   (prints prices and scores as a balance file)
@@ -22,8 +22,8 @@ const USAGE: &str = "usage:
                                         (standalone games beside the base, add-ons over them)
   c2-pc mod detect <MOD_DIR>... --base <GAME_DIR> [--write]
   c2-pc mod build  <MOD_DIR>... --base <GAME_DIR> --out <DIR>
-  c2-pc recipe verify <RECIPE.toml> --base <GAME_DIR> [--overlay DIR]... --mods <DIR>...
-  c2-pc recipe build  <RECIPE.toml> --base <GAME_DIR> [--overlay DIR]... --mods <DIR>... --out <DIR>
+  c2-pc recipe verify <RECIPE.toml> --base <GAME_DIR> [--overlay DIR]... --mods <DIR>... [--accept-base]
+  c2-pc recipe build  <RECIPE.toml> --base <GAME_DIR> [--overlay DIR]... --mods <DIR>... --out <DIR> [--accept-base]
   c2-pc recipe new    <MOD_DIR>... --base <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... --id ID [--name NAME] [--base-id ID] [--out RECIPE.toml]
   c2-pc recipe base   --base <GAME_DIR> [--id c2-vanilla|ice-age] [--out recipes/bases/c2-vanilla.toml]
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
@@ -343,6 +343,7 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
                 .into_iter()
                 .map(PathBuf::from)
                 .collect(),
+            accept_base: o.has("accept-base"),
         };
         return mods_cli::run_recipe(&o.positional, &a);
     }
@@ -577,7 +578,7 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
                 let mods: Vec<PathBuf> = o.values("mods").into_iter().map(PathBuf::from).collect();
                 let mods = mods_cli::mods_dirs(&c2_mods::recipe::Recipe::load(&r)?, &mods)?;
                 let out = mods_cli::recipe_pack_dir(&r);
-                mods_cli::build_recipe(&r, &bases, &mods, balance, &out)?;
+                mods_cli::build_recipe(&r, &bases, &mods, balance, &out, o.has("accept-base"))?;
                 out
             } else if mods.is_empty()
                 && overlays.is_empty()

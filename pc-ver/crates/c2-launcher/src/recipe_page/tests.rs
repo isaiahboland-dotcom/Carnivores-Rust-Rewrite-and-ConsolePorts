@@ -145,6 +145,53 @@ fn a_wrong_base_is_not_played_silently_and_the_game_is_kept() {
     assert_eq!(kept, Some(dir.join("other")));
 }
 
+/// The player's "anyway" is kept for that game folder only, and a
+/// missing hash list blocks the game with no "anyway" at all.
+#[test]
+fn an_accepted_game_stays_accepted_and_a_missing_list_blocks() {
+    let dir = std::env::temp_dir().join(format!("c2rs-recipe-kept-{}", std::process::id()));
+    let h = dir.join("other/HUNTDAT");
+    std::fs::create_dir_all(&h).unwrap_or_else(|e| panic!("{e}"));
+    std::fs::write(h.join("X.CAR"), b"zz").unwrap_or_else(|e| panic!("{e}"));
+    std::fs::create_dir_all(dir.join("bases")).unwrap_or_else(|e| panic!("{e}"));
+    std::fs::write(
+        dir.join("bases/sa.toml"),
+        format!(
+            "[base]\nid = \"sa\"\n\n[files]\n\"HUNTDAT/X.CAR\" = \"{}\"\n",
+            recipe::sha256(b"sa")
+        ),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    let path = dir.join("sa.toml");
+    std::fs::write(&path, "[recipe]\nid = \"sa\"\nbase = \"sa\"\n")
+        .unwrap_or_else(|e| panic!("{e}"));
+    let other = dir.join("other");
+    let open = |accepted: Option<PathBuf>| {
+        let mut p = Page::open(&path, None, vec![other.clone()], Vec::new())
+            .unwrap_or_else(|e| panic!("{e}"));
+        p.set_accepted(accepted);
+        settle(&mut p);
+        p
+    };
+    let kept = open(Some(other.clone()));
+    let (kept_ready, kept_game) = (kept.ready(), kept.base_accepted_game());
+    let elsewhere = open(Some(dir.join("elsewhere"))).ready();
+    std::fs::remove_file(dir.join("bases/sa.toml")).unwrap_or_else(|e| panic!("{e}"));
+    let mut gone = open(Some(other.clone()));
+    gone.accept_base = true;
+    let (gone_ready, gone_differs) = (gone.ready(), gone.base_differs());
+    let gone_status = gone.base_status.clone();
+    std::fs::remove_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+    assert!(
+        kept_ready,
+        "the folder accepted before plays without asking"
+    );
+    assert_eq!(kept_game, Some(other));
+    assert!(!elsewhere, "another folder is checked afresh");
+    assert!(!gone_ready && !gone_differs, "no hash list: never played");
+    assert!(matches!(gone_status, Status::Bad(_)), "{gone_status:?}");
+}
+
 #[test]
 fn entries_found_in_a_downloads_folder() {
     let dir = std::env::temp_dir().join(format!("c2rs-recipe-page-{}", std::process::id()));
