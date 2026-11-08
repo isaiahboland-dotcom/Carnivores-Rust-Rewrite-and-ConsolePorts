@@ -283,6 +283,9 @@ struct Choice {
     survival: Option<SurvivalKind>,
     /// The list item whose picture and description show: (column, row).
     focus: Option<(usize, usize)>,
+    /// The list (1 animals, 2 weapons) whose last pick was refused for
+    /// being at `--max-picks`; shown until the next pick.
+    full: Option<usize>,
 }
 
 /// Accessories in the equipment list, with their picture and description.
@@ -1337,6 +1340,17 @@ impl Menu {
                 || (!self.choice.dinos.is_empty() || self.choice.survival.is_some())
                     && self.choice.weapons != 0)
             && self.remaining() >= 0
+            && self.within_picks()
+    }
+
+    /// The picks are within `--max-picks` (a survival brings its own
+    /// animals and weapon, so it always is).
+    fn within_picks(&self) -> bool {
+        let c = &self.choice;
+        MAX_PICKS.get().is_none_or(|&cap| {
+            c.survival.is_some()
+                || (c.dinos.count() <= cap && c.weapons.count_ones() as usize <= cap)
+        })
     }
 
     /// The canvas rectangle a 4:3 picture covers the whole window with
@@ -1619,6 +1633,7 @@ impl Menu {
             return;
         }
         let bit = 1u128.checked_shl(r as u32).unwrap_or(0);
+        self.choice.full = None;
         // A full list takes no more (dropping a pick is always allowed).
         let adding = match col {
             1 => !self.choice.dinos.has(r),
@@ -1631,6 +1646,7 @@ impl Menu {
         };
         if adding && MAX_PICKS.get().is_some_and(|&cap| count >= cap) {
             self.choice.focus = Some((col, r));
+            self.choice.full = Some(col);
             return;
         }
         let price = self.columns[col].prices[r];
@@ -1658,6 +1674,7 @@ impl Menu {
 
     /// Starts the hunt the choices describe.
     fn launch_hunt(&mut self) {
+        debug_assert!(self.within_picks(), "hunt started over --max-picks");
         if self.choice.survival.is_none() {
             self.save_equipment();
         }
@@ -2302,13 +2319,20 @@ impl Menu {
         for (i, l) in text.iter().enumerate().take(11) {
             self.text(out, 416.0, 80.0 + i as f32 * 17.0, 12.0, TEXT, l);
         }
+        let cap = MAX_PICKS.get().copied().unwrap_or(0);
         if !self.can_hunt() && region == 8 {
-            let why = if self.choice.dinos.is_empty() && self.choice.survival.is_none() {
-                "Choose dinosaurs to hunt"
+            let why = if !self.within_picks() {
+                format!("At most {cap} animals and {cap} weapons")
+            } else if self.choice.dinos.is_empty() && self.choice.survival.is_none() {
+                "Choose dinosaurs to hunt".into()
             } else {
-                "Choose a weapon"
+                "Choose a weapon".into()
             };
-            self.text(out, 420.0, 566.0, 12.0, HOVER, why);
+            self.text(out, 420.0, 566.0, 12.0, HOVER, &why);
+        } else if let Some(col) = c.full {
+            let what = if col == 1 { "animals" } else { "weapons" };
+            let note = format!("Limit reached: {cap} {what} per hunt");
+            self.text(out, 420.0, 566.0, 12.0, HOVER, &note);
         }
     }
 

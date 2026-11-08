@@ -16,4 +16,5 @@ pub mod pdf;
 pub mod pdf_report;
 pub mod publish;
 pub mod record;
+pub mod render_state;
 pub mod scenario_file;

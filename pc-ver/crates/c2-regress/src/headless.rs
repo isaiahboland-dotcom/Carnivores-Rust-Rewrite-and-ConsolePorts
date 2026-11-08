@@ -45,19 +45,26 @@ fn clock_ms() -> f64 {
     START.get_or_init(Instant::now).elapsed().as_secs_f64() * 1000.0
 }
 
+impl RunData {
+    /// A run that has done nothing yet.
+    pub fn empty() -> Self {
+        RunData {
+            director: None,
+            setup_error: None,
+            panic: None,
+            samples: Vec::new(),
+            checkpoints: Vec::new(),
+            placed: Vec::new(),
+            animals_end: 0,
+            effects_end: 0,
+            shots: 0,
+            wall_ms: 0.0,
+        }
+    }
+}
+
 pub fn run(game: &Game, s: &Scenario, inject: Option<Inject>) -> RunData {
-    let mut data = RunData {
-        director: None,
-        setup_error: None,
-        panic: None,
-        samples: Vec::new(),
-        checkpoints: Vec::new(),
-        placed: Vec::new(),
-        animals_end: 0,
-        effects_end: 0,
-        shots: 0,
-        wall_ms: 0.0,
-    };
+    let mut data = RunData::empty();
     let infos = game.weapons.iter().map(|w| w.info.clone()).collect();
     let anims = game.weapons.iter().map(|w| w.anims).collect();
     let room = c2_core::profile::new_player("regress", 0, 0);

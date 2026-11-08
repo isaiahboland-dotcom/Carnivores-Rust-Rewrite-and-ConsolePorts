@@ -891,7 +891,11 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
             .map(|n| a0 as u32 + n)
             .collect();
         let gone_areas: Vec<u32> = skip.areas.clone();
-        let gone_slots: Vec<u32> = skip.huntables.iter().map(|n| n - 1).collect();
+        let gone_slots: Vec<u32> = skip
+            .huntables
+            .iter()
+            .filter_map(|n| n.checked_sub(1))
+            .collect();
         let gone_names: HashSet<String> = gm
             .huntables
             .iter()

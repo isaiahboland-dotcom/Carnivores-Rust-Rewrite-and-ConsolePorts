@@ -8,9 +8,10 @@ use c2_formats::res_txt::{c_atoi, Block};
 use serde::{Deserialize, Serialize};
 
 /// Numbers from 1, in the game's own menu order (`AREA2`, its first
-/// huntable, its third weapon...).
+/// huntable, its third weapon...). Read from a recipe or config, a 0 is
+/// rejected as [`Skip::parse`] rejects `dino0`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, try_from = "RawSkip")]
 pub struct Skip {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub areas: Vec<u32>,
@@ -18,6 +19,36 @@ pub struct Skip {
     pub huntables: Vec<u32>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub weapons: Vec<u32>,
+}
+
+/// [`Skip`] as written, before its numbers are checked.
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct RawSkip {
+    areas: Vec<u32>,
+    huntables: Vec<u32>,
+    weapons: Vec<u32>,
+}
+
+impl TryFrom<RawSkip> for Skip {
+    type Error = String;
+
+    fn try_from(r: RawSkip) -> Result<Self, String> {
+        for (kind, v) in [
+            ("areas", &r.areas),
+            ("huntables", &r.huntables),
+            ("weapons", &r.weapons),
+        ] {
+            if v.contains(&0) {
+                return Err(format!("skip {kind}: numbers start from 1, got 0"));
+            }
+        }
+        Ok(Skip {
+            areas: r.areas,
+            huntables: r.huntables,
+            weapons: r.weapons,
+        })
+    }
 }
 
 impl Skip {
@@ -202,6 +233,17 @@ mod tests {
         assert!(Skip::parse("map2").is_err());
         assert!(Skip::parse("dino0").is_err());
         assert!(Skip::parse("").unwrap().is_empty());
+    }
+
+    #[test]
+    fn deserialising_rejects_zero_like_parse() {
+        let ok: Skip = toml::from_str("huntables = [1, 3]").unwrap();
+        assert_eq!(ok.huntables, [1, 3]);
+        let empty: Skip = toml::from_str("").unwrap();
+        assert!(empty.is_empty());
+        for bad in ["huntables = [0]", "areas = [2, 0]", "weapons = [0]"] {
+            assert!(toml::from_str::<Skip>(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

@@ -108,7 +108,11 @@ pub fn layer(vfs: &Vfs, skip: &Skip) -> Result<Option<MemBackend>> {
     // Slots count from 0, the picker's numbers from 1.
     let slot = |n: u32| new_number(&kept_dinos, n + 1).map(|g| g - 1);
     let gone_areas = skip.areas.clone();
-    let gone_slots: Vec<u32> = skip.huntables.iter().map(|n| n - 1).collect();
+    let gone_slots: Vec<u32> = skip
+        .huntables
+        .iter()
+        .filter_map(|n| n.checked_sub(1))
+        .collect();
     let gone_names: Vec<String> = gm
         .huntables
         .iter()

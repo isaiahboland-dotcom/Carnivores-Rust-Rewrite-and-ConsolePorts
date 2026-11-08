@@ -356,8 +356,13 @@ times; `metrics.json` `determinism.identical` says whether every repeat
 reached every checkpoint at the same tick with the same hash; repeats that
 disagree fail the run (exit code 1). One run reports determinism as
 unavailable and does not fail on it. The render
-pass runs the same script through `HuntView`, and its hashes match the
-headless ones, so rendering does not disturb the simulation.
+pass runs the same script through `HuntView`; `metrics.json` `render_state`
+compares its checkpoints with the headless run's by name, and a checkpoint
+reached at another tick or with another hash, or missing from the render
+pass, fails the run. Checkpoints only the render pass reaches (the weapon
+and call pickers, which headless can't open) are listed under
+`render_only` and not compared; `end` is then skipped too, since the render
+pass ends later.
 
 ## Published vanilla baselines
 

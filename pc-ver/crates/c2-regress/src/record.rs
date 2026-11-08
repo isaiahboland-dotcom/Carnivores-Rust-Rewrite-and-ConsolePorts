@@ -134,9 +134,12 @@ pub fn write(dir: &Path, ctx: &RunContext) -> Result<bool> {
     });
     let kills_ok = !kill_script || kill_stages("passed") == ctx.scenario.species.len();
     let determinism = determinism(ctx.runs);
-    // Repeats that disagree: the run is not reproducible, so it fails.
+    let render_state = crate::render_state::agreement(first, ctx.render.as_ref());
+    // Repeats that disagree, or a render pass that reaches another state:
+    // the run is not reproducible, so it fails.
     let failed = count("failed") > 0
         || determinism["identical"] == false
+        || render_state["identical"] == false
         || setup_error.is_some()
         || panics > 0
         || !weapons_ok
@@ -232,6 +235,7 @@ pub fn write(dir: &Path, ctx: &RunContext) -> Result<bool> {
         "memory": { "process_bytes": rss, "peak_bytes": peak },
         "render": render,
         "determinism": determinism,
+        "render_state": render_state,
         "checkpoints": first.map(|r| r.checkpoints.iter().map(|c| json!({
             "name": c.name, "tick": c.tick, "state_hash": format!("{:016x}", c.hash),
         })).collect::<Vec<_>>()),

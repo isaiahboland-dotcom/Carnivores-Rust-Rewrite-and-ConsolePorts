@@ -40,6 +40,9 @@ impl Launcher {
                 let package = crate::android::app_package(&self.cfg.android_name);
                 ui.label(RichText::new(format!("-> {package}")).color(DIM));
             });
+            if let Some(other) = self.android_clash() {
+                ui.label(RichText::new(other).color(RED));
+            }
             help(
                 ui,
                 "Empty: the shared c2rs app (each install replaces the last). A name makes the \
@@ -126,6 +129,22 @@ impl Launcher {
         })
     }
 
+    /// Why installing would replace another instance's app: its name on
+    /// the phone gives the same package as this one's.
+    fn android_clash(&self) -> Option<String> {
+        let own = &self.active_recipe()?.path;
+        let package = crate::android::app_package(&self.cfg.android_name);
+        let other = crate::android::package_clash(&package, own, &self.cfg.instance_builds)?;
+        let name = other.file_stem().map_or_else(
+            || other.display().to_string(),
+            |n| n.to_string_lossy().into(),
+        );
+        Some(format!(
+            "The instance {name} is also the app {package}: installing this one would replace \
+             it. Give this one a different name on the phone."
+        ))
+    }
+
     pub(super) fn build_android(&mut self) {
         self.start_android(false);
     }
@@ -163,6 +182,9 @@ impl Launcher {
         )?;
         crate::android::validate_apk(&apk)?;
         let adb = if install {
+            if let Some(clash) = self.android_clash() {
+                return Err(clash);
+            }
             Some(crate::android::find_adb(tools).ok_or(
                 "adb not found: install the Android SDK platform tools or put adb in the tools \
                  folder.",

@@ -44,6 +44,28 @@ pub fn app_package(name: &str) -> String {
     }
 }
 
+/// Another saved instance whose own app is also `package` (names such as
+/// "+++" and "!!!" both sanitise to `io.github.c2rs.app`), so installing
+/// one would replace the other. The shared app (an empty name) is meant to
+/// be shared and never clashes.
+pub fn package_clash<'a>(
+    package: &str,
+    own: &Path,
+    builds: &'a std::collections::BTreeMap<PathBuf, crate::config::InstanceBuilds>,
+) -> Option<&'a Path> {
+    if package == PACKAGE {
+        return None;
+    }
+    builds
+        .iter()
+        .find(|(p, b)| {
+            p.as_path() != own
+                && !b.android_name.trim().is_empty()
+                && app_package(&b.android_name) == package
+        })
+        .map(|(p, _)| p.as_path())
+}
+
 /// The files folder on the device of the app `package`.
 pub fn device_files(package: &str) -> String {
     format!("/sdcard/Android/data/{package}/files")
@@ -242,6 +264,33 @@ mod tests {
         assert_eq!(
             device_files(&app_package("Vanilla")),
             "/sdcard/Android/data/io.github.c2rs.vanilla/files"
+        );
+    }
+
+    #[test]
+    fn names_that_meet_in_one_package_clash() {
+        use crate::config::InstanceBuilds;
+        let named = |n: &str| InstanceBuilds {
+            android_name: n.into(),
+            ..Default::default()
+        };
+        let builds = [
+            (PathBuf::from("a.toml"), named("+++")),
+            (PathBuf::from("b.toml"), named("")),
+            (PathBuf::from("c.toml"), named("Ice Age")),
+        ]
+        .into_iter()
+        .collect();
+        let own = Path::new("me.toml");
+        let clash = |name: &str| package_clash(&app_package(name), own, &builds);
+        assert_eq!(clash("!!!"), Some(Path::new("a.toml")));
+        assert_eq!(clash("ice-age"), Some(Path::new("c.toml")));
+        assert_eq!(clash("Vanilla"), None);
+        // The shared app, and an instance's own saved name, never clash.
+        assert_eq!(clash(""), None);
+        assert_eq!(
+            package_clash(&app_package("+++"), Path::new("a.toml"), &builds),
+            None
         );
     }
 }
