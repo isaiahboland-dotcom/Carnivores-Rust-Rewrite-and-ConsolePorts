@@ -9,6 +9,11 @@
  *   empty ends the message loop of one frame) and runs the script.
  * - Keyboard and mouse (USER32): the script's virtual devices (script.c).
  * - CreateWindowExA: remembers the game's window, for posted messages.
+ * - BitBlt (GDI32): the software renderer presents each frame with one
+ *   blit from its own DIB (RenderSoft.cpp). A copy of the last presented
+ *   frame is kept and is what `shot` saves, so pictures do not depend on
+ *   the screen (a sleeping monitor or the compositor gave black ones).
+ *   Before the first frame, the screen is captured instead.
  * - MessageBoxA: logs the text and ends the run (exit code 3) instead of
  *   waiting for a click (the game's error boxes: "ABNORMAL_HALT").
  * - CreateProcessA (KERNEL32): the menu runs the hunt as a second copy of
@@ -44,6 +49,13 @@ static BOOL(WINAPI *real_create_process)(LPCSTR, LPSTR, LPSECURITY_ATTRIBUTES,
                                          LPSTARTUPINFOA, LPPROCESS_INFORMATION);
 static HWND(WINAPI *real_create_window)(DWORD, LPCSTR, LPCSTR, DWORD, int, int, int, int, HWND,
                                          HMENU, HINSTANCE, LPVOID);
+static BOOL(WINAPI *real_bitblt)(HDC, int, int, int, int, HDC, int, int, DWORD);
+/* The last frame the game presented (24-bit, bottom-up). */
+static HDC cap_dc = NULL;
+static HBITMAP cap_bmp = NULL;
+static void *cap_bits = NULL;
+static int cap_w = 0, cap_h = 0;
+static BOOL cap_have = FALSE;
 
 void *__cdecl memset(void *d, int c, size_t n) {
     unsigned char *p = d;
@@ -70,9 +82,65 @@ static DWORD env_num(const char *name, DWORD def) {
     return i ? v : def;
 }
 
-/* The game window's client area as a 24-bit BMP (the whole screen if
- * there is no window yet). */
+static void write_bmp(const char *path, int w, int h, const void *bits) {
+    DWORD row = ((DWORD)w * 3 + 3) & ~3u, size = row * (DWORD)h, n;
+    BITMAPFILEHEADER fh;
+    BITMAPINFOHEADER ih;
+    HANDLE f;
+    memset(&fh, 0, sizeof fh);
+    memset(&ih, 0, sizeof ih);
+    ih.biSize = sizeof ih;
+    ih.biWidth = w;
+    ih.biHeight = h;
+    ih.biPlanes = 1;
+    ih.biBitCount = 24;
+    fh.bfType = 0x4d42;
+    fh.bfOffBits = sizeof fh + sizeof ih;
+    fh.bfSize = fh.bfOffBits + size;
+    f = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
+    if (f == INVALID_HANDLE_VALUE) return;
+    WriteFile(f, &fh, sizeof fh, &n, NULL);
+    WriteFile(f, &ih, sizeof ih, &n, NULL);
+    WriteFile(f, bits, size, &n, NULL);
+    CloseHandle(f);
+}
+
+/* A whole-picture blit from the game's DIB: keep a copy. */
+static BOOL WINAPI hook_bitblt(HDC d, int x, int y, int w, int h, HDC s, int sx, int sy, DWORD rop) {
+    BOOL r = real_bitblt(d, x, y, w, h, s, sx, sy, rop);
+    if (s && rop == SRCCOPY && x == 0 && y == 0 && sx == 0 && sy == 0 && w >= 320 && h >= 200) {
+        if (w != cap_w || h != cap_h) {
+            BITMAPINFO bi;
+            if (cap_bmp) DeleteObject(cap_bmp);
+            if (!cap_dc) cap_dc = CreateCompatibleDC(NULL);
+            memset(&bi, 0, sizeof bi);
+            bi.bmiHeader.biSize = sizeof bi.bmiHeader;
+            bi.bmiHeader.biWidth = w;
+            bi.bmiHeader.biHeight = h;
+            bi.bmiHeader.biPlanes = 1;
+            bi.bmiHeader.biBitCount = 24;
+            cap_bits = NULL;
+            cap_bmp = CreateDIBSection(cap_dc, &bi, DIB_RGB_COLORS, &cap_bits, NULL, 0);
+            if (cap_bmp) SelectObject(cap_dc, cap_bmp);
+            cap_w = w;
+            cap_h = h;
+        }
+        if (cap_bmp && cap_bits && real_bitblt(cap_dc, 0, 0, w, h, s, 0, 0, SRCCOPY)) {
+            GdiFlush();
+            cap_have = TRUE;
+        }
+    }
+    return r;
+}
+
+/* The last frame the game presented as a 24-bit BMP; before the first,
+ * the game window's client area (the whole screen if there is no window
+ * yet). */
 void save_screen(const char *path) {
+    if (cap_have) {
+        write_bmp(path, cap_w, cap_h, cap_bits);
+        return;
+    }
     int w = GetSystemMetrics(SM_CXSCREEN), h = GetSystemMetrics(SM_CYSCREEN);
     POINT at = {0, 0};
     RECT rc;
@@ -276,6 +344,7 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID unused) {
     hook(exe, "WINMM.dll", "timeGetTime", (void *)fake_time);
     real_peek = hook(exe, "USER32.dll", "PeekMessageA", (void *)hook_peek);
     real_create_window = hook(exe, "USER32.dll", "CreateWindowExA", (void *)hook_create_window);
+    real_bitblt = hook(exe, "GDI32.dll", "BitBlt", (void *)hook_bitblt);
     hook(exe, "USER32.dll", "MessageBoxA", (void *)hook_message_box);
     hook(exe, "USER32.dll", "GetKeyboardState", (void *)hook_get_keyboard_state);
     hook(exe, "USER32.dll", "GetAsyncKeyState", (void *)hook_get_async_key_state);

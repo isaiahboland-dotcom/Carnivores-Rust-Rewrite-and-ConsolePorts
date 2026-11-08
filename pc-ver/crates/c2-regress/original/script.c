@@ -1,7 +1,9 @@
 /* The input script and the virtual keyboard and mouse the game reads.
  *
- * One action per line, `FRAME ACTION ARGS`; FRAME is absolute, or `+N`
- * for N frames after the previous line. `#` starts a comment.
+ * One action per line, `FRAME ACTION ARGS`; FRAME is absolute, `+N` for
+ * N frames after the previous line, or `D+N` for N frames after the
+ * hunter's death (kill.c; never run if he does not die). `#` starts a
+ * comment.
  *   key VK down|up   hold or release a key (also posts WM_KEYDOWN/UP)
  *   tap VK           down now, up two frames later
  *   text STRING      WM_CHAR per character (names on the register screen)
@@ -12,6 +14,9 @@
  *   shot NAME        save the screen as NAME.bmp
  *   mark TEXT        a line in the log (stage and checkpoint names)
  *   exit             quit the game (exit code 0)
+ *   addr NAME HEX    a game global for kill.c (health, characters, count,
+ *                    player_x, player_y, player_z, camera_alpha)
+ *   release AI DIST  kill.c: the first animal of AI set on the hunter
  * VK: a letter or digit, LBUTTON RBUTTON RETURN TAB ESCAPE SPACE SHIFT
  * CONTROL MENU BACK F1..F12 UP DOWN LEFT RIGHT, or a number.
  * The real keyboard and mouse are never read: runs repeat exactly.
@@ -22,7 +27,10 @@
  * let go, as a player's finger would. */
 #include "hook.h"
 
-enum { A_KEY, A_TAP, A_TEXT, A_MOUSE, A_CLICK, A_LOOK, A_SHOT, A_MARK, A_EXIT, A_UP };
+enum {
+    A_KEY, A_TAP, A_TEXT, A_MOUSE, A_CLICK, A_LOOK, A_SHOT, A_MARK, A_EXIT, A_UP,
+    A_ADDR, A_RELEASE
+};
 
 typedef struct {
     DWORD frame;
@@ -33,6 +41,11 @@ typedef struct {
 #define MAX_ACTIONS 2048
 static Action acts[MAX_ACTIONS];
 static int nacts = 0, next_act = 0;
+/* `D+N` actions, by N. */
+#define MAX_AFTER 64
+static Action after[MAX_AFTER];
+static int nafter = 0, next_after = 0;
+static BOOL to_after = FALSE;
 #define RELEASE_POLLS 256
 static BYTE keys[256];
 static WORD polls[256];
@@ -64,6 +77,19 @@ static int num(const char *w) {
     return neg ? -v : v;
 }
 
+static DWORD hex(const char *w) {
+    DWORD v = 0;
+    if (w[0] == '0' && (w[1] == 'x' || w[1] == 'X')) w += 2;
+    for (;; w++) {
+        int d = (*w >= '0' && *w <= '9')   ? *w - '0'
+                : (*w >= 'a' && *w <= 'f') ? *w - 'a' + 10
+                : (*w >= 'A' && *w <= 'F') ? *w - 'A' + 10
+                                           : -1;
+        if (d < 0) return v;
+        v = v * 16 + (DWORD)d;
+    }
+}
+
 static int vk(const char *w) {
     static const struct { const char *name; int vk; } names[] = {
         {"LBUTTON", VK_LBUTTON}, {"RBUTTON", VK_RBUTTON}, {"RETURN", VK_RETURN},
@@ -82,14 +108,29 @@ static int vk(const char *w) {
 
 static void add(DWORD f, int kind, int a, int b, const char *text) {
     Action *x;
-    if (nacts >= MAX_ACTIONS) return;
-    x = &acts[nacts++];
+    if (to_after) {
+        if (nafter >= MAX_AFTER) return;
+        x = &after[nafter++];
+    } else {
+        if (nacts >= MAX_ACTIONS) return;
+        x = &acts[nacts++];
+    }
     x->frame = f;
     x->kind = kind;
     x->a = a;
     x->b = b;
     x->text[0] = 0;
     if (text) lstrcpynA(x->text, text, sizeof x->text);
+}
+
+static void sort(Action *v, int n) {
+    int i, j;
+    for (i = 1; i < n; i++)
+        for (j = i; j > 0 && v[j - 1].frame > v[j].frame; j--) {
+            Action t = v[j];
+            v[j] = v[j - 1];
+            v[j - 1] = t;
+        }
 }
 
 BOOL script_load(const char *path) {
@@ -108,7 +149,11 @@ BOOL script_load(const char *path) {
         if (*s) s++;
         if (*line == '#' || *line == '\r' || *line == '\n' || !*line) continue;
         rest = word(line, w, sizeof w);
-        f = (w[0] == '+') ? f + (DWORD)num(w) : (DWORD)num(w);
+        to_after = (w[0] == 'D' && w[1] == '+');
+        if (to_after)
+            f = (DWORD)num(w + 2);
+        else
+            f = (w[0] == '+') ? f + (DWORD)num(w) : (DWORD)num(w);
         rest = word(rest, w, sizeof w);
         if (!lstrcmpA(w, "key")) {
             rest = word(word(rest, a, sizeof a), b, sizeof b);
@@ -134,6 +179,12 @@ BOOL script_load(const char *path) {
             add(f, kind, 0, 0, t);
         } else if (!lstrcmpA(w, "exit")) {
             add(f, A_EXIT, 0, 0, NULL);
+        } else if (!lstrcmpA(w, "addr")) {
+            rest = word(word(rest, a, sizeof a), b, sizeof b);
+            add(f, A_ADDR, (int)hex(b), 0, a);
+        } else if (!lstrcmpA(w, "release")) {
+            rest = word(word(rest, a, sizeof a), b, sizeof b);
+            add(f, A_RELEASE, num(a), num(b), NULL);
         } else {
             char m[160];
             wsprintfA(m, "script: unknown action \"%s\" at frame %lu\r\n", w, f);
@@ -141,15 +192,8 @@ BOOL script_load(const char *path) {
         }
     }
     /* Run in frame order (lines may be out of order); stable. */
-    {
-        int i, j;
-        for (i = 1; i < nacts; i++)
-            for (j = i; j > 0 && acts[j - 1].frame > acts[j].frame; j--) {
-                Action t = acts[j];
-                acts[j] = acts[j - 1];
-                acts[j - 1] = t;
-            }
-    }
+    sort(acts, nacts);
+    sort(after, nafter);
     return TRUE;
 }
 
@@ -205,6 +249,12 @@ static void run(const Action *x) {
         wsprintfA(m, "frame %lu mark %s\r\n", frame, x->text);
         logs(m);
         break;
+    case A_ADDR:
+        kill_addr(x->text, (DWORD)x->a);
+        break;
+    case A_RELEASE:
+        kill_release(x->a, x->b);
+        break;
     case A_EXIT:
         wsprintfA(m, "frame %lu exit\r\n", frame);
         logs(m);
@@ -215,8 +265,13 @@ static void run(const Action *x) {
 
 void script_step(void) {
     int i;
+    DWORD d;
     for (i = 0; i < 256; i++) polls[i] = 0;
     while (next_act < nacts && acts[next_act].frame <= frame) run(&acts[next_act++]);
+    kill_step();
+    d = kill_death_frame();
+    while (d && next_after < nafter && d + after[next_after].frame <= frame)
+        run(&after[next_after++]);
 }
 
 UINT WINAPI hook_get_keyboard_state(PBYTE out) {

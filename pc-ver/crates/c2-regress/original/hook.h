@@ -21,5 +21,11 @@ SHORT WINAPI hook_get_key_state(int vk);
 BOOL WINAPI hook_get_cursor_pos(LPPOINT p);
 BOOL WINAPI hook_set_cursor_pos(int x, int y);
 
+/* kill.c: kill runs (globals from the script's `addr` lines). */
+void kill_addr(const char *name, DWORD v);
+void kill_release(int ai, int dist);
+void kill_step(void);
+DWORD kill_death_frame(void);
+
 void *__cdecl memset(void *d, int c, size_t n);
 #endif

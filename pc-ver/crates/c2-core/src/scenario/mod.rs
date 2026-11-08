@@ -26,7 +26,7 @@ mod tests;
 
 pub use director::{Director, Frontend, Headless, Screen, TickPlan};
 pub use inject::Inject;
-pub use kills::{Arrange, KillPlan, KillWatch};
+pub use kills::{hunter_clip, Arrange, KillPlan, KillReport, KillWatch, Pose};
 pub use record::{Event, EventKind, StageResult, Status};
 pub use setup::{build, state_hash, Built, Cast, Hold, SetupError};
 

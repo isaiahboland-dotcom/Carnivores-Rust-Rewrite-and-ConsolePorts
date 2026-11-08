@@ -12,7 +12,8 @@ use alloc::{
 };
 
 use super::{
-    Arrange, Cast, Event, EventKind, KillPlan, KillWatch, Scenario, Script, StageResult, Status,
+    Arrange, Cast, Event, EventKind, KillPlan, KillReport, KillWatch, Scenario, Script,
+    StageResult, Status,
 };
 use crate::game::{weapon_anim, Hunt, HuntInput, WeaponState};
 
@@ -133,7 +134,10 @@ pub struct Director {
     cast: Vec<Cast>,
     kills: Option<KillPlan>,
     watch: Option<KillWatch>,
+    kill_ms: u32,
     pub events: Vec<Event>,
+    /// Each judged kill's summary, in order.
+    pub kill_reports: Vec<KillReport>,
     pub stages: Vec<StageResult>,
 }
 
@@ -165,7 +169,9 @@ impl Director {
                 Script::Tour => None,
             },
             watch: None,
+            kill_ms: 0,
             events: Vec::new(),
+            kill_reports: Vec::new(),
             stages: Vec::new(),
         }
     }
@@ -540,6 +546,7 @@ impl Director {
             self.tick - self.step_tick
         );
         self.check("killed_by", want == Some(w.killer), detail);
+        self.kill_ms = (self.tick - self.step_tick) * super::TICK_MS as u32;
         self.watch = Some(w);
         true
     }
@@ -553,6 +560,8 @@ impl Director {
         for (name, ok, detail) in w.verdicts(&plan) {
             self.check(name, ok, detail);
         }
+        let stage = self.stage.as_ref().map_or("", |s| &s.0).to_string();
+        self.kill_reports.push(w.report(&stage, self.kill_ms));
     }
 
     /// Ends the run early (the whole-run tick ceiling): the open stage fails.

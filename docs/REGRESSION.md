@@ -248,6 +248,8 @@ changed. `--inject freeze-body` holds the body on its first frame, and
 every kill must then fail `hunter_animates`.
 
 Results (2026-11-08, PC, Linux): all ten kills pass on all five games.
+The original engines run the same scenario for `c2` and `ice-age`
+([Kill animations in the original](#kill-animations-in-the-original)).
 Three repeats are identical, and the render pass gives the same state
 hashes as the headless run.
 
@@ -469,13 +471,18 @@ How it works (`pc-ver/crates/c2-regress/original/`, `src/original/`):
     without the hook); it is made growable. Memory only, no game logic.
   - `CreateProcessA`: if the menu is driven instead, the hunt it starts is
     hooked too (that is how the command line above was found).
+  - `BitBlt`: the software renderer presents each frame with one blit
+    from its own DIB (`RenderSoft.cpp`). The hook keeps a copy of the last
+    presented frame, and screenshots are taken from it, not from the
+    screen. Screen captures came out black when the monitor slept or the
+    session was locked. The screen is still read before the first frame.
 - A copy of the game folder (without wrapper DLLs, logs and saves) and a
   Wine prefix with an 800x600 virtual desktop are kept in
   `regression-sim-recordings/_original/<game>/`. A run whose screenshots
   are not 800x600 fails: the game did not run in the virtual desktop.
 - The stages are ours, as key presses with the original's default keys,
-  with screenshots at the same checkpoint names. The original's memory is
-  not read, so the checks use the pictures: a weapon fired when its ammo
+  with screenshots at the same checkpoint names. The tour does not read
+  the original's memory, so its checks use the pictures: a weapon fired when its ammo
   display (top left) changed between its "ready" and "after" frames, and a
   screen opened when the frame with it open differs from the frame after
   closing it. The fire key is held two frames (40 ms), shorter than any
@@ -493,13 +500,69 @@ visual check is skipped and the PDF shows them side by side; performance
 is not comparable (virtual clock). Not yet published: the original-engine
 dataset waits for approval.
 
+### Kill animations in the original
+
+`kill_animations.toml` also runs with `--engine original`, for the stock
+games (`c2`, `ice-age`; killers by AI number). A kill can't be told
+from pictures alone, and the original places its hunt animals 40 or
+more cells away, so here the hook reads and writes a few of the game's
+globals (`original/kill.c`):
+
+- **Finding them.** `c2-regress` finds them in the copied `v_soft.ren`'s
+  own code (`src/original/addrs.rs`), without hard-coded addresses.
+  `MyHealth` is the variable most often set to `MAX_HEALTH` (128000).
+  `AddDeadBody` starts by reading it. In that function the scan finds
+  `ChCount`, `CameraAlpha`, `&Characters[0]` and the three `PlayerX/Y/Z`
+  globals (the stores of the body's position), and it checks what it
+  found. Both shipped renderers match `Hunt.h`'s `TCharacter` (156
+  bytes). The addresses go to the hook as `addr` lines, and it checks
+  each one against the executable's image before using it.
+- **One hunt per killer**, with only that animal picked in the menu
+  (`din`). After the warm-up, `release AI 600` sets the first living
+  animal of that AI 600 units ahead of the hunter and sets it hunting
+  (`State` 1, `AfraidTime` 20000, its target on the hunter), as our
+  engine's kill script does.
+- **The death** is `MyHealth` reaching 0. From then on, the hook logs the
+  body (`Characters[ChCount-1]`) and the killer every frame: clip, frame
+  time, position and scale. Script lines with a `D+N` frame run N frames
+  after the death: the `_start`, `_mid` and `_late` screenshots (1 s and
+  3 s, in 20 ms frames), then `exit`. An absolute `exit` ends a hunt in
+  which nobody kills.
+- **Checks** are our engine's (`KillWatch`) on the logged poses. The
+  movement counts are in frames, so `min_moving_ticks` is halved.
+  `--repeat` compares the screenshots and the logged poses.
+
+Each run records `functional.kills_detail`: per kill, the time from
+release to kill, the body's and the killer's clips, and whether the body
+lies on the killer. Ours records the same. `compare ORIGINAL_RUN OUR_RUN`
+lists their differences under `kill_parity` in `comparison.json`. They
+don't fail the comparison, because each kill's own checks already do
+that.
+
+Results (2026-11-08, Wine 11, `--repeat 2`, identical repeats): all
+five kills pass in both originals.
+
+| Kill | Original: body clip, killer clip, body | Ours |
+|---|---|---|
+| C2 T-Rex | 3, 9, carried; 7.9 s to kill | same; 8.0 s |
+| C2 Allosaurus | 0, 6, 179 units from the killer | same, 182 |
+| Ice Age Woolly rhinoceros | 6, 7, on the killer | 0, 6, 150 units away |
+| Ice Age Yeti | 12, 7, on the killer | 0, 6, 148 units away |
+| Ice Age Diatryma | 7, 8, on the killer; stays | 0, runs on (0, 1) |
+
+Ice Age's `AddDeadBody` differs from Carnivores 2's. The body takes the
+killer's position, heading and scale, and the hunter clip `AI - 7`. The
+killer then plays a kill clip of its own. Our engine gives these killers
+Carnivores 2's generic kill. See `docs/DECISIONS.md` (2026-11-08).
+
 ## Limitations
 
 - C1 is unsupported (no loader). Fallen Kings is not yet baselined.
-- The kill scenario has no published baselines yet, and `--engine original`
-  refuses it (the original's memory is not read, so a kill can't be
-  checked). Killers are set down beside the hunter, so how an animal
-  finds and stalks him is not covered.
+- The kill scenario has no published baselines yet. Under the original it
+  runs the stock games only (the original's menu picks animals by AI
+  number; add-on and Modder's Edition packs need their own executables).
+  Killers are set down beside the hunter, so how an animal finds and
+  stalks him is not covered.
 - Screenshots and frame times come from the PC renderer only.
 - The change-gun and change-call pickers exist only in the PC frontend:
   the headless run reports them as unsupported, and the render pass checks

@@ -145,6 +145,39 @@ fn dist(a: [f32; 2], b: [f32; 2]) -> f32 {
     ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt()
 }
 
+/// How a kill went, for comparing engines (the original's against ours):
+/// time from release to kill, the clips played, and where the body lay.
+#[derive(Debug, Clone, PartialEq)]
+pub struct KillReport {
+    pub stage: String,
+    pub ms_to_kill: u32,
+    pub body_clips: Vec<usize>,
+    pub killer_clips: Vec<usize>,
+    pub start_gap: f32,
+    pub max_stray: f32,
+}
+
+/// A character's clip, frame time and ground position, as a kill watch
+/// sees it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Pose {
+    pub phase: usize,
+    pub ftime: i32,
+    pub at: [f32; 2],
+}
+
+/// Whether `phase` is one of a hunter model's clips (`ani_ms`: each clip's
+/// length), with a length above zero.
+pub fn hunter_clip(ani_ms: &[i32], phase: usize) -> Result<(), String> {
+    match ani_ms.get(phase) {
+        Some(&ms) if ms > 0 => Ok(()),
+        _ => Err(format!(
+            "clip {phase} of a hunter model with {} clips",
+            ani_ms.len()
+        )),
+    }
+}
+
 fn note(clips: &mut Vec<usize>, phase: usize) {
     if clips.last() != Some(&phase) {
         clips.push(phase);
@@ -152,20 +185,32 @@ fn note(clips: &mut Vec<usize>, phase: usize) {
 }
 
 impl KillWatch {
+    /// A kill to watch: `reach` from [`KillWatch::reach_for`]. The original
+    /// engine's runner builds one from the game's memory.
+    pub fn new(killer: usize, body: usize, start_tick: u32, reach: f32) -> Self {
+        Self {
+            killer,
+            body,
+            start_tick,
+            reach,
+            ..Default::default()
+        }
+    }
+
+    /// How far the body may be from a killer of model reach `size` at
+    /// `scale`.
+    pub fn reach_for(size: f32, scale: f32, plan: &KillPlan) -> f32 {
+        (size * scale.max(0.1) * plan.body_reach).max(plan.min_body_reach)
+    }
+
     /// The kill has happened: who did it, and the limits for this killer.
     pub fn start(hunt: &Hunt, tick: u32, plan: &KillPlan) -> Option<Self> {
         let d = hunt.death?;
         let killer = d.killer?;
         let k = hunt.herd.chars.get(killer)?;
         let size = hunt.herd.species.get(k.ctype).map_or(0.0, |s| s.size);
-        let reach = (size * k.scale.max(0.1) * plan.body_reach).max(plan.min_body_reach);
-        let mut w = Self {
-            killer,
-            body: d.body,
-            start_tick: tick,
-            reach,
-            ..Default::default()
-        };
+        let reach = Self::reach_for(size, k.scale, plan);
+        let mut w = Self::new(killer, d.body, tick, reach);
         w.sample(hunt);
         Some(w)
     }
@@ -178,25 +223,27 @@ impl KillWatch {
                 .get_or_insert("the body or the killer is gone".into());
             return;
         };
-        let clips = hunt.herd.species.get(b.ctype).map(|s| &s.ani_time[..]);
-        let hunter = hunt.herd.species.get(b.ctype).map(|s| s.info.ai);
-        match clips {
-            _ if hunter != Some(ai::HUNTER) => {
-                self.bad_clip
-                    .get_or_insert(format!("the body is species {} (not a hunter)", b.ctype));
+        let sp = hunt.herd.species.get(b.ctype);
+        let clip = match sp {
+            Some(s) if s.info.ai != ai::HUNTER => {
+                Err(format!("the body is species {} (not a hunter)", b.ctype))
             }
-            Some(t) if t.get(b.phase).is_some_and(|&ms| ms > 0) => {}
-            Some(t) => {
-                self.bad_clip.get_or_insert(format!(
-                    "clip {} of a hunter model with {} clips",
-                    b.phase,
-                    t.len()
-                ));
-            }
-            None => {
-                self.bad_clip
-                    .get_or_insert("the body has no species".into());
-            }
+            Some(s) => hunter_clip(&s.ani_time, b.phase),
+            None => Err("the body has no species".into()),
+        };
+        let pose = |c: &crate::dino::Character| Pose {
+            phase: c.phase,
+            ftime: c.ftime,
+            at: [c.pos[0], c.pos[2]],
+        };
+        self.push(pose(b), pose(k), clip);
+    }
+
+    /// One tick of the kill, from the poses: `clip` says whether the
+    /// body's clip is one of the hunter model's ([`hunter_clip`]).
+    pub fn push(&mut self, b: Pose, k: Pose, clip: Result<(), String>) {
+        if let Err(e) = clip {
+            self.bad_clip.get_or_insert(e);
         }
         let body = (b.phase, b.ftime);
         let killer = (k.phase, k.ftime);
@@ -210,13 +257,25 @@ impl KillWatch {
         self.last_killer = Some(killer);
         note(&mut self.body_clips, b.phase);
         note(&mut self.killer_clips, k.phase);
-        let gap = dist([b.pos[0], b.pos[2]], [k.pos[0], k.pos[2]]);
+        let gap = dist(b.at, k.at);
         if self.start_gap.is_none() {
             self.start_gap = Some(gap);
-            self.fell_at = [b.pos[0], b.pos[2]];
+            self.fell_at = b.at;
         }
-        let drift = dist([b.pos[0], b.pos[2]], self.fell_at);
+        let drift = dist(b.at, self.fell_at);
         self.max_stray = self.max_stray.max(gap.min(drift));
+    }
+
+    /// The kill's summary, for comparisons between engines.
+    pub fn report(&self, stage: &str, ms_to_kill: u32) -> KillReport {
+        KillReport {
+            stage: stage.into(),
+            ms_to_kill,
+            body_clips: self.body_clips.clone(),
+            killer_clips: self.killer_clips.clone(),
+            start_gap: self.start_gap.unwrap_or(f32::INFINITY),
+            max_stray: self.max_stray,
+        }
     }
 
     /// `(check name, passed, detail)` for the watched kill.

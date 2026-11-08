@@ -8,6 +8,7 @@ pub mod game;
 pub mod headless;
 pub mod html;
 pub mod image_diff;
+pub mod kill_parity;
 pub mod metrics;
 pub mod original;
 pub mod output;

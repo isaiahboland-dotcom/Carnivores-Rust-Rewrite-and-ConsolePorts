@@ -337,6 +337,7 @@ pub fn compare(base: &Path, cand: &Path, th: &Thresholds) -> Result<Verdict> {
         "performance": perf,
         "performance_warnings": perf_warnings,
         "simulation_state_identical": same_state,
+        "kill_parity": crate::kill_parity::compare(&bm, &cm),
         "content_matches_baseline": content_matches,
         "baseline_has_screenshots": base.join("screenshots").is_dir(),
     });

@@ -1,5 +1,28 @@
 # Decisions and deviations
 
+## 2026-11-08 — Kill runs in the original engines; Ice Age kills differ from ours
+- **The hook reads and writes the original's globals for kill runs.** The
+  original places hunt animals 40 or more cells from the hunter, and a
+  kill can't be told from pictures. So `c2-regress` finds `MyHealth`,
+  `Characters`, `ChCount`, `PlayerX/Y/Z` and `CameraAlpha` by signature
+  in the shipped renderer (`src/original/addrs.rs`). `kill.c` releases
+  the killer as our kill script does, notices the death and logs the
+  poses. Nothing on disk is changed. The tour still reads no memory.
+- **Screenshots from the presented frame.** The hook keeps a copy of the
+  software renderer's per-frame `BitBlt` and saves that. Screen captures
+  were black whenever the monitor slept, so tour runs failed for reasons
+  outside the game.
+- **Finding: Ice Age's kills are synchronized, and ours are not.** In the
+  original Ice Age, `AddDeadBody` gives the body the killer's position,
+  heading and scale, and the hunter clip `AI - 7`. The killer plays a
+  kill clip of its own: Woolly rhinoceros body 6, killer 7; Yeti 12, 7;
+  Diatryma 7, 8, and it stays rather than running on. Our engine plays
+  Carnivores 2's kill for them (body clip 0, killer clip 6, the body 150
+  units off; the Diatryma gores and runs). The original wins: Ice Age's
+  kill path needs porting. The kill-animation checks pass on both, so
+  `kill_parity` in the comparison is where this shows. Carnivores 2's T-Rex
+  and Allosaurus kills match the original's clip for clip.
+
 ## 2026-11-08 — Kill-animation regression scenario
 - **A second script, not a second runner.** `kill_animations.toml` sets
   `script = "kills"`; the same `Director`, `Hold`, headless runner, render

@@ -16,9 +16,11 @@ clang $cflags -c "$here/hook.c" -o "$out/hook.o"
 # shellcheck disable=SC2086
 clang $cflags -c "$here/script.c" -o "$out/script.o"
 # shellcheck disable=SC2086
+clang $cflags -c "$here/kill.c" -o "$out/kill.o"
+# shellcheck disable=SC2086
 clang $cflags -c "$here/launch.c" -o "$out/launch.o"
 # shellcheck disable=SC2086
-lld-link /nologo /dll /safeseh:no /entry:DllMain /nodefaultlib /out:"$out/c2hook.dll" "$out/hook.o" "$out/script.o" $libs
+lld-link /nologo /dll /safeseh:no /entry:DllMain /nodefaultlib /out:"$out/c2hook.dll" "$out/hook.o" "$out/script.o" "$out/kill.o" $libs
 # shellcheck disable=SC2086
 lld-link /nologo /safeseh:no /subsystem:console /entry:start /nodefaultlib /out:"$out/c2launch.exe" "$out/launch.o" $libs
 echo "$out/c2launch.exe"

@@ -3,7 +3,9 @@
 //! `pc-ver/crates/c2-regress/original/` (docs/REGRESSION.md). Recorded in
 //! the same files as our engine's runs, with the same checkpoint names.
 
+pub mod addrs;
 pub mod checks;
+pub mod kills;
 pub mod script;
 pub mod wine;
 
@@ -39,18 +41,25 @@ pub fn default_hook_dir() -> Option<PathBuf> {
     Some(exe.parent()?.parent()?.join("original-hook"))
 }
 
-fn stage(name: &str, status: &str, reason: String, frame: u32) -> Value {
+pub(super) fn stage(name: &str, status: &str, reason: String, frame: u32) -> Value {
     json!({ "name": name, "source": "original", "status": status, "reason": reason,
             "start_tick": Value::Null, "end_tick": frame })
 }
 
-fn event(frame: u32, kind: &str, stage: &str, name: &str, ok: Option<bool>, detail: &str) -> Value {
+pub(super) fn event(
+    frame: u32,
+    kind: &str,
+    stage: &str,
+    name: &str,
+    ok: Option<bool>,
+    detail: &str,
+) -> Value {
     json!({ "tick": Value::Null, "frame": frame, "time_ms": frame * script::FRAME_MS,
             "source": "original", "kind": kind, "stage": stage, "name": name, "ok": ok,
             "detail": detail })
 }
 
-fn sha_file(p: &Path) -> String {
+pub(super) fn sha_file(p: &Path) -> String {
     std::fs::read(p).map_or_else(|_| "missing".into(), |d| format!("{:x}", Sha256::digest(d)))
 }
 
@@ -69,6 +78,10 @@ pub fn run(o: &Original, dir: &Path) -> Result<bool> {
         .area
         .as_deref()
         .context("the game section names no area")?;
+    std::fs::create_dir_all(o.work)?;
+    if let c2_core::scenario::Script::Kills(k) = &o.scenario.script {
+        return kills::run(o, dir, k, area);
+    }
     let weapons = o.game.weapon_names();
     let args = script::command_line(area, o.scenario, weapons.len())?;
     let plan = script::plan(o.scenario, &weapons);
@@ -314,6 +327,17 @@ fn record(
         },
         "checkpoints": checkpoints,
     });
+    let manifest = manifest(o, args, exe, runs.len());
+    write_json(&dir.join("metrics.json"), &metrics)?;
+    write_json(&dir.join("manifest.json"), &manifest)?;
+    write_jsonl(&dir.join("events.jsonl"), &events)?;
+    std::fs::write(dir.join("engine.log"), log)?;
+    Ok(!failed)
+}
+
+/// What a run of the original was: scenario, game, the hunt executable and
+/// its command line, the hook and the game's files.
+pub(super) fn manifest(o: &Original, args: &str, exe: &Path, repeats: usize) -> Value {
     let files: Vec<Value> = o
         .game
         .files
@@ -325,7 +349,7 @@ fn record(
         .output()
         .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-    let manifest = json!({
+    json!({
         "scenario": { "id": o.file.id(), "version": o.file.version(), "file_sha256": o.file.hash },
         "game": { "id": o.def.id, "name": o.def.name, "area": o.game.area_name },
         "engine": "original",
@@ -344,13 +368,8 @@ fn record(
         "seed": unavailable("the original seeds rand() from its clock, which starts at a fixed value"),
         "settings": { "tick_ms": Value::Null, "frame_ms": script::FRAME_MS,
                       "warmup_ticks": o.scenario.warmup_ticks, "time_of_day": "day",
-                      "repeats": runs.len(), "inject": Value::Null },
+                      "repeats": repeats, "inject": Value::Null },
         "hardware": crate::output::hardware(),
         "renderer": { "backend": "original software renderer (v_soft.ren)", "resolution": [800, 600] },
-    });
-    write_json(&dir.join("metrics.json"), &metrics)?;
-    write_json(&dir.join("manifest.json"), &manifest)?;
-    write_jsonl(&dir.join("events.jsonl"), &events)?;
-    std::fs::write(dir.join("engine.log"), log)?;
-    Ok(!failed)
+    })
 }

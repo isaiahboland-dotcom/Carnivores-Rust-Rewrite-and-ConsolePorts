@@ -207,6 +207,8 @@ pub fn write(dir: &Path, ctx: &RunContext) -> Result<bool> {
             "weapons_fired_once": fired,
             "weapons_to_fire": to_fire,
             "kills": kills,
+            "kills_detail": director.map(|d| d.kill_reports.iter()
+                .map(crate::kill_parity::report_json).collect::<Vec<_>>()),
             "shots_total": first.map(|r| r.shots),
             "stages": { "passed": count("passed"), "failed": count("failed"),
                         "unsupported": count("unsupported") },
