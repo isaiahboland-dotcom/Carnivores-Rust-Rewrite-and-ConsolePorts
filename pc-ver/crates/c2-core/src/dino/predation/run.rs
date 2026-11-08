@@ -453,6 +453,12 @@ impl Predators {
     /// (their AIs play no kill clip for an animal).
     pub fn settle(&self, i: usize, chars: &mut [Character], species: &[Species], struck: bool) {
         let Some(c) = chars.get(i) else { return };
+        // Goals are re-picked every THINK_MS but settled every step: one
+        // shot dead in between must not kill or eat.
+        if c.health == 0 {
+            chars[i].predation.goal = Goal::None;
+            return;
+        }
         let goal = c.predation.goal;
         let chases = self.rules.kind(c.ctype).drive != Drive::Flees;
         let Some(j) = goal.target() else {

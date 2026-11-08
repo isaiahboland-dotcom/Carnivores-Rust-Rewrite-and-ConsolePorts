@@ -4731,3 +4731,12 @@ Found by comparing the original engine's regression screenshots with ours.
   Their checkpoint state hashes are identical to the old ones, so the draft
   differed only in text that does not change the run. The scenario stays at
   version 2.
+
+## 2026-11-07 — A dead animal settles no predation goal
+
+- Predation re-picks goals every 300 ms (`THINK_MS`) but settles them on
+  every AI step. An animal shot dead in between kept its hunt or scavenge
+  goal and, within reach of its target, still killed it or ate from it.
+- `Predators::settle` now drops the goal of a dead actor before anything
+  else. Picking goals less often stays as it is (it keeps the scans cheap).
+

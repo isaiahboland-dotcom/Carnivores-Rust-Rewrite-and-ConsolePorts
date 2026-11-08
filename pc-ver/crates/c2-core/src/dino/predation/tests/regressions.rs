@@ -153,3 +153,30 @@ fn a_finished_meal_hands_the_carnivore_back_to_its_ai() {
         );
     }
 }
+
+/// From the v0.5.0 source audit: goals are re-picked every `THINK_MS`, but
+/// a goal is settled on every AI step, so an animal shot dead within reach
+/// of its target could still kill it or eat from it before the next pick.
+#[test]
+fn a_dead_animal_neither_kills_nor_eats() {
+    let area = Area::flat(10);
+    let mut h = herd(
+        &Predation::default(),
+        &area,
+        &[(RAPTOR, 0.0), (STEGO, 100.0)],
+    );
+    h.chars[0].health = 0;
+    h.chars[0].predation.goal = Goal::Hunt(1);
+    let p = h.predation.take().unwrap();
+    p.settle(0, &mut h.chars, &h.species, true);
+    assert_ne!(h.chars[1].health, 0, "a dead raptor killed the stego");
+    assert_eq!(h.chars[0].predation.eat_phase, None);
+
+    h.chars[1].health = 0;
+    h.chars[0].predation.goal = Goal::Scavenge(1);
+    p.settle(0, &mut h.chars, &h.species, true);
+    assert!(
+        !h.chars[1].predation.eaten,
+        "a dead raptor ate from the body"
+    );
+}

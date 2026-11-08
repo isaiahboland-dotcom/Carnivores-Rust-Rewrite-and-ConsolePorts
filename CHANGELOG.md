@@ -6,6 +6,8 @@
 
 - With predation on, a carnivore that finished (or was interrupted in) a meal no longer stands
   eating for the rest of the hunt; it walks off and its AI takes over again.
+- With predation on, a carnivore shot dead next to its prey can no longer kill it or eat from a
+  body in the moment before it stops hunting.
 
 ### Gameplay regression scenarios (PC; developer tool)
 
