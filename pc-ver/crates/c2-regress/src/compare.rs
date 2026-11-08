@@ -123,6 +123,15 @@ fn functional(base: &Value, cand: &Value, bman: &Value, cman: &Value) -> (bool, 
             problems.push(format!("{k}: runs are of different scenarios or games"));
         }
     }
+    // Same id and version but another text: the scenario was edited
+    // without a version bump, so the runs did not do the same thing.
+    let hash = "/scenario/file_sha256";
+    if bman.pointer(hash) != cman.pointer(hash) {
+        problems.push(format!(
+            "{hash}: the scenario file differs from the baseline's \
+             (edited without a version bump?)"
+        ));
+    }
     if cand["result"] != "passed" {
         problems.push("candidate run failed".into());
     }
@@ -332,4 +341,33 @@ pub fn compare(base: &Path, cand: &Path, th: &Thresholds) -> Result<Verdict> {
         perf_warnings,
         report,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn passing() -> Value {
+        json!({ "result": "passed", "functional": {
+            "animals_end": 4, "animals_expected": 4, "weapons_fired_once": 2,
+            "weapon_registry": 2, "timeouts": 0, "panics": 0, "setup_error": null } })
+    }
+
+    fn manifest(hash: &str) -> Value {
+        json!({ "scenario": { "id": "s", "version": 2, "file_sha256": hash },
+                "game": { "id": "c2", "area": "AREA2" } })
+    }
+
+    #[test]
+    fn same_scenario_text_passes() {
+        let (ok, problems) = functional(&passing(), &passing(), &manifest("a"), &manifest("a"));
+        assert!(ok, "{problems:?}");
+    }
+
+    #[test]
+    fn an_edited_scenario_without_a_version_bump_fails() {
+        let (ok, problems) = functional(&passing(), &passing(), &manifest("a"), &manifest("b"));
+        assert!(!ok);
+        assert!(problems[0].contains("file_sha256"), "{problems:?}");
+    }
 }

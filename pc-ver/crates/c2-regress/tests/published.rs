@@ -33,6 +33,10 @@ fn published_baselines_are_complete_and_vanilla() {
             let m = read_json(&d.join("metrics.json")).unwrap();
             assert!(d.join("events.jsonl").exists(), "{id}");
             assert_eq!(man["scenario"]["version"], sf.version(), "{id}: re-publish");
+            assert_eq!(
+                man["scenario"]["file_sha256"], sf.hash,
+                "{id}: recorded from another scenario text: bump its version and re-publish"
+            );
             assert_eq!(m["result"], "passed", "{id}");
             let f = &m["functional"];
             assert_eq!(f["animals_end"], f["animals_expected"], "{id}");

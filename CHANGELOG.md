@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Hunt (PC, Android)
+
+- With predation on, a carnivore that finished (or was interrupted in) a meal no longer stands
+  eating for the rest of the hunt; it walks off and its AI takes over again.
+
+### Gameplay regression scenarios (PC; developer tool)
+
+- Comparing with a baseline fails when the scenario file's text differs, not only its id or
+  version.
+- Repeats that disagree fail the run. `publish` requires agreeing repeats (`--repeat` 2 or
+  more) and the scenario text in the repository.
+- The published vanilla baselines were re-recorded from the committed scenario file.
+
 ## 0.5.1 — 2026-11-07
 
 Two fixes: standalone instances could play Carnivores 2's animals, and observer mode

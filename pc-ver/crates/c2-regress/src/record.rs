@@ -117,7 +117,10 @@ pub fn write(dir: &Path, ctx: &RunContext) -> Result<bool> {
     let panics = ctx.runs.iter().filter(|r| r.panic.is_some()).count();
     let registry = ctx.game.weapons.len();
     let weapons_ok = ctx.def.weapons.is_none_or(|n| n == registry);
+    let determinism = determinism(ctx.runs);
+    // Repeats that disagree: the run is not reproducible, so it fails.
     let failed = count("failed") > 0
+        || determinism["identical"] == false
         || setup_error.is_some()
         || panics > 0
         || !weapons_ok
@@ -207,7 +210,7 @@ pub fn write(dir: &Path, ctx: &RunContext) -> Result<bool> {
         },
         "memory": { "process_bytes": rss, "peak_bytes": peak },
         "render": render,
-        "determinism": determinism(ctx.runs),
+        "determinism": determinism,
         "checkpoints": first.map(|r| r.checkpoints.iter().map(|c| json!({
             "name": c.name, "tick": c.tick, "state_hash": format!("{:016x}", c.hash),
         })).collect::<Vec<_>>()),

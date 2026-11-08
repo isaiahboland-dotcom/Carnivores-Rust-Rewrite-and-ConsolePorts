@@ -9,6 +9,7 @@ use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
 
 use crate::output::{read_json, write_json};
+use crate::scenario_file::ScenarioFile;
 
 /// The published baselines in this checkout:
 /// `pc-ver/crates/c2-regress/baselines/<scenario>/<game>/`.
@@ -94,15 +95,52 @@ pub fn redact_metrics(m: &Value) -> Value {
     m
 }
 
+/// Why a run cannot be a baseline, if it cannot. `scenario_hash` is the
+/// SHA-256 of the scenario file in this checkout.
+pub fn refuse(manifest: &Value, metrics: &Value, scenario_hash: &str) -> Option<String> {
+    if metrics["result"] != "passed" {
+        return Some("only a passed run can be a baseline".into());
+    }
+    if manifest["settings"]["inject"].as_str().is_some() {
+        return Some("a run with a deliberate fault (--inject) cannot be a baseline".into());
+    }
+    if metrics.pointer("/determinism/identical") != Some(&json!(true)) {
+        return Some(
+            "a baseline needs repeats that agree: run with --repeat 2 or more \
+             (determinism.identical must be true)"
+                .into(),
+        );
+    }
+    if manifest.pointer("/scenario/file_sha256") != Some(&json!(scenario_hash)) {
+        return Some(
+            "the run used another text of the scenario than this checkout's: \
+             re-run it (and bump the scenario version if the file changed)"
+                .into(),
+        );
+    }
+    None
+}
+
+/// The scenario file a published baseline belongs to:
+/// `pc-ver/crates/c2-regress/scenarios/<id>.toml`.
+pub fn scenario_path(id: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("scenarios")
+        .join(format!("{id}.toml"))
+}
+
 /// Copies `run` to `to` (replacing what is there) after the checks.
 pub fn publish(run: &Path, list: &Path, list_label: &str, to: &Path) -> Result<()> {
     let manifest = read_json(&run.join("manifest.json"))?;
     let metrics = read_json(&run.join("metrics.json"))?;
-    if metrics["result"] != "passed" {
-        bail!("only a passed run can be a baseline");
-    }
-    if manifest["settings"]["inject"].as_str().is_some() {
-        bail!("a run with a deliberate fault (--inject) cannot be a baseline");
+    let id = manifest
+        .pointer("/scenario/id")
+        .and_then(Value::as_str)
+        .context("manifest without scenario id")?;
+    let scenario = ScenarioFile::load(&scenario_path(id))
+        .context("a published baseline must be of a scenario in this repository")?;
+    if let Some(why) = refuse(&manifest, &metrics, &scenario.hash) {
+        bail!("{why}");
     }
     let checked = verify_vanilla(&manifest, list)?;
     let events = std::fs::read_to_string(run.join("events.jsonl"))
@@ -132,6 +170,21 @@ mod tests {
             "renderer": { "adapter": "Some GPU", "backend": "Vulkan", "resolution": [960, 540] },
             "settings": { "inject": null },
         })
+    }
+
+    #[test]
+    fn only_reproducible_runs_of_this_scenario_text_are_published() {
+        let man = json!({ "scenario": { "file_sha256": "abc" }, "settings": { "inject": null } });
+        let ok = json!({ "result": "passed", "determinism": { "identical": true } });
+        assert_eq!(refuse(&man, &ok, "abc"), None);
+        assert!(refuse(&man, &ok, "def").unwrap().contains("scenario"));
+        let one = json!({ "result": "passed",
+                          "determinism": { "identical": { "unavailable": "one run" } } });
+        assert!(refuse(&man, &one, "abc").unwrap().contains("--repeat"));
+        let flaky = json!({ "result": "passed", "determinism": { "identical": false } });
+        assert!(refuse(&man, &flaky, "abc").unwrap().contains("--repeat"));
+        let failed = json!({ "result": "failed", "determinism": { "identical": true } });
+        assert!(refuse(&man, &failed, "abc").unwrap().contains("passed"));
     }
 
     #[test]

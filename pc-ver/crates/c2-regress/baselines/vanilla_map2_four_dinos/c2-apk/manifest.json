@@ -1,9 +1,9 @@
 {
   "build": {
-    "commit": "c1751015c87b",
+    "commit": "398e58e25080",
     "dirty": true,
     "profile": "release",
-    "version": "0.4.3"
+    "version": "0.5.1"
   },
   "content": {
     "files": [
@@ -351,14 +351,14 @@
     ]
   },
   "scenario": {
-    "file_sha256": "cea79917f767088db245258abac7d21372e0bb09eab73d163ae4984fd6f70211",
+    "file_sha256": "2a9df197791560564f69f65c646bac25b21b983760f880e14540d1b39fc08d82",
     "id": "vanilla_map2_four_dinos",
     "version": 2
   },
   "seed": 20261107,
   "settings": {
     "inject": null,
-    "repeats": 5,
+    "repeats": 3,
     "settle_ticks": 30,
     "tick_ms": 10,
     "time_of_day": "day",

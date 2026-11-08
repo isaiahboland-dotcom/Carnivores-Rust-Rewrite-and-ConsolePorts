@@ -4712,3 +4712,22 @@ Found by comparing the original engine's regression screenshots with ours.
 - Fed carnivores now hunt again after their 30 s rest, so predation can
   empty a map of herbivores faster than before; see the open population
   and corpse policy item from the same audit.
+
+## 2026-11-07 — Regression baselines are tied to the scenario text and to agreeing repeats
+
+- The four published baselines recorded a scenario file hash that matched no
+  committed text of `vanilla_map2_four_dinos.toml` (same id, version 2):
+  they were recorded from an uncommitted draft. The comparison checked id and
+  version only, so nothing noticed.
+- The functional comparison now also requires the same `scenario.file_sha256`.
+  Any edit to a scenario file, comments included, needs a version bump and new
+  baselines, as `docs/REGRESSION.md` already asked.
+- Repeats that reach a checkpoint with different state now fail the run, on
+  both engines. A single run still passes with determinism "unavailable", so
+  quick local runs keep working.
+- `publish` refuses a run unless `determinism.identical` is true (so at least
+  two repeats) and its scenario hash matches the file in this checkout.
+- The baselines were re-recorded from the committed text with `--repeat 3`.
+  Their checkpoint state hashes are identical to the old ones, so the draft
+  differed only in text that does not change the run. The scenario stays at
+  version 2.

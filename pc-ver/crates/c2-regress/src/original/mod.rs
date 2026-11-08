@@ -266,14 +266,14 @@ fn record(
         ));
     }
     let count = |k: &str| stages.iter().filter(|s| s["status"] == k).count();
-    let failed = count("failed") > 0;
+    let identical = runs.iter().all(|r| r.1 == runs[0].1);
+    let failed = count("failed") > 0 || !identical;
     let ui = |n: &str| {
         stages
             .iter()
             .find(|s| s["name"] == n)
             .map_or(json!("not_run"), |s| s["status"].clone())
     };
-    let identical = runs.iter().all(|r| r.1 == runs[0].1);
     let checkpoints: Vec<Value> = plan
         .shots
         .iter()

@@ -269,7 +269,9 @@ not measured is written as `{"unavailable": "why"}`, never as zero:
 Each checkpoint records a hash of the hunt (tick, hunter, weapon, every
 animal's pose, the random stream). `--repeat N` runs the headless hunt N
 times; `metrics.json` `determinism.identical` says whether every repeat
-reached every checkpoint at the same tick with the same hash. The render
+reached every checkpoint at the same tick with the same hash; repeats that
+disagree fail the run (exit code 1). One run reports determinism as
+unavailable and does not fail on it. The render
 pass runs the same script through `HuntView`, and its hashes match the
 headless ones, so rendering does not disturb the simulation.
 
@@ -287,14 +289,17 @@ machine, not identified). See the README there.
 
 `c2-regress publish RUN_DIR --hash-list LIST.toml [--to DIR]` makes one. The
 list must be a file of this repository; the manifest names it by its path
-from the repository root. It refuses failed runs, runs with `--inject`, and runs that
-read any file not matching the list. A test in the `pc` CI job checks the
+from the repository root. It refuses failed runs, runs with `--inject`, runs
+without agreeing repeats (`--repeat` of 2 or more, `determinism.identical`
+true), runs of another text of the scenario than the one in
+`crates/c2-regress/scenarios/`, and runs that read any file not matching the list. A test in the `pc` CI job checks the
 published baselines (current scenario version, hash lists, no machine
 details) without game files.
 
 ## Comparing with a baseline
 
-- **Functional** (fails): different scenario/game/version, failed run, a
+- **Functional** (fails): different scenario/game/version, a different
+  scenario file text (its SHA-256: edited without a version bump), failed run, a
   different map, animals missing at the end, a weapon not fired exactly
   once, timeouts, panics, set-up errors, a screen that passed in the
   baseline and no longer does.
