@@ -7,7 +7,7 @@ use crate::portable_math::FloatMath;
 #[cfg(not(feature = "std"))]
 use alloc::{format, string::String, vec::Vec};
 
-use super::{Scenario, SpeciesRef};
+use super::{Scenario, Script, SpeciesRef};
 use crate::area::Area;
 use crate::dino::{Herd, Species};
 use crate::game::{Hunt, HuntOptions, WeaponAnims, WeaponInfo, Weapons, MAX_HEALTH};
@@ -58,21 +58,36 @@ pub struct Hold {
     pub view: [f32; 2],
     /// `(character index, x, z)`.
     pub animals: Vec<(usize, f32, f32)>,
+    /// The character the kill script has let go of (not pinned).
+    pub released: Option<usize>,
+    /// `--inject freeze-body`: the hunter's body is held on frame 0.
+    pub freeze_body: bool,
 }
 
 impl Hold {
     /// Pins the hunter's place and view and the animals' places, and keeps
-    /// the hunter alive. Returns the animals that are gone or dead.
+    /// the hunter alive until something kills him (the kill script).
+    /// Returns the animals that are gone or dead.
     pub fn apply(&self, hunt: &mut Hunt, area: &Area) -> Vec<usize> {
         let p = &mut hunt.player;
         [p.x, p.z] = self.player;
         [p.alpha, p.beta] = self.view;
-        hunt.health = MAX_HEALTH;
+        match hunt.death {
+            None => hunt.health = MAX_HEALTH,
+            Some(d) if self.freeze_body => {
+                if let Some(b) = hunt.herd.chars.get_mut(d.body) {
+                    b.ftime = 0;
+                }
+            }
+            Some(_) => {}
+        }
         let mut lost = Vec::new();
         for &(i, x, z) in &self.animals {
             match hunt.herd.chars.get_mut(i) {
                 Some(c) if c.health > 0 => {
-                    c.pos = [x, area.land_height(x, z), z];
+                    if self.released != Some(i) {
+                        c.pos = [x, area.land_height(x, z), z];
+                    }
                 }
                 _ => lost.push(i),
             }
@@ -81,17 +96,32 @@ impl Hold {
     }
 }
 
+/// A placed animal, as the director names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Cast {
+    /// Character index in the hunt.
+    pub index: usize,
+    pub name: String,
+}
+
 pub struct Built {
     pub hunt: Hunt,
     pub hold: Hold,
     /// Species index of each placed animal, in scenario order.
     pub placed: Vec<usize>,
+    /// The placed animals, in scenario order.
+    pub cast: Vec<Cast>,
 }
 
 fn resolve(species: &[Species], r: &SpeciesRef) -> Result<usize, SetupError> {
     let found = match r {
         SpeciesRef::Ai(a) => species.iter().position(|s| s.info.ai == *a),
         SpeciesRef::Index(i) => (*i < species.len()).then_some(*i),
+        SpeciesRef::Model(m) => species.iter().position(|s| {
+            let f = s.info.file.replace('\\', "/");
+            let base = f.rsplit('/').next().unwrap_or(&f);
+            base.eq_ignore_ascii_case(m) || f.eq_ignore_ascii_case(m)
+        }),
     };
     found.ok_or_else(|| SetupError::MissingSpecies(format!("{r:?}")))
 }
@@ -145,6 +175,7 @@ pub fn build(
     ];
     let fire = forward(s.yaw);
     let mut placed = Vec::new();
+    let mut cast = Vec::new();
     let mut animals = Vec::new();
     let mut targets = Bits::NONE;
     for (r, off) in s.species.iter().zip(&s.offsets) {
@@ -169,7 +200,8 @@ pub fn build(
         let angle = cross.abs().atan2(dx * fire[0] + dz * fire[1]);
         let half = (sp.info.radius * 2.0 / dist).atan();
         let edge = angle - half;
-        if edge < s.fire_clearance {
+        // Nothing is fired in the kill script.
+        if edge < s.fire_clearance && s.script == Script::Tour {
             return Err(SetupError::InLineOfFire {
                 species: name,
                 degrees: edge.to_degrees(),
@@ -183,6 +215,10 @@ pub fn build(
             return Err(SetupError::SpawnFailed(name));
         }
         placed.push(ctype);
+        cast.push(Cast {
+            index,
+            name: herd.species[ctype].info.name.clone(),
+        });
         animals.push((index, x, z));
     }
     let n = weapons.len();
@@ -196,9 +232,16 @@ pub fn build(
         player: [player.x, player.z],
         view: [s.yaw, s.pitch],
         animals,
+        released: None,
+        freeze_body: false,
     };
     let hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
-    Ok(Built { hunt, hold, placed })
+    Ok(Built {
+        hunt,
+        hold,
+        placed,
+        cast,
+    })
 }
 
 /// FNV-1a over the state a deterministic run must reproduce: the tick, the

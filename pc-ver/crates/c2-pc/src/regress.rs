@@ -107,7 +107,7 @@ pub fn run(a: &Args) -> Result<()> {
         pc: crate::settings::PcSettings::default(),
     };
     let mut view = HuntView::load(&gpu, setup)?;
-    let (mut hold, names) = view.regress_setup(&s)?;
+    let (mut hold, names, cast) = view.regress_setup(&s)?;
     let inject = a
         .inject
         .map(Inject::parse)
@@ -116,7 +116,7 @@ pub fn run(a: &Args) -> Result<()> {
     if let Some(i) = &inject {
         i.adjust_hold(&mut hold);
     }
-    let mut d = Director::new(&s, &names);
+    let mut d = Director::new(&s, &names, &cast);
     let mut fe = PcFrontend {
         open: None,
         request: None,
@@ -137,6 +137,9 @@ pub fn run(a: &Args) -> Result<()> {
         if let Some(i) = &inject {
             i.adjust_plan(&mut plan, view.regress_hunt());
             i.adjust_hunt(d.tick(), s.warmup_ticks, view.regress_hunt_mut());
+        }
+        if let Some(a) = plan.arrange {
+            view.regress_arrange(&mut hold, a, &s.script);
         }
         if let Some((screen, open)) = fe.request.take() {
             view.regress_picker(screen, open);

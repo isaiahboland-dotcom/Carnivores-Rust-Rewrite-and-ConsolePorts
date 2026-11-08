@@ -107,6 +107,7 @@ fn scenario() -> Scenario {
         warmup_ticks: 50,
         settle_ticks: 5,
         timeout_ticks: 300,
+        script: Script::Tour,
     }
 }
 
@@ -123,7 +124,7 @@ fn run_with(s: &Scenario, weapons: Vec<WeaponInfo>, sabotage: Option<u32>) -> Ru
     let mut b = build(&area, roster(), weapons, anims, s, save()).expect("builds");
     let model = car();
     let cars: Vec<Option<&Car>> = (0..5).map(|_| Some(&model)).collect();
-    let mut d = Director::new(s, &names);
+    let mut d = Director::new(s, &names, &b.cast);
     let mut fe = Headless;
     let mut hashes = Vec::new();
     let mut out: Vec<GameEvent> = Vec::new();
@@ -136,6 +137,9 @@ fn run_with(s: &Scenario, weapons: Vec<WeaponInfo>, sabotage: Option<u32>) -> Ru
             b.hunt.herd.chars[1].health = 0;
         }
         let plan = d.plan(&b.hunt, &mut fe);
+        if let (Some(a), Script::Kills(k)) = (plan.arrange, &s.script) {
+            b.hold.arrange(&mut b.hunt, &area, a, k);
+        }
         b.hunt.tick(&area, &cars, &plan.input, TICK_MS, &mut out);
         out.clear();
         let lost = b.hold.apply(&mut b.hunt, &area);
@@ -246,7 +250,7 @@ fn injected_faults_are_caught() {
     let mut b = build(&area, roster(), guns, anims, &s, save()).expect("builds");
     let model = car();
     let cars: Vec<Option<&Car>> = (0..5).map(|_| Some(&model)).collect();
-    let mut d = Director::new(&s, &names);
+    let mut d = Director::new(&s, &names, &b.cast);
     let inject = Inject::DropShot(1);
     let mut out = Vec::new();
     while !d.done() {
@@ -307,4 +311,117 @@ fn bad_setups_are_refused() {
         save(),
     );
     assert!(matches!(r.err(), Some(SetupError::NoModel(_))));
+}
+
+fn kill_scenario(species: &[i32]) -> Scenario {
+    let mut s = scenario();
+    s.species = species.iter().map(|&a| SpeciesRef::Ai(a)).collect();
+    s.offsets = vec![[0.0, -1500.0], [0.0, 0.0], [0.0, 1500.0]][..species.len()].to_vec();
+    s.anchor_distance = 6000.0;
+    s.anchor_bearing = core::f32::consts::FRAC_PI_2;
+    s.script = Script::Kills(KillPlan {
+        start_distance: 600.0,
+        timeout_ticks: 1500,
+        mid_ticks: 50,
+        late_ticks: 50,
+        min_moving_ticks: 10,
+        body_reach: 3.0,
+        min_body_reach: 1024.0,
+    });
+    s
+}
+
+#[test]
+fn each_animal_kills_and_the_hunter_comes_back() {
+    let s = kill_scenario(&[13, 18]);
+    let r = run_with(&s, three_guns(), None);
+    assert!(!r.director.failed(), "{:#?}", r.director.stages);
+    for stage in ["kill_01_allo", "kill_02_trex", "animals_present"] {
+        assert_eq!(status(&r, stage), &Status::Passed, "{stage}");
+    }
+    let caps: Vec<&str> = r.hashes.iter().map(|h| h.0.as_str()).collect();
+    for c in [
+        "kill_01_allo_start",
+        "kill_01_allo_mid",
+        "kill_02_trex_late",
+    ] {
+        assert!(caps.contains(&c), "{c} in {caps:?}");
+    }
+    let passed = |name: &str| {
+        r.director
+            .events
+            .iter()
+            .filter(|e| e.name == name && e.ok == Some(true))
+            .count()
+    };
+    for check in [
+        "killed_by",
+        "hunter_clip",
+        "hunter_animates",
+        "killer_animates",
+    ] {
+        assert_eq!(passed(check), 2, "{check}");
+    }
+    assert_eq!(passed("body_with_killer"), 2);
+    // Nothing was fired, and the two kills repeat exactly.
+    assert_eq!(passed("fired_once"), 0);
+    let again = run_with(&s, three_guns(), None);
+    assert_eq!(r.hashes, again.hashes);
+}
+
+#[test]
+fn an_animal_that_never_kills_fails_and_the_next_still_runs() {
+    // The Stegosaurus runs from the hunter; the Allosaurus after it kills.
+    let mut s = kill_scenario(&[12, 13]);
+    if let Script::Kills(k) = &mut s.script {
+        k.timeout_ticks = 200;
+    }
+    let r = run_with(&s, three_guns(), None);
+    assert!(matches!(status(&r, "kill_01_stego"), Status::Failed(m) if m.contains("timeout")));
+    assert_eq!(status(&r, "kill_02_allo"), &Status::Passed);
+    assert_eq!(status(&r, "animals_present"), &Status::Passed);
+}
+
+#[test]
+fn a_frozen_body_fails_its_kill() {
+    assert_eq!(Inject::parse("freeze-body"), Ok(Inject::FreezeBody));
+    assert!(Inject::parse("freeze-body:1").is_err());
+    let area = Area::flat(10);
+    let s = kill_scenario(&[13]);
+    let mut b = build(
+        &area,
+        roster(),
+        three_guns(),
+        vec![WeaponAnims::uniform(100); 3],
+        &s,
+        save(),
+    )
+    .expect("builds");
+    Inject::FreezeBody.adjust_hold(&mut b.hold);
+    let model = car();
+    let cars: Vec<Option<&Car>> = (0..5).map(|_| Some(&model)).collect();
+    let mut d = Director::new(&s, &[], &b.cast);
+    let Script::Kills(k) = &s.script else {
+        unreachable!()
+    };
+    let mut out = Vec::new();
+    while !d.done() && d.tick() < s.max_ticks(0) {
+        let plan = d.plan(&b.hunt, &mut Headless);
+        if let Some(a) = plan.arrange {
+            b.hold.arrange(&mut b.hunt, &area, a, k);
+        }
+        b.hunt.tick(&area, &cars, &plan.input, TICK_MS, &mut out);
+        let lost = b.hold.apply(&mut b.hunt, &area);
+        d.observe(&b.hunt, &mut Headless, &lost);
+    }
+    let kill = d
+        .stages
+        .iter()
+        .find(|x| x.name == "kill_01_allo")
+        .expect("ran");
+    assert!(
+        matches!(&kill.status, Status::Failed(m) if m.contains("hunter_animates")),
+        "{:?}",
+        kill.status
+    );
 }

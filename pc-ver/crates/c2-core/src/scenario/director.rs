@@ -11,7 +11,9 @@ use alloc::{
     vec::Vec,
 };
 
-use super::{Event, EventKind, Scenario, StageResult, Status};
+use super::{
+    Arrange, Cast, Event, EventKind, KillPlan, KillWatch, Scenario, Script, StageResult, Status,
+};
 use crate::game::{weapon_anim, Hunt, HuntInput, WeaponState};
 
 /// A screen the script opens and closes.
@@ -70,6 +72,9 @@ impl Frontend for Headless {
 #[derive(Debug, Clone, Default)]
 pub struct TickPlan {
     pub input: HuntInput,
+    /// A change the frontend makes to the hunt before this tick
+    /// ([`super::Hold::arrange`]); kill script only.
+    pub arrange: Option<Arrange>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -90,6 +95,13 @@ enum Step {
     Expect(Screen, bool),
     SaveCall,
     ExpectCallChanged,
+    /// Kill script: let scenario animal `n` go, wait for its kill, watch
+    /// it for `n` ticks, judge it, bring the hunter back.
+    Release(usize),
+    AwaitKill(usize),
+    Watch(u32),
+    VerifyKill,
+    Revive(usize),
 }
 
 /// Lower-case letters and digits, `_` between words.
@@ -118,14 +130,48 @@ pub struct Director {
     call_before: i32,
     lost: bool,
     caps: Vec<String>,
+    cast: Vec<Cast>,
+    kills: Option<KillPlan>,
+    watch: Option<KillWatch>,
     pub events: Vec<Event>,
     pub stages: Vec<StageResult>,
 }
 
 impl Director {
-    /// The script for `s`, with `weapons` the registry's names in order.
-    pub fn new(s: &Scenario, weapons: &[String]) -> Self {
-        let mut steps = vec![
+    /// The script for `s`, with `weapons` the registry's names in order and
+    /// `cast` the placed animals ([`super::Built::cast`]).
+    pub fn new(s: &Scenario, weapons: &[String], cast: &[Cast]) -> Self {
+        let steps = match &s.script {
+            Script::Tour => Self::tour(s, weapons),
+            Script::Kills(k) => Self::kill_steps(s, k, cast),
+        };
+        Self {
+            steps,
+            at: 0,
+            tick: 0,
+            step_tick: 0,
+            // The call icon shows 2048 ms before it closes on its own.
+            timeout: s.timeout_ticks.max(2048 / super::TICK_MS as u32 + 50),
+            animals: s.species.len(),
+            stage: None,
+            shots_before: 0,
+            rounds_before: 0,
+            call_before: 0,
+            lost: false,
+            caps: Vec::new(),
+            cast: cast.to_vec(),
+            kills: match &s.script {
+                Script::Kills(k) => Some(k.clone()),
+                Script::Tour => None,
+            },
+            watch: None,
+            events: Vec::new(),
+            stages: Vec::new(),
+        }
+    }
+
+    fn opening(s: &Scenario) -> Vec<Step> {
+        vec![
             Step::Begin("spawn".into(), None),
             Step::VerifyAnimals,
             Step::End,
@@ -133,7 +179,45 @@ impl Director {
             Step::Wait(s.warmup_ticks),
             Step::Checkpoint("warmup".into()),
             Step::End,
-        ];
+        ]
+    }
+
+    fn closing() -> [Step; 4] {
+        [
+            Step::Begin("animals_present".into(), None),
+            Step::VerifyAnimals,
+            Step::Checkpoint("end".into()),
+            Step::End,
+        ]
+    }
+
+    /// Each animal kills the hunter in turn.
+    fn kill_steps(s: &Scenario, k: &KillPlan, cast: &[Cast]) -> Vec<Step> {
+        let mut steps = Self::opening(s);
+        for (n, c) in cast.iter().enumerate() {
+            let stage = format!("kill_{:02}_{}", n + 1, slug(&c.name));
+            steps.extend([
+                Step::Begin(stage.clone(), None),
+                Step::Release(n),
+                Step::AwaitKill(n),
+                Step::Checkpoint(format!("{stage}_start")),
+                Step::Watch(k.mid_ticks),
+                Step::Checkpoint(format!("{stage}_mid")),
+                Step::Watch(k.late_ticks),
+                Step::Checkpoint(format!("{stage}_late")),
+                Step::VerifyKill,
+                Step::Revive(n),
+                Step::End,
+            ]);
+        }
+        steps.extend(Self::closing());
+        steps
+    }
+
+    /// Every weapon, then every screen.
+    fn tour(s: &Scenario, weapons: &[String]) -> Vec<Step> {
+        let mut steps = vec![];
+        steps.extend(Self::opening(s));
         for (i, name) in weapons.iter().enumerate() {
             let stage = format!("weapon_{:02}_{}", i + 1, slug(name));
             steps.extend([
@@ -166,29 +250,8 @@ impl Director {
         for screen in [Screen::WeaponPicker, Screen::CallPicker] {
             steps.extend(Self::open_close(screen, s.settle_ticks));
         }
-        steps.extend([
-            Step::Begin("animals_present".into(), None),
-            Step::VerifyAnimals,
-            Step::Checkpoint("end".into()),
-            Step::End,
-        ]);
-        Self {
-            steps,
-            at: 0,
-            tick: 0,
-            step_tick: 0,
-            // The call icon shows 2048 ms before it closes on its own.
-            timeout: s.timeout_ticks.max(2048 / super::TICK_MS as u32 + 50),
-            animals: s.species.len(),
-            stage: None,
-            shots_before: 0,
-            rounds_before: 0,
-            call_before: 0,
-            lost: false,
-            caps: Vec::new(),
-            events: Vec::new(),
-            stages: Vec::new(),
-        }
+        steps.extend(Self::closing());
+        steps
     }
 
     fn open_close(screen: Screen, settle: u32) -> [Step; 8] {
@@ -246,11 +309,16 @@ impl Director {
         }
     }
 
-    /// Skips to the current stage's end.
+    /// Skips to the current stage's end, or to its revive: a failed kill
+    /// still brings the hunter back and pins its animal again.
     fn skip_stage(&mut self) {
-        while self.at < self.steps.len() && self.steps[self.at] != Step::End {
+        while let Some(step) = self.steps.get(self.at) {
+            if matches!(step, Step::End | Step::Revive(_)) {
+                break;
+            }
             self.at += 1;
         }
+        self.watch = None;
     }
 
     fn next(&mut self) {
@@ -302,6 +370,10 @@ impl Director {
                     self.call_before = hunt.target_call;
                     self.next();
                 }
+                Step::VerifyKill => {
+                    self.verify_kill();
+                    self.next();
+                }
                 Step::Press(s, open) if s.frontend_only() => {
                     fe.set(s, open);
                     let verb = if open { "open" } else { "close" };
@@ -342,7 +414,16 @@ impl Director {
     pub fn plan(&mut self, hunt: &Hunt, fe: &mut dyn Frontend) -> TickPlan {
         self.run_instant(hunt, fe);
         let mut input = HuntInput::default();
+        let mut arrange = None;
         let action = match self.steps.get(self.at) {
+            Some(&Step::Release(n)) => {
+                arrange = Some(Arrange::Release(n));
+                Some(format!("release_animal {n}"))
+            }
+            Some(&Step::Revive(n)) => {
+                arrange = Some(Arrange::Revive(n));
+                Some("revive_hunter".into())
+            }
             Some(&Step::Select(i)) if hunt.weapons.ftime == 0 => {
                 input.select_weapon = Some(i);
                 Some(format!("select_weapon {i}"))
@@ -370,7 +451,7 @@ impl Director {
         if let Some(a) = action {
             self.log(EventKind::Action, &a, None, String::new());
         }
-        TickPlan { input }
+        TickPlan { input, arrange }
     }
 
     /// Checks the hunt after a tick; `lost` lists animals [`super::Hold`]
@@ -381,11 +462,16 @@ impl Director {
             self.lost = true;
             self.check("animals_kept", false, format!("lost animals {lost:?}"));
         }
+        if let Some(w) = &mut self.watch {
+            w.sample(hunt);
+        }
         let w = &hunt.weapons;
         let done = match self.steps.get(self.at).cloned() {
             None => return core::mem::take(&mut self.caps),
-            Some(Step::Wait(n)) => self.tick - self.step_tick >= n,
+            Some(Step::Wait(n) | Step::Watch(n)) => self.tick - self.step_tick >= n,
             Some(Step::Select(_) | Step::Holster | Step::Press(..)) => true,
+            Some(Step::Release(_) | Step::Revive(_)) => true,
+            Some(Step::AwaitKill(n)) => self.await_kill(hunt, n),
             Some(Step::AwaitReady(i)) => {
                 w.current == i && w.state == WeaponState::Ready && w.ftime == 0
             }
@@ -422,15 +508,51 @@ impl Director {
             }
             Some(_) => true,
         };
+        // A killer may finish a sniff and roar before it charges.
+        let timeout = match (&self.steps[self.at], &self.kills) {
+            (Step::AwaitKill(_), Some(k)) => self.timeout.max(k.timeout_ticks),
+            _ => self.timeout,
+        };
         if done {
             self.next();
-        } else if self.tick - self.step_tick > self.timeout {
+        } else if self.tick - self.step_tick > timeout {
             let step = format!("{:?}", self.steps[self.at]);
             self.check("timeout", false, format!("waiting for {step}"));
             self.skip_stage();
         }
         self.run_instant(hunt, fe);
         core::mem::take(&mut self.caps)
+    }
+
+    /// Whether animal `n`'s kill has happened; starts watching it.
+    fn await_kill(&mut self, hunt: &Hunt, n: usize) -> bool {
+        let Some(plan) = &self.kills else {
+            return true;
+        };
+        let Some(w) = KillWatch::start(hunt, self.tick, plan) else {
+            return hunt.death.is_some();
+        };
+        let want = self.cast.get(n).map(|c| c.index);
+        let body = hunt.herd.chars.get(w.body).map_or(0, |b| b.phase);
+        let detail = format!(
+            "character {} (expected {want:?}), body clip {body}, after {} ticks",
+            w.killer,
+            self.tick - self.step_tick
+        );
+        self.check("killed_by", want == Some(w.killer), detail);
+        self.watch = Some(w);
+        true
+    }
+
+    /// Judges the watched kill.
+    fn verify_kill(&mut self) {
+        let (Some(w), Some(plan)) = (self.watch.take(), self.kills.clone()) else {
+            self.check("kill_watched", false, "no kill to judge".into());
+            return;
+        };
+        for (name, ok, detail) in w.verdicts(&plan) {
+            self.check(name, ok, detail);
+        }
     }
 
     /// Ends the run early (the whole-run tick ceiling): the open stage fails.

@@ -31,8 +31,9 @@ alive still passes. For an optimization or refactor that must not change
 behaviour, compare the hashes yourself (step 4 below).
 
 Not covered by any scenario: the menus and hunt setup, the launcher, mod
-merging and recipes, combined packs, sound, save files, animals hunting the
-player over time, Modder's Edition games beyond loading, and every console
+merging and recipes, combined packs, sound, save files, animals stalking the
+player over time (the kill scenario sets each killer down beside him),
+Modder's Edition games beyond loading and the kills below, and every console
 build. Changes there still need the unit tests and a hand-played check, as
 described in the pull request.
 
@@ -88,7 +89,7 @@ make the comparison fail.
 
 | Where | What |
 |---|---|
-| `pc-ver/crates/c2-core/src/scenario/` | The scenario run, shared by every frontend: set-up (`build`), the script (`Director`), pinning (`Hold`), state hashes, deliberate faults (`Inject`). No I/O. Compiles for the consoles' `portable-hunt` target. |
+| `pc-ver/crates/c2-core/src/scenario/` | The scenario run, shared by every frontend: set-up (`build`), the scripts (`Director`; the kill script's steps and checks in `kills.rs`), pinning (`Hold`), state hashes, deliberate faults (`Inject`). No I/O. Compiles for the consoles' `portable-hunt` target. |
 | `pc-ver/crates/c2-regress/` | `c2-regress` CLI: scenario files, the headless runner, recordings, comparison, `report.html` and the screenshot PDF. |
 | `pc-ver/crates/c2-pc/src/regress.rs`, `hunt_view/regress.rs` | `c2-pc regress`: the same script through the PC renderer, offscreen. Started by `c2-regress run`. |
 | `pc-ver/crates/c2-regress/scenarios/` | Versioned scenario files. |
@@ -181,6 +182,75 @@ checks the APK, not the rebuilt files. When `mobile-base` output changes,
 regenerate the lists (`c2-pc recipe base --base <DIR> --id ID --out FILE`,
 keeping the header) and re-publish the APK baselines.
 
+## Kill animations: `kill_animations`
+
+File: `scenarios/kill_animations.toml` (version 1, `script = "kills"`).
+Kills have broken before: a body frozen on one frame, a kill type naming
+a clip the hunter model does not have, a synchronized body left behind by
+its killer. This scenario plays each kill and checks it.
+
+1. Loads the area by day, seed 20261108. The hunter stands at the first
+   landing, pinned, looking along yaw 0.
+2. Parks the animals 30 cells to the hunter's right, 6 cells apart,
+   pinned (the first `[anchor] offsets`, one per animal).
+3. Warm-up: 200 ticks (2 s).
+4. For each animal, one stage `kill_NN_<name>`:
+   - **Release**: the animal is set down 600 units ahead, facing the
+     hunter, hunting him (as `c2-pc --die`), and is no longer pinned.
+     The hunter's health is no longer topped up once he is dead.
+   - **Kill**: waits up to 1500 ticks (a T-Rex finishes a sniff and roars
+     before it charges). `killed_by`: the death names this animal.
+   - Checkpoints `_start` (the tick of the kill), `_mid` (1 s later) and
+     `_late` (3 s later). The state hash includes the body's and the
+     killer's clip and frame time, so any change to either shows up in
+     the hashes; the render pass takes a picture at each.
+   - Checks over the 300 watched ticks:
+     - `hunter_clip`: the body is a hunter model playing one of its own
+       clips, with a length above zero.
+     - `hunter_animates`, `killer_animates`: each one's (clip, frame time)
+       changes on at least 20 ticks.
+     - `body_with_killer`: the body falls within reach of the killer
+       (3 x the killer's size x scale, at least 1024 units). After that,
+       it may leave the spot where it fell only by staying with the
+       killer (carried, or synchronized to the killer's clip). Killers
+       that gore and run on (the Chasmosaurus AI, which Ice Age's Diatryma
+       uses) leave the body where it fell, and that passes.
+   - **Revive**: the body is removed, the death camera ends, the hunter
+     gets full health, and the animal is calmed and pinned at its parking
+     spot again. A kill that fails or times out is still revived, and the
+     next stage runs.
+5. Checks that every animal is still alive and in place.
+
+| Game | Killers | Area |
+|---|---|---|
+| `c2` | T-Rex (scripted grab and carry), Allosaurus | AREA2 |
+| `ice-age` | Woolly rhinoceros, Yeti, Diatryma | AREA4 |
+| `c2-addons` | Diabloceratops (synchronized toss), Saurophaganax (its own hunter model) | AREA1 |
+| `jphl` | JPHL Special Edition's own T-Rex (`t-rex.car`, not the Carnivores 2 one beside it) | AREA1 |
+| `triassic-mee` | Gojirasaurus (Triassic, Modder's Edition) | AREA1 |
+
+`c2-addons` takes any pack that holds both add-ons, for example one built
+from `recipes/c2-everything.toml`. The modded games pick their animals by
+model file (`model:diablo.car`), since an add-on pack's character indices
+change whenever its mod list changes. They have local baselines only:
+add-on and standalone packs are never published.
+
+```sh
+./target/release/c2-regress run --scenario crates/c2-regress/scenarios/kill_animations.toml \
+    --game-id c2-addons --game <PACK DIR> --repeat 3 [--baseline RUN_DIR]
+```
+
+Use it for any change to the AI's attacks, kill types, hunter-model
+merging, the death camera, `.CAR` animation loading or the renderer's
+character drawing. The functional comparison requires every kill to pass
+(`functional.kills`). The state hashes and screenshots show *how* a kill
+changed. `--inject freeze-body` holds the body on its first frame, and
+every kill must then fail `hunter_animates`.
+
+Results (2026-11-08, PC, Linux): all ten kills pass on all five games.
+Three repeats are identical, and the render pass gives the same state
+hashes as the headless run.
+
 ## Commands
 
 Build both binaries (the render pass runs `c2-pc` from beside `c2-regress`;
@@ -224,7 +294,8 @@ or planned for the scenario, 4 performance warnings with `--fail-on-warn`.
 
 `--inject` proves the checks catch real problems: `drop-shot:N` (weapon N,
 0-based, is never fired), `kill-animal:N` (animal N dies after warm-up),
-`nudge-view:DEG` (the view turns, so screenshots differ). The fault is
+`nudge-view:DEG` (the view turns, so screenshots differ), `freeze-body`
+(kill script: the hunter's body is held on its first frame). The fault is
 recorded in the manifest, and such a run is never used for performance
 comparisons.
 
@@ -301,8 +372,9 @@ details) without game files.
 - **Functional** (fails): different scenario/game/version, a different
   scenario file text (its SHA-256: edited without a version bump), failed run, a
   different map, animals missing at the end, a weapon not fired exactly
-  once, timeouts, panics, set-up errors, a screen that passed in the
-  baseline and no longer does.
+  once (none, for the kill script: `functional.weapons_to_fire`), a kill
+  that did not pass (`functional.kills`), timeouts, panics, set-up errors,
+  a screen that passed in the baseline and no longer does.
 - **Visual** (fails): each baseline screenshot against the candidate's. A
   pixel differs when a channel is more than `tolerance` (24) apart; a
   checkpoint fails when more than `max_differing_ratio` (1%) of its
@@ -424,6 +496,10 @@ dataset waits for approval.
 ## Limitations
 
 - C1 is unsupported (no loader). Fallen Kings is not yet baselined.
+- The kill scenario has no published baselines yet, and `--engine original`
+  refuses it (the original's memory is not read, so a kill can't be
+  checked). Killers are set down beside the hunter, so how an animal
+  finds and stalks him is not covered.
 - Screenshots and frame times come from the PC renderer only.
 - The change-gun and change-call pickers exist only in the PC frontend:
   the headless run reports them as unsupported, and the render pass checks

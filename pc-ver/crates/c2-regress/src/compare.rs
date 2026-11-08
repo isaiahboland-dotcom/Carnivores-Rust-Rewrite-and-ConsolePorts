@@ -145,11 +145,17 @@ fn functional(base: &Value, cand: &Value, bman: &Value, cman: &Value) -> (bool, 
             f["animals_end"], f["animals_expected"]
         ));
     }
-    if f["weapons_fired_once"] != f["weapon_registry"] {
+    // Older recordings have no `weapons_to_fire`: they fired them all.
+    let to_fire = f.get("weapons_to_fire").unwrap_or(&f["weapon_registry"]);
+    if &f["weapons_fired_once"] != to_fire {
         problems.push(format!(
             "{} of {} weapons fired once",
-            f["weapons_fired_once"], f["weapon_registry"]
+            f["weapons_fired_once"], to_fire
         ));
+    }
+    let k = &f["kills"];
+    if !k.is_null() && k["passed"] != k["expected"] {
+        problems.push(format!("{} of {} kills passed", k["passed"], k["expected"]));
     }
     for k in ["timeouts", "panics"] {
         if f[k].as_u64().unwrap_or(1) > 0 {

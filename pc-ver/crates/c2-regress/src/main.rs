@@ -204,6 +204,9 @@ fn run(a: &Args) -> Result<ExitCode> {
     let root = a
         .get("--out")
         .map_or_else(output::default_root, PathBuf::from);
+    if original && scenario.script != c2_core::scenario::Script::Tour {
+        bail!("--engine original runs the tour script only (its memory is not read, so a kill cannot be checked)");
+    }
     if original {
         return run_original(a, &file, def, &scenario, &game, &root, repeat);
     }

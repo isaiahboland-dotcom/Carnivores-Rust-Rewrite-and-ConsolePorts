@@ -16,25 +16,34 @@ pub enum Inject {
     KillAnimal(usize),
     /// The view turns by this many degrees: screenshots must differ.
     NudgeView(f32),
+    /// The hunter's body is held on its first frame (kill script): the
+    /// kill checks must fail.
+    FreezeBody,
 }
 
 impl Inject {
-    /// `drop-shot:N`, `kill-animal:N`, `nudge-view:DEG`.
+    /// `drop-shot:N`, `kill-animal:N`, `nudge-view:DEG`, `freeze-body`.
     pub fn parse(s: &str) -> Result<Self, String> {
         let (k, v) = s.split_once(':').unwrap_or((s, ""));
-        let bad =
-            || format!("--inject {s:?}: expected drop-shot:N, kill-animal:N or nudge-view:DEG");
+        let bad = || {
+            format!(
+                "--inject {s:?}: expected drop-shot:N, kill-animal:N, nudge-view:DEG or freeze-body"
+            )
+        };
         match k {
             "drop-shot" => v.parse().map(Inject::DropShot).map_err(|_| bad()),
             "kill-animal" => v.parse().map(Inject::KillAnimal).map_err(|_| bad()),
             "nudge-view" => v.parse().map(Inject::NudgeView).map_err(|_| bad()),
+            "freeze-body" if v.is_empty() => Ok(Inject::FreezeBody),
             _ => Err(bad()),
         }
     }
 
     pub fn adjust_hold(&self, hold: &mut Hold) {
-        if let Inject::NudgeView(deg) = *self {
-            hold.view[0] += deg.to_radians();
+        match *self {
+            Inject::NudgeView(deg) => hold.view[0] += deg.to_radians(),
+            Inject::FreezeBody => hold.freeze_body = true,
+            _ => {}
         }
     }
 

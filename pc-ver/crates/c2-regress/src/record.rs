@@ -117,6 +117,22 @@ pub fn write(dir: &Path, ctx: &RunContext) -> Result<bool> {
     let panics = ctx.runs.iter().filter(|r| r.panic.is_some()).count();
     let registry = ctx.game.weapons.len();
     let weapons_ok = ctx.def.weapons.is_none_or(|n| n == registry);
+    // The kill script fires nothing; each animal's kill is a stage.
+    let kill_script = matches!(ctx.scenario.script, c2_core::scenario::Script::Kills(_));
+    let to_fire = if kill_script { 0 } else { registry };
+    let kill_stages = |st: &str| {
+        stages
+            .iter()
+            .filter(|s| s["source"] == "headless")
+            .filter(|s| s["name"].as_str().is_some_and(|n| n.starts_with("kill_")))
+            .filter(|s| st.is_empty() || s["status"] == st)
+            .count()
+    };
+    let kills = kill_script.then(|| {
+        json!({ "expected": ctx.scenario.species.len(), "ran": kill_stages(""),
+                "passed": kill_stages("passed") })
+    });
+    let kills_ok = !kill_script || kill_stages("passed") == ctx.scenario.species.len();
     let determinism = determinism(ctx.runs);
     // Repeats that disagree: the run is not reproducible, so it fails.
     let failed = count("failed") > 0
@@ -124,7 +140,8 @@ pub fn write(dir: &Path, ctx: &RunContext) -> Result<bool> {
         || setup_error.is_some()
         || panics > 0
         || !weapons_ok
-        || fired != registry
+        || fired != to_fire
+        || !kills_ok
         || director.is_none();
 
     // UI screens: passed on any source beats unsupported; any failure fails.
@@ -188,6 +205,8 @@ pub fn write(dir: &Path, ctx: &RunContext) -> Result<bool> {
             "weapon_registry": registry,
             "weapon_registry_expected": ctx.def.weapons,
             "weapons_fired_once": fired,
+            "weapons_to_fire": to_fire,
+            "kills": kills,
             "shots_total": first.map(|r| r.shots),
             "stages": { "passed": count("passed"), "failed": count("failed"),
                         "unsupported": count("unsupported") },

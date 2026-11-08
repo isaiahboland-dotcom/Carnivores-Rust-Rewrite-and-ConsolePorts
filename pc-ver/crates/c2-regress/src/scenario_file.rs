@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use anyhow::{bail, Context, Result};
-use c2_core::scenario::{Scenario, SpeciesRef};
+use c2_core::scenario::{KillPlan, Scenario, Script, SpeciesRef};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -16,6 +16,29 @@ struct Head {
     warmup_ticks: u32,
     settle_ticks: u32,
     timeout_ticks: u32,
+    /// `tour` (default) or `kills`.
+    #[serde(default)]
+    script: ScriptName,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ScriptName {
+    #[default]
+    Tour,
+    Kills,
+}
+
+/// `[kills]`: the kill script's distances and timings (`KillPlan`).
+#[derive(Debug, Deserialize)]
+struct Kills {
+    start_distance: f32,
+    timeout_ticks: u32,
+    mid_ticks: u32,
+    late_ticks: u32,
+    min_moving_ticks: u32,
+    body_reach: f32,
+    min_body_reach: f32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,6 +91,7 @@ struct Raw {
     scenario: Head,
     view: View,
     anchor: Anchor,
+    kills: Option<Kills>,
     game: Vec<GameDef>,
 }
 
@@ -80,11 +104,12 @@ pub struct ScenarioFile {
 fn species_ref(s: &str) -> Result<SpeciesRef> {
     let (kind, n) = s
         .split_once(':')
-        .with_context(|| format!("species {s:?}: expected ai:N or index:N"))?;
+        .with_context(|| format!("species {s:?}: expected ai:N, index:N or model:FILE"))?;
     match kind {
         "ai" => Ok(SpeciesRef::Ai(n.parse().context("species ai:N")?)),
         "index" => Ok(SpeciesRef::Index(n.parse().context("species index:N")?)),
-        _ => bail!("species {s:?}: expected ai:N or index:N"),
+        "model" if !n.is_empty() => Ok(SpeciesRef::Model(n.into())),
+        _ => bail!("species {s:?}: expected ai:N, index:N or model:FILE"),
     }
 }
 
@@ -96,6 +121,9 @@ impl ScenarioFile {
         }
         if raw.anchor.offsets.is_empty() {
             bail!("the scenario places no animals");
+        }
+        if raw.scenario.script == ScriptName::Kills && raw.kills.is_none() {
+            bail!("script = \"kills\" needs a [kills] section");
         }
         let hash = format!("{:x}", Sha256::digest(text.as_bytes()));
         Ok(Self { raw, hash })
@@ -142,7 +170,13 @@ impl ScenarioFile {
             .iter()
             .map(|s| species_ref(s))
             .collect::<Result<Vec<_>>>()?;
-        if species.len() != a.offsets.len() {
+        // The tour places exactly one animal per offset; the kill script
+        // takes the first offsets it needs (games have different killers).
+        let fits = match h.script {
+            ScriptName::Tour => species.len() == a.offsets.len(),
+            ScriptName::Kills => species.len() <= a.offsets.len(),
+        };
+        if !fits || species.is_empty() {
             bail!(
                 "{}: {} species for {} anchor offsets",
                 game.id,
@@ -150,6 +184,18 @@ impl ScenarioFile {
                 a.offsets.len()
             );
         }
+        let script = match (h.script, &self.raw.kills) {
+            (ScriptName::Kills, Some(k)) => Script::Kills(KillPlan {
+                start_distance: k.start_distance,
+                timeout_ticks: k.timeout_ticks,
+                mid_ticks: k.mid_ticks,
+                late_ticks: k.late_ticks,
+                min_moving_ticks: k.min_moving_ticks,
+                body_reach: k.body_reach,
+                min_body_reach: k.min_body_reach,
+            }),
+            _ => Script::Tour,
+        };
         Ok(Scenario {
             id: h.id.clone(),
             version: h.version,
@@ -160,12 +206,13 @@ impl ScenarioFile {
             pitch: v.pitch_deg.to_radians(),
             anchor_distance: game.anchor_distance.unwrap_or(a.distance),
             anchor_bearing: a.bearing_deg.to_radians(),
-            offsets: a.offsets.clone(),
+            offsets: a.offsets[..species.len()].to_vec(),
             species,
             fire_clearance: a.fire_clearance_deg.to_radians(),
             warmup_ticks: h.warmup_ticks,
             settle_ticks: h.settle_ticks,
             timeout_ticks: h.timeout_ticks,
+            script,
         })
     }
 }
@@ -204,6 +251,29 @@ mod tests {
         assert_eq!(d.yaw, 270f32.to_radians());
         assert!(f.for_game(f.game("c1").unwrap()).is_err());
         assert!(f.game("c3").is_err());
+    }
+
+    #[test]
+    fn the_kill_scenario_parses() {
+        let text = include_str!("../scenarios/kill_animations.toml");
+        let f = ScenarioFile::parse(text).unwrap();
+        assert_eq!(f.id(), "kill_animations");
+        let ice = f.for_game(f.game("ice-age").unwrap()).unwrap();
+        assert_eq!(ice.species.len(), 3);
+        assert_eq!(ice.offsets.len(), 3, "the first offsets, one per killer");
+        let Script::Kills(k) = &ice.script else {
+            panic!("kill script expected")
+        };
+        assert_eq!((k.start_distance, k.timeout_ticks), (600.0, 1500));
+        let addons = f.for_game(f.game("c2-addons").unwrap()).unwrap();
+        assert_eq!(addons.species[0], SpeciesRef::Model("diablo.car".into()));
+        // The tour stays exact, and a kill script needs its section.
+        assert_eq!(f.for_game(f.game("c2").unwrap()).unwrap().species.len(), 2);
+        assert!(ScenarioFile::parse(&text.replace("[kills]", "[other]")).is_err());
+        assert!(
+            ScenarioFile::parse(&text.replace("\"model:ta10f.car\"", "\"model:\""))
+                .is_ok_and(|f| f.for_game(f.game("triassic-mee").unwrap()).is_err())
+        );
     }
 
     #[test]

@@ -3,7 +3,8 @@
 //! A [`Scenario`] fixes everything a run depends on: seed, hunter cell and
 //! view, four animals pinned around one anchor, and a script of stages
 //! (warm-up, every weapon fired once, binoculars, map, the call icon and
-//! the frontend's pickers). The [`Director`] turns the script into one
+//! the frontend's pickers), or, with the kill script ([`kills`]), each
+//! animal killing the hunter in turn. The [`Director`] turns the script into one
 //! [`HuntInput`](crate::game::HuntInput) per tick, watches the hunt, and
 //! records each stage as passed, failed or unsupported. Frontends drive it
 //! the same way: the headless runner (`c2-regress`) and the PC renderer.
@@ -17,6 +18,7 @@ use alloc::{string::String, vec::Vec};
 
 mod director;
 mod inject;
+mod kills;
 mod record;
 mod setup;
 #[cfg(test)]
@@ -24,8 +26,9 @@ mod tests;
 
 pub use director::{Director, Frontend, Headless, Screen, TickPlan};
 pub use inject::Inject;
+pub use kills::{Arrange, KillPlan, KillWatch};
 pub use record::{Event, EventKind, StageResult, Status};
-pub use setup::{build, state_hash, Built, Hold, SetupError};
+pub use setup::{build, state_hash, Built, Cast, Hold, SetupError};
 
 /// Simulation step of every scenario, ms (the PC's and the 3DS's tick).
 pub const TICK_MS: i32 = 10;
@@ -38,6 +41,19 @@ pub enum SpeciesRef {
     /// By position in `_RES.TXT`'s character list (dialect games, where
     /// names and AI numbers repeat).
     Index(usize),
+    /// By model file, ignoring case and folders (`diablo.car`): add-on
+    /// packs, whose character indices move when their mods change.
+    Model(String),
+}
+
+/// What a run does with the hunt it builds.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Script {
+    /// Every weapon fired once, then every screen opened (the canonical
+    /// scenario).
+    Tour,
+    /// Each animal kills the hunter in turn ([`kills`]).
+    Kills(KillPlan),
 }
 
 /// A scenario after its file is read and its game section picked.
@@ -68,12 +84,19 @@ pub struct Scenario {
     pub settle_ticks: u32,
     /// Most ticks any one wait may take before its stage fails.
     pub timeout_ticks: u32,
+    pub script: Script,
 }
 
 impl Scenario {
     /// Hard ceiling for the whole run: every stage at its timeout.
     pub fn max_ticks(&self, weapons: usize) -> u32 {
-        let stages = 8 + weapons as u32 * 5;
-        self.warmup_ticks + stages * (self.timeout_ticks + self.settle_ticks)
+        let per = self.timeout_ticks + self.settle_ticks;
+        match &self.script {
+            Script::Tour => self.warmup_ticks + (8 + weapons as u32 * 5) * per,
+            Script::Kills(k) => {
+                let kill = k.timeout_ticks.max(self.timeout_ticks) + k.mid_ticks + k.late_ticks + 4;
+                self.warmup_ticks + 4 * per + self.species.len() as u32 * kill
+            }
+        }
     }
 }

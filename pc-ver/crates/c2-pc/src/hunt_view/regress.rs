@@ -2,7 +2,7 @@
 //! replaced by the scenario's and advanced by the script, one tick per
 //! frame, instead of by keys. Not reachable from normal play.
 
-use c2_core::scenario::{self, Hold, Scenario, Screen, SetupError, TICK_MS};
+use c2_core::scenario::{self, Arrange, Cast, Hold, Scenario, Screen, Script, SetupError, TICK_MS};
 use glam::Vec3;
 
 use super::{HuntView, Pick};
@@ -14,11 +14,11 @@ use crate::scene::Scene;
 impl HuntView {
     /// Swaps in the scenario's hunt (same species, weapons and models as
     /// loaded) with a fresh profile and silent audio; returns the layout
-    /// to hold and the weapon names in order.
+    /// to hold, the weapon names in order and the placed animals.
     pub(crate) fn regress_setup(
         &mut self,
         s: &Scenario,
-    ) -> Result<(Hold, Vec<String>), SetupError> {
+    ) -> Result<(Hold, Vec<String>, Vec<Cast>), SetupError> {
         let built = scenario::build(
             self.view.area(),
             self.hunt.herd.species.clone(),
@@ -31,7 +31,18 @@ impl HuntView {
         self.audio = Audio::silent();
         self.prev_cam = self.hunt.camera().0;
         let names = self.weapon_infos.iter().map(|w| w.name.clone()).collect();
-        Ok((built.hold, names))
+        Ok((built.hold, names, built.cast))
+    }
+
+    /// The kill script's change to the hunt. A revived hunter's death
+    /// message goes too, so each kill's pictures stand alone.
+    pub(crate) fn regress_arrange(&mut self, hold: &mut Hold, a: Arrange, script: &Script) {
+        let Script::Kills(k) = script else { return };
+        hold.arrange(&mut self.hunt, self.view.area(), a, k);
+        if matches!(a, Arrange::Revive(_)) {
+            self.message = None;
+            self.prev_cam = self.hunt.camera().0;
+        }
     }
 
     pub(crate) fn regress_hunt(&self) -> &c2_core::game::Hunt {

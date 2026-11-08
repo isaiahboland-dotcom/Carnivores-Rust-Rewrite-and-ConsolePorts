@@ -1,5 +1,30 @@
 # Decisions and deviations
 
+## 2026-11-08 — Kill-animation regression scenario
+- **A second script, not a second runner.** `kill_animations.toml` sets
+  `script = "kills"`; the same `Director`, `Hold`, headless runner, render
+  pass, recordings and comparison run it. Kill steps and checks are in
+  `c2_core::scenario::kills`.
+- **One hunt, every kill.** Each animal is released toward the pinned
+  hunter, and after its kill the hunter is revived (`Arrange::Revive`: body
+  removed, death camera ended, health restored, killer calmed and pinned
+  again). One run per game, with one baseline and one PDF per game.
+  Reviving is test-only and never reachable from play.
+- **Killers are released, not scripted.** The released animal is set
+  hunting, as `c2-pc --die` does, and its own AI makes the kill. This
+  covers each AI's real strike path (T-Rex grab, eat, gore, Modder's
+  Edition kill types) at the cost of waiting up to 15 s for a T-Rex to
+  sniff and roar first.
+- **"Body with the killer"** allows a body that stays where it fell. Our
+  goring killers (the Chasmosaurus AI, which vanilla Ice Age's Diatryma
+  uses) strike and run on. The check fails only when the body moves away
+  from both its killer and the spot where it fell.
+- **Species by model** (`model:FILE`) for add-on and standalone packs,
+  whose character indices change with their mod lists.
+- **Weapons**: the kill script fires nothing, so metrics record
+  `weapons_to_fire` (0) and the comparison uses it. Older recordings
+  without the field fall back to the registry size.
+
 ## 2026-11-07 — Game tab overlays only for Carnivores 2 instances; v0.5.1
 
 An instance with no overlays of its own took the old Game tab's overlays when

@@ -1,0 +1,91 @@
+# Kill-animation regression scenario (docs/REGRESSION.md, "Kill animations").
+#
+# Each animal in turn is set down in front of the pinned hunter, hunting
+# him. Its kill is watched: the hunter's body must play one of the hunter
+# model's clips and move, the killer must keep animating, and the body must
+# stay with the killer. Checkpoints at the kill, mid-kill and late in it
+# (state hashes; screenshots in the render pass). Then the hunter is brought
+# back and the animal is pinned again where it was parked.
+#
+# Bump `version` whenever anything below changes what a run does.
+
+[scenario]
+id = "kill_animations"
+version = 1
+script = "kills"
+seed = 20261108
+# 10 ms ticks: 2 s of warm-up, 6 s per wait.
+warmup_ticks = 200
+settle_ticks = 30
+timeout_ticks = 600
+
+[view]
+landing = 0
+yaw_deg = 0.0
+pitch_deg = 0.0
+
+[anchor]
+# Animals wait 30 cells to the right of the hunter, 6 cells apart, pinned,
+# until their turn.
+distance = 7680.0
+bearing_deg = 90.0
+fire_clearance_deg = 0.0
+offsets = [[0.0, -2304.0], [0.0, -768.0], [0.0, 768.0], [0.0, 2304.0]]
+
+[kills]
+# Set down 600 units ahead (as `c2-pc --die`), facing the hunter.
+start_distance = 600.0
+# 15 s to kill: a T-Rex finishes a sniff and roars before it charges.
+timeout_ticks = 1500
+# Checkpoints 1 s and 3 s after the kill.
+mid_ticks = 100
+late_ticks = 200
+# The body and the killer must each change pose on at least this many of
+# the 300 watched ticks.
+min_moving_ticks = 20
+# The body stays within 3 x the killer's size (model reach x scale), and
+# never needs to be closer than 1024 units.
+body_reach = 3.0
+min_body_reach = 1024.0
+
+[[game]]
+id = "c2"
+name = "Carnivores 2"
+status = "supported"
+area = "AREA2"
+# T-Rex (its scripted grab and carry), Allosaurus (the eating kill).
+species = ["ai:18", "ai:13"]
+
+[[game]]
+id = "ice-age"
+name = "Carnivores: Ice Age"
+status = "supported"
+area = "AREA4"
+# Woolly rhinoceros (gores), Yeti, Diatryma.
+species = ["ai:13", "ai:19", "ai:14"]
+
+[[game]]
+id = "c2-addons"
+name = "Carnivores 2 (Modder's Edition) with the Diabloceratops and Saurophaganax add-ons"
+status = "supported"
+# Any pack holding both add-ons (models found by file name, since add-on
+# packs' character indices move as their mods change). Local baselines
+# only: add-on packs are not published.
+area = "AREA1"
+# Diabloceratops (synchronized toss), Saurophaganax (its own hunter model).
+species = ["model:diablo.car", "model:phaganax4.car"]
+
+[[game]]
+id = "jphl"
+name = "JPHL Special Edition"
+status = "supported"
+# The standalone's own T-Rex, not the Carnivores 2 one beside it.
+area = "AREA1"
+species = ["model:t-rex.car"]
+
+[[game]]
+id = "triassic-mee"
+name = "Carnivores Triassic (Modder's Edition)"
+status = "supported"
+area = "AREA1"
+species = ["model:ta10f.car"]
