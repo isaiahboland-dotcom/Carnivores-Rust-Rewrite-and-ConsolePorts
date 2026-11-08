@@ -222,3 +222,52 @@ impl HuntView {
         }
     }
 }
+
+/// A filled pie slice in map pixels (from the map's corner `origin`,
+/// `scale` screen pixels each): centre `c`, radius `r`, facing `alpha`
+/// (the hunter's heading), `half` either side; as one-pixel runs.
+fn sector(
+    hud: &Hud,
+    c: (f32, f32),
+    r: f32,
+    (alpha, half): (f32, f32),
+    origin: (f32, f32),
+    scale: f32,
+    color: [f32; 4],
+) -> Vec<Sprite> {
+    use std::f32::consts::{PI, TAU};
+    let mut out = Vec::new();
+    let inside = |x: f32, y: f32| {
+        let (dx, dy) = (x - c.0, y - c.1);
+        if dx * dx + dy * dy > r * r {
+            return false;
+        }
+        // Heading `alpha`: forward is (sin, -cos) on the map.
+        let a = (dx.atan2(-dy) - alpha + PI).rem_euclid(TAU) - PI;
+        a.abs() <= half
+    };
+    let n = r.ceil() as i32 + 1;
+    for j in -n..=n {
+        let y = (c.1 + j as f32).floor();
+        let mut run: Option<f32> = None;
+        for i in -n..=n + 1 {
+            let x = (c.0 + i as f32).floor();
+            let on = i <= n && inside(x + 0.5, y + 0.5);
+            match (on, run) {
+                (true, None) => run = Some(x),
+                (false, Some(x0)) => {
+                    out.extend(hud.rect(
+                        origin.0 + x0 * scale,
+                        origin.1 + y * scale,
+                        (x - x0) * scale,
+                        scale,
+                        color,
+                    ));
+                    run = None;
+                }
+                _ => {}
+            }
+        }
+    }
+    out
+}
