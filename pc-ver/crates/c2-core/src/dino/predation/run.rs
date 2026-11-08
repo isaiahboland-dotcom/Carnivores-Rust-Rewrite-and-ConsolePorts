@@ -159,6 +159,20 @@ pub(super) fn feed_phase(sp: &Species, kill_type: usize) -> Option<usize> {
     }
 }
 
+/// The clip a meal ends on. The stock carnivore and dialect AIs never leave
+/// their eating clip on their own (in the original it only follows killing
+/// the hunter), so the meal hands them back walking. The Rex sniffs, which
+/// its AI leaves by itself: `None`.
+pub(super) fn resume_phase(sp: &Species) -> Option<usize> {
+    if let Some(m) = &sp.mee {
+        return Some(m.walk);
+    }
+    match sp.runs_as() {
+        ai::TREX => None,
+        a => CarnivoreParams::for_ai(a).map(|p| p.walk),
+    }
+}
+
 /// Starts eating: `phase` from its first frame.
 fn feed(c: &mut Character, phase: Option<usize>) {
     c.predation.eat_phase = phase;

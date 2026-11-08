@@ -4,7 +4,7 @@
 
 use c2_formats::predation::Predation;
 
-use super::{fights, herd, run, species, ALLO, RAPTOR, STEGO};
+use super::{fights, herd, run, species, ALLO, RAPTOR, REX, STEGO};
 use crate::area::Area;
 use crate::dino::predation::run::Goal;
 use crate::dino::predation::{Rel, Rules};
@@ -122,4 +122,34 @@ fn a_rival_after_other_prey_does_not_scare_a_herd() {
     h.chars[1].predation.goal = Goal::Flee(0);
     run(&mut h, &area, 400, |_| false);
     assert_ne!(h.chars[1].predation.goal, Goal::Flee(0));
+}
+
+/// 2026-11-07 audit P1: a meal that ran its course left the carnivore in
+/// its eating clip, which its AI never leaves on its own (Allosaurus and
+/// Velociraptor stood eating forever). The Rex recovers from its sniff clip.
+#[test]
+fn a_finished_meal_hands_the_carnivore_back_to_its_ai() {
+    let area = Area::flat(10);
+    for eater in [RAPTOR, ALLO, REX] {
+        let mut h = herd(
+            &Predation::default(),
+            &area,
+            &[(eater, 0.0), (STEGO, 1500.0)],
+        );
+        run(&mut h, &area, 60_000, |h| h.chars[1].health == 0);
+        assert_eq!(h.chars[1].health, 0, "the stego got away from {eater}");
+        let clip = h.chars[0].predation.eat_phase;
+        assert!(clip.is_some());
+        run(&mut h, &area, 14_000, |_| false);
+        let c = &h.chars[0];
+        assert_eq!(c.predation.eat_ms, 0, "{eater} still eating");
+        assert_ne!(Some(c.phase), clip, "{eater} stuck in its eating clip");
+        let at = c.pos;
+        run(&mut h, &area, 10_000, |_| false);
+        let moved = (h.chars[0].pos[0] - at[0]).hypot(h.chars[0].pos[2] - at[2]);
+        assert!(
+            moved > 100.0,
+            "{eater} stood still after its meal ({moved})"
+        );
+    }
 }

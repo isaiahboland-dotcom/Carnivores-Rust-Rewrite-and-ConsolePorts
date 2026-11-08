@@ -4693,3 +4693,22 @@ Found by comparing the original engine's regression screenshots with ours.
   hashes identical to the published baselines).
 - Fallen Kings stays `planned` in the public scenario until it has a
   reference baseline; its runs are kept local.
+
+## 2026-11-07 — A predation meal ends on the walk clip
+
+- In the original engines a carnivore's eating clip only follows killing
+  the hunter, and the hunt ends there, so the stock carnivore AI
+  (`carnivore.rs`) and the dialect AI (`huntable.rs`) never leave it: both
+  skip their chase/wander body and phase selection while it plays.
+- Predation reuses that clip for a meal. When the meal finished, or a shot
+  or noise cut it short, the animal was left on it and stood eating for
+  the rest of the hunt (confirmed in play with an Allosaurus).
+- `predation::step::feeding` now ends every meal by switching to the
+  species' walk clip (`run::resume_phase`), only if the eating clip is
+  still the current one. The Rex is left alone: it eats with its sniff
+  clip, which its AI leaves by itself.
+- Regression test: `a_finished_meal_hands_the_carnivore_back_to_its_ai`
+  (Velociraptor, Allosaurus, Rex).
+- Fed carnivores now hunt again after their 30 s rest, so predation can
+  empty a map of herbivores faster than before; see the open population
+  and corpse policy item from the same audit.
