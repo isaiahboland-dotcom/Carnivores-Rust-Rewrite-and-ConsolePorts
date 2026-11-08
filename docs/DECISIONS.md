@@ -1,5 +1,20 @@
 # Decisions and deviations
 
+## 2026-11-08 — Android manifest version follows the workspace; clippy on all features
+
+- **Manifest version.** `android-ver/AndroidManifest.xml` had stayed at 0.4.3
+  (versionCode 403) through 0.5.0 and 0.5.1; the launcher's renamed APKs copy it
+  and change only the package and label. It now says 0.5.1 / 501, and a
+  c2-launcher test fails when `versionName` differs from the workspace version
+  or `versionCode` differs from major\*10000 + minor\*100 + patch. Generating
+  the version at build time was not done: `build-apk.sh` and the launcher both
+  read the file as it is, and a failing test is enough to catch the miss.
+- **Clippy with `--all-features`.** CI linted default features only, so code
+  behind `hunt-diagnostics` and the `portable-load` host tests was never linted.
+  A second clippy step runs with all features. The Wii U sources those tests
+  include by `#[path]` are lint-exempted per module, as before, rather than
+  edited: they build in their own workspace and toolchain.
+
 ## 2026-11-08 — Kill runs in the original engines; Ice Age kills differ from ours
 - **The hook reads and writes the original's globals for kill runs.** The
   original places hunt animals 40 or more cells from the hunter, and a

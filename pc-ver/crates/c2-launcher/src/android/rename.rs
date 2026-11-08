@@ -237,6 +237,19 @@ mod tests {
         assert!(!m.contains("package=\"io.github.c2rs\""));
     }
 
+    /// The manifest is bumped with each release: versionName is the
+    /// workspace version and versionCode is major*10000 + minor*100 + patch.
+    #[test]
+    fn the_manifest_version_is_the_workspace_version() {
+        let name = env!("CARGO_PKG_VERSION");
+        let code = name
+            .split('.')
+            .map(|n| n.parse::<u32>().unwrap_or(0))
+            .fold(0, |acc, n| acc * 100 + n);
+        assert!(MANIFEST.contains(&format!("android:versionName=\"{name}\"")));
+        assert!(MANIFEST.contains(&format!("android:versionCode=\"{code}\"")));
+    }
+
     #[test]
     fn newest_sdk_folder_by_version() {
         let mut v = [

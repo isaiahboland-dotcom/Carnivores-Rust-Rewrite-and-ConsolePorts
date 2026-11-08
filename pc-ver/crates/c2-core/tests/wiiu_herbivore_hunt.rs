@@ -1,4 +1,5 @@
 #![cfg(feature = "portable-load")]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! The Wii U's hunts of the original game, loaded as the console loads them
 //! (`hunt_setup::load` through an install over C2_ORIGINAL_HUNTDAT's game
 //! folder).
@@ -6,12 +7,24 @@ extern crate alloc;
 #[allow(dead_code)]
 // The Wii U sources keep their own workspace's style.
 #[rustfmt::skip]
-#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::needless_range_loop,
+    clippy::unwrap_used,
+    clippy::large_enum_variant,
+    clippy::chunks_exact_to_as_chunks
+)]
 #[path = "../../../../wiiu-ver/perf-probe/src/hunt_setup.rs"]
 mod hunt_setup;
 #[allow(dead_code)]
 #[rustfmt::skip]
-#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::needless_range_loop,
+    clippy::unwrap_used,
+    clippy::large_enum_variant,
+    clippy::chunks_exact_to_as_chunks
+)]
 #[path = "../../../../wiiu-ver/perf-probe/src/install.rs"]
 mod install;
 mod wiiu_common;
@@ -232,7 +245,7 @@ fn wiiu_roster_on_all_five_original_maps() {
                 c2_formats::wav::parse(&read(&format!("SOUNDFX/CALLS/CALL{call}_{variant}.WAV")))
                     .unwrap();
             assert_eq!(wav.format, Some(c2_formats::wav::WavFormat::VANILLA));
-            assert!(!wav.pcm.is_empty() && wav.pcm.len() % 2 == 0);
+            assert!(!wav.pcm.is_empty() && wav.pcm.len().is_multiple_of(2));
         }
     }
 }

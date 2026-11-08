@@ -1,4 +1,5 @@
 #![cfg(feature = "portable-load")]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! The Wii U's installs (`c2-cook --target wiiu`), opened and hunted on the
 //! host as the console does: with C2_WIIU_INSTALLS set to install folders
 //! (separated by `:`), each one's menu lists, a hunt with every animal and
@@ -7,12 +8,24 @@ extern crate alloc;
 #[allow(dead_code)]
 // The Wii U sources keep their own workspace's style.
 #[rustfmt::skip]
-#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::needless_range_loop,
+    clippy::unwrap_used,
+    clippy::large_enum_variant,
+    clippy::chunks_exact_to_as_chunks
+)]
 #[path = "../../../../wiiu-ver/perf-probe/src/install.rs"]
 mod install;
 #[allow(dead_code)]
 #[rustfmt::skip]
-#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::needless_range_loop,
+    clippy::unwrap_used,
+    clippy::large_enum_variant,
+    clippy::chunks_exact_to_as_chunks
+)]
 #[path = "../../../../wiiu-ver/perf-probe/src/hunt_setup.rs"]
 mod hunt_setup;
 

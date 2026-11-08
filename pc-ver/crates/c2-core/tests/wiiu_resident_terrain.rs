@@ -3,7 +3,13 @@ extern crate alloc;
 #[allow(dead_code)]
 // The Wii U sources keep their own workspace's style.
 #[rustfmt::skip]
-#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::needless_range_loop,
+    clippy::unwrap_used,
+    clippy::large_enum_variant,
+    clippy::chunks_exact_to_as_chunks
+)]
 #[path = "../../../../wiiu-ver/perf-probe/src/static_scene.rs"]
 mod static_scene;
 use c2_core::area::{Area, TimeOfDay};

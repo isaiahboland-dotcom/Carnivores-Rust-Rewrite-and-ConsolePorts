@@ -1,7 +1,7 @@
 //! The Wii U host tests' game folders: an install (`install.rs`) opened on
 //! the host over a game folder, as the console opens its SD folder. Each
 //! test crate declares `mod install;` (and `mod hunt_setup;`) itself.
-#![allow(dead_code)]
+#![allow(dead_code, clippy::expect_used)]
 use c2_vfs::{Backend, Vfs, VfsError};
 use std::path::{Path, PathBuf};
 

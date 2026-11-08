@@ -50,7 +50,9 @@ the new features. See the [v0.5.0 notes](releases/v0.5.0.md).
 ## Release maintenance
 
 Keep this file current when priorities or platform evidence change. Every release
-gets a tag, release notes and a short changelog entry. Security work and remaining
+gets a tag, release notes and a short changelog entry; bump the workspace version in
+`pc-ver/Cargo.toml` and `versionName`/`versionCode` in `android-ver/AndroidManifest.xml`
+together (a c2-launcher test checks they match). Security work and remaining
 limits are documented in [SECURITY-HARDENING.md](SECURITY-HARDENING.md). Track
 reproducible bugs with platform, revision, steps and logs without distributing game
 assets or private machine identifiers.

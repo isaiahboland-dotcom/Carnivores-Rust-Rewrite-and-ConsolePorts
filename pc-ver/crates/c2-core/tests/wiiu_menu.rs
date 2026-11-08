@@ -1,4 +1,5 @@
 #![cfg(feature = "portable-load")]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 //! The Wii U menu, drawn on the host. With C2_ORIGINAL_HUNTDAT set it reads
 //! the original menu pictures and texts; with C2_MENU_SHOTS=DIR it also
 //! writes every page as PNGs at the TV's and the GamePad's sizes, with
@@ -7,30 +8,60 @@ extern crate alloc;
 #[allow(dead_code)]
 // The Wii U sources keep their own workspace's style.
 #[rustfmt::skip]
-#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::needless_range_loop,
+    clippy::unwrap_used,
+    clippy::large_enum_variant,
+    clippy::chunks_exact_to_as_chunks
+)]
 #[path = "../../../../wiiu-ver/perf-probe/src/hunt_setup.rs"]
 mod hunt_setup;
 #[allow(dead_code)]
 // The Wii U sources keep their own workspace's style.
 #[rustfmt::skip]
-#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::needless_range_loop,
+    clippy::unwrap_used,
+    clippy::large_enum_variant,
+    clippy::chunks_exact_to_as_chunks
+)]
 #[path = "../../../../wiiu-ver/perf-probe/src/ui.rs"]
 mod ui;
 #[allow(dead_code)]
 // The Wii U sources keep their own workspace's style.
 #[rustfmt::skip]
-#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::needless_range_loop,
+    clippy::unwrap_used,
+    clippy::large_enum_variant,
+    clippy::chunks_exact_to_as_chunks
+)]
 #[path = "../../../../wiiu-ver/perf-probe/src/menu.rs"]
 mod menu;
 #[allow(dead_code)]
 // The Wii U sources keep their own workspace's style.
 #[rustfmt::skip]
-#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::needless_range_loop,
+    clippy::unwrap_used,
+    clippy::large_enum_variant,
+    clippy::chunks_exact_to_as_chunks
+)]
 #[path = "../../../../wiiu-ver/perf-probe/src/overlay.rs"]
 mod overlay;
 #[allow(dead_code)]
 #[rustfmt::skip]
-#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::needless_range_loop,
+    clippy::unwrap_used,
+    clippy::large_enum_variant,
+    clippy::chunks_exact_to_as_chunks
+)]
 #[path = "../../../../wiiu-ver/perf-probe/src/install.rs"]
 mod install;
 mod wiiu_common;

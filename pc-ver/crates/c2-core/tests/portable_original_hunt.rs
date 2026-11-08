@@ -34,7 +34,7 @@ fn original_pistol_and_animals_load_and_simulate() {
     ] {
         let wav = c2_formats::wav::parse(&read(name)).unwrap();
         assert_eq!(wav.format, Some(c2_formats::wav::WavFormat::VANILLA));
-        assert!(!wav.pcm.is_empty() && wav.pcm.len() % 2 == 0);
+        assert!(!wav.pcm.is_empty() && wav.pcm.len().is_multiple_of(2));
     }
     for name in [
         "SOUNDFX/STEPS/HWALK1.WAV",
@@ -55,7 +55,10 @@ fn original_pistol_and_animals_load_and_simulate() {
             Some(c2_formats::wav::WavFormat::VANILLA),
             "{name}"
         );
-        assert!(!wav.pcm.is_empty() && wav.pcm.len() % 2 == 0, "{name}");
+        assert!(
+            !wav.pcm.is_empty() && wav.pcm.len().is_multiple_of(2),
+            "{name}"
+        );
     }
     for name in [
         "MENU/PICS/WEAPON1.TGA",
@@ -102,12 +105,12 @@ fn original_pistol_and_animals_load_and_simulate() {
         .rsc
         .ambients
         .iter()
-        .any(|a| !a.pcm.is_empty() && a.pcm.len() % 2 == 0));
+        .any(|a| !a.pcm.is_empty() && a.pcm.len().is_multiple_of(2)));
     assert!(area
         .rsc
         .random_sounds
         .iter()
-        .any(|pcm| !pcm.is_empty() && pcm.len() % 2 == 0));
+        .any(|pcm| !pcm.is_empty() && pcm.len().is_multiple_of(2)));
     let player = Player::new(&area, area.landings[0]);
     let mut rng = MsRand::new(1);
     let mut herd = Herd {
