@@ -192,6 +192,7 @@ fn simulate(w: &World, herd: &mut Herd, mut rng: MsRand, seconds: u32) {
     let (mut worst, mut total) = (0f64, 0f64);
     let steps = seconds * 50;
     let mut killed = vec![false; herd.chars.len()];
+    let mut kills = 0usize;
     for t in 0..steps {
         let t0 = Instant::now();
         let mut ctx = Ctx {
@@ -214,8 +215,18 @@ fn simulate(w: &World, herd: &mut Herd, mut rng: MsRand, seconds: u32) {
         worst = worst.max(ms);
         total += ms;
         for (i, c) in herd.chars.iter().enumerate() {
+            // A kill comes back as a new animal in the same slot.
+            if killed[i] && !c.predation.killed_by_animal {
+                killed[i] = false;
+                println!(
+                    "{:>6.1}s  {} came back",
+                    t as f32 / 50.0,
+                    herd.species[c.ctype].info.name
+                );
+            }
             if c.predation.killed_by_animal && !killed[i] {
                 killed[i] = true;
+                kills += 1;
                 let by = herd
                     .chars
                     .iter()
@@ -237,8 +248,8 @@ fn simulate(w: &World, herd: &mut Herd, mut rng: MsRand, seconds: u32) {
     }
     let count = |f: fn(Goal) -> bool| herd.chars.iter().filter(|c| f(c.predation.goal)).count();
     println!(
-        "after {seconds}s: {} killed, hunting {}, fleeing {}, kill events {}",
-        killed.iter().filter(|k| **k).count(),
+        "after {seconds}s: {kills} killed, {} alive, hunting {}, fleeing {}, kill events {}",
+        herd.chars.iter().filter(|c| c.health != 0).count(),
         count(|g| matches!(g, Goal::Hunt(_))),
         count(|g| matches!(g, Goal::Flee(_))),
         events

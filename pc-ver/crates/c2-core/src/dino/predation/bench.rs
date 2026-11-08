@@ -137,6 +137,11 @@ pub fn measure(
     let mut events = Vec::new();
     let mut scratch_events = Vec::new();
     let think_every = (THINK_MS / STEP_MS).max(1) as u32;
+    let mut dead: Vec<bool> = herd
+        .chars
+        .iter()
+        .map(|c| c.predation.killed_by_animal)
+        .collect();
     for t in 0..s.steps {
         if t % think_every == 0 {
             if let Some(p) = herd.predation.as_deref() {
@@ -160,14 +165,16 @@ pub fn measure(
         step_total += us;
         s.step_worst_us = s.step_worst_us.max(us);
         events.clear();
+        // Kills come back as new animals in the same slot: count each death.
+        dead.resize(herd.chars.len(), false);
+        for (d, c) in dead.iter_mut().zip(&herd.chars) {
+            let now = c.predation.killed_by_animal;
+            s.kills += usize::from(now && !*d);
+            *d = now;
+        }
     }
     s.step_mean_us = step_total / u64::from(s.steps.max(1));
     s.think_mean_us = think_total / u64::from(s.thinks.max(1));
-    s.kills = herd
-        .chars
-        .iter()
-        .filter(|c| c.predation.killed_by_animal)
-        .count();
     s
 }
 

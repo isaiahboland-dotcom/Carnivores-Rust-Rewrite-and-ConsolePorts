@@ -72,6 +72,7 @@ impl Herd {
         }
         if let Some(p) = self.predation.as_deref_mut() {
             p.think(&mut self.chars, &self.species, ctx);
+            self.respawn_kills(ctx);
         }
         for i in 0..self.chars.len() {
             ctx.dt = base_dt;

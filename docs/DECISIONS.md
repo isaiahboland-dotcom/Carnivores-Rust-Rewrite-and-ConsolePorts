@@ -4767,3 +4767,34 @@ Source audit findings L1 and L2 (v0.5.0).
 - c2-cook (3DS, Wii U) takes the game as given and does not check base
   hashes; the launcher's recipe page is the check before those builds.
 
+## 2026-11-07 — Predation: an animal's kill comes back out of sight
+
+Source audit finding P3 (v0.5.0).
+
+- With predation on, the population only went down: nothing respawns, in
+  the original or here. Once P1 was fixed (fed carnivores hunt again),
+  `c2-parity predation` on stock areas, 1800 s, hunter away: Area 1 17 of
+  25 animals dead, Area 3 9 of 21, most later kills carnivore on carnivore.
+- Options considered: a prey-density brake (carnivores stop hunting below a
+  share of the placed population), sparing the hunt's targets, and
+  respawning. Chosen: respawning, so predation keeps going for the whole
+  hunt and the hunter keeps finding animals.
+- A body killed by an animal lies 60 s (`run::BODY_MS`) for scavengers.
+  Then, once it is beyond the hunter's render distance, the character is
+  reset in its own slot as a new animal of the same species
+  (`predation/respawn.rs`, `Herd::respawn_kills`): same index, spawn group
+  and pack, so no goal, pack leader or ship task needs renumbering, and the
+  population can't grow. The spot is out of render distance and found as a
+  hunt places animals: the original's main-population rule (within 500
+  cells of the map centre, at least 40 from the hunter), or the dialect's
+  spawn-group regions (`mee_spot`). No spot found: retried a second later.
+- Carnivore victims come back too (carnivore fights stay on when enabled).
+- Unchanged corpse policy: a predator's kill fires no `GameEvent::Killed`,
+  calls no ship and scores nothing (2026-11-06 "No trophy"). The hunter's
+  own kills never come back.
+- Tests: `dino/predation/tests/respawn.rs` (comes back out of sight after
+  the body time; stays while the hunter can see it; hunter kills stay); the
+  first fails without the change. `c2-parity predation` and
+  `bench::measure` now count each death of a slot.
+- After: 1800 s, same seed: Area 1 38 kills, 25 of 25 alive; Area 3 16
+  kills, 21 of 21 alive. Step cost 0.05 ms average.

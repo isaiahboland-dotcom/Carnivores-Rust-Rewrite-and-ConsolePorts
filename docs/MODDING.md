@@ -225,7 +225,10 @@ defensive = true             # charges carnivores below it for 5-10 s
   eating, resting or chasing something else scares it only within 4 cells.
 - A predator eating a kill stops when it is shot, hears a shot or notices
   the hunter.
-- A body left by a predator is not a trophy and scores nothing.
+- A body left by a predator is not a trophy and scores nothing. After a
+  minute, once you can't see it, it comes back as a new animal of its kind
+  somewhere out of sight, so the map's population stays the same. Animals
+  you kill don't come back.
 - Names are `_RES.TXT` names, case ignored. The built game gets
   `HUNTDAT/_PREDATION.TXT`, which every platform reads; survival and the
   trophy room ignore it.

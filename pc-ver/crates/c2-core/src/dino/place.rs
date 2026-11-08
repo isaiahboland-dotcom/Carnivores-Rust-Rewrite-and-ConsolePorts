@@ -542,7 +542,7 @@ impl Herd {
     /// outside avoided regions, in water of the right depth for waders and
     /// fish, clear of obstacles. `None` after too many tries.
     #[allow(clippy::too_many_arguments)]
-    fn mee_spot(
+    pub(super) fn mee_spot(
         &self,
         area: &Area,
         hunter: (f32, f32),

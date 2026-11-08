@@ -17,6 +17,9 @@
   eating for the rest of the hunt; it walks off and its AI takes over again.
 - With predation on, a carnivore shot dead next to its prey can no longer kill it or eat from a
   body in the moment before it stops hunting.
+- With predation on, an animal killed by another one comes back as a new animal of its kind,
+  out of the hunter's sight, a minute later, so predators no longer empty the map. The hunter's
+  own kills still don't come back, and a predator's kill still scores nothing.
 
 ### Gameplay regression scenarios (PC; developer tool)
 

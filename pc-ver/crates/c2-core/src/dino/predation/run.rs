@@ -52,6 +52,9 @@ const LEAD: f32 = 2560.0;
 /// Running off after scavenging or backing down.
 const RUN_MS: i32 = 6_000;
 const RUN_REST_MS: i32 = 15_000;
+/// A body left by an animal lies this long before it can come back as a
+/// new animal ([`super::respawn`]).
+pub const BODY_MS: i32 = 60_000;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum Goal {
@@ -104,6 +107,8 @@ pub struct Track {
     pub eaten: bool,
     /// A body: killed by an animal, not the hunter.
     pub killed_by_animal: bool,
+    /// A body killed by an animal: ms before it may come back.
+    pub respawn: i32,
 }
 
 /// What [`Predators::steer`] tells the herd for one step.
@@ -187,6 +192,7 @@ impl Track {
     pub fn tick(&mut self, dt: i32) {
         self.until = (self.until - dt).max(0);
         self.rest = (self.rest - dt).max(0);
+        self.respawn = (self.respawn - dt).max(0);
     }
 }
 
@@ -486,6 +492,7 @@ impl Predators {
                 tp.blood_ttime = 0;
                 tp.predation = Track {
                     killed_by_animal: true,
+                    respawn: BODY_MS,
                     ..Track::default()
                 };
                 let sp = species.get(chars[i].ctype);
