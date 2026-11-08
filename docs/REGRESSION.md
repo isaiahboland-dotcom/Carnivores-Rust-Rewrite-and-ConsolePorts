@@ -25,10 +25,10 @@ code, whoever wrote it.
 | Visual (fails the comparison) | A rendering change larger than the tolerance | Only against your own baseline, same GPU and driver. Published baselines have no screenshots |
 | Performance (warns) | Slower frames or ticks, more memory | Only between runs on the same machine and settings. Published figures are reference only |
 
-The comparison does **not** compare checkpoint state hashes between the
-baseline and the candidate: a change that moves an animal but keeps all four
-alive still passes. For an optimization or refactor that must not change
-behaviour, compare the hashes yourself (step 4 below).
+By default the comparison reports, but does not fail on, checkpoint state
+hashes that differ from the baseline's: a change that moves an animal but
+keeps all four alive still passes. For an optimization or refactor that must
+not change behaviour, add `--same-state` (step 4 below).
 
 Not covered by any scenario: the menus and hunt setup, the launcher, mod
 merging and recipes, combined packs, sound, save files, animals stalking the
@@ -53,11 +53,14 @@ described in the pull request.
    ./target/release/c2-regress run --scenario crates/c2-regress/scenarios/vanilla_map2_four_dinos.toml \
        --game-id c2 --game <DIR> --repeat 5 --label after --baseline <BEFORE_RUN_DIR>
    ```
-   Exit code 0 is required. Also run `--baseline published` to check against
-   the public reference.
+   Exit code 0 is required (5 means the visual comparison did not run: one
+   of the two runs has no screenshots). Also run `--baseline published` to
+   check against the public reference.
 3. **Read `report.html`** of the candidate: every stage passed,
    `determinism.identical: true`, and the screenshots look right.
-4. **Compare the state hashes**:
+4. **Compare the state hashes**: add `--same-state` to the step 2 run (or to
+   `c2-regress compare`), which fails on any difference and lists the
+   checkpoints that differ in `comparison.json`; or by hand:
    ```sh
    diff <(jq -c '.checkpoints[]' <BEFORE_RUN_DIR>/metrics.json) \
         <(jq -c '.checkpoints[]' <AFTER_RUN_DIR>/metrics.json)
@@ -274,10 +277,10 @@ cargo build --release -p c2-pc -p c2-regress
 # Run: headless (timed) N times, then the render pass once
 ./target/release/c2-regress run --scenario crates/c2-regress/scenarios/vanilla_map2_four_dinos.toml \
     --game-id c2 --game ../source/c2-original --repeat 3 [--label TEXT] [--size 960x540] \
-    [--baseline RUN_DIR] [--thresholds FILE] [--no-render] [--inject FAULT]
+    [--baseline RUN_DIR] [--thresholds FILE] [--same-state] [--no-render] [--inject FAULT]
 
 # Compare a candidate with a baseline (writes comparison.json and diffs into the candidate)
-./target/release/c2-regress compare BASELINE_DIR CANDIDATE_DIR [--thresholds FILE] [--fail-on-warn]
+./target/release/c2-regress compare BASELINE_DIR CANDIDATE_DIR [--thresholds FILE] [--same-state] [--fail-on-warn]
 
 # Screenshot PDF: runs side by side per checkpoint, then metrics by run
 ./target/release/c2-regress pdf --out history.pdf RUN_DIR [RUN_DIR...]
@@ -288,9 +291,17 @@ cargo build --release -p c2-pc -p c2-regress
 
 `--game` is the folder that holds `HUNTDAT/`. No game path is built in.
 
-Exit codes: 0 passed, 1 failed (functional or visual), 2 usage or set-up
-error (missing `_RES.TXT`, unreadable scenario), 3 the game is unsupported
-or planned for the scenario, 4 performance warnings with `--fail-on-warn`.
+Exit codes: 0 passed, 1 failed (functional, visual, or checkpoint state
+with `--same-state`), 2 usage or set-up error (missing `_RES.TXT`,
+unreadable scenario, an existing baseline without `--replace`), 3 the game
+is unsupported or planned for the scenario, 4 performance warnings with
+`--fail-on-warn`, 5 passed but the visual comparison did not run though it
+could have (the baseline or the candidate was recorded with `--no-render`
+or without `c2-pc`). A visual check that cannot run by design (a published
+baseline, which has no screenshots, or the original engine against ours)
+is noted and exits 0. `--no-render` with a `--baseline` other than
+`published` warns at the start. `c2-regress compare` prints the JSON report
+on stdout and the verdict on stderr.
 
 ### Deliberate faults
 
@@ -365,7 +376,10 @@ list must be a file of this repository; the manifest names it by its path
 from the repository root. It refuses failed runs, runs with `--inject`, runs
 without agreeing repeats (`--repeat` of 2 or more, `determinism.identical`
 true), runs of another text of the scenario than the one in
-`crates/c2-regress/scenarios/`, and runs that read any file not matching the list. A test in the `pc` CI job checks the
+`crates/c2-regress/scenarios/`, and runs that read any file not matching the list.
+It does not overwrite a baseline already in the folder unless given
+`--replace`; either way it lists what changes against it (scenario, game
+content, build, results, determinism, checkpoint state). A test in the `pc` CI job checks the
 published baselines (current scenario version, hash lists, no machine
 details) without game files.
 
@@ -377,7 +391,8 @@ details) without game files.
   once (none, for the kill script: `functional.weapons_to_fire`), a kill
   that did not pass (`functional.kills`), timeouts, panics, set-up errors,
   a screen that passed in the baseline and no longer does.
-- **Visual** (fails): each baseline screenshot against the candidate's. A
+- **Visual** (fails): each baseline screenshot against the candidate's
+  (`visual.ran` false and `visual.not_run` say why when none were compared). A
   pixel differs when a channel is more than `tolerance` (24) apart; a
   checkpoint fails when more than `max_differing_ratio` (1%) of its
   unmasked pixels differ. Masks are rectangles in fractions of the picture,

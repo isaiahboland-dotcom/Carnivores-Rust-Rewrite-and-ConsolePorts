@@ -129,8 +129,103 @@ pub fn scenario_path(id: &str) -> PathBuf {
         .join(format!("{id}.toml"))
 }
 
-/// Copies `run` to `to` (replacing what is there) after the checks.
-pub fn publish(run: &Path, list: &Path, list_label: &str, to: &Path) -> Result<()> {
+/// What changes between a published baseline and its replacement:
+/// scenario, game content, build, results, determinism, checkpoint state.
+pub fn baseline_changes(old: (&Value, &Value), new: (&Value, &Value)) -> Vec<String> {
+    let ((om, ox), (nm, nx)) = (old, new);
+    let mut out = Vec::new();
+    let mut cmp = |what: &str, a: &Value, b: &Value| {
+        if a != b {
+            out.push(format!("{what}: {a} -> {b}"));
+        }
+    };
+    for k in [
+        "/scenario/version",
+        "/scenario/file_sha256",
+        "/game/area",
+        "/content/sha256",
+        "/build/version",
+        "/build/commit",
+        "/build/dirty",
+        "/settings/repeats",
+    ] {
+        cmp(
+            k,
+            om.pointer(k).unwrap_or(&Value::Null),
+            nm.pointer(k).unwrap_or(&Value::Null),
+        );
+    }
+    for k in ["/result", "/determinism/identical", "/ui"] {
+        cmp(
+            k,
+            ox.pointer(k).unwrap_or(&Value::Null),
+            nx.pointer(k).unwrap_or(&Value::Null),
+        );
+    }
+    let empty = serde_json::Map::new();
+    let (of, nf) = (
+        ox["functional"].as_object().unwrap_or(&empty),
+        nx["functional"].as_object().unwrap_or(&empty),
+    );
+    let mut keys: Vec<&String> = of.keys().chain(nf.keys()).collect();
+    keys.sort();
+    keys.dedup();
+    for k in keys {
+        cmp(
+            &format!("/functional/{k}"),
+            of.get(k).unwrap_or(&Value::Null),
+            nf.get(k).unwrap_or(&Value::Null),
+        );
+    }
+    out.extend(
+        crate::compare::state_differences(ox, nx)
+            .into_iter()
+            .map(|d| format!("checkpoint state: {d}")),
+    );
+    out
+}
+
+/// The baseline already in `to`, if any: `(manifest, metrics)`.
+fn existing(to: &Path) -> Result<Option<(Value, Value)>> {
+    let man = to.join("manifest.json");
+    if !man.exists() {
+        return Ok(None);
+    }
+    Ok(Some((
+        read_json(&man)?,
+        read_json(&to.join("metrics.json"))?,
+    )))
+}
+
+/// `None` when `to` holds no baseline; else its changes, which are only
+/// allowed with `replace`.
+fn check_replace(to: &Path, new: (&Value, &Value), replace: bool) -> Result<Option<Vec<String>>> {
+    let Some((om, ox)) = existing(to)? else {
+        return Ok(None);
+    };
+    let mut changes = baseline_changes((&om, &ox), new);
+    if changes.is_empty() {
+        changes.push("none in scenario, content, build, results or checkpoint state".into());
+    }
+    if !replace {
+        bail!(
+            "{} already holds a baseline; pass --replace to overwrite it. Changes:\n  {}",
+            to.display(),
+            changes.join("\n  ")
+        );
+    }
+    Ok(Some(changes))
+}
+
+/// Copies `run` to `to` after the checks. An existing baseline there is
+/// replaced only with `replace`; the changes against it are returned.
+pub fn publish(
+    run: &Path,
+    list: &Path,
+    list_label: &str,
+    to: &Path,
+    replace: bool,
+) -> Result<Option<Vec<String>>> {
     let manifest = read_json(&run.join("manifest.json"))?;
     let metrics = read_json(&run.join("metrics.json"))?;
     let id = manifest
@@ -145,14 +240,16 @@ pub fn publish(run: &Path, list: &Path, list_label: &str, to: &Path) -> Result<(
     let checked = verify_vanilla(&manifest, list)?;
     let events = std::fs::read_to_string(run.join("events.jsonl"))
         .with_context(|| format!("reading {}/events.jsonl", run.display()))?;
+    let (manifest, metrics) = (
+        redact_manifest(&manifest, list_label, checked),
+        redact_metrics(&metrics),
+    );
+    let changes = check_replace(to, (&manifest, &metrics), replace)?;
     std::fs::create_dir_all(to)?;
-    write_json(
-        &to.join("manifest.json"),
-        &redact_manifest(&manifest, list_label, checked),
-    )?;
-    write_json(&to.join("metrics.json"), &redact_metrics(&metrics))?;
+    write_json(&to.join("manifest.json"), &manifest)?;
+    write_json(&to.join("metrics.json"), &metrics)?;
     std::fs::write(to.join("events.jsonl"), events)?;
-    Ok(())
+    Ok(changes)
 }
 
 #[cfg(test)]
@@ -185,6 +282,43 @@ mod tests {
         assert!(refuse(&man, &flaky, "abc").unwrap().contains("--repeat"));
         let failed = json!({ "result": "failed", "determinism": { "identical": true } });
         assert!(refuse(&man, &failed, "abc").unwrap().contains("passed"));
+    }
+
+    #[test]
+    fn an_existing_baseline_is_replaced_only_on_request_with_its_changes() {
+        let dir = std::env::temp_dir().join(format!("c2-regress-replace-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let man = json!({ "scenario": { "version": 2 }, "build": { "commit": "aaa" } });
+        let met = json!({ "result": "passed", "functional": { "animals_end": 4 },
+                          "checkpoints": [{ "name": "warmup", "tick": 500, "state_hash": "aa" }] });
+        assert_eq!(check_replace(&dir, (&man, &met), false).unwrap(), None);
+        write_json(&dir.join("manifest.json"), &man).unwrap();
+        write_json(&dir.join("metrics.json"), &met).unwrap();
+
+        let mut man2 = man.clone();
+        man2["build"]["commit"] = json!("bbb");
+        let mut met2 = met.clone();
+        met2["functional"]["animals_end"] = json!(3);
+        met2["checkpoints"][0]["state_hash"] = json!("bb");
+        let e = check_replace(&dir, (&man2, &met2), false)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            e.contains("--replace") && e.contains("/build/commit"),
+            "{e}"
+        );
+        let c = check_replace(&dir, (&man2, &met2), true).unwrap().unwrap();
+        assert_eq!(c.len(), 3, "{c:?}");
+        assert!(c
+            .iter()
+            .any(|c| c.contains("/functional/animals_end: 4 -> 3")));
+        assert!(c
+            .iter()
+            .any(|c| c.starts_with("checkpoint state") && c.contains("warmup")));
+        let same = check_replace(&dir, (&man, &met), true).unwrap().unwrap();
+        assert!(same[0].starts_with("none"), "{same:?}");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

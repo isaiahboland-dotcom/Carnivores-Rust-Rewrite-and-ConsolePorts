@@ -68,11 +68,84 @@ impl Thresholds {
     }
 }
 
+/// What the visual comparison did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VisualCheck {
+    /// `compared` checkpoints, all within the tolerance.
+    Passed {
+        compared: usize,
+    },
+    Failed,
+    /// No pictures compared. `by_design`: they cannot be (a published
+    /// baseline has no screenshots; another engine draws differently).
+    /// Otherwise they could have been and were not: one of the runs was
+    /// recorded without the render pass.
+    NotRun {
+        reason: String,
+        by_design: bool,
+    },
+}
+
+impl VisualCheck {
+    pub fn failed(&self) -> bool {
+        *self == Self::Failed
+    }
+
+    /// Not compared, though it could have been (exit code 5).
+    pub fn missing(&self) -> bool {
+        matches!(
+            self,
+            Self::NotRun {
+                by_design: false,
+                ..
+            }
+        )
+    }
+}
+
 pub struct Verdict {
     pub functional_ok: bool,
-    pub visual_ok: bool,
+    pub visual: VisualCheck,
+    /// `Some` when the comparison was asked to require identical
+    /// checkpoint state (`--same-state`): whether it was.
+    pub same_state: Option<bool>,
     pub perf_warnings: usize,
     pub report: Value,
+}
+
+impl Verdict {
+    /// Functional and visual passed, and the state matched if required.
+    /// A visual check that did not run is no failure here: see
+    /// [`VisualCheck::missing`].
+    pub fn passed(&self) -> bool {
+        self.functional_ok && !self.visual.failed() && self.same_state != Some(false)
+    }
+}
+
+/// Where the checkpoint state of two runs differs: names, ticks, hashes,
+/// or the number of checkpoints. Empty when identical.
+pub fn state_differences(base: &Value, cand: &Value) -> Vec<String> {
+    let (Some(b), Some(c)) = (
+        base["checkpoints"].as_array(),
+        cand["checkpoints"].as_array(),
+    ) else {
+        return vec!["checkpoint state missing in one of the runs".into()];
+    };
+    let mut out: Vec<String> = b
+        .iter()
+        .zip(c)
+        .filter(|(b, c)| b != c)
+        .map(|(b, c)| {
+            format!(
+                "{}: tick {} hash {} -> {}: tick {} hash {}",
+                b["name"], b["tick"], b["state_hash"], c["name"], c["tick"], c["state_hash"]
+            )
+        })
+        .collect();
+    if b.len() != c.len() {
+        out.push(format!("{} checkpoints -> {}", b.len(), c.len()));
+    }
+    out
 }
 
 fn num(v: &Value) -> Option<f64> {
@@ -179,24 +252,48 @@ fn functional(base: &Value, cand: &Value, bman: &Value, cman: &Value) -> (bool, 
     (problems.is_empty(), problems)
 }
 
-fn visual(base: &Path, cand: &Path, out: &Path, th: &Visual) -> Result<(bool, Vec<Value>)> {
-    let bdir = base.join("screenshots");
-    let mut rows = Vec::new();
-    let mut ok = true;
-    let Ok(entries) = std::fs::read_dir(&bdir) else {
-        return Ok((
-            true,
-            vec![json!({ "unavailable": "baseline has no screenshots" })],
-        ));
-    };
-    let mut names: Vec<String> = entries
+/// The `.png` names in `dir`, sorted; empty if there is no such folder.
+fn pngs(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
         .flatten()
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .filter(|n| n.ends_with(".png"))
         .collect();
     names.sort();
+    names
+}
+
+fn visual(base: &Path, cand: &Path, out: &Path, th: &Visual) -> Result<(VisualCheck, Vec<Value>)> {
+    let bdir = base.join("screenshots");
+    let names = pngs(&bdir);
+    let not_run = |reason: String| {
+        let row = json!({ "unavailable": reason });
+        let check = VisualCheck::NotRun {
+            reason,
+            by_design: false,
+        };
+        Ok((check, vec![row]))
+    };
+    if names.is_empty() {
+        return not_run(
+            "the baseline has no screenshots (recorded with --no-render, \
+             or without c2-pc)"
+                .into(),
+        );
+    }
+    if pngs(&cand.join("screenshots")).is_empty() {
+        return not_run(format!(
+            "the candidate has no screenshots (--no-render, or c2-pc missing); \
+             the baseline has {}",
+            names.len()
+        ));
+    }
+    let mut rows = Vec::new();
+    let mut ok = true;
     std::fs::create_dir_all(out)?;
-    for name in names {
+    for name in &names {
         let cp = name.trim_end_matches(".png");
         let masks: Vec<Mask> = th
             .mask
@@ -205,13 +302,13 @@ fn visual(base: &Path, cand: &Path, out: &Path, th: &Visual) -> Result<(bool, Ve
             .map(|m| m.rect)
             .collect();
         let row = match (
-            image_diff::load_png(&bdir.join(&name)),
-            image_diff::load_png(&cand.join("screenshots").join(&name)),
+            image_diff::load_png(&bdir.join(name)),
+            image_diff::load_png(&cand.join("screenshots").join(name)),
         ) {
             (Ok(a), Ok(b)) => match image_diff::diff(&a, &b, th.tolerance, &masks) {
                 Ok(d) => {
                     let pass = d.ratio() <= th.max_differing_ratio;
-                    let file = out.join(&name);
+                    let file = out.join(name);
                     std::fs::write(&file, image_diff::encode_rgb(a.width, a.height, &d.image)?)?;
                     ok &= pass;
                     json!({ "checkpoint": cp, "differing_ratio": d.ratio(),
@@ -230,12 +327,20 @@ fn visual(base: &Path, cand: &Path, out: &Path, th: &Visual) -> Result<(bool, Ve
         };
         rows.push(row);
     }
-    Ok((ok, rows))
+    let check = if ok {
+        VisualCheck::Passed {
+            compared: names.len(),
+        }
+    } else {
+        VisualCheck::Failed
+    };
+    Ok((check, rows))
 }
 
 /// Compares `cand` with `base`; writes `comparison.json` and diff images
-/// into `cand`.
-pub fn compare(base: &Path, cand: &Path, th: &Thresholds) -> Result<Verdict> {
+/// into `cand`. `same_state`: differing checkpoint state fails the
+/// comparison (otherwise it is reported only).
+pub fn compare(base: &Path, cand: &Path, th: &Thresholds, same_state: bool) -> Result<Verdict> {
     if base == cand {
         bail!("baseline and candidate are the same run");
     }
@@ -248,24 +353,33 @@ pub fn compare(base: &Path, cand: &Path, th: &Thresholds) -> Result<Verdict> {
         read_json(&cand.join("manifest.json"))?,
     );
     let (functional_ok, problems) = functional(&bm, &cm, &bman, &cman);
+    // A published baseline names no machine: no screenshots, and its
+    // performance figures are shown for reference, never warned about.
+    let published = bman.get("published").is_some();
     // Our renderer against the original's: different pictures by design,
     // compared by eye (the PDF), not pixel by pixel.
     let engine = |m: &Value| m["engine"].as_str().unwrap_or("rust").to_string();
-    let (visual_ok, shots) = if engine(&bman) != engine(&cman) {
-        let why = format!(
+    let by_design = |reason: String| {
+        let row = json!({ "unavailable": reason });
+        let check = VisualCheck::NotRun {
+            reason,
+            by_design: true,
+        };
+        (check, vec![row])
+    };
+    let (visual, shots) = if engine(&bman) != engine(&cman) {
+        by_design(format!(
             "{} engine against {}: compare by eye in the PDF",
             engine(&cman),
             engine(&bman)
-        );
-        (true, vec![json!({ "unavailable": why })])
+        ))
+    } else if published {
+        by_design("published baselines have no screenshots".into())
     } else {
         visual(base, cand, &cand.join("comparison"), &th.visual)?
     };
 
     let p = &th.performance;
-    // A published baseline names no machine: its figures are shown for
-    // reference, never warned about.
-    let published = bman.get("published").is_some();
     let mismatch = if published {
         None
     } else {
@@ -324,7 +438,7 @@ pub fn compare(base: &Path, cand: &Path, th: &Thresholds) -> Result<Verdict> {
     let perf_warnings = perf["checks"]
         .as_array()
         .map_or(0, |c| c.iter().filter(|c| c["warning"] == true).count());
-    let same_state = bm["checkpoints"] == cm["checkpoints"] && !bm["checkpoints"].is_null();
+    let state_diff = state_differences(&bm, &cm);
     // Another release of the game (or edited files): results may differ
     // for that reason alone.
     let content_matches = bman.pointer("/content/sha256") == cman.pointer("/content/sha256");
@@ -332,11 +446,18 @@ pub fn compare(base: &Path, cand: &Path, th: &Thresholds) -> Result<Verdict> {
         "baseline": base.display().to_string(),
         "candidate": cand.display().to_string(),
         "functional": { "passed": functional_ok, "problems": problems },
-        "visual": { "passed": visual_ok, "tolerance": th.visual.tolerance,
+        "visual": { "passed": !visual.failed(),
+                    "ran": matches!(visual, VisualCheck::Passed { .. } | VisualCheck::Failed),
+                    "not_run": match &visual { VisualCheck::NotRun { reason, .. } => json!(reason),
+                                               _ => Value::Null },
+                    "not_run_by_design": matches!(visual, VisualCheck::NotRun { by_design: true, .. }),
+                    "tolerance": th.visual.tolerance,
                     "max_differing_ratio": th.visual.max_differing_ratio, "checkpoints": shots },
         "performance": perf,
         "performance_warnings": perf_warnings,
-        "simulation_state_identical": same_state,
+        "simulation_state_identical": state_diff.is_empty(),
+        "simulation_state_required": same_state,
+        "simulation_state_differences": &state_diff,
         "kill_parity": crate::kill_parity::compare(&bm, &cm),
         "content_matches_baseline": content_matches,
         "baseline_has_screenshots": base.join("screenshots").is_dir(),
@@ -344,7 +465,8 @@ pub fn compare(base: &Path, cand: &Path, th: &Thresholds) -> Result<Verdict> {
     write_json(&cand.join("comparison.json"), &report)?;
     Ok(Verdict {
         functional_ok,
-        visual_ok,
+        visual,
+        same_state: same_state.then_some(state_diff.is_empty()),
         perf_warnings,
         report,
     })
@@ -376,5 +498,87 @@ mod tests {
         let (ok, problems) = functional(&passing(), &passing(), &manifest("a"), &manifest("b"));
         assert!(!ok);
         assert!(problems[0].contains("file_sha256"), "{problems:?}");
+    }
+
+    fn tmp(name: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("c2-regress-cmp-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// A run folder with the given manifest and, if `shot`, one screenshot.
+    fn run_dir(root: &Path, name: &str, man: &Value, shot: bool) -> std::path::PathBuf {
+        let d = root.join(name);
+        std::fs::create_dir_all(d.join("screenshots")).unwrap();
+        let mut m = passing();
+        m["checkpoints"] = json!([{ "name": "warmup", "tick": 500, "state_hash": "aa" }]);
+        write_json(&d.join("metrics.json"), &m).unwrap();
+        write_json(&d.join("manifest.json"), man).unwrap();
+        if shot {
+            let png = image_diff::encode_rgb(2, 2, &[0; 12]).unwrap();
+            std::fs::write(d.join("screenshots/warmup.png"), png).unwrap();
+        }
+        d
+    }
+
+    #[test]
+    fn a_visual_check_that_never_ran_is_not_a_pass() {
+        let root = tmp("visual");
+        let th = Thresholds::default();
+        let (with, without) = (
+            run_dir(&root, "with", &manifest("a"), true),
+            run_dir(&root, "without", &manifest("a"), false),
+        );
+        let v = compare(
+            &with,
+            &run_dir(&root, "with2", &manifest("a"), true),
+            &th,
+            false,
+        )
+        .unwrap();
+        assert_eq!(v.visual, VisualCheck::Passed { compared: 1 });
+        // Baseline recorded without the render pass.
+        let v = compare(&without, &with, &th, false).unwrap();
+        assert!(v.visual.missing() && v.passed(), "{:?}", v.visual);
+        assert_eq!(v.report["visual"]["ran"], false);
+        // Candidate recorded with --no-render.
+        let v = compare(&with, &without, &th, false).unwrap();
+        assert!(v.visual.missing(), "{:?}", v.visual);
+        // A published baseline: no screenshots by design.
+        let mut pubm = manifest("a");
+        pubm["published"] = json!({});
+        let published = run_dir(&root, "published", &pubm, false);
+        let v = compare(&published, &with, &th, false).unwrap();
+        assert!(matches!(
+            v.visual,
+            VisualCheck::NotRun {
+                by_design: true,
+                ..
+            }
+        ));
+        assert!(!v.visual.missing());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn differing_state_fails_only_when_required() {
+        let root = tmp("state");
+        let th = Thresholds::default();
+        let base = run_dir(&root, "base", &manifest("a"), false);
+        let cand = run_dir(&root, "cand", &manifest("a"), false);
+        let mut m = read_json(&cand.join("metrics.json")).unwrap();
+        m["checkpoints"][0]["state_hash"] = json!("bb");
+        write_json(&cand.join("metrics.json"), &m).unwrap();
+        let v = compare(&base, &cand, &th, false).unwrap();
+        assert!(v.passed() && v.same_state.is_none());
+        assert_eq!(v.report["simulation_state_identical"], false);
+        let v = compare(&base, &cand, &th, true).unwrap();
+        assert!(!v.passed() && v.same_state == Some(false));
+        assert!(v.report["simulation_state_differences"][0]
+            .as_str()
+            .unwrap()
+            .contains("warmup"));
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

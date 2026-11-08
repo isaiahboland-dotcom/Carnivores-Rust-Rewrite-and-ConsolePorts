@@ -244,12 +244,23 @@ pub fn write(dirs: &[PathBuf], out: &Path) -> Result<()> {
         let vs = read_json(&r.dir.join("comparison.json"))
             .ok()
             .map_or("-".into(), |c| {
-                let ok = c["functional"]["passed"] == true && c["visual"]["passed"] == true;
+                let state_ok = c["simulation_state_required"] != true
+                    || c["simulation_state_identical"] == true;
+                let ok =
+                    c["functional"]["passed"] == true && c["visual"]["passed"] == true && state_ok;
+                // A visual check that could have run and did not.
+                let no_visual =
+                    c["visual"]["ran"] == false && c["visual"]["not_run_by_design"] == false;
                 let warn = c["performance_warnings"].as_u64().unwrap_or(0);
+                let pass = if no_visual {
+                    "passed, no visual"
+                } else {
+                    "passed"
+                };
                 match (ok, warn) {
                     (false, _) => "FAILED".to_string(),
-                    (true, 0) => "passed".into(),
-                    (true, n) => format!("passed, {n} warn"),
+                    (true, 0) => pass.into(),
+                    (true, n) => format!("{pass}, {n} warn"),
                 }
             });
         let st = &m["functional"]["stages"];

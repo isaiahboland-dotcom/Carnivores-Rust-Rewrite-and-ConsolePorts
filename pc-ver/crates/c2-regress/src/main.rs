@@ -7,7 +7,7 @@ use std::process::{Command, ExitCode};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{bail, Context, Result};
-use c2_regress::compare::{compare, Thresholds};
+use c2_regress::compare::{compare, Thresholds, Verdict, VisualCheck};
 use c2_regress::game::Game;
 use c2_regress::record::{self, RunContext};
 use c2_regress::scenario_file::{GameStatus, ScenarioFile};
@@ -21,24 +21,30 @@ usage:
                      index (for index:N), AI number, model, name
   c2-regress run     --scenario FILE --game-id ID --game DIR [--out ROOT] [--repeat N]
                      [--label TEXT] [--no-render] [--size WxH] [--c2-pc PATH]
-                        [--baseline RUN_DIR] [--thresholds FILE] [--inject FAULT]
+                        [--baseline RUN_DIR] [--thresholds FILE] [--same-state] [--inject FAULT]
                      [--engine rust|original] [--hook-dir DIR]
      --engine original: the game's own hunt executable under Wine, driven by
      the hook (pc-ver/crates/c2-regress/original/build.sh)
-  c2-regress compare BASELINE_DIR CANDIDATE_DIR [--thresholds FILE] [--fail-on-warn]
+  c2-regress compare BASELINE_DIR CANDIDATE_DIR [--thresholds FILE] [--same-state]
+                     [--fail-on-warn]
   c2-regress report  RUN_DIR
   c2-regress pdf     --out FILE RUN_DIR [RUN_DIR...]
-  c2-regress publish RUN_DIR --hash-list recipes/bases/BASE.toml [--to DIR]
+  c2-regress publish RUN_DIR --hash-list recipes/bases/BASE.toml [--to DIR] [--replace]
+                     --replace: overwrite an existing baseline (the changes are listed)
   c2-regress original-profile OUT.SAV [--name NAME] [--score N] [--res 0-7]
                      a hunter in the original's save format (trophy00.sav), with
                      the original's default options, for original-engine runs
 
 --baseline published: the reference baseline published in this checkout
 (pc-ver/crates/c2-regress/baselines/<scenario>/<game>/).
+--same-state: checkpoint state that differs from the baseline's fails the
+comparison (refactors and optimizations; same platform only).
 
-Exit codes: 0 passed, 1 failed (functional or visual), 2 usage or set-up
-error, 3 the game is unsupported or planned for this scenario, 4 performance
-warnings with --fail-on-warn.";
+Exit codes: 0 passed, 1 failed (functional, visual, or state with
+--same-state), 2 usage or set-up error, 3 the game is unsupported or planned
+for this scenario, 4 performance warnings with --fail-on-warn, 5 passed but
+the visual comparison did not run though it could have (a baseline or
+candidate recorded without the render pass).";
 
 struct Args {
     words: Vec<String>,
@@ -47,7 +53,7 @@ struct Args {
 
 impl Args {
     fn parse(raw: &[String]) -> Self {
-        let switches = ["--no-render", "--fail-on-warn"];
+        let switches = ["--no-render", "--fail-on-warn", "--same-state", "--replace"];
         let (mut words, mut flags) = (Vec::new(), Vec::new());
         let mut it = raw.iter();
         while let Some(a) = it.next() {
@@ -109,6 +115,59 @@ fn c2_pc_path(a: &Args) -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let p = exe.with_file_name(format!("c2-pc{}", std::env::consts::EXE_SUFFIX));
     p.exists().then_some(p)
+}
+
+/// `--baseline`: a run folder, or `published` for this checkout's.
+fn baseline_dir(a: &Args, scenario: &str, game: &str) -> Option<PathBuf> {
+    a.get("--baseline").map(|b| {
+        if b == "published" {
+            publish::published_dir(scenario, game)
+        } else {
+            PathBuf::from(b)
+        }
+    })
+}
+
+/// The verdict word and exit code (see USAGE), warning on stderr about a
+/// comparison that left something out.
+fn verdict(run_ok: bool, v: Option<&Verdict>, fail_on_warn: bool) -> (&'static str, u8) {
+    if let Some(v) = v {
+        match &v.visual {
+            VisualCheck::NotRun {
+                reason,
+                by_design: true,
+            } => eprintln!("note: visual not compared: {reason}"),
+            VisualCheck::NotRun { reason, .. } => {
+                eprintln!("WARNING: the visual comparison did not run: {reason}");
+            }
+            _ => {}
+        }
+        if v.same_state == Some(false) {
+            eprintln!("checkpoint state differs from the baseline (--same-state)");
+        }
+    }
+    if !run_ok || v.is_some_and(|v| !v.passed()) {
+        ("FAILED", 1)
+    } else if v.is_some_and(|v| v.visual.missing()) {
+        ("PASSED WITHOUT VISUAL CHECK", 5)
+    } else if fail_on_warn && v.is_some_and(|v| v.perf_warnings > 0) {
+        ("PASSED WITH PERFORMANCE WARNINGS", 4)
+    } else {
+        ("PASSED", 0)
+    }
+}
+
+/// Compares a finished run with `--baseline` (if given), writes its report
+/// and prints the verdict.
+fn finish_run(a: &Args, dir: &Path, run_ok: bool, scenario: &str, game: &str) -> Result<ExitCode> {
+    let v = match baseline_dir(a, scenario, game) {
+        Some(base) => Some(compare(&base, dir, &thresholds(a)?, a.has("--same-state"))?),
+        None => None,
+    };
+    html::write(dir)?;
+    let (word, code) = verdict(run_ok, v.as_ref(), false);
+    println!("{word}: {}", dir.display());
+    Ok(ExitCode::from(code))
 }
 
 fn list(a: &Args) -> Result<ExitCode> {
@@ -216,6 +275,12 @@ fn run(a: &Args) -> Result<ExitCode> {
     );
     std::fs::create_dir_all(&dir)?;
     let (mut render, mut render_missing, mut render_failed) = (None, None, false);
+    if a.has("--no-render") && a.get("--baseline").is_some_and(|b| b != "published") {
+        eprintln!(
+            "WARNING: --no-render with --baseline: this run has no screenshots, \
+             so the visual comparison cannot run (exit code 5 at best)"
+        );
+    }
     if a.has("--no-render") {
         render_missing = Some("--no-render given".to_string());
     } else if let Some(exe) = c2_pc_path(a) {
@@ -266,27 +331,8 @@ fn run(a: &Args) -> Result<ExitCode> {
         inject: a.get("--inject").map(str::to_string),
         log,
     };
-    let mut passed = record::write(&dir, &ctx)? && !render_failed;
-    if let Some(base) = a.get("--baseline") {
-        let base = if base == "published" {
-            publish::published_dir(file.id(), &def.id)
-        } else {
-            PathBuf::from(base)
-        };
-        let v = compare(&base, &dir, &thresholds(a)?)?;
-        passed &= v.functional_ok && v.visual_ok;
-    }
-    html::write(&dir)?;
-    println!(
-        "{}: {}",
-        if passed { "PASSED" } else { "FAILED" },
-        dir.display()
-    );
-    Ok(if passed {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
-    })
+    let passed = record::write(&dir, &ctx)? && !render_failed;
+    finish_run(a, &dir, passed, file.id(), &def.id)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -319,44 +365,27 @@ fn run_original(
         hook_dir: &hook_dir,
         repeat,
     };
-    let mut passed = run(&o, &dir)?;
-    if let Some(base) = a.get("--baseline") {
-        let base = if base == "published" {
-            publish::published_dir(file.id(), &def.id)
-        } else {
-            PathBuf::from(base)
-        };
-        let v = compare(&base, &dir, &thresholds(a)?)?;
-        passed &= v.functional_ok && v.visual_ok;
-    }
-    html::write(&dir)?;
-    println!(
-        "{}: {}",
-        if passed { "PASSED" } else { "FAILED" },
-        dir.display()
-    );
-    Ok(if passed {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
-    })
+    let passed = run(&o, &dir)?;
+    finish_run(a, &dir, passed, file.id(), &def.id)
 }
 
 fn compare_cmd(a: &Args) -> Result<ExitCode> {
     let [base, cand] = a.words.as_slice() else {
         bail!("compare takes BASELINE_DIR CANDIDATE_DIR\n\n{USAGE}");
     };
-    let v = compare(Path::new(base), Path::new(cand), &thresholds(a)?)?;
+    let v = compare(
+        Path::new(base),
+        Path::new(cand),
+        &thresholds(a)?,
+        a.has("--same-state"),
+    )?;
     html::write(Path::new(cand))?;
     println!("{}", serde_json::to_string_pretty(&v.report)?);
     let _ = std::io::stdout().flush();
-    Ok(if !(v.functional_ok && v.visual_ok) {
-        ExitCode::FAILURE
-    } else if v.perf_warnings > 0 && a.has("--fail-on-warn") {
-        ExitCode::from(4)
-    } else {
-        ExitCode::SUCCESS
-    })
+    // stdout is the JSON report; the verdict goes to stderr.
+    let (word, code) = verdict(true, Some(&v), a.has("--fail-on-warn"));
+    eprintln!("{word}");
+    Ok(ExitCode::from(code))
 }
 
 fn original_profile(a: &Args) -> Result<ExitCode> {
@@ -404,7 +433,19 @@ fn publish_cmd(a: &Args) -> Result<ExitCode> {
         .strip_prefix(&repo)
         .context("the hash list must be a file of this repository")?
         .to_path_buf();
-    publish::publish(run, &full, &label.to_string_lossy(), &to)?;
+    let changes = publish::publish(
+        run,
+        &full,
+        &label.to_string_lossy(),
+        &to,
+        a.has("--replace"),
+    )?;
+    if let Some(changes) = changes {
+        println!("replaced the baseline in {}; changes:", to.display());
+        for c in changes {
+            println!("  {c}");
+        }
+    }
     println!("published {} -> {}", run.display(), to.display());
     Ok(ExitCode::SUCCESS)
 }

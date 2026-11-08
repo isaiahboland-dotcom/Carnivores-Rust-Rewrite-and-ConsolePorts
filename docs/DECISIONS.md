@@ -4846,3 +4846,33 @@ Source audit finding P3 (v0.5.0).
   `bench::measure` now count each death of a slot.
 - After: 1800 s, same seed: Area 1 38 kills, 25 of 25 alive; Area 3 16
   kills, 21 of 21 alive. Step cost 0.05 ms average.
+
+## 2026-11-08 — Regression comparison: missing visual checks, opt-in state equality, guarded publish
+
+Source audit findings R4, R5, R6 (v0.5.0).
+
+- R5: a visual check that compared no pictures counted as passed, with the
+  same exit code. Now `compare` returns a `VisualCheck` (passed, failed, or
+  not run with a reason). Not run where it could have run (the baseline or
+  the candidate has no screenshots: `--no-render`, or no `c2-pc`) exits 5
+  instead of 0. Not run by design (a published baseline, which carries no
+  screenshots; the original engine against ours) is noted and exits 0, so
+  `--baseline published` keeps its 0. A candidate without screenshots
+  against a baseline with them used to fail as missing files; it is now
+  exit 5 with that reason. `--no-render` with a non-published `--baseline`
+  warns at the start.
+- R4: checkpoint state equality stays informational by default. The hashes
+  depend on float results, so they only match between runs on the same
+  platform, and a deliberate behaviour change differs on purpose. Opt-in
+  `--same-state` (run and compare) fails on any difference; the differing
+  checkpoints are listed in `comparison.json` either way. It replaces the
+  manual `jq` diff in the steps (kept as an alternative).
+- R6: `publish` already refused failed, injected, non-reproducible and
+  other-scenario-text runs (2026-11-07). It now refuses to overwrite a
+  baseline already in the folder without `--replace`, and lists the
+  changes against it (scenario, content, build, results, determinism,
+  checkpoint state) in both cases. No interactive prompt: the tool must
+  stay scriptable, and git shows the file diff before commit.
+- Tests: `compare::tests::a_visual_check_that_never_ran_is_not_a_pass`,
+  `differing_state_fails_only_when_required`,
+  `publish::tests::an_existing_baseline_is_replaced_only_on_request_with_its_changes`.
