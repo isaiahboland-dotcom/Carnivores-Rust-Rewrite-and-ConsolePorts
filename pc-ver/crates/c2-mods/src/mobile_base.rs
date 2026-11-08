@@ -9,8 +9,9 @@
 //! one, each new animal running as the PC animal of its kind with its clips
 //! put in that animal's order.
 
-use crate::mobile::{falls, roles, Apk, DONORS};
-use crate::ModError;
+use crate::mobile::Apk;
+use crate::mobile_anims::{arrange, donors, falls, layout, roles};
+use crate::{io, ModError};
 use c2_formats::car::Car;
 use c2_formats::mobile::{car_from_in, parse_cat, Assets, Cat, Rgba};
 use c2_formats::mobile_area;
@@ -30,13 +31,6 @@ pub struct Built {
     pub weapons: Vec<String>,
     /// What was left out, and why.
     pub notes: Vec<String>,
-}
-
-fn io(path: &Path) -> impl Fn(std::io::Error) -> ModError + '_ {
-    move |source| ModError::Io {
-        path: path.to_path_buf(),
-        source,
-    }
 }
 
 fn write(path: &Path, data: &[u8]) -> Result<(), ModError> {
@@ -152,74 +146,6 @@ const PC_AI: [(&str, i32); 9] = [
     ("Ceratosaurus", 17),
     ("T-Rex", 18),
 ];
-
-/// Each PC AI's clips in the order it plays them by number (the PC
-/// models': `Par_wlk, Par_run1, Par_idle1, Par_idle2, Par_die, Par_slp`...).
-fn layout(ai: i32) -> &'static [&'static str] {
-    match ai {
-        10 => &["walk", "run", "idle", "idle", "die", "sleep"],
-        11 => &["run", "walk", "idle", "idle", "die", "sleep"],
-        12 => &["run", "walk", "die", "idle", "idle", "sleep"],
-        13 => &[
-            "run", "walk", "swim", "slide", "jump", "die", "eat", "sleep",
-        ],
-        14 => &["run", "walk", "idle", "idle", "idle", "die", "sleep"],
-        15 => &[
-            "run", "walk", "slide", "swim", "jump", "die", "eat", "sleep",
-        ],
-        16 => &[
-            "run", "walk", "slide", "idle", "idle", "jump", "die", "eat", "sleep",
-        ],
-        17 => &["walk", "run", "idle", "idle", "idle", "die", "sleep", "eat"],
-        _ => &[],
-    }
-}
-
-/// The clip for a role an animal lacks: the nearest it has.
-fn stand_in(role: &str) -> &'static [&'static str] {
-    match role {
-        "slide" => &["run"],
-        "swim" => &["walk", "run"],
-        "jump" => &["attack", "run"],
-        "eat" => &["attack", "idle", "walk"],
-        "idle" => &["growl", "call", "walk"],
-        "sleep" => &["die"],
-        _ => &["walk"],
-    }
-}
-
-/// `car`'s clips (and their sounds) in `layout`'s order, from `roles`
-/// (each clip's). Repeated roles (two idles) take the animal's in turn.
-fn arrange(car: &Car, roles: &[Option<&str>], layout: &[&str]) -> Option<Car> {
-    let mut used: BTreeMap<&str, usize> = BTreeMap::new();
-    let mut pick = Vec::with_capacity(layout.len());
-    for &want in layout {
-        let n = used.entry(want).or_insert(0);
-        let of = |r: &str| -> Vec<usize> {
-            (0..roles.len())
-                .filter(|&i| roles[i] == Some(r) && i < car.animations.len())
-                .collect()
-        };
-        let own = of(want);
-        let i = own
-            .get(*n)
-            .or(own.first())
-            .copied()
-            .or_else(|| stand_in(want).iter().find_map(|r| of(r).first().copied()))?;
-        *n += 1;
-        pick.push(i);
-    }
-    let mut out = car.clone();
-    out.animations = pick.iter().map(|&i| car.animations[i].clone()).collect();
-    if let Some(s) = car.anim_sounds {
-        let mut a = [-1; c2_formats::car::ANIFX_SLOTS];
-        for (slot, &i) in a.iter_mut().zip(&pick) {
-            *slot = s.get(i).copied().unwrap_or(-1);
-        }
-        out.anim_sounds = Some(a);
-    }
-    Some(out)
-}
 
 /// A weapon's clip role from its file name (`revolver_up`); `None` for a
 /// numbered one (`pistol_animation_0`, already in the PC's order).
@@ -629,17 +555,12 @@ impl Game<'_> {
             // (`DONORS`): the clips as they are, by role; `ice_age::layer`
             // makes the entry from the donor's.
             let ia_donor = || {
-                let ia = DONORS
-                    .iter()
-                    .find(|(d, _)| *d == stem)?
-                    .1
-                    .iter()
-                    .find_map(|n| {
-                        ICE_AGE_NAMES
-                            .iter()
-                            .find(|(p, _)| p.eq_ignore_ascii_case(n))
-                            .map(|(_, ai)| *ai)
-                    })?;
+                let ia = donors(&stem).iter().find_map(|n| {
+                    ICE_AGE_NAMES
+                        .iter()
+                        .find(|(p, _)| p.eq_ignore_ascii_case(n))
+                        .map(|(_, ai)| *ai)
+                })?;
                 let r = roles(&c, &stem, &car).filter(|r| r.contains(&Some("die")))?;
                 Some((ia, r))
             };
@@ -655,14 +576,9 @@ impl Game<'_> {
                 extra_ai += 1;
                 ((extra_ai - 1, None), car)
             } else {
-                let donor = DONORS
+                let donor = donors(&stem)
                     .iter()
-                    .find(|(d, _)| *d == stem)
-                    .and_then(|(_, names)| {
-                        names
-                            .iter()
-                            .find_map(|n| PC_AI.iter().find(|(p, _)| p == n).map(|(_, ai)| *ai))
-                    });
+                    .find_map(|n| PC_AI.iter().find(|(p, _)| p == n).map(|(_, ai)| *ai));
                 let Some(ai) = donor else {
                     self.built.notes.push(format!(
                         "{name} ({stem}, #{index}): no PC kind to run it as (left out)"
@@ -811,7 +727,7 @@ impl Game<'_> {
                 .cat
                 .sounds
                 .iter()
-                .filter(|f| matches!(crate::mobile::role(f), Some("call" | "growl")))
+                .filter(|f| matches!(crate::mobile_anims::role(f), Some("call" | "growl")))
                 .filter_map(|f| snd(f))
                 .chain(snd(&format!("{}_call", a.stem)))
                 .collect();
@@ -1249,18 +1165,6 @@ pub fn build(apk: &Path, out: &Path) -> Result<Built, ModError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use c2_formats::car::Animation;
-
-    fn clip(name: &str) -> Animation {
-        let mut name_raw = [0u8; 32];
-        name_raw[..name.len()].copy_from_slice(name.as_bytes());
-        Animation {
-            name_raw,
-            kps: 10,
-            frames: 0,
-            data: Vec::new(),
-        }
-    }
 
     #[test]
     fn trophy_room_stands_inside_its_walls() {
@@ -1317,53 +1221,6 @@ mod tests {
         assert_eq!(back.mesh.vertices.len(), 32);
         assert_eq!(back.mesh.faces.len(), 32);
         assert_eq!(back.animations[0].frames, 41);
-    }
-
-    #[test]
-    fn clips_take_the_ais_order() {
-        let names = [
-            "walk", "run", "idle", "idle2", "growl", "die", "sleep", "eat", "attack",
-        ];
-        let car = Car {
-            name_raw: [0; 32],
-            mesh: c2_formats::model::Mesh {
-                vertices: Vec::new(),
-                faces: Vec::new(),
-                texture: Vec::new(),
-            },
-            animations: names.iter().map(|n| clip(n)).collect(),
-            sounds: Vec::new(),
-            anim_sounds: Some({
-                let mut a = [-1; c2_formats::car::ANIFX_SLOTS];
-                a[5] = 3;
-                a
-            }),
-            trailing: Vec::new(),
-        };
-        let roles = [
-            Some("walk"),
-            Some("run"),
-            Some("idle"),
-            Some("idle"),
-            Some("growl"),
-            Some("die"),
-            Some("sleep"),
-            Some("eat"),
-            Some("attack"),
-        ];
-        // The raptor's: run, walk, slide, swim, jump, die, eat, sleep.
-        let a = arrange(&car, &roles, layout(15)).unwrap_or_else(|| panic!("arranged"));
-        let got: Vec<String> = a.animations.iter().map(Animation::name).collect();
-        assert_eq!(
-            got,
-            ["run", "walk", "run", "walk", "attack", "die", "eat", "sleep"]
-        );
-        // The death's sound went with it.
-        assert_eq!(a.anim_sounds.map(|s| s[5]), Some(3));
-        // Two idles take the animal's two.
-        let a = arrange(&car, &roles, layout(14)).unwrap_or_else(|| panic!("arranged"));
-        let got: Vec<String> = a.animations.iter().map(Animation::name).collect();
-        assert_eq!(got[2..5], ["idle", "idle2", "idle"]);
     }
 
     #[test]

@@ -12,7 +12,7 @@ use crate::detect::{detect, is_data, read_res, RES_TXT};
 use crate::manifest::{slug, Manifest};
 use crate::res_merge::{block_id, merge, Change, Merged};
 use crate::resolve::order;
-use crate::ModError;
+use crate::{io, ModError};
 
 /// Marks a folder written by [`materialize`] (and so safe to replace).
 pub const PACK_MARKER: &str = ".c2rs-pack";
@@ -1230,13 +1230,6 @@ impl Pack {
             let _ = writeln!(s, "None.");
         }
         s
-    }
-}
-
-fn io(path: &Path) -> impl FnOnce(std::io::Error) -> ModError + '_ {
-    move |source| ModError::Io {
-        path: path.to_path_buf(),
-        source,
     }
 }
 

@@ -17,7 +17,7 @@
 use c2_formats::res_txt::{Block, ResTxt};
 use c2_vfs::{MemBackend, Vfs};
 
-use crate::ModError;
+use crate::{io, ModError};
 
 /// One Ice Age AI: its Modder's Edition AI, and the dialect lines for it.
 struct Rule {
@@ -386,13 +386,6 @@ pub fn layer(vfs: &Vfs) -> Result<Option<MemBackend>, ModError> {
 pub struct Import {
     pub added: Vec<std::path::PathBuf>,
     pub skipped: Vec<String>,
-}
-
-fn io(path: &std::path::Path) -> impl Fn(std::io::Error) -> ModError + '_ {
-    move |source| ModError::Io {
-        path: path.to_path_buf(),
-        source,
-    }
 }
 
 /// The `prices` section's `key` lines (`area`, `dino`), in order.

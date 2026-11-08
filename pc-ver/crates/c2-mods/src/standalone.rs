@@ -25,7 +25,7 @@
 //! Add-ons are layered on the result by the mod system as usual
 //! ([`add_ons`]: kept to the base game's maps, which they were made for).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use c2_formats::menu_txt::MenuData;
@@ -33,19 +33,12 @@ use c2_formats::res_txt::{c_atoi, Block, Entry, ResTxt, Section, Sub};
 use c2_vfs::{key, MemBackend, Vfs};
 
 use crate::loose::MapBackend;
-use crate::ModError;
+use crate::{io, ModError};
 
 type Result<T> = std::result::Result<T, ModError>;
 
 fn fail(msg: impl Into<String>) -> ModError {
     ModError::Standalone(msg.into())
-}
-
-fn io(path: &Path) -> impl FnOnce(std::io::Error) -> ModError + '_ {
-    move |source| ModError::Io {
-        path: path.to_path_buf(),
-        source,
-    }
 }
 
 /// Where ambient animals (AI below 10) may live.
@@ -63,19 +56,12 @@ pub struct Options {
     pub skip: Vec<Skip>,
 }
 
+mod dialect;
+mod game;
 pub mod leave_out;
 mod skip;
+pub use dialect::{spawn_layer, to_dialect, SPAWN_LAYER};
 pub use skip::{base_parts, parts, parts_in, Parts, Skip};
-
-/// One standalone game, read.
-struct Game {
-    slug: String,
-    name: String,
-    root: PathBuf,
-    res: ResTxt,
-    /// Its menu file, or its `_RES.TXT` when it has none.
-    menu: ResTxt,
-}
 
 fn read_res(p: &Path) -> Result<ResTxt> {
     let d = std::fs::read(p).map_err(io(p))?;
@@ -354,352 +340,10 @@ fn is_ambient(b: &Block) -> bool {
     b.get(&["ai"]).map(c_atoi).is_some_and(|a| a < 10)
 }
 
-/// A standalone made for the original engine, read as a dialect game over
-/// `base` (the Modder's Edition's `_RES.TXT`): the original engine fixes
-/// each AI's animation order, gait and placement, so each animal takes the
-/// base's animal of the same AI's animation and movement keys (unless it
-/// has its own) and its spawn blocks, its "picked" condition moved to the
-/// animal's own menu slot (`callNo`, set here); the base's spawn and pack
-/// tables come along, so the numbers stay right when they are moved.
-///
-/// An animal no base animal shares an AI with (an extra slot a patched
-/// engine added, AI 19) takes the kind of the base's Allosaurus when it is
-/// `danger`ous, else of its Parasaurolophus (or the closest kind the base
-/// has), and its animations by their
-/// names in its model (`model` reads one by its `file`); its own numbers
-/// (health, mass, scores, senses) stay. The original's brachiosaur (AI 6;
-/// the dialect's 6 is the pig) takes the base's brachiosaur's.
-/// Returns the notes (what was decided, animals left out).
-pub fn to_dialect(
-    g: &ResTxt,
-    base: &ResTxt,
-    model: &dyn Fn(&str) -> Option<c2_formats::car::Car>,
-) -> (ResTxt, Vec<String>) {
-    // Entries without a name (stray blocks) aren't animals.
-    let mut g = g.clone();
-    let mut notes = Vec::new();
-    if let Some(sec) = g
-        .sections
-        .iter_mut()
-        .find(|s| s.name.eq_ignore_ascii_case("characters"))
-    {
-        let before = sec.blocks.len();
-        sec.blocks.retain(|b| {
-            b.get(&["name"])
-                .is_some_and(|n| !unquote(n).trim().is_empty())
-        });
-        if sec.blocks.len() < before {
-            notes.push(format!(
-                "{} entries without a name left out",
-                before - sec.blocks.len()
-            ));
-        }
-    }
-    let g = &g;
-    let mut out = g.clone();
-    let donors = blocks(base, "characters");
-    let ai_of = |b: &Block| b.get(&["ai"]).map(c_atoi);
-    let menu = MenuData::from_res(g);
-    let slot_of = |b: &Block| {
-        let n = b.get(&["name"]).map(unquote)?;
-        menu.huntables
-            .iter()
-            .position(|h| h.name.eq_ignore_ascii_case(&n))
-    };
-    let mut chars = Vec::new();
-    for b in blocks(g, "characters") {
-        let mut b = b.clone();
-        let ai = ai_of(&b);
-        // The hunter (AI 0) as it is.
-        if ai.unwrap_or(0) == 0 {
-            chars.push(b);
-            continue;
-        }
-        let name = b.get(&["name"]).map(unquote).unwrap_or_default();
-        let slot = slot_of(&b);
-        let fits = |d: &Block| match ai {
-            Some(6) => matches!(ai_of(d), Some(30 | 34)),
-            _ => ai_of(d) == ai,
-        };
-        let Some(d) = donors
-            .iter()
-            .skip(1)
-            .find(|d| fits(d) && crate::loose::has_anims(d))
-        else {
-            match by_names(&b, &name, slot, donors, model) {
-                Ok((e, note)) => {
-                    notes.push(note);
-                    chars.push(e);
-                }
-                Err(why) => notes.push(format!("'{name}' left out: {why}")),
-            }
-            continue;
-        };
-        if ai == Some(6) {
-            if let Some(a) = d.get(&["ai"]) {
-                set(&mut b, "ai", a.trim().to_string());
-            }
-        }
-        if !crate::loose::has_anims(&b) {
-            crate::loose::copy_anims(d, &mut b);
-        }
-        b.entries.retain(|e| !e.key.eq_ignore_ascii_case("callNo"));
-        if let Some(n) = slot {
-            set(&mut b, "callNo", n.to_string());
-        }
-        // The donor's spawns, its slot's condition moved to this one's.
-        let donor_slot = d.get(&["callNo"]).map(c_atoi);
-        let at = b.entries.len();
-        for s in d
-            .subs
-            .iter()
-            .filter(|s| crate::loose::is_spawn_sub(&s.name) || crate::loose::has_spawns(&s.block))
-        {
-            let mut s = s.clone();
-            if is_condition(&s.name) {
-                let Some(n) = slot else { continue };
-                slot_condition(&mut s, donor_slot, n);
-            }
-            s.at = at;
-            b.subs.push(s);
-        }
-        chars.push(b);
-    }
-    section_mut(&mut out, "characters").blocks = chars;
-    for name in ["spawntable", "packtable"] {
-        if let Some(s) = base
-            .sections
-            .iter()
-            .find(|s| s.name.to_ascii_lowercase().contains(name))
-        {
-            out.sections
-                .retain(|x| !x.name.to_ascii_lowercase().contains(name));
-            out.sections.push(s.clone());
-        }
-    }
-    (out, notes)
-}
-
-/// The layer [`spawn_layer`] makes.
-pub const SPAWN_LAYER: &str = "default spawn tables";
-
-/// The Modder's Edition's three default spawn groups (its `_RES.TXT`'s
-/// `spawntable`): ambients, a random roster, the picked animals.
-const DEFAULT_SPAWNTABLE: &str = "spawntable {\n spawngroup {\n  spawnmax = 6\n  spawnmin = 0\n  spawnrate = 1\n  densityMulti = 2\n  moveForward = TRUE\n }\n spawngroup {\n  spawnmax = 4\n  spawnmin = 0\n  spawnrate = 1\n  randomise = TRUE\n }\n spawngroup {\n  spawnmax = 13\n  spawnmin = 12\n  spawnrate = 0.5\n  densityMulti = 4\n }\n}\n.\n";
-
-/// For a game read in the dialect (it has its animation keys) but without
-/// spawn tables, nothing would be placed: its `_RES.TXT` with the
-/// Modder's Edition's default spawn groups, each ambient (AI below 10) in
-/// the ambients' group and each huntable in the random roster, and in the
-/// picked group when picked (`overwrite charN`, its menu slot as `callNo`).
-pub fn spawn_layer(vfs: &Vfs) -> Result<Option<MemBackend>> {
-    let Ok(data) = vfs.read("HUNTDAT/_RES.TXT") else {
-        return Ok(None);
-    };
-    let mut res = ResTxt::parse(&String::from_utf8_lossy(&data))?;
-    let has_table = res
-        .sections
-        .iter()
-        .any(|s| s.name.to_ascii_lowercase().contains("spawntable"));
-    if !c2_formats::mee::is_dialect(&res) || has_table {
-        return Ok(None);
-    }
-    let menu = match vfs.read("HUNTDAT/_MENU.TXT") {
-        Ok(d) => MenuData::from_res(&ResTxt::parse(&String::from_utf8_lossy(&d))?),
-        Err(_) => MenuData::from_res(&res),
-    };
-    let spawn = |group: usize| Sub {
-        name: "spawninfo".into(),
-        at: 0,
-        block: Block {
-            entries: vec![
-                Entry {
-                    key: "spawngroup".into(),
-                    value: group.to_string(),
-                },
-                Entry {
-                    key: "spawnratio".into(),
-                    value: "1".into(),
-                },
-            ],
-            subs: Vec::new(),
-        },
-    };
-    if let Some(sec) = res
-        .sections
-        .iter_mut()
-        .find(|s| s.name.eq_ignore_ascii_case("characters"))
-    {
-        for b in sec.blocks.iter_mut() {
-            let ai = b.get(&["ai"]).map(c_atoi).unwrap_or(0);
-            // The hunter (AI 0): first in most games; one keeps it in a
-            // `hunterinfo` section of its own, its first character a
-            // menu animal.
-            if ai == 0 || crate::loose::has_spawns(b) {
-                continue;
-            }
-            let at = b.entries.len();
-            if ai < 10 {
-                b.subs.push(Sub { at, ..spawn(0) });
-                continue;
-            }
-            let name = b.get(&["name"]).map(unquote).unwrap_or_default();
-            let slot = menu
-                .huntables
-                .iter()
-                .position(|h| h.name.eq_ignore_ascii_case(&name));
-            b.subs.push(Sub { at, ..spawn(1) });
-            if let Some(n) = slot {
-                if b.get(&["callNo"]).is_none() {
-                    set(b, "callNo", n.to_string());
-                }
-                let n = b.get(&["callNo"]).map(c_atoi).unwrap_or(n as i32);
-                b.subs.push(Sub {
-                    name: format!("overwrite char{n}"),
-                    at: b.entries.len(),
-                    block: Block {
-                        entries: Vec::new(),
-                        subs: vec![spawn(2)],
-                    },
-                });
-            }
-        }
-    }
-    let table = ResTxt::parse(DEFAULT_SPAWNTABLE)?;
-    res.sections.extend(table.sections);
-    let mut m = MemBackend::new();
-    m.insert("HUNTDAT/_RES.TXT", res.write().into_bytes());
-    Ok(Some(m))
-}
-
-/// A donor's slot condition (`overwrite char5 { ... spawninfo{} }`) as one
-/// for slot `n`: only its spawn part (its other keys are the donor's own).
-fn slot_condition(s: &mut Sub, donor_slot: Option<i32>, n: usize) {
-    s.name = header(&s.name, &Some, &|c| {
-        Some(if Some(c as i32) == donor_slot {
-            n as u32
-        } else {
-            c
-        })
-    });
-    s.block.entries.clear();
-    s.block.subs.retain(|x| crate::loose::is_spawn_sub(&x.name));
-}
-
-/// Roles of a model's animations by their names (`BR_Walk`, `Par_slp`,
-/// `death`...): `None` for those that say none (trophy poses, slides).
-fn roles_by_name(car: &c2_formats::car::Car) -> Vec<Option<&'static str>> {
-    let mut seen: Vec<&str> = Vec::new();
-    car.animations
-        .iter()
-        .map(|a| {
-            let n = a.name().to_ascii_lowercase();
-            let has = |w: &[&str]| w.iter().any(|x| n.contains(x));
-            let r = if has(&["die", "death", "dead"]) {
-                "die"
-            } else if has(&["slp", "sleep"]) {
-                "sleep"
-            } else if has(&["swim", "swm"]) {
-                "swim"
-            } else if has(&["jmp", "jump"]) {
-                "jump"
-            } else if has(&["run"]) {
-                "run"
-            } else if has(&["wlk", "walk"]) {
-                "walk"
-            } else if has(&["eat", "kill"]) {
-                "eat"
-            } else if has(&["roar", "scr", "growl"]) {
-                "growl"
-            } else if has(&["idle", "look", "see", "sml", "smell"]) {
-                "idle"
-            } else {
-                return None;
-            };
-            // One walk, run, death and sleep; any number of idles.
-            if r != "idle" && seen.contains(&r) {
-                return None;
-            }
-            seen.push(r);
-            Some(r)
-        })
-        .collect()
-}
-
-/// The keys an original-engine entry keeps over its donor's: its own size,
-/// health, score and senses.
-const OWN_KEYS: [&str; 14] = [
-    "health",
-    "mass",
-    "length",
-    "radius",
-    "basescore",
-    "smellK",
-    "hearK",
-    "lookK",
-    "smell",
-    "hear",
-    "look",
-    "shipdelta",
-    "scale0",
-    "scaleA",
-];
-
-/// An animal no base animal shares an AI with: the kind of a dangerous or
-/// harmless base animal, its animations by name (see [`to_dialect`]).
-fn by_names(
-    b: &Block,
-    name: &str,
-    slot: Option<usize>,
-    donors: &[Block],
-    model: &dyn Fn(&str) -> Option<c2_formats::car::Car>,
-) -> std::result::Result<(Block, String), String> {
-    let file = b.get(&["file"]).map(unquote).ok_or("no model")?;
-    let car = model(&file).ok_or_else(|| format!("its model {file} isn't there"))?;
-    let roles = roles_by_name(&car);
-    if !roles.contains(&Some("die")) {
-        return Err("no AI of the base fits it, and its model names no death animation".into());
-    }
-    let danger = b
-        .get(&["danger"])
-        .is_some_and(|v| v.trim().eq_ignore_ascii_case("true") || c_atoi(v) != 0);
-    // The Allosaurus, or the closest kind the base has (hunters / grazers).
-    let kinds: &[i32] = if danger {
-        &[13, 17, 16, 15, 18]
-    } else {
-        &[10, 12, 11, 14]
-    };
-    let d = kinds
-        .iter()
-        .find_map(|&k| {
-            donors
-                .iter()
-                .skip(1)
-                .find(|d| d.get(&["ai"]).map(c_atoi) == Some(k) && crate::loose::has_anims(d))
-        })
-        .ok_or("the base has no animal to take its kind from")?;
-    let mut e = crate::mobile::make_entry(d, name, &file, &roles, slot.is_some());
-    for k in OWN_KEYS {
-        if let Some(v) = b.get(&[k]) {
-            set(&mut e, k, v.trim().to_string());
-        }
-    }
-    let donor_slot = d.get(&["callNo"]).map(c_atoi);
-    e.entries.retain(|x| !x.key.eq_ignore_ascii_case("callNo"));
-    if let Some(n) = slot {
-        set(&mut e, "callNo", n.to_string());
-        for s in e.subs.iter_mut().filter(|s| is_condition(&s.name)) {
-            slot_condition(s, donor_slot, n);
-        }
-    }
-    let donor = d.get(&["name"]).map(unquote).unwrap_or_default();
-    Ok((
-        e,
-        format!(
-            "'{name}' (AI {}): the {donor}'s kind, animations by their names",
-            b.get(&["ai"]).unwrap_or("?").trim()
-        ),
-    ))
+/// Whether an animal is kept to its game's maps: all are, but ambients
+/// when they roam (`Ambients::Random`).
+fn ties(o: &Options, b: &Block) -> bool {
+    !(o.ambients == Ambients::Random && is_ambient(b))
 }
 
 /// What [`build`] made.
@@ -715,14 +359,12 @@ pub struct Built {
 /// plus `games`, written to `out` (a folder this tool made, or empty).
 pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> Result<Built> {
     let vfs = crate::vanilla(bases)?;
-    let mut report = String::from("# Combined game\n\n");
-    let mut res = ResTxt::parse(&String::from_utf8_lossy(&vfs.read("HUNTDAT/_RES.TXT")?))?;
-    let base_res = res.clone();
+    let res = ResTxt::parse(&String::from_utf8_lossy(&vfs.read("HUNTDAT/_RES.TXT")?))?;
     // The base's menu: its `_MENU.TXT`, or its `_RES.TXT` when that lists
     // the areas itself (a game built from a mobile APK; the game reads its
     // menu from there too, `menu_txt`). The combined menu is then written
     // as a new `_MENU.TXT`.
-    let (menu_path, mut menu) = match vfs.resolve("huntdat/_menu.txt") {
+    let (menu_path, menu) = match vfs.resolve("huntdat/_menu.txt") {
         Some(r) => {
             let p = r.path.clone();
             let m = ResTxt::parse(&String::from_utf8_lossy(&vfs.read(&p)?))?;
@@ -738,32 +380,13 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
         }
     };
     let base_menu = MenuData::from_res(&menu);
-    let (mut n_dinos, mut n_weapons, mut n_areas) = (
-        base_menu.huntables.len(),
-        base_menu.weapons.len(),
-        base_menu.areas.len(),
-    );
-    let mut names: HashSet<String> = blocks(&res, "characters")
+    let names: HashSet<String> = blocks(&res, "characters")
         .iter()
         .chain(blocks(&menu, "characters"))
         .filter_map(|b| b.get(&["name"]).map(|n| unquote(n).to_ascii_lowercase()))
         .collect();
-    // The base's own animals stay on the base's maps.
-    let tie_ok = |b: &Block| !(o.ambients == Ambients::Random && is_ambient(b));
-    let base_area_count = n_areas as u32;
+    let base_area_count = base_menu.areas.len() as u32;
     let base_chars = blocks(&res, "characters").len();
-    let base_areas: Vec<u32> = (1..=base_area_count).collect();
-    if let Some(s) = res
-        .sections
-        .iter_mut()
-        .find(|s| s.name.eq_ignore_ascii_case("characters"))
-    {
-        for b in s.blocks.iter_mut().skip(1) {
-            if tie_ok(b) {
-                tie(b, &base_areas);
-            }
-        }
-    }
 
     // The hunter model all kills are merged into.
     let hunter_file = blocks(&res, "characters")
@@ -774,10 +397,9 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
     let hunter_path = vfs
         .resolve(&key(&format!("HUNTDAT/{hunter_file}")))
         .map_or_else(|| format!("HUNTDAT/{hunter_file}"), |r| r.path.clone());
-    let mut hunter = c2_formats::car::parse(&vfs.read(&hunter_path)?)?;
+    let hunter = c2_formats::car::parse(&vfs.read(&hunter_path)?)?;
 
-    let mut files: Vec<(String, PathBuf)> = Vec::new();
-    let mut weapon_cars: Vec<(String, Vec<u8>)> = blocks(&res, "weapons")
+    let weapon_cars: Vec<(String, Vec<u8>)> = blocks(&res, "weapons")
         .iter()
         .map(|b| {
             let name = b.get(&["name"]).map(unquote).unwrap_or_default();
@@ -789,405 +411,44 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
         })
         .collect();
 
-    let mut slugs: HashSet<String> = HashSet::new();
-    for (gi, dir) in games.iter().enumerate() {
-        let skip = o.skip.get(gi).cloned().unwrap_or_default();
-        let root = crate::pack::find_game_root(dir)
-            .and_then(|r| find_ci(&r, "HUNTDAT"))
-            .ok_or_else(|| ModError::NoHuntdat(dir.clone()))?;
-        // Named after the first telling folder up its path (not `Game`).
-        let name = root
-            .ancestors()
-            .skip(1)
-            .filter_map(|p| p.file_name())
-            .map(|n| n.to_string_lossy().into_owned())
-            .find(|n| {
-                let s = crate::manifest::slug(n);
-                !matches!(s.as_str(), "game" | "huntdat" | "carnivores-2")
-            })
-            .unwrap_or_else(|| "mod".into());
-        let mut slug = crate::manifest::slug(&name);
-        while !slugs.insert(slug.clone()) {
-            slug.push('2');
-        }
-        // Apply the same engine compatibility rules as when this game is
-        // played alone (including original Triassic's Ice Age AI layouts).
-        let game_vfs = crate::pack::vanilla(core::slice::from_ref(dir))?;
-        let data = game_vfs.read("HUNTDAT/_RES.TXT")?;
-        let mut g_res = ResTxt::parse(&String::from_utf8_lossy(&data))?;
-        // Its menu as its own engine shows it. Converting moves the
-        // original's AI 6 animal (the brachiosaur's slot) to the base's
-        // brachiosaur AI, 30 or 34, which would count it as a huntable: one
-        // slot more at the front, and every name off by one against its
-        // picture (`DINOn.TGA`) and price.
-        let own_menu = g_res.clone();
-        // Made for the original engine (or another without spawn tables:
-        // nothing of it would be placed).
-        let spawns = g_res
-            .sections
-            .iter()
-            .any(|s| s.name.to_ascii_lowercase().contains("spawntable"));
-        if !c2_formats::mee::is_dialect(&g_res) || !spawns {
-            let groot = root.clone();
-            let model = move |f: &str| {
-                crate::pack::find_path(&groot, f)
-                    .and_then(|p| std::fs::read(p).ok())
-                    .and_then(|d| c2_formats::car::parse(&d).ok())
-            };
-            let (converted, notes) = to_dialect(&g_res, &base_res, &model);
-            g_res = converted;
-            report.push_str(&format!(
-                "- **{name}**: made for the original engine; its animals take the base's same-AI animals' animations and spawns{}\n",
-                if notes.is_empty() { String::new() } else { format!(" ({})", notes.join("; ")) }
-            ));
-        }
-        let g = Game {
-            slug,
-            name,
-            menu: match find_ci(&root, "_MENU.TXT") {
-                Some(p) => read_res(&p)?,
-                None => own_menu,
-            },
-            res: g_res,
-            root,
-        };
-        let gm = MenuData::from_res(&g.menu);
-        let (d0, w0, a0) = (n_dinos, n_weapons, n_areas);
-        // Areas its menu lists that it has maps for (a menu may list more).
-        let has_map = |n: usize| {
-            find_ci(&g.root, "AREAS")
-                .is_some_and(|d| find_ci(&d, &format!("AREA{n}.MAP")).is_some())
-        };
-        let g_areas = (1..=gm.areas.len()).take_while(|&n| has_map(n)).count();
-        if g_areas < gm.areas.len() {
-            report.push_str(&format!(
-                "- **{}**: its menu lists {} areas, it has maps for {}: those only\n",
-                g.name,
-                gm.areas.len(),
-                g_areas
-            ));
-        }
-        // What is kept (`Skip`) gets the next numbers, with no gaps.
-        let kept_areas = Skip::kept(&skip.areas, g_areas);
-        let area_map = |n: u32| {
-            kept_areas
-                .iter()
-                .position(|&k| k == n)
-                .map(|i| a0 as u32 + i as u32 + 1)
-        };
-        let g_dinos = gm.huntables.len();
-        // Slots count from 0, the picker's numbers from 1.
-        let kept_dinos: Vec<u32> = Skip::kept(&skip.huntables, g_dinos)
-            .into_iter()
-            .map(|n| n - 1)
-            .collect();
-        let slot_map = |n: u32| {
-            kept_dinos
-                .iter()
-                .position(|&k| k == n)
-                .map(|i| d0 as u32 + i as u32)
-        };
-        let my_areas: Vec<u32> = (1..=kept_areas.len() as u32)
-            .map(|n| a0 as u32 + n)
-            .collect();
-        let gone_areas: Vec<u32> = skip.areas.clone();
-        let gone_slots: Vec<u32> = skip
-            .huntables
-            .iter()
-            .filter_map(|n| n.checked_sub(1))
-            .collect();
-        let gone_names: HashSet<String> = gm
-            .huntables
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| gone_slots.contains(&(*i as u32)))
-            .map(|(_, h)| h.name.to_ascii_lowercase())
-            .collect();
-
-        // Hunter: its kill animations into the shared model.
-        let g_hunter = game_hunter(&g.res)
-            .and_then(|b| b.get(&["file"]))
-            .map(unquote)
-            .and_then(|f| crate::pack::find_path(&g.root, &f))
-            .and_then(|p| std::fs::read(p).ok())
-            .and_then(|d| c2_formats::car::parse(&d).ok());
-        // Another body: the game keeps its own hunter, a second AI 0
-        // character its animals name (`hunterFile`), kills unmerged.
-        let mut own_hunter: Option<Block> = None;
-        let hunter_map = match g_hunter {
-            Some(h) => {
-                match crate::hunter::merge(&mut hunter, std::slice::from_ref(&h)).remove(0) {
-                    crate::hunter::Outcome::Merged { map } => map,
-                    crate::hunter::Outcome::Incompatible(why) => {
-                        report.push_str(&format!(
-                            "- **{}**: its hunter has another body ({why}); kept as its own, for its animals' kills\n",
-                            g.name
-                        ));
-                        own_hunter = game_hunter(&g.res).cloned().map(|mut b| {
-                            prefix_files(&mut b, &g.slug);
-                            set(&mut b, "ai", "0".into());
-                            set(&mut b, "name", format!("'Hunter ({})'", g.name));
-                            b
-                        });
-                        Vec::new()
-                    }
-                }
+    let mut c = game::Combined {
+        o,
+        report: String::from("# Combined game\n\n"),
+        base_res: res.clone(),
+        res,
+        menu,
+        names,
+        n_dinos: base_menu.huntables.len(),
+        n_weapons: base_menu.weapons.len(),
+        n_areas: base_menu.areas.len(),
+        hunter,
+        files: Vec::new(),
+        weapon_cars,
+        slugs: HashSet::new(),
+    };
+    // The base's own animals stay on the base's maps.
+    let base_areas: Vec<u32> = (1..=base_area_count).collect();
+    if let Some(s) = c
+        .res
+        .sections
+        .iter_mut()
+        .find(|s| s.name.eq_ignore_ascii_case("characters"))
+    {
+        for b in s.blocks.iter_mut().skip(1) {
+            if ties(o, b) {
+                tie(b, &base_areas);
             }
-            None => Vec::new(),
-        };
-        let hunter_file = own_hunter
-            .as_ref()
-            .and_then(|b| b.get(&["file"]).map(unquote));
-
-        // Weapons: shared when the game already has the same one.
-        let mut weapon_slot: Vec<Option<usize>> = Vec::new();
-        let mut new_weapons: Vec<(usize, Block)> = Vec::new();
-        let mut shared = 0;
-        for (i, b) in blocks(&g.res, "weapons").iter().enumerate() {
-            if skip.weapons.contains(&(i as u32 + 1)) {
-                weapon_slot.push(None);
-                continue;
-            }
-            let wname = b.get(&["name"]).map(unquote).unwrap_or_default();
-            let file = b.get(&["file"]).map(unquote).unwrap_or_default();
-            let data = crate::pack::find_path(&g.root, &format!("WEAPONS/{file}"))
-                .and_then(|p| std::fs::read(p).ok())
-                .unwrap_or_default();
-            if let Some(j) = weapon_cars
-                .iter()
-                .position(|(n, d)| *n == wname.to_ascii_lowercase() && *d == data)
-            {
-                weapon_slot.push(Some(j));
-                shared += 1;
-                continue;
-            }
-            weapon_cars.push((wname.to_ascii_lowercase(), data));
-            n_weapons += 1;
-            weapon_slot.push(Some(n_weapons - 1));
-            new_weapons.push((i, b.clone()));
-        }
-        let wslot = |n: usize| {
-            n.checked_sub(1)
-                .and_then(|i| weapon_slot.get(i).copied().flatten())
-                .map(|j| j + 1)
-        };
-
-        // Files.
-        let mut all = Vec::new();
-        walk(&g.root, &mut all);
-        for p in all {
-            let Ok(rel) = p.strip_prefix(&g.root) else {
-                continue;
-            };
-            let rel = rel.to_string_lossy().replace('\\', "/");
-            let k = key(&format!("HUNTDAT/{rel}"));
-            if !crate::detect::is_data(&k) || k.ends_with("/_res.txt") || k.ends_with("/_menu.txt")
-            {
-                continue;
-            }
-            let fname = rel.rsplit('/').next().unwrap_or(&rel).to_string();
-            let dest = if let Some(sub) = k.strip_prefix("huntdat/areas/") {
-                // The engine reads `AREAS/` itself; a folder in it is the
-                // maker's spare copies (another version of a map).
-                let ext = fname.rsplit('.').next().unwrap_or("").to_ascii_uppercase();
-                renumber(&fname, "area", &|n| area_map(n as u32).map(|g| g as usize))
-                    .filter(|_| (ext == "MAP" || ext == "RSC") && !sub.contains('/'))
-                    .and_then(|_| {
-                        let g = area_number(&fname).and_then(area_map)?;
-                        Some(format!("HUNTDAT/AREAS/AREA{g}.{ext}"))
-                    })
-            } else if k.starts_with("huntdat/menu/") {
-                let dir = rel.rsplit_once('/').map_or("MENU", |(d, _)| d);
-                let to = |n: usize| -> Option<usize> {
-                    u32::try_from(n)
-                        .ok()
-                        .and_then(|n| n.checked_sub(1))
-                        .and_then(slot_map)
-                        .map(|g| g as usize + 1)
-                };
-                renumber(&fname, "dino", &to)
-                    .or_else(|| renumber(&fname, "call", &to))
-                    .or_else(|| renumber(&fname, "weapon", &|n| wslot(n).filter(|&j| j > w0)))
-                    .or_else(|| {
-                        renumber(&fname, "area", &|n| area_map(n as u32).map(|g| g as usize))
-                    })
-                    .map(|f| format!("HUNTDAT/{dir}/{f}"))
-            } else if k.starts_with("huntdat/soundfx/") {
-                renumber(&fname, "call", &|n| {
-                    u32::try_from(n)
-                        .ok()
-                        .and_then(|n| n.checked_sub(1))
-                        .and_then(slot_map)
-                        .map(|g| g as usize + 1)
-                })
-                .filter(|_| k.contains("/calls/"))
-                .map(|f| format!("HUNTDAT/SOUNDFX/CALLS/{f}"))
-            } else if k.starts_with("huntdat/weapons/") {
-                // Flattened (`MODELS/x.car` -> `<mod>_MODELS_x.car`), as the
-                // entries are (`weapon_file`).
-                let under = &rel[rel.find('/').map_or(0, |i| i + 1)..];
-                Some(format!("HUNTDAT/WEAPONS/{}", weapon_file(&g.slug, under)))
-            } else {
-                Some(format!("HUNTDAT/MODS/{}/{rel}", g.slug))
-            };
-            if let Some(d) = dest {
-                files.push((d, p.clone()));
-            }
-        }
-
-        // _RES.TXT: tables, characters, weapons.
-        let spawn_offset = table_subs(&res, "spawntable", "spawngroup").len();
-        let pack_offset = table_subs(&res, "packtable", "packgroup").len();
-        let moves = Moves {
-            area: &|n| area_map(n),
-            slot: &|n| slot_map(n),
-            spawn_offset,
-            pack_offset,
-            hunter: &hunter_map,
-        };
-        for (table, sub) in [("spawntable", "spawngroup"), ("packtable", "packgroup")] {
-            let mut add: Vec<Sub> = table_subs(&g.res, table, sub)
-                .into_iter()
-                .cloned()
-                .collect();
-            for s in &mut add {
-                skip::drop_refs(&mut s.block, &gone_areas, &gone_slots);
-                moves.block(&mut s.block);
-            }
-            let sec = section_mut(&mut res, table);
-            let at = sec.entries.len();
-            sec.subs.extend(add.into_iter().map(|mut s| {
-                s.at = at;
-                s
-            }));
-        }
-        // Names already in the game get the game's name after them.
-        let mut renames: HashMap<String, String> = HashMap::new();
-        let mut added = 0;
-        for b in blocks(&g.res, "characters")
-            .iter()
-            .filter(|b| b.get(&["ai"]).map(c_atoi).unwrap_or(0) != 0)
-        {
-            let mut b = b.clone();
-            let left_out = b
-                .get(&["name"])
-                .is_some_and(|n| gone_names.contains(&unquote(n).to_ascii_lowercase()));
-            if left_out {
-                continue;
-            }
-            skip::drop_refs(&mut b, &gone_areas, &gone_slots);
-            if let Some(n) = b.get(&["name"]).map(unquote) {
-                let mut u = n.clone();
-                if names.contains(&u.to_ascii_lowercase()) {
-                    u = format!("{n} ({})", g.name);
-                    renames.insert(n.to_ascii_lowercase(), u.clone());
-                }
-                names.insert(u.to_ascii_lowercase());
-                set(&mut b, "name", format!("'{u}'"));
-            }
-            // Its models (also those its conditions switch to per area).
-            prefix_files(&mut b, &g.slug);
-            moves.block(&mut b);
-            if tie_ok(&b) {
-                tie(&mut b, &my_areas);
-            }
-            if let Some(f) = &hunter_file {
-                set(&mut b, "hunterFile", format!("'{f}'"));
-            }
-            section_mut(&mut res, "characters").blocks.push(b);
-            added += 1;
-        }
-        if let Some(b) = own_hunter {
-            section_mut(&mut res, "characters").blocks.push(b);
-        }
-        for (_, b) in &new_weapons {
-            let mut b = b.clone();
-            weapon_files(&mut b, &g.slug);
-            section_mut(&mut res, "weapons").blocks.push(b);
-        }
-
-        // _MENU.TXT: huntables, weapons, areas, prices.
-        let menu_dinos: Vec<&Block> = blocks(&g.menu, "characters")
-            .iter()
-            .filter(|b| b.get(&["ai"]).map(c_atoi).is_some_and(|a| a >= 10))
-            .collect();
-        let mut prices: Vec<Entry> = Vec::new();
-        for (i, b) in menu_dinos.iter().enumerate() {
-            if gone_slots.contains(&(i as u32)) {
-                continue;
-            }
-            let mut b = (*b).clone();
-            // The name its _RES entry got.
-            if let Some(n) = b.get(&["name"]).map(unquote) {
-                if let Some(u) = renames.get(&n.to_ascii_lowercase()) {
-                    set(&mut b, "name", format!("'{u}'"));
-                }
-            }
-            section_mut(&mut menu, "characters").blocks.push(b);
-            prices.push(Entry {
-                key: "dino".into(),
-                value: gm.huntables.get(i).map_or(0, |h| h.price).to_string(),
-            });
-        }
-        for (i, b) in &new_weapons {
-            let keep = ["name", "power", "prec", "loud", "rate"];
-            let entry = Block {
-                entries: b
-                    .entries
-                    .iter()
-                    .filter(|e| keep.iter().any(|k| e.key.eq_ignore_ascii_case(k)))
-                    .cloned()
-                    .collect(),
-                ..Default::default()
-            };
-            section_mut(&mut menu, "weapons").blocks.push(entry);
-            prices.push(Entry {
-                key: "weapon".into(),
-                value: gm.weapons.get(*i).map_or(0, |w| w.price).to_string(),
-            });
-        }
-        for (_, a) in gm
-            .areas
-            .iter()
-            .take(g_areas)
-            .enumerate()
-            .filter(|(i, _)| kept_areas.contains(&(*i as u32 + 1)))
-        {
-            prices.push(Entry {
-                key: "area".into(),
-                value: a.price.to_string(),
-            });
-        }
-        section_mut(&mut menu, "prices").entries.extend(prices);
-        n_dinos += kept_dinos.len();
-        n_areas += kept_areas.len();
-        if !skip.is_empty() {
-            report.push_str(&format!(
-                "- **{}**: left out (as picked): {}\n",
-                g.name,
-                skip.to_arg()
-            ));
-        }
-        report.push_str(&format!(
-            "- **{}**: areas {}–{}, huntables {}–{}, {} new weapons ({} shared), {} characters ({} renamed: same name as one already in), files under `MODS/{}/`\n",
-            g.name,
-            a0 + 1,
-            n_areas,
-            d0 + 1,
-            n_dinos,
-            new_weapons.len(),
-            shared,
-            added,
-            renames.len(),
-            g.slug
-        ));
-        if w0 + new_weapons.len() != n_weapons {
-            return Err(fail("weapon numbering went wrong"));
         }
     }
+    for (gi, dir) in games.iter().enumerate() {
+        c.add(dir, &o.skip.get(gi).cloned().unwrap_or_default())?;
+    }
+
+    let (n_areas, n_dinos, n_weapons) = (c.n_areas, c.n_dinos, c.n_weapons);
+    let mut report = c.report;
     report.push_str(&format!(
         "\nIn all: {n_areas} areas, {n_dinos} huntables, {n_weapons} weapons; hunter model {} animations.\n",
-        hunter.animations.len()
+        c.hunter.animations.len()
     ));
     let max = c2_formats::bits::Bits::LEN - 10;
     if n_dinos > max {
@@ -1201,11 +462,11 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
 
     // Write: the base, the games' files, the generated files.
     let mut out_vfs = crate::vanilla(bases)?;
-    out_vfs.push("games", Box::new(MapBackend { map: files }));
+    out_vfs.push("games", Box::new(MapBackend { map: c.files }));
     let mut mem = MemBackend::new();
-    mem.insert("HUNTDAT/_RES.TXT", res.write().into_bytes());
-    mem.insert(&menu_path, menu.write().into_bytes());
-    mem.insert(&hunter_path, c2_formats::car::write(&hunter));
+    mem.insert("HUNTDAT/_RES.TXT", c.res.write().into_bytes());
+    mem.insert(&menu_path, c.menu.write().into_bytes());
+    mem.insert(&hunter_path, c2_formats::car::write(&c.hunter));
     out_vfs.push("(generated)", Box::new(mem));
     write_out(&out_vfs, out, &report)?;
     Ok(Built {
@@ -1311,7 +572,7 @@ pub fn add_on_sources(
     {
         for b in &mut s.blocks {
             let id = block_id(b).unwrap_or_default();
-            if added.contains(&id) && !(o.ambients == Ambients::Random && is_ambient(b)) {
+            if added.contains(&id) && ties(o, b) {
                 tie(b, &areas);
             }
         }

@@ -9,6 +9,7 @@ pub mod ice_age;
 pub mod loose;
 pub mod manifest;
 pub mod mobile;
+mod mobile_anims;
 pub mod mobile_base;
 pub mod pack;
 pub mod patch;
@@ -53,6 +54,14 @@ pub enum ModError {
     NotAPack(PathBuf),
     #[error("standalone games: {0}")]
     Standalone(String),
+}
+
+/// An I/O error on `path` as [`ModError::Io`], for `map_err`.
+fn io(path: &std::path::Path) -> impl FnOnce(std::io::Error) -> ModError + '_ {
+    move |source| ModError::Io {
+        path: path.to_path_buf(),
+        source,
+    }
 }
 
 /// A path from mod metadata must stay inside the generated output directory.
