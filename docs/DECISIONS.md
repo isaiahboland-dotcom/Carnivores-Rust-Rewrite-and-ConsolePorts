@@ -1,5 +1,20 @@
 # Decisions and deviations
 
+## 2026-11-08 — Object indices are 16-bit; area side files
+
+`Map::objects` is `Vec<u16>`: the `.MAP`'s 255 and 254 become `NO_OBJECT`
+(0xFFFF) and `LANDING` (0xFFFE) at parse, and back at write; an index past
+253 is written as no object. `AREAn.OBX` (u16 grid and object heights)
+and `AREAn.RSX` (models after the `.RSC`'s) are applied by every loader
+(`c2_formats::obx::apply`: `c2_core::load`, the PC area view, VR), so an
+area without them loads exactly as before. Side files rather than a new
+`.MAP` version keep the original engines and map editors working on the
+same files. `c2-pc area-layers` joins copies of an area; identical models
+are shared, since layers made by copying an area repeat its trees. The
+3DS cooker still packs only the `.MAP` and `.RSC`. In the original-engine
+tour of Genesis Redux, the view's upward tilt is still unexplained (see
+REGRESSION.md).
+
 ## 2026-11-08 — Original-engine runs for Modder's Edition executables
 
 A Modder's Edition fork's hunt (`v_soft.ren`) takes the stock command line,

@@ -143,12 +143,25 @@ pub struct AreaView {
 impl AreaView {
     pub fn load(gpu: &Gpu, map_path: &Path, time: TimeOfDay) -> Result<Self> {
         let rsc_path = sibling(map_path, "rsc")?;
-        let m = map::parse(
+        let mut m = map::parse(
             &std::fs::read(map_path).with_context(|| format!("reading {}", map_path.display()))?,
         )?;
-        let r = rsc::parse(
+        let mut r = rsc::parse(
             &std::fs::read(&rsc_path).with_context(|| format!("reading {}", rsc_path.display()))?,
         )?;
+        // Side files past 254 kinds of object (docs/EXPANSION.md).
+        let side = |ext: &str| {
+            sibling(map_path, ext)
+                .ok()
+                .and_then(|p| std::fs::read(p).ok())
+        };
+        c2_formats::obx::apply(
+            &mut m,
+            &mut r.objects,
+            side("obx").as_deref(),
+            side("rsx").as_deref(),
+        )
+        .with_context(|| format!("reading the .OBX/.RSX beside {}", map_path.display()))?;
         let mut area = Area::new(m, r, time);
         let trophy = map_path
             .file_stem()

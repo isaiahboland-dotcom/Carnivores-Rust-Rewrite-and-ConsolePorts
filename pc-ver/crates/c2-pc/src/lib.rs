@@ -6,6 +6,7 @@ mod app;
 mod app_android;
 #[cfg(not(target_os = "android"))]
 mod app_desktop;
+mod area_layers;
 mod area_view;
 mod audio;
 mod camera;

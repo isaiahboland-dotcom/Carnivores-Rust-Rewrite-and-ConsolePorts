@@ -568,8 +568,8 @@ fn largest_scenery_windows() {
 #[test]
 fn dense_scenery_window_shrinks_and_grows_back() {
     // One 10-face model on every cell west of x = 500; none east of it.
-    let objects: Vec<u8> = (0..1024 * 1024)
-        .map(|i| if i % 1024 < 500 { 0 } else { 255 })
+    let objects: Vec<u16> = (0..1024 * 1024)
+        .map(|i| if i % 1024 < 500 { 0 } else { u16::MAX })
         .collect();
     let faces = |_: usize| 10;
     let emit = |i: usize, n: u32| ResidentObject {

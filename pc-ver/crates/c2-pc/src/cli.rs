@@ -26,6 +26,8 @@ const USAGE: &str = "usage:
   c2-pc recipe build  <RECIPE.toml> --base <GAME_DIR> [--overlay DIR]... --mods <DIR>... --out <DIR> [--accept-base]
   c2-pc recipe new    <MOD_DIR>... --base <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... --id ID [--name NAME] [--base-id ID] [--out RECIPE.toml]
   c2-pc recipe base   --base <GAME_DIR> [--id c2-vanilla|ice-age] [--out recipes/bases/c2-vanilla.toml]
+  c2-pc area-layers <BASE.MAP> --layer <LAYER.MAP>... --out <DIR>
+                                        (copies of an area joined past 254 kinds of object: AREAn.OBX + .RSX)
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
   c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--models] [--foliage CELLS] [--high-end] [--shot out.png]
   c2-pc hunt  <AREA.MAP|TROPHY.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all]
@@ -46,6 +48,7 @@ hunt:  click to capture mouse; keys follow the player's bindings (default WASD m
 
 /// Flags followed by a value (`--flag VALUE`).
 const VALUE_FLAGS: &[&str] = &[
+    "layer",
     "anim",
     "time",
     "yaw",
@@ -242,6 +245,14 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
             }
         }
         return Ok(());
+    }
+    if cmd == "area-layers" {
+        let base = o
+            .positional
+            .first()
+            .with_context(|| format!("usage: {}", crate::area_layers::USAGE))?;
+        let out = o.value("out").context("--out DIR")?;
+        return crate::area_layers::run(base, &o.values("layer"), out);
     }
     if cmd == "mobile-base" {
         let apk = o

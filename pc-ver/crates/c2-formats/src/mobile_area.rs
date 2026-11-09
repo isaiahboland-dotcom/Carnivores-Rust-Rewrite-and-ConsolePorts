@@ -81,7 +81,7 @@ fn read_man(data: &[u8]) -> Result<(Map, Vec<u8>, Vec<u8>), FormatError> {
         .map(u16::from)
         .collect();
     let lod_tiles = rle(&mut r, HALF_CELLS, "man.lod_tiles")?;
-    let objects = rle(&mut r, CELLS, "man.objects")?;
+    let objects = crate::map::objects_from_bytes(&rle(&mut r, CELLS, "man.objects")?);
     let object_height = rle(&mut r, CELLS, "man.object_height")?;
     let water = rle(&mut r, CELLS, "man.water")?;
     let fogs = rle(&mut r, HALF_CELLS, "man.fogs")?;
@@ -740,7 +740,7 @@ random_sound_index = 7\r\n\tvolume = 0.5\r\n[fog]\r\ncount = 1\r\nfog_id 0\r\n\t
         assert_eq!((m.height[7], m.light[2][9], m.flags[0]), (1, 4, 5));
         assert_eq!(
             (m.texture1[CELLS - 1], m.objects[3], m.object_height[0]),
-            (9, 255, 6)
+            (9, crate::map::NO_OBJECT, 6)
         );
         assert_eq!(
             (m.fogs.len(), m.fogs[0], m.ambient[HALF_CELLS - 1]),

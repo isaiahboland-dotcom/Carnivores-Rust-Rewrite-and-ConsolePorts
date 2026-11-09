@@ -77,25 +77,33 @@ of the file that says which sound each animation plays. Planned:
 
 ## More objects per area
 
-The `.MAP` stores one byte of object per cell, with two values reserved,
-so an area holds at most 254 kinds of object. The `.RSC` itself has no
-such limit, but the original engines stop at 256 models.
+**Implemented on PC** (hunt, area viewer, VR, regression runs). The
+`.MAP` stores one byte of object per cell, with two values reserved, so an
+area holds at most 254 kinds of object. The `.RSC` itself has no such
+limit, but the original engines stop at 256 models.
 
-Planned:
-
-- Side files only this engine reads: `AREAn.OBX` (two bytes of object per
-  cell) and `AREAn.RSX` (models numbered after the `.RSC`'s). The `.MAP`
-  and `.RSC` stay as they are, and the original engines go on using them.
-- Authoring with the existing map editors: a modder saves the same area
-  two or four times, each copy with up to 254 kinds of object, and
-  `c2-pc area layers` joins them into the side files (508 or 1016 kinds).
-  Each later layer's models are numbered after the earlier ones. A cell
-  given objects in two layers is reported, and the later layer wins. Each
-  object keeps the object height from its own layer.
-- Engine side: object indices become 16-bit wherever areas are read,
-  drawn and collided with (`c2-core` area, trace and collision code, the
-  PC and VR renderers, the 3DS cooker). Memory budgets on the 3DS and
-  Wii U still limit what an area can load.
+- **Side files** beside the area, which only this engine reads:
+  `AREAn.OBX` (two bytes of object per cell, plus the object heights) and
+  `AREAn.RSX` (models numbered after the `.RSC`'s). Formats are in
+  `c2-formats/src/obx.rs`. The `.MAP` and `.RSC` stay as they are, and the
+  original engines go on using them.
+- **Authoring** with the existing map editors: save the same area two or
+  four times, each copy with up to 254 kinds of object, then join them:
+  ```
+  c2-pc area-layers AREA2.MAP --layer AREA2B.MAP --layer AREA2C.MAP --out DIR
+  ```
+  Each layer's models are numbered after the ones before it; a model
+  identical to an earlier one reuses its number, so trees every copy
+  shares are stored once. Where a layer puts a different object on a
+  cell that already has one, the later layer wins and the command counts
+  it. Each object keeps its own layer's object height. Landing markers
+  come from the base only.
+- **In memory** object indices are 16-bit everywhere (`c2_formats::map`:
+  `NO_OBJECT`, `LANDING`); the `.MAP` writer stores indices past 253 as no
+  object, so such an area needs its side files.
+- **Not yet:** 3DS packs and the Wii U keep the `.MAP`'s objects (the
+  cooker packs the `.MAP` and `.RSC` only), as their memory budgets would
+  need checking first.
 
 ## Event reactions
 

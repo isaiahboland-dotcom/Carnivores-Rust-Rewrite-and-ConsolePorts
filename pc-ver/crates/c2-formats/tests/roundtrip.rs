@@ -129,7 +129,7 @@ fn map_roundtrip() {
         height: cells(1),
         texture1: words(3),
         texture2: words(5),
-        objects: cells(2),
+        objects: map::objects_from_bytes(&cells(2)),
         flags: words(7),
         light: [cells(3), cells(4), cells(5)],
         water: cells(6),

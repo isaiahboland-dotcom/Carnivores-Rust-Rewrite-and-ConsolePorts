@@ -205,8 +205,12 @@ For Modder's Edition executables the driver:
   overrides the profile's).
 
 Open: in the original run the hunter's view tilts up during warm-up and
-ends facing the sky. The hook's cursor stays centred, so it is not mouse
-drift; the cause is not found yet. Weapon and screen checks still pass.
+ends facing the sky; weapon and screen checks still pass. Ruled out so
+far: mouse input (the game re-centres the cursor every frame and reads
+back the centre, through the same window), the window's title bar (the
+same frames in borderless and exclusive fullscreen), the profile (the
+fork's `trophy0N.sav` layout is the stock one), and a drop-ship intro
+(the game has none).
 
 ## Kill animations: `kill_animations`
 

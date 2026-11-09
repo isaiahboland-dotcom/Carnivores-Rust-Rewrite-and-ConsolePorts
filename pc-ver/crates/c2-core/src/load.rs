@@ -7,7 +7,7 @@ use alloc::{format, string::String, vec, vec::Vec};
 
 use c2_formats::car::{self, Car};
 use c2_formats::res_txt::{ResData, ResTxt};
-use c2_formats::{map, rsc, FormatError};
+use c2_formats::{map, obx, rsc, FormatError};
 use c2_vfs::{Vfs, VfsError};
 
 use crate::area::{Area, TimeOfDay};
@@ -169,10 +169,11 @@ pub fn area(vfs: &Vfs, name: &str, time: TimeOfDay) -> Result<Area, LoadError> {
 /// (see [`map::parse_lean`]), for a renderer that never changes time of day.
 pub fn area_with(vfs: &Vfs, name: &str, time: TimeOfDay, lean: bool) -> Result<Area, LoadError> {
     let light = lean.then_some(time as usize);
-    let m = parse(vfs, &format!("HUNTDAT/AREAS/{name}.MAP"), |d| {
+    let mut m = parse(vfs, &format!("HUNTDAT/AREAS/{name}.MAP"), |d| {
         map::parse_lean(d, light)
     })?;
-    let r = parse(vfs, &format!("HUNTDAT/AREAS/{name}.RSC"), rsc::parse)?;
+    let mut r = parse(vfs, &format!("HUNTDAT/AREAS/{name}.RSC"), rsc::parse)?;
+    apply_object_side_files(vfs, name, &mut m, &mut r)?;
     let mut a = Area::new(m, r, time);
     // Snow of its own (the phone's Ice Age areas).
     if let Ok(d) = vfs.read(&format!("HUNTDAT/AREAS/{name}.SNOW")) {
@@ -186,6 +187,25 @@ pub fn area_with(vfs: &Vfs, name: &str, time: TimeOfDay, lean: bool) -> Result<A
         }
     }
     Ok(a)
+}
+
+/// `AREAn.OBX` / `AREAn.RSX` (docs/EXPANSION.md): an object grid with
+/// 16-bit indices in place of the `.MAP`'s, and models numbered after the
+/// `.RSC`'s. Either may be absent; one that is there must parse.
+fn apply_object_side_files(
+    vfs: &Vfs,
+    name: &str,
+    m: &mut map::Map,
+    r: &mut rsc::Rsc,
+) -> Result<(), LoadError> {
+    let obx_data = vfs.read(&format!("HUNTDAT/AREAS/{name}.OBX")).ok();
+    let rsx_data = vfs.read(&format!("HUNTDAT/AREAS/{name}.RSX")).ok();
+    obx::apply(m, &mut r.objects, obx_data.as_deref(), rsx_data.as_deref()).map_err(|source| {
+        LoadError::Format {
+            path: format!("HUNTDAT/AREAS/{name}.OBX/.RSX"),
+            source,
+        }
+    })
 }
 
 /// The ship's landing animation length (`SHIP2A.CAR`, animation 0), ms.

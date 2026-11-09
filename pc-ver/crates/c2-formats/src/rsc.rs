@@ -142,7 +142,7 @@ fn rgb3x3(r: &mut Reader<'_>, ctx: &str) -> Result<[[i32; 3]; 3], FormatError> {
     Ok(out)
 }
 
-fn read_object(r: &mut Reader<'_>) -> Result<Object, FormatError> {
+pub(crate) fn read_object(r: &mut Reader<'_>) -> Result<Object, FormatError> {
     let info = ObjectInfo {
         radius: r.i32("rsc.obj.radius")?,
         y_lo: r.i32("rsc.obj.ylo")?,
@@ -276,6 +276,37 @@ pub fn parse(data: &[u8]) -> Result<Rsc, FormatError> {
     })
 }
 
+/// One object as the `.RSC` stores it (also the `.RSX` side file's).
+pub(crate) fn write_object(w: &mut Vec<u8>, o: &Object) {
+    let i = &o.info;
+    for v in [
+        i.radius,
+        i.y_lo,
+        i.y_hi,
+        i.line_length,
+        i.line_intensity,
+        i.circle_radius,
+        i.circle_intensity,
+        i.flags,
+        i.grass_radius,
+        i.default_light,
+        i.last_ani_time,
+    ] {
+        w.put_i32(v);
+    }
+    w.put_f32(i.bound_r);
+    w.extend_from_slice(&i.reserved);
+    o.model.write(w);
+    w.put_u16s(&o.sprite);
+    if let Some(a) = &o.animation {
+        w.put_i32(a.vcount_a);
+        w.put_len(a.vcount);
+        w.put_i32(a.kps);
+        w.put_len(a.frames_stored);
+        w.put_i16s(&a.data);
+    }
+}
+
 pub fn write(rsc: &Rsc) -> Vec<u8> {
     let mut w = Vec::new();
     w.put_len(rsc.textures.len());
@@ -289,33 +320,7 @@ pub fn write(rsc: &Rsc) -> Vec<u8> {
         w.put_u16s(t);
     }
     for o in &rsc.objects {
-        let i = &o.info;
-        for v in [
-            i.radius,
-            i.y_lo,
-            i.y_hi,
-            i.line_length,
-            i.line_intensity,
-            i.circle_radius,
-            i.circle_intensity,
-            i.flags,
-            i.grass_radius,
-            i.default_light,
-            i.last_ani_time,
-        ] {
-            w.put_i32(v);
-        }
-        w.put_f32(i.bound_r);
-        w.extend_from_slice(&i.reserved);
-        o.model.write(&mut w);
-        w.put_u16s(&o.sprite);
-        if let Some(a) = &o.animation {
-            w.put_i32(a.vcount_a);
-            w.put_len(a.vcount);
-            w.put_i32(a.kps);
-            w.put_len(a.frames_stored);
-            w.put_i16s(&a.data);
-        }
+        write_object(&mut w, o);
     }
     for s in &rsc.skies {
         w.put_u16s(s);

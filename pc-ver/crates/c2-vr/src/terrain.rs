@@ -127,12 +127,25 @@ pub fn load(map_path: &Path) -> Result<Area> {
 /// The area at `map_path` at `time`.
 pub fn load_at(map_path: &Path, time: TimeOfDay) -> Result<Area> {
     let rsc_path = sibling(map_path, "rsc")?;
-    let m = c2_formats::map::parse(
+    let mut m = c2_formats::map::parse(
         &std::fs::read(map_path).with_context(|| format!("reading {}", map_path.display()))?,
     )?;
-    let r = c2_formats::rsc::parse(
+    let mut r = c2_formats::rsc::parse(
         &std::fs::read(&rsc_path).with_context(|| format!("reading {}", rsc_path.display()))?,
     )?;
+    // Side files past 254 kinds of object (docs/EXPANSION.md).
+    let side = |ext: &str| {
+        sibling(map_path, ext)
+            .ok()
+            .and_then(|p| std::fs::read(p).ok())
+    };
+    c2_formats::obx::apply(
+        &mut m,
+        &mut r.objects,
+        side("obx").as_deref(),
+        side("rsx").as_deref(),
+    )
+    .with_context(|| format!("reading the .OBX/.RSX beside {}", map_path.display()))?;
     Ok(Area::new(m, r, time))
 }
 

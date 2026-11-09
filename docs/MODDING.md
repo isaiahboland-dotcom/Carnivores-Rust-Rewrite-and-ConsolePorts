@@ -116,6 +116,17 @@ To build a combined game folder somewhere else:
 cargo run --release -p c2-pc -- mod build MOD_DIR... --base ../source/c2-original --out DIR
 ```
 
+## More than 254 kinds of object in an area
+An area made for this engine can go past the `.MAP`'s 254 kinds of
+object with two side files beside it, `AREAn.OBX` and `AREAn.RSX`,
+which the original engines never open. Make the extra objects in copies
+of the area with any map editor, then join them:
+```
+cargo run --release -p c2-pc -- area-layers AREA2.MAP --layer AREA2B.MAP --layer AREA2C.MAP --out DIR
+```
+and ship the two files from `DIR` in the mod's `HUNTDAT/AREAS/`. Details
+in [EXPANSION.md](EXPANSION.md) ("More objects per area").
+
 ## Balance files
 Prices and scores of your own, over any game (the launcher's Balance tab
 writes one; add-on weapons are often too cheap next to the others):

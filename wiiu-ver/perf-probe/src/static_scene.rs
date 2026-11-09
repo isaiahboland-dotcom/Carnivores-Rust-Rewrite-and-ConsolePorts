@@ -160,7 +160,7 @@ pub struct SceneryCandidates {
 impl SceneryCandidates {
     // Preserve the previous near-first ring traversal exactly. Camera motion
     // only reruns culling over occupied cells; rebuild the list on cell changes.
-    pub fn update(&mut self, objects: &[u8], model_count: usize, cell: (i32, i32)) {
+    pub fn update(&mut self, objects: &[u16], model_count: usize, cell: (i32, i32)) {
         if self.anchor == Some(cell) {
             return;
         }
@@ -675,7 +675,7 @@ impl ResidentScenery {
     pub fn update(
         &mut self,
         candidates: &mut SceneryCandidates,
-        objects: &[u8],
+        objects: &[u16],
         model_count: usize,
         cell: (i32, i32),
         capacity: u32,

@@ -30,6 +30,7 @@ pub mod mobile_chars;
 pub mod mobile_ui;
 pub mod mobile_values;
 pub mod model;
+pub mod obx;
 pub mod portrait;
 pub mod predation;
 pub mod res_txt;

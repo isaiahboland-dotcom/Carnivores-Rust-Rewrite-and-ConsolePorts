@@ -24,10 +24,10 @@ pub mod cell_flags {
     pub const WATER_ANY: u16 = WATER | WATER2;
 }
 
-/// `OMap` value meaning "no object".
-pub const NO_OBJECT: u8 = 255;
 /// `OMap` value marking a helicopter landing spot (removed at load).
-const LANDING: u8 = 254;
+use c2_formats::map::LANDING;
+/// `OMap` value meaning "no object" (the `.MAP`'s 255).
+pub use c2_formats::map::NO_OBJECT;
 /// `WMap` value meaning "no water".
 pub const NO_WATER: u8 = 255;
 
@@ -62,7 +62,7 @@ impl TimeOfDay {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Placement {
     pub cell: (u16, u16),
-    pub model: u8,
+    pub model: u16,
     /// World position of the model origin.
     pub pos: [f32; 3],
     /// Quarter turns around Y (`(FMap >> 2) & 3`).
@@ -507,12 +507,12 @@ pub const ORIGINAL_FACES_48: u64 = 40_000;
 /// bridges) stay. How many were removed.
 pub fn thin_objects(map: &mut Map, rsc: &Rsc, window: usize, budget: u64) -> usize {
     let n = MAP_SIZE;
-    let faces = |o: u8| -> u64 {
+    let faces = |o: u16| -> u64 {
         rsc.objects
             .get(usize::from(o))
             .map_or(0, |ob| ob.model.mesh.faces.len() as u64)
     };
-    let thinnable = |o: u8| {
+    let thinnable = |o: u16| {
         rsc.objects
             .get(usize::from(o))
             .is_some_and(|ob| ob.info.flags & object_flags::NO_BMP == 0)

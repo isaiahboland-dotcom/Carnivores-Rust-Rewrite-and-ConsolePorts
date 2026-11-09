@@ -9,6 +9,38 @@ pub const MAP_SIZE: usize = 1024;
 pub const CELLS: usize = MAP_SIZE * MAP_SIZE;
 pub const HALF_SIZE: usize = 512;
 pub const HALF_CELLS: usize = HALF_SIZE * HALF_SIZE;
+
+/// A cell with no object. The `.MAP` stores 255; in memory object indices
+/// are 16-bit so an area's side file ([`crate::obx`]) can name more models.
+pub const NO_OBJECT: u16 = u16::MAX;
+/// The landing marker (`.MAP` 254): a landing spot, not a model.
+pub const LANDING: u16 = u16::MAX - 1;
+/// Highest object index a `.MAP` can store (254 and 255 are the markers).
+pub const MAX_MAP_OBJECT: u16 = 253;
+
+fn object_from_byte(b: u8) -> u16 {
+    match b {
+        255 => NO_OBJECT,
+        254 => LANDING,
+        n => u16::from(n),
+    }
+}
+
+/// An object as a `.MAP` byte; an index past [`MAX_MAP_OBJECT`] has no
+/// byte and is written as no object (the side file holds those).
+pub fn object_to_byte(o: u16) -> u8 {
+    match o {
+        NO_OBJECT => 255,
+        LANDING => 254,
+        n if n <= MAX_MAP_OBJECT => n as u8,
+        _ => 255,
+    }
+}
+
+/// `.MAP` object bytes as in-memory indices.
+pub fn objects_from_bytes(raw: &[u8]) -> Vec<u16> {
+    raw.iter().copied().map(object_from_byte).collect()
+}
 /// Total size of a `.MAP` file in bytes.
 pub const FILE_SIZE: usize = CELLS * 13 + HALF_CELLS * 2;
 
@@ -21,8 +53,9 @@ pub struct Map {
     pub texture1: Vec<u16>,
     /// `TMap2`: secondary texture index per cell.
     pub texture2: Vec<u16>,
-    /// `OMap`: object (RSC model) index per cell, 255 = none.
-    pub objects: Vec<u8>,
+    /// `OMap`: object (RSC model) index per cell, [`NO_OBJECT`] none,
+    /// [`LANDING`] a landing spot.
+    pub objects: Vec<u16>,
     /// `FMap`: per-cell flags.
     pub flags: Vec<u16>,
     /// `LMap`: light maps indexed by time of day (`OptDayNight`: 0 the menu's dawn, 1 day, 2 night).
@@ -56,7 +89,7 @@ pub fn parse_lean(data: &[u8], light: Option<usize>) -> Result<Map, FormatError>
         r.bytes(CELLS * 2, "map.tmap2")?;
         Vec::new()
     };
-    let objects = b(&mut r, CELLS, "map.omap")?;
+    let objects = objects_from_bytes(r.bytes(CELLS, "map.omap")?);
     let flags = r.u16_vec(CELLS, "map.fmap")?;
     let mut lights: [Vec<u8>; 3] = Default::default();
     for (i, (l, c)) in lights
@@ -90,7 +123,7 @@ pub fn write(m: &Map) -> Vec<u8> {
     w.extend_from_slice(&m.height);
     w.put_u16s(&m.texture1);
     w.put_u16s(&m.texture2);
-    w.extend_from_slice(&m.objects);
+    w.extend(m.objects.iter().copied().map(object_to_byte));
     w.put_u16s(&m.flags);
     for l in &m.light {
         w.extend_from_slice(l);
