@@ -87,7 +87,7 @@ pub fn run(o: &Original, dir: &Path) -> Result<bool> {
     let args = script::command_line(area, o.scenario, weapons.len(), &|i| {
         slots.get(i).copied().flatten()
     })?;
-    let plan = script::plan(o.scenario, &weapons);
+    let plan = script::plan(o.scenario, &o.game.weapon_timings());
     std::fs::create_dir_all(o.work)?;
     let game_dir = wine::game_copy(o.game_dir, o.work, &o.game.content_hash)?;
     let prefix = wine::prefix(o.work)?;

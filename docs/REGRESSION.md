@@ -204,13 +204,18 @@ For Modder's Edition executables the driver:
   the software renderer and no frame limit (the file's `resolution`
   overrides the profile's).
 
-Open: in the original run the hunter's view tilts up during warm-up and
-ends facing the sky; weapon and screen checks still pass. Ruled out so
-far: mouse input (the game re-centres the cursor every frame and reads
-back the centre, through the same window), the window's title bar (the
-same frames in borderless and exclusive fullscreen), the profile (the
-fork's `trophy0N.sav` layout is the stock one), and a drop-ship intro
-(the game has none).
+- ignores the game centring the cursor on (0,0): the fork does that once
+  before its window has a size, then reads it back against its real
+  centre, a one-off jump of half the screen that threw the view about
+  25 degrees up at the start;
+- waits for each weapon's own draw, fire and put-away animations (from
+  its view model), never less than the stock games' waits: the fork's
+  bow ignores a click while it is still being drawn.
+
+The view still ends pointing up: each shot's recoil (`recoil` in the
+weapon's entry) raises the view and nothing lowers it again, as a player
+would with the mouse. Our engine applies the same recoil, but the tour
+holds the hunter's view there, so the end pictures differ by design.
 
 ## Kill animations: `kill_animations`
 

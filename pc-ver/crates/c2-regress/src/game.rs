@@ -113,4 +113,20 @@ impl Game {
     pub fn weapon_names(&self) -> Vec<String> {
         self.weapons.iter().map(|w| w.info.name.clone()).collect()
     }
+
+    /// Each weapon's name and draw, fire and put-away lengths, for the
+    /// original-engine script.
+    pub fn weapon_timings(&self) -> Vec<crate::original::script::WeaponTiming> {
+        use c2_core::game::weapon_anim::{DRAW, FIRE, HIDE};
+        let ms = |w: &c2_core::load::LoadedWeapon, a: usize| w.anims.ms[a].max(0) as u32;
+        self.weapons
+            .iter()
+            .map(|w| crate::original::script::WeaponTiming {
+                name: w.info.name.clone(),
+                draw_ms: ms(w, DRAW),
+                fire_ms: ms(w, FIRE),
+                hide_ms: ms(w, HIDE),
+            })
+            .collect()
+    }
 }

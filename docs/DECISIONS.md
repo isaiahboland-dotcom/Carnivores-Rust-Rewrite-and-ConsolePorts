@@ -1,5 +1,18 @@
 # Decisions and deviations
 
+## 2026-11-08 — Original-engine driver: (0,0) cursor centring, weapon timings
+
+The upward view in Genesis Redux's original-engine tour had two causes.
+At the start, the fork calls `SetCursorPos(0,0)` once (its window has no
+size yet) and then reads that back against its real centre: a one-off
+mouse jump of half the screen, about 25 degrees up. The hook ignores a
+centring on (0,0), which is never a real mouse-look centre; stock C2
+runs are unchanged (they pass with the same results). The rest is the
+weapons' recoil building up over eight shots, which is the game's own
+behaviour. The script now waits for each weapon's draw, fire and
+put-away lengths from its model (never less than the old fixed waits),
+because the fork's bow ignores a click during its long draw.
+
 ## 2026-11-08 — Object indices are 16-bit; area side files
 
 `Map::objects` is `Vec<u16>`: the `.MAP`'s 255 and 254 become `NO_OBJECT`

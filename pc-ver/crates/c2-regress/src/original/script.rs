@@ -124,7 +124,23 @@ pub fn slug(s: &str) -> String {
 /// fire key held two frames, shorter than any fire animation, so one
 /// shot) and put away; binoculars, map and the call switch opened and
 /// closed. Keys are the original's defaults (`profile::default_keys`).
-pub fn plan(s: &Scenario, weapons: &[String]) -> Plan {
+/// A weapon for [`plan`]: its name and its view model's draw, fire and
+/// put-away animation lengths (ms; 0 when unknown).
+#[derive(Debug, Clone, Default)]
+pub struct WeaponTiming {
+    pub name: String,
+    pub draw_ms: u32,
+    pub fire_ms: u32,
+    pub hide_ms: u32,
+}
+
+/// Frames to wait for an animation of `ms`: at least `floor` (the stock
+/// games' waits), else its length plus 10 frames.
+fn wait(floor: u32, ms: u32) -> u32 {
+    floor.max(ms.div_ceil(FRAME_MS) + 10)
+}
+
+pub fn plan(s: &Scenario, weapons: &[WeaponTiming]) -> Plan {
     let k = c2_core::profile::default_keys();
     let (fire, show) = (vk(k.fire), vk(k.show));
     let (binoculars, change_call) = (vk(k.binoculars), vk(k.change_call));
@@ -142,16 +158,17 @@ pub fn plan(s: &Scenario, weapons: &[String]) -> Plan {
     };
     shot(&mut text, "warmup", "warmup".into(), t);
     for (i, w) in weapons.iter().enumerate().take(9) {
-        let st = format!("weapon_{:02}_{}", i + 1, slug(w));
+        let st = format!("weapon_{:02}_{}", i + 1, slug(&w.name));
         stages.push(st.clone());
         t += 10;
         let _ = writeln!(text, "{t} mark {st}\n{t} tap {}", i + 1);
-        t += 75;
+        // A slow draw (a Modder's Edition bow) ignores a click before it ends.
+        t += wait(75, w.draw_ms);
         shot(&mut text, &st, format!("{st}_ready"), t);
         t += 2;
         let _ = writeln!(text, "{t} key {} down\n{} key {} up", fire, t + 2, fire);
         shot(&mut text, &st, format!("{st}_fire"), t + 6);
-        t += 90;
+        t += wait(90, w.fire_ms);
         shot(&mut text, &st, format!("{st}_after"), t);
         let _ = writeln!(
             text,
@@ -161,7 +178,7 @@ pub fn plan(s: &Scenario, weapons: &[String]) -> Plan {
             t + 3,
             show
         );
-        t += 80;
+        t += wait(80, w.hide_ms);
     }
     for (key, name) in [(binoculars.clone(), "binoculars"), ("TAB".into(), "map")] {
         stages.push(name.into());
@@ -228,8 +245,28 @@ mod tests {
 
     #[test]
     fn every_stage_has_its_shots() {
-        let names: Vec<String> = ["Pistol", "Sniper rifle"].map(String::from).to_vec();
+        let names: Vec<WeaponTiming> = ["Pistol", "Sniper rifle"]
+            .map(|n| WeaponTiming {
+                name: n.into(),
+                ..Default::default()
+            })
+            .to_vec();
         let p = plan(&scenario(), &names);
+        // Unknown lengths keep the stock waits; a 3 s draw waits it out.
+        let fast = p
+            .shots
+            .iter()
+            .find(|s| s.name == "weapon_02_sniper_rifle_ready")
+            .map(|s| s.frame);
+        let mut slow = names.clone();
+        slow[0].draw_ms = 3000;
+        let q = plan(&scenario(), &slow);
+        let late = q
+            .shots
+            .iter()
+            .find(|s| s.name == "weapon_02_sniper_rifle_ready")
+            .map(|s| s.frame);
+        assert_eq!(late.zip(fast).map(|(l, f)| l - f), Some(160 - 75));
         let shots: Vec<&str> = p.shots.iter().map(|s| s.name.as_str()).collect();
         assert_eq!(shots[0], "warmup");
         assert!(shots.contains(&"weapon_02_sniper_rifle_fire"));

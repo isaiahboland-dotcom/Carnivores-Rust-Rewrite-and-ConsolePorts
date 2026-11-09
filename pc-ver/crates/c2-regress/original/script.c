@@ -298,8 +298,17 @@ BOOL WINAPI hook_get_cursor_pos(LPPOINT p) {
     return TRUE;
 }
 
-/* The game centres the cursor for mouse-look; the real one stays put. */
+/* The game centres the cursor for mouse-look; the real one stays put.
+ * A centre at (0,0) is ignored: a Modder's Edition fork centres there once
+ * while its window has no size yet, then reads it back against its real
+ * centre, a jump of half the screen that throws the view up and left. */
 BOOL WINAPI hook_set_cursor_pos(int x, int y) {
+    if (x == 0 && y == 0) {
+        char m[64];
+        wsprintfA(m, "frame %lu: SetCursorPos(0,0) ignored\r\n", frame);
+        logs(m);
+        return TRUE;
+    }
     cursor.x = centre.x = x;
     cursor.y = centre.y = y;
     return TRUE;
