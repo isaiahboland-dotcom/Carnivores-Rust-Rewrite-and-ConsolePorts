@@ -202,7 +202,65 @@ pub fn layer(vfs: &Vfs, skip: &Skip) -> Result<Option<MemBackend>> {
     for (from, to) in moved {
         layer.insert(&to, vfs.read(&from)?);
     }
+    if let Some(cfg) = sprites(vfs, &by_area, &by_dino, &by_weapon)? {
+        layer.insert(SPRITES, cfg.into_bytes());
+    }
     Ok(Some(layer))
+}
+
+const SPRITES: &str = "HUNTDAT/MOBILE/SPRITES.CFG";
+
+/// A game built from the APK draws its menu cells, hunt call icons and
+/// weapon buttons from the phone's sprites by slot number
+/// (`button_dino_active_N`), not from `MENU/PICS`. They move with the kept
+/// parts; a left-out part's sprite goes, so the slot it frees (now another
+/// game's animal, map or weapon) shows that one's own picture.
+fn sprites(
+    vfs: &Vfs,
+    by_area: &dyn Fn(usize) -> Option<usize>,
+    by_dino: &dyn Fn(usize) -> Option<usize>,
+    by_weapon: &dyn Fn(usize) -> Option<usize>,
+) -> Result<Option<String>> {
+    use std::collections::BTreeMap;
+    if vfs.resolve(SPRITES).is_none() {
+        return Ok(None);
+    }
+    let mut all = BTreeMap::new();
+    c2_formats::mobile_ui::parse(&String::from_utf8_lossy(&vfs.read(SPRITES)?), &mut all);
+    // The weapon sprites: the PC's six, the camera (7th, no slot), then
+    // the rest (`c2-pc`'s `hunt_kit`).
+    let weapon_slot = |s: usize| match s {
+        7 => None,
+        s if s > 7 => Some(s - 1),
+        s => Some(s),
+    };
+    let weapon_sprite = |w: usize| if w >= 7 { w + 1 } else { w };
+    let mut out = BTreeMap::new();
+    for (name, sprite) in all {
+        let (stem, n) = match name.rsplit_once('_') {
+            Some((stem, n)) => (stem, n.parse::<usize>().ok()),
+            None => (name.as_str(), None),
+        };
+        let moved = n.and_then(|n| match stem {
+            "button_area_active" | "button_area_inactive" => Some(by_area(n)),
+            "button_dino_active" | "button_dino_inactive" => Some(by_dino(n)),
+            "button_weapon_active" | "button_weapon_inactive" | "game_weapon_button" => {
+                weapon_slot(n).map(|w| by_weapon(w).map(weapon_sprite))
+            }
+            _ => None,
+        });
+        match moved {
+            // Not a numbered part's sprite: kept as is.
+            None => {
+                out.insert(name, sprite);
+            }
+            Some(Some(to)) => {
+                out.insert(format!("{stem}_{to}"), sprite);
+            }
+            Some(None) => {}
+        }
+    }
+    Ok(Some(c2_formats::mobile_ui::write(&out)))
 }
 
 /// Pushes [`layer`] over `vfs`: whether anything was left out.
@@ -277,6 +335,51 @@ prices {\n start = 100\n area = 10\n area = 20\n area = 30\n dino = 1\n dino = 2
         assert_eq!(v.read("HUNTDAT/MENU/DINO1.TGA").unwrap(), [12]);
         assert_eq!(v.read("HUNTDAT/MENU/DINO2.TGA").unwrap(), [13]);
         assert!(layer(&game(), &Skip::default()).unwrap().is_none());
+    }
+
+    #[test]
+    fn the_phone_sprites_follow_the_kept_parts() {
+        let sprite = |name: &str, x: u32| {
+            format!("sprite {name} {{\n\ttexture = \"gui\"\n\ttc_x = {x}\n\ttc_y = 0\n\ttc_width = 1\n\ttc_height = 1\n}}\n")
+        };
+        let cfg = [
+            sprite("button_dino_active_1", 1),
+            sprite("button_dino_active_2", 2),
+            sprite("button_dino_active_3", 3),
+            sprite("button_area_active_1", 11),
+            sprite("button_area_active_3", 13),
+            sprite("button_weapon_active_1", 21),
+            sprite("button_weapon_active_2", 22),
+            sprite("button_weapon_active_7", 27),
+            sprite("game_weapon_button_2", 32),
+            sprite("menu_hunt_cell_button", 40),
+        ]
+        .concat();
+        let mut v = game();
+        let mut m = MemBackend::new();
+        m.insert(SPRITES, cfg.into_bytes());
+        v.push("phone", Box::new(m));
+        let skip = Skip {
+            areas: vec![2],
+            huntables: vec![1, 2],
+            weapons: vec![1],
+        };
+        let l = layer(&v, &skip).unwrap().expect("a layer");
+        v.push("leave out", Box::new(l));
+        let mut s = std::collections::BTreeMap::new();
+        c2_formats::mobile_ui::parse(&String::from_utf8_lossy(&v.read(SPRITES).unwrap()), &mut s);
+        let x = |n: &str| s.get(n).map(|s| s.x as u32);
+        // Huntable 3 is now 1; slots 2 and 3 hold other games' animals.
+        assert_eq!(x("button_dino_active_1"), Some(3));
+        assert_eq!(x("button_dino_active_2"), None);
+        assert_eq!(x("button_dino_active_3"), None);
+        assert_eq!(x("button_area_active_1"), Some(11));
+        assert_eq!(x("button_area_active_2"), Some(13));
+        assert_eq!(x("button_weapon_active_1"), Some(22));
+        assert_eq!(x("game_weapon_button_1"), Some(32));
+        // The camera has no slot; other sprites stay.
+        assert_eq!(x("button_weapon_active_7"), Some(27));
+        assert_eq!(x("menu_hunt_cell_button"), Some(40));
     }
 
     #[test]
