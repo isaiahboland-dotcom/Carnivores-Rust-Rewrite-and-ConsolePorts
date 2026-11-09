@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.5.2 — 2026-11-08
+
+Launch protection, predation and regression-tool fixes, and finally some o3ds performance numbers. 
+Notes: `docs/releases/v0.5.2.md`.
+
 ### Launcher and command line
 
 - An instance whose base game hash list is missing, broken or empty no longer plays unchecked.
@@ -20,6 +25,8 @@
 - With predation on, an animal killed by another one comes back as a new animal of its kind,
   out of the hunter's sight, a minute later, so predators no longer empty the map. The hunter's
   own kills still don't come back, and a predator's kill still scores nothing.
+- With a pick limit set (`--max-picks`, used by Android), a refused pick shows **Limit reached**
+  instead of doing nothing.
 
 ### Gameplay regression scenarios (PC; developer tool)
 
@@ -28,6 +35,32 @@
 - Repeats that disagree fail the run. `publish` requires agreeing repeats (`--repeat` 2 or
   more) and the scenario text in the repository.
 - The published vanilla baselines were re-recorded from the committed scenario file.
+- Kill-animation scenarios (`kill_animations.toml`): each animal is released toward the
+  hunter and checked to kill it with the right death, body clip and killer pose. Runs on
+  Carnivores 2, Ice Age and three modded packs, and against the original engines
+  (`run --engine original`), where Carnivores 2 matches clip for clip.
+- A visual check that compared no pictures no longer counts as a pass. `--same-state` fails a
+  comparison on differing checkpoint state, and `publish` won't overwrite a baseline without
+  `--replace`.
+- The rendered pass's checkpoint hashes must match the headless run's.
+
+### Android
+
+- The Android tab warns when two instances' phone names give the same package, and install
+  refuses.
+- The manifest version matches the workspace again (it had stayed at 0.4.3); a test fails if
+  they drift.
+
+### Mods
+
+- A recipe or instance `skip` of 0 is rejected when read from a file, as it already was on the
+  command line.
+
+### Nintendo 3DS
+
+- First Old 3DS / 2DS readings for ten packs: about 30 fps with animals in view on most, up to
+  45–57 fps with none. JPHL's AREA4–5 and Genesis Redux don't start a hunt yet. Details in
+  `3ds-ver/README.md`; the optimisation plan is in `docs/ROADMAP.md`.
 
 ## 0.5.1 — 2026-11-07
 

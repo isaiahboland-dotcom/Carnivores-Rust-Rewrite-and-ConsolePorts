@@ -5,11 +5,13 @@ build instructions and milestone definitions live in [DEVELOPMENT.md](DEVELOPMEN
 Implementation does not imply that every platform or combination of mods has been
 validated. Game and mod assets must come from the player's own copies.
 
-## Current milestone: v0.5.1
+## Current milestone: v0.5.2
 
-v0.5.1 fixes standalone instances (such as Carnivores Triassic) playing Carnivores 2's
-animals after taking the old Game tab's overlays, and restores night vision and the
-flashlight in observer mode ([v0.5.1 notes](releases/v0.5.1.md)).
+v0.5.2 makes launch protection fail closed, fixes predation leaving carnivores stuck or
+emptying the map, adds kill-animation regression scenarios, and records the first Old
+3DS readings for ten packs ([v0.5.2 notes](releases/v0.5.2.md)). v0.5.1 fixed standalone
+instances playing Carnivores 2's animals and restored night vision and the flashlight in
+observer mode ([v0.5.1 notes](releases/v0.5.1.md)).
 v0.5.0 brought:
 
 Gameplay regression scenarios (`c2-regress`) with published vanilla baselines, used to
@@ -32,8 +34,29 @@ the new features. See the [v0.5.0 notes](releases/v0.5.0.md).
 | PC VR (M17) | Hands-on hunting with vanilla guns: floating guns in the hand (no arms), firing from the muzzle, two-handed support for long guns, sights that snap to the eye, a handheld map on the off hand, a head-aimed gamepad fallback; no recoil or reloading yet. Also: audit Vulkan/device/session lifetimes and tune performance | Monado's simulated controllers first, then headset hunts with tracked controllers; runtime diagnostics during scene replacement, session loss and shutdown |
 | Android (M19) | First APK builds (`android-ver/`): the PC frontend on a phone, with an APK-built base game only, add-ons, standalones combined beside it on the PC, and at most 8 animals and 8 weapons. Next: the mobile game's hunt touch controls (stick, fire, weapon buttons), and an on-screen message when the game folder is missing | First run on a phone, for each mobile base: vanilla and with add-ons; pause and resume; saves |
 | Regression scenarios | `vanilla_map2_four_dinos` runs on PC for Carnivores 2, Ice Age and both APK-built bases, headless and rendered ([REGRESSION.md](REGRESSION.md)); the runner also loads Modder's Edition data. Next: a Fallen Kings baseline, then the 3DS, Wii U and Android | Approved baselines per machine; emulator automation to be investigated before any console run |
-| Performance figures (3DS, Wii U) | Coming soon: average fps for the 3DS and Wii U, for vanilla hunts and for representative modded setups (add-on packs, standalones, combined games). 3DS performance work targets the Old 3DS first, so the game stays playable on every 3DS model | Repeatable measured runs per platform and scenario, labelled by console model rather than individual hardware |
+| Performance figures (3DS, Wii U) | First Old 3DS / 2DS spot readings for ten packs are in [`3ds-ver/README.md`](../3ds-ver/README.md#hardware-results-2026-11-08): about 30 fps with animals in view on most packs. Next: averages for the 3DS and Wii U, for vanilla hunts and representative modded setups. 3DS performance work targets the Old 3DS first, so the game stays playable on every 3DS model | Repeatable measured runs per platform and scenario, labelled by console model rather than individual hardware |
 | PS5 / PS VR2 (M18) | Research a dedicated port | No port implementation or hardware compatibility claim yet |
+
+## 3DS performance plan
+
+The Old 3DS readings show that animals in view, not the models themselves, set the frame
+rate. The dinosaur models are already much simpler than on PC, so the next gains should
+come from doing less work rather than cutting their detail further. In priority order:
+
+1. **A cap on active animals per area**, so simulation and memory stay predictable.
+2. **Ambient animal limits that adjust in play** to what the frame can afford.
+3. **AI updates by distance**: far animals think less often.
+4. **Visibility and occlusion culling**: skip what the hunter can't see.
+5. **View distance that adjusts** in demanding areas.
+6. **Fewer animation updates** for distant animals.
+7. **Trees as sprites by default** in an Old 3DS preset (helped in every comparison so far).
+8. **Memory-aware mod loading**: refuse or trim a hunt before it fails to start, as
+   JPHL's AREA4–5 do now.
+
+Also planned: per-pack compatibility profiles (tested areas, recommended settings, known
+limits), a setting to turn off Ice Age snow, and repeatable 3DS runs (fixed spawn, view
+direction, animal count and settings) that record average fps, 1% lows, peak memory and
+frame timings, so each change can be checked against these first readings.
 
 ## Implemented foundations
 
