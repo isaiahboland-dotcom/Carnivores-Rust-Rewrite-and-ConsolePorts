@@ -374,3 +374,66 @@ fn find_vector_alpha_matches_atan2() {
         assert!((find_vector_alpha(x, y) - want).abs() < 0.002, "{x},{y}");
     }
 }
+
+#[test]
+fn mee_placement_has_no_128_character_cap() {
+    // The Modder's Edition engine stops at 128 character entries
+    // (`ChInfo[128]`); skin variants are entries of their own, so a game
+    // with several common and rare skins per animal runs past it. Here 200
+    // entries, each in a spawn group of its own, and the last spawns only
+    // on area 2 (a map-specific skin, through `overwrite area2`).
+    const N: usize = 200;
+    let mut text = String::from("spawntable {\n");
+    for _ in 0..N {
+        text.push_str("spawngroup {\nspawnmin = 1\nspawnmax = 1\n}\n");
+    }
+    text.push_str("}\ncharacters {\n");
+    for i in 0..N - 1 {
+        text.push_str(&format!(
+            "{{\nname = 'Skin {i}'\nai = 10\nspawninfo {{\nspawngroup = {i}\nspawnratio = 1\n}}\n}}\n"
+        ));
+    }
+    text.push_str(&format!(
+        "{{\nname = 'Map skin'\nai = 10\noverwrite area2 {{\nspawninfo {{\nspawngroup = {}\nspawnratio = 1\n}}\n}}\n}}\n}}\n",
+        N - 1
+    ));
+    let raw = c2_formats::res_txt::ResTxt::parse(&text).unwrap_or_else(|e| panic!("{e}"));
+    let place = |area: u32| {
+        let tables = c2_formats::mee::Tables::read(
+            &raw,
+            &c2_formats::mee::Hunt {
+                area: Some(area),
+                time: 1,
+                picked: Default::default(),
+            },
+        );
+        assert_eq!(tables.characters.len(), N);
+        let mut herd = Herd {
+            species: (0..N).map(|_| species(ai::PARA, 8)).collect(),
+            ..Default::default()
+        };
+        herd.place_mee(
+            &Area::flat(10),
+            (50.0 * 256.0, 50.0 * 256.0),
+            &mut MsRand::new(7),
+            &tables,
+            128,
+        );
+        let mut types: Vec<usize> = herd.chars.iter().map(|c| c.ctype).collect();
+        types.sort_unstable();
+        types.dedup();
+        types
+    };
+    let on_1 = place(1);
+    assert_eq!(
+        on_1,
+        (0..N - 1).collect::<Vec<_>>(),
+        "every entry but the map skin"
+    );
+    let on_2 = place(2);
+    assert_eq!(
+        on_2,
+        (0..N).collect::<Vec<_>>(),
+        "the map skin joins on area 2"
+    );
+}

@@ -1,5 +1,16 @@
 # Decisions and deviations
 
+## 2026-11-08 — No 128-entry character cap in the Modder's Edition dialect
+
+The Modder's Edition engine holds at most 128 character entries
+(`ChInfo[128]`, `DINOINFO_MAX`). A skin is its own entry there (its own
+`.car`, weighted by `spawnratio`, made map-specific with `overwrite areaN`),
+so a game with several common and rare skins per animal runs out of entries.
+Ours reads the entries, spawn groups and overwrites into vectors, and hunt
+targets are a 512-bit set. A c2-core test places 200 entries, the last of
+them only on area 2 through `overwrite area2`. The menu, trophy room and
+draw path have not yet been checked with that many entries on real data.
+
 ## 2026-11-08 — Android manifest version follows the workspace; clippy on all features
 
 - **Manifest version.** `android-ver/AndroidManifest.xml` had stayed at 0.4.3
