@@ -1,0 +1,41 @@
+# The canonical tour (vanilla_map2_four_dinos) on Modder's Edition
+# standalone games, kept apart so its published baselines stay valid.
+#
+# Bump `version` whenever anything below changes what a run does; runs of
+# different versions are never compared for performance or visuals.
+
+[scenario]
+id = "standalone_map2_four_dinos"
+version = 1
+seed = 20261107
+# 10 ms ticks: 5 s of warm-up, 0.3 s on each open screen, 6 s per wait.
+warmup_ticks = 500
+settle_ticks = 30
+timeout_ticks = 600
+
+[view]
+# The area's first landing (`Area::landings[0]`), looking north, level.
+landing = 0
+yaw_deg = 0.0
+pitch_deg = 0.0
+
+[anchor]
+# Animals 12 cells out, 27 degrees right of the line of fire, so every
+# screenshot shows them and no shot can hit one.
+distance = 3072.0
+bearing_deg = 27.0
+fire_clearance_deg = 4.0
+# (right, forward) from the anchor, in the anchor's frame, in species
+# order: the two large carnivores on the side away from the line of fire.
+offsets = [[350.0, 900.0], [350.0, 0.0], [-350.0, 900.0], [-350.0, 0.0]]
+
+[[game]]
+id = "genesis-redux"
+name = "Carnivores Genesis Redux (Beta 2.0, standalone)"
+status = "supported"
+# Runs stay local (no published baseline).
+area = "AREA2"
+# Tyrannosaurus, Carnotaurus (F), Stegosaurus (F), Triceratops by character
+# index (names repeat across skins).
+species = ["index:94", "index:92", "index:9", "index:73"]
+weapons = 8

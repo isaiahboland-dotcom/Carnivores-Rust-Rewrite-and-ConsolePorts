@@ -63,6 +63,42 @@ cargo run --release -p c2-pc -- play ../source/c2-original --overlay "PATH/Carni
 cargo run --release -p c2-pc -- mod build ADDON_DIR... --base ../source/c2-original --overlay "PATH/Carnivores 2" --out DIR
 ```
 
+### Skins and rarities
+In the Modder's Edition dialect a skin is a character entry of its own
+(its own `.car`), and everything about where and how often it spawns is
+written with spawn groups and conditional blocks. This engine reads them
+as the Modder's Edition engine does:
+- **Rarity** is `spawnratio` within a `spawninfo { spawngroup = N }`: a
+  skin with 0.05 beside one with 1 is picked about 1 time in 21.
+- **Chance or fixed share.** A spawn group with `randomise = TRUE` picks
+  each animal by ratio at random. Without it, entries are taken in turn,
+  each once its accumulated ratio reaches 1, so which skins spawn depends
+  only on how many the group spawns that hunt. A rare skin that should
+  sometimes appear and sometimes not belongs in a randomised group.
+- **Map-exclusive skins:** put the skin's `spawninfo` inside
+  `overwrite area3 { ... }` and give it none outside, and it spawns on
+  area 3 only. `overwrite area1 area4 { ... }` applies on either area.
+- **Different rarities per island:** one `overwrite` per area (or set of
+  areas), each with its own `spawninfo` and `spawnratio`. An `overwrite`
+  replaces the earlier `spawninfo` blocks; an `addition` adds to them.
+- **Conditions combine** as in the engine: areas listed together are
+  either-or, as are times and `charN` (picked menu slots); different kinds
+  must all hold (`overwrite area2 time2` = area 2 at night). Matching is by
+  substring, so `area10` also matches area 1 (the tenth area is `area0`).
+- **More than 128 entries.** The Modder's Edition engine stops at 128
+  character entries. This engine has no such limit; a game that needs more
+  can ship the extra skins as an add-on that `requires` the base game.
+
+To see what a game's tables come to without playing, `c2-parity spawns`
+places each area and time of day many times (seeds 1..N, the first
+landing, by default every menu animal picked) and prints, per character,
+the share of hunts it appeared in and its mean count:
+```
+cargo run --release -p c2-parity -- spawns GAME_DIR [--areas 1,2|all] [--times 0,1,2|all] [--picked slots|all|none] [--hunts 200]
+```
+A `-` means the character never spawned there: a map-exclusive skin shows
+`-` in every other area's column.
+
 ## Playing with mods
 ```
 cd pc-ver

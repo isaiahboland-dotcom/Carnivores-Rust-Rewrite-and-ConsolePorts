@@ -185,6 +185,18 @@ checks the APK, not the rebuilt files. When `mobile-base` output changes,
 regenerate the lists (`c2-pc recipe base --base <DIR> --id ID --out FILE`,
 keeping the header) and re-publish the APK baselines.
 
+### Standalone games: `standalone_map2_four_dinos`
+
+The same tour for Modder's Edition standalone games, in a file of its own
+so that adding a game doesn't change the canonical scenario's text (and
+invalidate its published baselines). Runs stay local; nothing from these
+games is published. Genesis Redux (Beta 2.0) passes on our engine, headless
+and rendered: four animals by character index (Tyrannosaurus, Carnotaurus,
+Stegosaurus, Triceratops on area 2) and all 8 weapons. Under
+`--engine original` it is not supported yet: the driver picks hunt animals
+by AI number, as the stock games' menus do, and this game's own executable
+has not been mapped.
+
 ## Kill animations: `kill_animations`
 
 File: `scenarios/kill_animations.toml` (version 1, `script = "kills"`).

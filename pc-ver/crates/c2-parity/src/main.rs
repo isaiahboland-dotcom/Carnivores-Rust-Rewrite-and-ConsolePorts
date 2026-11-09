@@ -7,6 +7,7 @@
 use std::path::{Path, PathBuf};
 
 mod predation_sim;
+mod spawns;
 mod strstr;
 
 use anyhow::{bail, Context, Result};
@@ -417,7 +418,7 @@ fn mee_report(game: &Path, area: u32, time: u8, picked: u128) -> Result<()> {
 }
 
 /// `path` (either slash, any case) under `base`.
-fn find_path(base: &Path, path: &str) -> Option<PathBuf> {
+pub(crate) fn find_path(base: &Path, path: &str) -> Option<PathBuf> {
     path.split(['/', '\\'])
         .filter(|c| !c.is_empty() && *c != ".")
         .try_fold(base.to_path_buf(), |d, c| find_ci(&d, c))
@@ -431,22 +432,13 @@ fn find_path(base: &Path, path: &str) -> Option<PathBuf> {
 /// stops), and the slowest step.
 fn mee_sim(game: &Path, area_n: u32, seconds: u32, picked: &str) -> Result<()> {
     use c2_core::area::{Area, TimeOfDay};
-    use c2_core::dino::{Ctx, DinoInfo, Herd, HunterView, Species};
+    use c2_core::dino::{Ctx, Herd, HunterView};
     use c2_core::rng::MsRand;
     use c2_formats::mee::Hunt;
     let huntdat = find_ci(game, "HUNTDAT").context("no HUNTDAT")?;
     let res_path = find_ci(&huntdat, "_RES.TXT").context("no _RES.TXT")?;
     let res = ResTxt::parse(&String::from_utf8_lossy(&std::fs::read(res_path)?))?;
-    let mut picked_bits = c2_formats::bits::Bits::NONE;
-    for p in picked.split(',').filter(|p| !p.is_empty()) {
-        if p == "all" {
-            for b in 10..c2_formats::bits::Bits::LEN {
-                picked_bits.set(b);
-            }
-        } else {
-            picked_bits.set(10 + p.parse::<usize>().context("picked: menu slots")?);
-        }
-    }
+    let picked_bits = spawns::picked_bits(picked)?;
     let h = Hunt {
         area: Some(area_n),
         time: 1,
@@ -461,22 +453,7 @@ fn mee_sim(game: &Path, area_n: u32, seconds: u32, picked: &str) -> Result<()> {
         rsc::parse(&std::fs::read(rsc_path)?)?,
         TimeOfDay::Day,
     );
-    let mut species = Vec::new();
-    for d in &m.res.characters {
-        let info = DinoInfo::from_def(d);
-        let car = find_path(&huntdat, &info.file)
-            .and_then(|p| std::fs::read(p).ok())
-            .and_then(|d| car::parse(&d).ok());
-        let empty = car::Car {
-            name_raw: [0; 32],
-            mesh: Default::default(),
-            animations: vec![],
-            sounds: vec![],
-            anim_sounds: None,
-            trailing: Vec::new(),
-        };
-        species.push(Species::new(info, car.as_ref().unwrap_or(&empty)));
-    }
+    let mut species = spawns::species(&huntdat, &m.res, &mut Default::default());
     c2_core::mee::tune(&mut species, &m.tables);
     for (i, s) in species.iter().enumerate() {
         if let Some(mi) = &s.mee {
@@ -797,7 +774,7 @@ fn tick_bench(game: &Path, area_n: u32) -> Result<()> {
 }
 
 /// `name` in `dir`, ignoring case.
-fn find_ci(dir: &Path, name: &str) -> Option<std::path::PathBuf> {
+pub(crate) fn find_ci(dir: &Path, name: &str) -> Option<std::path::PathBuf> {
     std::fs::read_dir(dir)
         .ok()?
         .flatten()
@@ -832,6 +809,9 @@ fn main() -> Result<()> {
             num(3, 1)? as u8,
             u128::from(num(4, 1)?),
         );
+    }
+    if args.first().map(String::as_str) == Some("spawns") {
+        return spawns::run(&args[1..]);
     }
     if args.first().map(String::as_str) == Some("mee-sim") {
         let usage = "usage: c2-parity mee-sim <GAME_DIR> [AREA] [seconds] [picked slots|all]";
