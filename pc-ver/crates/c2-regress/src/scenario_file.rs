@@ -97,7 +97,8 @@ struct Raw {
 
 pub struct ScenarioFile {
     raw: Raw,
-    /// SHA-256 of the file's text.
+    /// SHA-256 of the file's text with LF line endings, so a CRLF
+    /// checkout (Windows) gives the same hash as the committed file.
     pub hash: String,
 }
 
@@ -125,7 +126,7 @@ impl ScenarioFile {
         if raw.scenario.script == ScriptName::Kills && raw.kills.is_none() {
             bail!("script = \"kills\" needs a [kills] section");
         }
-        let hash = format!("{:x}", Sha256::digest(text.as_bytes()));
+        let hash = format!("{:x}", Sha256::digest(text.replace("\r\n", "\n")));
         Ok(Self { raw, hash })
     }
 
@@ -274,6 +275,15 @@ mod tests {
             ScenarioFile::parse(&text.replace("\"model:ta10f.car\"", "\"model:\""))
                 .is_ok_and(|f| f.for_game(f.game("triassic-mee").unwrap()).is_err())
         );
+    }
+
+    #[test]
+    fn the_hash_ignores_crlf_line_endings() {
+        let crlf = FILE.replace('\n', "\r\n");
+        let lf = ScenarioFile::parse(FILE).unwrap().hash;
+        assert_eq!(ScenarioFile::parse(&crlf).unwrap().hash, lf);
+        let plain = format!("{:x}", Sha256::digest(FILE.as_bytes()));
+        assert_eq!(lf, plain, "an LF file keeps its published hash");
     }
 
     #[test]

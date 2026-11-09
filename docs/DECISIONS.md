@@ -4891,3 +4891,16 @@ Source audit findings R4, R5, R6 (v0.5.0).
 - Tests: `compare::tests::a_visual_check_that_never_ran_is_not_a_pass`,
   `differing_state_fails_only_when_required`,
   `publish::tests::an_existing_baseline_is_replaced_only_on_request_with_its_changes`.
+
+## 2026-11-08 — Scenario hash ignores line endings
+
+The Windows workflow failed `published_baselines_are_complete_and_vanilla`:
+the runner checks text out with CRLF, so the scenario file's SHA-256 no
+longer matched the hash recorded in the published baselines.
+`ScenarioFile::parse` now hashes the text with CRLF turned into LF. An LF
+file keeps its old hash, so no baseline needs re-publishing, and a
+Windows clone records and compares the same hash as Linux. Chosen over a
+`.gitattributes` rule because a scenario saved by a Windows editor would
+still have changed the hash.
+- Test: `scenario_file::tests::the_hash_ignores_crlf_line_endings`; the
+  published-baselines test also passes in an `autocrlf=true` checkout.
