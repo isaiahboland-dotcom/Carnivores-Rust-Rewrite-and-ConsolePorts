@@ -82,6 +82,22 @@ day cycle's midnight, with the flashlight, the radar and the shotgun.
 
 ---
 
+## Platform comparison
+
+The same Carnivores 2 location captured from approximately the same viewpoint across platforms. These are screenshots from the Rust rewrite running on each platform, not promotional renders. Visual differences reflect platform-specific rendering, resolution, draw distance, and hardware limitations; camera positions and settings are not perfectly identical.
+
+| PC | Android |
+|:---:|:---:|
+| <img src="assets/platform-comparison/pc.png" alt="Carnivores 2 Rust rewrite gameplay on PC" width="100%"> | <img src="assets/platform-comparison/android.png" alt="Carnivores 2 Rust rewrite gameplay on Android" width="100%"> |
+
+| Nintendo 3DS | Wii U (Coming Soon) |
+|:---:|:---:|
+| <img src="assets/platform-comparison/3ds.png" alt="Carnivores 2 Rust rewrite gameplay on Nintendo 3DS" width="100%"> | **Coming Soon** — Wii U gameplay screenshot pending. |
+
+*Screenshots are intended to illustrate the ports' visual differences, not to serve as a controlled graphics or performance benchmark.*
+
+---
+
 ## What you need
 
 - **Your own Carnivores 2 install**: the folder that contains `HUNTDAT/`. ReShade or other wrapper DLLs
