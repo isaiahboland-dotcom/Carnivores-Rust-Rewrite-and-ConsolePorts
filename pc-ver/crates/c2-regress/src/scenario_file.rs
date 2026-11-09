@@ -279,10 +279,13 @@ mod tests {
 
     #[test]
     fn the_hash_ignores_crlf_line_endings() {
-        let crlf = FILE.replace('\n', "\r\n");
-        let lf = ScenarioFile::parse(FILE).unwrap().hash;
+        // The checkout itself may be CRLF (Windows), so start from LF.
+        let lf_text = FILE.replace("\r\n", "\n");
+        let crlf = lf_text.replace('\n', "\r\n");
+        let lf = ScenarioFile::parse(&lf_text).unwrap().hash;
         assert_eq!(ScenarioFile::parse(&crlf).unwrap().hash, lf);
-        let plain = format!("{:x}", Sha256::digest(FILE.as_bytes()));
+        assert_eq!(ScenarioFile::parse(FILE).unwrap().hash, lf);
+        let plain = format!("{:x}", Sha256::digest(lf_text.as_bytes()));
         assert_eq!(lf, plain, "an LF file keeps its published hash");
     }
 
