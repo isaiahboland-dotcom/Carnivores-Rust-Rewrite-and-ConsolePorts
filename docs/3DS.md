@@ -227,6 +227,8 @@ bench 20,40,60 30   # the herd alone, 30 s per count, predation on and off
 - **Hardware (2026-10-18)**: Old 3DS / Old 2DS, single-area o3ds
   pack: loads, ~58 fps, heap 15.1 MiB in use while hunting.
 - Out of memory shows a message (press START) instead of crashing.
+- What each tested game and mod can do on the Old 3DS (memory, survival,
+  what `c2-cook --check` reports): [3ds-ver/README.md](../3ds-ver/README.md#tested-games-and-mods).
 
 ## Sound
 Sounds play on the DSP, which needs the console's DSP firmware dump at
