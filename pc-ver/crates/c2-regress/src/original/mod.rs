@@ -83,7 +83,10 @@ pub fn run(o: &Original, dir: &Path) -> Result<bool> {
         return kills::run(o, dir, k, area);
     }
     let weapons = o.game.weapon_names();
-    let args = script::command_line(area, o.scenario, weapons.len())?;
+    let slots = script::menu_slots(o.game_dir, area);
+    let args = script::command_line(area, o.scenario, weapons.len(), &|i| {
+        slots.get(i).copied().flatten()
+    })?;
     let plan = script::plan(o.scenario, &weapons);
     std::fs::create_dir_all(o.work)?;
     let game_dir = wine::game_copy(o.game_dir, o.work, &o.game.content_hash)?;

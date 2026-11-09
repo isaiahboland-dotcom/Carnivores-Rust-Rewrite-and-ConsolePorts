@@ -223,7 +223,7 @@ pub fn run(o: &Original, dir: &Path, k: &KillPlan, area: &str) -> Result<bool> {
             .map_or_else(|| format!("ai {a}"), |sp| sp.info.name.clone());
         let mut one = o.scenario.clone();
         one.species = vec![r.clone()];
-        let args = script::command_line(area, &one, weapons.len())?;
+        let args = script::command_line(area, &one, weapons.len(), &|_| None)?;
         if n == 0 {
             first_args = args.clone();
         }

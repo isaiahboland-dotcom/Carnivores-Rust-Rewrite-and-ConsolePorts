@@ -192,10 +192,21 @@ so that adding a game doesn't change the canonical scenario's text (and
 invalidate its published baselines). Runs stay local; nothing from these
 games is published. Genesis Redux (Beta 2.0) passes on our engine, headless
 and rendered: four animals by character index (Tyrannosaurus, Carnotaurus,
-Stegosaurus, Triceratops on area 2) and all 8 weapons. Under
-`--engine original` it is not supported yet: the driver picks hunt animals
-by AI number, as the stock games' menus do, and this game's own executable
-has not been mapped.
+Stegosaurus, Triceratops on area 2) and all 8 weapons. It also passes
+under `--engine original`, with the game's own `v_soft.ren`: every weapon
+fires, and binoculars, map and call switch open and close.
+
+For Modder's Edition executables the driver:
+- picks animals by menu slot: the hunt's command line is the stock one
+  (`din` a bit per slot), and a character index is turned into its slot
+  as our engine reads the game's `_RES.TXT`;
+- pins `config.cfg` in the game copy to 800x600, exclusive fullscreen,
+  the software renderer and no frame limit (the file's `resolution`
+  overrides the profile's).
+
+Open: in the original run the hunter's view tilts up during warm-up and
+ends facing the sky. The hook's cursor stays centred, so it is not mouse
+drift; the cause is not found yet. Weapon and screen checks still pass.
 
 ## Kill animations: `kill_animations`
 

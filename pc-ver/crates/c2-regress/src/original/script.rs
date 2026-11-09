@@ -28,13 +28,24 @@ pub struct Plan {
     pub exit_frame: u32,
 }
 
-/// `huntdat\areas\area2 reg=0 din=... wep=... dtm=1` for `area` (e.g.
-/// `AREA2`). Stock games only: `din` is a bit per menu slot (AI - 10).
-pub fn command_line(area: &str, s: &Scenario, weapons: usize) -> Result<String> {
+/// `huntdat\\areas\\area2 reg=0 din=... wep=... dtm=1` for `area` (e.g.
+/// `AREA2`). `din` is a bit per menu slot: AI - 10 in the stock games; in
+/// a Modder's Edition game (the same command line, `CommandLine.cpp` in the
+/// modernized fork) the slot `menu_slot` gives for a character index.
+pub fn command_line(
+    area: &str,
+    s: &Scenario,
+    weapons: usize,
+    menu_slot: &dyn Fn(usize) -> Option<usize>,
+) -> Result<String> {
     let mut din = 0u32;
     for r in &s.species {
         match r {
             SpeciesRef::Ai(a) if (10..42).contains(a) => din |= 1 << (a - 10),
+            SpeciesRef::Index(i) => match menu_slot(*i) {
+                Some(k) if k < 10 => din |= 1 << k,
+                k => bail!("character {i} has no menu slot the command line can pick ({k:?})"),
+            },
             other => bail!("the original's menu takes hunt animals by AI 10..41, not {other:?}"),
         }
     }
@@ -47,6 +58,35 @@ pub fn command_line(area: &str, s: &Scenario, weapons: usize) -> Result<String> 
     Ok(format!(
         "prj=huntdat\\areas\\{area} reg=0 din={din} wep={wep} dtm=1"
     ))
+}
+
+/// Each character's menu slot in a Modder's Edition game, for `area` by
+/// day with nothing picked; empty for a stock game (it picks by AI).
+pub fn menu_slots(game_dir: &std::path::Path, area: &str) -> Vec<Option<usize>> {
+    use c2_formats::{mee, res_txt::ResTxt};
+    let Some(res) = super::wine::find_ci(game_dir, "HUNTDAT")
+        .and_then(|h| super::wine::find_ci(&h, "_RES.TXT"))
+        .and_then(|p| std::fs::read(p).ok())
+        .and_then(|d| ResTxt::parse(&String::from_utf8_lossy(&d)).ok())
+        .filter(mee::is_dialect)
+    else {
+        return Vec::new();
+    };
+    let h = mee::Hunt {
+        area: mee::area_of(area),
+        time: 1,
+        picked: Default::default(),
+    };
+    let t = mee::Tables::read(&res, &h);
+    let raw = res
+        .section("characters")
+        .map(|s| s.blocks.as_slice())
+        .unwrap_or(&[]);
+    t.characters
+        .iter()
+        .enumerate()
+        .map(|(i, c)| mee::menu_slot(raw.get(i), &c.block))
+        .collect()
 }
 
 /// A virtual-key code as the hook's script writes it: a single letter or
@@ -173,12 +213,17 @@ mod tests {
     fn the_menus_command_line() {
         // As carn2.exe's menu passed it for the same choices.
         assert_eq!(
-            command_line("AREA2", &scenario(), 6).unwrap(),
+            command_line("AREA2", &scenario(), 6, &|_| None).unwrap(),
             "prj=huntdat\\areas\\area2 reg=0 din=284 wep=63 dtm=1"
         );
         let mut s = scenario();
         s.species[0] = SpeciesRef::Index(3);
-        assert!(command_line("AREA2", &s, 6).is_err());
+        assert!(command_line("AREA2", &s, 6, &|_| None).is_err());
+        assert_eq!(
+            command_line("AREA2", &s, 6, &|i| (i == 3).then_some(4)).unwrap(),
+            // Slot 4 (the index) and AI 13, 12, 14 (slots 3, 2, 4).
+            "prj=huntdat\\areas\\area2 reg=0 din=28 wep=63 dtm=1"
+        );
     }
 
     #[test]

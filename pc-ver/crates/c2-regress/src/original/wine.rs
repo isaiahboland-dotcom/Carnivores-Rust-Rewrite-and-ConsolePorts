@@ -49,7 +49,36 @@ pub fn game_copy(game: &Path, work: &Path, content_hash: &str) -> Result<PathBuf
         copy_tree(game, &dir)?;
         std::fs::write(&stamp, content_hash)?;
     }
+    pin_config(&dir)?;
     Ok(dir)
+}
+
+/// Modder's Edition forks read `config.cfg`, whose `resolution` overrides
+/// the profile's: pin the copy to the 800x600 virtual desktop (exclusive
+/// fullscreen, a popup window with no title bar), the software renderer
+/// and no frame limit. Other keys are kept.
+fn pin_config(dir: &Path) -> Result<()> {
+    let Some(p) = find_ci(dir, "config.cfg") else {
+        return Ok(());
+    };
+    let pins = [
+        ("resolution", "800x600"),
+        ("display_mode", "1"),
+        ("renderer", "0"),
+        ("fps_limit", "0"),
+    ];
+    let text = std::fs::read_to_string(&p)?;
+    let mut out: Vec<String> = text
+        .lines()
+        .filter(|l| {
+            let key = l.trim_start_matches('#').split_whitespace().next();
+            !pins.iter().any(|(k, _)| Some(*k) == key)
+        })
+        .map(String::from)
+        .collect();
+    out.extend(pins.iter().map(|(k, v)| format!("{k} {v}")));
+    std::fs::write(&p, out.join("\n") + "\n")?;
+    Ok(())
 }
 
 /// A file in `dir`, ignoring case.
@@ -76,7 +105,8 @@ fn wine(prefix: &Path, args: &[&str]) -> Command {
 /// Creates the prefix once, set to an 800x600 virtual desktop so the game
 /// never changes the display mode.
 pub fn prefix(work: &Path) -> Result<PathBuf> {
-    let p = work.join("prefix");
+    // Wine refuses a relative WINEPREFIX (a relative `--out`).
+    let p = std::path::absolute(work.join("prefix"))?;
     if !p.join("system.reg").exists() {
         std::fs::create_dir_all(&p)?;
         let ok = Command::new("wineboot")

@@ -1,5 +1,16 @@
 # Decisions and deviations
 
+## 2026-11-08 — Original-engine runs for Modder's Edition executables
+
+A Modder's Edition fork's hunt (`v_soft.ren`) takes the stock command line,
+so the Wine driver runs one: `din` is built from each character index's
+menu slot (`c2_formats::mee::menu_slot`) instead of AI - 10. Its
+`config.cfg` overrides the profile's resolution, so the game copy is pinned
+to 800x600, exclusive fullscreen, software rendering and no frame limit.
+The Wine prefix path is made absolute: a relative `--out` made `wineboot`
+fail. The kill scenario still picks by AI only (it reads globals found in
+the stock renderers).
+
 ## 2026-11-08 — No 128-entry character cap in the Modder's Edition dialect
 
 The Modder's Edition engine holds at most 128 character entries
