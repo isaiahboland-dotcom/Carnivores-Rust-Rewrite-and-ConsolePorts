@@ -6,7 +6,7 @@
 //! has no `MOBILE` and keeps the original's pictures.
 
 use crate::gpu::Gpu;
-use crate::hud::{Hud, Sprite};
+use crate::hud::{load_tga, Hud, Sprite};
 use crate::menu::kit::{Kit, GOLD, LIGHT};
 use std::path::Path;
 
@@ -72,13 +72,24 @@ impl HuntKit {
         let disc = hud.add_image_filtered(gpu, DISC as u32, DISC as u32, &disc(), true);
         let compass = kit.picture("COMPAS.PNG", hud, gpu);
         let map = map.and_then(|m| kit.picture(&format!("MAPS/{m}.PNG"), hud, gpu));
+        let pictures: Vec<_> = (0..weapons)
+            .map(|i| {
+                let number = if i < 6 { i + 1 } else { i + 2 };
+                kit.image(&format!("button_weapon_active_{number}"), hud, gpu)
+                    .or_else(|| {
+                        let menu = crate::area_view::find_file(huntdat, "MENU")?;
+                        let pics = crate::area_view::find_file(&menu, "PICS")?;
+                        let path =
+                            crate::area_view::find_file(&pics, &format!("WEAPON{}.TGA", i + 1))?;
+                        let (w, h, rgba) = load_tga(&path).ok()?;
+                        Some(hud.add_image(gpu, w, h, &rgba))
+                    })
+            })
+            .collect();
         let mut img = |n: &str| kit.image(n, hud, gpu);
         // The kit's weapon pictures: the PC's six, the camera, the revolver
         // (the `_RES.TXT` the conversion writes has the revolver 7th).
         let number = |i: usize| if i < 6 { i + 1 } else { i + 2 };
-        let pictures = (0..weapons)
-            .map(|i| img(&format!("button_weapon_active_{}", number(i))))
-            .collect();
         let touch = TouchArt {
             stick: img("movement_controller"),
             knob: img("movement_controller_center"),
@@ -90,6 +101,10 @@ impl HuntKit {
                 .map(|i| img(&format!("game_weapon_button_{}", number(i))))
                 .collect(),
         };
+        let mut touch = touch;
+        for (button, picture) in touch.weapons.iter_mut().zip(&pictures) {
+            *button = button.or(*picture);
+        }
         Some(Self {
             binoculars: img("binoculars_sight"),
             cross: img("binoculars_crosshair"),

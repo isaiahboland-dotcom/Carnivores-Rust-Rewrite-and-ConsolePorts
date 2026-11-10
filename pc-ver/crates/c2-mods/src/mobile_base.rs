@@ -925,6 +925,16 @@ impl Game<'_> {
                     clear_surround(&mut img);
                 }
                 write(&out, &png(&img))?;
+                if let Some(area) = out
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .and_then(|s| s.split('_').next())
+                    .filter(|s| s.starts_with("AREA"))
+                {
+                    let source = self.huntdat.join("AREAS").join(format!("{area}.MAP"));
+                    let data = std::fs::read(&source).map_err(io(&source))?;
+                    write(&maps.join(format!("{area}.MAP")), &data)?;
+                }
             }
         }
         let title = if self.ice_age {

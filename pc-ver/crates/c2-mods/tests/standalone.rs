@@ -508,6 +508,8 @@ fn a_base_without_menu_txt_uses_its_res_txt_as_the_menu() {
             ("HUNTDAT/WEAPONS/pistol.car", b"pistol"),
             ("HUNTDAT/AREAS/AREA1.MAP", b"base map"),
             ("HUNTDAT/AREAS/AREA1.RSC", b"base rsc"),
+            ("HUNTDAT/MOBILE/MAPS/AREA1.MAP", b"base map"),
+            ("HUNTDAT/MOBILE/SPRITES.CFG", b"sprite button_dino_active_1 { texture = gui tc_x = 0 tc_y = 0 tc_width = 1 tc_height = 1 }\nsprite button_weapon_active_1 { texture = gui tc_x = 0 tc_y = 0 tc_width = 1 tc_height = 1 }\n"),
         ],
     );
     let a = tmp("apk-game").join("Game A");
@@ -520,6 +522,8 @@ fn a_base_without_menu_txt_uses_its_res_txt_as_the_menu() {
             ("HUNTDAT/WEAPONS/bow.car", b"bow"),
             ("HUNTDAT/AREAS/AREA1.MAP", b"a map"),
             ("HUNTDAT/AREAS/AREA1.RSC", b"a rsc"),
+            ("HUNTDAT/MENU/PICS/DINO1.TGA", b"addon animal"),
+            ("HUNTDAT/MENU/PICS/WEAPON1.TGA", b"addon weapon"),
         ],
     );
     let out = tmp("apk-out");
@@ -538,6 +542,41 @@ fn a_base_without_menu_txt_uses_its_res_txt_as_the_menu() {
     assert_eq!(m.huntables.len(), 2);
     assert_eq!(m.weapons.len(), 2);
     assert!(out.join("HUNTDAT/AREAS/AREA2.MAP").is_file());
+
+    // The exported APK base keeps its UI while all its playable parts go.
+    let mut vfs = c2_vfs::Vfs::new();
+    vfs.push("combined", Box::new(c2_vfs::DirBackend::new(&out).unwrap()));
+    c2_mods::standalone::leave_out::push(
+        &mut vfs,
+        &c2_mods::standalone::Skip {
+            areas: vec![1],
+            huntables: vec![1],
+            weapons: vec![1],
+        },
+    )
+    .unwrap();
+    assert_eq!(vfs.read("HUNTDAT/AREAS/AREA1.MAP").unwrap(), b"a map");
+    assert_eq!(
+        vfs.read("HUNTDAT/MENU/PICS/DINO1.TGA").unwrap(),
+        b"addon animal"
+    );
+    assert_eq!(
+        vfs.read("HUNTDAT/MENU/PICS/WEAPON1.TGA").unwrap(),
+        b"addon weapon"
+    );
+    let mut sprites = std::collections::BTreeMap::new();
+    c2_formats::mobile_ui::parse(
+        &String::from_utf8_lossy(&vfs.read("HUNTDAT/MOBILE/SPRITES.CFG").unwrap()),
+        &mut sprites,
+    );
+    assert!(!sprites.contains_key("button_dino_active_1"));
+    assert!(!sprites.contains_key("button_weapon_active_1"));
+    // The provenance stays with the APK terrain, so the reused slot cannot
+    // accidentally select its painted artwork for the addon terrain.
+    assert_ne!(
+        vfs.read("HUNTDAT/MOBILE/MAPS/AREA1.MAP").unwrap(),
+        vfs.read("HUNTDAT/AREAS/AREA1.MAP").unwrap()
+    );
 
     // Without areas in its `_RES.TXT` either, it still needs a menu file.
     let bare = tmp("bare-base");

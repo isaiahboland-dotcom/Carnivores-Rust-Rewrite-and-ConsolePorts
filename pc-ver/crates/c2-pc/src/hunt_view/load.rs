@@ -291,7 +291,45 @@ fn load_kit(
             };
             format!("AREA{n}_{t}")
         });
+    // Slot numbers can belong to addons after Pick parts. Only use painted
+    // APK artwork when its source map still matches the selected terrain.
+    let kit_map = kit_map.filter(|name| {
+        let area = name.split('_').next().unwrap_or(name);
+        let original = huntdat
+            .join("MOBILE")
+            .join("MAPS")
+            .join(format!("{area}.MAP"));
+        same_map(&original, &setup.map)
+    });
     HuntKit::load(huntdat, hud, gpu, weapons, kit_map.as_deref())
+}
+
+// Missing provenance in older exports deliberately uses the terrain overview.
+fn same_map(original: &Path, selected: &Path) -> bool {
+    match (std::fs::read(original), std::fs::read(selected)) {
+        (Ok(original), Ok(selected)) => original == selected,
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod map_art_tests {
+    use super::same_map;
+
+    #[test]
+    fn painted_art_requires_matching_terrain_even_when_slots_match() {
+        let root = std::env::temp_dir().join(format!("c2-map-art-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let original = root.join("original.MAP");
+        let selected = root.join("AREA1.MAP");
+        std::fs::write(&original, b"APK terrain").unwrap();
+        std::fs::write(&selected, b"addon terrain").unwrap();
+        assert!(!same_map(&original, &selected));
+        std::fs::write(&selected, b"APK terrain").unwrap();
+        assert!(same_map(&original, &selected));
+        assert!(!same_map(&root.join("missing.MAP"), &selected));
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
 
 /// The map: the frame with the area overview painted in at (11, 23), and
@@ -359,6 +397,16 @@ fn call_pictures(
                     return None;
                 }
                 k.image(&format!("button_dino_active_{n}"), hud, gpu)
+                    .or_else(|| {
+                        let pics = pics.as_deref()?;
+                        [format!("DINO{n}.TGA"), format!("CALL{n}.TGA")]
+                            .iter()
+                            .find_map(|name| {
+                                let p = find_file(pics, name)?;
+                                let (w, h, rgba) = load_tga(&p).ok()?;
+                                Some(hud.add_image(gpu, w, h, &rgba))
+                            })
+                    })
             })
             .collect(),
         None => Vec::new(),
