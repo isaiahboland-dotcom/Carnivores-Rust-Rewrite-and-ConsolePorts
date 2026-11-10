@@ -567,7 +567,7 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "c2-core"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "ab_glyph",
  "c2-formats",
@@ -582,7 +582,7 @@ dependencies = [
 
 [[package]]
 name = "c2-formats"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "libm",
  "thiserror 2.0.21",
@@ -590,7 +590,7 @@ dependencies = [
 
 [[package]]
 name = "c2-launcher"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "c2-formats",
@@ -605,7 +605,7 @@ dependencies = [
 
 [[package]]
 name = "c2-mods"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "c2-formats",
  "c2-vfs",
@@ -619,14 +619,14 @@ dependencies = [
 
 [[package]]
 name = "c2-pad"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "gilrs",
 ]
 
 [[package]]
 name = "c2-parity"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "c2-core",
@@ -635,7 +635,7 @@ dependencies = [
 
 [[package]]
 name = "c2-pc"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "android-activity",
  "anyhow",
@@ -663,11 +663,11 @@ dependencies = [
 
 [[package]]
 name = "c2-platform"
-version = "0.5.2"
+version = "0.5.3"
 
 [[package]]
 name = "c2-regress"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "c2-core",
@@ -684,7 +684,7 @@ dependencies = [
 
 [[package]]
 name = "c2-vfs"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "c2-formats",
  "thiserror 2.0.21",
@@ -693,7 +693,7 @@ dependencies = [
 
 [[package]]
 name = "c2-vr"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "anyhow",
  "ash",

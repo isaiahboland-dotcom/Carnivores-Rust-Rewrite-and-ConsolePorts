@@ -117,9 +117,20 @@ pub fn write(dir: &Path, ctx: &RunContext) -> Result<bool> {
     let panics = ctx.runs.iter().filter(|r| r.panic.is_some()).count();
     let registry = ctx.game.weapons.len();
     let weapons_ok = ctx.def.weapons.is_none_or(|n| n == registry);
-    // The kill script fires nothing; each animal's kill is a stage.
-    let kill_script = matches!(ctx.scenario.script, c2_core::scenario::Script::Kills(_));
-    let to_fire = if kill_script { 0 } else { registry };
+    // Only the tour fires; each kill or behaviour is a stage of its own.
+    use c2_core::scenario::Script;
+    let kill_script = matches!(ctx.scenario.script, Script::Kills(_));
+    let behaviours = matches!(ctx.scenario.script, Script::Behaviours(_));
+    let to_fire = if matches!(ctx.scenario.script, Script::Tour) {
+        registry
+    } else {
+        0
+    };
+    let end_expected = if behaviours {
+        0
+    } else {
+        ctx.scenario.species.len()
+    };
     let kill_stages = |st: &str| {
         stages
             .iter()
@@ -205,6 +216,7 @@ pub fn write(dir: &Path, ctx: &RunContext) -> Result<bool> {
             "animals_expected": ctx.scenario.species.len(),
             "animals_placed": first.map(|r| r.placed.clone()),
             "animals_end": first.map(|r| r.animals_end),
+            "animals_end_expected": end_expected,
             "weapon_registry": registry,
             "weapon_registry_expected": ctx.def.weapons,
             "weapons_fired_once": fired,
@@ -212,6 +224,8 @@ pub fn write(dir: &Path, ctx: &RunContext) -> Result<bool> {
             "kills": kills,
             "kills_detail": director.map(|d| d.kill_reports.iter()
                 .map(crate::kill_parity::report_json).collect::<Vec<_>>()),
+            "behaviours_detail": director.filter(|_| behaviours).map(|d| d.behaviour_reports
+                .iter().map(crate::behaviour_parity::report_json).collect::<Vec<_>>()),
             "shots_total": first.map(|r| r.shots),
             "stages": { "passed": count("passed"), "failed": count("failed"),
                         "unsupported": count("unsupported") },

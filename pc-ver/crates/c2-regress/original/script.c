@@ -17,6 +17,8 @@
  *   addr NAME HEX    a game global for kill.c (health, characters, count,
  *                    player_x, player_y, player_z, camera_alpha)
  *   release AI DIST  kill.c: the first animal of AI set on the hunter
+ *   place X Y Z YAW, alarm AI [X Z], slay AI [X Z], track hunter,
+ *   untrack, pacify  behave.c
  * VK: a letter or digit, LBUTTON RBUTTON RETURN TAB ESCAPE SPACE SHIFT
  * CONTROL MENU BACK F1..F12 UP DOWN LEFT RIGHT, or a number.
  * The real keyboard and mouse are never read: runs repeat exactly.
@@ -29,12 +31,13 @@
 
 enum {
     A_KEY, A_TAP, A_TEXT, A_MOUSE, A_CLICK, A_LOOK, A_SHOT, A_MARK, A_EXIT, A_UP,
-    A_ADDR, A_RELEASE
+    A_ADDR, A_RELEASE, A_ALARM, A_SLAY, A_TRACK, A_UNTRACK, A_PLACE, A_PACIFY, A_TEXTURE
 };
 
 typedef struct {
     DWORD frame;
-    int kind, a, b;
+    int kind, a, b, c, d;
+    BOOL has_cd;
     char text[96];
 } Action;
 
@@ -106,21 +109,24 @@ static int vk(const char *w) {
     return num(w);
 }
 
-static void add(DWORD f, int kind, int a, int b, const char *text) {
-    Action *x;
+/* Returns the action written (a spare one, never run, when full). */
+static Action *add(DWORD f, int kind, int a, int b, const char *text) {
+    static Action spare;
+    Action *x = &spare;
     if (to_after) {
-        if (nafter >= MAX_AFTER) return;
-        x = &after[nafter++];
+        if (nafter < MAX_AFTER) x = &after[nafter++];
     } else {
-        if (nacts >= MAX_ACTIONS) return;
-        x = &acts[nacts++];
+        if (nacts < MAX_ACTIONS) x = &acts[nacts++];
     }
     x->frame = f;
     x->kind = kind;
     x->a = a;
     x->b = b;
+    x->c = x->d = 0;
+    x->has_cd = FALSE;
     x->text[0] = 0;
     if (text) lstrcpynA(x->text, text, sizeof x->text);
+    return x;
 }
 
 static void sort(Action *v, int n) {
@@ -177,11 +183,37 @@ BOOL script_load(const char *path) {
             while (*rest && *rest != '\r' && *rest != '\n' && i < 95) t[i++] = *rest++;
             t[i] = 0;
             add(f, kind, 0, 0, t);
+        } else if (!lstrcmpA(w, "texture")) {
+            char name[96];
+            word(rest, name, sizeof name);
+            add(f, A_TEXTURE, 0, 0, name);
         } else if (!lstrcmpA(w, "exit")) {
             add(f, A_EXIT, 0, 0, NULL);
         } else if (!lstrcmpA(w, "addr")) {
             rest = word(word(rest, a, sizeof a), b, sizeof b);
             add(f, A_ADDR, (int)hex(b), 0, a);
+        } else if (!lstrcmpA(w, "alarm") || !lstrcmpA(w, "slay")) {
+            char x[32], z[32];
+            Action *n;
+            rest = word(word(word(rest, a, sizeof a), x, sizeof x), z, sizeof z);
+            n = add(f, w[0] == 'a' ? A_ALARM : A_SLAY, num(a), 0, NULL);
+            n->has_cd = x[0] && z[0];
+            n->c = num(x);
+            n->d = num(z);
+        } else if (!lstrcmpA(w, "place")) {
+            char y[32], z[32], yaw[32];
+            Action *n;
+            rest = word(word(word(word(rest, a, sizeof a), y, sizeof y), z, sizeof z), yaw,
+                        sizeof yaw);
+            n = add(f, A_PLACE, num(a), num(y), NULL);
+            n->c = num(z);
+            n->d = num(yaw);
+        } else if (!lstrcmpA(w, "track")) {
+            add(f, A_TRACK, 0, 0, NULL);
+        } else if (!lstrcmpA(w, "untrack")) {
+            add(f, A_UNTRACK, 0, 0, NULL);
+        } else if (!lstrcmpA(w, "pacify")) {
+            add(f, A_PACIFY, 0, 0, NULL);
         } else if (!lstrcmpA(w, "release")) {
             rest = word(word(rest, a, sizeof a), b, sizeof b);
             add(f, A_RELEASE, num(a), num(b), NULL);
@@ -255,6 +287,27 @@ static void run(const Action *x) {
     case A_RELEASE:
         kill_release(x->a, x->b);
         break;
+    case A_ALARM:
+        behave_alarm(x->a, x->has_cd, x->c, x->d);
+        break;
+    case A_SLAY:
+        behave_slay(x->a, x->has_cd, x->c, x->d);
+        break;
+    case A_PACIFY:
+        behave_pacify();
+        break;
+    case A_PLACE:
+        behave_place(x->a, x->b, x->c, x->d);
+        break;
+    case A_TRACK:
+        behave_track_hunter();
+        break;
+    case A_UNTRACK:
+        behave_untrack();
+        break;
+    case A_TEXTURE:
+        texture_run(x->text);
+        break;
     case A_EXIT:
         wsprintfA(m, "frame %lu exit\r\n", frame);
         logs(m);
@@ -269,6 +322,7 @@ void script_step(void) {
     for (i = 0; i < 256; i++) polls[i] = 0;
     while (next_act < nacts && acts[next_act].frame <= frame) run(&acts[next_act++]);
     kill_step();
+    behave_step();
     d = kill_death_frame();
     while (d && next_after < nafter && d + after[next_after].frame <= frame)
         run(&after[next_after++]);

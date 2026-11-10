@@ -3,6 +3,7 @@
 //! and PDF reports. The scripted run itself is `c2_core::scenario`, shared
 //! with the PC renderer (`c2-pc regress`).
 
+pub mod behaviour_parity;
 pub mod compare;
 pub mod game;
 pub mod headless;
@@ -18,3 +19,4 @@ pub mod publish;
 pub mod record;
 pub mod render_state;
 pub mod scenario_file;
+pub mod texture_review;

@@ -212,10 +212,14 @@ fn functional(base: &Value, cand: &Value, bman: &Value, cman: &Value) -> (bool, 
     if bman.pointer("/game/area") != cman.pointer("/game/area") {
         problems.push("map differs from the baseline".into());
     }
-    if f["animals_end"] != f["animals_expected"] {
+    // The behaviour script slays every animal; older runs keep them all.
+    let end = f
+        .get("animals_end_expected")
+        .unwrap_or(&f["animals_expected"]);
+    if &f["animals_end"] != end {
         problems.push(format!(
-            "{} animals at the end, {} expected",
-            f["animals_end"], f["animals_expected"]
+            "{} animals at the end, {end} expected",
+            f["animals_end"]
         ));
     }
     // Older recordings have no `weapons_to_fire`: they fired them all.
@@ -459,6 +463,7 @@ pub fn compare(base: &Path, cand: &Path, th: &Thresholds, same_state: bool) -> R
         "simulation_state_required": same_state,
         "simulation_state_differences": &state_diff,
         "kill_parity": crate::kill_parity::compare(&bm, &cm),
+        "behaviour_parity": crate::behaviour_parity::compare(&bm, &cm),
         "content_matches_baseline": content_matches,
         "baseline_has_screenshots": base.join("screenshots").is_dir(),
     });

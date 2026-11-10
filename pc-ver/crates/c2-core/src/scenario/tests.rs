@@ -90,7 +90,7 @@ fn save() -> Save {
     }
 }
 
-fn scenario() -> Scenario {
+pub(super) fn scenario() -> Scenario {
     Scenario {
         id: "synthetic".into(),
         version: 1,
@@ -111,13 +111,13 @@ fn scenario() -> Scenario {
     }
 }
 
-struct Run {
-    director: Director,
-    hashes: Vec<(String, u64)>,
-    ticks: u32,
+pub(super) struct Run {
+    pub director: Director,
+    pub hashes: Vec<(String, u64)>,
+    pub ticks: u32,
 }
 
-fn run_with(s: &Scenario, weapons: Vec<WeaponInfo>, sabotage: Option<u32>) -> Run {
+pub(super) fn run_with(s: &Scenario, weapons: Vec<WeaponInfo>, sabotage: Option<u32>) -> Run {
     let area = Area::flat(10);
     let names: Vec<String> = weapons.iter().map(|w| w.name.clone()).collect();
     let anims = vec![WeaponAnims::uniform(100); weapons.len()];
@@ -137,8 +137,8 @@ fn run_with(s: &Scenario, weapons: Vec<WeaponInfo>, sabotage: Option<u32>) -> Ru
             b.hunt.herd.chars[1].health = 0;
         }
         let plan = d.plan(&b.hunt, &mut fe);
-        if let (Some(a), Script::Kills(k)) = (plan.arrange, &s.script) {
-            b.hold.arrange(&mut b.hunt, &area, a, k);
+        if let Some(a) = plan.arrange {
+            b.hold.arrange(&mut b.hunt, &area, a, &s.script);
         }
         b.hunt.tick(&area, &cars, &plan.input, TICK_MS, &mut out);
         out.clear();
@@ -154,7 +154,7 @@ fn run_with(s: &Scenario, weapons: Vec<WeaponInfo>, sabotage: Option<u32>) -> Ru
     }
 }
 
-fn status<'a>(r: &'a Run, stage: &str) -> &'a Status {
+pub(super) fn status<'a>(r: &'a Run, stage: &str) -> &'a Status {
     &r.director
         .stages
         .iter()
@@ -163,7 +163,7 @@ fn status<'a>(r: &'a Run, stage: &str) -> &'a Status {
         .status
 }
 
-fn three_guns() -> Vec<WeaponInfo> {
+pub(super) fn three_guns() -> Vec<WeaponInfo> {
     vec![
         weapon("Pistol", 8),
         weapon("Shotgun", 6),
@@ -401,14 +401,11 @@ fn a_frozen_body_fails_its_kill() {
     let model = car();
     let cars: Vec<Option<&Car>> = (0..5).map(|_| Some(&model)).collect();
     let mut d = Director::new(&s, &[], &b.cast);
-    let Script::Kills(k) = &s.script else {
-        unreachable!()
-    };
     let mut out = Vec::new();
     while !d.done() && d.tick() < s.max_ticks(0) {
         let plan = d.plan(&b.hunt, &mut Headless);
         if let Some(a) = plan.arrange {
-            b.hold.arrange(&mut b.hunt, &area, a, k);
+            b.hold.arrange(&mut b.hunt, &area, a, &s.script);
         }
         b.hunt.tick(&area, &cars, &plan.input, TICK_MS, &mut out);
         let lost = b.hold.apply(&mut b.hunt, &area);

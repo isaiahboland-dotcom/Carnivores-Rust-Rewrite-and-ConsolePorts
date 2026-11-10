@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## 0.5.3 — 2026-11-10
+
+Desktop release bundles, texture import fixes and broader original-engine
+regression coverage. Notes: `docs/releases/v0.5.3.md`.
+
+- Add exact-tag Windows/Linux bundle builds and release attachment automation,
+  with the launcher, host engines/tools, recipes, base hashes and file manifests.
+  Game/mod assets and personal instances are excluded. Console payloads and
+  third-party packaging tools remain separate.
+- Windows x64 test builds use the static MSVC runtime; launcher startup is
+  confirmed in a VM. Bundle hunt acceptance, clean-machine checks and physical
+  Windows performance testing remain pending.
+- Support more than 254 PC map object types through `.OBX`/`.RSX` side files and
+  `c2-pc area-layers`; console packs retain their existing limits.
+- Keep phone-menu sprites aligned when base parts are skipped.
+- Extend original-engine tours and spawn diagnostics to Modder's Edition games,
+  correct the initial tour camera, and test 200 MEE character entries.
+- Preserve opaque near-black texels when importing APK models, and fall back to
+  internal model names for texture lookup. Add synthetic import/runtime tests.
+- Add deterministic texture-review captures, original-engine comparisons, local
+  HTML reports and verified lossless capture archives.
+- Extend walking/running, death and settled-body regression checks and record
+  engine revision provenance. Pack-wide human visual approval remains separate.
+- Document Steam Deck updates, Desktop Mode setup and controller limitations.
+- Add platform comparison screenshots and document bundle validation.
+
 ## 0.5.2 — 2026-11-08
 
 Launch protection, predation and regression-tool fixes, and finally some o3ds performance numbers. 

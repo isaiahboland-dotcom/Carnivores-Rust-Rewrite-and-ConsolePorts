@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use c2_core::game::GameEvent;
 use c2_core::prof::SECTIONS;
-use c2_core::scenario::{self, Director, Headless, Inject, Scenario, Script, TICK_MS};
+use c2_core::scenario::{self, Director, Headless, Inject, Scenario, TICK_MS};
 use c2_formats::car::Car;
 
 use crate::game::Game;
@@ -99,8 +99,8 @@ pub fn run(game: &Game, s: &Scenario, inject: Option<Inject>) -> RunData {
                 break;
             }
             let mut plan = d.plan(&b.hunt, &mut fe);
-            if let (Some(a), Script::Kills(k)) = (plan.arrange, &s.script) {
-                b.hold.arrange(&mut b.hunt, &game.area, a, k);
+            if let Some(a) = plan.arrange {
+                b.hold.arrange(&mut b.hunt, &game.area, a, &s.script);
             }
             if let Some(i) = &inject {
                 i.adjust_plan(&mut plan, &b.hunt);

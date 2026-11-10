@@ -171,6 +171,27 @@ pub struct Launch<'a> {
     pub timeout: Duration,
 }
 
+/// Runs one hunt from a clean slate: the last run's pictures and hook log
+/// removed, a fresh hunter (5000 points, 800x600: `OptRes` 4). Returns the
+/// exit code and the hook's log.
+pub fn run_fresh(l: &Launch) -> Result<(Option<i32>, String)> {
+    for e in std::fs::read_dir(l.game_dir)?.flatten() {
+        let n = e.file_name().to_string_lossy().to_ascii_lowercase();
+        if n.ends_with(".bmp") || n == "c2hook.log" {
+            std::fs::remove_file(e.path())?;
+        }
+    }
+    let mut save = c2_core::profile::new_player("regress", 0, 5000);
+    save.options.res = 4;
+    std::fs::write(
+        l.game_dir.join("trophy00.sav"),
+        c2_formats::sav::write(&save),
+    )?;
+    let code = run(l)?;
+    let log = std::fs::read_to_string(l.game_dir.join("c2hook.log")).unwrap_or_default();
+    Ok((code, log))
+}
+
 /// Runs one hunt; returns its exit code (`None`: killed at the timeout).
 pub fn run(l: &Launch) -> Result<Option<i32>> {
     let script = win_path(l.prefix, l.script)?;

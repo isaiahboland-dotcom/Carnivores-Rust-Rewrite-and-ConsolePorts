@@ -37,8 +37,7 @@ impl HuntView {
     /// The kill script's change to the hunt. A revived hunter's death
     /// message goes too, so each kill's pictures stand alone.
     pub(crate) fn regress_arrange(&mut self, hold: &mut Hold, a: Arrange, script: &Script) {
-        let Script::Kills(k) = script else { return };
-        hold.arrange(&mut self.hunt, self.view.area(), a, k);
+        hold.arrange(&mut self.hunt, self.view.area(), a, script);
         if matches!(a, Arrange::Revive(_)) {
             self.message = None;
             self.prev_cam = self.hunt.camera().0;

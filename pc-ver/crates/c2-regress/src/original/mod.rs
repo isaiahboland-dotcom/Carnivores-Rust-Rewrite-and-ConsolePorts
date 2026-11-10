@@ -4,6 +4,7 @@
 //! the same files as our engine's runs, with the same checkpoint names.
 
 pub mod addrs;
+pub mod behave;
 pub mod checks;
 pub mod kills;
 pub mod script;
@@ -79,8 +80,10 @@ pub fn run(o: &Original, dir: &Path) -> Result<bool> {
         .as_deref()
         .context("the game section names no area")?;
     std::fs::create_dir_all(o.work)?;
-    if let c2_core::scenario::Script::Kills(k) = &o.scenario.script {
-        return kills::run(o, dir, k, area);
+    match &o.scenario.script {
+        c2_core::scenario::Script::Kills(k) => return kills::run(o, dir, k, area),
+        c2_core::scenario::Script::Behaviours(b) => return behave::run(o, dir, b, area),
+        c2_core::scenario::Script::Tour => {}
     }
     let weapons = o.game.weapon_names();
     let slots = script::menu_slots(o.game_dir, area);

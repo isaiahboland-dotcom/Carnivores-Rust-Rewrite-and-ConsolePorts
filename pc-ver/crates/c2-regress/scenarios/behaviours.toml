@@ -1,0 +1,72 @@
+# Behaviour regression scenario (docs/REGRESSION.md, "Behaviours").
+#
+# The hunter walks, then runs, along his view, and his ground speed is
+# measured. Each animal in turn is alarmed and watched as it runs, then
+# put back. Then each is slain and watched as it dies: the death clip must
+# play and hold its last frame, and the body must stay where it fell.
+# The same stages run in the original engine (`--engine original`), so
+# speeds and clips can be compared (`behaviour_parity`).
+#
+# Bump `version` whenever anything below changes what a run does.
+
+[scenario]
+id = "behaviours"
+version = 1
+script = "behaviours"
+seed = 20261109
+# 10 ms ticks: 2 s of warm-up.
+warmup_ticks = 200
+settle_ticks = 30
+timeout_ticks = 600
+
+[view]
+landing = 0
+yaw_deg = 0.0
+pitch_deg = 0.0
+
+[anchor]
+# Animals wait 30 cells to the hunter's left, 6 cells apart, pinned until
+# their turn: far enough that a charging predator never reaches him. (On
+# Carnivores 2's area 2 the right side has a spot where a Chasmosaurus
+# cannot run, in either engine.) The original's animals are set down on
+# the same spots.
+distance = 7680.0
+bearing_deg = 270.0
+fire_clearance_deg = 0.0
+offsets = [[0.0, -2304.0], [0.0, -768.0], [0.0, 768.0], [0.0, 2304.0]]
+
+[behaviours]
+# 3 s of forward held; the last 1.5 s measured (the hunter takes under
+# 1 s to reach full speed).
+move_ticks = 300
+measure_ticks = 150
+# The original's caps: 0.3 units/ms walking, 0.7 running
+# (`ProcessPlayerMovement`), on open ground.
+walk_speed = 300.0
+run_speed = 700.0
+speed_tolerance = 0.05
+# Up to 10 s after the alarm (a T-Rex turns, looks and sniffs before it
+# charges), less if it comes within 2048 units; its fastest 1.5 s must
+# average this.
+run_ticks = 1000
+min_run_speed = 400.0
+# 4 s after the animal is slain: its pose must change on 20 ticks, then
+# hold for the last 0.5 s, and the body may slide at most 256 units.
+die_ticks = 400
+min_moving_ticks = 20
+hold_ticks = 50
+max_drift = 256.0
+
+[[game]]
+id = "c2"
+name = "Carnivores 2"
+status = "supported"
+area = "AREA2"
+species = ["ai:18", "ai:13", "ai:12", "ai:14"]
+
+[[game]]
+id = "ice-age"
+name = "Carnivores: Ice Age"
+status = "supported"
+area = "AREA4"
+species = ["ai:17", "ai:16", "ai:18", "ai:13"]

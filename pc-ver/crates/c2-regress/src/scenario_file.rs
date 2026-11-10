@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use anyhow::{bail, Context, Result};
-use c2_core::scenario::{KillPlan, Scenario, Script, SpeciesRef};
+use c2_core::scenario::{BehaviourPlan, KillPlan, Scenario, Script, SpeciesRef};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -16,7 +16,7 @@ struct Head {
     warmup_ticks: u32,
     settle_ticks: u32,
     timeout_ticks: u32,
-    /// `tour` (default) or `kills`.
+    /// `tour` (default), `kills` or `behaviours`.
     #[serde(default)]
     script: ScriptName,
 }
@@ -27,6 +27,7 @@ enum ScriptName {
     #[default]
     Tour,
     Kills,
+    Behaviours,
 }
 
 /// `[kills]`: the kill script's distances and timings (`KillPlan`).
@@ -39,6 +40,23 @@ struct Kills {
     min_moving_ticks: u32,
     body_reach: f32,
     min_body_reach: f32,
+}
+
+/// `[behaviours]`: the behaviour script's timings and limits
+/// (`BehaviourPlan`).
+#[derive(Debug, Deserialize)]
+struct Behaviours {
+    move_ticks: u32,
+    measure_ticks: u32,
+    walk_speed: f32,
+    run_speed: f32,
+    speed_tolerance: f32,
+    run_ticks: u32,
+    min_run_speed: f32,
+    die_ticks: u32,
+    min_moving_ticks: u32,
+    hold_ticks: u32,
+    max_drift: f32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,6 +110,7 @@ struct Raw {
     view: View,
     anchor: Anchor,
     kills: Option<Kills>,
+    behaviours: Option<Behaviours>,
     game: Vec<GameDef>,
 }
 
@@ -125,6 +144,9 @@ impl ScenarioFile {
         }
         if raw.scenario.script == ScriptName::Kills && raw.kills.is_none() {
             bail!("script = \"kills\" needs a [kills] section");
+        }
+        if raw.scenario.script == ScriptName::Behaviours && raw.behaviours.is_none() {
+            bail!("script = \"behaviours\" needs a [behaviours] section");
         }
         let hash = format!("{:x}", Sha256::digest(text.replace("\r\n", "\n")));
         Ok(Self { raw, hash })
@@ -175,7 +197,7 @@ impl ScenarioFile {
         // takes the first offsets it needs (games have different killers).
         let fits = match h.script {
             ScriptName::Tour => species.len() == a.offsets.len(),
-            ScriptName::Kills => species.len() <= a.offsets.len(),
+            ScriptName::Kills | ScriptName::Behaviours => species.len() <= a.offsets.len(),
         };
         if !fits || species.is_empty() {
             bail!(
@@ -185,8 +207,21 @@ impl ScenarioFile {
                 a.offsets.len()
             );
         }
-        let script = match (h.script, &self.raw.kills) {
-            (ScriptName::Kills, Some(k)) => Script::Kills(KillPlan {
+        let script = match (h.script, &self.raw.kills, &self.raw.behaviours) {
+            (ScriptName::Behaviours, _, Some(b)) => Script::Behaviours(BehaviourPlan {
+                move_ticks: b.move_ticks,
+                measure_ticks: b.measure_ticks,
+                walk_speed: b.walk_speed,
+                run_speed: b.run_speed,
+                speed_tolerance: b.speed_tolerance,
+                run_ticks: b.run_ticks,
+                min_run_speed: b.min_run_speed,
+                die_ticks: b.die_ticks,
+                min_moving_ticks: b.min_moving_ticks,
+                hold_ticks: b.hold_ticks,
+                max_drift: b.max_drift,
+            }),
+            (ScriptName::Kills, Some(k), _) => Script::Kills(KillPlan {
                 start_distance: k.start_distance,
                 timeout_ticks: k.timeout_ticks,
                 mid_ticks: k.mid_ticks,

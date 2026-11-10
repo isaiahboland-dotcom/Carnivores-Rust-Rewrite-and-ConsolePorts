@@ -120,6 +120,33 @@ fn model_reads_like_a_car_mesh() {
 }
 
 #[test]
+fn texture_fidelity_uses_internal_model_name_when_file_stem_differs() {
+    struct Renamed;
+    impl Assets for Renamed {
+        fn get(&self, path: &str) -> Option<Vec<u8>> {
+            match path {
+                "assets/models/characters/renamed.3dn" => Some(model()), // internal name: rex
+                "assets/textures/characters/rex.crt" => {
+                    let mut data = vec![0, 1, 0, 1, 32];
+                    data.extend([255, 0, 0, 255].repeat(256 * 256));
+                    Some(data)
+                }
+                _ => None,
+            }
+        }
+    }
+    let car = car_from(
+        &Cat {
+            model: "renamed.3dn".into(),
+            ..Default::default()
+        },
+        &Renamed,
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(car.mesh.texture, vec![0x7c00; 256 * 256]);
+}
+
+#[test]
 fn animation_needs_the_models_vertex_count() {
     let mut d = Vec::new();
     for v in [20u32, 2, 3] {

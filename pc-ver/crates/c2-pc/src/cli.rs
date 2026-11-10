@@ -28,6 +28,7 @@ const USAGE: &str = "usage:
   c2-pc recipe base   --base <GAME_DIR> [--id c2-vanilla|ice-age] [--out recipes/bases/c2-vanilla.toml]
   c2-pc area-layers <BASE.MAP> --layer <LAYER.MAP>... --out <DIR>
                                         (copies of an area joined past 254 kinds of object: AREAn.OBX + .RSX)
+  c2-pc texture-review --manifest FILE --out NEW_DIR [--baseline RUN_DIR] [--limit N] [--keep-models]
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
   c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--models] [--foliage CELLS] [--high-end] [--shot out.png]
   c2-pc hunt  <AREA.MAP|TROPHY.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all]
@@ -90,6 +91,9 @@ const VALUE_FLAGS: &[&str] = &[
     "game",
     "size",
     "inject",
+    "manifest",
+    "baseline",
+    "limit",
     // Older launchers' survival choices (read and ignored: survival is
     // always Classic / Modded now).
     "survival-modes",
@@ -321,6 +325,21 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
             out.display()
         );
         return Ok(());
+    }
+    if cmd == "texture-review" {
+        return crate::texture_review::run(
+            std::path::Path::new(
+                o.value("manifest")
+                    .context("texture-review needs --manifest FILE")?,
+            ),
+            std::path::Path::new(
+                o.value("out")
+                    .context("texture-review needs --out NEW_DIR")?,
+            ),
+            o.value("baseline").map(std::path::Path::new),
+            o.value("limit").map(str::parse).transpose()?,
+            o.has("keep-models"),
+        );
     }
     if cmd == "regress" {
         let need = |k: &str| o.value(k).with_context(|| format!("regress needs --{k}"));

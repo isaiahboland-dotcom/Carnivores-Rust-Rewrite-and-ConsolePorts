@@ -31,6 +31,7 @@ pub struct ModelView {
     anim: usize,
     time_ms: f32,
     paused: bool,
+    review: Option<c2_regress::texture_review::CaptureRecipe>,
 }
 
 pub fn list_models(path: &std::path::Path) -> Result<Vec<PathBuf>> {
@@ -63,6 +64,29 @@ pub fn list_models(path: &std::path::Path) -> Result<Vec<PathBuf>> {
 }
 
 impl ModelView {
+    /// Fixed framing over all animation frames, shared by both review sides.
+    pub(crate) fn review_frame(&mut self, center: [f32; 3], distance: f32) -> Result<()> {
+        anyhow::ensure!(self.loaded.is_some(), "model load failed: {:?}", self.error);
+        self.cam.target = Vec3::from(center);
+        self.cam.dist = distance;
+        self.cam.pitch = 0.0;
+        Ok(())
+    }
+
+    pub(crate) fn review_recipe(
+        &mut self,
+        recipe: c2_regress::texture_review::CaptureRecipe,
+    ) -> Result<()> {
+        recipe.validate()?;
+        self.review_frame(recipe.center, recipe.distance)?;
+        self.anim = recipe.animation;
+        self.time_ms = recipe.time_ms as f32;
+        self.cam.yaw = recipe.yaw;
+        self.cam.pitch = recipe.pitch;
+        self.paused = true;
+        self.review = Some(recipe);
+        Ok(())
+    }
     pub fn new(gpu: &Gpu, files: Vec<PathBuf>, anim: usize, time_ms: f32, yaw: f32) -> Self {
         let mut s = Self {
             files,
@@ -79,6 +103,7 @@ impl ModelView {
             anim,
             time_ms,
             paused: false,
+            review: None,
         };
         s.load(gpu);
         s
@@ -108,7 +133,14 @@ impl ModelView {
                 // Characters get no CalcLights in the original (commented out in
                 // LoadCharacterInfo), so they are unlit here too.
                 let gpu_model = GpuModel::new(gpu, &prepared, Vec::new());
-                let renderer = ModelRenderer::new(gpu, &self.globals, &[&prepared.texture_rgba]);
+                // GLES infers a one-layer texture as D2 even though the shader
+                // samples D2Array. Two identical layers retain layer 0's pixels
+                // while ensuring a real array allocation on that backend.
+                let renderer = ModelRenderer::new(
+                    gpu,
+                    &self.globals,
+                    &[&prepared.texture_rgba, &prepared.texture_rgba],
+                );
                 if car.as_ref().is_none_or(|c| self.anim >= c.animations.len()) {
                     self.anim = 0;
                 }
@@ -220,7 +252,9 @@ impl Scene for ModelView {
     }
 
     fn clear_color(&self) -> [f64; 3] {
-        [0.18, 0.2, 0.24]
+        self.review
+            .as_ref()
+            .map_or([0.18, 0.2, 0.24], |r| r.background)
     }
 
     fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, screen: (u32, u32)) {
@@ -230,25 +264,38 @@ impl Scene for ModelView {
             gpu,
             &FrameParams {
                 view: self.cam.view(),
-                proj: projection(aspect, self.cam.dist * 10.0 + 1000.0, 1.0),
+                proj: self.review.as_ref().map_or_else(
+                    || projection(aspect, self.cam.dist * 10.0 + 1000.0, 1.0),
+                    |r| {
+                        glam::camera::rh::proj::directx::perspective(
+                            2.0 * r.vertical_half_angle_tangent.atan(),
+                            aspect,
+                            r.near,
+                            r.far,
+                        )
+                    },
+                ),
                 eye: self.cam.eye(),
                 fog_rgb: [0.0; 3],
-                fog: (1e9, 2e9),
-                daylight: [0.0, 1.0, 0.0],
+                fog: self
+                    .review
+                    .as_ref()
+                    .map_or((1e9, 2e9), |r| (r.fog[0], r.fog[1])),
+                daylight: self.review.as_ref().map_or([0.0, 1.0, 0.0], |r| r.daylight),
                 stars: false,
                 night_vision: 0.0,
-                ambient: 1.0,
+                ambient: self.review.as_ref().map_or(1.0, |r| r.ambient),
                 flashlight: false,
                 narrow_flashlight: false,
                 time_s: 0.0,
-                brightness: 1.0,
+                brightness: self.review.as_ref().map_or(1.0, |r| r.brightness),
             },
         );
         let inst = [Instance {
             dither: 0.0,
             offset: [0.0; 3],
             turns: 0.0,
-            light: 1.0,
+            light: self.review.as_ref().map_or(1.0, |r| r.instance_light),
             layer: 0,
         }];
         l.renderer

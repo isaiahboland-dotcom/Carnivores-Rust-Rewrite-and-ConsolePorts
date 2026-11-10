@@ -13,7 +13,7 @@ A fan-made, ground-up Rust rewrite of **Carnivores 2** (Action Forms, 1999), wit
 You need your own copy of Carnivores 2: this project contains **no game files and no mod files**, only
 code, documentation and recipes (lists of credits, download links and file hashes).
 
-**v0.5.0:** [Release notes](docs/releases/v0.5.0.md) · [Changelog](CHANGELOG.md) · [Public roadmap](docs/ROADMAP.md)
+**v0.5.3:** [Release notes](docs/releases/v0.5.3.md) · [Changelog](CHANGELOG.md) · [Public roadmap](docs/ROADMAP.md)
 
 ---
 

@@ -1,0 +1,65 @@
+name: Release bundles
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build (never a branch)
+        required: true
+        type: string
+      attach:
+        description: Attach to the existing release after reviewing validation
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux
+            target: x86_64-unknown-linux-gnu
+            flags: ''
+          - os: windows-latest
+            platform: windows
+            target: x86_64-pc-windows-msvc
+            flags: '-C target-feature=+crt-static'
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTFLAGS: ${{ matrix.flags }}
+      RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag || github.event.release.tag_name }}
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
+      - run: python -m unittest discover -s tools -p test_release_bundle.py
+      - run: cargo build --locked --release --manifest-path pc-ver/Cargo.toml --target ${{ matrix.target }} -p c2-pc -p c2-launcher -p c2-vr
+      - run: cargo +stable build --locked --release --manifest-path 3ds-ver/Cargo.toml --target ${{ matrix.target }} -p c2-cook
+      - run: python tools/release_bundle.py --platform ${{ matrix.platform }} --pc pc-ver/target/${{ matrix.target }}/release --cooker 3ds-ver/target/${{ matrix.target }}/release --output out/bundles
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.platform }}
+          path: out/bundles/*
+          if-no-files-found: error
+  attach:
+    needs: bundle
+    if: github.event_name == 'release' || inputs.attach
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+      RUN_ID: ${{ github.run_id }}
+    steps:
+      - run: gh run download "$RUN_ID" --pattern 'release-*' --dir bundles
+      - run: gh release upload "$RELEASE_TAG" bundles/release-windows/windows.zip bundles/release-linux/linux.tar

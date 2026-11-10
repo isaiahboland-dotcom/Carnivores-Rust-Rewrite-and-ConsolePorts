@@ -7,6 +7,10 @@ repository. Recordings, screenshots and reports stay local
 (`regression-sim-recordings/` is gitignored) because they are made from the
 player's own game files.
 
+For isolated animal texture captures from PC games, APKs and addons, see
+[Texture fidelity review](TEXTURE-REVIEW.md). Its screenshots and review reports
+stay local; its runner and configuration format are public.
+
 ## Validating a change
 
 Much of this project's code is written with AI assistance. A fix or an
@@ -92,7 +96,7 @@ make the comparison fail.
 
 | Where | What |
 |---|---|
-| `pc-ver/crates/c2-core/src/scenario/` | The scenario run, shared by every frontend: set-up (`build`), the scripts (`Director`; the kill script's steps and checks in `kills.rs`), pinning (`Hold`), state hashes, deliberate faults (`Inject`). No I/O. Compiles for the consoles' `portable-hunt` target. |
+| `pc-ver/crates/c2-core/src/scenario/` | The scenario run, shared by every frontend: set-up (`build`, `layout`), the scripts (`Director`; the kill script's steps and checks in `kills.rs`, the behaviour script's in `behaviour.rs`), pinning (`Hold`), state hashes, deliberate faults (`Inject`). No I/O. Compiles for the consoles' `portable-hunt` target. |
 | `pc-ver/crates/c2-regress/` | `c2-regress` CLI: scenario files, the headless runner, recordings, comparison, `report.html` and the screenshot PDF. |
 | `pc-ver/crates/c2-pc/src/regress.rs`, `hunt_view/regress.rs` | `c2-pc regress`: the same script through the PC renderer, offscreen. Started by `c2-regress run`. |
 | `pc-ver/crates/c2-regress/scenarios/` | Versioned scenario files. |
@@ -287,6 +291,74 @@ The original engines run the same scenario for `c2` and `ice-age`
 ([Kill animations in the original](#kill-animations-in-the-original)).
 Three repeats are identical, and the render pass gives the same state
 hashes as the headless run.
+
+## Behaviours: `behaviours`
+
+File: `scenarios/behaviours.toml` (version 1, `script = "behaviours"`).
+How the hunter and the animals move, measured the same way in our engine
+and in the original, so the two can be set side by side.
+
+1. Loads the area by day, seed 20261109. The hunter stands at the first
+   landing, looking along yaw 0.
+2. Parks the animals 30 cells to the hunter's left, 6 cells apart, pinned.
+3. Warm-up: 200 ticks (2 s).
+4. `hunter_walk`, `hunter_run`: the hunter is no longer pinned (his view
+   still is) and holds forward for 3 s, the second time in run mode. His
+   ground speed over the last 1.5 s must be within 5% of the original's
+   caps, 0.3 and 0.7 units/ms (`walk_speed`, `run_speed`: 300 and 700
+   units/s). Then he is put back on the landing.
+5. `run_NN_<name>`, for each animal: it is alarmed where it stands
+   (`State = 2`, `AfraidTime` 20 s, as a shot or a heard hunter) and let
+   go. Herbivores flee, predators charge. Watched for up to 10 s, or until
+   it comes within 2048 units of the hunter (before a predator can reach
+   him). `runs`: its fastest 1.5 s must average at least 400 units/s (a
+   T-Rex first turns, looks and sniffs). Then it is calmed and pinned at
+   its spot again.
+6. `die_NN_<name>`, for each animal: its health goes to 0 from a
+   standstill (the original's way into `Animate*Dead`), and it is watched
+   for 4 s. `death_clip_plays`: its pose changes on at least 20 ticks;
+   `death_pose_holds`: then holds for the last 0.5 s; `body_stays`: it
+   ends within 256 units of where it was slain.
+7. `animals_dead`: every animal is dead at the end. Each stage also checks
+   `hunter_alive`.
+
+Each stage records `functional.behaviours_detail`: the speed, the
+animal's size (`scale`) and the speed per unit of size, the clips played,
+how long the last pose held, and how far the subject got. An animal's
+speeds are its species' times its size, and each engine draws its own
+sizes, so `compare ORIGINAL_RUN OUR_RUN` compares animals' speeds per unit
+of size (`behaviour_parity` in `comparison.json`: speeds more than 5%
+apart, a different running or death clip, a body that slides more than 64
+units further). Like kill parity, the differences do not fail the
+comparison.
+
+| Game | Animals | Area |
+|---|---|---|
+| `c2` | T-Rex, Allosaurus, Stegosaurus, Chasmosaurus | AREA2 |
+| `ice-age` | Mammoth, Smilodon, Bear, Woolly rhinoceros | AREA4 |
+
+Results (2026-11-09, PC, Linux, and the original under Wine 11): on `c2`
+every stage passes in both engines, our three repeats and the original's
+two are identical, and `behaviour_parity` lists no differences:
+
+| Stage | Original | Ours |
+|---|---|---|
+| Hunter walk, run (units/s) | 300, 700 | 300, 700 |
+| T-Rex, Allosaurus, Stegosaurus, Chasmosaurus run (units/s per unit of size) | 1625, 1201, 961, 1201 | 1626, 1200, 960, 1200 |
+| Death clips (T-Rex, Allosaurus, Stegosaurus, Chasmosaurus) | 8, 5, 2, 5 | same |
+
+The death poses hold 40-50 ms longer in ours: the original's first sample
+is taken before the frame that starts the death clip, and its frames are
+20 ms. On area 2's other side, 30 cells to the right, one spot stops a
+Chasmosaurus from running in both engines; the scenario uses the left.
+
+`ice-age` is not yet meaningful: `c2-regress` loads an Ice Age folder
+without the Ice Age rules layer that play applies (see Limitations), so
+its animals run Carnivores 2's AIs (its Bear runs as the T-Rex, and its
+death clip number is the T-Rex's).
+
+Not covered yet: eating and idling (random choices that differ between
+engines), the spawn of a whole hunt, and the radar.
 
 ## Commands
 
@@ -584,6 +656,34 @@ globals (`original/kill.c`):
   movement counts are in frames, so `min_moving_ticks` is halved.
   `--repeat` compares the screenshots and the logged poses.
 
+### Behaviours in the original
+
+`behaviours.toml` also runs with `--engine original`, for the stock games:
+one hunt with every scenario animal picked in the menu. The hook
+(`original/behave.c`) adds:
+
+- `place X Y Z YAW`: the hunter on our engine's landing. The yaw goes to
+  `PlayerAlpha`, which `c2-regress` takes to be the global just below the
+  hunter's position (`PlayerX/Y/Z` lie 4 bytes apart, downwards, in both
+  shipped renderers); the hook writes it only while it holds the same
+  value as `CameraAlpha`, and logs whether it did.
+- `alarm AI X Z`, `slay AI X Z`: the first living animal of that AI, set
+  down on our engine's spot for that animal, then alarmed or slain as
+  ours. A calmed one goes back to its spot.
+- `track hunter`, `untrack`: the watched subject (hunter or animal) is
+  logged every frame: clip, frame time, position and size. A runner that
+  comes within 2048 units of the hunter is calmed there, as ours ends its
+  watch.
+- `pacify`: every other animal is calmed each frame (`State` 0, which no
+  AI kills from). The original places many roaming animals of each picked
+  AI, and without this one of them found and killed the hunter mid-run
+  (the original then ends the hunt 12 s later); ours has only the four,
+  pinned 30 cells away.
+
+The checks and the summaries are our engine's (`Subject::verdicts`), on
+the logged samples (20 ms frames). `--repeat` compares the screenshots
+and the logs.
+
 Each run records `functional.kills_detail`: per kill, the time from
 release to kill, the body's and the killer's clips, and whether the body
 lies on the killer. Ours records the same. `compare ORIGINAL_RUN OUR_RUN`
@@ -610,6 +710,12 @@ Carnivores 2's generic kill. See `docs/DECISIONS.md` (2026-11-08).
 ## Limitations
 
 - C1 is unsupported (no loader). Fallen Kings is not yet baselined.
+- `c2-regress` (headless and render pass) loads a game folder as it is.
+  Play builds the folder through `c2_mods::vanilla`, which adds the Ice
+  Age rules layer (`c2_mods::ice_age`), the Triassic compatibility rules
+  and default spawn tables. So every Ice Age run here, in every scenario,
+  plays Ice Age's animals with Carnivores 2's AIs, not as the game is
+  played. Fixing it changes the published Ice Age baselines.
 - The kill scenario has no published baselines yet. Under the original it
   runs the stock games only (the original's menu picks animals by AI
   number; add-on and Modder's Edition packs need their own executables).

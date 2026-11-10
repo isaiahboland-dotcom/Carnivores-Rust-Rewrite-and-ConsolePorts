@@ -1,0 +1,49 @@
+# Separate routine texture sweeps from exhaustive animation archives.
+# Use asset_type = "animation-archive" with animations = [] for every clip.
+asset_type = "texture-sweep"
+# Copy into source/ (gitignored), then edit local paths and add sources.
+# Paths are relative to the manifest. No assets are distributed with the runner.
+width = 960
+height = 720
+# Compact pass: one pose in clip 0, both sides (two images per model).
+phases = [0.33]
+animations = [0]
+keep_models = false
+# Exhaustive pass: animations = [], phases = [0.0, 0.33, 0.67]
+channel_tolerance = 12
+changed_fraction = 0.005
+
+[[source]]
+id = "my-pc-animals"
+kind = "game"
+path = "path/to/owned/game"
+# game: unique character models named by HUNTDAT/_RES.TXT.
+# cars: all CAR files recursively, useful for variants and loose addons.
+# apk: all assets/characters/*.cat, converted anew using the current importer.
+# include/exclude contain exact, case-insensitive backend-relative paths.
+# Use include/exclude to select animals and omit weapons, hunters and effects.
+# include = ["HUNTDAT/myanimal.car"]
+# exclude = ["HUNTDAT/blank.car"]
+
+# [[source]]
+# id = "my-addon"
+# kind = "cars"
+# path = "path/to/addon"
+# include = ["myanimal.car"]
+
+# [[source]]
+# id = "my-apk"
+# kind = "apk"
+# path = "path/to/owned.apk"
+# include = ["assets/characters/myanimal.cat"]
+
+# [[source]]
+# id = "standalone-variants"
+# kind = "cars"
+# path = "path/to/owned-mod.zip"
+# prefix = "Mod folder/HUNTDAT/MODELS"
+# exclude = ["Hunter1.car"]
+
+# Camera offsets for planar/edge-on animals, per source (optional):
+# yaw_offset_degrees = 15.0
+# pitch_degrees = 15.0

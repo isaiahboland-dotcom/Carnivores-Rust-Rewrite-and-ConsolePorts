@@ -46,8 +46,9 @@ pub struct KillPlan {
     pub min_body_reach: f32,
 }
 
-/// A change to the hunt between ticks, asked for by the kill script and
-/// made by the frontend (`Hold::arrange`), which owns the hunt.
+/// A change to the hunt between ticks, asked for by the kill and
+/// behaviour scripts and made by the frontend (`Hold::arrange`), which
+/// owns the hunt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Arrange {
     /// Scenario animal `n` is set down in front of the hunter, alarmed and
@@ -56,14 +57,38 @@ pub enum Arrange {
     /// The hunter is brought back: the body goes, the death camera ends,
     /// and animal `n` is calmed and pinned again where it stood.
     Revive(usize),
+    /// Behaviours: the hunter may move (his view stays pinned), then is
+    /// put back on his landing, standing still.
+    FreeHunter,
+    PinHunter,
+    /// Behaviours: animal `n` is alarmed where it stands and no longer
+    /// pinned; then calmed and pinned again where it was placed.
+    Alarm(usize),
+    Calm(usize),
+    /// Behaviours: animal `n`'s health goes to 0 and it stays dead.
+    Slay(usize),
+}
+
+impl Arrange {
+    /// Run even when its stage fails, so the next stage starts as planned.
+    pub fn restores(self) -> bool {
+        matches!(
+            self,
+            Arrange::Revive(_) | Arrange::PinHunter | Arrange::Calm(_)
+        )
+    }
 }
 
 impl Hold {
     /// Makes `a` (test runs only).
-    pub fn arrange(&mut self, hunt: &mut Hunt, area: &Area, a: Arrange, plan: &KillPlan) {
-        match a {
-            Arrange::Release(n) => self.release(hunt, area, n, plan.start_distance),
-            Arrange::Revive(n) => self.revive(hunt, area, n),
+    pub fn arrange(&mut self, hunt: &mut Hunt, area: &Area, a: Arrange, script: &super::Script) {
+        match (a, script) {
+            (Arrange::Release(n), super::Script::Kills(k)) => {
+                self.release(hunt, area, n, k.start_distance)
+            }
+            (Arrange::Revive(n), _) => self.revive(hunt, area, n),
+            (Arrange::Release(_), _) => {}
+            _ => self.behave(hunt, area, a),
         }
     }
 

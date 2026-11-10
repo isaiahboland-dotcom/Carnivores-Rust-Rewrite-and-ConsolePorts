@@ -431,7 +431,14 @@ fn car_texture(img: &Rgba) -> Vec<u16> {
             out.push(if p[3] < 128 && dim {
                 0
             } else {
-                (u16::from(p[0] >> 3) << 10) | (u16::from(p[1] >> 3) << 5) | u16::from(p[2] >> 3)
+                let rgb = (u16::from(p[0] >> 3) << 10)
+                    | (u16::from(p[1] >> 3) << 5)
+                    | u16::from(p[2] >> 3);
+                // Zero is the CAR transparency key. Opaque black (including
+                // near-black rounded down by RGB555) must stay visible when
+                // another face enables opacity for the model's texture.
+                // The nearest nonzero color costs at most one 5-bit step.
+                rgb.max(1)
             });
         }
     }
@@ -602,13 +609,17 @@ pub fn car_from_in(cat: &Cat, assets: &dyn Assets, kind: &str) -> Result<Car, Fo
     let model_path = format!("assets/models/{kind}/{}", cat.model);
     let (name, mut mesh) = parse_3dn(&assets.get(&model_path).ok_or_else(|| missing(model_path))?)?;
     let stem = cat.model.trim_end_matches(".3dn");
-    for ext in ["pkm", "crt", "tga"] {
-        let p = format!("assets/textures/{kind}/{stem}.{ext}");
-        if let Some(d) = assets.get(&p) {
-            let img = decode_texture(&p, &d)?;
-            mark_see_through(&mut mesh, &img);
-            mesh.texture = car_texture(&img);
-            break;
+    // The texture normally matches the filename, but some APK assets use
+    // the internal 3DN name (e.g. Hyaenodon's `hyaenodon_model`).
+    'texture: for texture_name in [stem, name.as_str()] {
+        for ext in ["pkm", "crt", "tga"] {
+            let p = format!("assets/textures/{kind}/{texture_name}.{ext}");
+            if let Some(d) = assets.get(&p) {
+                let img = decode_texture(&p, &d)?;
+                mark_see_through(&mut mesh, &img);
+                mesh.texture = car_texture(&img);
+                break 'texture;
+            }
         }
     }
     let vc = mesh.vertices.len();

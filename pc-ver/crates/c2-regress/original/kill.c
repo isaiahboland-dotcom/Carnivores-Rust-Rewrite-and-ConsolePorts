@@ -16,28 +16,10 @@
  */
 #include "hook.h"
 
-enum {
-    CH_SIZE = 156,
-    CH_AI = 4,
-    CH_STATE = 16,
-    CH_NOFIND = 24,
-    CH_AFRAID = 28,
-    CH_TGTIME = 32,
-    CH_PHASE = 48,
-    CH_FTIME = 52,
-    CH_SCALE = 68,
-    CH_TGX = 84,
-    CH_TGZ = 88,
-    CH_POSX = 92,
-    CH_POSY = 96,
-    CH_POSZ = 100,
-    CH_HEALTH = 144,
-};
-
 /* MSVC's marker that floating point is used; no C runtime provides it. */
 int _fltused = 0;
 
-static DWORD a_health, a_chars, a_count, a_px, a_py, a_pz, a_cam;
+static DWORD a_health, a_chars, a_count, a_px, a_py, a_pz, a_cam, a_palpha;
 static DWORD image_lo, image_hi;
 static int released = -1;
 static DWORD death = 0;
@@ -56,7 +38,7 @@ static float fcos(float x) {
 }
 
 /* Rounded towards zero, without the C runtime's conversion helper. */
-static int to_int(float x) {
+int to_int(float x) {
     int r;
     short cw, trunc;
     __asm__ volatile("fnstcw %0" : "=m"(cw));
@@ -77,16 +59,35 @@ static BOOL ok(DWORD a, DWORD n) {
     return a >= image_lo && a + n <= image_hi;
 }
 
-static BOOL ready(void) {
+BOOL game_ready(void) {
     return a_health && a_chars && a_count && a_px && a_pz && a_cam && ok(a_health, 4) &&
            ok(a_count, 4) && ok(a_px, 4) && ok(a_py, 4) && ok(a_pz, 4) && ok(a_cam, 4) &&
            ok(a_chars, CH_SIZE);
 }
 
-static int *ch_int(int i, int off) { return (int *)(a_chars + (DWORD)i * CH_SIZE + off); }
-static float *ch_float(int i, int off) { return (float *)(a_chars + (DWORD)i * CH_SIZE + off); }
+int *ch_int(int i, int off) { return (int *)(a_chars + (DWORD)i * CH_SIZE + off); }
+float *ch_float(int i, int off) { return (float *)(a_chars + (DWORD)i * CH_SIZE + off); }
+float player_x(void) { return *(float *)a_px; }
+float player_z(void) { return *(float *)a_pz; }
 
-static int count(void) {
+void set_player(float x, float y, float z) {
+    *(float *)a_px = x;
+    *(float *)a_py = y;
+    *(float *)a_pz = z;
+}
+
+/* `player_alpha` is a guess (the global next to the hunter's position);
+ * it is written only while it holds what `CameraAlpha` holds. */
+BOOL set_player_alpha(float a) {
+    if (!a_palpha || !ok(a_palpha, 4) || *(float *)a_palpha != *(float *)a_cam) return FALSE;
+    *(float *)a_palpha = a;
+    return TRUE;
+}
+
+float player_y(void) { return *(float *)a_py; }
+int player_health(void) { return *(int *)a_health; }
+
+int game_count(void) {
     int n = *(int *)a_count;
     /* Characters[] has room for 256 in both games; never read past it. */
     if (n < 0) return 0;
@@ -98,7 +99,7 @@ void kill_addr(const char *name, DWORD v) {
     static const struct { const char *n; DWORD *a; } names[] = {
         {"health", &a_health}, {"characters", &a_chars}, {"count", &a_count},
         {"player_x", &a_px},   {"player_y", &a_py},      {"player_z", &a_pz},
-        {"camera_alpha", &a_cam},
+        {"camera_alpha", &a_cam}, {"player_alpha", &a_palpha},
     };
     unsigned i;
     for (i = 0; i < sizeof names / sizeof names[0]; i++)
@@ -111,11 +112,11 @@ void kill_release(int ai, int dist) {
     char m[128];
     int i, n;
     float a, px, pz;
-    if (!ready()) {
+    if (!game_ready()) {
         logs("release: addresses missing or outside the executable\r\n");
         return;
     }
-    n = count();
+    n = game_count();
     for (i = 0; i < n; i++)
         if (*ch_int(i, CH_AI) == ai && *ch_int(i, CH_HEALTH) > 0) break;
     if (i == n) {
@@ -152,8 +153,8 @@ static void pose_text(char *out, int i) {
 void kill_step(void) {
     char m[200], b[80], k[80];
     int n;
-    if (released < 0 || !ready()) return;
-    n = count();
+    if (released < 0 || !game_ready()) return;
+    n = game_count();
     if (!death) {
         if (*(int *)a_health != 0) return;
         death = frame;

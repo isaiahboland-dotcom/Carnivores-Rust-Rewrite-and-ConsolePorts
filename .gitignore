@@ -65,3 +65,15 @@ newest-mods-credits-etc
 *.aab
 *.keystore
 *.jks
+
+# Private planning, original TODO backups and migration evidence
+/futureplans.md
+/.todo-archive/
+
+# Python utility bytecode
+/tools/__pycache__/
+
+# Private lossless texture-review archives and their integrity inventories
+*.tar.xz
+*.tar.xz.index.json
+*.tar.xz.partial

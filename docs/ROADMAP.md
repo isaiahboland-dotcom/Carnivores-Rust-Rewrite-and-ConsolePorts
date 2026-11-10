@@ -5,7 +5,14 @@ build instructions and milestone definitions live in [DEVELOPMENT.md](DEVELOPMEN
 Implementation does not imply that every platform or combination of mods has been
 validated. Game and mod assets must come from the player's own copies.
 
-## Current milestone: v0.5.2
+## Current milestone: v0.5.3
+
+v0.5.3 prepares Windows/Linux desktop bundles and exact-tag release automation,
+adds PC map object side files, and extends MEE regression coverage
+([v0.5.3 notes](releases/v0.5.3.md)). The Windows test launcher opens in a VM;
+bundle hunt acceptance, clean-machine checks and physical Windows performance
+remain pending. Console payloads and third-party tools remain separate.
+
 
 v0.5.2 makes launch protection fail closed, fixes predation leaving carnivores stuck or
 emptying the map, adds kill-animation regression scenarios, and records the first Old
@@ -31,12 +38,12 @@ the new features. See the [v0.5.0 notes](releases/v0.5.0.md).
 | Nintendo 3DS (M6–M8, M11) | Check far terrain seams, frustum/LOD behavior, memory and performance with large packs | Old and New 3DS hardware, including 56/76-cell view ranges and comfort settings |
 | Wii U | Validate survival, trophies, saves, pause/exit and modded packaging; improve jungle performance and reproducible cross-builds | Aroma hardware runs and clean-toolchain builds; portable C tests cover only host-testable code |
 | Windows | Follow up the Windows VM run with native gameplay and portable distribution tests | CI builds/tests pass; VM log confirms software rendering, with input/performance comparisons pending. Fresh physical Windows machine, interactive launcher and complete hunt still needed |
-| PC VR (M17) | Hands-on hunting with vanilla guns: floating guns in the hand (no arms), firing from the muzzle, two-handed support for long guns, sights that snap to the eye, a handheld map on the off hand, a head-aimed gamepad fallback; no recoil or reloading yet. Also: audit Vulkan/device/session lifetimes and tune performance | Monado's simulated controllers first, then headset hunts with tracked controllers; runtime diagnostics during scene replacement, session loss and shutdown |
-| Android (M19) | First APK builds (`android-ver/`): the PC frontend on a phone, with an APK-built base game only, add-ons, standalones combined beside it on the PC, and at most 8 animals and 8 weapons. Next: the mobile game's hunt touch controls (stick, fire, weapon buttons), and an on-screen message when the game folder is missing | First run on a phone, for each mobile base: vanilla and with add-ons; pause and resume; saves |
+| PC VR | Hands-on hunting with vanilla guns: floating guns in the hand (no arms), firing from the muzzle, two-handed support for long guns, sights that snap to the eye, a handheld map on the off hand, a head-aimed gamepad fallback; no recoil or reloading yet. Also: audit Vulkan/device/session lifetimes and tune performance | Monado's simulated controllers first, then headset hunts with tracked controllers; runtime diagnostics during scene replacement, session loss and shutdown |
+| Android | First APK builds (`android-ver/`): the PC frontend on a phone, with an APK-built base game only, add-ons, standalones combined beside it on the PC, and at most 8 animals and 8 weapons. Touch controls and missing-game messages are implemented; next validate modded picker/map artwork, texture holes and device input | Dinosaur Hunter menus/registration reached a Retroid; full hunts for both mobile bases, add-ons, pause/resume and saves still need acceptance |
 | Regression scenarios | `vanilla_map2_four_dinos` runs on PC for Carnivores 2, Ice Age and both APK-built bases, headless and rendered ([REGRESSION.md](REGRESSION.md)); the runner also loads Modder's Edition data. `standalone_map2_four_dinos` covers Genesis Redux locally, on our engine and on its own executable under Wine. Next: behaviour scenarios on it (running, dying, eating, spawning, radar, hunter walk and run speed) against its own executable, a Fallen Kings baseline, then the 3DS, Wii U and Android | Approved baselines per machine; emulator automation to be investigated before any console run |
 | Performance figures (3DS, Wii U) | First Old 3DS / 2DS spot readings for ten packs are in [`3ds-ver/README.md`](../3ds-ver/README.md#hardware-results-2026-11-08): about 30 fps with animals in view on most packs. Next: averages for the 3DS and Wii U, for vanilla hunts and representative modded setups. 3DS performance work targets the Old 3DS first, so the game stays playable on every 3DS model | Repeatable measured runs per platform and scenario, labelled by console model rather than individual hardware |
 | Limits past the original | Character entries, random sounds and terrain textures are already unbounded (textures to the GPU's array limit). More than 254 kinds of object per area is in on PC (`AREAn.OBX`/`.RSX` side files and `c2-pc area-layers`; 3DS and Wii U packs still use the `.MAP`'s). Planned: a per-animation sound table past 64 animations in a `.CAR`, a compact skin list per animal, random spawn groups by opt-in, and event reactions (design in [EXPANSION.md](EXPANSION.md)) | Round trips of the original formats unchanged; a stress pack past each limit; `c2-parity spawns` for skin rarities |
-| PS5 / PS VR2 (M18) | Research a dedicated port | No port implementation or hardware compatibility claim yet |
+| PS5 / PS VR2 | Research a dedicated port | No port implementation or hardware compatibility claim yet |
 
 ## 3DS performance plan
 
@@ -67,10 +74,10 @@ frame timings, so each change can be checked against these first readings.
 - M9–M16: Modder's Edition data, launchers, hunt options, profiles/trophies,
   survival, Ice Age, mobile conversion and standalone combinations are implemented
   with compatibility and platform testing still ongoing.
-- M17: OpenXR menus, movement and animals exist; weapons are not implemented (design in
+- PC VR: OpenXR menus, movement and animals exist; weapons are not implemented (design in
   `pc-ver/crates/c2-vr/GAMEPLAN.md`, "Hands-on hunting"). Later: gesture reloading, a
   held scope and binoculars, and per-gun VR configs so modded guns can join VR hunts.
-- M18: research only.
+- PS5 / PS VR2 dedicated port: research only.
 
 ## Release maintenance
 
@@ -81,3 +88,28 @@ together (a c2-launcher test checks they match). Security work and remaining
 limits are documented in [SECURITY-HARDENING.md](SECURITY-HARDENING.md). Track
 reproducible bugs with platform, revision, steps and logs without distributing game
 assets or private machine identifiers.
+
+## Further milestones and distribution
+
+- **Portable desktop releases:** provide `windows.zip` and `linux.tar` with the
+  launcher and required executable/runtime support for each release, excluding all
+  game/mod assets. Validate extraction, owned-base setup and play on fresh systems
+  before recommending Releases as the easiest GUI install path; retain manual setup.
+- **Add-on variants:** flag duplicate dinosaur names and allow intentional shared
+  menu slots, with map-specific eligibility and weighted spawn rates. Reconcile this
+  with compact skins and opt-in spawn groups in [EXPANSION.md](EXPANSION.md).
+- **Mobile and console polish:** correct modded Android picker/map artwork and
+  texture defects, finish console mobile UI and MEE weapon presentation, and add a
+  Wii U debug-metrics visibility toggle. Implementation requires platform validation.
+- **3DS compatibility:** user-overridable low-memory presets, ambient species from
+  combined loaded rosters, and content-identified pack restrictions/compatibility
+  profiles accompany the performance plan above.
+- **VR after basic hunting:** calls, HUD, accounts, options/credits, and displayed
+  trophies; later gesture reloads, held optics, flashlight and per-mod gun configs.
+  Validate each stage with simulated controllers, then tracked-controller hardware.
+- **Expanded formats on consoles:** consider OBX/RSX only after cooker and console
+  memory-budget checks; preserve original formats and existing PC support.
+
+Legacy documents disagree on milestone numbers (APK bases and PC VR both used M17;
+local notes later called PC VR M20). Platform names identify ongoing work here until
+numbering is reconciled across the development documentation.

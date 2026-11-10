@@ -62,6 +62,10 @@ pub struct Hold {
     pub released: Option<usize>,
     /// `--inject freeze-body`: the hunter's body is held on frame 0.
     pub freeze_body: bool,
+    /// Behaviours: the hunter walks (his view stays pinned), and the
+    /// animals slain on purpose, which are neither pinned nor lost.
+    pub hunter_free: bool,
+    pub dead: Vec<usize>,
 }
 
 impl Hold {
@@ -70,7 +74,9 @@ impl Hold {
     /// Returns the animals that are gone or dead.
     pub fn apply(&self, hunt: &mut Hunt, area: &Area) -> Vec<usize> {
         let p = &mut hunt.player;
-        [p.x, p.z] = self.player;
+        if !self.hunter_free {
+            [p.x, p.z] = self.player;
+        }
         [p.alpha, p.beta] = self.view;
         match hunt.death {
             None => hunt.health = MAX_HEALTH,
@@ -83,6 +89,9 @@ impl Hold {
         }
         let mut lost = Vec::new();
         for &(i, x, z) in &self.animals {
+            if self.dead.contains(&i) {
+                continue;
+            }
             match hunt.herd.chars.get_mut(i) {
                 Some(c) if c.health > 0 => {
                     if self.released != Some(i) {
@@ -131,6 +140,44 @@ fn forward(yaw: f32) -> [f32; 2] {
     [yaw.sin(), -yaw.cos()]
 }
 
+/// Where a scenario puts the hunter (`x, y, z`: on his landing's ground)
+/// and each animal (`x, z`), in scenario order.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Layout {
+    pub player: [f32; 3],
+    pub animals: Vec<[f32; 2]>,
+}
+
+/// The scenario's [`Layout`] on `area`.
+pub fn layout(area: &Area, s: &Scenario) -> Result<Layout, SetupError> {
+    let cell = match s.cell {
+        Some(c) => c,
+        None => *area
+            .landings
+            .get(s.landing)
+            .ok_or(SetupError::NoLanding(s.landing))?,
+    };
+    let p = Player::new(area, cell);
+    let bearing = s.yaw + s.anchor_bearing;
+    let [fx, fz] = forward(bearing);
+    let [rx, rz] = forward(bearing + core::f32::consts::FRAC_PI_2);
+    let anchor = [p.x + fx * s.anchor_distance, p.z + fz * s.anchor_distance];
+    let animals = s
+        .offsets
+        .iter()
+        .map(|off| {
+            [
+                anchor[0] + rx * off[0] + fx * off[1],
+                anchor[1] + rz * off[0] + fz * off[1],
+            ]
+        })
+        .collect();
+    Ok(Layout {
+        player: [p.x, p.y, p.z],
+        animals,
+    })
+}
+
 /// Builds the hunt. `weapons` and `anims` are the game's whole registry, in
 /// `_RES.TXT` order; every one is carried with full ammo.
 pub fn build(
@@ -150,12 +197,10 @@ pub fn build(
     if weapons.is_empty() {
         return Err(SetupError::NoWeapons);
     }
+    let spots = layout(area, s)?;
     let cell = match s.cell {
         Some(c) => c,
-        None => *area
-            .landings
-            .get(s.landing)
-            .ok_or(SetupError::NoLanding(s.landing))?,
+        None => area.landings[s.landing],
     };
     let mut player = Player::new(area, cell);
     player.alpha = s.yaw;
@@ -166,19 +211,12 @@ pub fn build(
         ..Default::default()
     };
 
-    let bearing = s.yaw + s.anchor_bearing;
-    let [fx, fz] = forward(bearing);
-    let [rx, rz] = forward(bearing + core::f32::consts::FRAC_PI_2);
-    let anchor = [
-        player.x + fx * s.anchor_distance,
-        player.z + fz * s.anchor_distance,
-    ];
     let fire = forward(s.yaw);
     let mut placed = Vec::new();
     let mut cast = Vec::new();
     let mut animals = Vec::new();
     let mut targets = Bits::NONE;
-    for (r, off) in s.species.iter().zip(&s.offsets) {
+    for (r, &[x, z]) in s.species.iter().zip(&spots.animals) {
         let ctype = resolve(&herd.species, r)?;
         let sp = &herd.species[ctype];
         let name = format!("{} ({r:?})", sp.info.name);
@@ -188,10 +226,6 @@ pub fn build(
         if sp.ani_time.is_empty() || placeholder {
             return Err(SetupError::NoModel(name));
         }
-        let (x, z) = (
-            anchor[0] + rx * off[0] + fx * off[1],
-            anchor[1] + rz * off[0] + fz * off[1],
-        );
         // The animal's edge, as seen from the hunter, must stay clear of
         // the line of fire (shots go straight along `yaw`).
         let (dx, dz) = (x - player.x, z - player.z);
@@ -234,6 +268,8 @@ pub fn build(
         animals,
         released: None,
         freeze_body: false,
+        hunter_free: false,
+        dead: Vec::new(),
     };
     let hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);
     Ok(Built {

@@ -11,9 +11,10 @@ use alloc::{
     vec::Vec,
 };
 
+use super::behaviour::{self, slug};
 use super::{
-    Arrange, Cast, Event, EventKind, KillPlan, KillReport, KillWatch, Scenario, Script,
-    StageResult, Status,
+    Arrange, BehaviourPlan, BehaviourReport, Cast, Event, EventKind, KillPlan, KillReport,
+    KillWatch, Scenario, Script, StageResult, Status, Subject, Track,
 };
 use crate::game::{weapon_anim, Hunt, HuntInput, WeaponState};
 
@@ -79,7 +80,7 @@ pub struct TickPlan {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum Step {
+pub(super) enum Step {
     Begin(String, Option<Screen>),
     End,
     Wait(u32),
@@ -96,26 +97,19 @@ enum Step {
     Expect(Screen, bool),
     SaveCall,
     ExpectCallChanged,
-    /// Kill script: let scenario animal `n` go, wait for its kill, watch
-    /// it for `n` ticks, judge it, bring the hunter back.
-    Release(usize),
+    /// A change the frontend makes to the hunt before the next tick
+    /// ([`super::Hold::arrange`]).
+    Do(Arrange),
+    /// Kill script: wait for scenario animal `n`'s kill, watch it for `n`
+    /// ticks, judge it.
     AwaitKill(usize),
     Watch(u32),
     VerifyKill,
-    Revive(usize),
-}
-
-/// Lower-case letters and digits, `_` between words.
-fn slug(s: &str) -> String {
-    let mut out = String::new();
-    for ch in s.chars() {
-        if ch.is_ascii_alphanumeric() {
-            out.push(ch.to_ascii_lowercase());
-        } else if !out.ends_with('_') && !out.is_empty() {
-            out.push('_');
-        }
-    }
-    out.trim_end_matches('_').to_string()
+    /// Behaviour script: sample the subject for `n` ticks (the hunter
+    /// holding forward), judge it, check every animal ended dead.
+    Behave(Subject, u32),
+    VerifyBehaviour(Subject),
+    VerifyDead,
 }
 
 pub struct Director {
@@ -135,9 +129,13 @@ pub struct Director {
     kills: Option<KillPlan>,
     watch: Option<KillWatch>,
     kill_ms: u32,
+    behaviours: Option<BehaviourPlan>,
+    track: Option<Track>,
     pub events: Vec<Event>,
     /// Each judged kill's summary, in order.
     pub kill_reports: Vec<KillReport>,
+    /// Each judged behaviour stage's summary, in order.
+    pub behaviour_reports: Vec<BehaviourReport>,
     pub stages: Vec<StageResult>,
 }
 
@@ -148,6 +146,7 @@ impl Director {
         let steps = match &s.script {
             Script::Tour => Self::tour(s, weapons),
             Script::Kills(k) => Self::kill_steps(s, k, cast),
+            Script::Behaviours(b) => behaviour::steps(s, b, cast),
         };
         Self {
             steps,
@@ -166,17 +165,23 @@ impl Director {
             cast: cast.to_vec(),
             kills: match &s.script {
                 Script::Kills(k) => Some(k.clone()),
-                Script::Tour => None,
+                _ => None,
             },
             watch: None,
             kill_ms: 0,
+            behaviours: match &s.script {
+                Script::Behaviours(b) => Some(b.clone()),
+                _ => None,
+            },
+            track: None,
             events: Vec::new(),
             kill_reports: Vec::new(),
+            behaviour_reports: Vec::new(),
             stages: Vec::new(),
         }
     }
 
-    fn opening(s: &Scenario) -> Vec<Step> {
+    pub(super) fn opening(s: &Scenario) -> Vec<Step> {
         vec![
             Step::Begin("spawn".into(), None),
             Step::VerifyAnimals,
@@ -204,7 +209,7 @@ impl Director {
             let stage = format!("kill_{:02}_{}", n + 1, slug(&c.name));
             steps.extend([
                 Step::Begin(stage.clone(), None),
-                Step::Release(n),
+                Step::Do(Arrange::Release(n)),
                 Step::AwaitKill(n),
                 Step::Checkpoint(format!("{stage}_start")),
                 Step::Watch(k.mid_ticks),
@@ -212,7 +217,7 @@ impl Director {
                 Step::Watch(k.late_ticks),
                 Step::Checkpoint(format!("{stage}_late")),
                 Step::VerifyKill,
-                Step::Revive(n),
+                Step::Do(Arrange::Revive(n)),
                 Step::End,
             ]);
         }
@@ -315,16 +320,18 @@ impl Director {
         }
     }
 
-    /// Skips to the current stage's end, or to its revive: a failed kill
-    /// still brings the hunter back and pins its animal again.
+    /// Skips to the current stage's end, or to what puts things back: a
+    /// failed kill still brings the hunter back and pins its animal again.
     fn skip_stage(&mut self) {
         while let Some(step) = self.steps.get(self.at) {
-            if matches!(step, Step::End | Step::Revive(_)) {
-                break;
+            match step {
+                Step::End => break,
+                Step::Do(a) if a.restores() => break,
+                _ => self.at += 1,
             }
-            self.at += 1;
         }
         self.watch = None;
+        self.track = None;
     }
 
     fn next(&mut self) {
@@ -380,6 +387,29 @@ impl Director {
                     self.verify_kill();
                     self.next();
                 }
+                Step::VerifyBehaviour(subject) => {
+                    let alive = hunt.death.is_none();
+                    let detail = if alive {
+                        ""
+                    } else {
+                        "an animal killed the hunter"
+                    };
+                    self.check("hunter_alive", alive, detail.into());
+                    self.verify_behaviour(subject);
+                    self.next();
+                }
+                Step::VerifyDead => {
+                    let dead = self.cast.iter().filter(|c| {
+                        hunt.herd
+                            .chars
+                            .get(c.index)
+                            .is_some_and(|ch| ch.health == 0)
+                    });
+                    let dead = dead.count();
+                    let detail = format!("{dead} dead of {} slain", self.animals);
+                    self.check("animals_dead", dead == self.animals, detail);
+                    self.next();
+                }
                 Step::Press(s, open) if s.frontend_only() => {
                     fe.set(s, open);
                     let verb = if open { "open" } else { "close" };
@@ -422,13 +452,22 @@ impl Director {
         let mut input = HuntInput::default();
         let mut arrange = None;
         let action = match self.steps.get(self.at) {
-            Some(&Step::Release(n)) => {
-                arrange = Some(Arrange::Release(n));
-                Some(format!("release_animal {n}"))
+            Some(&Step::Do(a)) => {
+                arrange = Some(a);
+                Some(action_name(a))
             }
-            Some(&Step::Revive(n)) => {
-                arrange = Some(Arrange::Revive(n));
-                Some("revive_hunter".into())
+            Some(&Step::Behave(subject, _)) => {
+                if let Subject::Hunter { run } = subject {
+                    input.controls.forward = true;
+                    input.controls.run = run;
+                }
+                let first = self.track.is_none();
+                if first {
+                    let mut t = Track::new(super::TICK_MS as u32);
+                    t.samples.extend(subject.sample(hunt, &self.indices()));
+                    self.track = Some(t);
+                }
+                first.then(|| format!("watch_{}", subject.kind()))
             }
             Some(&Step::Select(i)) if hunt.weapons.ftime == 0 => {
                 input.select_weapon = Some(i);
@@ -471,12 +510,21 @@ impl Director {
         if let Some(w) = &mut self.watch {
             w.sample(hunt);
         }
+        let mut near = false;
+        if let Some(&Step::Behave(subject, _)) = self.steps.get(self.at) {
+            let s = subject.sample(hunt, &self.indices());
+            near = s.is_some_and(|s| subject.near(&s, [hunt.player.x, hunt.player.z]));
+            if let Some(t) = &mut self.track {
+                t.samples.extend(s);
+            }
+        }
         let w = &hunt.weapons;
         let done = match self.steps.get(self.at).cloned() {
             None => return core::mem::take(&mut self.caps),
             Some(Step::Wait(n) | Step::Watch(n)) => self.tick - self.step_tick >= n,
+            Some(Step::Behave(_, n)) => near || self.tick - self.step_tick >= n,
             Some(Step::Select(_) | Step::Holster | Step::Press(..)) => true,
-            Some(Step::Release(_) | Step::Revive(_)) => true,
+            Some(Step::Do(_)) => true,
             Some(Step::AwaitKill(n)) => self.await_kill(hunt, n),
             Some(Step::AwaitReady(i)) => {
                 w.current == i && w.state == WeaponState::Ready && w.ftime == 0
@@ -515,8 +563,10 @@ impl Director {
             Some(_) => true,
         };
         // A killer may finish a sniff and roar before it charges.
+        // A fixed wait ends on its own; only waits for the hunt time out.
         let timeout = match (&self.steps[self.at], &self.kills) {
             (Step::AwaitKill(_), Some(k)) => self.timeout.max(k.timeout_ticks),
+            (Step::Wait(n) | Step::Watch(n) | Step::Behave(_, n), _) => self.timeout.max(*n),
             _ => self.timeout,
         };
         if done {
@@ -564,6 +614,25 @@ impl Director {
         self.kill_reports.push(w.report(&stage, self.kill_ms));
     }
 
+    /// The placed animals' character indices, in scenario order.
+    fn indices(&self) -> Vec<usize> {
+        self.cast.iter().map(|c| c.index).collect()
+    }
+
+    /// Judges the watched behaviour stage.
+    fn verify_behaviour(&mut self, subject: Subject) {
+        let (Some(t), Some(plan)) = (self.track.take(), self.behaviours.clone()) else {
+            self.check("behaviour_watched", false, "nothing was watched".into());
+            return;
+        };
+        for (name, ok, detail) in subject.verdicts(&t, &plan) {
+            self.check(name, ok, detail);
+        }
+        let stage = self.stage.as_ref().map_or("", |s| &s.0).to_string();
+        self.behaviour_reports
+            .push(subject.report(&stage, &t, &plan));
+    }
+
     /// Ends the run early (the whole-run tick ceiling): the open stage fails.
     pub fn abort(&mut self, reason: &str) {
         if self.stage.is_some() {
@@ -571,5 +640,18 @@ impl Director {
             self.end_stage(Status::Failed(reason.into()));
         }
         self.at = self.steps.len();
+    }
+}
+
+/// The event name of a change to the hunt.
+fn action_name(a: Arrange) -> String {
+    match a {
+        Arrange::Release(n) => format!("release_animal {n}"),
+        Arrange::Revive(_) => "revive_hunter".into(),
+        Arrange::FreeHunter => "free_hunter".into(),
+        Arrange::PinHunter => "pin_hunter".into(),
+        Arrange::Alarm(n) => format!("alarm_animal {n}"),
+        Arrange::Calm(n) => format!("calm_animal {n}"),
+        Arrange::Slay(n) => format!("slay_animal {n}"),
     }
 }
