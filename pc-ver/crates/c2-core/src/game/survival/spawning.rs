@@ -103,6 +103,9 @@ impl Hunt {
     }
 
     fn add_wave_animal(&mut self, area: &Area, ctype: usize, n: u32, (x, z): (f32, f32)) {
+        let Some(ctype) = self.herd.select_variant(ctype, &mut self.rng) else {
+            return;
+        };
         let Some(sp) = self.herd.species.get(ctype) else {
             return;
         };

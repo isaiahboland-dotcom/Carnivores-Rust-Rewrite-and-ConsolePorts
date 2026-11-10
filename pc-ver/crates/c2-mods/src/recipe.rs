@@ -24,6 +24,9 @@ pub use base::*;
 #[serde(default)]
 pub struct Recipe {
     pub recipe: Info,
+    /// Expansion variant authoring data; omitted for ordinary recipes.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub variants: Vec<crate::variants::Group>,
     /// Releases copied over the base game first (the Modder's Edition):
     /// pinned like mods, files from the release's folder.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -740,6 +743,12 @@ pub fn prepare(
     located: &[Located],
     vanilla: &Vfs,
 ) -> Result<(Vec<ModSource>, BuildOptions), ModError> {
+    crate::variants::validate(&r.variants)?;
+    if !r.variants.is_empty() && !r.recipe.skip.is_empty() {
+        return Err(ModError::Recipe(
+            "variant packs cannot yet renumber base parts through recipe.skip".into(),
+        ));
+    }
     if let Some(bad) = located.iter().find(|l| !l.complete()) {
         return Err(ModError::Recipe(format!(
             "mod '{}' is missing or doesn't match (get it from {})",
@@ -762,6 +771,16 @@ pub fn prepare(
                     continue;
                 }
                 let mut s = load_loose(vanilla, child, &|p| pinned.iter().any(|q| q == p))?;
+                s.variant_origin = Some((
+                    m.id.clone(),
+                    collection.then(|| {
+                        child
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .into_owned()
+                    }),
+                ));
                 let info = &mut s.manifest.info;
                 info.id = if collection {
                     format!("{}--part-{i}", m.id)
@@ -793,6 +812,7 @@ pub fn prepare(
         manifest.info.authors = vec![m.credit.clone()];
         manifest.info.source_url = m.url.clone();
         sources.push(ModSource {
+            variant_origin: Some((m.id.clone(), None)),
             manifest,
             root: root.clone(),
             files,
@@ -827,6 +847,7 @@ pub fn prepare(
         });
     }
     let mut opts = BuildOptions::default();
+    opts.variants = r.variants.clone();
     for res in &r.resolve {
         if !res.path.is_empty() {
             opts.file_winners

@@ -93,6 +93,11 @@ pub fn layer(vfs: &Vfs, skip: &Skip) -> Result<Option<MemBackend>> {
     if skip.is_empty() {
         return Ok(None);
     }
+    if vfs.resolve(crate::variants::PATH).is_some() {
+        return Err(super::fail(
+            "variant packs cannot renumber parts through Pick parts yet",
+        ));
+    }
     let mut res = parse(vfs, RES)?.ok_or_else(|| super::fail("the game has no _RES.TXT"))?;
     let mut menu = parse(vfs, MENU)?;
     let gm = MenuData::from_res(menu.as_ref().unwrap_or(&res));

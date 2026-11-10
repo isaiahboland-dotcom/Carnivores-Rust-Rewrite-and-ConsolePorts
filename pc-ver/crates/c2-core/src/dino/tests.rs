@@ -1,6 +1,129 @@
 use super::*;
 use c2_formats::car::{Animation, Car};
 
+fn variant_herd(probabilities: [f64; 2]) -> Herd {
+    let mut herd = Herd {
+        species: vec![species(0, 1), species(ai::PARA, 8), species(ai::STEGO, 8)],
+        ..Default::default()
+    };
+    for i in 1..=2 {
+        herd.species[i].tuning.menu_slot = Some(0);
+        herd.species[i].variant = Some(variants::Variant {
+            owner: 1,
+            token: 100 + i as u64,
+            choices: if i == 1 {
+                vec![(1, probabilities[0]), (2, probabilities[1])]
+            } else {
+                vec![]
+            },
+        });
+    }
+    herd
+}
+
+#[test]
+fn variant_spawns_are_seeded_weighted_and_keep_the_selected_ai() {
+    let mut herd = variant_herd([0.25, 0.75]);
+    let mut rng = MsRand::new(71);
+    let mut repeat = MsRand::new(71);
+    let expected: Vec<_> = (0..4000)
+        .map(|_| {
+            let selected = herd.select_variant(2, &mut repeat).expect("eligible");
+            // Reset consumes RNG too; mirror the real spawn below.
+            let mut c = Character {
+                ctype: selected,
+                ..Default::default()
+            };
+            c.reset(&herd.species[selected], &mut repeat, 128);
+            selected
+        })
+        .collect();
+    for _ in 0..4000 {
+        assert!(herd.spawn(1, [0.0; 3], &mut rng, 128));
+    }
+    assert_eq!(
+        herd.chars.iter().map(|c| c.ctype).collect::<Vec<_>>(),
+        expected
+    );
+    let classic = herd.chars.iter().filter(|c| c.ctype == 1).count();
+    assert!((850..1150).contains(&classic), "{classic}");
+    assert!(herd
+        .chars
+        .iter()
+        .all(|c| c.ai == herd.species[c.ctype].runs_as()));
+}
+
+#[test]
+fn disabled_variants_have_no_fallback_and_ordinary_species_do_not_draw_rng() {
+    let mut herd = variant_herd([0.0, 0.0]);
+    let mut rng = MsRand::new(91);
+    let mut unchanged = rng.clone();
+    assert!(!herd.spawn(1, [0.0; 3], &mut rng, 128));
+    assert!(!herd.spawn(2, [0.0; 3], &mut rng, 128));
+    assert_eq!(herd.select_variant(0, &mut rng), Some(0));
+    assert_eq!(rng.rand(), unchanged.rand());
+    assert!(herd.chars.is_empty());
+}
+
+#[test]
+fn initial_dialect_variants_share_population_instead_of_duplicating_it() {
+    let res = c2_formats::res_txt::ResTxt::parse("spawntable {\n spawngroup {\n spawnmin = 3\n spawnmax = 3\n }\n}\ncharacters {\n{\n name = 'Hunter'\n ai = 0\n}\n{\n name = 'Owner'\n ai = 10\n spawninfo {\n spawngroup = 0\n spawnratio = 1\n }\n}\n{\n name = 'Variant'\n ai = 14\n spawninfo {\n spawngroup = 0\n spawnratio = 1\n }\n}\n}\n").expect("res");
+    let tables = c2_formats::mee::Tables::read(
+        &res,
+        &c2_formats::mee::Hunt {
+            area: Some(1),
+            time: 1,
+            picked: c2_formats::bits::Bits::ALL,
+        },
+    );
+    let area = Area::flat(10);
+    let mut herd = variant_herd([0.0, 1.0]);
+    herd.place_mee(
+        &area,
+        (50.0 * 256.0, 50.0 * 256.0),
+        &mut MsRand::new(7),
+        &tables,
+        128,
+    );
+    assert_eq!(herd.chars.len(), 3);
+    assert!(herd.chars.iter().all(|c| c.ctype == 2));
+    herd.species[1]
+        .variant
+        .as_mut()
+        .expect("variant")
+        .choices
+        .clear();
+    herd.place_mee(
+        &area,
+        (50.0 * 256.0, 50.0 * 256.0),
+        &mut MsRand::new(7),
+        &tables,
+        128,
+    );
+    assert!(herd.chars.is_empty());
+}
+
+#[test]
+fn trophy_variant_identity_survives_reordering_and_missing_members() {
+    let mut herd = variant_herd([0.5, 0.5]);
+    let mut room =
+        c2_formats::sav::parse(&vec![0; c2_formats::sav::FILE_SIZE]).expect("blank save");
+    room.bodies[0].ctype = 2;
+    room.bodies[0].set_variant_token(102);
+    room.bodies[1].ctype = 1; // legacy trophy
+    herd.species.swap(1, 2);
+    variants::remap_trophies(&herd.species, &mut room);
+    assert_eq!(room.bodies[0].ctype, 1);
+    assert_eq!(room.bodies[1].ctype, 1);
+    let bytes = c2_formats::sav::write(&room);
+    let mut room = c2_formats::sav::parse(&bytes).expect("save round trip");
+    variants::remap_trophies(&[], &mut room);
+    assert_eq!(room.bodies[0].ctype, -1);
+    assert_eq!(room.bodies[0].variant_token(), 102);
+    variants::remap_trophies(&herd.species, &mut room);
+    assert_eq!(room.bodies[0].ctype, 1);
+}
+
 /// A one-vertex species with `n` 1-second, 2-frame animations.
 fn species(ai_id: i32, n: usize) -> Species {
     let car = Car {

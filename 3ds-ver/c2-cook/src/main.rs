@@ -303,6 +303,9 @@ fn parse_args() -> Result<Args> {
 /// scores over them (`c2_mods::balance`, as `c2-pc play --balance`).
 fn merged(a: &Args, game: &Path) -> Result<Vfs> {
     let mut vfs = merged_game(a, game)?;
+    if vfs.resolve(c2_mods::variants::PATH).is_some() {
+        bail!("variant packs currently require the PC runtime; 3DS and Wii U cooking is not supported");
+    }
     if let Some(f) = &a.balance {
         let b = c2_mods::balance::Balance::load(f)?;
         let layer = c2_mods::balance::apply(&vfs, &b)

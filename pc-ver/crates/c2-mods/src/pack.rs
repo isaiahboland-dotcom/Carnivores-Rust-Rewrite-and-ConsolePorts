@@ -192,6 +192,8 @@ impl Backend for Subset {
 /// A mod ready to layer.
 #[derive(Default)]
 pub struct ModSource {
+    /// Recipe source and stable collection child identity (not load order).
+    pub variant_origin: Option<(String, Option<String>)>,
     pub manifest: Manifest,
     pub root: PathBuf,
     /// Data files it adds or replaces (its spelling, relative to `root`).
@@ -268,6 +270,7 @@ pub(crate) fn load_loose(
         }
     }
     Ok(ModSource {
+        variant_origin: None,
         manifest,
         root: dir.to_path_buf(),
         files: l.files.iter().map(|(p, _)| p.clone()).collect(),
@@ -422,6 +425,7 @@ pub struct Pack {
 /// Recipe decisions applied while building.
 #[derive(Debug, Clone, Default)]
 pub struct BuildOptions {
+    pub variants: Vec<crate::variants::Group>,
     /// `(path, mod id)`: this mod's copy of the file wins.
     pub file_winners: Vec<(String, String)>,
     /// `(section, entry name, mod id)`: only this mod's change to the entry applies.
@@ -433,7 +437,7 @@ pub struct BuildOptions {
 const MENU_TXT: &str = "huntdat/_menu.txt";
 
 /// `CALL7_A.WAV` with prefix `call`, from 7 to 11 -> `CALL11_A.WAV`.
-fn renumber(name: &str, prefixes: &[&str], from: usize, to: usize) -> Option<String> {
+pub(crate) fn renumber(name: &str, prefixes: &[&str], from: usize, to: usize) -> Option<String> {
     let lower = name.to_ascii_lowercase();
     let p = prefixes.iter().find(|p| lower.starts_with(*p))?;
     let rest = &name[p.len()..];
@@ -855,6 +859,9 @@ pub fn build_with(
     let mut seen = std::collections::HashSet::new();
     for m in &mut mods {
         let id = m.manifest.info.id.clone();
+        if !opts.variants.is_empty() && m.variant_origin.is_none() {
+            m.variant_origin = Some((id.clone(), None));
+        }
         if !seen.insert(id.clone()) {
             let new = (2..)
                 .map(|n| format!("{id}-{n}"))
@@ -875,6 +882,10 @@ pub fn build_with(
     let ord = order(&manifests)?;
     let mut slots: Vec<Option<ModSource>> = mods.into_iter().map(Some).collect();
     let mut mods: Vec<ModSource> = ord.into_iter().filter_map(|i| slots[i].take()).collect();
+    // Snapshot variant assets before shared-path winner decisions discard a
+    // source's copy. Those decisions still govern the ordinary shared files.
+    let (variant_members, variant_assets) =
+        crate::variants::preserve(&opts.variants, &vfs, &vanilla_res, &mut mods)?;
     // File winners: drop the file from every other mod.
     for (path, winner) in &opts.file_winners {
         let k = key(path);
@@ -929,6 +940,9 @@ pub fn build_with(
         };
         vfs.push(m.manifest.info.id.clone(), layer);
     }
+    if !opts.variants.is_empty() {
+        vfs.push("(private variant assets)", Box::new(variant_assets));
+    }
     let hunter = merge_hunters(&mut vfs, &vanilla_res, &mut mods, &mut notes)?;
     let mut changes: Vec<(String, Vec<Change>)> = mods
         .iter()
@@ -966,7 +980,10 @@ pub fn build_with(
     // add-ons belong after its slots, even when the base has no _MENU.TXT.
     // Rebuilding a menu from the merged character order shifts pictures,
     // prices and hunt bits as soon as a roamer precedes a slotted add-on.
-    if c2_formats::mee::is_dialect(&merged.res) || vfs.resolve(MENU_TXT).is_some() {
+    if !opts.variants.is_empty()
+        || c2_formats::mee::is_dialect(&merged.res)
+        || vfs.resolve(MENU_TXT).is_some()
+    {
         let path = vfs
             .resolve(MENU_TXT)
             .map_or_else(|| "HUNTDAT/_MENU.TXT".to_string(), |r| r.path.clone());
@@ -1082,6 +1099,13 @@ pub fn build_with(
         let mut mem = MemBackend::new();
         mem.insert(&path, data);
         vfs.push("(merged hunter)", Box::new(mem));
+    }
+    if !opts.variants.is_empty() {
+        crate::variants::finish(&opts.variants, &variant_members, &mut merged.res, &mut vfs)?;
+        notes.push(format!(
+            "{} explicit variant group(s); private assets and VARIANTS.TOML generated",
+            opts.variants.len()
+        ));
     }
     if merged.res != vanilla_res {
         let mut mem = MemBackend::new();

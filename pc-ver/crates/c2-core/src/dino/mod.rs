@@ -43,6 +43,7 @@ mod species;
 #[cfg(test)]
 mod tests;
 mod trex;
+pub mod variants;
 
 use crate::area::Area;
 use crate::rng::MsRand;

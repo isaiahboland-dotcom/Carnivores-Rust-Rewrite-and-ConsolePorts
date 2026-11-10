@@ -62,7 +62,8 @@ impl HuntView {
         mee: Option<&c2_formats::mee::Tables>,
     ) -> Hunt {
         let area = view.area();
-        let room = crate::save::load(&setup.game_dir, setup.reg);
+        let mut room = crate::save::load(&setup.game_dir, setup.reg);
+        c2_core::dino::variants::remap_trophies(&species, &mut room);
         let trophy = setup.trophy();
         let mut rng = MsRand::new(seed);
         let player = if trophy {

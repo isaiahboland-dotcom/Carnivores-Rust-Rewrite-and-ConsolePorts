@@ -60,6 +60,124 @@ skin {
 A skin counts as its animal for trophies, calls and the menu. Which skin
 was shot is kept with the trophy (the save format has spare fields).
 
+## Add-on variants sharing a menu animal (implementation contract)
+
+**Status:** the launcher warns about duplicate add-on dinosaur names in red.
+Recipe persistence, private asset/character preservation and per-map runtime
+selection are implemented for PC hunts. Explicit recipe groups retain all members
+and one shared menu slot; ordinary duplicate names still use replacement behavior.
+Initial placement, replacement spawns, predation respawns and survival waves share
+the seeded selector. Dedicated editor controls and percentage previews remain pending.
+
+Identity and persistence:
+
+- A menu animal has an explicit stable group ID. Equal display names are a
+  warning, never implicit consent to group or rename animals.
+- A variant is identified by recipe source ID plus source character ID (the
+  trimmed, unquoted, ASCII case-folded name used by `res_merge::block_id`).
+  Collections additionally need a stable child source ID. Ambiguous references
+  must fail preparation with the matching candidates listed; load order and
+  character array indices are not persistent IDs.
+- Store explicit groups and members in recipe `[[variants]]` tables; write a
+  versioned `HUNTDAT/VARIANTS.TOML` side file when building. Retain source
+  character blocks and namespace colliding asset paths before merging. Do not
+  add expansion keys to the source `_RES.TXT`. Old recipes keep replacement
+  behavior and produce no variant side file.
+- A group specifies its menu owner and each member's `source`, `character`,
+  `weight` (default 1), and optional `maps`. An omitted map list permits all
+  maps; an empty list permits none. Map identities use source ID plus source
+  area ID, resolved to packed areas during preparation. Missing members, maps,
+  or owners are errors, including members removed through Pick parts.
+
+Probability and eligibility:
+
+- Choose a variant for each individual spawn, after selecting the menu animal;
+  variants do not multiply its population or create additional spawn groups.
+- Filter members by current map, then normalize their finite, nonnegative
+  weights: `P(member | animal, map) = weight / sum(eligible weights)`.
+  Zero disables a member. Negative, NaN and infinite values are errors.
+  Weights need not add to 100; the UI displays the resulting percentages.
+- Per-map weights override the member's default before normalization. A zero
+  total means the animal cannot spawn on that map; do not substitute an
+  ineligible member or bypass the rule through the selected-animal fallback.
+- Use the hunt's seeded RNG and a stable persisted member order. Initial,
+  replacement and survival spawning must use the same selector. With no
+  variant data, preserve existing RNG consumption and spawn behavior.
+
+The authoring format (edit the recipe TOML, then build/play it on PC) is:
+
+```toml
+[[variants]]
+id = "rex"
+menu_owner = "classic"
+
+[[variants.members]]
+id = "classic"
+source = "classic-rex"
+character = "Tyrannosaurus"
+weight = 75
+
+[[variants.members]]
+id = "striped"
+source = "striped-rex"
+character = "Tyrannosaurus"
+weight = 25
+maps = [{ source = "base", area = "area1" }]
+map_weights = [{ map = { source = "base", area = "area1" }, weight = 75 }]
+```
+
+On `base:area1` these members have equal probability; elsewhere only `classic`
+is eligible. Group and member IDs use lowercase ASCII letters, digits, hyphens
+and underscores. Character names retain source spelling; identity comparison
+uses the normalization described above. Source IDs are recipe IDs. A collection
+member additionally specifies `child`, the exact child folder name, independent
+of its generated load-order number.
+
+Current boundaries:
+
+- Members must be huntable land characters (source AI 10–29), supplied by an
+  add-on in `mods`. A model-only replacement may inherit its unchanged character
+  definition from the base. References to absent or ambiguous sources/characters
+  fail the build. Base and standalone characters are not directly addressable
+  as members in this first implementation.
+- Referenced files, including models in nested conditional blocks, are copied
+  under `HUNTDAT/VARIANTS/<group>/<member>/`. Embedded textures, animations and
+  sounds remain in the member's CAR. The menu owner's numbered art and call
+  recordings are copied to the shared slot after layering, so a later member
+  cannot replace them.
+- Eligibility supports base maps and direct add-on maps whose area file stems
+  are retained. Source map references must exist. Renumbering with Pick parts
+  (`recipe.skip`) is explicitly rejected for variant packs. Standalone source
+  map remapping is not supported. Changing a member's model through a conditional
+  overwrite is rejected at load if it differs from its side-file binding; use
+  separate members with map eligibility instead.
+- Version 1 of `VARIANTS.TOML` stores validated character/model bindings, rule
+  order and stable trophy tokens. The PC loader rejects stale bindings, missing
+  member models and unknown versions. The cooker rejects these packs for 3DS
+  and Wii U; the Wii U folder loader also refuses the side file.
+- New trophies use a tagged identity in the existing save spare fields, derived
+  from group/member identity and model content. On reload, character indices
+  are recovered from that identity. A missing variant stays recorded but hidden,
+  and reappears if its model returns. Original untagged trophies keep their
+  original index interpretation. Members share the menu owner's base score.
+
+Calls, trophies and review requirements:
+
+- All members answer the group's call and count as its selected menu target;
+  keep their own AI, model, animations and sounds. The menu owner's call art
+  and call recording provide one unambiguous picker entry.
+- Trophies count and score as the group's animal while retaining the variant
+  ID and model identity for display. Existing trophies must retain their
+  original interpretation; do not reinterpret saved character indices after
+  a recipe changes. Tagged variant trophy remapping and missing-member retention
+  implement this for new variant trophies.
+- The editor must show effective percentages per map and reject ambiguous or
+  invalid configuration before saving/building. Round-trip the recipe through
+  editing and pinning. Test duplicate asset paths, map renumbering, exclusions,
+  all-zero groups, calls, trophy reloads, seeded selection, and unchanged
+  ordinary recipes. Unsupported platform consumers must reject variant packs
+  explicitly until they can load the side file.
+
 ## More animations per model, joined by name
 
 A `.car` stores its animation and sound counts in its header, so it can

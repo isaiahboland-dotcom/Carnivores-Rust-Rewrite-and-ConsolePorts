@@ -150,6 +150,7 @@ impl Tuning {
 /// What the AI needs from a `.CAR`: per-animation length and sound map.
 #[derive(Debug, Clone)]
 pub struct Species {
+    pub variant: Option<super::variants::Variant>,
     pub info: DinoInfo,
     /// Resolved hunt-menu price; None when no menu entry or donor exists.
     pub hunt_price: Option<i32>,
@@ -190,6 +191,7 @@ impl Species {
             .fold(0.0, f32::max);
         Self {
             info,
+            variant: None,
             hunt_price: None,
             tuning: Tuning::default(),
             mee: None,

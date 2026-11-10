@@ -32,6 +32,19 @@ impl Editor {
         self.list_ui(ui, Kind::Standalone);
         ui.add_space(6.0);
         self.list_ui(ui, Kind::AddOn);
+        let collisions = self.extras.addon_collisions(
+            &self.recipe,
+            &self.draft.game_dirs(),
+            &self.draft.folders,
+        );
+        if !collisions.is_empty() {
+            ui.label(
+                RichText::new("Same-name dinosaurs (explicit variants retain both; otherwise the later add-on wins):").color(RED),
+            );
+            for (source, name) in collisions {
+                ui.label(RichText::new(format!("{name} — {source}")).color(RED));
+            }
+        }
     }
 
     /// One list of entries, with its "Add" button.

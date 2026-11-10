@@ -30,6 +30,7 @@ pub(super) struct Extras {
     parts: HashMap<PathBuf, Option<Parts>>,
     /// The base game's parts, and the folders (game, overlays) read.
     base_parts: Option<(Vec<PathBuf>, Option<Parts>)>,
+    addon_names: Option<(Instance, Vec<(String, String)>)>,
 }
 
 /// The game folder in `dir` (the folder as given, if none is found).
@@ -116,6 +117,58 @@ impl Extras {
         self.error = None;
         self.parts.clear();
         self.base_parts = None;
+        self.addon_names = None;
+    }
+
+    /// Inspect source entries before merging: merging discards duplicate names.
+    pub(super) fn addon_collisions(
+        &mut self,
+        r: &Recipe,
+        game: &[PathBuf],
+        folders: &BTreeMap<String, PathBuf>,
+    ) -> Vec<(String, String)> {
+        let (Some(i), _) = instance(r, game, folders) else {
+            return Vec::new();
+        };
+        if let Some((previous, names)) = &self.addon_names {
+            if previous == &i {
+                return names.clone();
+            }
+        }
+        let mut names = Vec::new();
+        if let Ok(base) = c2_mods::pack::vanilla(&i.bases) {
+            for m in &r.mods {
+                let Some(dir) = folders.get(&m.id) else {
+                    continue;
+                };
+                for path in c2_mods::pack::expand_addons(dir) {
+                    let Ok(source) = c2_mods::pack::load_mod(&base, &path) else {
+                        continue;
+                    };
+                    for change in &source.res_changes {
+                        use c2_mods::res_merge::{block_id, Change};
+                        if let Change::Add { section, block }
+                        | Change::Modify { section, block, .. } = change
+                        {
+                            if section.eq_ignore_ascii_case("characters") {
+                                if let Some(name) = block_id(block) {
+                                    names.push((m.id.clone(), name));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let mut counts = HashMap::new();
+        for (_, name) in &names {
+            *counts.entry(name.clone()).or_insert(0usize) += 1;
+        }
+        names.retain(|(_, name)| counts[name] > 1);
+        names.sort();
+        names.dedup();
+        self.addon_names = Some((i, names.clone()));
+        names
     }
 
     pub(super) fn values_read(&mut self, values: Balance) {

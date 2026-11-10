@@ -29,6 +29,9 @@ impl Hunt {
             if (p[0] - px).abs() + (p[2] - pz).abs() < 256.0 * 40.0 {
                 continue;
             }
+            let Some(ctype) = self.herd.select_variant(ctype, &mut self.rng) else {
+                return;
+            };
             let mut c = Character {
                 ctype,
                 pos: p,

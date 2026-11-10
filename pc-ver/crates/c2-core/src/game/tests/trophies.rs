@@ -13,6 +13,42 @@ use c2_formats::bits::Bits;
 use c2_formats::sav::TrophyItem;
 
 #[test]
+fn variants_share_call_target_and_trophy_spots_but_save_their_own_model() {
+    use crate::dino::variants::Variant;
+    let (area, mut hunt, _) = setup(false);
+    hunt.herd.species.push(hunt.herd.species[1].clone());
+    for i in 1..=2 {
+        let sp = &mut hunt.herd.species[i];
+        sp.info.base_score = 100.0;
+        sp.tuning.menu_slot = Some(0);
+        sp.variant = Some(Variant {
+            owner: 1,
+            token: 100 + i as u64,
+            choices: vec![],
+        });
+    }
+    hunt.herd.chars[0].ctype = 2;
+    hunt.opts.targets = Bits::bit(10);
+    assert!(hunt.is_target(&hunt.herd.chars[0]));
+    assert_eq!(hunt.call_bit(&hunt.herd.chars[0]), Some(10));
+    hunt.herd.trophy_spots = vec![
+        c2_formats::mee::TrophySpot {
+            chars: vec![99],
+            ..Default::default()
+        },
+        c2_formats::mee::TrophySpot {
+            chars: vec![1],
+            ..Default::default()
+        },
+    ];
+    hunt.add_ship_task(&area, 0, &mut Vec::new());
+    assert_eq!(hunt.room.score, 100);
+    assert_eq!(hunt.room.bodies[1].ctype, 2);
+    assert_eq!(hunt.room.bodies[1].variant_token(), 102);
+    assert_eq!(hunt.room.bodies[0].ctype, 0);
+}
+
+#[test]
 fn non_targets_score_half_only_in_the_original() {
     let score = |dialect: bool, targets: Bits, bonus: Bits| {
         let (area, mut hunt, _) = setup(false);

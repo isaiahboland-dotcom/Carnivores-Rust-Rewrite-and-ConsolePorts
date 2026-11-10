@@ -124,10 +124,24 @@ pub fn roster(species: &[Species], kind: SurvivalKind) -> Vec<(usize, u32)> {
         .iter()
         .enumerate()
         .filter_map(|(i, sp)| {
+            if sp
+                .variant
+                .as_ref()
+                .is_some_and(|v| v.owner != i || !v.choices.iter().any(|(_, p)| *p > 0.0))
+            {
+                return None;
+            }
             let cost = u32::try_from(sp.hunt_price?).ok()?;
             (can_attack(sp)
                 && (kind != SurvivalKind::Classic
-                    || classic_identity(&sp.info.name, &sp.info.file)))
+                    || classic_identity(
+                        &sp.info.name,
+                        if sp.variant.is_some() {
+                            sp.info.file.rsplit('/').next().unwrap_or(&sp.info.file)
+                        } else {
+                            &sp.info.file
+                        },
+                    )))
             .then_some((i, cost))
         })
         .collect()

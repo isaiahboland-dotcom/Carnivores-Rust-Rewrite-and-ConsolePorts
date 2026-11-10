@@ -40,6 +40,14 @@ const MEE_MAX_CHARS: usize = 256;
 
 impl Herd {
     fn by_ai(&self, ai_id: i32) -> Option<usize> {
+        if let Some(i) = self.species.iter().enumerate().position(|(i, s)| {
+            s.variant.as_ref().is_some_and(|v| v.owner == i)
+                && s.tuning
+                    .menu_slot
+                    .is_some_and(|slot| slot >= 0 && slot + 10 == ai_id)
+        }) {
+            return Some(i);
+        }
         self.species.iter().position(|s| s.info.ai == ai_id)
     }
 
@@ -52,6 +60,9 @@ impl Herd {
         rng: &mut MsRand,
         opt_agres: i32,
     ) -> bool {
+        let Some(ctype) = self.select_variant(ctype, rng) else {
+            return false;
+        };
         // No model, or (dialect data) an AI family not implemented yet.
         if self
             .species
@@ -90,6 +101,7 @@ impl Herd {
             return None;
         }
         let i = self.chars.len() - 1;
+        let ctype = self.chars[i].ctype;
         let fish = self.species[ctype]
             .mee
             .as_ref()
@@ -322,6 +334,9 @@ impl Herd {
             })
             .collect();
         for (ct, c) in t.characters.iter().enumerate() {
+            if !self.variant_owner_enabled(ct) {
+                continue;
+            }
             for l in &c.packs {
                 if let Some(p) = packs.get_mut(l.group) {
                     p.members.push((ct, l.ratio));
@@ -329,6 +344,9 @@ impl Herd {
             }
         }
         for (ct, c) in t.characters.iter().enumerate() {
+            if !self.variant_owner_enabled(ct) {
+                continue;
+            }
             if !c.spawn.is_empty() {
                 packs.push(PackType {
                     members: vec![(ct, 1.0)],
@@ -520,6 +538,9 @@ impl Herd {
             {
                 continue;
             }
+            let Some(ctype) = self.select_variant(ctype, rng) else {
+                return;
+            };
             let mut c = Character {
                 ctype,
                 pos: p,
@@ -679,9 +700,14 @@ impl Herd {
         // others (saved before, or by the original's stands) on the first
         // free spot that is. The save keeps its slots.
         let fits = |t: usize, ctype: usize| {
+            let identity = self
+                .species
+                .get(ctype)
+                .and_then(|s| s.variant.as_ref())
+                .map_or(ctype, |v| v.owner);
             self.trophy_spots
                 .get(t)
-                .is_some_and(|s| s.chars.contains(&ctype))
+                .is_some_and(|s| s.chars.contains(&identity))
         };
         let mut used: Vec<bool> = (0..self.trophy_spots.len())
             .map(|t| {

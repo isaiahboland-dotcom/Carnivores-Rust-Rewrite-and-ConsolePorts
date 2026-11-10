@@ -8,6 +8,41 @@ use crate::game::{
 use alloc::{vec, vec::Vec};
 
 #[test]
+fn variant_replacements_and_survival_waves_use_the_same_selector() {
+    use crate::dino::variants::Variant;
+    let (area, mut hunt, car) = setup(false);
+    let mut sp = Species::new(info(ai::VELO), &car);
+    sp.hunt_price = Some(20);
+    hunt.herd.species[1] = sp.clone();
+    hunt.herd.species.push(sp);
+    hunt.herd.species[1].variant = Some(Variant {
+        owner: 1,
+        token: 11,
+        choices: vec![(1, 0.0), (2, 1.0)],
+    });
+    hunt.herd.species[2].variant = Some(Variant {
+        owner: 1,
+        token: 12,
+        choices: vec![],
+    });
+    hunt.herd.chars.clear();
+    hunt.add_secondary_one(&area, 1);
+    assert_eq!(hunt.herd.chars.len(), 1);
+    assert_eq!(hunt.herd.chars[0].ctype, 2);
+    let opts = SurvivalOptions::pick(&hunt, SurvivalKind::Modded, 4);
+    assert_eq!(
+        opts.roster,
+        [(1, 20)],
+        "members must not multiply the roster"
+    );
+    hunt.start_survival(&area, opts);
+    hunt.survival.as_mut().expect("survival").rest_ms = 0;
+    hunt.survival_step(&area, 10, &mut Vec::new());
+    assert!(!hunt.herd.chars.is_empty());
+    assert!(hunt.herd.chars.iter().all(|c| c.ctype == 2));
+}
+
+#[test]
 fn budget_survival_filters_rosters_and_spends_without_touching_hunter_points() {
     let (area, mut hunt, car) = setup(false);
     for (name, file, cost) in [

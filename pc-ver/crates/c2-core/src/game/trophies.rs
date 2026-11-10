@@ -70,6 +70,12 @@ impl Hunt {
         // The first free stand; in a dialect game the first free spot made
         // for this animal (none: no trophy, as `AddShipTask` there).
         let spots = &self.herd.trophy_spots;
+        let identity = self
+            .herd
+            .species
+            .get(c.ctype)
+            .and_then(|s| s.variant.as_ref())
+            .map_or(c.ctype, |v| v.owner);
         let t = if spots.is_empty() {
             Some(
                 self.room
@@ -86,7 +92,7 @@ impl Hunt {
             let n = spots.len().min(self.room.bodies.len());
             (0..n)
                 .filter(free)
-                .find(|&t| spots[t].chars.contains(&c.ctype))
+                .find(|&t| spots[t].chars.contains(&identity))
                 .or_else(|| (0..n).find(free))
         };
         let base = self
@@ -163,6 +169,9 @@ impl Hunt {
                 ..Default::default()
             };
             self.room.bodies[t].set_area(self.area_no);
+            if let Some(v) = self.herd.species[c.ctype].variant.as_ref() {
+                self.room.bodies[t].set_variant_token(v.token);
+            }
             self.trophy_time = 20 * 1000;
             self.trophy_body = Some(t);
             out.push(GameEvent::Trophy {

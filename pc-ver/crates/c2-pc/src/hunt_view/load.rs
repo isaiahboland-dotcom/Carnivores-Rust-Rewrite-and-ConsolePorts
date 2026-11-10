@@ -81,6 +81,7 @@ impl HuntView {
         if let Some(t) = &mee {
             c2_core::mee::tune(&mut species, t);
         }
+        super::variants::load(&huntdat, &setup.map, &mut species)?;
         let menu = crate::menu::menu_data(&huntdat)?;
         c2_core::game::price_species(&mut species, &menu);
         if setup.pc.survival_budget == 0 {

@@ -44,8 +44,11 @@ impl Herd {
                 continue;
             };
             let old = &self.chars[i];
+            let Some(ctype) = self.select_variant(old.ctype, ctx.rng) else {
+                continue;
+            };
             let mut c = Character {
-                ctype: old.ctype,
+                ctype,
                 pos,
                 tgx: pos[0],
                 tgz: pos[2],

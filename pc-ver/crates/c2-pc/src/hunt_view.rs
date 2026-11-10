@@ -52,6 +52,7 @@ mod survival_hud;
 mod touch;
 mod trophy;
 mod update;
+mod variants;
 
 use picker::{Pick, HOLD_TO_PICK};
 use trophy::Ask;

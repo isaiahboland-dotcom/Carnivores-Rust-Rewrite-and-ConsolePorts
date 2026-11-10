@@ -72,6 +72,9 @@ fn parse(vfs: &Vfs, path: &str) -> Option<ResTxt> {
 
 impl Rules {
     pub fn load(vfs: &Vfs) -> Option<Self> {
+        if vfs.resolve("HUNTDAT/VARIANTS.TOML").is_some() {
+            return None; // This runtime cannot consume the variant side file.
+        }
         let raw = parse(vfs, "HUNTDAT/_RES.TXT")?;
         let menu = match parse(vfs, "HUNTDAT/_MENU.TXT") {
             Some(m) => MenuData::from_res(&m),

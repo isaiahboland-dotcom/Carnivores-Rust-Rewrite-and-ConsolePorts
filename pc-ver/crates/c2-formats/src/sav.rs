@@ -26,6 +26,20 @@ pub struct TrophyItem {
 }
 
 impl TrophyItem {
+    /// Stable variant identity. Zero denotes an original, index-based trophy.
+    pub fn variant_token(&self) -> u64 {
+        if self.reserved[1] as u32 >> 16 != 0x5632 {
+            return 0;
+        }
+        u64::from(self.reserved[2] as u32) | (u64::from(self.reserved[3] as u32) << 32)
+    }
+
+    pub fn set_variant_token(&mut self, token: u64) {
+        self.reserved[1] = (self.reserved[1] & 0xffff) | if token == 0 { 0 } else { 0x56320000 };
+        self.reserved[2] = token as u32 as i32;
+        self.reserved[3] = (token >> 32) as u32 as i32;
+    }
+
     /// Ours, in `reserved` (the original never reads it): the area it was
     /// won in (1-based map number; 0 unknown).
     pub fn area(&self) -> i32 {
