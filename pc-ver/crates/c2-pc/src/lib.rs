@@ -35,6 +35,8 @@ mod scene;
 mod settings;
 mod sounds;
 mod texture_review;
+#[cfg(test)]
+mod texture_review_tests;
 mod weapons;
 
 #[cfg(target_os = "android")]

@@ -4954,3 +4954,27 @@ Windows clone records and compares the same hash as Linux. Chosen over a
 still have changed the hash.
 - Test: `scenario_file::tests::the_hash_ignores_crlf_line_endings`; the
   published-baselines test also passes in an `autocrlf=true` checkout.
+
+## Model texture cutouts apply per face (2026-11-11)
+
+The PC renderer separates solid, cutout (`sfOpacity`), and blended
+(`sfTransparent`) model faces. Solid faces ignore texture alpha; cutout faces
+retain the existing alpha threshold and depth writes. Blended and additive
+behavior is unchanged. This also applies to the Android frontend using this
+renderer; console renderers are not changed here.
+
+`Resources.cpp: GenerateAlphaFlags` constructs one zero-key alpha mask for a
+whole model when any face requests cutouts. That does not make every face a
+cutout: `renderd3d.cpp: d3dFlushBuffer` draws the solid batch before enabling
+color-key/alpha testing for the flagged batch. Applying the mask to every
+solid face incorrectly removed dark pixels from Genesis 2.0 Dilophosaurus
+heads and crests. Preserve the source texture and face flags instead of
+rewriting black pixels or changing the model's winding.
+
+The synthetic GPU regression `shared_texture_key_only_cuts_flagged_faces`
+checks solid black and cutout black faces sharing one texture; it fails with
+the previous shader and passes with the split batches. Local matched original
+captures confirm restored crest coverage. Full-image pixel parity remains
+unresolved (filtering/rasterization differences are not waived). Gameplay
+verification confirmed the Dilophosaurus face fix on 2026-11-11, completing
+acceptance for the reported defect. Private evidence stays ignored.

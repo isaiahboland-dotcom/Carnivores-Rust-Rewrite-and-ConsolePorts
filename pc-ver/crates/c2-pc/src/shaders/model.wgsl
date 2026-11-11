@@ -108,8 +108,20 @@ fn dithered_out(i: VOut) -> bool {
     return select(t >= -i.dither, (t < i.dither), (i.dither > 0.0));
 }
 
+// renderd3d.cpp: d3dFlushBuffer enables alpha testing only for the
+// sfOpacity/sfTransparent batch. A shared texture key must not punch holes
+// through unflagged solid faces (e.g. the Genesis Dilophosaurus crest).
 @fragment
 fn fs_opaque(i: VOut) -> @location(0) vec4<f32> {
+    let c = textureSample(tex, samp, i.uv, i.layer);
+    if (dithered_out(i)) {
+        discard;
+    }
+    return vec4<f32>(fogged(surface_light(c.rgb, i.light, i.world), i.dist), 1.0);
+}
+
+@fragment
+fn fs_cutout(i: VOut) -> @location(0) vec4<f32> {
     let c = textureSample(tex, samp, i.uv, i.layer);
     if (c.a < 0.5 || dithered_out(i)) {
         discard;

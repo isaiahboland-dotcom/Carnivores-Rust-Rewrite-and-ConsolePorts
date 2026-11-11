@@ -312,7 +312,7 @@ pub struct Instance {
     pub dither: f32,
 }
 
-/// One model on the GPU: faces expanded to unshared vertices (opaque first,
+/// One model on the GPU: faces expanded to unshared vertices (solid, cutout,
 /// then blended), so a new animation pose is a single buffer write.
 pub struct GpuModel {
     vbuf: wgpu::Buffer,
@@ -321,7 +321,8 @@ pub struct GpuModel {
     uvs: Vec<[f32; 2]>,
     /// Per-vertex `VLight` for the 4 rotations; empty = unlit (all zero).
     vlights: Vec<[f32; 4]>,
-    opaque: u32,
+    opaque: u32, // End of solid vertices.
+    cutout: u32, // End of solid + cutout vertices.
     total: u32,
 }
 
@@ -331,7 +332,16 @@ impl GpuModel {
         let mut uvs = Vec::new();
         let (opaque, blended): (Vec<&PreparedFace>, Vec<&PreparedFace>) =
             m.faces.iter().partition(|f| !f.is_transparent());
-        for f in opaque.iter().chain(&blended) {
+        let (solid, cutout): (Vec<_>, Vec<_>) = opaque
+            .iter()
+            .partition(|f| f.flags & c2_formats::model::face_flags::OPACITY == 0);
+        let solid_count = solid.len() as u32 * 3;
+        for f in solid
+            .into_iter()
+            .chain(cutout)
+            .copied()
+            .chain(blended.iter().copied())
+        {
             for k in 0..3 {
                 order.push(f.v[k]);
                 uvs.push(f.uv[k]);
@@ -355,7 +365,8 @@ impl GpuModel {
             order,
             uvs,
             vlights,
-            opaque: opaque.len() as u32 * 3,
+            opaque: solid_count,
+            cutout: opaque.len() as u32 * 3,
             total: (opaque.len() + blended.len()) as u32 * 3,
         }
     }
@@ -418,6 +429,7 @@ impl GpuModel {
 
 pub struct ModelRenderer {
     opaque: wgpu::RenderPipeline,
+    cutout: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
     tex_layout: wgpu::BindGroupLayout,
     textures: wgpu::BindGroup,
@@ -459,6 +471,7 @@ mod pose_upload_tests {
             uvs: vec![[0.1, 0.2], [0.3, 0.4]],
             vlights: vec![],
             opaque: 2,
+            cutout: 2,
             total: 2,
         };
         model.set_pose(&gpu, &[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]);
@@ -580,6 +593,7 @@ impl ModelRenderer {
     pub fn additive(gpu: &Gpu, globals: &Globals, textures: &[&[u8]]) -> Self {
         let mut r = Self::with_entry(gpu, globals, textures, "vs", &[0; 4]);
         r.opaque = r.blend_variant(gpu, globals, "fs_add", Blend::AdditiveDepth);
+        r.cutout = r.blend_variant(gpu, globals, "fs_add", Blend::AdditiveDepth);
         r.blend = r.blend_variant(gpu, globals, "fs_add", Blend::AdditiveDepth);
         r
     }
@@ -663,11 +677,13 @@ impl ModelRenderer {
             blend,
         };
         let opaque = pipeline(gpu, desc("model opaque", "fs_opaque", Blend::Opaque));
+        let cutout = pipeline(gpu, desc("model cutout", "fs_cutout", Blend::Opaque));
         let blend = pipeline(gpu, desc("model blend", "fs_blend", Blend::Alpha));
         let capacity = 1024;
         let instances = Self::instance_buffer(gpu, capacity);
         Self {
             opaque,
+            cutout,
             blend,
             tex_layout,
             textures: group,
@@ -685,8 +701,8 @@ impl ModelRenderer {
         })
     }
 
-    /// Draws `batches` of (model, instances). Opaque faces of every batch go
-    /// first, then the blended faces, so transparency sorts over solids.
+    /// Draws solid and cutout faces before blended faces. Only cutout faces
+    /// alpha-test the shared texture, as in renderd3d.cpp: d3dFlushBuffer.
     pub fn draw(
         &mut self,
         gpu: &Gpu,
@@ -720,15 +736,15 @@ impl ModelRenderer {
         pass.set_bind_group(0, &globals.group, &[]);
         pass.set_bind_group(1, &self.textures, &[]);
         pass.set_vertex_buffer(1, self.instances.slice(..));
-        for (pipe, blended) in [(&self.opaque, false), (&self.blend, true)] {
+        for (pipe, phase) in [(&self.opaque, 0), (&self.cutout, 1), (&self.blend, 2)] {
             pass.set_pipeline(pipe);
             let mut first = 0u32;
             for (m, inst) in batches {
                 let n = inst.len() as u32;
-                let range = if blended {
-                    m.opaque..m.total
-                } else {
-                    0..m.opaque
+                let range = match phase {
+                    0 => 0..m.opaque,
+                    1 => m.opaque..m.cutout,
+                    _ => m.cutout..m.total,
                 };
                 if !range.is_empty() && n > 0 {
                     pass.set_vertex_buffer(0, m.vbuf.slice(..));
