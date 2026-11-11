@@ -11,6 +11,84 @@ For isolated animal texture captures from PC games, APKs and addons, see
 [Texture fidelity review](TEXTURE-REVIEW.md). Its screenshots and review reports
 stay local; its runner and configuration format are public.
 
+## Master audit
+
+`tools/regression_audit.py` runs configured tests, builds both current Rust
+binaries and the native Wine hook, captures gameplay and isolated animals,
+then creates original/Rust comparisons and one linked HTML report. Requires
+Python 3.11+, the existing Rust/C toolchains, owned game data, a GPU, and the
+Wine/Pillow/NumPy dependencies of the original capture tools. It runs locally;
+it does not install dependencies or upload results.
+
+```sh
+cp -n tools/regression-audit.example.toml source/regression-audit.toml
+# Edit the private game paths, texture inventories and desired coverage.
+python3 tools/regression_audit.py --config source/regression-audit.toml
+```
+
+Keep an existing private configuration when rerunning an audit; the copy command
+above does not overwrite it. Run the Python command from the repository root.
+It prints the absolute path to the new master `report.html` before starting.
+Open that file locally after completion, or during the run to see completed
+steps. A full audit can take substantial time and disk space, especially the
+exhaustive animation captures and separate Wine game copies.
+
+To check configuration without starting tests or captures, or to choose an
+explicit new destination:
+
+```sh
+python3 tools/regression_audit.py --config source/regression-audit.toml --dry-run
+python3 tools/regression_audit.py --config source/regression-audit.toml \
+    --out regression-sim-recordings/my-new-audit
+```
+
+The example includes all-features workspace tests with local C2 data, portable
+core tests, Python tooling tests, cooker tests, format parity, portable Wii U C
+tests (including legacy upload), the C2/Ice Age tours, kills and behaviours,
+the Genesis standalone tour, compact/exhaustive textures and native texture
+references. Add prepared APK bases and addon packs as `[[game]]` entries;
+console hardware/emulator validation is separate. Every test/build entry
+accepts `name`, an argument-array `argv`, optional `cwd` and `env`. Commands
+run sequentially without shell expansion, so GPU tests do not compete.
+`{repo}` and `{audit}` are available in command arguments and paths.
+The native adapters currently cover the supported PC executables, not the
+Android games running on a device. APK Rust captures therefore do not imply
+an Android-original visual reference. Add explicit native references only
+when a capture adapter exists; do not substitute stock PC pictures for APKs.
+
+Outputs use a fresh ignored `regression-sim-recordings/audit-<UTC>-<id>/`:
+`report.html` links every child report, JSON result and command log, includes
+metric summaries, and embeds checkpoint pairs and native texture triptychs.
+`audit.json` records commands, exit codes, duration, blocked prerequisites and
+comparison coverage; `config.json` records requested coverage. Both are private.
+The report updates after each command; failures do not stop unrelated suites.
+Timeouts terminate the command process group. Ctrl-C retains a partial report.
+Existing destinations are refused. Use `--out NEW_DIRECTORY` to choose one.
+
+Gameplay captures are paired by checkpoint filename and also exported together
+using `c2-regress pdf`. `compare ORIGINAL RUST` records functional/behaviour/kill
+comparisons; gameplay pictures are observational, since renderer and animal
+placement differ. Isolated native texture captures replay the Rust pose and
+camera and show original, Rust and difference images with the existing native
+validity and pixel-parity checks. A missing original capture is visible as
+incomplete coverage, never silently replaced with Rust or historical pictures.
+
+An audit exits nonzero for any failed, blocked, timed-out or interrupted command,
+or missing comparison. It never approves/publishes baselines or archives/prunes
+media. Review the child reports and screenshots before following the existing
+baseline approval or [texture archival](TEXTURE-REVIEW.md#compact-sweeps-and-disk-use)
+workflow. `--dry-run` prints configuration without executing it.
+
+Synthetic orchestration/report tests (no game data, GPU or Wine):
+
+```sh
+python3 -m unittest discover -s tools -p 'test_regression_audit.py'
+```
+
+These tests exercise continuation after failure, prerequisite blocking, timeouts,
+capture pairing, PDF invocation and report generation with synthetic fixtures.
+They do not establish visual fidelity or replace a full audit on owned game data.
+
 ## Validating a change
 
 Much of this project's code is written with AI assistance. A fix or an

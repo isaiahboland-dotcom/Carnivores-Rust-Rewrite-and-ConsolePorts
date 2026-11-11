@@ -1,0 +1,85 @@
+# Copy to source/regression-audit.toml and adjust private paths/inventories.
+# Paths use {repo} and {audit}; commands run directly, without a shell.
+repeat = 5
+timeout_seconds = 7200
+portable_c_tests = true
+capture_requires = ["build-engines"]
+original_requires = ["build-original-hook"]
+
+[[test]]
+name = "workspace-all-features"
+cwd = "{repo}/pc-ver"
+argv = ["cargo", "test", "--locked", "--workspace", "--all-features", "--", "--test-threads=1"]
+env = { C2_ORIGINAL_DIR = "{repo}/source/c2-original", C2_ORIGINAL_HUNTDAT = "{repo}/source/c2-original/HUNTDAT" }
+
+[[test]]
+name = "portable-core"
+cwd = "{repo}/pc-ver"
+argv = ["cargo", "test", "--locked", "-p", "c2-core", "--no-default-features", "--features", "portable-hunt", "--", "--test-threads=1"]
+env = { C2_ORIGINAL_HUNTDAT = "{repo}/source/c2-original/HUNTDAT" }
+
+[[test]]
+name = "python-tools"
+argv = ["python3", "-m", "unittest", "discover", "-s", "tools", "-p", "test_*.py"]
+
+[[test]]
+name = "cooker"
+cwd = "{repo}/3ds-ver"
+argv = ["cargo", "+stable", "test", "--locked", "-p", "c2-cook"]
+
+[[test]]
+name = "format-parity"
+cwd = "{repo}/pc-ver"
+argv = ["cargo", "run", "--locked", "-p", "c2-parity", "--", "scan", "{repo}/source/c2-original", "{repo}/source/ice-age/Carnivores Ice Age"]
+
+[[build]]
+name = "build-engines"
+cwd = "{repo}/pc-ver"
+argv = ["cargo", "build", "--locked", "--release", "-p", "c2-pc", "-p", "c2-regress"]
+
+[[build]]
+name = "build-original-hook"
+argv = ["sh", "{repo}/pc-ver/crates/c2-regress/original/build.sh"]
+
+[[game]]
+id = "c2"
+path = "{repo}/source/c2-original"
+original = true
+scenarios = ["vanilla_map2_four_dinos", "kill_animations", "behaviours"]
+
+[[game]]
+id = "ice-age"
+path = "{repo}/source/ice-age/Carnivores Ice Age"
+original = true
+scenarios = ["vanilla_map2_four_dinos", "kill_animations", "behaviours"]
+
+[[game]]
+id = "genesis-redux"
+path = "{repo}/source/mods-extracted/genesis-redux-2.0/Carnivores Genesis Redux Beta 2.0/- Game"
+original = true
+scenarios = ["standalone_map2_four_dinos"]
+
+# Add locally prepared c2-apk / ice-age-apk bases and addon packs as [[game]]
+# entries, using the game ids and scenarios documented in docs/REGRESSION.md.
+# Set original=true only for scenarios supported by that native executable.
+# A game.baseline may name an approved local Rust run or "published".
+
+[textures]
+compact = "{repo}/source/texture-review.toml"
+exhaustive = "{repo}/source/texture-review-exhaustive.toml"
+original_input = "{repo}/source/texture-review-original-pc.toml"
+
+[[original_texture]]
+id = "c2"
+path = "{repo}/source/c2-original"
+sources = ["pc-carnivores-2"]
+
+[[original_texture]]
+id = "ice-age"
+path = "{repo}/source/ice-age/Carnivores Ice Age"
+sources = ["pc-ice-age"]
+
+[[original_texture]]
+id = "genesis"
+path = "{repo}/source/mods-extracted/genesis-redux-2.0/Carnivores Genesis Redux Beta 2.0/- Game"
+sources = ["genesis-2-0", "genesis-2-0-critters"]
