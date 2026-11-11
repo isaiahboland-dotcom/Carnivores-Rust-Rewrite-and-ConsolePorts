@@ -846,8 +846,10 @@ pub fn prepare(
             })
         });
     }
-    let mut opts = BuildOptions::default();
-    opts.variants = r.variants.clone();
+    let mut opts = BuildOptions {
+        variants: r.variants.clone(),
+        ..Default::default()
+    };
     for res in &r.resolve {
         if !res.path.is_empty() {
             opts.file_winners

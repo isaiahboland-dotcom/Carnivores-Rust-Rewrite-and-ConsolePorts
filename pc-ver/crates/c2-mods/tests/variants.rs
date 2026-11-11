@@ -181,7 +181,7 @@ fn building_retains_same_name_characters_and_private_assets() {
         winner: "classic-rex".into(),
         ..Default::default()
     });
-    let locations = c2_mods::recipe::locate(&recipe, &[root.clone()]);
+    let locations = c2_mods::recipe::locate(&recipe, std::slice::from_ref(&root));
     let (sources, opts) =
         c2_mods::recipe::prepare(&root, &recipe, &locations, &vfs).expect("prepare");
     assert_eq!(opts.variants, recipe.variants);

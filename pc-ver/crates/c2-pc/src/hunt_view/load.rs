@@ -312,26 +312,6 @@ fn same_map(original: &Path, selected: &Path) -> bool {
     }
 }
 
-#[cfg(test)]
-mod map_art_tests {
-    use super::same_map;
-
-    #[test]
-    fn painted_art_requires_matching_terrain_even_when_slots_match() {
-        let root = std::env::temp_dir().join(format!("c2-map-art-{}", std::process::id()));
-        std::fs::create_dir_all(&root).unwrap();
-        let original = root.join("original.MAP");
-        let selected = root.join("AREA1.MAP");
-        std::fs::write(&original, b"APK terrain").unwrap();
-        std::fs::write(&selected, b"addon terrain").unwrap();
-        assert!(!same_map(&original, &selected));
-        std::fs::write(&selected, b"APK terrain").unwrap();
-        assert!(same_map(&original, &selected));
-        assert!(!same_map(&root.join("missing.MAP"), &selected));
-        std::fs::remove_dir_all(root).unwrap();
-    }
-}
-
 /// The map: the frame with the area overview painted in at (11, 23), and
 /// where the area sits in it. No frame (an APK-built game): the area alone,
 /// the kit's frame drawn around it.
@@ -430,4 +410,24 @@ fn fit_view(view: &mut AreaView, hunt: &Hunt, setup: &HuntSetup) {
     }
     view.brightness = (hunt.room.options.brightness + 128) as f32 / 256.0;
     view.sprite_cells = setup.pc.model_cells(view.radius as i32);
+}
+
+#[cfg(test)]
+mod map_art_tests {
+    use super::same_map;
+
+    #[test]
+    fn painted_art_requires_matching_terrain_even_when_slots_match() {
+        let root = std::env::temp_dir().join(format!("c2-map-art-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let original = root.join("original.MAP");
+        let selected = root.join("AREA1.MAP");
+        std::fs::write(&original, b"APK terrain").unwrap();
+        std::fs::write(&selected, b"addon terrain").unwrap();
+        assert!(!same_map(&original, &selected));
+        std::fs::write(&selected, b"APK terrain").unwrap();
+        assert!(same_map(&original, &selected));
+        assert!(!same_map(&root.join("missing.MAP"), &selected));
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

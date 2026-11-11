@@ -19,8 +19,8 @@ pub mod res_merge;
 pub mod resolve;
 pub mod rules;
 pub mod standalone;
-pub mod variants;
 mod triassic;
+pub mod variants;
 
 use std::path::PathBuf;
 
