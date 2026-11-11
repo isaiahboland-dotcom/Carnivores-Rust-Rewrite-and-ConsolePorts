@@ -7,14 +7,11 @@
 //! from the game's own menu picture (`cia::wiiu_art`), so several games sit
 //! side by side on the Wii U Menu (say Triassic, Mandibles, and Carnivores
 //! 2 with the Modder's Edition and add-ons). An `.rpx` (Homebrew Launcher)
-//! has no bundle: it can only be the default install, `carnivores-probe`.
+//! uses its executable's parent folder, with `carnivores-probe` as a fallback.
 
 use std::path::{Path, PathBuf};
 
 use crate::jobs::Step;
-
-/// The install an `.rpx`, or a `.wuhb` without `install.txt`, reads.
-pub const SD_FOLDER: &str = "carnivores-probe";
 
 /// The Wii U app as the Wii U build makes it (`wiiu-ver/perf-probe`).
 pub const APP: &str = "c2-wiiu-perf-probe.rpx";
@@ -59,15 +56,18 @@ pub fn art_source(cook_args: &[String]) -> Option<PathBuf> {
     last("--overlay").or_else(|| last("--game"))
 }
 
+/// Folder names fit the runtime's 64-byte buffer and are safe on FAT SD cards.
+pub fn folder_name(default: &str, custom: Option<&str>) -> String {
+    crate::config::install_name(custom.filter(|n| !n.trim().is_empty()).unwrap_or(default))
+        .chars()
+        .take(63)
+        .collect()
+}
+
 /// The steps for install `i` on the SD card `sd` (`work`: a folder for the
 /// bundle's content and art).
 pub fn steps(i: &Install, t: &Tools, sd: &Path, work: &Path) -> Vec<Step> {
-    // An .rpx can't say which folder it is: the default one.
-    let name = if t.wuhbtool.is_some() {
-        i.name
-    } else {
-        SD_FOLDER
-    };
+    let name = i.name;
     let dir = sd.join("wiiu").join("apps").join(name);
     let mut cook = i.cook_args.clone();
     cook.extend([
@@ -143,6 +143,17 @@ mod tests {
     }
 
     #[test]
+    fn custom_names_are_safe_and_fit_the_runtime() {
+        assert_eq!(folder_name("triassic", None), "triassic");
+        assert_eq!(folder_name("triassic", Some("  ")), "triassic");
+        assert_eq!(
+            folder_name("triassic", Some("Ice Age / Mods")),
+            "Ice-Age---Mods"
+        );
+        assert_eq!(folder_name("default", Some(&"x".repeat(100))).len(), 63);
+    }
+
+    #[test]
     fn a_wuhb_names_its_folder_and_cooks_into_it() {
         let i = Install {
             name: "triassic",
@@ -183,7 +194,7 @@ mod tests {
     }
 
     #[test]
-    fn an_rpx_is_the_default_install() {
+    fn an_rpx_uses_its_own_install() {
         let i = Install {
             name: "triassic",
             title: "T",
@@ -198,8 +209,8 @@ mod tests {
         assert_eq!(
             to,
             &Path::new("sd/wiiu/apps")
-                .join(SD_FOLDER)
-                .join(format!("{SD_FOLDER}.rpx"))
+                .join("triassic")
+                .join("triassic.rpx")
         );
     }
 

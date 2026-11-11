@@ -174,8 +174,29 @@ impl Launcher {
     /// The base game's files and the Wii U app onto the SD card
     /// (`crate::wiiu`).
     /// The Wii U installs the tab's choices make: (folder, title, `c2-cook`
-    /// arguments). An `.rpx` is one install only (the Homebrew Launcher's).
+    /// arguments). Both formats support separate named installs.
     pub(super) fn wiiu_installs(&self) -> Vec<(String, String, Vec<String>)> {
+        self.wiiu_default_installs()
+            .into_iter()
+            .map(|(key, title, args)| {
+                let title = self
+                    .cfg
+                    .wiiu
+                    .names
+                    .get(&key)
+                    .filter(|n| !n.trim().is_empty())
+                    .map(|n| n.trim().to_string())
+                    .unwrap_or(title);
+                let name = crate::wiiu::folder_name(
+                    &key,
+                    self.cfg.wiiu.names.get(&key).map(String::as_str),
+                );
+                (name, title, args)
+            })
+            .collect()
+    }
+
+    pub(super) fn wiiu_default_installs(&self) -> Vec<(String, String, Vec<String>)> {
         if let Some(r) = self.active_recipe() {
             if !self.cfg.wiiu.addons {
                 return Vec::new();
@@ -239,9 +260,6 @@ impl Launcher {
                 a.extend(extras.clone());
                 v.push((install_name(&c2_mods::manifest::slug(&title)), title, a));
             }
-        }
-        if w.format == crate::config::WiiUFormat::Rpx {
-            v.truncate(1);
         }
         v
     }

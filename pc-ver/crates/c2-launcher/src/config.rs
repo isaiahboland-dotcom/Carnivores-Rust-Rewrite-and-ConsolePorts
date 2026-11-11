@@ -172,6 +172,8 @@ pub struct WiiU {
     pub out: Option<PathBuf>,
     /// RPX for Homebrew Launcher or WUHB for Aroma's Wii U Menu.
     pub format: WiiUFormat,
+    /// Custom display names keyed by the install's stable default folder.
+    pub names: BTreeMap<String, String>,
     /// The original game (`carnivores2`).
     pub original: bool,
     /// The game with the overlays and add-ons (`carnivores2-addons`).
@@ -204,6 +206,7 @@ impl Default for WiiU {
         WiiU {
             out: None,
             format: WiiUFormat::default(),
+            names: Default::default(),
             original: true,
             addons: true,
             standalones: true,
@@ -695,6 +698,7 @@ mod tests {
         c.three_ds.out = Some("first sd".into());
         c.three_ds.cia = true;
         c.wiiu.out = Some("wii u sd".into());
+        c.wiiu.names.insert("first".into(), "My Mod Pack".into());
         c.windows_out = Some("windows output".into());
         c.android_out = Some("android output".into());
         c.android_name = "Vanilla".into();

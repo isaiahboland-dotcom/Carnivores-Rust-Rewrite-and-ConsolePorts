@@ -1700,7 +1700,26 @@ end_load:
     return session_result;
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    /* HBL supplies the executable path. Keep RPX installs beside their own
+     * data; WUHB's bundled install.txt takes precedence in app_folder_init. */
+    if (argc > 0 && argv && argv[0]) {
+        const char *apps = strstr(argv[0], "/wiiu/apps/");
+        if (apps) {
+            const char *name = apps + strlen("/wiiu/apps/");
+            const char *slash = strchr(name, '/');
+            size_t len = slash ? (size_t)(slash - name) : 0;
+            if (len > 0 && len < sizeof(app_folder) && name[0] != '.') {
+                size_t i;
+                for (i = 0; i < len; ++i) {
+                    char c = name[i];
+                    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                          (c >= '0' && c <= '9') || c == '-' || c == '_')) break;
+                }
+                if (i == len) { memcpy(app_folder, name, len); app_folder[len] = 0; }
+            }
+        }
+    }
     WHBProcInit();
     // WHB registers the HBL HOME-denied handler; keep our deferred-shutdown
     // loop informed as well, without polling WHBProcIsRunning again.

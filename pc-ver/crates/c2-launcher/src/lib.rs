@@ -156,7 +156,7 @@ pub fn cia_cli(args: &[String]) -> Result<std::path::PathBuf, String> {
 /// the window: `c2-cook --target wiiu` with `COOK_ARGS` (`--game`,
 /// `--overlay`, `--mod`, `--recipe`...) into `SD/wiiu/apps/NAME/`, and
 /// `NAME.wuhb` (its own Wii U Menu entry; `--rpx`: the Homebrew Launcher's
-/// default install instead). The tools are found as the window finds them.
+/// named install). The tools are found as the window finds them.
 pub fn wiiu_cli(args: &[String]) -> Result<std::path::PathBuf, String> {
     use std::path::PathBuf;
     let split = args.iter().position(|a| a == "--").unwrap_or(args.len());
@@ -167,7 +167,7 @@ pub fn wiiu_cli(args: &[String]) -> Result<std::path::PathBuf, String> {
             .and_then(|i| own.get(i + 1))
             .cloned()
     };
-    let name = config::install_name(&get("--install").ok_or("--install NAME")?);
+    let name = wiiu::folder_name(&get("--install").ok_or("--install NAME")?, None);
     let title = get("--title").unwrap_or_else(|| name.clone());
     let sd = PathBuf::from(get("--sd").ok_or("--sd DIR")?);
     let tools = get("--tools").map(PathBuf::from);

@@ -10,7 +10,7 @@ impl Launcher {
             "Puts each game on the SD card as its own Wii U Menu entry, in wiiu/apps/<name>/: the \
              original game, the game with your overlays and add-ons, and each standalone game. Its \
              icon and start screens are cut from the game's own menu picture. Choose WUHB for \
-             Aroma's Wii U Menu or RPX for the Homebrew Launcher (one game only).",
+             Aroma's Wii U Menu or RPX for the Homebrew Launcher.",
         );
         ui.add_space(6.0);
         let mut changed = false;
@@ -65,20 +65,23 @@ impl Launcher {
             help(ui, "The balance file goes with the add-ons install (or the original game without add-ons).");
             ui.add_space(4.0);
             changed |= self.pictures_ui(ui);
-            let names: Vec<String> = self
-                .wiiu_installs()
-                .into_iter()
-                .map(|(n, t, _)| {
-                    let folder = if self.cfg.wiiu.format == crate::config::WiiUFormat::Rpx {
-                        crate::wiiu::SD_FOLDER
-                    } else {
-                        &n
-                    };
-                    format!("{t} -> wiiu/apps/{folder}/")
-                })
-                .collect();
-            for n in names {
-                ui.label(RichText::new(n).color(DIM));
+            help(ui, "Give each install its own name. This sets its menu title, app filename and SD folder. Blank uses the default. Reusing a folder replaces that install.");
+            for (key, title, _) in self.wiiu_default_installs() {
+                ui.horizontal(|ui| {
+                    ui.label(&title);
+                    let name = self.cfg.wiiu.names.entry(key.clone()).or_default();
+                    let old_folder = crate::wiiu::folder_name(&key, Some(name));
+                    changed |= ui
+                        .add(egui::TextEdit::singleline(name).hint_text(&title))
+                        .changed();
+                    let folder = crate::wiiu::folder_name(&key, Some(name));
+                    ui.label(RichText::new(format!("wiiu/apps/{folder}/")).color(DIM));
+                    if old_folder != folder {
+                        if let Some(art) = self.cfg.wiiu.art.remove(&old_folder) {
+                            self.cfg.wiiu.art.insert(folder, art);
+                        }
+                    }
+                });
             }
         });
         ui.add_space(8.0);
@@ -154,6 +157,13 @@ impl Launcher {
             } else {
                 "tick at least one install under What goes on".into()
             });
+        }
+        let mut folders = std::collections::BTreeSet::new();
+        for (name, _, _) in self.wiiu_installs() {
+            if !folders.insert(name.to_ascii_lowercase()) {
+                blockers.push("give each install a different SD folder name".into());
+                break;
+            }
         }
         if build_button(ui, &blockers, self.busy()) {
             self.build_wiiu();
