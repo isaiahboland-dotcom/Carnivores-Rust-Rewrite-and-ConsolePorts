@@ -13,7 +13,7 @@ A fan-made, ground-up Rust rewrite of **Carnivores 2** (Action Forms, 1999), wit
 You need your own copy of Carnivores 2: this project contains **no game files and no mod files**, only
 code, documentation and recipes (lists of credits, download links and file hashes).
 
-**v0.5.3:** [Release notes](docs/releases/v0.5.3.md) · [Changelog](CHANGELOG.md) · [Public roadmap](docs/ROADMAP.md)
+**v0.5.3:** [Download Windows ZIP or Linux TAR](https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/releases/tag/v0.5.3) · [Release notes](docs/releases/v0.5.3.md) · [Changelog](CHANGELOG.md) · [Public roadmap](docs/ROADMAP.md)
 
 ---
 
@@ -54,7 +54,7 @@ the 3DS's PICA200 GPU and the Wii U's PowerPC CPU.
 |---|---|---|
 | **PC** (Linux; Windows experimental) | Playable, feature-rich | The full original game, plus add-ons, Modder's Edition games, standalone games, Carnivores: Ice Age, animals from the mobile games, survival mode and a balance editor. Bugs mostly show up when a lot of mods and add-ons are used at once. Working on smaller bugs and optional quality of life features |
 | **Nintendo 3DS** (homebrew) | Nearly complete | Full hunts, touch menus, bottom-screen map, sound, saves, trophy room, add-on and standalone packs, `.cia` installs. Tested on real 3DS and 2DS hardware. Optional settings help with the handheld controls (see [below](#3ds-settings-for-handheld-play)). Like PC, bugs mostly come from packing in too many add-ons or mods. |
-| **Wii U** (homebrew) | Demo, being optimized | Stock Carnivores 2 only: an HD menu (TV and GamePad) with dawn/day/night and all the original gear and options, all five maps, the nine animals, six weapons, calls, radar, GamePad map. Runs on a real Wii U under Aroma (`.wuhb`) and exits to the HOME menu cleanly. A steady 30 FPS in open areas; 20-25 FPS in thick jungle, where the GPU is the limit (measured on hardware). New and not yet tested on the console: survival, the trophy room, saved trophies and score (the PC's save format), the PC's kill notice and trophy plaque, the hunter record, and an exit prompt and pause. New: any game as its own Wii U Menu entry: add-ons, the Modder's Edition and standalone games such as Triassic and Mandibles. |
+| **Wii U** (homebrew) | Demo, being optimized | Stock Carnivores 2 only: an HD menu (TV and GamePad) with dawn/day/night and all the original gear and options, all five maps, the nine animals, six weapons, calls, radar, GamePad map. Runs on a real Wii U under Aroma (`.wuhb`) and exits to the HOME menu cleanly. A steady 30 FPS in open areas; 50-60fps, where the GPU is the limit (measured on hardware) (the PC's save format), the PC's kill notice and trophy plaque, the hunter record, and an exit prompt and pause. New: any game as its own Wii U Menu entry: add-ons, the Modder's Edition and standalone games such as Triassic and Mandibles. |
 | **PC VR** (OpenXR) | Early first draft | Menus and the hunt setup on a panel, walking the areas, animals that hunt you. No weapons yet. Tested with a PS VR2 on Linux through Monado. |
 | **Android** | First build: menus run, tested on android device. Controller and touch controls work | The PC game in an APK, for a game built from your own mobile APK (Dinosaur Hunter or Ice Age), plus add-ons and standalones combined beside it on the PC; at most 8 animals and 8 weapons per hunt. See [`android-ver/README.md`](android-ver/README.md). |
 | **PS5 / PS VR2** | Not started | Research notes only (`psvr2-ver/gameplan.md`). Mainly looking at an optimized PSVR2 setup since the PS5 CFW community is already working on translation layers for PC games to run |
@@ -86,15 +86,18 @@ day cycle's midnight, with the flashlight, the radar and the shotgun.
 
 The same Carnivores 2 location captured from approximately the same viewpoint across platforms. These are screenshots from the Rust rewrite running on each platform, not promotional renders. Visual differences reflect platform-specific rendering, resolution, draw distance, and hardware limitations; camera positions and settings are not perfectly identical.
 
-| PC | Android |
+| PC (max settings) | Android (medium settings) |
 |:---:|:---:|
 | <img src="assets/platform-comparison/pc.png" alt="Carnivores 2 Rust rewrite gameplay on PC" width="100%"> | <img src="assets/platform-comparison/android.png" alt="Carnivores 2 Rust rewrite gameplay on Android" width="100%"> |
 
-| Nintendo 3DS | Wii U (Coming Soon) |
+| O3DS | Wii U (Coming Soon) |
 |:---:|:---:|
-| <img src="assets/platform-comparison/3ds.png" alt="Carnivores 2 Rust rewrite gameplay on Nintendo 3DS" width="100%"> | **Coming Soon** — Wii U gameplay screenshot pending. |
+| <img src="assets/platform-comparison/3ds.png" alt="Carnivores 2 Rust rewrite gameplay on Nintendo 3DS" width="100%"> | <img src="assets/platform-comparison/wiiu.png" alt="Carnivores 2 Rust rewrite gameplay on Wii U" width="100%"> |
 
 *Screenshots are intended to illustrate the ports' visual differences, not to serve as a controlled graphics or performance benchmark.*
+*The Android port currently requires the original Carnivores Android APK. Some visual differences, particularly in lighting, are expected due to differences in how the original Android version handles rendering.*
+*The Android port also supports PC mods, although additional testing is needed to verify compatibility and stability across a wider range of mods.*
+*Future plans include support for using Carnivores 2 as a base game on Android, further expanding compatibility with the original games and community-created content.*
 
 ---
 
@@ -102,13 +105,47 @@ The same Carnivores 2 location captured from approximately the same viewpoint ac
 
 - **Your own Carnivores 2 install**: the folder that contains `HUNTDAT/`. ReShade or other wrapper DLLs
   in it are ignored.
-- **Building from source:** stable Rust for PC (<https://rustup.rs>). Downloaded Windows
-  builds do not need Rust or C++ build tools; see [Windows installation](#windows-installation).
-  The 3DS and Wii U source builds also need nightly; see their sections.
+- **A Windows or Linux desktop:** download the ready-to-run bundle below. No Rust or C++
+  build tools are needed to play. Building from source is optional.
 - Optional: mods you've downloaded, each in its own folder (or as a `.zip`; extract `.rar` and `.7z` separately
   before adding their folders). Carnivores: Ice Age and the mobile games' APKs can be imported too.
 
-On Linux, the PC build needs the ALSA and udev headers:
+---
+
+## The easy way: download and open the launcher
+
+1. Download the bundle for your system from the
+   [v0.5.3 release](https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/releases/tag/v0.5.3):
+   - **Windows (64-bit):** [windows.zip](https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/releases/download/v0.5.3/windows.zip)
+   - **Linux (x86-64, glibc 2.35 or newer; Ubuntu 22.04 or newer):** [linux.tar](https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/releases/download/v0.5.3/linux.tar)
+2. Extract the **whole archive** into a writable folder. Keep the executables,
+   `recipes/` and the other included files together.
+3. Open **`c2-launcher.exe`** on Windows. On Linux, extract and start it from a terminal:
+   ```sh
+   mkdir -p c2rs
+   tar -xf ~/Downloads/linux.tar -C c2rs
+   cd c2rs
+   ./c2-launcher
+   ```
+4. Choose **New instance**, select your own game folder (the one containing
+   `HUNTDAT/`) as the base game, save, then press **Play**.
+
+The bundles include the launcher, PC engine, experimental VR engine, cooker,
+console-builder interfaces and recipes. They contain **no game or mod files**.
+Linux still needs desktop/audio libraries and graphics drivers; see the
+[bundle guide](docs/BUNDLE.md) for runtime packages and console-packaging requirements.
+3DS and Wii U packaging needs separately built console applications and third-party tools.
+
+Both release builds passed, and the downloaded archives were verified against the
+v0.5.3 tagged commit, including file hashes and Windows runtime dependencies.
+Gameplay and clean-machine testing remain pending; Windows remains experimental.
+
+### Optional: build the launcher from source
+
+For PC source builds, install stable Rust from <https://rustup.rs> and Git.
+Windows also needs Visual Studio Build Tools with **Desktop development with C++**
+and a Windows SDK; see the [Windows guide](docs/WINDOWS.md).
+On Linux, install the ALSA and udev headers and build tools:
 
 ```sh
 sudo apt install build-essential pkg-config libasound2-dev libudev-dev   # Debian / Ubuntu
@@ -116,12 +153,7 @@ sudo dnf install gcc pkgconf alsa-lib-devel systemd-devel                 # Fedo
 sudo pacman -S base-devel alsa-lib                                        # Arch
 ```
 
----
-
-## The easy way: the launcher (GUI)
-
-The launcher sets up the game, manages mods, plays on PC, and builds 3DS and Wii U installs, without the
-command line.
+Then clone and build:
 
 ```sh
 git clone https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts.git c2rs
@@ -129,6 +161,14 @@ cd c2rs/pc-ver
 cargo build --release          # builds c2-pc, the launchers and c2-vr into pc-ver/target/release/
 cargo run --release -p c2-launcher --bin c2-launcher   # or ./target/release/c2-launcher
 ```
+
+The 3DS and Wii U source builds also need nightly Rust and their platform tools;
+see their sections below.
+
+### Using the launcher
+
+The launcher sets up the game, manages mods, plays on PC, and provides 3DS and Wii U
+packaging interfaces.
 
 Three builds of the same app:
 
@@ -180,21 +220,18 @@ played at all: restore the list, or remove `base` from the recipe to allow any g
 1. Use a **64-bit Windows** system with working graphics/audio drivers. In a VM,
    install its guest graphics drivers/tools and enable 3D acceleration if available;
    compatibility depends on the graphics API exposed by that VM.
-2. Open the [Windows workflow](https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/actions/workflows/windows.yml),
-   choose a successful run for the revision you want, and download the
-   **c2rs-windows-x64** artifact (GitHub sign-in may be required). Extract the ZIP.
-   The executables are under `pc-ver/target/x86_64-pc-windows-msvc/release/`.
-3. Keep `c2-launcher.exe` and `c2-pc.exe` together. Open `c2-launcher.exe`, make a
+2. Download [windows.zip](https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/releases/download/v0.5.3/windows.zip)
+   from the [v0.5.3 release](https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/releases/tag/v0.5.3)
+   and extract the whole ZIP into a writable folder. The executables are directly
+   inside the extracted folder.
+3. Keep all included files together. Open `c2-launcher.exe`, make a
    **New instance** with your own game folder (the one containing `HUNTDAT`) as its
-   base game, then use **Play**. The download contains no game assets. A generated portable instance can instead be started
+   base game, save, then use **Play**. The download contains no game assets. A generated portable instance can instead be started
    by double-clicking its `c2-pc.exe`; keep its whole folder together.
 
-Downloaded builds need **no Rust, Visual Studio build tools or devkitPro**.
-Builds importing `VCRUNTIME140.dll` (including the inspected VM test executable)
-need Microsoft's [Visual C++ x64 runtime](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist).
-The CI configuration requests static C runtime linking; runtime dependencies must
-still be verified for the executable being distributed. Graphics driver support
-is required; original-game wrapper/ReShade DLLs are not dependencies.
+Downloaded builds need **no Rust, Visual Studio build tools or devkitPro** to play.
+The v0.5.3 Windows bundle uses the static MSVC runtime, and its verified executables
+need no separate Visual C++ runtime installation. Graphics driver support is required.
 Saves and settings are under `%APPDATA%\c2rs`.
 
 To compile your own executables, you also need stable Rust (MSVC), Git if cloning,
@@ -208,6 +245,19 @@ native hardware gameplay and broader compatibility testing are pending.
 ---
 
 ## PC from the command line
+
+With a downloaded bundle, open a terminal in the extracted folder:
+
+```sh
+./c2-pc play "PATH/TO/Carnivores2"
+```
+
+On Windows PowerShell, use `.\c2-pc.exe play "PATH\TO\Carnivores2"`.
+The examples below use Cargo for source builds; with a bundle, replace
+`cargo run --release -p c2-pc --` with `./c2-pc` (or `.\c2-pc.exe` on Windows).
+Bundled recipes are in `recipes/`, so use `recipes/...` instead of `../recipes/...`.
+
+From a source checkout:
 
 ```sh
 cd pc-ver
@@ -231,10 +281,15 @@ cargo run --release -p c2-pc -- play GAME --standalone GAME_DIR                 
 cargo run --release -p c2-pc -- play GAME --recipe ../recipes/c2-mee-addons.toml --mods DOWNLOADS --overlay "PATH/Carnivores 2"
 ```
 
-**Controls:** keyboard and mouse follow your bindings (Options > Controls). A gamepad works too: left
-stick moves, right stick looks, ZL draws, ZR fires, L binoculars, R map, A jump, B run, X call, Y next
-weapon, D-pad up crouch / down change call, + pause, − exit. In the menus, the left stick moves a pointer,
-A clicks, B goes back, and the right stick or D-pad scrolls lists.
+**Controls:** keyboard and mouse follow your bindings (Options > Controls). PC and Android gamepads
+use Xbox/Steam Deck labels: left stick moves (click to sprint), right stick looks (click to cycle
+lights), LT draws, RT fires, LB binoculars, RB map, A jump, B supported firing modes, X call, Y next
+weapon. Hold X/Y for the call/weapon picker; inside them, right-stick click changes the flashlight
+beam and B swaps split lethal/tranq ammo, respectively. D-pad up crouches, down changes calls,
+left reloads, right racks; Start pauses, Select opens the exit prompt. Advanced Observer uses
+A double-tap for flight and X to stop/resume time. In menus, A confirms and B goes back.
+See [controller bindings and settings](pc-ver/CONTROLLER.md), including Android's default-on
+**Fire reloads when empty** and the optional picker pause. Nintendo ports keep their own mappings.
 Enable **Map zoom / pan** under **Options > Video** (off by default).
 With the PC map open, use the wheel to zoom at the pointer, right-drag to pan,
 and Home to restore the full map. Dynamic-time equipment uses N for night vision
