@@ -1,0 +1,42 @@
+# CODEOWNERS for the Carnivores Rust Rewrite and Console Ports.
+# Format: https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# To add a co-maintainer for a specific area, add their @handle on the
+# right-hand side of the relevant path. Every path listed below requires
+# at least one review from a listed code owner before merge (once branch
+# protection is enabled in GitHub repo settings).
+
+# Default owner for anything not matched below.
+*                           @isaiahboland-dotcom
+
+# PC workspace — main engine, launcher, VR, parity tooling.
+/pc-ver/                    @isaiahboland-dotcom
+/pc-ver/Cargo.toml          @isaiahboland-dotcom
+/pc-ver/Cargo.lock          @isaiahboland-dotcom
+/pc-ver/clippy.toml         @isaiahboland-dotcom
+
+# Console and mobile targets.
+/3ds-ver/                   @isaiahboland-dotcom
+/wiiu-ver/                  @isaiahboland-dotcom
+/android-ver/               @isaiahboland-dotcom
+/psvr2-ver/                 @isaiahboland-dotcom
+/steamdeck/                 @isaiahboland-dotcom
+
+# Recipes (mod-pack metadata only — never mod files themselves).
+/recipes/                   @isaiahboland-dotcom
+
+# Python tooling (release bundling, texture review).
+/tools/                     @isaiahboland-dotcom
+
+# Documentation and governance.
+/docs/                      @isaiahboland-dotcom
+/README.md                  @isaiahboland-dotcom
+/CHANGELOG.md               @isaiahboland-dotcom
+/CONTRIBUTING.md            @isaiahboland-dotcom
+/SECURITY.md                @isaiahboland-dotcom
+/CODE_OF_CONDUCT.md         @isaiahboland-dotcom
+/LICENSE                    @isaiahboland-dotcom
+
+# CI and repo configuration.
+/.github/                   @isaiahboland-dotcom
+/.gitignore                 @isaiahboland-dotcom

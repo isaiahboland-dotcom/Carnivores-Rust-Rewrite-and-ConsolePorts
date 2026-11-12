@@ -7,6 +7,9 @@ Keep pull requests focused, explain what changed, and describe how you tested it
 Discuss major architectural or gameplay changes in an issue first. Follow the
 conventions in [the development guide](docs/DEVELOPMENT.md).
 
+All participation is covered by the [Code of Conduct](CODE_OF_CONDUCT.md).
+Report security issues privately as described in [SECURITY.md](SECURITY.md).
+
 ## Build and check
 
 Install stable Rust (1.88 or newer). On Linux, install the ALSA and udev
