@@ -3,6 +3,7 @@
 //! folders, and recipes (mod combinations shared as URLs and file hashes).
 
 pub mod balance;
+pub mod classic;
 pub mod detect;
 pub mod flee;
 pub mod hunter;
