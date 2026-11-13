@@ -3,6 +3,11 @@ use super::*;
 
 impl Launcher {
     pub(super) fn play(&mut self) {
+        self.launch_game(false);
+    }
+
+    /// Starts the game; `classic`: as Play Vanilla (`--classic`).
+    pub(super) fn launch_game(&mut self, classic: bool) {
         if !self.can_start_operation() {
             return;
         }
@@ -22,7 +27,7 @@ impl Launcher {
         };
         let step = Step::Launch {
             program: pc,
-            args: self.play_args(),
+            args: self.game_args(classic),
         };
         // The time played goes to the instance in use.
         let instance = self.active_recipe().map(|r| r.path.clone());

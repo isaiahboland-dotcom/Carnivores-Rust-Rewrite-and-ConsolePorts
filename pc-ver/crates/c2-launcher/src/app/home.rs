@@ -12,6 +12,8 @@ pub(super) enum Dialog {
     /// A name for a copy of the instance.
     Clone(PathBuf, String),
     Delete(PathBuf),
+    /// An imported recipe's advanced sections, to keep or take out.
+    Review(PathBuf),
 }
 
 /// Where Fix missing is.
@@ -35,6 +37,7 @@ impl Launcher {
             Ask::Nothing => {}
             Ask::Play(p) => self.start(p, Destination::Play),
             Ask::PlayVr(p) => self.start(p, Destination::PlayVr),
+            Ask::PlayVanilla(p) => self.start(p, Destination::PlayVanilla),
             Ask::Build(p) => {
                 // One platform: straight to it.
                 match Destination::builds(self.ui.mode) {
@@ -206,9 +209,22 @@ impl Launcher {
             return;
         };
         let mut done = false;
+        if let Dialog::Review(p) = &d {
+            let p = p.clone();
+            let mut done = false;
+            egui::Modal::new(egui::Id::unique("review-dialog")).show(ctx, |ui| {
+                ui.set_width(460.0);
+                done = self.review_ui(ui, &p);
+            });
+            if !done {
+                self.ui.dialog = Some(d);
+            }
+            return;
+        }
         egui::Modal::new(egui::Id::unique("instance-dialog")).show(ctx, |ui| {
             ui.set_width(420.0);
             match &mut d {
+                Dialog::Review(_) => done = true,
                 Dialog::New(name) | Dialog::Clone(_, name) => {
                     ui.label(RichText::new("Instance name").color(SAND).strong());
                     let r = ui.text_edit_singleline(name);
@@ -280,7 +296,7 @@ impl Launcher {
             Dialog::New(name) => self.new_instance(&name),
             Dialog::Clone(from, name) => self.clone_recipe(&from, &name),
             Dialog::Delete(p) if !p.as_os_str().is_empty() => self.delete_instance(&p),
-            Dialog::Delete(_) => {}
+            Dialog::Delete(_) | Dialog::Review(_) => {}
         }
     }
 
@@ -326,6 +342,12 @@ impl Launcher {
         self.ui.note = Some(match crate::instances::copy_recipe(&from, &to) {
             Ok(()) => {
                 self.ui.instances.refresh(&self.cfg);
+                // Advanced rules in it: shown, to keep or take out.
+                if Recipe::load(&to)
+                    .is_ok_and(|r| !c2_mods::classic::advanced_summary(&r).is_empty())
+                {
+                    self.ui.dialog = Some(Dialog::Review(to.clone()));
+                }
                 (
                     format!(
                         "Imported as {}: Fix missing (Options) finds its downloads.",

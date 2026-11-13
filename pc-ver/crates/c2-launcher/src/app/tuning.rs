@@ -181,6 +181,16 @@ impl Launcher {
         changed
     }
 
+    /// [`Self::play_args`], with `--classic` for Play Vanilla (an
+    /// instance only).
+    pub(super) fn game_args(&self, classic: bool) -> Vec<String> {
+        let mut args = self.play_args();
+        if classic && self.active_recipe().is_some() {
+            args.push("--classic".into());
+        }
+        args
+    }
+
     /// `play <base> --overlay .. --mod .. [--balance ..]`
     pub(super) fn play_args(&self) -> Vec<String> {
         let mut args = vec!["play".to_string()];

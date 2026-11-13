@@ -53,7 +53,7 @@ pub(super) fn show(
                     Some(it) => {
                         instance_box(&mut inner, it, using, mode, busy, ask);
                         if !busy {
-                            resp.context_menu(|ui| options_menu(ui, &it.path, mode, ask));
+                            resp.context_menu(|ui| options_menu(ui, it, mode, ask));
                         }
                     }
                     None => {
@@ -129,14 +129,25 @@ fn instance_box(
             *ask = Ask::Build(it.path.clone());
         }
         ui.add_enabled_ui(!busy, |ui| {
-            ui.menu_button("Options", |ui| options_menu(ui, &it.path, mode, ask));
+            ui.menu_button("Options", |ui| options_menu(ui, it, mode, ask));
         });
     });
 }
 
 /// An instance's Options: the same on its button and on a right click.
-fn options_menu(ui: &mut egui::Ui, path: &Path, mode: crate::Mode, ask: &mut Ask) {
-    let p = || path.to_path_buf();
+fn options_menu(ui: &mut egui::Ui, it: &Item, mode: crate::Mode, ask: &mut Ask) {
+    let p = || it.path.clone();
+    if mode == crate::Mode::Full {
+        let enhanced = !c2_mods::classic::advanced_summary(&it.recipe).is_empty();
+        if ui
+            .add_enabled(enhanced, egui::Button::new("Play Vanilla"))
+            .on_hover_text(crate::app::play_vanilla_hint(&it.recipe))
+            .on_disabled_hover_text(crate::app::play_vanilla_hint(&it.recipe))
+            .clicked()
+        {
+            *ask = Ask::PlayVanilla(p());
+        }
+    }
     if ui.button("Edit").clicked() {
         *ask = Ask::Edit(p());
     }

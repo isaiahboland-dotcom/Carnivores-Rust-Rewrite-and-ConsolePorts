@@ -57,6 +57,53 @@ impl Advanced {
     }
 }
 
+impl Advanced {
+    /// Whether the section has built-in values to go back to (predation's
+    /// and flee limits' defaults); the others are only on or off.
+    pub fn has_defaults(self) -> bool {
+        matches!(self, Advanced::Predation | Advanced::FleeLimits)
+    }
+}
+
+/// Takes the section out of `r`; everything else is left as it is.
+pub fn remove(r: &mut Recipe, a: Advanced) {
+    let s = &mut r.settings;
+    match a {
+        Advanced::Predation => s.predation = None,
+        Advanced::FleeLimits => s.flee = None,
+        Advanced::AreaCaps => s.rules.areas.clear(),
+        Advanced::Secrets => s.rules.secrets.clear(),
+        Advanced::ForcedOn(l) => match s.rules.locks.field(l) {
+            crate::rules::LockValue::Switch(v) => *v = None,
+            crate::rules::LockValue::Number(v) => *v = None,
+        },
+    }
+}
+
+/// Keeps the section, on, with its built-in values (predation by price
+/// with the hunter first; the default flee limits). False, and nothing
+/// changed, for a section without defaults ([`Advanced::has_defaults`]).
+pub fn restore_defaults(r: &mut Recipe, a: Advanced) -> bool {
+    let s = &mut r.settings;
+    match a {
+        Advanced::Predation => {
+            s.predation = Some(crate::predation::Predation {
+                enabled: true,
+                ..Default::default()
+            });
+            true
+        }
+        Advanced::FleeLimits => {
+            s.flee = Some(crate::flee::Flee {
+                enabled: true,
+                ..Default::default()
+            });
+            true
+        }
+        _ => false,
+    }
+}
+
 fn lock_label(l: Lock) -> &'static str {
     match l {
         Lock::DynamicTime => "dynamic time",
@@ -203,6 +250,67 @@ mod tests {
         assert_eq!(f.times, 0b010);
         assert_eq!(f.hidden, ["Velociraptor"]);
         assert!(f.locks.is_empty() && f.huntable.is_empty() && f.secrets.is_empty());
+    }
+
+    const ALL: &str = "[settings.balance]\nstart = 200\n\
+         [settings.predation]\nenabled = true\npriority = \"prey\"\ncarnivore_fights = true\n\
+         [settings.flee]\nenabled = true\nmax_distance = 40\n\
+         [settings.rules]\ntimes = [\"day\"]\n\
+         [settings.rules.locks]\nteleport = true\nsecret_dinos = 4\n\
+         [[settings.rules.areas]]\narea = \"Vengar Peninsula\"\nmax_huntable = 3\n\
+         [[settings.rules.secrets]]\nanimal = \"Tyrannosaurus Rex\"\ncount = 2\n";
+
+    #[test]
+    fn remove_takes_out_that_section_only() {
+        let r = parse(ALL);
+        for a in advanced_summary(&r) {
+            let mut x = r.clone();
+            remove(&mut x, a);
+            let left: Vec<Advanced> = advanced_summary(&r)
+                .into_iter()
+                .filter(|&b| b != a)
+                .collect();
+            assert_eq!(advanced_summary(&x), left, "{a:?}");
+            // Put back by hand, the rest is what it was.
+            let s = &mut x.settings;
+            match a {
+                Advanced::Predation => s.predation = r.settings.predation.clone(),
+                Advanced::FleeLimits => s.flee = r.settings.flee.clone(),
+                Advanced::AreaCaps => s.rules.areas = r.settings.rules.areas.clone(),
+                Advanced::Secrets => s.rules.secrets = r.settings.rules.secrets.clone(),
+                Advanced::ForcedOn(_) => s.rules.locks.teleport = Some(true),
+            }
+            assert_eq!(x, r, "{a:?}");
+        }
+        // The lock that forces nothing on stays.
+        let mut x = r.clone();
+        remove(&mut x, Advanced::ForcedOn(Lock::Teleport));
+        assert_eq!(x.settings.rules.locks.secret_dinos, Some(4));
+    }
+
+    #[test]
+    fn restore_defaults_keeps_the_section_with_built_in_values() {
+        let r = parse(ALL);
+        let mut x = r.clone();
+        assert!(restore_defaults(&mut x, Advanced::Predation));
+        let p = x.settings.predation.clone().unwrap_or_default();
+        assert!(p.enabled && p.priority.is_empty() && !p.carnivore_fights);
+        assert!(restore_defaults(&mut x, Advanced::FleeLimits));
+        let f = x.settings.flee.clone().unwrap_or_default();
+        assert!(f.enabled && f.limits.is_empty() && f.animals.is_empty());
+        assert_eq!(advanced_summary(&x), advanced_summary(&r));
+        x.settings.predation = r.settings.predation.clone();
+        x.settings.flee = r.settings.flee.clone();
+        assert_eq!(x, r, "only those two sections changed");
+        for a in [
+            Advanced::AreaCaps,
+            Advanced::Secrets,
+            Advanced::ForcedOn(Lock::Teleport),
+        ] {
+            let mut y = r.clone();
+            assert!(!restore_defaults(&mut y, a) && !a.has_defaults());
+            assert_eq!(y, r);
+        }
     }
 
     #[test]

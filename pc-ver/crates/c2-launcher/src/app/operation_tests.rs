@@ -258,3 +258,121 @@ fn android_warns_about_a_base_game_not_built_from_an_apk() {
     assert!(app.android_base_problem(&used(None)).is_some());
     assert!(app.android_base_problem(&used(Some(apk))).is_none());
 }
+
+/// Play Vanilla, Remove and Restore defaults are separate operations: only
+/// the last two write the recipe, each changing its own section only.
+mod play_vanilla {
+    use super::*;
+    use c2_mods::classic::{advanced_summary, Advanced};
+    use c2_mods::recipe::Recipe;
+
+    const ADVANCED: &str = "# shared by a friend\n[recipe]\nid = 'adv'\nname = 'Adv'\n\n\
+        [settings.balance]\nstart = 200\n\n\
+        [settings.predation]\nenabled = true\npriority = 'prey'\n\n\
+        [settings.flee]\nenabled = true\nmax_distance = 40\n\n\
+        [settings.rules.locks]\nteleport = true\n";
+
+    fn instance(t: &crate::publish::tests::Temp) -> PathBuf {
+        let path = t.0.join("adv.toml");
+        std::fs::write(&path, ADVANCED).unwrap();
+        path
+    }
+
+    fn using(app: &mut Launcher, path: &Path) {
+        app.cfg.recipe = Some(RecipeUse {
+            path: path.to_path_buf(),
+            on: true,
+            ..Default::default()
+        });
+    }
+
+    #[test]
+    fn play_vanilla_adds_classic_and_leaves_the_recipe_byte_identical() {
+        let t = crate::publish::tests::Temp::new();
+        let path = instance(&t);
+        let mut app = launcher();
+        using(&mut app, &path);
+        let args = app.game_args(true);
+        assert!(args.iter().any(|a| a == "--classic"), "{args:?}");
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "--recipe" && Path::new(&w[1]) == path));
+        assert!(!app.game_args(false).iter().any(|a| a == "--classic"));
+        // Started (stopped here by the job in progress, before any game):
+        // the recipe file is not written.
+        app.job
+            .start_task("pending", |_| Ok(crate::jobs::Completion::Recipe(vec![])))
+            .unwrap();
+        app.play_vanilla();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), ADVANCED);
+        // No instance in use: no `--classic` for a plain setup.
+        app.cfg.recipe = None;
+        assert!(!app.game_args(true).iter().any(|a| a == "--classic"));
+    }
+
+    #[test]
+    fn the_button_is_enabled_only_for_an_instance_with_advanced_rules() {
+        let plain = Recipe::parse("[recipe]\nid = 'p'\n[settings.balance]\nstart = 5\n").unwrap();
+        assert!(advanced_summary(&plain).is_empty());
+        assert!(crate::app::play_vanilla_hint(&plain).contains("no enhanced rules"));
+        let adv = Recipe::parse(ADVANCED).unwrap();
+        assert!(!advanced_summary(&adv).is_empty());
+        assert!(crate::app::play_vanilla_hint(&adv).contains("Predation"));
+    }
+
+    #[test]
+    fn remove_takes_out_only_that_section() {
+        let t = crate::publish::tests::Temp::new();
+        let path = instance(&t);
+        let mut app = launcher();
+        app.edit_section(&path, Advanced::Predation, vanilla::SectionEdit::Remove)
+            .unwrap();
+        let got = Recipe::load(&path).unwrap();
+        let mut want = Recipe::parse(ADVANCED).unwrap();
+        want.settings.predation = None;
+        assert_eq!(got, want);
+        assert_eq!(got.settings.balance.and_then(|b| b.start), Some(200));
+    }
+
+    #[test]
+    fn restore_defaults_keeps_the_section_with_built_in_values() {
+        let t = crate::publish::tests::Temp::new();
+        let path = instance(&t);
+        let mut app = launcher();
+        app.edit_section(
+            &path,
+            Advanced::FleeLimits,
+            vanilla::SectionEdit::RestoreDefaults,
+        )
+        .unwrap();
+        let got = Recipe::load(&path).unwrap();
+        let f = got.settings.flee.clone().expect("still there");
+        assert!(f.enabled && f.limits.is_empty());
+        let mut want = Recipe::parse(ADVANCED).unwrap();
+        want.settings.flee = got.settings.flee.clone();
+        assert_eq!(got, want, "nothing else changed");
+        // A section with no defaults is refused and left as it was.
+        let before = std::fs::read(&path).unwrap();
+        let lock = Advanced::ForcedOn(c2_formats::rules::Lock::Teleport);
+        assert!(app
+            .edit_section(&path, lock, vanilla::SectionEdit::RestoreDefaults)
+            .is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn the_review_dialog_renders_and_stays_until_done() {
+        let t = crate::publish::tests::Temp::new();
+        let path = instance(&t);
+        let mut app = launcher();
+        app.ui.dialog = Some(home::Dialog::Review(path.clone()));
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            egui::CentralPanel::default().show(ui, |_| {});
+            app.dialogs(ui.ctx());
+        });
+        output.textures_delta.clear();
+        assert!(matches!(app.ui.dialog, Some(home::Dialog::Review(_))));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), ADVANCED);
+    }
+}

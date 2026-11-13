@@ -25,6 +25,7 @@ mod setup;
 pub(crate) mod standalones;
 mod three_ds;
 mod tuning;
+mod vanilla;
 mod wiiu;
 mod windows;
 
@@ -113,6 +114,7 @@ fn style(ctx: &egui::Context) {
 }
 
 pub(crate) use screen::steam_game_mode;
+pub(crate) use vanilla::play_vanilla_hint;
 
 fn heading(ui: &mut egui::Ui, text: &str) {
     ui.label(RichText::new(text).size(20.0).color(SAND).strong());
@@ -471,10 +473,13 @@ impl eframe::App for Launcher {
             if destination == crate::instances::Destination::PlayVr {
                 self.play_vr();
             }
+            if destination == crate::instances::Destination::PlayVanilla {
+                self.play_vanilla();
+            }
             self.ui.tab = match destination {
-                crate::instances::Destination::Play | crate::instances::Destination::PlayVr => {
-                    Tab::Instances
-                }
+                crate::instances::Destination::Play
+                | crate::instances::Destination::PlayVr
+                | crate::instances::Destination::PlayVanilla => Tab::Instances,
                 crate::instances::Destination::Windows => Tab::Windows,
                 crate::instances::Destination::Android => Tab::Android,
                 crate::instances::Destination::ThreeDs => Tab::ThreeDs,

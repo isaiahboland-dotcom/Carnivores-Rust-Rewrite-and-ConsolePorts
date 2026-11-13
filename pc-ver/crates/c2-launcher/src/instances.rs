@@ -67,6 +67,8 @@ impl Item {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Destination {
     Play,
+    /// Play Vanilla: the game without the instance's enhanced rules.
+    PlayVanilla,
     /// The same game in a headset (`c2-vr`, a first draft).
     PlayVr,
     Windows,
@@ -95,6 +97,7 @@ impl Destination {
 pub enum Ask {
     Nothing,
     Play(PathBuf),
+    PlayVanilla(PathBuf),
     PlayVr(PathBuf),
     Build(PathBuf),
     Edit(PathBuf),

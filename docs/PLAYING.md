@@ -65,9 +65,17 @@ yellow **⚠ N missing** when files can't be found, and the time played (or **Un
   something changes) and starts it. Missing downloads are listed with their download pages.
 - **Build** asks for a platform: **Windows** (experimental), **3DS** or **Wii U**. Output, packaging
   and artwork choices are remembered separately for each instance.
-- **Options** (or a right click on the box): **Edit**, **Clone**, **Fix missing**, **Export…** (the
-  recipe to share, with its base game's hash list and patches), **Play in VR** and **Delete**.
-  **Fix missing** looks through the mod and add-on folders set in Settings and keeps what it finds.
+- **Options** (or a right click on the box): **Play Vanilla**, **Edit**, **Clone**, **Fix missing**,
+  **Export…** (the recipe to share, with its base game's hash list and patches), **Play in VR** and
+  **Delete**. **Fix missing** looks through the mod and add-on folders set in Settings and keeps
+  what it finds.
+- **Play Vanilla** plays the instance without its enhanced rules (predation, custom flee limits,
+  spawn rules, locked settings), with the same prices and saves; its hover text lists what is left
+  out. It is greyed out for an instance that has none. The instance itself is not changed
+  ([what is kept](RECIPE-SETTINGS.md)).
+- After **Import recipe…**, a recipe with enhanced rules lists them, each with **Remove** (taken
+  out of the instance) and, for predation and custom flee limits, **Restore defaults** (kept on,
+  with the built-in values). Both save the recipe the way **Edit** does, without its comments.
 
 **Edit** has these pages, with **Save**, **Save and exit**, **Discard changes** and **Cancel** at
 the bottom:
