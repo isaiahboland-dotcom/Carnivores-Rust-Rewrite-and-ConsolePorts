@@ -5055,3 +5055,44 @@ acceptance for the reported defect. Private evidence stays ignored.
   PC renderer already uses. Not validated against a native hardware capture.
 - The VR (`c2-vr/src/terrain.rs`) and 3DS (`c2-3ds/src/world.rs`) water still
   clamp `transp` and are not changed.
+
+## 2026-11-13 — Bounded fleeing (opt-in departure from the original)
+
+- The original aims a frightened animal at a point 2048 units straight away
+  from the hunter with no check that the point is playable, and re-arms its
+  fear timer every frame while the hunter is within 6000 units, on every call
+  or danger sound and on every heard shot. Animals run off the map's edge or
+  pile against it, and repeated noises keep them afraid indefinitely.
+- With the player's **Bounded fleeing** option on, `c2-core/src/dino/flee.rs`
+  changes only the flee branch of the stock herbivore, small-animal and
+  dialect hunting AIs (`herbivore.rs`, `small.rs`, `huntable.rs`):
+  - The target is the first clear heading found among +-0, 20, 40 ... 180
+    degrees around "directly away" (side chosen by the seeded RNG), tried
+    over 2048, 1024 and 512 units. A heading is clear when every 256-unit
+    sample passes `check_place_collision_p` (map edge, water, `NO_WAY`,
+    slope, big objects) and the spawn group's prohibited areas, and its end is
+    4 cells inside the playable square and no nearer the hunter. A cornered
+    animal takes the candidate that gains most distance, or stays put.
+    Sampling the headings is the slide along a wall.
+  - A flight records its origin and clock and ends (the existing calm path) at
+    its distance or duration cap. A hunter that is aware of the animal, within
+    6000 units and has closed over the last second extends it by at most the
+    chase extension; the flight then ends regardless.
+  - A flight re-aims every 400 ms, and after a stall (`no_way_cnt` over 4),
+    when it rejects the blocked heading. Four stalls end the flight.
+  - `Character::scare` replaces the noise and shot sites: ignored during the
+    lockout, otherwise `afraid_time = max(afraid_time, ticks)`. The 8000 ms
+    proximity refresh only continues while the hunter is pursuing.
+- Not changed: carnivores that chase (their retreat uses the stock carnivore
+  AI, which this does not touch), fish, flyers, brachiosaurs and the dialect's
+  ambient AIs, which use their own placement helpers.
+- Limits (cells, seconds) come from `HUNTDAT/_FLEE.TXT`, written from a
+  recipe's `[settings.flee]` (global and per animal), else built-in defaults:
+  24 cells, 20 s, 10 s chase extension, 4 s noise lockout. They are inert
+  unless the player turns the option on; **default off**, so the original's
+  behaviour (and every baseline hash) is unchanged. The launcher shows what the
+  original does per animal beside each field; `c2-formats/src/flee.rs`
+  holds that table and a `c2-core` test checks it against the AI code.
+- The option is experimental on 3DS (a setup-menu row) and Wii U (its hunt is
+  not playable yet, so its row lands with the Wii U hunt menu; host tests cover
+  the engine). VR has no options menu yet and keeps the original's fleeing.

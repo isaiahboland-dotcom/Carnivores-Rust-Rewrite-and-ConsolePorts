@@ -818,3 +818,27 @@ Carnivores 2's generic kill. See `docs/DECISIONS.md` (2026-11-08).
   and GPU time are not measured.
 - A render pass from a `c2-pc` older than `c2-regress` can disagree with it
   (for example, an older scenario parser). Build both together.
+
+## Bounded fleeing
+
+Automated, no game data (`cargo test -p c2-core --lib flee`,
+`-p c2-formats flee`, `-p c2-mods flee`, `-p c2-launcher flee`,
+`-p c2-pc bounded_flee`):
+
+- **Target choice** (`dino/flee_tests.rs`): at every edge and corner of the
+  playable square, fleeing outward never aims off it; a wall of `NO_WAY`
+  cells is slid along; a spawn group's prohibited area is avoided; the pick is
+  deterministic; with the setting off the target is the original's 2048 units
+  straight away.
+- **Timers**: ten repeated noises arm fear once and lengthen nothing, and the
+  lockout expires; a flight ends at its duration or distance cap, and a hunter
+  closing in extends it by exactly the chase extension, then it ends.
+- **Sweep**: each fleeing AI family, re-frightened every second for a minute
+  at an edge and a corner, stays inside the walkable square while fleeing.
+- **Vanilla table**: the launcher's "what the original does" numbers match
+  the AI constants.
+- **Parse/round trip**: `_FLEE.TXT`, the recipe's `[settings.flee]`, the
+  launcher's per-animal edits and the `bounded_flee` option.
+- The setting is `None` unless a player turns it on, so every existing
+  baseline and the parity suites are unaffected; the unchanged `c2-core`
+  suite passes.

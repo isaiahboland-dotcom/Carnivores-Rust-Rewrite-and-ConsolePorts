@@ -430,3 +430,33 @@ release.
 ## Checking a mod's files
 `c2-parity scan <dir>` parses every `.CAR`, `.3DF`, `.MAP`, `.RSC` and
 `_RES.TXT` under a directory and reports anything malformed.
+
+### Flee limits (bounded fleeing)
+
+An advanced instance setting on the recipe editor's Advanced tab, opt-in and
+not part of the original game. **Bounded fleeing** itself is a switch in the
+game's options (off by default); the recipe only sets the limits it uses.
+Without a `[settings.flee]` section the built-in limits apply when a player
+turns the option on. Experimental on 3DS and Wii U; PC is the tested platform.
+```toml
+[settings.flee]
+enabled = true
+max_distance = 24        # cells a flight may cover (4-200; default 24)
+max_duration = 20        # seconds a flight may last (2-300; default 20)
+chase_extension = 10     # seconds a still-pursuing hunter may add (0-120; default 10)
+retrigger_lockout = 4    # seconds repeated noises cannot re-arm fear (0-60; default 4)
+
+[[settings.flee.animals]]
+name = "Parasaurolophus"
+max_distance = 40        # unset keys inherit the global value, then the default
+```
+- Scared animals aim inside the map, clear of cliffs, water and prohibited
+  areas; a flight ends at the distance or duration cap unless the hunter is
+  still closing in, and then by at most `chase_extension`.
+- Names are `_RES.TXT` names, case ignored. The built game gets
+  `HUNTDAT/_FLEE.TXT`, which the PC and 3DS engines read.
+- The launcher shows what the original does for each animal (no distance or
+  duration limit; fear timers re-armed by closeness and noise) beside each
+  field, whether or not custom limits are on.
+- Carnivores that are chasing are never limited; fish, flyers and
+  brachiosaurs keep their own movement.
