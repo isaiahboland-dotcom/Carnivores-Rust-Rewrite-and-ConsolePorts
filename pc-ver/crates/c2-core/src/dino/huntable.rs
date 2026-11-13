@@ -22,8 +22,8 @@ use c2_formats::mee::SpawnGroup;
 
 use super::mee::{ai_info, mee_ai, IdleGroup, MeeInfo};
 use super::{
-    ai, angle_difference, corrected_alpha, delta_func, find_vector_alpha, hunt, sgn, wrap_angle,
-    Character, Ctx, Pack, Species, CS_ON_WATER, PI,
+    ai, angle_difference, corrected_alpha, delta_func, find_vector_alpha, flee, hunt, sgn,
+    wrap_angle, Character, Ctx, Pack, Species, CS_ON_WATER, PI,
 };
 use crate::rng::MsRand;
 
@@ -116,8 +116,13 @@ pub fn animate(
             let a_dist = if a.carnivore && (!a.ice_age || c.ai == mee_ai::WOLF) {
                 (ctx.view_r * m.aggress + ctx.opt_agres / a.agress_multi.max(1)) as f32
             } else {
-                if pdist < 6000.0 && c.ai != mee_ai::DEER {
-                    c.afraid_time = 8000;
+                if pdist < flee::PROXIMITY_UNITS
+                    && c.ai != mee_ai::DEER
+                    && (ctx.flee.is_none()
+                        || !c.flight.active
+                        || c.flight.pursued(ctx.target.aware, pdist))
+                {
+                    c.afraid_time = flee::PROXIMITY_FEAR_MS;
                 }
                 (a.agress_multi * m.aggress + ctx.opt_agres / 8) as f32
             };
@@ -139,8 +144,17 @@ pub fn animate(
             }
             if flee {
                 let l = pdist.max(1e-6);
-                c.tgx = c.pos[0] - playerdx / l * 2048.0;
-                c.tgz = c.pos[2] - playerdz / l * 2048.0;
+                if let Some(lim) = ctx.flee {
+                    let away = (-playerdx / l, -playerdz / l);
+                    let aware = ctx.target.aware;
+                    match flee::step(c, ctx, lim, w.group, away, pdist, aware) {
+                        Some((tx, tz)) => (c.tgx, c.tgz) = (tx, tz),
+                        None => c.afraid_time = 0,
+                    }
+                } else {
+                    c.tgx = c.pos[0] - playerdx / l * 2048.0;
+                    c.tgz = c.pos[2] - playerdz / l * 2048.0;
+                }
                 c.tgtime = 0;
                 if a.carnivore {
                     c.afraid_time -= dt;
@@ -818,6 +832,7 @@ mod tests {
                 view_r: 74,
                 render_r: 74,
                 run_k: 1.0,
+                flee: None,
                 events: &mut events,
             };
             herd.step(&mut ctx);

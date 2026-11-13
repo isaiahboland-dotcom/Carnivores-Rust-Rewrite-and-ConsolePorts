@@ -16,8 +16,8 @@ use alloc::{
 };
 
 use super::{
-    ai, corrected_alpha, delta_func, find_vector_alpha, hunt, sgn, wrap_angle, Character, Ctx,
-    Species, CS_ON_WATER, PI,
+    ai, corrected_alpha, delta_func, find_vector_alpha, flee, hunt, sgn, wrap_angle, Character,
+    Ctx, Species, CS_ON_WATER, PI,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -172,8 +172,13 @@ pub fn animate(
 
         // Alarmed: run away (or, for Tric, charge when close).
         if c.state != 0 {
-            if p.defensive && pdist < 6000.0 {
-                c.afraid_time = 8000;
+            if p.defensive
+                && pdist < flee::PROXIMITY_UNITS
+                && (ctx.flee.is_none()
+                    || !c.flight.active
+                    || c.flight.pursued(ctx.target.aware, pdist))
+            {
+                c.afraid_time = flee::PROXIMITY_FEAR_MS;
             }
             if c.afraid_time == 0 {
                 c.state = 0;
@@ -187,8 +192,22 @@ pub fn animate(
                 c.tgz = ctx.target.view.z;
             } else {
                 let l = pdist.max(1e-6);
-                c.tgx = c.pos[0] - playerdx / l * 2048.0;
-                c.tgz = c.pos[2] - playerdz / l * 2048.0;
+                if let Some(lim) = ctx.flee {
+                    let away = (-playerdx / l, -playerdz / l);
+                    let aware = ctx.target.aware;
+                    match flee::step(c, ctx, lim, None, away, pdist, aware) {
+                        Some((tx, tz)) => (c.tgx, c.tgz) = (tx, tz),
+                        None => {
+                            c.afraid_time = 0;
+                            c.state = 0;
+                            c.set_new_target_place(ctx.area, ctx.rng, 8048.0);
+                            continue;
+                        }
+                    }
+                } else {
+                    c.tgx = c.pos[0] - playerdx / l * 2048.0;
+                    c.tgz = c.pos[2] - playerdz / l * 2048.0;
+                }
             }
             c.tgtime = 0;
         }

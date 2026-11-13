@@ -200,6 +200,7 @@ fn ctx<'a>(
         view_r: 42,
         render_r: 42,
         run_k: 1.0,
+        flee: None,
         events,
     }
 }

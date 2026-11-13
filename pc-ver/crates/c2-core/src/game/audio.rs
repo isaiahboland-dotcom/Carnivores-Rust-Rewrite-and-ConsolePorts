@@ -124,9 +124,11 @@ impl Hunt {
         for i in 0..self.herd.chars.len() {
             if danger && self.herd.chars[i].ai < 10 {
                 let t = (10 + self.rng.r_rand(5)) * 1024;
+                let lim = self.herd.flee_limits(self.herd.chars[i].ctype);
                 let c = &mut self.herd.chars[i];
-                c.state = 2;
-                c.afraid_time = t;
+                if c.scare(t, lim) {
+                    c.state = 2;
+                }
             }
             let c = &self.herd.chars[i];
             let d =
@@ -149,9 +151,11 @@ impl Hunt {
                     );
                     if c.health != 0 && hears && !flier && m.fear_calls.contains(&slot) {
                         let t = (10 + self.rng.r_rand(5)) * 1024;
+                        let lim = self.herd.flee_limits(self.herd.chars[i].ctype);
                         let c = &mut self.herd.chars[i];
-                        c.state = 2;
-                        c.afraid_time = t;
+                        if c.scare(t, lim) {
+                            c.state = 2;
+                        }
                     }
                     (m.call_no == slot, hears)
                 }

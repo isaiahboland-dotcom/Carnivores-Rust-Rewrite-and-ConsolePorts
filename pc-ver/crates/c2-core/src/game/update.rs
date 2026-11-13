@@ -126,6 +126,7 @@ impl Hunt {
             view_r: self.opts.view_r,
             render_r: self.opts.render_r.max(self.opts.view_r),
             run_k: self.opts.dino_run_k,
+            flee: None,
             events: &mut dev,
         };
         if !self.opts.trophy {

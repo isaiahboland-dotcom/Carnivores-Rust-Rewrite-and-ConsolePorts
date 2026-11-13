@@ -68,6 +68,13 @@ pub fn predation(
     crate::dino::predation::load(&vfs.read(c2_formats::predation::PATH).ok()?, species)
 }
 
+/// Bounded fleeing's limits (`_FLEE.TXT`, else the built-in ones) for
+/// `species`. The caller decides whether the player turned the setting on.
+pub fn flee(vfs: &Vfs, species: &[Species]) -> alloc::boxed::Box<crate::dino::flee::FleeTable> {
+    let bytes = vfs.read(c2_formats::flee::PATH).ok();
+    crate::dino::flee::FleeTable::load(bytes.as_deref(), species)
+}
+
 /// The instance's rules (`_RULES.TXT`, not in the original): times of
 /// day, locked settings and spawn rules. Empty when the file is missing.
 pub fn rules(vfs: &Vfs) -> c2_formats::rules::Rules {

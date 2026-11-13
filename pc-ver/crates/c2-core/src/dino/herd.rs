@@ -10,7 +10,7 @@ use alloc::{boxed::Box, string::String, vec, vec::Vec};
 use c2_formats::mee::SpawnGroup;
 
 use super::{
-    ai, brachi, carnivore, dead, flyer, herbivore, huntable, mee, mee_ambient, mee_brachi,
+    ai, brachi, carnivore, dead, flee, flyer, herbivore, huntable, mee, mee_ambient, mee_brachi,
     mee_fish, mee_flyer, mee_icth, mee_trex, predation, small, trex, CarnivoreParams, Character,
     Ctx, DinoEvent, HerbivoreParams, HunterView, SmallParams, Species, Target, TargetKind,
 };
@@ -49,9 +49,16 @@ pub struct Herd {
     pub portrait_stands: bool,
     /// Predation, when the game turns it on (`None`: the original's herd).
     pub predation: Option<Box<predation::run::Predators>>,
+    /// Bounded fleeing, when the player turns it on (`None`: the original's).
+    pub flee: Option<Box<flee::FleeTable>>,
 }
 
 impl Herd {
+    /// Bounded fleeing's limits for species `ctype` (`None`: it is off).
+    pub fn flee_limits(&self, ctype: usize) -> Option<flee::FleeLimits> {
+        self.flee.as_deref().map(|t| t.limits(ctype))
+    }
+
     /// Character `index` was removed: renumber what refers past it.
     pub fn forget(&mut self, index: usize) {
         if self.predation.is_some() {
@@ -80,6 +87,7 @@ impl Herd {
         for i in 0..self.chars.len() {
             ctx.dt = base_dt;
             self.chars[i].predation.tick(base_dt);
+            self.chars[i].flee_tick(base_dt);
             let steer = self
                 .predation
                 .as_deref()
@@ -175,6 +183,7 @@ impl Herd {
             if predation::step::feeding(c, sp, ctx.dt) {
                 continue;
             }
+            ctx.flee = self.flee.as_deref().map(|t| t.limits(c.ctype));
             ctx.target = target_of(c, hunter, steer);
             ctx.struck = None;
             // Pack alarms and attacks are about the player: a member after
@@ -194,6 +203,7 @@ impl Herd {
         }
         ctx.target = Target::default();
         ctx.struck = None;
+        ctx.flee = None;
         ctx.dt = base_dt;
     }
 }

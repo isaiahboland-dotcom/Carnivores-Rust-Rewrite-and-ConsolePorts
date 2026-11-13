@@ -51,6 +51,7 @@ impl Hunt {
     /// `2 * hearK` times as far, only start an alarm if calm, and remember
     /// the shot (`heardShot`).
     pub fn make_noise(&mut self, pos: [f32; 3], range: f32) {
+        let flee = self.herd.flee.as_deref();
         for c in &mut self.herd.chars {
             if c.health == 0 {
                 continue;
@@ -76,7 +77,10 @@ impl Hunt {
                 if crate::dino::mee::is_fish(c.ai) {
                     continue;
                 }
-                c.afraid_time = ((10.0 + (range - l) / 256.0) as i32) * 1024;
+                let ticks = ((10.0 + (range - l) / 256.0) as i32) * 1024;
+                if !c.scare(ticks, flee.map(|t| t.limits(c.ctype))) {
+                    continue;
+                }
                 if c.state == 0 {
                     c.state = 2;
                 }
@@ -93,7 +97,10 @@ impl Hunt {
                     c.state = 2;
                 }
             } else {
-                c.afraid_time = ((10.0 + (range - l) / 256.0) as i32) * 1024;
+                let ticks = ((10.0 + (range - l) / 256.0) as i32) * 1024;
+                if !c.scare(ticks, flee.map(|t| t.limits(c.ctype))) {
+                    continue;
+                }
                 c.state = 2;
                 c.no_find_cnt = 0;
                 // Read only by predation's hunter-first priority.

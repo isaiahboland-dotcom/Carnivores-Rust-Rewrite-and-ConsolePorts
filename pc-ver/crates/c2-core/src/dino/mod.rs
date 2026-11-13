@@ -24,6 +24,9 @@ mod carnivore;
 mod character;
 mod collide;
 mod dead;
+pub mod flee;
+#[cfg(test)]
+mod flee_tests;
 mod flyer;
 mod herbivore;
 mod herd;
@@ -107,6 +110,8 @@ pub struct Character {
     pub no_way_cnt: i32,
     pub no_find_cnt: i32,
     pub afraid_time: i32,
+    /// Bounded fleeing's state ([`flee`]); idle when the setting is off.
+    pub flight: flee::Flight,
     pub tgtime: i32,
     pub pp_morph_time: i32,
     pub prev_phase: usize,
@@ -333,6 +338,9 @@ pub struct Ctx<'a> {
     /// Multiplies every species' running speed (1 in the original; a 3DS
     /// setting lowers it).
     pub run_k: f32,
+    /// Bounded fleeing's limits for the character being stepped (`None`:
+    /// the original's fleeing). [`Herd::step`] sets it per character.
+    pub flee: Option<flee::FleeLimits>,
     pub events: &'a mut Vec<DinoEvent>,
 }
 

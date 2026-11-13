@@ -125,7 +125,7 @@ fn trophy_variant_identity_survives_reordering_and_missing_members() {
 }
 
 /// A one-vertex species with `n` 1-second, 2-frame animations.
-fn species(ai_id: i32, n: usize) -> Species {
+pub(super) fn species(ai_id: i32, n: usize) -> Species {
     let car = Car {
         name_raw: [0; 32],
         mesh: Default::default(),
@@ -226,6 +226,7 @@ fn run(herd: &mut Herd, area: &Area, hunter: HunterView, ms: i32) -> Vec<DinoEve
             view_r: 74,
             render_r: 74,
             run_k: 1.0,
+            flee: None,
             events: &mut events,
         };
         herd.step(&mut ctx);
@@ -233,7 +234,7 @@ fn run(herd: &mut Herd, area: &Area, hunter: HunterView, ms: i32) -> Vec<DinoEve
     events
 }
 
-fn herd_with(area: &Area, ai_id: i32, n_anims: usize, pos: [f32; 3]) -> Herd {
+pub(super) fn herd_with(area: &Area, ai_id: i32, n_anims: usize, pos: [f32; 3]) -> Herd {
     let mut rng = MsRand::new(1);
     let mut herd = Herd {
         species: vec![species(ai_id, n_anims)],
@@ -376,7 +377,7 @@ fn mee_placement_follows_groups_and_packs() {
     assert_eq!(count(&herd, 1), 0);
 }
 
-fn dist(c: &Character, h: &HunterView) -> f32 {
+pub(super) fn dist(c: &Character, h: &HunterView) -> f32 {
     ((c.pos[0] - h.x).powi(2) + (c.pos[2] - h.z).powi(2)).sqrt()
 }
 
