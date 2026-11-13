@@ -489,6 +489,16 @@ fn merged_game(a: &Args, game: &Path) -> Result<Vfs> {
         }
         // Times of day, locked settings and spawn rules: `_RULES.TXT`.
         recipe.settings.rules.push(&mut vfs)?;
+        // What looks wrong in the recipe's settings (warnings only).
+        use c2_mods::validate::{validate, Names, Platform};
+        let platform = if a.target.as_deref() == Some("wiiu") {
+            Platform::WiiU
+        } else {
+            Platform::ThreeDs
+        };
+        for w in validate(&recipe, Names::read(&vfs).ok().as_ref(), platform) {
+            eprintln!("{}: {w}", r.display());
+        }
         return Ok(vfs);
     }
     let game = &bases[..];

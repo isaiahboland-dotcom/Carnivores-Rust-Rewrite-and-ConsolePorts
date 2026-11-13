@@ -456,3 +456,47 @@ mobile_card_layout = true
             .mobile_card_layout
     );
 }
+
+/// `validate` only reports: a balance entry naming an animal the game lacks
+/// is a warning with its key path, and the balance layer built from the
+/// recipe is what it was without that entry.
+#[test]
+fn validation_warns_but_leaves_the_build_unchanged() {
+    use c2_mods::validate::{validate, Names, Platform};
+    use c2_vfs::Backend as _;
+    let base = tmp("validate-base");
+    write(&base, &[("HUNTDAT/_RES.TXT", RES.as_bytes())]);
+    let v = vanilla(std::slice::from_ref(&base)).expect("vanilla");
+    let names = Names::read(&v).expect("names");
+    assert!(names.weapons.iter().any(|w| w == "Pistol"), "{names:?}");
+    let r = Recipe::parse(
+        "[recipe]\nid = \"v\"\n\n[settings.balance]\n\n\
+         [[settings.balance.weapons]]\nname = \"Pistol\"\nprice = 7\n\n\
+         [[settings.balance.animals]]\nname = \"Unicorn\"\nprice = 9\n",
+    )
+    .expect("parse");
+    let w = validate(&r, Some(&names), Platform::Pc);
+    assert_eq!(w.len(), 1, "{w:?}");
+    assert_eq!(w[0].key, "settings.balance.animals[0].name");
+
+    let with = r.settings.balance.clone().expect("balance");
+    let mut without = with.clone();
+    without.animals.clear();
+    let layer = |b| {
+        let m = c2_mods::balance::apply(&v, b).expect("apply");
+        let mut files: Vec<(String, Vec<u8>)> = m
+            .files()
+            .into_iter()
+            .map(|f| {
+                let d = m.read(&f).expect("read");
+                (f, d)
+            })
+            .collect();
+        files.sort();
+        files
+    };
+    let built = layer(&with);
+    assert!(!built.is_empty(), "the weapon price changed nothing");
+    assert_eq!(built, layer(&without));
+    let _ = std::fs::remove_dir_all(base);
+}

@@ -232,6 +232,13 @@ older build can still load a recipe written for a newer one. `[missions]` is
 reserved for a later version: it is accepted, reported as not implemented, and
 ignored.
 
+Building a recipe also checks its settings and warns, without changing the
+build, about values outside their range (they are clamped), names the built
+game does not have (areas, animals, weapons; those entries are skipped) and
+features the target platform lacks (variants on 3DS and Wii U, custom flee
+limits on Wii U and VR). Each warning names its key, for example
+`settings.balance.animals[1].name`.
+
 A recipe can also hold the choices made for its game, so the launcher's
 Instances tab can rebuild it later exactly as it was:
 ```toml

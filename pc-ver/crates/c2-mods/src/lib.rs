@@ -23,6 +23,7 @@ pub mod resolve;
 pub mod rules;
 pub mod standalone;
 mod triassic;
+pub mod validate;
 pub mod variants;
 pub mod weapon_rules;
 

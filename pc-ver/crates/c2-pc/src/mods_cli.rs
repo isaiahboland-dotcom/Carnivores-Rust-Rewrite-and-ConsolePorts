@@ -440,6 +440,12 @@ pub fn build_recipe(
     if r.settings.rules.push(&mut pack.vfs)? {
         pack.notes.push("instance rules applied".into());
     }
+    // What looks wrong in the recipe's settings (warnings only).
+    let names = c2_mods::validate::Names::read(&pack.vfs).ok();
+    let platform = c2_mods::validate::Platform::Pc;
+    for w in c2_mods::validate::validate(&r, names.as_ref(), platform) {
+        tracing::warn!("{}: {w}", recipe_path.display());
+    }
     materialize(&pack, out).with_context(|| format!("writing {}", out.display()))?;
     tracing::info!(
         "built {} — see {}",

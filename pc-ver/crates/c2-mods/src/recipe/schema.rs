@@ -5,7 +5,8 @@
 //! than [`SCHEMA`] is refused, naming both, rather than half-read. The
 //! author's `[recipe] version` is free text and is never compared.
 //! Unknown keys load (an older build reading a newer recipe's additions)
-//! and are reported as warnings.
+//! and are reported as warnings, except inside `[settings.flee]` and its
+//! animals, whose flattened limits hide them from the check.
 
 use super::Recipe;
 
@@ -109,6 +110,22 @@ mod tests {
         for k in ["recipe.colour", "settings.future", "extra"] {
             assert!(w.iter().any(|x| x.contains(k)), "{k}: {w:?}");
         }
+    }
+
+    /// Flattened sections (`[settings.flee]`'s limits) are read keys, not
+    /// unknown ones. A serde limitation: an unknown key inside a table with
+    /// flattened fields is dropped without being reported.
+    #[test]
+    fn flattened_keys_are_not_unknown() {
+        let text = format!(
+            "{MIN}[settings.flee]\nenabled = true\nmax_distance = 30\ntypo = 1\n\
+             [[settings.flee.animals]]\nname = \"Velociraptor\"\nmax_duration = 9\n"
+        );
+        let (r, w) = Recipe::parse_checked(&text).unwrap_or_else(|e| panic!("{e}"));
+        let f = r.settings.flee.unwrap_or_default();
+        assert_eq!(f.limits.max_distance, Some(30));
+        assert_eq!(f.animals[0].limits.max_duration, Some(9));
+        assert!(w.is_empty(), "{w:?}");
     }
 
     #[test]
