@@ -165,6 +165,13 @@ impl PcSettings {
         let s = std::fs::read_to_string(path()).map_or(s, |text| Self::parse(&text));
         // The settings the game's instance fixes (not stored, see `store`).
         let s = crate::instance_rules::apply(s, &crate::instance_rules::get());
+        // A Play Vanilla session: the enhancements at their defaults (not
+        // stored either).
+        let s = if crate::classic::on() {
+            crate::classic::apply(s)
+        } else {
+            s
+        };
         s.publish();
         s
     }
@@ -180,7 +187,7 @@ impl PcSettings {
         scale_of(self.render_scale)
     }
 
-    fn parse(text: &str) -> Self {
+    pub(crate) fn parse(text: &str) -> Self {
         let mut s = Self::default();
         for line in text.lines() {
             let Some((k, v)) = line.split_once('=') else {
@@ -227,15 +234,33 @@ impl PcSettings {
     pub fn store(&self) {
         self.publish();
         // A setting the instance fixes keeps the player's own value here.
+        // So does one a Play Vanilla session fixes.
         let rules = crate::instance_rules::get();
-        let s = if rules.locks.is_empty() {
+        let s = if rules.locks.is_empty() && !crate::classic::on() {
             *self
         } else {
             let own = std::fs::read_to_string(path())
                 .map_or_else(|_| Self::default(), |t| Self::parse(&t));
-            crate::instance_rules::unapply(*self, &own, &rules)
+            let s = crate::instance_rules::unapply(*self, &own, &rules);
+            if crate::classic::on() {
+                crate::classic::unapply(s, &own)
+            } else {
+                s
+            }
         };
-        let text = format!(
+        let text = s.to_text();
+        if let Some(dir) = path().parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        if let Err(e) = std::fs::write(path(), text) {
+            tracing::warn!("saving settings: {e}");
+        }
+    }
+
+    /// The settings file's text for these settings.
+    pub(crate) fn to_text(self) -> String {
+        let s = self;
+        format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nmodel_distance = {}\n\
              map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\nfire_reloads_empty = {}\npause_pickers = {}\nradar_water = {}\npretty_underwater = {}\nclassic_filter = {}\nbounded_flee = {}\n",
             s.render,
@@ -266,13 +291,7 @@ impl PcSettings {
             s.pretty_underwater,
             s.classic_filter,
             s.bounded_flee
-        );
-        if let Some(dir) = path().parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        if let Err(e) = std::fs::write(path(), text) {
-            tracing::warn!("saving settings: {e}");
-        }
+        )
     }
 
     /// Cells out to which objects are models, given the cells drawn

@@ -97,6 +97,20 @@ pub fn advanced_summary(r: &Recipe) -> Vec<Advanced> {
     out
 }
 
+/// The recipe a classic build uses: `r` without predation, custom flee
+/// limits, spawn rules and locks. Everything else, `times` and `hidden`
+/// included, is kept, so the classic `_RULES.TXT` holds only those.
+pub fn classic_recipe(r: &Recipe) -> Recipe {
+    let mut c = r.clone();
+    let s = &mut c.settings;
+    s.predation = None;
+    s.flee = None;
+    s.rules.areas.clear();
+    s.rules.secrets.clear();
+    s.rules.locks = Default::default();
+    c
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,6 +167,42 @@ mod tests {
             Advanced::ForcedOn(Lock::Teleport).key(),
             "settings.rules.locks.teleport"
         );
+    }
+
+    #[test]
+    fn the_classic_recipe_keeps_only_game_defining_settings() {
+        let r = parse(
+            "[recipe.skip]\nareas = [2]\n\
+             [settings]\nmenu = \"mod\"\n\
+             [settings.balance]\nstart = 200\n\
+             [[settings.weapon_restrictions]]\nname = \"Pistol\"\nallow_trophy = false\n\
+             [settings.predation]\nenabled = true\n\
+             [settings.flee]\nenabled = true\n\
+             [settings.rules]\ntimes = [\"day\"]\nhidden = [\"Velociraptor\"]\n\
+             [settings.rules.locks]\nteleport = true\nsecret_dinos = 4\n\
+             [[settings.rules.areas]]\narea = \"Vengar Peninsula\"\nmax_huntable = 3\n\
+             [[settings.rules.secrets]]\nanimal = \"Tyrannosaurus Rex\"\ncount = 2\n",
+        );
+        let c = classic_recipe(&r);
+        assert!(advanced_summary(&c).is_empty());
+        assert_eq!(c.recipe, r.recipe);
+        assert_eq!(c.mods, r.mods);
+        let (s, o) = (&c.settings, &r.settings);
+        assert_eq!((&s.menu, &s.balance), (&o.menu, &o.balance));
+        assert_eq!(s.weapon_restrictions, o.weapon_restrictions);
+        assert_eq!((&s.pictures, &s.tuning), (&o.pictures, &o.tuning));
+        assert_eq!(
+            (&s.rules.times, &s.rules.hidden),
+            (&o.rules.times, &o.rules.hidden)
+        );
+        assert!(s.predation.is_none() && s.flee.is_none());
+        assert!(s.rules.locks.is_empty());
+        assert!(s.rules.areas.is_empty() && s.rules.secrets.is_empty());
+        // The rules file it writes: the times and hidden animals only.
+        let f = s.rules.to_format(&[]);
+        assert_eq!(f.times, 0b010);
+        assert_eq!(f.hidden, ["Velociraptor"]);
+        assert!(f.locks.is_empty() && f.huntable.is_empty() && f.secrets.is_empty());
     }
 
     #[test]

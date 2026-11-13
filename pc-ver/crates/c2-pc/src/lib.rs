@@ -10,6 +10,9 @@ mod area_layers;
 mod area_view;
 mod audio;
 mod camera;
+mod classic;
+#[cfg(test)]
+mod classic_build_tests;
 pub mod cli;
 mod dinos;
 mod effects_view;

@@ -32,7 +32,9 @@ pub(super) fn shown(opts: &[Opt]) -> Vec<Opt> {
     opts.iter()
         .copied()
         .filter(|o| match o {
-            Opt::PcToggle(n, _) | Opt::PcSlider(n, _) => !crate::instance_rules::hides(n),
+            Opt::PcToggle(n, _) | Opt::PcSlider(n, _) => {
+                !crate::instance_rules::hides(n) && !crate::classic::hides(n)
+            }
             _ => true,
         })
         .collect()

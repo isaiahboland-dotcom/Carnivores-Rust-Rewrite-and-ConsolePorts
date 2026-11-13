@@ -112,6 +112,12 @@ cargo run --release -p c2-pc -- play GAME --standalone GAME_DIR                 
 cargo run --release -p c2-pc -- play GAME --recipe ../recipes/c2-mee-addons.toml --mods DOWNLOADS --overlay "PATH/Carnivores 2"
 ```
 
+Add `--classic` to a `--recipe` command to play it as **Play Vanilla**: the same game, prices and
+saves, without the recipe's enhanced rules (predation, custom flee limits, spawn rules, locked
+settings) and with the opt-in enhancements in Options (teleport, dynamic time, multi ammo and the
+like) at their defaults. Your recipe, settings and the normal build are left as they are; the
+classic build has its own folder. What is kept and what is turned off: [RECIPE-SETTINGS.md](RECIPE-SETTINGS.md).
+
 More on mods, recipes and balance files: [MODDING.md](MODDING.md).
 
 ## Controls

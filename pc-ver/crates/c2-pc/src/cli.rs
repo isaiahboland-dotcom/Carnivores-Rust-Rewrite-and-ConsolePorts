@@ -9,7 +9,7 @@ use c2_core::area::TimeOfDay;
 use c2_core::game::SurvivalKind;
 
 const USAGE: &str = "usage:
-  c2-pc play  <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR... [--accept-base]] [--balance FILE]
+  c2-pc play  <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR... [--accept-base] [--classic]] [--balance FILE]
               [--screen main|stats|hunt|options|credits|register|quit|loading]
               [--script 'X,Y;'TEXT;enter;esc'] [--shot out.png]
   c2-pc balance <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]...   (prints prices and scores as a balance file)
@@ -23,7 +23,7 @@ const USAGE: &str = "usage:
   c2-pc mod detect <MOD_DIR>... --base <GAME_DIR> [--write]
   c2-pc mod build  <MOD_DIR>... --base <GAME_DIR> --out <DIR>
   c2-pc recipe verify <RECIPE.toml> --base <GAME_DIR> [--overlay DIR]... --mods <DIR>... [--accept-base]
-  c2-pc recipe build  <RECIPE.toml> --base <GAME_DIR> [--overlay DIR]... --mods <DIR>... --out <DIR> [--accept-base]
+  c2-pc recipe build  <RECIPE.toml> --base <GAME_DIR> [--overlay DIR]... --mods <DIR>... --out <DIR> [--accept-base] [--classic]
   c2-pc recipe new    <MOD_DIR>... --base <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... --id ID [--name NAME] [--base-id ID] [--out RECIPE.toml]
   c2-pc recipe base   --base <GAME_DIR> [--id c2-vanilla|ice-age] [--out recipes/bases/c2-vanilla.toml]
   c2-pc area-layers <BASE.MAP> --layer <LAYER.MAP>... --out <DIR>
@@ -384,6 +384,7 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
                 .map(PathBuf::from)
                 .collect(),
             accept_base: o.has("accept-base"),
+            classic: o.has("classic"),
         };
         return mods_cli::run_recipe(&o.positional, &a);
     }
@@ -586,6 +587,10 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
                 .flat_map(|m| c2_mods::expand_addons(std::path::Path::new(m)))
                 .collect();
             let recipe = o.value("recipe").map(PathBuf::from);
+            anyhow::ensure!(
+                recipe.is_some() || !o.has("classic"),
+                "--classic plays a recipe without its enhanced rules: give --recipe RECIPE.toml"
+            );
             // --overlay DIR (repeatable): files copied over the game first
             // (the Modder's Edition release over the original game).
             let overlays = o.values("overlay");
@@ -617,8 +622,22 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
             } else if let Some(r) = recipe {
                 let mods: Vec<PathBuf> = o.values("mods").into_iter().map(PathBuf::from).collect();
                 let mods = mods_cli::mods_dirs(&c2_mods::recipe::Recipe::load(&r)?, &mods)?;
-                let out = mods_cli::recipe_pack_dir(&r);
-                mods_cli::build_recipe(&r, &bases, &mods, balance, &out, o.has("accept-base"))?;
+                // --classic: Play Vanilla, the instance without its enhanced
+                // rules, in its own pack folder and with the same saves.
+                let classic = o.has("classic");
+                if classic {
+                    crate::classic::enable();
+                }
+                let out = mods_cli::recipe_pack_dir(&r, classic);
+                mods_cli::build_recipe(
+                    &r,
+                    &bases,
+                    &mods,
+                    balance,
+                    &out,
+                    o.has("accept-base"),
+                    classic,
+                )?;
                 out
             } else if mods.is_empty()
                 && overlays.is_empty()

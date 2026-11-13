@@ -344,7 +344,8 @@ impl Verified {
     }
 }
 
-/// Verifies and builds a recipe into `out`.
+/// Verifies and builds a recipe into `out`. `classic`: Play Vanilla's
+/// build, without the recipe's enhanced rules ([`c2_mods::classic`]).
 pub fn build_recipe(
     recipe_path: &Path,
     bases: &[PathBuf],
@@ -352,11 +353,22 @@ pub fn build_recipe(
     balance_file: Option<&Path>,
     out: &Path,
     accept_base: bool,
+    classic: bool,
 ) -> Result<()> {
     let (r, warnings) = c2_mods::recipe::Recipe::load_checked(recipe_path)?;
     for w in warnings {
         tracing::warn!("{}: {w}", recipe_path.display());
     }
+    let r = if classic {
+        let left_out = c2_mods::classic::advanced_summary(&r);
+        if !left_out.is_empty() {
+            let names: Vec<String> = left_out.iter().map(|a| a.key()).collect();
+            tracing::info!("Play Vanilla: leaving out {}", names.join(", "));
+        }
+        c2_mods::classic::classic_recipe(&r)
+    } else {
+        r
+    };
     let found = verify(recipe_path, &r, bases, mods_dirs, accept_base)?;
     if let Some(e) = &found.base_problem {
         bail!("{e}");
@@ -437,8 +449,9 @@ pub fn build_recipe(
     Ok(())
 }
 
-/// Where `play --recipe` keeps its combined game.
-pub fn recipe_pack_dir(recipe_path: &Path) -> PathBuf {
+/// Where `play --recipe` keeps its combined game; a classic build (Play
+/// Vanilla) beside it, so neither replaces the other.
+pub fn recipe_pack_dir(recipe_path: &Path, classic: bool) -> PathBuf {
     let id = c2_mods::recipe::Recipe::load(recipe_path)
         .map(|r| r.recipe.id)
         .unwrap_or_default();
@@ -447,10 +460,15 @@ pub fn recipe_pack_dir(recipe_path: &Path) -> PathBuf {
     } else {
         c2_mods::manifest::slug(&id)
     };
-    crate::save::data_dir()
-        .join("packs")
-        .join(format!("recipe-{id}"))
+    crate::save::data_dir().join("packs").join(format!(
+        "recipe-{id}{}",
+        if classic { CLASSIC_SUFFIX } else { "" }
+    ))
 }
+
+/// A classic pack's folder: the recipe's, with this after it. Slugs hold
+/// only `a-z`, `0-9` and `-`, so no recipe's own folder ends in it.
+pub const CLASSIC_SUFFIX: &str = ".classic";
 
 pub struct RecipeArgs<'a> {
     pub bases: Vec<PathBuf>,
@@ -467,6 +485,8 @@ pub struct RecipeArgs<'a> {
     /// `--accept-base`: use a game whose files differ from the recipe's
     /// base (another version of it).
     pub accept_base: bool,
+    /// `recipe build --classic`: Play Vanilla's build (no enhanced rules).
+    pub classic: bool,
 }
 
 /// `c2-pc recipe verify|build|new|base ...`.
@@ -501,6 +521,7 @@ pub fn run_recipe(args: &[String], a: &RecipeArgs<'_>) -> Result<()> {
                 None,
                 &out,
                 a.accept_base,
+                a.classic,
             )
         }
         "new" => {

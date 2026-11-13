@@ -441,4 +441,5 @@ fn a_charging_herbivore_gores_without_its_kill_clip() {
 mod bench;
 mod regressions;
 mod respawn;
+mod score;
 mod targets;
