@@ -1321,9 +1321,51 @@ fn place(src: &Path, dst: &Path) -> Result<(), ModError> {
     std::fs::copy(src, dst).map(|_| ()).map_err(io(dst))
 }
 
+/// Records the inputs a written pack was built from (see [`pack_key`]).
+pub const KEY_FILE: &str = ".c2rs-pack-key";
+
+/// What a pack is built from: every file's path with its size and time
+/// (generated files: their bytes), and the merge report (which holds the
+/// balance and the add-on decisions). A folder whose key matches is current.
+fn pack_key(pack: &Pack) -> Result<String, ModError> {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    for (path, _) in pack.vfs.files() {
+        h.update(path.as_bytes());
+        h.update([0]);
+        match pack.vfs.disk_path(path) {
+            Some(src) => {
+                let m = std::fs::metadata(&src).map_err(io(&src))?;
+                h.update(m.len().to_le_bytes());
+                let t = m
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map_or(0, |d| d.as_nanos());
+                h.update(t.to_le_bytes());
+            }
+            None => h.update(Sha256::digest(pack.vfs.read(path)?)),
+        }
+    }
+    h.update(pack.report().as_bytes());
+    Ok(format!("{:x}", h.finalize()))
+}
+
+/// Where a pack is written before it replaces `out`: beside it.
+fn staging_dir(out: &Path) -> PathBuf {
+    let mut s = out.as_os_str().to_owned();
+    s.push(".partial");
+    PathBuf::from(s)
+}
+
 /// Writes the pack to `out`: every visible file linked (or copied) from its
 /// layer, generated files written, plus the merge report. `out` must be
 /// empty, missing, or an earlier pack (which is replaced).
+///
+/// An earlier pack built from the same inputs is kept as it is (copying a
+/// large game again on every launch is slow, on a phone very slow). The pack
+/// is written beside `out` and swapped in only when complete, so an
+/// interrupted copy never leaves a folder that a later run refuses.
 pub fn materialize(pack: &Pack, out: &Path) -> Result<(), ModError> {
     // Check every backend's original path before touching an existing pack.
     for (_, file) in pack.vfs.files() {
@@ -1334,16 +1376,25 @@ pub fn materialize(pack: &Pack, out: &Path) -> Result<(), ModError> {
             }));
         }
     }
+    let key = pack_key(pack)?;
+    let current = out.join(PACK_MARKER).is_file()
+        && std::fs::read_to_string(out.join(KEY_FILE)).is_ok_and(|k| k.trim() == key);
+    if current {
+        return Ok(());
+    }
     if out.exists() {
         let empty = std::fs::read_dir(out).map_err(io(out))?.next().is_none();
         if !empty && !out.join(PACK_MARKER).exists() {
             return Err(ModError::NotAPack(out.to_path_buf()));
         }
-        std::fs::remove_dir_all(out).map_err(io(out))?;
     }
-    std::fs::create_dir_all(out).map_err(io(out))?;
+    let stage = staging_dir(out);
+    if stage.exists() {
+        std::fs::remove_dir_all(&stage).map_err(io(&stage))?;
+    }
+    std::fs::create_dir_all(&stage).map_err(io(&stage))?;
     for (_, r) in pack.vfs.files() {
-        let dst = out.join(&r.path);
+        let dst = stage.join(&r.path);
         if let Some(parent) = dst.parent() {
             std::fs::create_dir_all(parent).map_err(io(parent))?;
         }
@@ -1355,8 +1406,13 @@ pub fn materialize(pack: &Pack, out: &Path) -> Result<(), ModError> {
             None => std::fs::write(&dst, pack.vfs.read(&r.path)?).map_err(io(&dst))?,
         }
     }
-    std::fs::write(out.join(REPORT_FILE), pack.report()).map_err(io(out))?;
-    std::fs::write(out.join(PACK_MARKER), "built by c2rs\n").map_err(io(out))?;
+    std::fs::write(stage.join(REPORT_FILE), pack.report()).map_err(io(&stage))?;
+    std::fs::write(stage.join(KEY_FILE), &key).map_err(io(&stage))?;
+    std::fs::write(stage.join(PACK_MARKER), "built by c2rs\n").map_err(io(&stage))?;
+    if out.exists() {
+        std::fs::remove_dir_all(out).map_err(io(out))?;
+    }
+    std::fs::rename(&stage, out).map_err(io(out))?;
     Ok(())
 }
 

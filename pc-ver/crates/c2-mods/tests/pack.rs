@@ -125,3 +125,40 @@ fn malicious_backend_paths_are_rejected_before_replacing_output() {
     std::fs::remove_dir_all(base).expect("remove fixture");
     std::fs::remove_dir_all(out).expect("remove fixture");
 }
+
+#[test]
+fn an_unchanged_pack_is_kept_and_an_interrupted_write_is_not_left_behind() {
+    let base = tmp("keep-base");
+    write(
+        &base,
+        &[
+            ("carn2.exe", b"exe"),
+            ("HUNTDAT/_RES.TXT", RES.as_bytes()),
+            ("HUNTDAT/TIREX.CAR", b"rex"),
+        ],
+    );
+    let out = tmp("keep-out");
+    let pack = build(std::slice::from_ref(&base), vec![]).expect("pack");
+    materialize(&pack, &out).expect("first write");
+    let copied = out.join("HUNTDAT/TIREX.CAR");
+    let stamp = std::fs::metadata(&copied)
+        .and_then(|m| m.modified())
+        .expect("mtime");
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    // The same inputs: the folder is kept, not copied again.
+    materialize(&pack, &out).expect("same inputs");
+    let again = std::fs::metadata(&copied)
+        .and_then(|m| m.modified())
+        .expect("mtime");
+    assert_eq!(stamp, again, "an unchanged pack was written again");
+
+    // A changed input replaces the folder, and an interrupted earlier write
+    // (a leftover staging folder) does not block it or stay behind.
+    std::fs::write(base.join("HUNTDAT/TIREX.CAR"), b"a bigger rex").expect("change");
+    let partial = PathBuf::from(format!("{}.partial", out.display()));
+    write(&partial, &[("HUNTDAT/TIREX.CAR", b"half")]);
+    let pack = build(std::slice::from_ref(&base), vec![]).expect("pack");
+    materialize(&pack, &out).expect("changed inputs");
+    assert_eq!(std::fs::read(&copied).expect("read"), b"a bigger rex");
+    assert!(!partial.exists(), "the staging folder was left behind");
+}
