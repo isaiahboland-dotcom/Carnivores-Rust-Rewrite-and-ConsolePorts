@@ -18,6 +18,7 @@ use crate::res_merge::diff;
 use crate::ModError;
 
 mod base;
+mod keep_comments;
 mod schema;
 pub use base::*;
 pub use schema::{RESERVED, SCHEMA};

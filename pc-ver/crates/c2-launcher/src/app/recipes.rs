@@ -96,7 +96,7 @@ impl Launcher {
     }
 
     pub(super) fn write_instance(&mut self, r: c2_mods::recipe::Recipe, u: RecipeUse) {
-        match std::fs::write(&u.path, r.to_toml()) {
+        match r.save(&u.path) {
             Ok(()) => {
                 self.ui.note = Some((format!("Instance saved: {}", u.path.display()), TEXT));
                 self.cfg.remember_builds();
@@ -138,8 +138,7 @@ impl Launcher {
                 let mut c = crate::recipe_edit::renamed_for(&r, &to);
                 c.recipe.name = name.trim().to_string();
                 let old = std::fs::read_to_string(from).unwrap_or_default();
-                std::fs::write(&to, crate::recipe_edit::with_header(&old, &c.to_toml()))
-                    .map_err(|e| e.to_string())
+                std::fs::write(&to, c.to_toml_over(&old)).map_err(|e| e.to_string())
             });
         match made {
             Ok(()) => {

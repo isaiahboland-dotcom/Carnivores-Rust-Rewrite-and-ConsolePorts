@@ -228,9 +228,15 @@ recipe with a newer schema than the build supports is refused with both
 numbers named; update the game to load it. `[recipe] version` is your own
 version of the pack, free text that is never compared. Keys the build does not
 read are ignored with a warning (in the log, and in `c2-cook`'s output), so an
-older build can still load a recipe written for a newer one. `[missions]` is
+older build can still load a recipe written for a newer one; a mistyped key
+(`max_distnace` under `[settings.flee]`) shows up the same way. `[missions]` is
 reserved for a later version: it is accepted, reported as not implemented, and
 ignored.
+
+The launcher saves a recipe by editing the file in place: comments, key order
+and blank lines stay as written, a changed value keeps the comment beside it,
+and a removed entry or section goes with the comments inside it. Keys the build
+does not read are not kept when it saves.
 
 Building a recipe also checks its settings and warns, without changing the
 build, about values outside their range (they are clamped), names the built

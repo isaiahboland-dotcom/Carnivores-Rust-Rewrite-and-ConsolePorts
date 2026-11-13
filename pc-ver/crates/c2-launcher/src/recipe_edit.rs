@@ -187,24 +187,6 @@ pub fn renamed_for(r: &Recipe, to: &Path) -> Recipe {
     r
 }
 
-/// `toml` (a recipe written out) under the comment block that opens
-/// `old` (the file it replaces or copies): the instructions at the top of
-/// a recipe are kept; comments further down are not.
-pub fn with_header(old: &str, toml: &str) -> String {
-    let header: Vec<&str> = old
-        .lines()
-        .take_while(|l| l.trim().is_empty() || l.trim_start().starts_with('#'))
-        .collect();
-    let n = header
-        .iter()
-        .rposition(|l| !l.trim().is_empty())
-        .map_or(0, |i| i + 1);
-    if n == 0 {
-        return toml.to_string();
-    }
-    format!("{}\n\n{toml}", header[..n].join("\n"))
-}
-
 impl Editor {
     /// The recipe at `path`, with the instance's folders as last kept.
     pub fn open(path: &Path, draft: Draft) -> Result<Self, String> {
@@ -399,9 +381,7 @@ impl Editor {
             .map(|(_, m, _)| m.id.clone())
             .collect();
         self.draft.folders.retain(|id, _| ids.contains(id));
-        let old = std::fs::read_to_string(&self.path).unwrap_or_default();
-        std::fs::write(&self.path, with_header(&old, &self.recipe.to_toml()))
-            .map_err(|e| e.to_string())?;
+        self.recipe.save(&self.path).map_err(|e| e.to_string())?;
         self.saved = self.recipe.clone();
         self.saved_draft = self.draft.clone();
         self.note = Some(("Saved.".into(), TEXT));
@@ -528,14 +508,26 @@ mod tests {
         assert_eq!(r.combine.map(|c| c.ambients).as_deref(), Some("tied"));
     }
 
+    /// Saving keeps the file's comments, at the top and further down
+    /// (`Recipe::to_toml_over`).
     #[test]
-    fn the_opening_comments_are_kept() {
-        let old = "# How to get it\n#   c2-pc play ...\n\n[recipe]\n# lost\nid = \"x\"\n";
+    fn saving_keeps_the_files_comments() {
+        let dir = std::env::temp_dir().join(format!("c2-edit-save-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let path = dir.join("x.toml");
+        let old = "# How to get it\n#   c2-pc play ...\n\n[recipe]\n# kept\nid = \"x\"\n\
+                   name = \"X\"   # shown\n";
+        std::fs::write(&path, old).expect("write");
+        let mut ed = Editor::open(&path, Draft::default()).expect("open");
+        ed.recipe.recipe.name = "Y".into();
+        ed.save().expect("save");
+        let text = std::fs::read_to_string(&path).expect("read");
         assert_eq!(
-            with_header(old, "[recipe]\nid = \"y\"\n"),
-            "# How to get it\n#   c2-pc play ...\n\n[recipe]\nid = \"y\"\n"
+            text,
+            "# How to get it\n#   c2-pc play ...\n\n[recipe]\n# kept\nid = \"x\"\n\
+             name = \"Y\"   # shown\n"
         );
-        assert_eq!(with_header("[recipe]\n", "a = 1\n"), "a = 1\n");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

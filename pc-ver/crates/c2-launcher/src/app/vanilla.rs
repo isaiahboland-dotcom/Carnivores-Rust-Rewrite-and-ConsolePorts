@@ -1,7 +1,8 @@
 //! Play Vanilla (`c2-pc play --recipe R --classic`) and the review of an
 //! imported recipe's advanced sections. Playing vanilla never writes the
 //! recipe; Remove and Restore defaults are separate, explicit edits of it.
-//! What a classic session keeps and leaves out: `docs/RECIPE-SETTINGS.md`.
+//! Both keep the recipe's comments (`Recipe::save`). What a classic
+//! session keeps and leaves out: `docs/RECIPE-SETTINGS.md`.
 
 use c2_mods::classic::{advanced_summary, Advanced};
 use c2_mods::recipe::Recipe;
@@ -53,7 +54,8 @@ impl Launcher {
                 }
             }
         }
-        std::fs::write(path, r.to_toml()).map_err(|e| format!("{}: {e}", path.display()))?;
+        r.save(path)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
         self.ui.instances.refresh(&self.cfg);
         Ok(())
     }

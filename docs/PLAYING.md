@@ -75,7 +75,7 @@ yellow **⚠ N missing** when files can't be found, and the time played (or **Un
   ([what is kept](RECIPE-SETTINGS.md)).
 - After **Import recipe…**, a recipe with enhanced rules lists them, each with **Remove** (taken
   out of the instance) and, for predation and custom flee limits, **Restore defaults** (kept on,
-  with the built-in values). Both save the recipe the way **Edit** does, without its comments.
+  with the built-in values). Both save the recipe the way **Edit** does, keeping its comments.
 
 **Edit** has these pages, with **Save**, **Save and exit**, **Discard changes** and **Cancel** at
 the bottom:

@@ -615,6 +615,7 @@ dependencies = [
  "sha2",
  "thiserror 2.0.21",
  "toml",
+ "toml_edit",
  "zip",
 ]
 
@@ -3912,6 +3913,7 @@ dependencies = [
  "indexmap",
  "toml_datetime 1.1.2+spec-1.1.0",
  "toml_parser",
+ "toml_writer",
  "winnow 1.0.4",
 ]
 

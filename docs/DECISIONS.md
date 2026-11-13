@@ -657,7 +657,7 @@ Clone is a save-as: id and name from the new file name, the folders given for th
 for the copy, then opened in the editor. A recipe with patches must stay in its folder (they are found
 beside it). The file is written by `Recipe::to_toml`, so only the comment block that opens the file is
 kept (that is where every repository recipe has its instructions); a test checks every repository recipe
-writes out unchanged. `[settings]` are not edited here: "Save as instance" takes them from the other tabs.
+writes out unchanged. (Superseded 2026-11-13: saving keeps every comment; see "Saving keeps comments".) `[settings]` are not edited here: "Save as instance" takes them from the other tabs.
 
 **A `_RES` entry wins over a `_MENU.TXT` one of the same name.** ARK Yutyrannus, Giganotosaurus 1.0.4
 and Carcharodontosaurus V1 ship their `_MENU.TXT` lines (`MENU.txt`, `MENU_ ENTRY.txt`, `MENURES.txt`)
@@ -5489,12 +5489,22 @@ field-by-field treatment is in [RECIPE-SETTINGS.md](RECIPE-SETTINGS.md).
   of range, names the built game lacks and features the target platform
   lacks, each with its key path. Builds already clamp and skip those, so a
   warning changes nothing; refusing them would break recipes that work.
-  Unknown keys inside `[settings.flee]` are not reported, because its
-  flattened limits hide them from `serde_ignored`.
+  Unknown keys inside `[settings.flee]` and its animals are reported too:
+  the limits are read through plain structs (`serde(from)`) and only
+  written flattened, since a table with flattened fields drops unknown keys
+  without reporting them.
 - **Imported recipes are reviewed, not rewritten.** The launcher lists an
   imported recipe's advanced sections with Remove and, where built-in values
   exist (predation, flee limits), Restore defaults. Only those two buttons
-  write the recipe; they save it as the editor does, without comments.
+  write the recipe; they save it as the editor does, comments kept.
+- **Saving keeps comments.** `Recipe::save` merges the written-out recipe
+  into the file's `toml_edit` document: unchanged keys keep their text,
+  changed values keep their comments, removed keys and tables take theirs,
+  arrays of tables are matched by position, and keys the merge would add
+  only to restate a default are left out. If the result ever reads back
+  differently from the recipe, the plain form is written. Keys the build
+  does not read are dropped on save, as before; a test saves every
+  repository recipe unchanged and checks it byte for byte.
 - **Separate standalone folder too.** A classic build's combined standalones
   go to `recipe-<slug>.classic.games`, not the enhanced `.games` folder,
   because `standalone::build` rewrites its output folder on every build.

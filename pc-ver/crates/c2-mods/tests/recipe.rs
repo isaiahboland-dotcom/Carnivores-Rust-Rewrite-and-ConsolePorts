@@ -258,6 +258,13 @@ fn the_repository_recipes_write_out_unchanged() {
         let (r, warnings) = c2_mods::recipe::Recipe::load_checked(&p).expect("loads");
         let again = c2_mods::recipe::Recipe::parse(&r.to_toml()).expect("reparses");
         assert_eq!(r, again, "{}", p.display());
+        // Saved unchanged over its own file, a recipe keeps every byte:
+        // comments, layout and the keys its author left out. (Keys this
+        // build does not read, reported as warnings, are not kept.)
+        let text = std::fs::read_to_string(&p).expect("reads");
+        if warnings.is_empty() {
+            assert_eq!(r.to_toml_over(&text), text, "{}", p.display());
+        }
         // The published recipes (not the personal instances below them) use
         // only keys this build reads, in a format it supports.
         let personal = p.components().any(|c| c.as_os_str() == "instances");
