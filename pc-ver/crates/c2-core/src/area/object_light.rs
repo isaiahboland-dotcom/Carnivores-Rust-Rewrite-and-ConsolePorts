@@ -113,4 +113,26 @@ mod tests {
         let f = sprite_light(Some(ObjectLight::Fixed(100.0 / 255.0)), w);
         assert!((f - 84.0 / 255.0).abs() < 1e-6);
     }
+
+    #[test]
+    fn water_mean_colour_is_the_texture_average_in_8_bit_steps() {
+        let mut a = Area::flat(10);
+        a.map.water.fill(0);
+        a.rsc.waters = vec![c2_formats::rsc::Water {
+            texture_index: 0,
+            level: 100,
+            transp: 0.5,
+            fog_rgb: 0,
+        }];
+        // Half the texels r=20, half r=10 (g=b=0): mean r = 15 * 8 = 120.
+        let px = |r: u16| r << 10;
+        a.rsc.textures = vec![(0..128 * 128)
+            .map(|i| if i % 2 == 0 { px(20) } else { px(10) })
+            .collect()];
+        let [r, g, b] = a.water_mean_rgb(1000.0, 1000.0).unwrap();
+        assert_eq!((r, g, b), (120.0 / 255.0, 0.0, 0.0));
+        // No water type on the cell: no underwater colour.
+        a.map.water.fill(crate::area::NO_WATER);
+        assert!(a.water_mean_rgb(1000.0, 1000.0).is_none());
+    }
 }

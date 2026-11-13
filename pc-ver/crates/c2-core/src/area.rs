@@ -314,6 +314,26 @@ impl Area {
             .map(|wt| wt.level as f32 * H_SCALE)
     }
 
+    /// `CalcMidColor` of the water texture at world (x, z), as 0..1 RGB.
+    /// The original uses it as the fog colour while the camera is
+    /// underwater (`WaterList[w].fogRGB`).
+    pub fn water_mean_rgb(&self, x: f32, z: f32) -> Option<[f32; 3]> {
+        let (cx, cy) = ((x / 256.0) as usize, (z / 256.0) as usize);
+        let w = *self.map.water.get(idx(cx, cy))?;
+        let tex = self
+            .rsc
+            .textures
+            .get(self.rsc.waters.get(usize::from(w))?.texture_index as usize)?;
+        let mut sum = [0u64; 3];
+        for &c in tex {
+            sum[0] += u64::from((c >> 10) & 31);
+            sum[1] += u64::from((c >> 5) & 31);
+            sum[2] += u64::from(c & 31);
+        }
+        let n = tex.len().max(1) as u64;
+        Some(sum.map(|v| (v * 8 / n) as f32 / 255.0))
+    }
+
     pub fn placements(&self) -> impl Iterator<Item = Placement> + '_ {
         let n = self.rsc.objects.len();
         self.map
