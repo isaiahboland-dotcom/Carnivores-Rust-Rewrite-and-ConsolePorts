@@ -10,6 +10,7 @@ use c2_core::dino::{Herd, PlaceOptions};
 use c2_core::game::{
     GameEvent, Hunt, HuntInput, HuntOptions, SurvivalKind, SurvivalOptions, Weapons,
 };
+use c2_core::game::trophy_room;
 use c2_core::load;
 use c2_core::player::{Controls, Player};
 use c2_core::rng::MsRand;
@@ -328,6 +329,8 @@ pub struct Game {
     gait: u8,
     /// The trophy room's question waiting for A / B.
     pub ask: Option<TrophyAsk>,
+    /// The trophy room's memory plan (`None` outside it).
+    pub trophy_plan: Option<trophy_room::RoomPlan>,
     /// The gyroscope, on for a stealth hunt: raw-to-degrees/s.
     gyro: Option<f32>,
     /// Extra ammo refills left.
@@ -413,6 +416,7 @@ fn next_seed(s: u32) -> u32 {
     s.wrapping_mul(1_103_515_245).wrapping_add(12345)
 }
 
+#[allow(clippy::too_many_arguments)]
 /// `ReInitGame`: the hunter at a random landing spot (or the trophy room's
 /// door) and the herd placed (or the trophies), as `c2-pc`'s `new_hunt`.
 fn new_hunt(
@@ -424,6 +428,7 @@ fn new_hunt(
     ship_ms: i32,
     seed: u32,
     room: Save,
+    portrait_stands: bool,
 ) -> Hunt {
     let o = room.options;
     let trophy = setup.trophy();
@@ -455,6 +460,7 @@ fn new_hunt(
     if let Some(t) = tables {
         herd.trophy_spots = t.trophies.clone();
     }
+    herd.portrait_stands = portrait_stands;
     if trophy {
         herd.place_trophies(area, &room, &mut rng);
     } else if let Some(t) = tables {
@@ -563,33 +569,44 @@ impl Game {
         let rules = menu_rules.hunt_with(&setup.area, setup.time, setup.targets, &setup.roamers);
         progress("animals");
         // The trophy room needs only the species on display (every one a
-        // pack with add-ons has won't fit in an Old 3DS), and of those as
-        // many as fit, by stand (24 big add-ons crashed it); a trophy whose
-        // species doesn't fit isn't shown (the save keeps it).
+        // pack with add-ons has won't fit in an Old 3DS). When their models
+        // don't all fit in memory (by the cooker's figures, whatever the
+        // number of species), none is loaded and the room shows portraits.
         let mut trophies: Vec<usize> = Vec::new();
+        let mut trophy_plan = None;
         if setup.trophy() {
-            let cost = |i: usize, f: &dyn Fn(&str) -> usize| {
-                rules.keys.get(i).map_or(0, |k| f(&format!("m:{k}")))
-            };
+            let model = |i: usize| rules.keys.get(i).map(|k| format!("m:{k}"));
             let hunter = (0..rules.roles.len()).filter(|&i| rules.roles[i] == Role::Hunter);
-            let mut lin = info.cost("hunt") + info.cost(&setup.area);
-            lin += hunter.map(|i| cost(i, &|p| info.cost(p))).sum::<usize>();
-            let mut heap = info.heap(&setup.area);
-            for b in &room.bodies {
-                let Some(c) = usize::try_from(b.ctype).ok().filter(|&c| c != 0) else {
-                    continue;
-                };
-                if trophies.contains(&c) {
-                    continue;
-                }
-                let (l, h) = (cost(c, &|p| info.cost(p)), cost(c, &|p| info.heap(p)));
-                if lin + l > info.linear_kb || heap + h > info.heap_kb {
-                    continue;
-                }
-                lin += l;
-                heap += h;
-                trophies.push(c);
-            }
+            let base_linear_kb = info.cost("hunt")
+                + info.cost(&setup.area)
+                + hunter.filter_map(model).map(|m| info.cost(&m)).sum::<usize>();
+            let budget = trophy_room::Budget {
+                linear_kb: info.linear_kb,
+                heap_kb: info.heap_kb,
+                base_linear_kb,
+                base_heap_kb: info.heap(&setup.area),
+            };
+            let cost = |i: usize| {
+                let m = model(i).filter(|m| info.costs.contains_key(m))?;
+                Some(trophy_room::ModelCost {
+                    linear_kb: info.cost(&m),
+                    heap_kb: info.heap(&m),
+                })
+            };
+            let has_portrait = |i: usize| {
+                rules.keys.get(i).is_some_and(|k| {
+                    vfs.resolve(&format!("C2RS/MENU/R/{k}.TX")).is_some()
+                })
+            };
+            let p = trophy_room::plan(
+                &room.bodies,
+                rules.roles.len(),
+                budget,
+                &cost,
+                &has_portrait,
+            );
+            trophies = p.load.clone();
+            trophy_plan = Some(p);
         }
         // Random ambients: 4 ambient species this hunt (modded games add
         // many; the rest aren't loaded, so they don't spawn).
@@ -656,6 +673,7 @@ impl Game {
             ship_ms,
             seed,
             room,
+            trophy_plan.as_ref().is_some_and(|p| p.low_memory()),
         );
         if let Some(s) = &mut hunt.survival {
             s.opts.starting_budget =
@@ -733,6 +751,7 @@ impl Game {
             l_ms: 0.0,
             gait: 0,
             ask: None,
+            trophy_plan,
             gyro: gyro_on(setup_stealth),
             resupplies,
         })

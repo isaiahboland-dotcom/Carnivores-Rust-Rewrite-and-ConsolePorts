@@ -60,7 +60,7 @@ pub struct DrawInfo {
     pub all_sprites: bool,
 }
 
-fn load_texture(vfs: &Vfs, path: &str) -> Option<Texture> {
+pub(crate) fn load_texture(vfs: &Vfs, path: &str) -> Option<Texture> {
     let t = parse_texture(&vfs.read(path).ok()?).ok()?;
     Texture::new(&t)
 }
@@ -299,6 +299,8 @@ pub struct World {
     sprites: Vec<Option<(Texture, [[f32; 3]; 4])>>,
     /// Each object's sprites this frame, in one buffer.
     sprite_bufs: Vec<Option<LinearBuf<Vertex>>>,
+    /// The low-memory trophy room's portrait cards (`stands.rs`).
+    pub stands: Option<crate::stands::Stands>,
     species: Vec<Option<Posed>>,
     weapons: Vec<Option<Posed>>,
     /// One buffer per character slot, refilled when it is drawn.
@@ -502,6 +504,7 @@ impl World {
             placements,
             sprites,
             sprite_bufs: Vec::new(),
+            stands: None,
             species: posed(cars, &|i| {
                 format!("C2RS/M/{}.TX", keys.get(i).map_or("", String::as_str))
             }),
@@ -806,6 +809,9 @@ impl World {
         self.draw_sprites(gpu, view, fwd, &by_sprite);
 
         self.draw_animals(gpu, hunt, poser, view, eye);
+        if let Some(stands) = &mut self.stands {
+            stands.draw(gpu, hunt, view, fwd);
+        }
         self.draw_ship(gpu, hunt, view, eye);
 
         // Water, blended, after everything opaque, lit as `water_lit` says.

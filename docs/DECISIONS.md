@@ -4978,3 +4978,29 @@ captures confirm restored crest coverage. Full-image pixel parity remains
 unresolved (filtering/rasterization differences are not waived). Gameplay
 verification confirmed the Dilophosaurus face fix on 2026-11-11, completing
 acceptance for the reported defect. Private evidence stays ignored.
+
+## 2026-11-12 — 3DS trophy room: memory-planned 2D fallback
+
+- A fixed "more than five species" threshold does not address the limit. The
+  trophy room loads each displayed animal's model, texture, animations and
+  sounds, so the cost follows the animals' size (a few large add-ons outweigh
+  many small ones), not the species count. Eight small animals fit where four
+  large ones do not.
+- `c2_core::game::trophy_room::plan` sums the cooker's per-model figures
+  (`cost.m:*`, `heap.m:*`) plus the area and hunter against the pack's linear and
+  heap budgets. If every displayed species fits, the room is unchanged (3D
+  statues). If not, or if a model was not cooked, no animal model is loaded and
+  the room is the low-memory room. Previously the loader silently dropped the
+  species that did not fit.
+- Low-memory room: each stand is an upright card turned to the visitor with a
+  portrait above a plate of the trophy's name, score, weight and length.
+  Portraits are the cooker's `C2RS/MENU/R/{model}.TX` pictures (now drawn for
+  every model, not only roaming add-ons), so each is the exact model and skin of
+  the species the trophy was saved under; a skin variant is its own species with
+  its own picture. A species without a picture shows the plate only. Stands are
+  still placed as characters (`Herd::portrait_stands`), so walking, plaques,
+  remove, lock and move work as in the 3D room.
+- Entering the low-memory room shows a one-time notice until A, START or a tap.
+- Trophy records, scoring and the save format are untouched. Packs cooked
+  before this change have no portraits, so a room that needs the fallback shows
+  plates only until the pack is re-cooked.

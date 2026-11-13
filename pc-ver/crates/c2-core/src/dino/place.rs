@@ -654,7 +654,7 @@ impl Herd {
                 || self
                     .species
                     .get(ctype)
-                    .is_none_or(|s| s.ani_time.is_empty())
+                    .is_none_or(|s| s.ani_time.is_empty() && !self.portrait_stands)
             {
                 continue;
             }
@@ -752,7 +752,11 @@ impl Herd {
             let Some(&(lx, lz)) = landings.get(spot.pos) else {
                 continue;
             };
-            let Some(sp) = self.species.get(ctype).filter(|s| !s.ani_time.is_empty()) else {
+            let Some(sp) = self
+                .species
+                .get(ctype)
+                .filter(|s| self.portrait_stands || !s.ani_time.is_empty())
+            else {
                 continue;
             };
             // How much bigger than usual, in `scaleA`s.

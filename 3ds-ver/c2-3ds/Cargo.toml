@@ -18,6 +18,7 @@ anyhow.workspace = true
 c2-formats.workspace = true
 c2-vfs.workspace = true
 c2-core.workspace = true
+font8x8.workspace = true
 glam = { version = "0.33", default-features = false, features = ["std"] }
 # rust3ds crates are not on crates.io; Cargo.lock pins the commits.
 ctru-rs = { git = "https://github.com/rust3ds/ctru-rs" }

@@ -44,6 +44,9 @@ pub struct Herd {
     /// Dialect games: the trophy room's spots (trophy slot n = spot n);
     /// empty: the original's stands.
     pub trophy_spots: Vec<c2_formats::mee::TrophySpot>,
+    /// The low-memory trophy room: stands are placed for trophies whose
+    /// animal has no model loaded (a 2D portrait is drawn instead).
+    pub portrait_stands: bool,
     /// Predation, when the game turns it on (`None`: the original's herd).
     pub predation: Option<Box<predation::run::Predators>>,
 }

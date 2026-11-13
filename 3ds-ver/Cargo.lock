@@ -86,6 +86,7 @@ dependencies = [
  "citro3d-sys",
  "ctru-rs",
  "ctru-sys",
+ "font8x8",
  "glam",
 ]
 

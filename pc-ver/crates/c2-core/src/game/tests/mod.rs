@@ -8,5 +8,6 @@ mod spawn_rules;
 mod support;
 mod survival;
 mod trophies;
+mod trophy_room;
 mod weapons;
 mod wildlife;

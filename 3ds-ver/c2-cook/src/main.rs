@@ -913,9 +913,6 @@ struct Rules {
     models: BTreeMap<String, (String, bool)>,
     /// The dialect's `_RES.TXT` as written (each area's ambients).
     raw: Option<c2_formats::res_txt::ResTxt>,
-    /// Models of roaming add-ons (huntable, no menu slot), by `model_key`:
-    /// they get a menu picture drawn from the model.
-    roamers: std::collections::BTreeSet<String>,
     /// The menu: `_MENU.TXT` if there is one, else `_RES.TXT`.
     menu: c2_formats::menu_txt::MenuData,
     /// The model of each menu slot's animal (slot 0 = `DINO1.TGA`), for
@@ -999,7 +996,6 @@ fn rules(vfs: &Vfs) -> Result<Rules> {
         (c2_core::load::res(vfs)?, Vec::new())
     };
     let mut models = BTreeMap::new();
-    let mut roamers = std::collections::BTreeSet::new();
     let mut slot_files = BTreeMap::new();
     for (i, def) in res.characters.iter().enumerate() {
         let info = DinoInfo::from_def(def);
@@ -1012,9 +1008,6 @@ fn rules(vfs: &Vfs) -> Result<Rules> {
         };
         if let Some(k) = slot {
             slot_files.entry(k).or_insert_with(|| info.file.clone());
-        }
-        if dialect && slot.is_none() && (10..30).contains(&info.ai) {
-            roamers.insert(key.clone());
         }
         let always = if dialect {
             slot.is_none() && (0..10).contains(&info.ai)
@@ -1046,7 +1039,6 @@ fn rules(vfs: &Vfs) -> Result<Rules> {
         res,
         models,
         raw: dialect.then_some(raw),
-        roamers,
         menu,
         slot_files,
     })
@@ -1218,11 +1210,11 @@ fn main() -> Result<()> {
         let rgba = c.car(&vfs, &path, &format!("M/{key}/"))?;
         c.model_texture(format!("C2RS/M/{key}.TX"), &rgba);
         cooked_models.push((key.clone(), *always));
-        if rules.roamers.contains(key) {
-            c.scope = "menu".into();
-            c.portrait(&vfs, &path, &format!("C2RS/MENU/R/{key}.TX"));
-            c.scope = format!("m:{key}");
-        }
+        // A picture of every model, from its own skin: the menu's for
+        // roaming add-ons, and the low-memory trophy room's stands.
+        c.scope = "menu".into();
+        c.portrait(&vfs, &path, &format!("C2RS/MENU/R/{key}.TX"));
+        c.scope = format!("m:{key}");
     }
     // Calls by menu slot n (call id n + 9; in the original the slot is the
     // AI - 10): MENU/PICS/CALLn.TGA, SOUNDFX/CALLS/CALLn_*.WAV.

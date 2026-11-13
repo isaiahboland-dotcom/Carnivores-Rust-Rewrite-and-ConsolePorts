@@ -20,6 +20,7 @@ mod state;
 mod survival;
 mod teleport;
 mod trophies;
+pub mod trophy_room;
 mod update;
 mod view;
 mod weapon_actions;

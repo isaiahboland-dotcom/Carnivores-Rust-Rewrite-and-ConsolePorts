@@ -16,6 +16,7 @@ mod save;
 mod instance_rules;
 mod settings;
 mod shot;
+mod stands;
 mod sound;
 mod ui;
 mod world;
@@ -496,6 +497,39 @@ fn menu(
     Ok(None)
 }
 
+/// The low-memory trophy room's notice, shown on entering it until A,
+/// START or a tap.
+fn low_memory_notice(vfs: &Vfs, gpu: &mut Gpu, io: &mut Io) {
+    const LINES: [&str; 7] = [
+        "Sorry, the 3DS has reached a limit",
+        "for the trophy room.",
+        "",
+        "Don't panic: the low-memory trophy room",
+        "has been enabled. You can still view",
+        "your trophies as 2D pictures instead",
+        "of 3D models.",
+    ];
+    let mut c = Canvas::new(ui::load(vfs, "C2RS/FONT.TX"));
+    while io.apt.main_loop() {
+        let (_, down) = io.keys();
+        let tapped = read_pad(io.hid, KeyPad::empty(), down, &mut io.touch).1.is_some();
+        if down.intersects(KeyPad::A | KeyPad::START) || tapped {
+            return;
+        }
+        c.new_frame();
+        gpu.begin([0, 0, 0]);
+        gpu.begin_2d(None);
+        c.text_c(gpu, 200.0, 40.0, 2.0, [240, 200, 70, 255], "Trophy room");
+        for (k, line) in LINES.iter().enumerate() {
+            c.text_c(gpu, 200.0, 84.0 + 14.0 * k as f32, 1.0, WHITE, line);
+        }
+        c.text_c(gpu, 200.0, 200.0, 1.0, [150, 150, 150, 255], "Press A to continue");
+        gpu.begin_2d(Some([0, 0, 0]));
+        gpu.end();
+        io.frame += 1;
+    }
+}
+
 /// "Loading..." on both screens while a hunt loads.
 fn loading_screen(vfs: &Vfs, gpu: &mut Gpu, what: &str) {
     let mut c = Canvas::new(ui::load(vfs, "C2RS/FONT.TX"));
@@ -541,6 +575,10 @@ fn hunt(
         &game.keys,
         &game.weapon_cars,
     );
+    world.stands = stands::Stands::new(vfs, &game);
+    if world.stands.is_some() {
+        low_memory_notice(vfs, gpu, io);
+    }
     let mut ui = Ui::new(vfs, &game);
     let (mut sound, sound_err) = match sound::Sound::new(vfs, &game) {
         Ok(s) => (Some(s), None),
