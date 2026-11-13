@@ -135,3 +135,21 @@ enhanced `packs/recipe-<slug>`. The pack cache replaces a folder whose inputs
 changed, so sharing one folder would rebuild and replace the enhanced pack on
 every switch. Recipe slugs contain only `a-z`, `0-9` and `-`, so the suffix
 cannot collide with another recipe.
+
+## Platform support
+
+What each platform does with the enhanced rules today, and where Play Vanilla
+is available. `c2-pc` and `c2-cook` warn when a recipe uses a feature its
+target lacks (`c2_mods::validate`).
+
+| | PC | Android | 3DS | Wii U | VR |
+|---|---|---|---|---|---|
+| Play Vanilla | Yes: launcher (Options), `play --classic`, `recipe build --classic` | No | No (planned) | No (planned) | No |
+| Predation (`_PREDATION.TXT`) | Yes | Yes (the PC game) | Yes | Experimental | Yes |
+| Custom flee limits (`_FLEE.TXT`) | Yes, with Bounded fleeing on | Yes (the PC game) | Experimental | No option yet | No |
+| Times, hidden animals, locks, spawn rules (`_RULES.TXT`) | Yes | Yes (the PC game) | Yes | Yes | No |
+| Variants | Yes | Yes (the PC game) | No: the cooker refuses them | No: refused at install | Not checked |
+
+Console Play Vanilla is planned as a separate task: a second, classic pack
+built beside the enhanced one with `recipe build --classic`, in the existing
+pack formats. It needs hardware testing.

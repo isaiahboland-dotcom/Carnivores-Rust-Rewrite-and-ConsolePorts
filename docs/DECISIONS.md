@@ -5485,4 +5485,17 @@ field-by-field treatment is in [RECIPE-SETTINGS.md](RECIPE-SETTINGS.md).
   file format (missing means 1; a higher one than the build knows is an
   error naming both). `[recipe] version` remains the author's free text and
   is never compared.
+- **Validation warns, never blocks.** `c2_mods::validate` reports values out
+  of range, names the built game lacks and features the target platform
+  lacks, each with its key path. Builds already clamp and skip those, so a
+  warning changes nothing; refusing them would break recipes that work.
+  Unknown keys inside `[settings.flee]` are not reported, because its
+  flattened limits hide them from `serde_ignored`.
+- **Imported recipes are reviewed, not rewritten.** The launcher lists an
+  imported recipe's advanced sections with Remove and, where built-in values
+  exist (predation, flee limits), Restore defaults. Only those two buttons
+  write the recipe; they save it as the editor does, without comments.
+- **Separate standalone folder too.** A classic build's combined standalones
+  go to `recipe-<slug>.classic.games`, not the enhanced `.games` folder,
+  because `standalone::build` rewrites its output folder on every build.
 - PC first. Console Play Vanilla is planned separately and needs hardware.
