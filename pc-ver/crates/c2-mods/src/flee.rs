@@ -53,7 +53,7 @@ impl Limits {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, from = "RawAnimal")]
 pub struct Animal {
     /// The animal's resource name (as `_RES.TXT` gives it).
     pub name: String,
@@ -62,13 +62,67 @@ pub struct Animal {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, from = "RawFlee")]
 pub struct Flee {
     pub enabled: bool,
     #[serde(flatten)]
     pub limits: Limits,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub animals: Vec<Animal>,
+}
+
+// Read through plain structs, not `flatten`: a table with flattened fields
+// drops unknown keys without reporting them, so a mistyped limit would be
+// ignored silently. Written with `flatten`; the file's form is the same.
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct RawAnimal {
+    name: String,
+    max_distance: Option<u32>,
+    max_duration: Option<u32>,
+    chase_extension: Option<u32>,
+    retrigger_lockout: Option<u32>,
+}
+
+impl From<RawAnimal> for Animal {
+    fn from(r: RawAnimal) -> Self {
+        Animal {
+            name: r.name,
+            limits: Limits {
+                max_distance: r.max_distance,
+                max_duration: r.max_duration,
+                chase_extension: r.chase_extension,
+                retrigger_lockout: r.retrigger_lockout,
+            },
+        }
+    }
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct RawFlee {
+    enabled: bool,
+    max_distance: Option<u32>,
+    max_duration: Option<u32>,
+    chase_extension: Option<u32>,
+    retrigger_lockout: Option<u32>,
+    animals: Vec<Animal>,
+}
+
+impl From<RawFlee> for Flee {
+    fn from(r: RawFlee) -> Self {
+        Flee {
+            enabled: r.enabled,
+            limits: Limits {
+                max_distance: r.max_distance,
+                max_duration: r.max_duration,
+                chase_extension: r.chase_extension,
+                retrigger_lockout: r.retrigger_lockout,
+            },
+            animals: r.animals,
+        }
+    }
 }
 
 impl Flee {

@@ -5,8 +5,7 @@
 //! than [`SCHEMA`] is refused, naming both, rather than half-read. The
 //! author's `[recipe] version` is free text and is never compared.
 //! Unknown keys load (an older build reading a newer recipe's additions)
-//! and are reported as warnings, except inside `[settings.flee]` and its
-//! animals, whose flattened limits hide them from the check.
+//! and are reported as warnings.
 
 use super::Recipe;
 
@@ -28,7 +27,9 @@ impl Recipe {
     pub fn parse_checked(text: &str) -> Result<(Self, Vec<String>), toml::de::Error> {
         let de = toml::Deserializer::parse(text)?;
         let mut ignored = Vec::new();
-        let r: Recipe = serde_ignored::deserialize(de, |p| ignored.push(p.to_string()))?;
+        // `?` marks an `Option` in serde_ignored's paths; it is not a key.
+        let r: Recipe =
+            serde_ignored::deserialize(de, |p| ignored.push(p.to_string().replace(".?", "")))?;
         match r.recipe.schema {
             0 => {
                 return Err(invalid(format!(
@@ -112,20 +113,41 @@ mod tests {
         }
     }
 
-    /// Flattened sections (`[settings.flee]`'s limits) are read keys, not
-    /// unknown ones. A serde limitation: an unknown key inside a table with
-    /// flattened fields is dropped without being reported.
+    /// `[settings.flee]` and its animals hold the limits as plain keys
+    /// (written flattened): read keys load, a mistyped one is reported.
     #[test]
-    fn flattened_keys_are_not_unknown() {
+    fn a_mistyped_flee_limit_is_reported() {
         let text = format!(
-            "{MIN}[settings.flee]\nenabled = true\nmax_distance = 30\ntypo = 1\n\
-             [[settings.flee.animals]]\nname = \"Velociraptor\"\nmax_duration = 9\n"
+            "{MIN}[settings.flee]\nenabled = true\nmax_distance = 30\nmax_distnace = 1\n\
+             [[settings.flee.animals]]\nname = \"Velociraptor\"\nmax_duration = 9\n\
+             retrigger_lockuot = 2\n"
         );
         let (r, w) = Recipe::parse_checked(&text).unwrap_or_else(|e| panic!("{e}"));
         let f = r.settings.flee.unwrap_or_default();
+        assert!(f.enabled);
         assert_eq!(f.limits.max_distance, Some(30));
+        assert_eq!(f.animals[0].name, "Velociraptor");
         assert_eq!(f.animals[0].limits.max_duration, Some(9));
+        assert_eq!(w.len(), 2, "{w:?}");
+        for k in [
+            "`settings.flee.max_distnace`",
+            "`settings.flee.animals.0.retrigger_lockuot`",
+        ] {
+            assert!(w.iter().any(|x| x.contains(k)), "{k}: {w:?}");
+        }
+    }
+
+    #[test]
+    fn a_correct_flee_section_has_no_warnings() {
+        let text = format!(
+            "{MIN}[settings.flee]\nenabled = true\nmax_distance = 30\nmax_duration = 20\n\
+             chase_extension = 10\nretrigger_lockout = 4\n[[settings.flee.animals]]\n\
+             name = \"Velociraptor\"\nmax_distance = 40\nmax_duration = 9\n\
+             chase_extension = 5\nretrigger_lockout = 2\n"
+        );
+        let (r, w) = Recipe::parse_checked(&text).unwrap_or_else(|e| panic!("{e}"));
         assert!(w.is_empty(), "{w:?}");
+        assert_eq!(Recipe::parse(&r.to_toml()).ok(), Some(r), "written as read");
     }
 
     #[test]
