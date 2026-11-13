@@ -110,6 +110,9 @@ pub struct Settings {
     /// Carnivores hunt herbivores (an advanced setting, `crate::predation`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub predation: Option<crate::predation::Predation>,
+    /// Custom limits for bounded fleeing (Advanced tab, `crate::flee`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flee: Option<crate::flee::Flee>,
     /// Times of day, settings fixed by the instance and spawn rules (the
     /// Advanced tab, `crate::rules`).
     #[serde(skip_serializing_if = "crate::rules::Rules::is_empty")]

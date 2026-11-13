@@ -20,6 +20,7 @@ pub mod bits;
 pub mod bmfont;
 pub mod car;
 pub mod cooked;
+pub mod flee;
 pub mod map;
 pub mod mee;
 pub mod menu_txt;

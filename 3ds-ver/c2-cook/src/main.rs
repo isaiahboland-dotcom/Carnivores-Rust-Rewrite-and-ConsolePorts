@@ -480,6 +480,10 @@ fn merged_game(a: &Args, game: &Path) -> Result<Vfs> {
     }
     let vanilla = c2_mods::vanilla(game)?;
     let mods = a
+        // Custom flee limits (an Advanced setting): `_FLEE.TXT`.
+        if let Some(f) = &recipe.settings.flee {
+            f.push(&mut vfs);
+        }
         .mods
         .iter()
         .map(|m| c2_mods::load_mod(&vanilla, m))
@@ -1154,7 +1158,11 @@ fn main() -> Result<()> {
     if vfs.resolve("HUNTDAT/_MENU.TXT").is_some() {
         c.copy(&vfs, "HUNTDAT/_MENU.TXT")?;
     }
-    for p in [c2_formats::predation::PATH, c2_formats::rules::PATH] {
+    for p in [
+        c2_formats::predation::PATH,
+        c2_formats::flee::PATH,
+        c2_formats::rules::PATH,
+    ] {
         if vfs.resolve(p).is_some() {
             c.copy(&vfs, p)?;
         }

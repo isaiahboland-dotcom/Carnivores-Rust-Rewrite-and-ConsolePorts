@@ -59,6 +59,9 @@ pub struct Item {
     pub rate: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shots: Option<f32>,
+    /// Animals read from a game: its AI number (not kept in recipes).
+    #[serde(skip)]
+    pub ai: Option<i32>,
 }
 
 /// The stats kept in `_RES.TXT` (not the menu): field, the section, its
@@ -441,6 +444,11 @@ pub fn read(vfs: &Vfs) -> Result<Balance, ModError> {
         let block = g.res.section("characters")?.blocks.get(b)?;
         Some(block.get(&["basescore"]).map_or(0.0, c_atof))
     };
+    let ai_of = |key: &str| {
+        let b = g.res_block(key)?;
+        let block = g.res.section("characters")?.blocks.get(b)?;
+        block.get(&["ai"]).map(c_atoi)
+    };
     let item = |f: &Found| Item {
         name: f.key.clone(),
         price: f.price,
@@ -470,6 +478,7 @@ pub fn read(vfs: &Vfs) -> Result<Balance, ModError> {
                 stats(
                     Item {
                         score: score(&f.key),
+                        ai: ai_of(&f.key),
                         ..item(f)
                     },
                     "characters",

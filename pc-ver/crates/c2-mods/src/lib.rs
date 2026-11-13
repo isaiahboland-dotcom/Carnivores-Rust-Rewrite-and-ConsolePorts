@@ -4,6 +4,7 @@
 
 pub mod balance;
 pub mod detect;
+pub mod flee;
 pub mod hunter;
 pub mod ice_age;
 pub mod legacy;

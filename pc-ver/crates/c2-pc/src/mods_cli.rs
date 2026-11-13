@@ -416,6 +416,11 @@ pub fn build_recipe(
             pack.notes.push("predation settings applied".into());
         }
     }
+    if let Some(f) = &r.settings.flee {
+        if f.push(&mut pack.vfs) {
+            pack.notes.push("flee limits applied".into());
+        }
+    }
     c2_mods::weapon_rules::push(&mut pack.vfs, &r.settings.weapon_restrictions)?;
     if r.settings.rules.push(&mut pack.vfs)? {
         pack.notes.push("instance rules applied".into());
