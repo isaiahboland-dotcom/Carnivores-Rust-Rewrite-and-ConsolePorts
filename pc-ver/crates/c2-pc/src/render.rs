@@ -765,6 +765,10 @@ pub use terrain::TerrainRenderer;
 #[path = "render_time_tests.rs"]
 mod time_tests;
 
+#[cfg(test)]
+#[path = "render_water_tests.rs"]
+mod water_tests;
+
 mod sky;
 pub use sky::SkyRenderer;
 
