@@ -24,6 +24,7 @@ use c2_core::sound::SAMPLE_RATE;
 use c2_formats::cooked::{tile, write_pack, write_texture, TexFormat};
 use c2_vfs::{MemBackend, Vfs};
 
+mod area_sounds;
 mod check;
 mod wiiu;
 
@@ -53,6 +54,8 @@ const USAGE: &str = "usage:
   --areas    only these areas (default: all, plus the trophy room)
   --target   n3ds (New 3DS, default) or o3ds (Old 3DS / 2DS: smaller textures, shorter view)
   --force    write the pack even if it is over the target's memory budget
+  --no-sound a pack with no sounds at all (to measure what sound costs in
+             memory and speed; the app starts without audio)
 
 Copy the pack to sdmc:/3ds/c2rs/ on the SD card. Several packs (say
 c2rs.c2pk and modded.c2pk) can sit side by side: the app asks which one.";
@@ -77,6 +80,8 @@ struct Profile {
     linear_kb: usize,
     /// Sound sample rate (the originals are 22050 Hz).
     sound_rate: u32,
+    /// An area's random sounds and ambient loops together fit this, KiB.
+    area_sound_kb: usize,
     /// A character's animations at most this big (KiB); bigger ones keep
     /// every other frame until they fit (add-ons can be huge).
     anim_kb: usize,
@@ -95,6 +100,7 @@ const N3DS: Profile = Profile {
     heap_kb: 96 * 1024,
     linear_kb: 22 * 1024,
     sound_rate: SAMPLE_RATE,
+    area_sound_kb: 4 * 1024,
     anim_kb: 6 * 1024,
 };
 
@@ -112,6 +118,7 @@ const O3DS: Profile = Profile {
     heap_kb: 34 * 1024,
     linear_kb: 22 * 1024,
     sound_rate: SAMPLE_RATE,
+    area_sound_kb: 4 * 1024,
     anim_kb: 2 * 1024,
 };
 
@@ -252,6 +259,8 @@ struct Args {
     phone_game: Option<PathBuf>,
     phone_pictures: Option<String>,
     force: bool,
+    /// `--no-sound`: a pack without any sound (for measuring what sound costs).
+    no_sound: bool,
     out: Option<PathBuf>,
 }
 
@@ -287,6 +296,7 @@ fn parse_args() -> Result<Args> {
             "--phone-pictures" => a.phone_pictures = Some(val()?),
             "--out" => a.out = Some(val()?.into()),
             "--force" => a.force = true,
+            "--no-sound" => a.no_sound = true,
             "-h" | "--help" => {
                 println!("{USAGE}");
                 std::process::exit(0);
@@ -470,6 +480,10 @@ fn merged_game(a: &Args, game: &Path) -> Result<Vfs> {
         if let Some(p) = &recipe.settings.predation {
             p.push(&mut vfs);
         }
+        // Custom flee limits (an Advanced setting): `_FLEE.TXT`.
+        if let Some(f) = &recipe.settings.flee {
+            f.push(&mut vfs);
+        }
         // Times of day, locked settings and spawn rules: `_RULES.TXT`.
         recipe.settings.rules.push(&mut vfs)?;
         return Ok(vfs);
@@ -480,10 +494,6 @@ fn merged_game(a: &Args, game: &Path) -> Result<Vfs> {
     }
     let vanilla = c2_mods::vanilla(game)?;
     let mods = a
-        // Custom flee limits (an Advanced setting): `_FLEE.TXT`.
-        if let Some(f) = &recipe.settings.flee {
-            f.push(&mut vfs);
-        }
         .mods
         .iter()
         .map(|m| c2_mods::load_mod(&vanilla, m))
@@ -610,36 +620,6 @@ fn to_mono16(pcm: &[u8], rate0: u32, channels: u16, bits: u16, rate: u32) -> Vec
     out
 }
 
-/// An area's ambient loop at most this long on the 3DS. The originals'
-/// are seconds long; one standalone (Fallen Kings) loops minutes of music,
-/// 13 MiB of the 22 MiB of video memory a hunt has, so that no hunt on
-/// those areas fit ("Too much for this console", owner 2026-11-01).
-const MAX_AMBIENT_SECS: u32 = 45;
-
-/// A 16-bit mono loop of `rate` Hz cut to `secs`, its first half second
-/// cross-faded from what followed the cut, so the loop runs on without a
-/// click. Shorter ones as they are.
-fn loop_cut(pcm: &[u8], rate: u32, secs: u32) -> Vec<u8> {
-    let s: Vec<i16> = pcm
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|b| i16::from_le_bytes(*b))
-        .collect();
-    let len = (rate * secs) as usize;
-    let fade = (rate / 2) as usize;
-    if s.len() <= len + fade {
-        return pcm.to_vec();
-    }
-    let mut out: Vec<i16> = s[..len].to_vec();
-    for (i, o) in out.iter_mut().take(fade).enumerate() {
-        // At the seam the loop goes from s[len - 1] to out[0] = s[len].
-        let a = i as f32 / fade as f32;
-        *o = (f32::from(s[i]) * a + f32::from(s[len + i]) * (1.0 - a)) as i16;
-    }
-    out.iter().flat_map(|v| v.to_le_bytes()).collect()
-}
-
 struct Cooker {
     profile: &'static Profile,
     entries: Vec<(String, Vec<u8>)>,
@@ -650,6 +630,8 @@ struct Cooker {
     scope: String,
     /// Sounds go in as 16-bit mono at this rate.
     sound_rate: u32,
+    /// False for `--no-sound`: no sound goes in the pack.
+    sound_on: bool,
     /// Main memory a loaded model takes, by scope, KiB (about its cooked
     /// file).
     heap: BTreeMap<String, usize>,
@@ -703,6 +685,9 @@ impl Cooker {
 
     /// A sound as `C2RS/SND/{name}.PCM` (raw 16-bit mono at `sound_rate`).
     fn sound(&mut self, name: &str, pcm: &[u8], rate: u32, channels: u16, bits: u16) {
+        if !self.sound_on {
+            return;
+        }
         let out = to_mono16(pcm, rate, channels, bits, self.sound_rate);
         if out.is_empty() {
             return;
@@ -886,13 +871,21 @@ fn cook_area(c: &mut Cooker, vfs: &Vfs, name: &str) -> Result<()> {
     for o in &mut rsc.objects {
         o.model.mesh.texture = Vec::new();
     }
-    for (k, s) in rsc.random_sounds.iter_mut().enumerate() {
-        let pcm = std::mem::take(s);
-        c.sound(&format!("{name}/R{k}"), &pcm, SAMPLE_RATE, 1, 16);
+    // Sounds are a third or more of an area's linear memory, so they are
+    // fitted to the profile's share (`area_sounds`).
+    let randoms: Vec<Vec<u8>> = rsc.random_sounds.iter_mut().map(std::mem::take).collect();
+    let loops: Vec<Vec<u8>> = rsc
+        .ambients
+        .iter_mut()
+        .map(|a| std::mem::take(&mut a.pcm))
+        .collect();
+    let (randoms, loops) =
+        area_sounds::fit(randoms, loops, SAMPLE_RATE, profile.area_sound_kb * 1024);
+    for (k, pcm) in randoms.iter().enumerate() {
+        c.sound(&format!("{name}/R{k}"), pcm, SAMPLE_RATE, 1, 16);
     }
-    for (k, amb) in rsc.ambients.iter_mut().enumerate() {
-        let pcm = loop_cut(&std::mem::take(&mut amb.pcm), SAMPLE_RATE, MAX_AMBIENT_SECS);
-        c.sound(&format!("{name}/A{k}"), &pcm, SAMPLE_RATE, 1, 16);
+    for (k, pcm) in loops.iter().enumerate() {
+        c.sound(&format!("{name}/A{k}"), pcm, SAMPLE_RATE, 1, 16);
     }
     c.add(
         format!("HUNTDAT/AREAS/{name}.RSC"),
@@ -1118,6 +1111,7 @@ fn main() -> Result<()> {
         linear: BTreeMap::new(),
         scope: "hunt".into(),
         sound_rate: profile.sound_rate,
+        sound_on: !a.no_sound,
         heap: BTreeMap::new(),
     };
     let infos: Vec<DinoInfo> = res.characters.iter().map(DinoInfo::from_def).collect();
@@ -1228,6 +1222,9 @@ fn main() -> Result<()> {
     // AI - 10): MENU/PICS/CALLn.TGA, SOUNDFX/CALLS/CALLn_*.WAV.
     for n in 1..=rules.menu.huntables.len().max(1) {
         let id = n + 9;
+        // Its own scope: the 3DS loads a call only for a picked target
+        // (`call{id}` in `Setup::load_kb`), not with the last model.
+        c.scope = format!("call{id}");
         for (v, l) in ["A", "B", "C"].iter().enumerate() {
             let f = format!("HUNTDAT/SOUNDFX/CALLS/CALL{n}_{l}.WAV");
             c.wav(&vfs, &f, &format!("K{id}_{v}"));
@@ -1259,6 +1256,7 @@ fn main() -> Result<()> {
             }
         }
     }
+    c.scope = "hunt".into();
     for (i, w) in winfos.iter().enumerate() {
         let path = format!("HUNTDAT/WEAPONS/{}", w.file);
         if vfs.resolve(&path).is_none() {
@@ -1515,7 +1513,7 @@ fn main() -> Result<()> {
     // linear memory (`cost.`) and main memory (`heap.`), KiB.
     let mut info = format!(
         "pack = 4\ntarget = {}\ndialect = {}\nareas = {}\nview = {}\ndetail = {}\n\
-         object_view = {}\nsound_rate = {}\nlinear_kb = {}\nheap_kb = {}\n",
+         object_view = {}\nsound_rate = {}\nsound = {}\nlinear_kb = {}\nheap_kb = {}\n",
         profile.name,
         u8::from(rules.dialect),
         areas.join(","),
@@ -1523,6 +1521,7 @@ fn main() -> Result<()> {
         profile.detail,
         profile.object_view,
         profile.sound_rate,
+        u8::from(c.sound_on),
         profile.linear_kb,
         profile.heap_kb,
     );
@@ -1577,20 +1576,5 @@ mod tests {
         assert_eq!(downscale(&px, 2, 2, 1, 1), vec![255, 0, 0, 255]);
         let clear = [0, 0, 0, 0, 0, 0, 0, 0, 9, 9, 9, 255, 0, 0, 0, 0];
         assert_eq!(downscale(&clear, 2, 2, 1, 1)[3], 0);
-    }
-
-    #[test]
-    fn long_loops_are_cut_without_a_seam() {
-        let pcm = |v: &[i16]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
-        // 10 Hz, 3 s cap, half a second (5 samples) of fade.
-        let short: Vec<i16> = (0..35).collect();
-        assert_eq!(loop_cut(&pcm(&short), 10, 3), pcm(&short));
-        let long: Vec<i16> = (0..100).map(|i| i * 10).collect();
-        let out = loop_cut(&pcm(&long), 10, 3);
-        assert_eq!(out.len(), 30 * 2);
-        let first = i16::from_le_bytes([out[0], out[1]]);
-        // The loop's first sample follows its last as the source did.
-        assert_eq!(first, long[30]);
-        assert_eq!(&out[10..], &pcm(&long[5..30])[..]);
     }
 }

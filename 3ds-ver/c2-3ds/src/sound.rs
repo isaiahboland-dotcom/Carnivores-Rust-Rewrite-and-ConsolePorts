@@ -171,6 +171,9 @@ impl Sound {
     /// firmware dump on the SD card).
     pub fn new(vfs: &Vfs, game: &Game) -> Result<Self, String> {
         let rate = game.info.sound_rate;
+        if !game.info.sound {
+            return Err("no sound: this pack was cooked without it".into());
+        }
         if unsafe { sys::ndspInit() } < 0 {
             return Err("no sound: DSP firmware missing (sdmc:/3ds/dspfirm.cdc)".into());
         }

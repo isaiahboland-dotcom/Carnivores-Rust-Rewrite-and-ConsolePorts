@@ -55,6 +55,8 @@ pub struct PackInfo {
     pub object_view: u32,
     /// Sample rate of the pack's sounds.
     pub sound_rate: u32,
+    /// Whether the pack has sounds (`c2-cook --no-sound` leaves them out).
+    pub sound: bool,
     /// Linear memory a hunt may use, and what each piece takes (KiB):
     /// `hunt` (always), `AREAn`, `m:{model}`, `wpn{i}`.
     pub linear_kb: usize,
@@ -90,6 +92,7 @@ impl PackInfo {
             detail: num("detail", num("view", 42)),
             object_view: num("object_view", 28),
             sound_rate: num("sound_rate", c2_core::sound::SAMPLE_RATE),
+            sound: num("sound", 1) != 0,
             linear_kb: num("linear_kb", 16 * 1024) as usize,
             costs: Self::prefixed(&m, "cost."),
             heap_kb: num("heap_kb", 34 * 1024) as usize,
@@ -174,12 +177,12 @@ pub struct Setup {
     /// the animals' running speed (0.5..=1).
     pub max_ambient: i32,
     pub dino_run_k: f32,
-    /// Settings: blood, and the death camera.
-    pub blood: bool,
-    pub death_anim: bool,
     /// Bounded fleeing (experimental here): scared animals stay on the map
     /// and a flight has limits (`_FLEE.TXT`, else built-in ones).
     pub bounded_flee: bool,
+    /// Settings: blood, and the death camera.
+    pub blood: bool,
+    pub death_anim: bool,
     /// Hunt options: "3DS friendly" (animals notice and chase the hunter
     /// from a shorter range), stealth crouch (ZL toggles; crouched: gyro
     /// aim, half as visible and loud), and 4 random ambient species
@@ -274,6 +277,14 @@ impl Setup {
         for w in self.carried() {
             lin += info.cost(&format!("wpn{w}"));
             heap += info.heap(&format!("wpn{w}"));
+        }
+        // The targets' calls (sounds and button picture), loaded per pick.
+        // Packs from before `call{id}` scopes counted them with a model.
+        if !self.trophy() {
+            lin += (10..Bits::LEN)
+                .filter(|&id| self.targets.has(id))
+                .map(|id| info.cost(&format!("call{id}")))
+                .sum::<usize>();
         }
         (lin, heap)
     }
@@ -687,6 +698,9 @@ impl Game {
         if !setup.trophy() && setup.survival.is_none() {
             hunt.herd.predation = load::predation(vfs, &hunt.herd.species);
         }
+        if setup.bounded_flee {
+            hunt.herd.flee = Some(load::flee(vfs, &hunt.herd.species));
+        }
         // A dialect game's tables can place a dozen ambients or more:
         // the setting's cap, as the original's placement has.
         if rules.tables.is_some() && !setup.trophy() {
@@ -698,9 +712,6 @@ impl Game {
         // always come.
         if hunting && !inst.is_empty() {
             hunt.apply_spawn_rules(&area, &inst, &setup.area);
-        if setup.bounded_flee {
-            hunt.herd.flee = Some(load::flee(vfs, &hunt.herd.species));
-        }
         }
         // Shots carry and animals out of sight are re-placed past what is
         // drawn, which can be farther than `view_r`.
