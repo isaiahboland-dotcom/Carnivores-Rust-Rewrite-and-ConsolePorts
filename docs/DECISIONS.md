@@ -5453,3 +5453,36 @@ baseline approval.
 - The option is experimental on 3DS (a setup-menu row) and Wii U (its hunt is
   not playable yet, so its row lands with the Wii U hunt menu; host tests cover
   the engine). VR has no options menu yet and keeps the original's fleeing.
+
+## 2026-11-13 — Play Vanilla: a classic session of an instance
+
+An instance can be played without its enhanced rules (Play Vanilla). The
+field-by-field treatment is in [RECIPE-SETTINGS.md](RECIPE-SETTINGS.md).
+
+- **Game-defining parts stay; enhanced rules go.** The classic build keeps
+  the files, balance, weapon restrictions, `[recipe.skip]`, menu, pictures,
+  tuning, variants, and the `times` and `hidden` rules. It leaves out
+  predation, custom flee limits, spawn rules (per-area huntable caps,
+  secrets) and instance locks. The classic session reads the defaults for the
+  opt-in player settings (teleport, advanced observer, multi ammo, bounded
+  fleeing, all huntable, water radar, hardcore survival, dynamic time, map
+  zoom) and keeps the player's comfort and display settings.
+- **Dynamic time counts as enhanced.** It adds night vision and a flashlight
+  as equipment, so it changes play, not only the look.
+- **Nothing is written.** The recipe file, `c2rs.cfg` and the enhanced pack
+  are unchanged by a classic session. Player settings are overridden in
+  memory, the way instance locks already are; no new lock keys are added to
+  the `_RULES.TXT` format.
+- **Separate pack folder.** The classic pack is `packs/recipe-<slug>.classic`.
+  The pack cache (`c2_mods::pack::materialize`) replaces a folder whose
+  inputs changed, so one shared folder would rebuild the enhanced pack on
+  each switch and could remove files from under a running game.
+- **Shared saves.** The save instance stays the recipe ID. Score, rank and
+  trophies mean the same in both sessions, because balance and weapon
+  restrictions stay applied and the animal and weapon order is unchanged. No
+  unlock or licence state exists yet; adding one requires revisiting this.
+- **Recipe schema version.** `[recipe] schema` is an integer for the recipe
+  file format (missing means 1; a higher one than the build knows is an
+  error naming both). `[recipe] version` remains the author's free text and
+  is never compared.
+- PC first. Console Play Vanilla is planned separately and needs hardware.
