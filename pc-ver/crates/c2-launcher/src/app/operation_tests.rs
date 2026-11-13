@@ -15,6 +15,7 @@ fn launcher() -> Launcher {
             build_for: None,
             fixing: None,
             dialog: None,
+            adb_confirm: false,
         },
         job: Default::default(),
     }

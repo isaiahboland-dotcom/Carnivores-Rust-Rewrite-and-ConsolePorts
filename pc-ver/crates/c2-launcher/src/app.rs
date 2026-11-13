@@ -84,6 +84,8 @@ struct View {
     /// Fix missing, while it runs.
     fixing: Option<home::Fixing>,
     dialog: Option<home::Dialog>,
+    /// The Install over adb confirmation is showing.
+    adb_confirm: bool,
 }
 
 fn style(ctx: &egui::Context) {
@@ -232,6 +234,7 @@ impl Launcher {
             build_for: None,
             fixing: None,
             dialog: None,
+            adb_confirm: false,
         };
         Self {
             cfg,

@@ -82,27 +82,66 @@ impl Launcher {
                 self.build_android();
             }
             if ui
-                .add_enabled(ready, egui::Button::new("Build and install over adb"))
+                .add_enabled(ready, egui::Button::new("Install over adb"))
                 .on_hover_text(
-                    "Installs the APK on the connected device and replaces the app's game \
-                     folder. Close the game on the device first.",
+                    "Installs the last Android package built for this instance on the connected \
+                     device. It does not rebuild the package.",
                 )
                 .clicked()
             {
-                self.install_android();
+                self.ui.adb_confirm = true;
             }
         });
+        self.adb_confirm(ui.ctx());
         help(
             ui,
             &format!(
                 "The output contains a folder named after the instance, with c2rs.apk and files/. \
                  Rebuilding replaces that generated folder. By hand: install c2rs.apk, start it \
                  once, then copy the contents of files/ to Android/data/{}/files/ on the device. \
-                 Over adb (USB debugging on), the game is pushed beside the old one and swapped \
-                 in when complete; saves and other folders there are kept.",
+                 Install over adb (USB debugging on) installs that folder as last built: build \
+                 the Android package first after changing the instance. The game is pushed beside \
+                 the old one and swapped in when complete; saves and other folders there are kept.",
                 crate::android::app_package(&self.cfg.android_name)
             ),
         );
+    }
+
+    /// The confirmation before installing: the last built package goes to
+    /// the device as it is.
+    fn adb_confirm(&mut self, ctx: &egui::Context) {
+        if !self.ui.adb_confirm {
+            return;
+        }
+        let mut answer = None;
+        egui::Modal::new(egui::Id::unique("android-install-modal")).show(ctx, |ui| {
+            ui.set_width(420.0);
+            ui.label(
+                RichText::new("Install the last built Android package?")
+                    .color(SAND)
+                    .strong(),
+            );
+            help(
+                ui,
+                "This installs the package already built for this instance. It is not rebuilt: \
+                 if the instance, its base game, add-ons or balance changed since, use Build \
+                 Android package first. Saves and other folders on the device are kept.",
+            );
+            ui.horizontal(|ui| {
+                if ui.button(RichText::new("Install").color(GOLD)).clicked() {
+                    answer = Some(true);
+                }
+                if ui.button("Cancel").clicked() {
+                    answer = Some(false);
+                }
+            });
+        });
+        if let Some(go) = answer {
+            self.ui.adb_confirm = false;
+            if go {
+                self.install_android();
+            }
+        }
     }
 
     /// Why `r` can't be built for Android (its base game isn't one built
@@ -146,31 +185,54 @@ impl Launcher {
     }
 
     pub(super) fn build_android(&mut self) {
-        self.start_android(false);
-    }
-
-    pub(super) fn install_android(&mut self) {
-        self.start_android(true);
-    }
-
-    fn start_android(&mut self, install: bool) {
         if !self.can_start_operation() {
             return;
         }
-        match self.android_steps(install) {
-            Ok(steps) => {
-                let title = if install {
-                    "Building and installing for Android"
-                } else {
-                    "Building Android package"
-                };
-                self.start_job(title, steps);
-            }
+        match self.android_steps() {
+            Ok(steps) => self.start_job("Building Android package", steps),
             Err(e) => self.ui.note = Some((e, RED)),
         }
     }
 
-    fn android_steps(&self, install: bool) -> Result<Vec<Step>, String> {
+    /// Installs the package built last (it is not rebuilt here).
+    pub(super) fn install_android(&mut self) {
+        if !self.can_start_operation() {
+            return;
+        }
+        match self.android_install_steps() {
+            Ok(steps) => self.start_job("Installing for Android", steps),
+            Err(e) => self.ui.note = Some((e, RED)),
+        }
+    }
+
+    fn android_install_steps(&self) -> Result<Vec<Step>, String> {
+        let r = self
+            .active_recipe()
+            .ok_or("Choose a saved instance first.")?;
+        let tools = self.cfg.tools.as_deref();
+        if let Some(clash) = self.android_clash() {
+            return Err(clash);
+        }
+        let adb = crate::android::find_adb(tools).ok_or(
+            "adb not found: install the Android SDK platform tools or put adb in the tools \
+             folder.",
+        )?;
+        let out = self
+            .cfg
+            .android_out
+            .as_ref()
+            .ok_or("Choose an output folder.")?
+            .join(install_name(&r.id()));
+        if !out.join(crate::android::APK).is_file() {
+            return Err(
+                "No Android package for this instance yet: use Build Android package first.".into(),
+            );
+        }
+        let app = crate::android::app_package(&self.cfg.android_name);
+        Ok(crate::android::install_steps(&adb, &out, &app))
+    }
+
+    fn android_steps(&self) -> Result<Vec<Step>, String> {
         let r = self
             .active_recipe()
             .ok_or("Choose a saved instance first.")?;
@@ -181,17 +243,6 @@ impl Launcher {
              folder in Settings.",
         )?;
         crate::android::validate_apk(&apk)?;
-        let adb = if install {
-            if let Some(clash) = self.android_clash() {
-                return Err(clash);
-            }
-            Some(crate::android::find_adb(tools).ok_or(
-                "adb not found: install the Android SDK platform tools or put adb in the tools \
-                 folder.",
-            )?)
-        } else {
-            None
-        };
         let games = self.recipe_game_with_overlays(r);
         let base = games
             .first()
@@ -226,7 +277,6 @@ impl Launcher {
             .windows(2)
             .find(|p| p[0] == "--balance")
             .map(|p| PathBuf::from(&p[1]));
-        let package = out.clone();
         // The APK is relabelled and given the game's launcher icon: as an
         // app of its own when named, else as the shared app. Without the
         // SDK's tools only a name needs them.
@@ -245,7 +295,7 @@ impl Launcher {
         };
         let renamed = work.with_extension("apk-build");
         let app_id = app.clone();
-        let mut steps = vec![
+        let steps = vec![
             Step::Run { program: pc, args },
             Step::Task(Box::new(move |job| {
                 let apk = match &sdk {
@@ -278,9 +328,6 @@ impl Launcher {
                 Ok(())
             })),
         ];
-        if let Some(adb) = adb {
-            steps.extend(crate::android::install_steps(&adb, &package, &app));
-        }
         Ok(steps)
     }
 }
