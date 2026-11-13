@@ -32,6 +32,7 @@ mod regress;
 mod render;
 mod save;
 mod scene;
+mod scene_review;
 mod settings;
 mod sounds;
 mod texture_review;

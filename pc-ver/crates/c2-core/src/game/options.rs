@@ -14,7 +14,8 @@ pub struct HuntOptions {
     pub view_r: i32,
     /// Cells drawn (at least `view_r`; more with a longer PC render
     /// distance): how far shots carry and where animals out of sight are
-    /// re-placed. Detection and aggression keep `view_r`.
+    /// re-placed, and the default binocular range. Animal detection and
+    /// aggression keep `view_r`.
     pub render_r: i32,
     pub camo: bool,
     pub scent: bool,

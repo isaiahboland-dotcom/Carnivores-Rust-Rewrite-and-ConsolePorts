@@ -109,16 +109,20 @@ pub fn prefix(work: &Path) -> Result<PathBuf> {
     let p = std::path::absolute(work.join("prefix"))?;
     if !p.join("system.reg").exists() {
         std::fs::create_dir_all(&p)?;
-        let ok = Command::new("wineboot")
+        let output = Command::new("wineboot")
             .arg("-i")
             .env("WINEPREFIX", &p)
             .env("WINEDEBUG", "-all")
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
+            .stderr(Stdio::piped())
+            .output()
             .context("running wineboot (is Wine installed?)")?;
-        if !ok.success() {
-            bail!("wineboot failed: {ok}");
+        if !output.status.success() {
+            bail!(
+                "wineboot failed: {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
         }
     }
     for (key, value, data) in [
@@ -129,7 +133,16 @@ pub fn prefix(work: &Path) -> Result<PathBuf> {
             "800x600",
         ),
     ] {
-        wine(&p, &["reg", "add", key, "/v", value, "/d", data, "/f"]).status()?;
+        let output = wine(&p, &["reg", "add", key, "/v", value, "/d", data, "/f"])
+            .stderr(Stdio::piped())
+            .output()?;
+        if !output.status.success() {
+            bail!(
+                "configuring Wine desktop failed: {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
     }
     // `wine reg` started the desktop before the setting existed; a game
     // started while it lingers would get the real screen.
@@ -157,6 +170,14 @@ pub fn win_path(prefix: &Path, p: &Path) -> Result<String> {
         .env("WINEPREFIX", prefix)
         .env("WINEDEBUG", "-all")
         .output()?;
+    if !o.status.success() || o.stdout.is_empty() {
+        bail!(
+            "winepath failed for {}: {}: {}",
+            p.display(),
+            o.status,
+            String::from_utf8_lossy(&o.stderr).trim()
+        );
+    }
     Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
 }
 
@@ -169,6 +190,14 @@ pub struct Launch<'a> {
     pub script: &'a Path,
     pub exit_frame: u32,
     pub timeout: Duration,
+}
+
+/// Keep the hook input below Win32's MAX_PATH even when the audit's output
+/// directory and stage name make the archived script's full path longer.
+fn stage_script(game_dir: &Path, script: &Path) -> Result<&'static str> {
+    const NAME: &str = "c2-regression-script.txt";
+    std::fs::copy(script, game_dir.join(NAME)).context("staging original-engine script")?;
+    Ok(NAME)
 }
 
 /// Runs one hunt from a clean slate: the last run's pictures and hook log
@@ -189,12 +218,39 @@ pub fn run_fresh(l: &Launch) -> Result<(Option<i32>, String)> {
     )?;
     let code = run(l)?;
     let log = std::fs::read_to_string(l.game_dir.join("c2hook.log")).unwrap_or_default();
+    require_hooks(&log)?;
     Ok((code, log))
+}
+
+/// The hooks every capture depends on: the virtual clock, the frame count
+/// that drives the script, and the presented-frame capture. Others
+/// (`GetAsyncKeyState`, `CreateProcessA`) are absent from some executables.
+const REQUIRED_HOOKS: [&str; 3] = ["timeGetTime", "PeekMessageA", "BitBlt"];
+
+/// Fails when the hook log reports a required import as not found: such a
+/// run is untimed, unscripted or uncaptured, which is an infrastructure
+/// error and not an engine result.
+pub fn require_hooks(hook_log: &str) -> Result<()> {
+    let missing: Vec<&str> = REQUIRED_HOOKS
+        .into_iter()
+        .filter(|name| {
+            hook_log
+                .lines()
+                .any(|l| l.trim() == format!("{name} NOT FOUND"))
+        })
+        .collect();
+    if !missing.is_empty() {
+        bail!(
+            "the original executable does not import {}; the hook cannot drive or capture it",
+            missing.join(", ")
+        );
+    }
+    Ok(())
 }
 
 /// Runs one hunt; returns its exit code (`None`: killed at the timeout).
 pub fn run(l: &Launch) -> Result<Option<i32>> {
-    let script = win_path(l.prefix, l.script)?;
+    let script = stage_script(l.game_dir, l.script)?;
     let mut cmd = wine(l.prefix, &[]);
     cmd.arg(l.hook_dir.join("c2launch.exe"))
         .arg(win_path(l.prefix, l.exe)?)
@@ -219,4 +275,49 @@ pub fn run(l: &Launch) -> Result<Option<i32>> {
     // Nothing of the run may linger in the prefix.
     stop(l.prefix);
     Ok(code)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_required_hooks_fail_and_optional_ones_do_not() {
+        // The log every supported executable produces: optional imports absent.
+        let usual = "timeGetTime hooked\r\nPeekMessageA hooked\r\nBitBlt hooked\r\n\
+                     GetAsyncKeyState NOT FOUND\r\nCreateProcessA NOT FOUND\r\n";
+        assert!(require_hooks(usual).is_ok());
+        // A run that never reached the hook has no verdict to give here.
+        assert!(require_hooks("").is_ok());
+        let unclocked = usual.replace("timeGetTime hooked", "timeGetTime NOT FOUND");
+        let error = require_hooks(&unclocked).unwrap_err().to_string();
+        assert!(error.contains("timeGetTime") && !error.contains("CreateProcessA"));
+        let blind = usual.replace("BitBlt hooked", "BitBlt NOT FOUND");
+        assert!(require_hooks(&blind)
+            .unwrap_err()
+            .to_string()
+            .contains("BitBlt"));
+    }
+
+    #[test]
+    fn long_archived_script_is_staged_verbatim_under_a_short_relative_name() -> Result<()> {
+        let root = std::env::temp_dir().join(format!("c2-hook-script-{}", std::process::id()));
+        let archived = root
+            .join("a".repeat(90))
+            .join("b".repeat(90))
+            .join("c".repeat(90));
+        let game = root.join("game");
+        std::fs::create_dir_all(&archived)?;
+        std::fs::create_dir_all(&game)?;
+        let script = archived.join("original-script-kill_01_wooly_rhinoceros.txt");
+        let text = b"101 release 13 600\nD+301 exit\n";
+        std::fs::write(&script, text)?;
+        assert!(script.to_string_lossy().len() > 260);
+        let name = stage_script(&game, &script)?;
+        assert!(!Path::new(name).is_absolute());
+        assert_eq!(std::fs::read(game.join(name))?, text);
+        assert_eq!(std::fs::read(&script)?, text);
+        std::fs::remove_dir_all(&root)?;
+        Ok(())
+    }
 }

@@ -13,8 +13,9 @@ use c2_vfs::key;
 use super::{
     area_number, blocks, fail, find_ci, game_hunter, prefix_files, read_res, renumber, section_mut,
     set, skip, table_subs, tie, ties, to_dialect, unquote, walk, weapon_file, weapon_files, Moves,
-    Options, Result, Skip,
+    Options, Placed, Result, Skip, Unlisted,
 };
+use crate::variants::canonical;
 use crate::ModError;
 
 /// One standalone game, read.
@@ -47,6 +48,8 @@ pub(super) struct Combined<'a> {
     /// Weapons so far, by lowercase name and model data (to share them).
     pub weapon_cars: Vec<(String, Vec<u8>)>,
     pub slugs: HashSet<String>,
+    /// Where each game's parts went, in the order added.
+    pub placed: Vec<Placed>,
 }
 
 /// How a game's numbers move to the combined game's.
@@ -101,15 +104,18 @@ impl Numbers {
 /// What of a game is left out, in its own numbers.
 struct Gone {
     areas: Vec<u32>,
-    /// Huntable slots, from 0.
+    /// Huntable slots, from 0: those left out and those unlisted.
     slots: Vec<u32>,
-    /// Huntable names, lowercase.
+    /// Left-out huntables' names, lowercase.
     names: HashSet<String>,
+    /// Unlisted huntables: canonical name -> the name their character gets.
+    hidden: HashMap<String, String>,
 }
 
 impl Combined<'_> {
-    /// Adds the standalone game in `dir`, without what `skip` leaves out.
-    pub fn add(&mut self, dir: &Path, skip: &Skip) -> Result<()> {
+    /// Adds the standalone game in `dir`, without what `skip` leaves out,
+    /// the `unlisted` huntables' characters kept off the menu.
+    pub fn add(&mut self, dir: &Path, skip: &Skip, unlisted: &[Unlisted]) -> Result<()> {
         let g = self.read(dir)?;
         let gm = MenuData::from_res(&g.menu);
         let (d0, w0, a0) = (self.n_dinos, self.n_weapons, self.n_areas);
@@ -127,6 +133,7 @@ impl Combined<'_> {
                 g_areas
             ));
         }
+        let (hidden, hidden_slots) = self.unlisted(&g, &gm, skip, unlisted)?;
         // What is kept (`Skip`) gets the next numbers, with no gaps. Slots
         // count from 0, the picker's numbers from 1.
         let mut num = Numbers {
@@ -136,6 +143,7 @@ impl Combined<'_> {
             kept_dinos: Skip::kept(&skip.huntables, gm.huntables.len())
                 .into_iter()
                 .map(|n| n - 1)
+                .filter(|n| !hidden_slots.contains(n))
                 .collect(),
             weapon_slot: Vec::new(),
         };
@@ -153,13 +161,46 @@ impl Combined<'_> {
                 .filter(|(i, _)| gone_slots.contains(&(*i as u32)))
                 .map(|(_, h)| h.name.to_ascii_lowercase())
                 .collect(),
-            slots: gone_slots,
+            slots: gone_slots.into_iter().chain(hidden_slots).collect(),
+            hidden,
         };
 
         let (new_weapons, shared) = self.weapons(&g, skip, &mut num);
         self.place_files(&g, &num, w0);
-        let (added, renames) = self.add_res(&g, &num, &gone, &new_weapons);
+        let (added, renames, characters) = self.add_res(&g, &num, &gone, &new_weapons);
+        if let Some(u) = gone
+            .hidden
+            .keys()
+            .find(|n| !characters.iter().any(|(own, _)| own == *n))
+        {
+            return Err(fail(format!(
+                "{}: '{u}' is on its menu but has no character of that name",
+                g.name
+            )));
+        }
         self.add_menu(&g, &gm, &num, &gone, &new_weapons, &renames, g_areas);
+        if !gone.hidden.is_empty() {
+            let mut names: Vec<&String> = gone.hidden.keys().collect();
+            names.sort();
+            self.report.push_str(&format!(
+                "- **{}**: kept off the menu as variants: {}\n",
+                g.name,
+                names
+                    .iter()
+                    .map(|n| n.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        self.placed.push(Placed {
+            characters,
+            areas: num
+                .kept_areas
+                .iter()
+                .enumerate()
+                .map(|(i, own)| (format!("area{own}"), format!("area{}", a0 + i + 1)))
+                .collect(),
+        });
         self.n_dinos += num.kept_dinos.len();
         self.n_areas += num.kept_areas.len();
         if !skip.is_empty() {
@@ -186,6 +227,48 @@ impl Combined<'_> {
             return Err(fail("weapon numbering went wrong"));
         }
         Ok(())
+    }
+
+    /// The `unlisted` huntables checked against the game's menu: canonical
+    /// name -> rename, and their menu slots (from 0).
+    fn unlisted(
+        &self,
+        g: &Game,
+        gm: &MenuData,
+        skip: &Skip,
+        unlisted: &[Unlisted],
+    ) -> Result<(HashMap<String, String>, Vec<u32>)> {
+        let mut hidden = HashMap::new();
+        let mut slots = Vec::new();
+        for u in unlisted {
+            let want = canonical(&u.name);
+            let slot = gm
+                .huntables
+                .iter()
+                .position(|h| canonical(&h.name) == want)
+                .ok_or_else(|| fail(format!("{}: no huntable '{}' on its menu", g.name, u.name)))?;
+            if skip.huntables.contains(&(slot as u32 + 1)) {
+                return Err(fail(format!(
+                    "{}: '{}' is left out, so it can't be a variant",
+                    g.name, u.name
+                )));
+            }
+            let rename = canonical(&u.rename);
+            if rename.is_empty()
+                || self.names.contains(&rename)
+                || hidden.values().any(|r: &String| canonical(r) == rename)
+            {
+                return Err(fail(format!(
+                    "{}: the name '{}' is already in use",
+                    g.name, u.rename
+                )));
+            }
+            if hidden.insert(want, u.rename.clone()).is_some() {
+                return Err(fail(format!("{}: '{}' is unlisted twice", g.name, u.name)));
+            }
+            slots.push(slot as u32);
+        }
+        Ok((hidden, slots))
     }
 
     /// Reads the game in `dir`, named and given a slug of its own; one made
@@ -376,15 +459,17 @@ impl Combined<'_> {
 
     /// The game's `_RES.TXT` appended: its spawn and pack tables, its
     /// characters (renumbered, tied to its maps), its new weapons. Returns
-    /// how many characters were added and the renames (lowercase old name
-    /// to new name).
+    /// how many characters were added, the renames (lowercase old name to
+    /// new name) and every character's name (canonical, as in the game ->
+    /// as in the combined game).
+    #[allow(clippy::type_complexity)]
     fn add_res(
         &mut self,
         g: &Game,
         num: &Numbers,
         gone: &Gone,
         new_weapons: &[(usize, Block)],
-    ) -> (usize, HashMap<String, String>) {
+    ) -> (usize, HashMap<String, String>, Vec<(String, String)>) {
         let (hunter_map, own_hunter) = self.merge_hunter(g);
         let hunter_file = own_hunter
             .as_ref()
@@ -417,6 +502,7 @@ impl Combined<'_> {
         }
         // Names already in the game get the game's name after them.
         let mut renames: HashMap<String, String> = HashMap::new();
+        let mut characters = Vec::new();
         let mut added = 0;
         for b in blocks(&g.res, "characters")
             .iter()
@@ -431,13 +517,20 @@ impl Combined<'_> {
             }
             skip::drop_refs(&mut b, &gone.areas, &gone.slots);
             if let Some(n) = b.get(&["name"]).map(unquote) {
-                let mut u = n.clone();
-                if self.names.contains(&u.to_ascii_lowercase()) {
-                    u = format!("{n} ({})", g.name);
+                let own = canonical(&n);
+                let u = if let Some(r) = gone.hidden.get(&own) {
+                    // Off the menu: a name no menu entry has.
+                    r.clone()
+                } else if self.names.contains(&n.to_ascii_lowercase()) {
+                    let u = format!("{n} ({})", g.name);
                     renames.insert(n.to_ascii_lowercase(), u.clone());
-                }
+                    u
+                } else {
+                    n.clone()
+                };
                 self.names.insert(u.to_ascii_lowercase());
                 set(&mut b, "name", format!("'{u}'"));
+                characters.push((own, u));
             }
             // Its models (also those its conditions switch to per area).
             prefix_files(&mut b, &g.slug);
@@ -459,7 +552,7 @@ impl Combined<'_> {
             weapon_files(&mut b, &g.slug);
             section_mut(&mut self.res, "weapons").blocks.push(b);
         }
-        (added, renames)
+        (added, renames, characters)
     }
 
     /// The game's menu entries appended: huntables, new weapons, its kept

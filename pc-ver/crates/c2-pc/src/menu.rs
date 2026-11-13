@@ -181,8 +181,9 @@ pub struct Menu {
     /// (0 maps, 1 animals, 2 weapons and gear).
     mobile: Option<mobile::Art>,
     mobile_page: usize,
-    /// The animals' page in twenties (the phone layout, modded rosters).
-    comb_page: usize,
+    /// The current sheet of each mobile selection page.
+    comb_page: [usize; 3],
+    mobile_card_layout: bool,
     /// The phone game's interface art (a game built from an APK).
     kit: Option<kit::Kit>,
     /// The signed-in hunter's record (`trophy0N.rec`), read when the

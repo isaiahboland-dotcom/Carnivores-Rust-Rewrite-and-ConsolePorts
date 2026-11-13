@@ -62,6 +62,21 @@ fn missing_assets_and_bad_input_are_errors() {
         .output()
         .unwrap();
     assert_eq!(o.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("no HUNTDAT folder found"));
+
+    // A folder with HUNTDAT but no _RES.TXT gets the _RES.TXT diagnostic.
+    let partial = out.join("partial-game");
+    std::fs::create_dir_all(partial.join("HUNTDAT")).unwrap();
+    let o = bin()
+        .args(["run", "--scenario"])
+        .arg(scenario())
+        .args(["--game-id", "c2", "--no-render", "--game"])
+        .arg(&partial)
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&o.stderr).contains("_RES.TXT"));
 
     let bad = out.join("bad.toml");

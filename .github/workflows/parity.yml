@@ -1,4 +1,4 @@
-name: Parity
+name: Parity (synthetic suites; not original-asset parity)
 
 on:
   workflow_dispatch:
@@ -25,3 +25,13 @@ jobs:
       # Owner-data tests return early without their C2_* environment variables;
       # this job does not establish parity against original game assets.
       - run: cargo test --locked --workspace --all-features
+      - name: Record scope in the run summary
+        run: |
+          {
+            echo "## Parity workflow scope"
+            echo ""
+            echo "This run executes only the committed synthetic test suites."
+            echo "A green run does **not** prove parity with the original game assets:"
+            echo "owner-data tests skip when their C2_* environment variables are unset."
+            echo "Parity against original assets requires the regression scenarios in docs/REGRESSION.md, run locally."
+          } >> "$GITHUB_STEP_SUMMARY"

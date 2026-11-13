@@ -250,7 +250,7 @@ fn frame(
     // No cursor to capture, but the hunt owns the pointer as on PC (so the
     // pad's menu pointer stays out of it).
     st.input.grabbed = r.scene.grab_cursor();
-    st.input.pad = st.pads.poll();
+    st.input.pad = st.pads.poll().pc_layout();
     if st.input.pad.active() {
         st.input.touch_mode = false;
     }

@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{bail, Context, Result};
 use c2_regress::compare::{compare, Thresholds, Verdict, VisualCheck};
-use c2_regress::game::Game;
+use c2_regress::game::{Game, Prepared};
 use c2_regress::record::{self, RunContext};
 use c2_regress::scenario_file::{GameStatus, ScenarioFile};
 use c2_regress::{headless, html, output, pdf_report, publish};
@@ -46,26 +46,55 @@ for this scenario, 4 performance warnings with --fail-on-warn, 5 passed but
 the visual comparison did not run though it could have (a baseline or
 candidate recorded without the render pass).";
 
+const SWITCHES: [&str; 4] = ["--no-render", "--fail-on-warn", "--same-state", "--replace"];
+const VALUE_FLAGS: [&str; 19] = [
+    "--area",
+    "--baseline",
+    "--c2-pc",
+    "--engine",
+    "--game",
+    "--game-id",
+    "--hash-list",
+    "--hook-dir",
+    "--inject",
+    "--label",
+    "--name",
+    "--out",
+    "--repeat",
+    "--res",
+    "--scenario",
+    "--score",
+    "--size",
+    "--thresholds",
+    "--to",
+];
+
 struct Args {
     words: Vec<String>,
     flags: Vec<(String, Option<String>)>,
 }
 
 impl Args {
-    fn parse(raw: &[String]) -> Self {
-        let switches = ["--no-render", "--fail-on-warn", "--same-state", "--replace"];
+    /// Unknown flags and flags without their value are errors: a mistyped
+    /// `--repeat` must not silently run once.
+    fn parse(raw: &[String]) -> Result<Self> {
         let (mut words, mut flags) = (Vec::new(), Vec::new());
         let mut it = raw.iter();
         while let Some(a) = it.next() {
-            if switches.contains(&a.as_str()) {
+            if SWITCHES.contains(&a.as_str()) {
                 flags.push((a.clone(), None));
+            } else if VALUE_FLAGS.contains(&a.as_str()) {
+                match it.next() {
+                    Some(v) if !v.starts_with("--") => flags.push((a.clone(), Some(v.clone()))),
+                    _ => bail!("{a} needs a value\n\n{USAGE}"),
+                }
             } else if a.starts_with("--") {
-                flags.push((a.clone(), it.next().cloned()));
+                bail!("unknown flag {a}\n\n{USAGE}");
             } else {
                 words.push(a.clone());
             }
         }
-        Self { words, flags }
+        Ok(Self { words, flags })
     }
 
     fn get(&self, name: &str) -> Option<&str> {
@@ -189,7 +218,8 @@ fn list(a: &Args) -> Result<ExitCode> {
 
 fn species(a: &Args) -> Result<ExitCode> {
     let area = a.need("--area")?;
-    let game = Game::load(Path::new(a.need("--game")?), area)?;
+    let prepared = Prepared::new(Path::new(a.need("--game")?))?;
+    let game = Game::load(prepared.dir(), area)?;
     let dialect = if game.dialect {
         ", Modder's Edition"
     } else {
@@ -247,8 +277,16 @@ fn run(a: &Args) -> Result<ExitCode> {
         .with_ansi(false)
         .with_writer(move || writer.clone())
         .finish();
-    let (game, runs) = tracing::subscriber::with_default(sub, || -> Result<_> {
-        let game = Game::load(Path::new(a.need("--game")?), area)?;
+    let (prepared, game, runs) = tracing::subscriber::with_default(sub, || -> Result<_> {
+        // The original engine reads the folder as it is; ours as play
+        // prepares it.
+        let folder = Path::new(a.need("--game")?);
+        let prepared = if original {
+            None
+        } else {
+            Some(Prepared::new(folder)?)
+        };
+        let game = Game::load(prepared.as_ref().map_or(folder, Prepared::dir), area)?;
         // The original engine runs its own repeats (below).
         let ours = if original { 0 } else { repeat.max(1) };
         let runs: Vec<_> = (0..ours)
@@ -257,7 +295,7 @@ fn run(a: &Args) -> Result<ExitCode> {
                 headless::run(&game, &scenario, inject)
             })
             .collect();
-        Ok((game, runs))
+        Ok((prepared, game, runs))
     })?;
 
     let root = a
@@ -287,7 +325,13 @@ fn run(a: &Args) -> Result<ExitCode> {
         let status = Command::new(&exe)
             .args(["regress", "--scenario"])
             .arg(&path)
-            .args(["--game-id", &def.id, "--game", a.need("--game")?, "--out"])
+            .args(["--game-id", &def.id, "--game"])
+            .arg(
+                prepared
+                    .as_ref()
+                    .map_or(Path::new(a.need("--game")?), Prepared::dir),
+            )
+            .arg("--out")
             .arg(&dir)
             .args(["--size", a.get("--size").unwrap_or("960x540")])
             .args(a.get("--inject").map(|i| ["--inject", i]).iter().flatten())
@@ -456,7 +500,13 @@ fn main() -> ExitCode {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
     };
-    let a = Args::parse(rest);
+    let a = match Args::parse(rest) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("error: {e:#}");
+            return ExitCode::from(2);
+        }
+    };
     let r = match cmd.as_str() {
         "list" => list(&a),
         "species" => species(&a),
@@ -480,4 +530,25 @@ fn main() -> ExitCode {
         eprintln!("error: {e:#}");
         ExitCode::from(2)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(words: &[&str]) -> Result<Args> {
+        Args::parse(&words.iter().map(|w| w.to_string()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn flags_are_checked() {
+        let a = parse(&["a", "--repeat", "5", "--no-render", "b"]).unwrap();
+        assert_eq!(a.words, ["a", "b"]);
+        assert_eq!(a.get("--repeat"), Some("5"));
+        assert!(a.has("--no-render") && !a.has("--replace"));
+        // A typo must not fall back to the default silently.
+        assert!(parse(&["--repat", "5"]).is_err());
+        assert!(parse(&["--repeat"]).is_err());
+        assert!(parse(&["--label", "--no-render"]).is_err());
+    }
 }

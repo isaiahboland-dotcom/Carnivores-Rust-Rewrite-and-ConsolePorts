@@ -138,7 +138,12 @@ impl Hunt {
                     index,
                     kind,
                     scream,
-                } => self.kill_hunter(area, Some(index), kind, scream, out),
+                } => {
+                    // An observer is never a kill, whatever reached him.
+                    if !self.opts.observer {
+                        self.kill_hunter(area, Some(index), kind, scream, out);
+                    }
+                }
                 DinoEvent::BloodTrail { pos } if self.opts.blood => {
                     self.effects.blood_trail(area, &mut self.rng, pos);
                 }

@@ -103,7 +103,15 @@ pub fn run_dir(root: &Path, scenario: &str, game: &str, platform: &str, label: &
             }
         }));
     }
-    root.join(scenario).join(game).join(platform).join(leaf)
+    // Two runs within one second must not share a directory.
+    let parent = root.join(scenario).join(game).join(platform);
+    let mut dir = parent.join(&leaf);
+    let mut n = 2;
+    while dir.exists() {
+        dir = parent.join(format!("{leaf}-{n}"));
+        n += 1;
+    }
+    dir
 }
 
 pub fn event_json(e: &Event, source: &str) -> Value {
@@ -168,5 +176,17 @@ mod tests {
         let leaf = d.file_name().unwrap().to_string_lossy().to_string();
         assert!(leaf.ends_with("a_b____c"), "{leaf}");
         assert!(d.starts_with("r/s/c2/pc"));
+    }
+
+    #[test]
+    fn run_dirs_do_not_collide_within_a_second() {
+        let root = std::env::temp_dir().join(format!("c2-run-dir-{}", std::process::id()));
+        // The stamp can tick between calls; a taken name is never returned either way.
+        let first = run_dir(&root, "s", "c2", "pc", "x");
+        std::fs::create_dir_all(&first).unwrap();
+        let second = run_dir(&root, "s", "c2", "pc", "x");
+        assert_ne!(first, second);
+        assert!(!second.exists());
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

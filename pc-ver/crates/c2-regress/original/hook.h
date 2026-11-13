@@ -71,6 +71,7 @@ void behave_step(void);
 
 /* texture.c: isolated captures through native animation and rasterization. */
 void texture_run(const char *path);
+void scene_run(const char *path);
 
 void *__cdecl memset(void *d, int c, size_t n);
 #endif

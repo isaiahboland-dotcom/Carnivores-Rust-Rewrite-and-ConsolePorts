@@ -324,6 +324,7 @@ fn dinos_sim(map_path: &Path, seconds: u32) -> Result<()> {
         head_y: 220.0,
         alive: true,
         underwater: false,
+        observer: false,
     };
     for t in 0..seconds * 100 {
         let mut ctx = Ctx {

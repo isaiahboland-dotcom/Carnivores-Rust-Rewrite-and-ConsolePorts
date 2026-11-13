@@ -48,29 +48,23 @@ impl HuntView {
         }
         if self.setup.flashlight && self.view.area.cycle.is_some() && self.tap(input, KeyCode::KeyK)
         {
-            self.view.narrow_flashlight = !self.view.narrow_flashlight;
-            let narrow = self.view.narrow_flashlight;
-            self.message = Some((
-                if narrow {
-                    "Flashlight: narrow beam"
-                } else {
-                    "Flashlight: wide beam"
-                }
-                .into(),
-                2.0,
-            ));
-            // Kept for the next hunt.
-            let mut pc = crate::settings::PcSettings::load();
-            pc.narrow_flashlight = i32::from(narrow);
-            pc.store();
-            self.setup.pc.narrow_flashlight = pc.narrow_flashlight;
+            self.toggle_beam();
         }
         if self.hunt.free_observer() {
-            if self.tap(input, KeyCode::KeyF) {
+            let now = std::time::Instant::now();
+            let jump = input.pad.pressed(c2_pad::Action::Jump);
+            let double_jump = jump
+                && self
+                    .last_jump_tap
+                    .is_some_and(|t| now.duration_since(t).as_secs_f32() <= 0.3);
+            if jump {
+                self.last_jump_tap = if double_jump { None } else { Some(now) };
+            }
+            if self.tap(input, KeyCode::KeyF) || double_jump {
                 let on = self.hunt.toggle_fly();
                 self.message = Some((if on { "Flying" } else { "Walking" }.into(), 2.0));
             }
-            if self.tap(input, KeyCode::KeyT) {
+            if self.tap(input, KeyCode::KeyT) || input.pad.pressed(c2_pad::Action::Call) {
                 let on = self.hunt.toggle_time_stop();
                 self.message = Some((if on { "Time stopped" } else { "Time going" }.into(), 2.0));
             }
@@ -81,10 +75,45 @@ impl HuntView {
         }
     }
 
+    pub(super) fn toggle_beam(&mut self) {
+        if !self.setup.flashlight || self.view.area.cycle.is_none() {
+            return;
+        }
+        self.view.narrow_flashlight = !self.view.narrow_flashlight;
+        let narrow = self.view.narrow_flashlight;
+        self.message = Some((
+            if narrow {
+                "Flashlight: narrow beam"
+            } else {
+                "Flashlight: wide beam"
+            }
+            .into(),
+            2.0,
+        ));
+        // Kept for the next hunt.
+        let mut pc = crate::settings::PcSettings::load();
+        pc.narrow_flashlight = i32::from(narrow);
+        pc.store();
+        self.setup.pc.narrow_flashlight = pc.narrow_flashlight;
+    }
+
     /// The hint bar's entries for these toggles.
     pub(super) fn extra_hints(&self, pad: bool) -> Vec<(String, &'static str)> {
         if pad {
-            return Vec::new();
+            let mut hints = Vec::new();
+            if self.hunt.free_observer() {
+                hints.push(("A twice".into(), "Fly"));
+                hints.push(("X".into(), "Stop / resume time"));
+            } else if self
+                .hunt
+                .weapons
+                .mee()
+                .is_some_and(|m| m.semi_auto && m.full_auto)
+                && self.hunt.weapons.cur_anims().ms[c2_core::game::weapon_anim::MODE] > 0
+            {
+                hints.push(("B".into(), "Firing mode"));
+            }
+            return hints;
         }
         let mut v = Vec::new();
         if self.setup.flashlight && self.view.area.cycle.is_some() {

@@ -194,7 +194,11 @@ pub fn animate(
             if c.ai == ai::VELO || c.ai == ai::CERAT || !a.carnivore {
                 c.afraid_time = 0;
             }
-            if rethink < MAX_RETHINK && pdist < 1024.0 && c.ai == mee_ai::DEER {
+            if rethink < MAX_RETHINK
+                && pdist < 1024.0
+                && c.ai == mee_ai::DEER
+                && !ctx.target.view.observer
+            {
                 c.state = 1;
                 c.afraid_time = (6 + ctx.rng.r_rand(8)) * 1024;
                 c.phase = m.run;
@@ -387,7 +391,9 @@ pub fn animate(
     if c.phase == m.walk {
         curspeed = m.walk_speed;
     }
-    if m.can_swim && c.phase == m.swim {
+    // A missing swimAnim aliases phase zero (often run); sharing a clip
+    // must not apply swimming speed to locomotion on dry ground.
+    if on_water && m.can_swim && c.phase == m.swim {
         curspeed = m.swim_speed;
     }
     if a.jumper && c.phase == m.jump {
@@ -681,7 +687,7 @@ pub fn animate_dead(c: &mut Character, index: usize, sp: &Species, m: &MeeInfo, 
         c.process_prev_phase(sp, dt);
         c.ftime += dt;
         if c.ftime >= sp.time(c.phase) {
-            if (ctx.tranq || c.darted) && !d.no_sleep {
+            if c.tranquilized(ctx.tranq) && !d.no_sleep {
                 c.ftime = 0;
                 c.phase = d.sleep;
                 c.activate_fx(index, sp, ctx);
@@ -885,6 +891,65 @@ mod tests {
         herd.chars[i].aware_hunter = true;
         run(&mut herd, &area, h, 1000);
         assert!(herd.chars[i].pos[0] > start[0] + 100.0);
+    }
+
+    #[test]
+    fn shared_swim_clip_keeps_land_speed() {
+        // APK Diatryma inherits canSwim/swmspd from Velociraptor but has
+        // no swimAnim. Logical phase zero then serves both run and swim.
+        for water in [false, true] {
+            for shared_walk in [false, true] {
+                let area = if water { sea() } else { Area::flat(10) };
+                let h = hunter();
+                let first = if shared_walk {
+                    "walkAnim = 0\nrunAnim = 1"
+                } else {
+                    "runAnim = 1\nwalkAnim = 0"
+                };
+                let txt = format!("characters {{\n{{\n{first}\njumpAnim = 4\nrunspd = 1.2\nwlkspd = 0.428\nswmspd = 0.4\ncanswim = TRUE\nwaterLevel = 140\naggress = 160\ndontWeave = TRUE\n}}\n}}\n");
+                let res = c2_formats::res_txt::ResTxt::parse(&txt).unwrap();
+                let m = crate::mee::info(&res.sections[0].blocks[0], ai::VELO);
+                let expected = if water {
+                    0.4
+                } else if shared_walk {
+                    0.428
+                } else {
+                    1.2
+                };
+                let phase = if water {
+                    m.swim
+                } else if shared_walk {
+                    m.walk
+                } else {
+                    m.run
+                };
+                let mut herd = Herd {
+                    species: vec![species(m)],
+                    ..Default::default()
+                };
+                let i = add(&mut herd, 0, &area, h.x - 10_000.0, h.z);
+                let c = &mut herd.chars[i];
+                c.scale = 1.0;
+                c.alpha = 0.0;
+                c.lookx = 1.0;
+                c.lookz = 0.0;
+                c.phase = phase;
+                c.state = if shared_walk { 0 } else { 1 };
+                c.aware_hunter = !shared_walk;
+                c.wave = if shared_walk { 0 } else { 1 };
+                c.lure = (!shared_walk).then_some((h.x, h.z));
+                c.tgx = h.x;
+                c.tgz = h.z;
+                run(&mut herd, &area, h, 2000);
+                let start = herd.chars[i].pos;
+                run(&mut herd, &area, h, 1000);
+                let c = &herd.chars[i];
+                let travel = ((c.pos[0] - start[0]).powi(2) + (c.pos[2] - start[2]).powi(2)).sqrt();
+                assert_eq!(c.phase, phase, "water={water} walk={shared_walk}");
+                assert!((travel - expected * 1000.0).abs() < 10.0,
+                    "water={water} walk={shared_walk}: travel={travel}, expected={expected} units/ms");
+            }
+        }
     }
 
     #[test]
@@ -1247,6 +1312,60 @@ mod tests {
             fog_rgb: 0,
         }];
         a
+    }
+
+    /// Replacement, respawn and extra spawns ask `spot_blocked`: a fish
+    /// goes in water of its depth, never on dry ground (not even one
+    /// whose entry gives no depths), and swims halfway down.
+    #[test]
+    fn a_fish_is_only_put_down_in_water_of_its_depth() {
+        let (x, z) = (512.0 * 256.0, 512.0 * 256.0);
+        let mut deep = info(mee_ai::FISH);
+        (deep.min_depth, deep.max_depth) = (200, 8000);
+        let mut shallow = info(mee_ai::FISH);
+        (shallow.min_depth, shallow.max_depth) = (10, 100);
+        let herd = Herd {
+            species: vec![species(deep), species(info(mee_ai::FISH)), species(shallow)],
+            ..Default::default()
+        };
+        let land = Area::flat(10);
+        for ct in 0..3 {
+            assert!(herd.spot_blocked(&land, ct, &mut [x, 0.0, z]), "kind {ct}");
+        }
+        let sea = sea();
+        let mut p = [x, 0.0, z];
+        assert!(!herd.spot_blocked(&sea, 0, &mut p));
+        assert!(herd.spot_blocked(&sea, 2, &mut p), "too deep for it");
+        herd.swim_height(&sea, 0, &mut p);
+        let (up, bed) = (sea.land_up_h(x, z), sea.land_height(x, z));
+        assert!((p[1] - (up + bed) / 2.0).abs() < 1.0, "{p:?}");
+    }
+
+    /// `AnimateFish` leaves an observer alone (`!ObservMode`).
+    #[test]
+    fn a_danger_fish_leaves_an_observer_alone() {
+        let area = sea();
+        let (x, z) = (512.0 * 256.0, 512.0 * 256.0);
+        let mut h = hunter();
+        h.y = area.land_up_h(x, z) - 300.0;
+        h.observer = true;
+        let mut m = info(mee_ai::FISH);
+        (m.min_depth, m.max_depth, m.spacing_depth) = (200, 8000, 400);
+        (m.aggress, m.kill_dist, m.danger_fish) = (80, 400, true);
+        let mut herd = Herd {
+            species: vec![species(m)],
+            ..Default::default()
+        };
+        let shark = add(&mut herd, 0, &area, h.x + 3000.0, h.z);
+        let mid = (area.land_up_h(x, z) + area.land_height(x, z)) / 2.0;
+        herd.chars[shark].depth = mid;
+        herd.chars[shark].tdepth = mid;
+        let ev = run(&mut herd, &area, h, 20_000);
+        assert!(
+            !ev.iter().any(|e| matches!(e, DinoEvent::KillHunter { .. })),
+            "{ev:?}"
+        );
+        assert_eq!(herd.chars[shark].state, 0, "never set on him");
     }
 
     #[test]

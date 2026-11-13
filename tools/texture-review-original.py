@@ -301,10 +301,14 @@ def work_lock(work):
 
 def run_wine(prefix, hook, game, executable, script, timeout):
     env = dict(__import__('os').environ, WINEPREFIX=str(prefix.resolve()), WINEDEBUG='-all',
-               C2H_SCRIPT=winpath(script), C2H_EXIT='500', C2H_FRAME_MS='20')
+               C2H_SCRIPT='c2-regression-script.txt', C2H_EXIT='500', C2H_FRAME_MS='20')
     def invoke(args, **kwargs):
-        return subprocess.run(args, env=env, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                              timeout=timeout, **kwargs)
+        try:
+            return subprocess.run(args, env=env, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                  timeout=timeout, **kwargs)
+        except subprocess.CalledProcessError as exc:
+            detail = (exc.stderr or b'').decode(errors='replace').strip()
+            raise ValueError(f'{args[0]} failed (exit {exc.returncode}): {detail}') from exc
     # Only this dedicated prefix is stopped, never a user's Wine session.
     def stop():
         subprocess.run(['wineserver', '-k'], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -319,6 +323,7 @@ def run_wine(prefix, hook, game, executable, script, timeout):
                 ('HKCU\\Software\\Wine\\Explorer\\Desktops', 'Default', '800x600')]:
             invoke(['wine', 'reg', 'add', key, '/v', value, '/d', setting, '/f'])
         stop()
+        shutil.copyfile(script, game/'c2-regression-script.txt')
         result = subprocess.run(['wine', str(hook/'c2launch.exe'), winpath(executable),
                                  'prj=huntdat\\areas\\area2', 'reg=0', 'din=1', 'wep=1', 'dtm=1'],
                                 env=env, cwd=game, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)

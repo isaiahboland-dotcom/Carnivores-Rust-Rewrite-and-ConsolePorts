@@ -227,7 +227,7 @@ impl ApplicationHandler for App {
                 let now = Instant::now();
                 let dt = (now - r.last).as_secs_f32().min(0.25);
                 r.last = now;
-                r.input.pad = r.pads.poll();
+                r.input.pad = r.pads.poll().pc_layout();
                 if r.input.pad.active() {
                     r.input.touch_mode = false;
                 }

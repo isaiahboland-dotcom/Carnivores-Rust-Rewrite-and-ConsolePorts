@@ -24,7 +24,13 @@ pub mod effects;
 pub mod game;
 #[cfg(any(feature = "std", feature = "portable-load"))]
 pub mod load;
-#[cfg(any(feature = "std", feature = "portable-load"))]
+// Portable simulation fixtures parse synthetic dialect definitions without
+// enabling the VFS loader. This does not add MEE loading to portable-hunt builds.
+#[cfg(any(
+    feature = "std",
+    feature = "portable-load",
+    all(test, feature = "portable-hunt")
+))]
 pub mod mee;
 pub mod model;
 pub mod player;

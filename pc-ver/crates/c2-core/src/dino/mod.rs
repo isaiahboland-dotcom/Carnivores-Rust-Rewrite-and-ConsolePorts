@@ -143,6 +143,8 @@ pub struct Character {
     /// The last round that hit it was a tranquilizer dart (multi ammo; not
     /// in the original, where the hunt's tranquilizer option decides).
     pub darted: bool,
+    /// Weapon responsible for the last hit; retained after switching weapons.
+    pub hit_weapon: Option<usize>,
     /// Hit by a tracker (a dialect weapon's `radar`): shown on the map in
     /// this colour, for the ms left (`None`: for good) (`tracker`, `RTime`).
     pub tracked: Option<([u8; 3], Option<i32>)>,
@@ -211,6 +213,8 @@ pub struct HunterView {
     /// `MyHealth != 0`.
     pub alive: bool,
     pub underwater: bool,
+    /// `ObservMode`: he only watches, and nothing starts on him.
+    pub observer: bool,
 }
 
 /// What an AI's chase-or-flee code is aimed at for one step.

@@ -122,9 +122,13 @@ pub struct Built {
     pub cast: Vec<Cast>,
 }
 
-fn resolve(species: &[Species], r: &SpeciesRef) -> Result<usize, SetupError> {
+pub(super) fn resolve(species: &[Species], r: &SpeciesRef) -> Result<usize, SetupError> {
     let found = match r {
-        SpeciesRef::Ai(a) => species.iter().position(|s| s.info.ai == *a),
+        // By the number its own game gives it, when its rules were
+        // rewritten onto another (`Tuning::source_ai`).
+        SpeciesRef::Ai(a) => species
+            .iter()
+            .position(|s| s.tuning.source_ai.unwrap_or(s.info.ai) == *a),
         SpeciesRef::Index(i) => (*i < species.len()).then_some(*i),
         SpeciesRef::Model(m) => species.iter().position(|s| {
             let f = s.info.file.replace('\\', "/");

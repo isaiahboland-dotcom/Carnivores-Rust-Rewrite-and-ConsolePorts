@@ -17,6 +17,8 @@ use crate::app::{help, panel};
 use crate::jobs::balance::Instance;
 use crate::theme::*;
 
+mod variants;
+
 #[derive(Default)]
 pub(super) struct Extras {
     /// Edits the recipe's balance (copied back on each change).
@@ -26,6 +28,13 @@ pub(super) struct Extras {
     read_for: Option<Instance>,
     reading: bool,
     error: Option<String>,
+    /// The dinosaurs and maps the Variant manager can pick, and the
+    /// instance they were read for.
+    catalog: Option<c2_mods::variants::Catalog>,
+    catalog_for: Option<Instance>,
+    catalog_reading: bool,
+    catalog_error: Option<String>,
+    variants: variants::Editor,
     /// Each standalone folder's parts (`None`: not a game).
     parts: HashMap<PathBuf, Option<Parts>>,
     /// The base game's parts, and the folders (game, overlays) read.
@@ -78,21 +87,38 @@ pub(super) fn instance(
         found(m);
     });
     let bases = bases(r, game, folders);
+    let ids: Vec<String> = r.standalones.iter().map(|m| m.id.clone()).collect();
+    let all_unlisted = c2_mods::variants::unlisted(&r.variants, &ids);
+    let mut standalone_ids = Vec::new();
+    let mut unlisted = Vec::new();
     let standalones = r
         .standalones
         .iter()
-        .filter_map(|m| Some((root(&found(m)?), m.skip.clone())))
+        .zip(all_unlisted)
+        .filter_map(|(m, u)| {
+            let dir = root(&found(m)?);
+            standalone_ids.push(m.id.clone());
+            unlisted.push(u);
+            Some((dir, m.skip.clone()))
+        })
         .collect();
     let by_id: HashMap<&str, &RecipeMod> = r.mods.iter().map(|m| (m.id.as_str(), m)).collect();
-    let mods = super::add_on_order(r)
+    let (mod_ids, mods) = super::add_on_order(r)
         .iter()
-        .filter_map(|id| by_id.get(id.as_str()).and_then(|m| found(m)))
-        .collect();
+        .filter_map(|id| {
+            by_id
+                .get(id.as_str())
+                .and_then(|m| Some((id.clone(), found(m)?)))
+        })
+        .unzip();
     let i = Instance {
         bases,
         base_skip: r.recipe.skip.clone(),
         standalones,
+        standalone_ids,
+        unlisted,
         mods,
+        mod_ids,
         random_ambients: r.combine.as_ref().is_some_and(|c| c.ambients == "random"),
         scratch: crate::config::data_dir().join("recipe-balance"),
     };
@@ -177,7 +203,38 @@ impl Extras {
         self.error = None;
     }
 
+    pub(super) fn catalog_read(&mut self, catalog: c2_mods::variants::Catalog) {
+        self.catalog = Some(catalog);
+        self.catalog_reading = false;
+        self.catalog_error = None;
+    }
+
+    /// Reads the instance's dinosaurs and maps off the UI thread when the
+    /// instance changed. Only one background read runs at a time, so a
+    /// failure belongs to whichever read is pending.
+    fn refresh_catalog(&mut self, i: &Instance, handle: &mut crate::jobs::Handle) {
+        if self.catalog_reading || handle.busy() || self.catalog_for.as_ref() == Some(i) {
+            return;
+        }
+        let job = i.clone();
+        match handle.start_task("Reading the dinosaurs and maps for variants", move |_| {
+            crate::jobs::balance::read_catalog(job)
+        }) {
+            Ok(()) => {
+                self.catalog_for = Some(i.clone());
+                self.catalog_reading = true;
+                self.catalog_error = None;
+            }
+            Err(e) => self.catalog_error = Some(e),
+        }
+    }
+
     pub(super) fn failed(&mut self, error: &str) {
+        if self.catalog_reading {
+            self.catalog_error = Some(error.into());
+            self.catalog = None;
+            self.catalog_reading = false;
+        }
         if self.reading {
             self.error = Some(error.into());
             self.values = None;
@@ -346,15 +403,30 @@ impl Extras {
              this instance (its parts left out are not listed). Kept in the recipe; used when the \
              instance is played or built.",
         );
-        let Some(values) = self.read_values(ui, r, game, folders, handle) else {
-            return;
-        };
-        panel(ui, |ui| {
-            if self.balance.edit_ui(ui, &values) {
-                let e = &self.balance.edits;
-                r.settings.balance = (!e.is_empty()).then(|| e.clone());
-            }
-        });
+        let values = self.read_values(ui, r, game, folders, handle);
+        if let Some(values) = &values {
+            panel(ui, |ui| {
+                if self.balance.edit_ui(ui, values) {
+                    let e = &self.balance.edits;
+                    r.settings.balance = (!e.is_empty()).then(|| e.clone());
+                }
+            });
+        }
+        // Kept at the foot of the page; it works without the values read.
+        ui.add_space(8.0);
+        if let Some(inst) = instance(r, game, folders).0 {
+            self.refresh_catalog(&inst, handle);
+        }
+        variants::section_ui(
+            ui,
+            r,
+            variants::Dinos {
+                catalog: self.catalog.as_ref(),
+                reading: self.catalog_reading,
+                error: self.catalog_error.as_deref(),
+            },
+            &mut self.variants,
+        );
     }
 
     /// The instance's areas, animals and weapons with their values, read

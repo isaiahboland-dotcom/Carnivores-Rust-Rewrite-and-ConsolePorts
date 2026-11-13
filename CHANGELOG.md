@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- Read rules written for older Modder's Edition releases (`clone`, ambient
+  sections, per-animal spawn info, `idleAnim`), in games and in add-on
+  entries. Their map ambients, brachiosaurs and sea animals now spawn.
+- Read an add-on's entry from a readme beside its `HUNTDAT` folder.
+- Keep fish and waders to suitable water when replaced, respawned or added by
+  rules; never place a fish on dry ground.
+- Observer mode: dangerous fish and the Giant deer no longer attack, and an
+  observer cannot be killed.
+- Add the PC setting "Water animals on radar" (off by default).
+- Carnivores: Ice Age: the Diatryma's kill is synchronized as in the original.
+- `c2-regress` runs a game with the rules play generates for it, so Ice Age
+  scenarios use Ice Age's AIs; clips are recorded as model clips. Earlier Ice
+  Age baselines are superseded.
+
+- Rebuild the regression audit's master report as one filterable page: coverage
+  matrix by game, scenario and engine, derived and declared findings, gameplay
+  comparisons, matched original/Rust screenshots, compact and full sweeps, full
+  or compact views, a blink-comparison viewer, and review statuses stored
+  separately in `reviews.json`. Add `--report`, `--serve` and `--only` to
+  `tools/regression_audit.py`.
+- `c2-regress` rejects unknown flags and flags without a value, never reuses a
+  run directory within the same second, and fails native runs whose executable
+  lacks a required hook import.
+
+- Make binocular identification follow configured draw distance up to 1,000 m,
+  with tighter zoom-sensitive aiming and a shared aim/terrain-visibility point.
+
+- Fix imported animals with a shared run/swim clip using swimming speed on dry
+  ground, including APK Diatryma add-ons. Preserve configured speeds and clips.
+
 ## 0.5.3 — 2026-11-10
 
 Desktop release bundles, texture import fixes and broader original-engine
@@ -24,7 +54,7 @@ regression coverage. Notes: `docs/releases/v0.5.3.md`.
 - Add deterministic texture-review captures, original-engine comparisons, local
   HTML reports and verified lossless capture archives.
 - Extend walking/running, death and settled-body regression checks and record
-  engine revision provenance. Pack-wide human visual approval remains separate.
+  engine revision provenance. Human review is mandatory.
 - Document Steam Deck updates, Desktop Mode setup and controller limitations.
 - Add platform comparison screenshots and document bundle validation.
 

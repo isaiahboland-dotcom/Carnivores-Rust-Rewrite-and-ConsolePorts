@@ -31,7 +31,7 @@
 
 enum {
     A_KEY, A_TAP, A_TEXT, A_MOUSE, A_CLICK, A_LOOK, A_SHOT, A_MARK, A_EXIT, A_UP,
-    A_ADDR, A_RELEASE, A_ALARM, A_SLAY, A_TRACK, A_UNTRACK, A_PLACE, A_PACIFY, A_TEXTURE
+    A_ADDR, A_RELEASE, A_ALARM, A_SLAY, A_TRACK, A_UNTRACK, A_PLACE, A_PACIFY, A_TEXTURE, A_SCENE
 };
 
 typedef struct {
@@ -183,10 +183,10 @@ BOOL script_load(const char *path) {
             while (*rest && *rest != '\r' && *rest != '\n' && i < 95) t[i++] = *rest++;
             t[i] = 0;
             add(f, kind, 0, 0, t);
-        } else if (!lstrcmpA(w, "texture")) {
+        } else if (!lstrcmpA(w, "texture") || !lstrcmpA(w, "scene")) {
             char name[96];
             word(rest, name, sizeof name);
-            add(f, A_TEXTURE, 0, 0, name);
+            add(f, w[0] == 's' ? A_SCENE : A_TEXTURE, 0, 0, name);
         } else if (!lstrcmpA(w, "exit")) {
             add(f, A_EXIT, 0, 0, NULL);
         } else if (!lstrcmpA(w, "addr")) {
@@ -307,6 +307,9 @@ static void run(const Action *x) {
         break;
     case A_TEXTURE:
         texture_run(x->text);
+        break;
+    case A_SCENE:
+        scene_run(x->text);
         break;
     case A_EXIT:
         wsprintfA(m, "frame %lu exit\r\n", frame);

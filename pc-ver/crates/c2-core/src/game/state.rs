@@ -218,6 +218,7 @@ impl Hunt {
             head_y: p.head_y,
             alive: self.health > 0,
             underwater: p.underwater,
+            observer: self.opts.observer,
         }
     }
 }

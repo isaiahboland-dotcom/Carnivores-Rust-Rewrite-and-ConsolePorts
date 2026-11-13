@@ -29,6 +29,7 @@ const USAGE: &str = "usage:
   c2-pc area-layers <BASE.MAP> --layer <LAYER.MAP>... --out <DIR>
                                         (copies of an area joined past 254 kinds of object: AREAn.OBX + .RSX)
   c2-pc texture-review --manifest FILE --out NEW_DIR [--baseline RUN_DIR] [--limit N] [--keep-models]
+  c2-pc scene-review --manifest FILE --out NEW_DIR   (private native scene/sky diagnostic)
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
   c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--models] [--foliage CELLS] [--high-end] [--shot out.png]
   c2-pc hunt  <AREA.MAP|TROPHY.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all]
@@ -325,6 +326,15 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
             out.display()
         );
         return Ok(());
+    }
+    if cmd == "scene-review" {
+        return crate::scene_review::run(
+            std::path::Path::new(
+                o.value("manifest")
+                    .context("scene-review needs --manifest")?,
+            ),
+            std::path::Path::new(o.value("out").context("scene-review needs --out")?),
+        );
     }
     if cmd == "texture-review" {
         return crate::texture_review::run(

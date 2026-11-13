@@ -35,6 +35,7 @@ impl HuntView {
         self.draw_plaque(screen, scale, &mut sprites);
         self.draw_kit_hud(screen, &mut sprites);
         self.draw_picker(screen, scale, &mut sprites);
+        self.draw_picker_hint(screen, scale, &mut sprites);
         self.draw_trophy_prompt(screen, scale, &mut sprites);
         self.draw_prompts(screen, scale, &mut sprites);
         self.draw_touch(&mut sprites);
@@ -158,7 +159,10 @@ impl HuntView {
 
     /// Binoculars: what's in the cross-hairs (`Render_LifeInfo`).
     fn draw_life_info(&self, screen: (u32, u32), scale: f32, out: &mut Vec<Sprite>) {
-        let Some(li) = self.hunt.life_info(self.view.area()) else {
+        let Some(li) = self
+            .hunt
+            .life_info_with_range(self.view.area(), self.view.radius as i32)
+        else {
             return;
         };
         let green = [0.0, 0.69, 0.0, 1.0];

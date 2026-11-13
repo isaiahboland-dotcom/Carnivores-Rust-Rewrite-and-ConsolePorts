@@ -640,19 +640,22 @@ static int run_menu(void *ui, int death, uint32_t shots, uint32_t kills) {
         if (action != MENU_NONE && !final_frame) { final_frame = 1; dirty = 1; }
         GX2DrawDone();
         if (dirty) {
-            uint64_t took[2];
+            uint64_t took[2], inval[2];
             for (int i = 0; i < 2; ++i) {
                 OSTime start = OSGetTime();
                 c2_menu_draw(ui, tex[i].surface.image, tex[i].surface.pitch, tex[i].surface.width, tex[i].surface.height);
+                OSTime drawn = OSGetTime();
                 GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, tex[i].surface.image, tex[i].surface.imageSize);
-                took[i] = OSTicksToMicroseconds(OSGetTime() - start);
+                took[i] = OSTicksToMicroseconds(drawn - start);
+                inval[i] = OSTicksToMicroseconds(OSGetTime() - drawn);
             }
             c2_menu_drawn(ui);
             static uint32_t redraws;
             if (++redraws <= 200) {
                 char checkpoint[96];
-                snprintf(checkpoint, sizeof(checkpoint), "Menu: redraw %u took TV %llu us, GamePad %llu us", redraws,
-                         (unsigned long long)took[0], (unsigned long long)took[1]);
+                snprintf(checkpoint, sizeof(checkpoint), "Menu: redraw %u raster TV %llu us, GamePad %llu us; invalidate TV %llu us, GamePad %llu us", redraws,
+                         (unsigned long long)took[0], (unsigned long long)took[1],
+                         (unsigned long long)inval[0], (unsigned long long)inval[1]);
                 startup_checkpoint(checkpoint);
             }
             dirty = 0;
@@ -803,7 +806,9 @@ static int run_session(void *ui) {
     WHBLogPrint("Hunt and audio: READY"); WHBLogConsoleDraw();
 end_load:
     startup_checkpoint(sim ? "Hunt loading complete; releasing SD client" : "Session loading/menu ended without a hunt; releasing SD client");
+    lifecycle_checkpoint("end_load: closing startup trace");
     startup_trace_close();
+    lifecycle_checkpoint("end_load: startup trace closed");
     if (!sim) lifecycle_trace_close();
     if (!sim && added && FSDelClient(&client, FS_ERROR_FLAG_ALL) != FS_STATUS_OK) WHBLogPrint("FS client removal: FAIL");
     if (!sim && mounted && !WHBUnmountSdCard()) WHBLogPrint("SD unmount: FAIL");
@@ -813,17 +818,23 @@ end_load:
         WHBLogPrint("D-pad down changes the selected call.");
     }
     WHBLogPrint("Use HOME to exit.");
+    lifecycle_checkpoint("end_load: console draw (console already freed by the menu handoff)");
     WHBLogConsoleDraw();
+    lifecycle_checkpoint("end_load: console draw returned");
     if (!sim) { if (graphics_ready) { WHBGfxShutdown(); if (!lifecycle_exiting) WHBLogConsoleInit(); } while (app_running()) { WHBLogConsoleDraw(); OSSleepTicks(OSMillisecondsToTicks(16)); } WHBLogConsoleFree(); return HUNT_EXIT; }
+    lifecycle_checkpoint("hunt init: console free");
     WHBLogConsoleFree();
+    lifecycle_checkpoint("hunt init: console free returned; audio init");
     ambient_active = 0;
     audio_init(sim);
+    lifecycle_checkpoint("hunt init: audio init returned; loading world shaders");
     lifecycle_sim = sim;
     /* world: with the cut-out discard (scenery, animals, the gun, sky, map
      * and HUD); opaque: never discards, so the GPU tests depth before
      * shading (terrain and water, which have no cut-out texels). */
     WorldShader world = {0}, opaque = {0}; GX2RBuffer positions = {0}, colors = {0};
     world_shader_load(&world, c2_sample_shader); world_shader_load(&opaque, c2_opaque_shader);
+    lifecycle_checkpoint("hunt init: world shaders loaded; building atlases");
     GX2Texture atlas = {0}; GX2Sampler sampler = {0};
     atlas.surface.dim = GX2_SURFACE_DIM_TEXTURE_2D;
     atlas.surface.width = 2048; atlas.surface.height = 2048; atlas.surface.depth = 1;
@@ -879,6 +890,7 @@ end_load:
     int tiled_available = atlas_tiled_copy(&atlas, &tiled_atlas, &flat_atlas)
         && atlas_tiled_copy(&object_atlas, &tiled_object_atlas, &flat_object_atlas)
         && atlas_tiled_copy(&actor_atlas, &tiled_actor_atlas, &flat_actor_atlas);
+    lifecycle_checkpoint("hunt init: atlases built and tiled-copy attempted");
     int tiled_atlases = tiled_available;
     if (tiled_available) {
         /* Nothing draws from the linear atlases once the tiled ones pass:
@@ -893,6 +905,7 @@ end_load:
     /* D-pad Left: a diagnostic that turns vsync off (tearing) so a capture
      * shows how fast frames really are instead of 30/60 FPS steps. */
     int vsync = 1;
+    int metrics_visible = 1;
     GX2SetSwapInterval(1);
     OSReport("C2 tiled atlases with mips available %d; R3 switches mips off\n", tiled_available);
     GX2RBuffer object_positions = {0}, object_attrs = {0};
@@ -1040,6 +1053,7 @@ end_load:
         || !WHBGfxInitShaderAttribute(&overlay_shader, "aPosition", 0, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32)
         || !WHBGfxInitShaderAttribute(&overlay_shader, "aTexLight", 1, 0, GX2_ATTRIB_FORMAT_FLOAT_32_32_32_32)
         || !WHBGfxInitFetchShader(&overlay_shader)) OSFatal("Overlay: shader setup failed");
+    lifecycle_checkpoint("hunt init: overlay shader ready");
     uint32_t overlay_sampler_location = overlay_shader.pixelShader->samplerVars[0].location;
     GX2Texture overlay_tex; menu_texture(&overlay_tex, 1024, 1024);
     memset(overlay_tex.surface.image, 0, overlay_tex.surface.imageSize);
@@ -1088,7 +1102,9 @@ end_load:
     if (sim) { KPADInit(); WPADEnableURCC(TRUE); }
     /* Observer mode and the trophy room carry no weapons. */
     const uint32_t carried_weapons = c2_weapon_count(sim);
+    lifecycle_checkpoint("hunt init: opening profiler");
     performance_open(&menu, hunt_seed, tiled_available, tv_target.available);
+    lifecycle_checkpoint("hunt init: complete; entering hunt frame loop");
     while (app_running()) {
         if (sim) {
             struct { uint32_t shots, kills; } death = {0};
@@ -1121,11 +1137,16 @@ end_load:
                 if (t & VPAD_BUTTON_ZR) edges |= BTN_ZR;
                 if (t & VPAD_BUTTON_PLUS) edges |= BTN_PLUS;
                 flags |= hunt_edges(edges, hud.prompt, trophy_room);
-                if (sample.trigger & VPAD_BUTTON_LEFT) { if (left_is_extra(&menu)) flags |= IN_AMMO_SWITCH; else { vsync = !vsync; GX2SetSwapInterval(vsync ? 1 : 0); } }
+                /* Toggle once when either button completes the chord. Suppress
+                 * the individual Left/R action while its partner is held. */
+                uint32_t held = sample.hold | t;
+                const uint32_t metrics_chord = VPAD_BUTTON_LEFT | VPAD_BUTTON_R;
+                if ((held & metrics_chord) == metrics_chord && (t & metrics_chord)) metrics_visible = !metrics_visible;
+                if ((t & VPAD_BUTTON_LEFT) && !(held & VPAD_BUTTON_R)) { if (left_is_extra(&menu)) flags |= IN_AMMO_SWITCH; else { vsync = !vsync; GX2SetSwapInterval(vsync ? 1 : 0); } }
                 if ((sample.trigger & VPAD_BUTTON_Y) && free_observer_on(&menu)) flags |= IN_TIME_STOP;
                 if (sample.trigger & VPAD_BUTTON_STICK_R) { if (menu.dynamic_time && !trophy_room) flags |= IN_NIGHT_VISION; else mipmaps = !mipmaps; }
                 if (sample.trigger & VPAD_BUTTON_STICK_L) { if (menu.dynamic_time && !trophy_room) flags |= IN_FLASHLIGHT; else tv_scaled = !tv_scaled; }
-                if (sample.trigger & VPAD_BUTTON_R) tv_map = !tv_map;
+                if ((t & VPAD_BUTTON_R) && !(held & VPAD_BUTTON_LEFT)) tv_map = !tv_map;
                 if (sample.trigger & VPAD_BUTTON_MINUS) { gamepad_game = !gamepad_game; tele_pick = 0; }
                 VPADTouchData touch = {0};
                 VPADGetTPCalibratedPointEx(VPAD_CHAN_0, VPAD_TP_854X480, &touch, &sample.tpNormal);
@@ -1177,11 +1198,16 @@ end_load:
                         if (t & WPAD_PRO_BUTTON_ZR) edges |= BTN_ZR;
                         if (t & WPAD_PRO_BUTTON_PLUS) edges |= BTN_PLUS;
                         flags |= hunt_edges(edges, hud.prompt, trophy_room);
-                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_LEFT) { if (left_is_extra(&menu)) flags |= IN_AMMO_SWITCH; else { vsync = !vsync; GX2SetSwapInterval(vsync ? 1 : 0); } }
+                        /* Toggle once when either button completes the chord. Suppress
+                         * the individual Left/R action while its partner is held. */
+                        uint32_t held = sample_pro.pro.hold | t;
+                        const uint32_t metrics_chord = WPAD_PRO_BUTTON_LEFT | WPAD_PRO_BUTTON_R;
+                        if ((held & metrics_chord) == metrics_chord && (t & metrics_chord)) metrics_visible = !metrics_visible;
+                        if ((t & WPAD_PRO_BUTTON_LEFT) && !(held & WPAD_PRO_BUTTON_R)) { if (left_is_extra(&menu)) flags |= IN_AMMO_SWITCH; else { vsync = !vsync; GX2SetSwapInterval(vsync ? 1 : 0); } }
                         if ((sample_pro.pro.trigger & WPAD_PRO_BUTTON_Y) && free_observer_on(&menu)) flags |= IN_TIME_STOP;
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_STICK_R) { if (menu.dynamic_time && !trophy_room) flags |= IN_NIGHT_VISION; else mipmaps = !mipmaps; }
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_STICK_L) { if (menu.dynamic_time && !trophy_room) flags |= IN_FLASHLIGHT; else tv_scaled = !tv_scaled; }
-                        if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_R) tv_map = !tv_map;
+                        if ((t & WPAD_PRO_BUTTON_R) && !(held & WPAD_PRO_BUTTON_LEFT)) tv_map = !tv_map;
                         if (sample_pro.pro.trigger & WPAD_PRO_BUTTON_MINUS) gamepad_game = !gamepad_game;
                     }
                 } else if (kerr != KPAD_ERROR_NO_SAMPLES) { pro_valid[channel] = 0; }
@@ -1272,7 +1298,7 @@ end_load:
                 gpu_drc = GX2GPUTimeToCPUTime(gpu_stamp[2]) - GX2GPUTimeToCPUTime(gpu_stamp[1]);
             }
             overlay_start = OSGetTime();
-            if (overlay_due) perf_update(&perf_tex, &overlay_perf);
+            if (overlay_due && metrics_visible) perf_update(&perf_tex, &overlay_perf);
             overlay_ticks += OSGetTime() - overlay_start;
             c2_hud_state(sim, &hud);
             if (hud.call != prev_hud.call) call_page = (int)c2_call_page(sim);
@@ -1489,6 +1515,7 @@ end_load:
             }
             perf.map += OSGetTime() - mark;
             draw_start = OSGetTime();
+            if (perf.frames == 0) lifecycle_checkpoint("hunt frame 0: simulation done; WHBGfxBeginRender");
             WHBGfxBeginRender();
             GX2SampleBottomGPUCycle(&gpu_stamp[0]);
             uint32_t tv_world = 0;
@@ -1623,7 +1650,7 @@ end_load:
                     GX2RSetAttributeBuffer(&hud_pos, 0, hud_pos.elemSize, 0); GX2RSetAttributeBuffer(&hud_attr, 1, hud_attr.elemSize, 0);
                     GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
                 }
-                if (display == 0) {
+                if (display == 0 && metrics_visible) {
                     GX2SetPixelTexture(&perf_tex, world.sampler); GX2SetPixelSampler(&sampler, world.sampler);
                     GX2RSetAttributeBuffer(&perf_pos, 0, perf_pos.elemSize, 0); GX2RSetAttributeBuffer(&perf_attr, 1, perf_attr.elemSize, 0);
                     GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
@@ -1645,8 +1672,10 @@ end_load:
             perf.draw += (uint64_t)(mark - draw_start) - draw_wait;
             /* WHBGfxFinishRender without its GX2DrawDone: the GPU draws this
              * frame while the CPU starts the next one. */
+            if (perf.frames == 0) lifecycle_checkpoint("hunt frame 0: draws submitted; swapping");
             GX2SwapScanBuffers(); GX2Flush();
             GX2SetTVEnable(TRUE); GX2SetDRCEnable(TRUE);
+            if (perf.frames == 0) lifecycle_checkpoint("hunt frame 0: presented");
             perf.present += OSGetTime() - mark;
             perf.wait += frame_wait + draw_wait; perf.frame += OSGetTime() - frame_start; perf.frames++;
             performance_frame(&perf, &before, frame_start, hunt_seed, tv_map, gamepad_game,

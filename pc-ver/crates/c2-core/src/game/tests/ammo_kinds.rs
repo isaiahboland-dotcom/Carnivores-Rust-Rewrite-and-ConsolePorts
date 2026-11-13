@@ -144,3 +144,84 @@ fn advanced_observer_flies_stops_time_and_teleports_at_once() {
     assert!((h.player.x - x).abs() < 512.0);
     assert!(h.request_teleport(&area, x - 4096.0, z).is_ok());
 }
+
+#[test]
+fn restricted_gun_keeps_all_lethal_rounds_in_mixed_half_tranq_loadout() {
+    let mut blocked = rifle();
+    blocked.allow_tranq = false;
+    let mut w = Weapons::new(
+        vec![blocked, rifle()],
+        vec![WeaponAnims::uniform(100); 2],
+        Bits::from(3u128),
+        false,
+    );
+    w.split_tranq();
+    assert_eq!(w.kinds(0), (14, 0));
+    assert!(!w.swap_kind(0));
+    assert_eq!(w.kinds(1), (7, 7));
+    assert!(w.swap_kind(1));
+    w.resupply();
+    assert_eq!(w.kinds(0), (14, 0));
+    assert_eq!(w.kinds(1), (7, 7));
+}
+
+#[test]
+fn full_tranq_and_points_only_rules_follow_the_firing_weapon() {
+    for (allow_tranq, allow_trophy) in [(true, true), (false, true), (false, false)] {
+        let (area, mut h, car) = setup(true);
+        h.opts.tranq = true;
+        h.herd.species[1].info.base_score = 100.0;
+        h.weapons.info[0].allow_tranq = allow_tranq;
+        h.weapons.info[0].allow_trophy = allow_trophy;
+        let ev = fire(&mut h, &area, &car);
+        assert_eq!(h.herd.chars[0].tranquilized(true), allow_tranq);
+        assert!(ev.iter().any(|e| matches!(e, GameEvent::Scored { tranq, score, .. } if *tranq == allow_tranq && *score > 0)));
+        let trophy = !allow_tranq && allow_trophy;
+        assert_eq!(
+            ev.iter().any(|e| matches!(e, GameEvent::Trophy { .. })),
+            trophy
+        );
+        assert_eq!(!h.ship.tasks.is_empty(), trophy);
+        assert_eq!(h.room.bodies.iter().any(|b| b.ctype != 0), trophy);
+    }
+}
+
+#[test]
+fn projectile_uses_its_original_weapon_after_switching() {
+    use crate::game::Bullet;
+    for blocked in [false, true] {
+        let (area, mut h, car) = setup(true);
+        h.opts.tranq = true;
+        h.weapons.info[0].allow_tranq = !blocked;
+        h.weapons.info[0].allow_trophy = !blocked;
+        // The other gun has the opposite restrictions.
+        let mut other = rifle();
+        other.allow_tranq = blocked;
+        other.allow_trophy = blocked;
+        h.weapons.info.push(other);
+        h.weapons.current = 1;
+        let pos = [h.player.x, h.player.y + h.player.head_y, h.player.z];
+        h.bullets.push(Bullet {
+            pos,
+            vel: [0.0, 0.0, -3000.0],
+            land_vel: [0.0; 3],
+            fall_total: 0.0,
+            aq_state: 0,
+            stuck: false,
+            ftime: 0,
+            weapon: 0,
+            dart: !blocked,
+        });
+        let mut ev = Vec::new();
+        h.animate_bullets(&area, &[Some(&car), Some(&car)], 17, &mut ev);
+        assert!(
+            ev.iter().any(|e| matches!(e, GameEvent::Killed { .. })),
+            "{ev:?}"
+        );
+        assert_eq!(h.herd.chars[0].hit_weapon, Some(0));
+        assert_eq!(h.herd.chars[0].tranquilized(true), !blocked);
+        assert_eq!(h.kills[0].weapon, 0);
+        assert!(h.ship.tasks.is_empty());
+        assert!(!ev.iter().any(|e| matches!(e, GameEvent::Trophy { .. })));
+    }
+}

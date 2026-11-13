@@ -3,7 +3,7 @@
 The playable port lives in [perf-probe](perf-probe/README.md). Its existing
 name is retained because build commands, the launcher, and shared host tests
 use that path. Build and install instructions are in the
-[repository README](../README.md#wii-u-from-the-command-line-demo).
+[repository README](perf-probe/README.md#build-and-install-demo).
 
 ## Layout
 

@@ -2,7 +2,8 @@
 //! chases its prey while `ctx.hunter` stays the player, its kills go to
 //! the prey, and its pack hears only of the player. Stock and dialect AIs.
 
-use std::cell::Cell;
+use alloc::{boxed::Box, vec, vec::Vec};
+use core::cell::Cell;
 
 use c2_formats::predation::Predation;
 

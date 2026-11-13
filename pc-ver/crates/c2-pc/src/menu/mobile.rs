@@ -167,6 +167,26 @@ impl Menu {
     /// first.
     fn mobile_cells(&self) -> Vec<(usize, f32, f32, f32, f32)> {
         let col = &self.columns[self.mobile_col()];
+        if self.card_layout() {
+            return self
+                .comb_items()
+                .iter()
+                .enumerate()
+                .map(|(slot, &i)| {
+                    (
+                        i,
+                        205.0 + (slot / 3) as f32 * 390.0,
+                        if self.mobile_page == 1 {
+                            100.0 + (slot % 3) as f32 * 145.0
+                        } else {
+                            80.0 + (slot % 3) as f32 * 128.0
+                        },
+                        370.0,
+                        if self.mobile_page == 1 { 125.0 } else { 112.0 },
+                    )
+                })
+                .collect();
+        }
         if self.kit.is_some() {
             let items = self.comb_items();
             let comb = Comb::new(items.len(), self.mobile_page);
@@ -186,6 +206,10 @@ impl Menu {
 
     /// The side buttons' rects, in `mobile_side`'s order.
     fn side_rects(&self) -> Vec<Rect> {
+        if self.card_layout() {
+            let n = self.mobile_side().len();
+            return card_controls(n);
+        }
         if self.kit.is_none() {
             return side(self.mobile_side().len());
         }
@@ -292,7 +316,9 @@ impl Menu {
         let kit = self.kit.is_some();
         let hovered = p.and_then(|(x, y)| {
             self.mobile_cells().into_iter().find(|&(_, cx, cy, w, h)| {
-                if kit {
+                if self.card_layout() {
+                    (x - cx).abs() <= w / 2.0 && (y - cy).abs() <= h / 2.0
+                } else if kit {
                     // The phone's stand on a corner.
                     hex_depth(y - cy, x - cx, h * 0.96, w * 0.94) >= 0.0
                 } else {
@@ -553,7 +579,7 @@ impl Menu {
     }
 
     fn draw_kit_page(&self, out: &mut Vec<Sprite>, k: &super::kit::KitArt) {
-        use super::kit::{PALE, RED, STONE};
+        use super::kit::{PALE, RED};
         let page = self.mobile_page.min(2);
         let col = self.mobile_col();
         let c = &self.columns[col];
@@ -562,6 +588,12 @@ impl Menu {
         self.fill(out, cover, BG_F);
         if let Some(bg) = k.bg {
             self.tinted(out, bg, cover, full, [1.0; 4]);
+        }
+        if self.card_layout() {
+            self.draw_card_layout(out);
+            self.draw_kit_controls(out, k);
+            self.draw_kit_footer(out, k);
+            return;
         }
         // The empty cells of the honeycomb, all over.
         let comb = Comb::new(self.comb_items().len(), page);
@@ -758,6 +790,14 @@ impl Menu {
             }
             put(out, &mut y, &cur);
         }
+        self.draw_kit_controls(out, k);
+        self.draw_kit_footer(out, k);
+    }
+
+    fn draw_kit_controls(&self, out: &mut Vec<Sprite>, k: &super::kit::KitArt) {
+        use super::kit::PALE;
+        let page = self.mobile_page.min(2);
+        let full = [0.0, 0.0, 1.0, 1.0];
         // The toggles: plank, lamp, picture.
         let offered = offered_times();
         let icons = if page == 2 {
@@ -797,6 +837,18 @@ impl Menu {
                     [1.0; 4],
                 );
             }
+            if self.card_layout() {
+                self.kit_line(
+                    out,
+                    Face::Body,
+                    (r.0 + r.2 * 0.62, r.1 + 15.0),
+                    if label.len() > 14 { 12.0 } else { 14.0 },
+                    PALE,
+                    &label,
+                    0.5,
+                );
+                continue;
+            }
             match icon {
                 Some(id) => {
                     let ih = r.3 * 0.7;
@@ -818,6 +870,71 @@ impl Menu {
                 }
             }
         }
+    }
+
+    /// License artwork includes its own name and stats: preserve every pixel.
+    fn draw_card_layout(&self, out: &mut Vec<Sprite>) {
+        use super::kit::{PALE, RED};
+        let col = self.mobile_col();
+        let c = &self.columns[col];
+        let mask = self.picked_mask(col);
+        for (i, cx, cy, w, h) in self.mobile_cells() {
+            let selected = mask.has(i);
+            let affordable = selected
+                || c.prices.get(i).is_some_and(|&p| p <= self.remaining())
+                || self.choice.observer;
+            let focused = self.choice.focus == Some((col, i));
+            let border = if selected {
+                RED
+            } else if focused {
+                PALE
+            } else {
+                [0.0; 4]
+            };
+            let id = c.pics.get(i).copied().flatten();
+            let (iw, ih) = id
+                .and_then(|id| self.hud.image(id))
+                .map_or((w, h), |im| (im.w as f32, im.h as f32));
+            let scale = (w / iw).min(h / ih);
+            let (dw, dh) = (iw * scale, ih * scale);
+            self.fill(
+                out,
+                (cx - dw / 2.0 - 2.0, cy - dh / 2.0 - 2.0, dw + 4.0, dh + 4.0),
+                border,
+            );
+            if let Some(id) = id {
+                let tint = if affordable {
+                    [1.0; 4]
+                } else {
+                    [0.45, 0.45, 0.45, 1.0]
+                };
+                self.tinted(
+                    out,
+                    id,
+                    (cx - dw / 2.0, cy - dh / 2.0, dw, dh),
+                    [0.0, 0.0, 1.0, 1.0],
+                    tint,
+                );
+            } else {
+                self.fill(out, (cx - w / 2.0, cy - h / 2.0, w, h), BG_F);
+                self.kit_line(
+                    out,
+                    Face::Body,
+                    (cx, cy - 10.0),
+                    20.0,
+                    PALE,
+                    &c.names[i],
+                    0.5,
+                );
+            }
+        }
+    }
+
+    fn draw_kit_footer(&self, out: &mut Vec<Sprite>, k: &super::kit::KitArt) {
+        use super::kit::{PALE, RED, STONE};
+        let page = self.mobile_page.min(2);
+        let left = self.remaining();
+        let full = [0.0, 0.0, 1.0, 1.0];
         // Back, the account, next (dim until it can be pressed).
         let (back, next) = self.bottom_rects();
         let ready = self.next_ready();
@@ -842,6 +959,29 @@ impl Menu {
                 w,
                 0.5,
             );
+        }
+        if self.card_layout() {
+            let total = self.me().map_or(0, |p| p.score);
+            self.kit_line(
+                out,
+                Face::Body,
+                (CW / 2.0, 504.0),
+                20.0,
+                PALE,
+                &format!("Hunter points: {total}"),
+                0.5,
+            );
+            self.kit_line(
+                out,
+                Face::Body,
+                (CW / 2.0, 527.0),
+                16.0,
+                PALE,
+                &format!("Available: {left}"),
+                0.5,
+            );
+            self.draw_comb_arrows(out, k);
+            return;
         }
         let acc = format!("Your Account: {left}");
         let color = if left < 0 { RED } else { PALE };
@@ -1268,4 +1408,38 @@ impl Menu {
 fn offered_times() -> Vec<usize> {
     let r = crate::instance_rules::get();
     (0..3).filter(|&t| r.time_allowed(t)).collect()
+}
+
+/// One strip leaves all six cards and the navigation bar unobstructed.
+fn card_controls(n: usize) -> Vec<Rect> {
+    if n == 0 {
+        return Vec::new();
+    }
+    let gap = 8.0;
+    let w = ((760.0 - gap * (n - 1) as f32) / n as f32).min(180.0);
+    let start = (CW - (w * n as f32 + gap * (n - 1) as f32)) / 2.0;
+    (0..n)
+        .map(|i| (start + i as f32 * (w + gap), 436.0, w, 44.0))
+        .collect()
+}
+
+#[cfg(test)]
+mod card_tests {
+    use super::*;
+
+    #[test]
+    fn daylight_and_all_six_equipment_controls_fit_above_navigation() {
+        for n in [0, 2, 3, 4, 6] {
+            let buttons = card_controls(n);
+            assert_eq!(buttons.len(), n);
+            for &(x, y, w, h) in &buttons {
+                assert!(x >= 0.0 && x + w <= CW);
+                assert!(y > 392.0 && y + h < KIT_BACK.1);
+                assert!(w >= 120.0 && h >= 44.0);
+            }
+            for pair in buttons.windows(2) {
+                assert!(pair[0].0 + pair[0].2 < pair[1].0);
+            }
+        }
+    }
 }

@@ -227,13 +227,21 @@ impl Launcher {
             .find(|p| p[0] == "--balance")
             .map(|p| PathBuf::from(&p[1]));
         let package = out.clone();
-        // A name: the APK relabelled as an app of its own.
-        let label = self.cfg.android_name.trim().to_string();
-        let app = crate::android::app_package(&label);
-        let sdk = if label.is_empty() {
-            None
+        // The APK is relabelled and given the game's launcher icon: as an
+        // app of its own when named, else as the shared app. Without the
+        // SDK's tools only a name needs them.
+        let name = self.cfg.android_name.trim().to_string();
+        let named = !name.is_empty();
+        let app = crate::android::app_package(&name);
+        let label = if named {
+            name
         } else {
-            Some(crate::android::rename::find_sdk()?)
+            crate::android::LABEL.to_string()
+        };
+        let sdk = match crate::android::rename::find_sdk() {
+            Ok(sdk) => Some(sdk),
+            Err(e) if named => return Err(e),
+            Err(_) => None,
         };
         let renamed = work.with_extension("apk-build");
         let app_id = app.clone();
@@ -242,10 +250,27 @@ impl Launcher {
             Step::Task(Box::new(move |job| {
                 let apk = match &sdk {
                     Some(sdk) => {
-                        job.log(format!("Naming the app \"{label}\" ({app_id})"));
-                        crate::android::rename::renamed_apk(sdk, &apk, &label, &app_id, &renamed)?
+                        let icon_path = work.join("HUNTDAT").join("MOBILE").join("ICON.PNG");
+                        let icon = std::fs::read(&icon_path).ok();
+                        if named {
+                            job.log(format!("Naming the app \"{label}\" ({app_id})"));
+                        }
+                        if icon.is_none() {
+                            job.log("No launcher icon in the game: the app keeps the default");
+                        }
+                        crate::android::rename::renamed_apk(
+                            sdk,
+                            &apk,
+                            &label,
+                            &app_id,
+                            icon.as_deref(),
+                            &renamed,
+                        )?
                     }
-                    None => apk,
+                    None => {
+                        job.log("Android SDK not found: the APK is used as it is (no icon)");
+                        apk
+                    }
                 };
                 crate::android::package(&work, &base, &apk, balance.as_deref(), &app_id, &out)
                     .map_err(|e| e.to_string())?;

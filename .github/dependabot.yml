@@ -4,3 +4,23 @@ updates:
     directory: /
     schedule:
       interval: weekly
+
+  # The PC workspace. The GUI/graphics stack (eframe, egui, winit, wgpu, naga)
+  # moves together and is grouped so each bump is reviewed as one change.
+  - package-ecosystem: cargo
+    directory: /pc-ver
+    schedule:
+      interval: weekly
+    groups:
+      gui-graphics:
+        patterns:
+          - "eframe"
+          - "egui*"
+          - "emath"
+          - "ecolor"
+          - "epaint*"
+          - "accesskit*"
+          - "winit"
+          - "wgpu*"
+          - "naga*"
+          - "raw-window-handle"

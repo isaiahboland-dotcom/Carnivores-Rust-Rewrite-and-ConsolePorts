@@ -70,6 +70,11 @@ impl HuntView {
     /// A fresh hunt on the same area, reloading the saved trophy room.
     pub(super) fn restart(&mut self) {
         self.audio.stop_all();
+        self.last_jump_tap = None;
+        self.fire_was_down = false;
+        self.empty_reload = None;
+        self.held_pick = None;
+        self.picker = None;
         self.map_viewport = map_viewport::MapViewport::default();
         self.view.flashlight = self.setup.flashlight && Self::endless_night(&self.setup);
         if self.view.night_vision.is_some() {
@@ -201,7 +206,20 @@ impl HuntView {
     pub(super) fn update_hunt(&mut self, gpu: &Gpu, dt: f32, input: &Input) {
         if let Some(row) = self.picker {
             self.update_picker(input, row);
-            self.view.update(gpu, 0.0, &Input::default());
+            if self.setup.pc.pause_pickers == 0 {
+                let hin = if self.picker.is_none() {
+                    self.pending
+                } else {
+                    HuntInput::default()
+                };
+                self.run_ticks(hin, dt);
+                self.handle_events();
+                self.age_notices(dt);
+                self.check_outcome();
+                self.follow_camera(gpu, dt, &Input::default());
+            } else {
+                self.view.update(gpu, 0.0, &Input::default());
+            }
             return;
         }
         let light_tapped = self.update_lights(input);
@@ -217,14 +235,29 @@ impl HuntView {
         }
         self.update_buttons(input, &k);
         let pad = &input.pad;
+        let fire = keys::held(input, k.fire) || pad.held(Pad::Fire);
+        let fire_pressed = fresh_fire(&mut self.fire_was_down, fire, keys::pressed(input, k.fire));
+        let w = &self.hunt.weapons;
+        if self.setup.pc.fire_reloads_empty != 0
+            && fire_pressed
+            && !light_tapped
+            && !self.hunt.paused
+            && !self.hunt.show_exit()
+            && self.hunt.death.is_none()
+            && w.info.get(w.current).is_some_and(|i| i.chambers())
+            && w.chambered.get(w.current) == Some(&0)
+        {
+            self.empty_reload = Some(w.current);
+        }
+        self.pending.switch_mode |= !self.hunt.show_exit() && pad.pressed(Pad::FireMode);
         let mut hin = HuntInput {
             controls: self.controls(input, dt),
             fire: keys::held(input, k.fire) || pad.held(Pad::Fire),
             // The Modder's Edition's weapons (keys of their own here: the
             // dialect shares Look up, Strafe and Turn right).
-            reload: input.held(KeyCode::KeyR) || pad.held(Pad::Reload),
+            reload: self.pending.reload || input.held(KeyCode::KeyR) || pad.held(Pad::Reload),
             rack: input.held(KeyCode::KeyF) || pad.held(Pad::Rack),
-            switch_mode: input.held(KeyCode::KeyV) || pad.held(Pad::FireMode),
+            switch_mode: input.held(KeyCode::KeyV) || self.pending.switch_mode,
             zoom_in: input.held(KeyCode::Equal) || input.held(KeyCode::NumpadAdd),
             zoom_out: input.held(KeyCode::Minus) || input.held(KeyCode::NumpadSubtract),
             ..self.pending
@@ -248,10 +281,18 @@ impl HuntView {
             && !self.hunt.show_exit()
             && self.hunt.death.is_none()
             && !self.hunt.opts.trophy;
-        if can_pick && !self.hunt.opts.observer && input.pressed(self.pick_key()) {
+        if can_pick
+            && !self.hunt.opts.observer
+            && (input.pressed(self.pick_key()) || input.pad.pressed(Pad::NextWeapon))
+        {
             self.held_pick = Some((Pick::Weapon, 0.0));
         }
-        if can_pick && keys::pressed(input, k.change_call) && !self.call_list().is_empty() {
+        if can_pick
+            && !self.hunt.opts.observer
+            && (keys::pressed(input, k.change_call) || input.pad.pressed(Pad::Call))
+            && !self.call_list().is_empty()
+        {
+            self.pick_from_pad = input.pad.pressed(Pad::Call);
             self.held_pick = Some((Pick::Call, 0.0));
         }
         if let Some((kind, t)) = self.held_pick {
@@ -260,7 +301,13 @@ impl HuntView {
                 self.held_pick = None;
                 match kind {
                     Pick::Weapon => self.next_weapon(),
-                    Pick::Call => self.pending.change_call = true,
+                    Pick::Call => {
+                        if self.pick_from_pad {
+                            self.pending.call = true;
+                        } else {
+                            self.pending.change_call = true;
+                        }
+                    }
                 }
             } else if t >= HOLD_TO_PICK {
                 self.held_pick = None;
@@ -300,7 +347,7 @@ impl HuntView {
         {
             self.hunt.confirm_exit();
         }
-        if prompt && pad.pressed(Pad::Run) {
+        if prompt && pad.pressed(Pad::FireMode) {
             self.hunt.exit_prompt = false;
         }
         if pad.pressed(Pad::Crouch) && !map_pick {
@@ -327,15 +374,6 @@ impl HuntView {
             self.pending.toggle_weapon = true;
         }
         // Y: the next carried weapon (on the exit prompt: restart).
-        if pad.pressed(Pad::NextWeapon) && !prompt {
-            let carried = self.carried();
-            let cur = self.hunt.weapons.target;
-            let at = carried.iter().position(|&w| w == cur);
-            let next = at.map_or(0, |i| (i + 1) % carried.len().max(1));
-            if let Some(&w) = carried.get(next) {
-                self.pending.select_weapon = Some(w);
-            }
-        }
         const DIGITS: [KeyCode; 6] = [
             KeyCode::Digit1,
             KeyCode::Digit2,
@@ -353,7 +391,7 @@ impl HuntView {
         if input.pressed(KeyCode::Tab) || pad.pressed(Pad::Map) {
             self.pending.toggle_map = true;
         }
-        if pressed(k.call) || pad.pressed(Pad::Call) {
+        if pressed(k.call) {
             self.pending.call = true;
         }
         if pad.pressed(Pad::NextCall) && !map_pick {
@@ -404,6 +442,15 @@ impl HuntView {
     fn run_ticks(&mut self, mut hin: HuntInput, dt: f32) {
         self.acc_ms = (self.acc_ms + dt * 1000.0).min(250.0);
         while self.acc_ms >= TICK_MS as f32 {
+            if let Some(weapon) = self.empty_reload {
+                let w = &self.hunt.weapons;
+                if w.current != weapon || w.state == c2_core::game::WeaponState::Hidden {
+                    self.empty_reload = None;
+                } else if w.state == c2_core::game::WeaponState::Ready && w.ftime == 0 {
+                    hin.reload = true;
+                    self.empty_reload = None;
+                }
+            }
             self.step(&hin);
             hin.controls.mouse = (0.0, 0.0);
             hin.toggle_weapon = false;
@@ -411,6 +458,8 @@ impl HuntView {
             hin.toggle_binoculars = false;
             hin.toggle_map = false;
             hin.call = false;
+            hin.reload = false;
+            hin.switch_mode = false;
             hin.change_call = false;
             self.pending = HuntInput::default();
             self.acc_ms -= TICK_MS as f32;
@@ -480,5 +529,36 @@ impl HuntView {
         self.audio
             .set_engine(get(&self.sounds.ship, ship_sound::ENGINE), engine);
         self.view.update(gpu, dt, input);
+    }
+}
+
+/// Touch holds are synthesized anew each frame, so detect their edge here
+/// rather than treating Frame::pressed(Fire) as a new finger every frame.
+fn fresh_fire(was_down: &mut bool, down: bool, pressed: bool) -> bool {
+    let fresh = (down && !*was_down) || pressed;
+    *was_down = down;
+    fresh
+}
+
+#[cfg(test)]
+mod controller_tests {
+    use super::fresh_fire;
+
+    #[test]
+    fn holding_fire_does_not_become_a_new_press_when_the_gun_runs_empty() {
+        let mut held = false;
+        assert!(fresh_fire(&mut held, true, false));
+        for _ in 0..60 {
+            assert!(!fresh_fire(&mut held, true, false));
+        }
+        assert!(!fresh_fire(&mut held, false, false));
+        assert!(fresh_fire(&mut held, true, false));
+    }
+
+    #[test]
+    fn a_keyboard_press_and_release_between_frames_is_preserved() {
+        let mut held = false;
+        assert!(fresh_fire(&mut held, false, true));
+        assert!(!fresh_fire(&mut held, false, false));
     }
 }

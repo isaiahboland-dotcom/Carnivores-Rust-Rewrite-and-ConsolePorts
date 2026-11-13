@@ -18,9 +18,16 @@ use crate::area::Area;
 use crate::rng::MsRand;
 
 impl Character {
+    /// Recorded shots override the legacy hunt-wide tranq option.
+    pub fn tranquilized(&self, global_tranq: bool) -> bool {
+        self.darted || (global_tranq && self.hit_weapon.is_none())
+    }
+
     /// `ResetCharacter`.
     pub fn reset(&mut self, species: &Species, rng: &mut MsRand, opt_agres: i32) {
         self.pending_ai_ms = 0;
+        self.darted = false;
+        self.hit_weapon = None;
         self.ai = species.runs_as();
         self.state = 0;
         self.state_f = 0;
@@ -72,7 +79,6 @@ impl Character {
                     (scale_a as f32 / species.info.scale_a as f32 * m.health_a as f32) as i32;
             }
             self.damaged = false;
-            self.darted = false;
             self.follow_leader = false;
             self.aquatic_idle = false;
             self.turny = 0.0;

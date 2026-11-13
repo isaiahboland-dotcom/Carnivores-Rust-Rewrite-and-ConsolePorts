@@ -781,6 +781,7 @@ mod tests {
         let mut c = Config::default();
         let s = Settings {
             menu: "mobile".into(),
+            mobile_card_layout: true,
             three_ds_target: "n3ds".into(),
             pictures: c2_mods::recipe::Pictures {
                 scope: c2_mods::recipe::Source::Mobile,
@@ -794,6 +795,7 @@ mod tests {
         // What the launcher has no control for is kept from the recipe.
         let back = c.settings(&s);
         assert_eq!(back.pictures, s.pictures);
+        assert!(back.mobile_card_layout);
         assert_eq!(back.menu, "mobile");
         // Unset leaves the launcher's choice alone.
         c.apply(&Settings::default());

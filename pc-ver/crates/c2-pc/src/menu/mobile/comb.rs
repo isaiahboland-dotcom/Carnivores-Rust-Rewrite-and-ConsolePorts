@@ -76,27 +76,45 @@ impl Comb {
 }
 
 /// How many pages `n` animals fill.
-fn pages(n: usize) -> usize {
-    n.div_ceil(COMB_PAGE).max(1)
+fn pages(n: usize, size: usize) -> usize {
+    n.div_ceil(size).max(1)
 }
 
 /// The part of `order` page `at` shows.
-fn page_of(order: &[usize], at: usize) -> &[usize] {
-    let start = at.min(pages(order.len()) - 1) * COMB_PAGE;
-    &order[start..(start + COMB_PAGE).min(order.len())]
+fn page_of(order: &[usize], at: usize, size: usize) -> &[usize] {
+    let start = at.min(pages(order.len(), size) - 1) * size;
+    &order[start..(start + size).min(order.len())]
 }
 
 impl Menu {
+    pub(super) fn card_layout(&self) -> bool {
+        self.mobile_card_layout && self.kit.is_some()
+    }
+
+    fn comb_page_size(&self) -> usize {
+        if self.card_layout() {
+            6
+        } else {
+            COMB_PAGE
+        }
+    }
+
     /// Whether the animals' page is turned in twenties.
     fn comb_paged(&self) -> bool {
-        self.kit.is_some() && self.mobile_page == 1 && self.columns[1].order.len() > COMB_PAGE
+        self.kit.is_some()
+            && (self.card_layout() || self.mobile_page == 1)
+            && self.columns[self.mobile_col()].order.len() > self.comb_page_size()
     }
 
     /// The items the page's honeycomb shows, in order.
     pub(super) fn comb_items(&self) -> &[usize] {
         let order = &self.columns[self.mobile_col()].order;
         if self.comb_paged() {
-            page_of(order, self.comb_page)
+            page_of(
+                order,
+                self.comb_page[self.mobile_col()],
+                self.comb_page_size(),
+            )
         } else {
             order
         }
@@ -108,8 +126,11 @@ impl Menu {
         if !self.comb_paged() {
             return None;
         }
-        let last = pages(self.columns[1].order.len()) - 1;
-        let at = self.comb_page.min(last);
+        let last = pages(
+            self.columns[self.mobile_col()].order.len(),
+            self.comb_page_size(),
+        ) - 1;
+        let at = self.comb_page[self.mobile_col()].min(last);
         Some([(ARROWS[0], at > 0), (ARROWS[1], at < last)])
     }
 
@@ -119,14 +140,19 @@ impl Menu {
         let Some([(back, can_back), (on, can_on)]) = self.comb_arrows() else {
             return false;
         };
-        let at = self.comb_page.min(pages(self.columns[1].order.len()) - 1);
+        let at = self.comb_page[self.mobile_col()].min(
+            pages(
+                self.columns[self.mobile_col()].order.len(),
+                self.comb_page_size(),
+            ) - 1,
+        );
         let click = |r: Rect| input.clicked && inside(self.cursor, r);
         if can_back && (click(back) || input.pressed(KeyCode::PageUp)) {
-            self.comb_page = at - 1;
+            self.comb_page[self.mobile_col()] = at - 1;
             return true;
         }
         if can_on && (click(on) || input.pressed(KeyCode::PageDown)) {
-            self.comb_page = at + 1;
+            self.comb_page[self.mobile_col()] = at + 1;
             return true;
         }
         click(back) || click(on)
@@ -153,8 +179,11 @@ impl Menu {
             let at = (r.0 + r.2 / 2.0, r.1 + (r.3 - px) / 2.0);
             self.kit_line(out, Face::Title, at, px, color, word, 0.5);
         }
-        let n = pages(self.columns[1].order.len());
-        let t = format!("{} / {n}", self.comb_page.min(n - 1) + 1);
+        let n = pages(
+            self.columns[self.mobile_col()].order.len(),
+            self.comb_page_size(),
+        );
+        let t = format!("{} / {n}", self.comb_page[self.mobile_col()].min(n - 1) + 1);
         self.kit_line(out, Face::Body, (CW / 2.0, 545.0), 16.0, PALE, &t, 0.5);
     }
 }
@@ -172,13 +201,23 @@ mod tests {
     }
 
     #[test]
+    fn license_pages_preserve_order_and_partial_last_page() {
+        let order: Vec<usize> = (0..10).collect();
+        assert_eq!(pages(order.len(), 6), 2);
+        assert_eq!(page_of(&order, 0, 6), &order[..6]);
+        assert_eq!(page_of(&order, 1, 6), &order[6..]);
+        assert_eq!(page_of(&order, 99, 6), &order[6..]);
+        assert!(page_of(&[], 0, 6).is_empty());
+    }
+
+    #[test]
     fn pages_split_in_twenties() {
         let order: Vec<usize> = (0..45).collect();
-        assert_eq!(pages(order.len()), 3);
-        assert_eq!(page_of(&order, 0), &order[..20]);
-        assert_eq!(page_of(&order, 2), &order[40..]);
+        assert_eq!(pages(order.len(), COMB_PAGE), 3);
+        assert_eq!(page_of(&order, 0, COMB_PAGE), &order[..20]);
+        assert_eq!(page_of(&order, 2, COMB_PAGE), &order[40..]);
         // Past the end: the last page.
-        assert_eq!(page_of(&order, 9), &order[40..]);
-        assert_eq!(pages(0), 1);
+        assert_eq!(page_of(&order, 9, COMB_PAGE), &order[40..]);
+        assert_eq!(pages(0, COMB_PAGE), 1);
     }
 }

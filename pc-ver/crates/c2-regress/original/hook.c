@@ -314,6 +314,7 @@ static void *hook(HMODULE exe, const char *dll, const char *name, void *to) {
 
 BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID unused) {
     char path[MAX_PATH], b[MAX_PATH + 32], flag[4];
+    DWORD script_length;
     HMODULE exe;
     BOOL child;
     (void)unused;
@@ -336,9 +337,16 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID unused) {
     logf = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, 0, NULL);
     frame_ms = env_num("C2H_FRAME_MS", 20);
     exit_frame = env_num("C2H_EXIT", 60000);
-    if (GetEnvironmentVariableA(child ? "C2H_HUNT_SCRIPT" : "C2H_SCRIPT", path, sizeof path)) {
-        wsprintfA(b, "script %s %s\r\n", path, script_load(path) ? "loaded" : "NOT READABLE");
+    script_length = GetEnvironmentVariableA(child ? "C2H_HUNT_SCRIPT" : "C2H_SCRIPT", path, sizeof path);
+    if (script_length >= sizeof path) {
+        logs("script path exceeds hook capacity; refusing an unscripted capture\r\n");
+        return FALSE;
+    }
+    if (script_length) {
+        BOOL loaded = script_load(path);
+        wsprintfA(b, "script %s %s\r\n", path, loaded ? "loaded" : "NOT READABLE");
         logs(b);
+        if (!loaded) return FALSE;
     }
     exe = GetModuleHandleA(NULL);
     hook(exe, "WINMM.dll", "timeGetTime", (void *)fake_time);

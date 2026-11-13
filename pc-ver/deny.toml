@@ -1,0 +1,61 @@
+# cargo-deny policy for the PC workspace. Run from pc-ver/:
+#   cargo deny --locked check advisories licenses bans sources
+#
+# Exceptions are narrowly scoped to one advisory ID each, reviewed 2026-11-12.
+# Re-review them when eframe or egui is bumped and remove any that no longer
+# match the lockfile. Vulnerabilities with a patched release are not ignored:
+# update the dependency instead.
+
+[graph]
+all-features = true
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "aarch64-linux-android",
+]
+
+[advisories]
+unmaintained = "all"
+unsound = "all"
+yanked = "warn"
+ignore = [
+    # Unmaintained; reached only through the eframe launcher stack (zbus/atspi
+    # accessibility bus via accesskit_unix, and the ttf-parser font path via
+    # sctk-adwaita). No workspace crate uses these directly.
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser, via ab_glyph -> owned_ttf_parser -> sctk-adwaita (eframe Linux decorations)" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names, via zbus -> atspi-common / accesskit_unix (eframe accessibility)" },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant, via zbus -> atspi-common / accesskit_unix (eframe accessibility)" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive, via zvariant (zbus stack, eframe accessibility)" },
+]
+
+[licenses]
+confidence-threshold = 0.9
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+
+# Font assets bundled by epaint_default_fonts (egui's default UI fonts).
+# Permitted for this crate only; the font licences are not allowed in general.
+[[licenses.exceptions]]
+name = "epaint_default_fonts"
+allow = ["OFL-1.1", "Ubuntu-font-1.0"]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

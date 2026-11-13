@@ -86,7 +86,11 @@ pub fn build_combined(
     out: &Path,
 ) -> Result<()> {
     use c2_mods::standalone::{add_ons, build, Options};
-    let o = Options { ambients, skip };
+    let o = Options {
+        ambients,
+        skip,
+        unlisted: Vec::new(),
+    };
     let games = if mods.is_empty() && balance_file.is_none() {
         out.to_path_buf()
     } else {
@@ -371,19 +375,24 @@ pub fn build_recipe(
     } else {
         // Standalones combined beside the base; the add-ons over that.
         use c2_mods::standalone::{add_on_sources, build, Ambients, Options};
+        let ids: Vec<String> = r.standalones.iter().map(|m| m.id.clone()).collect();
         let o = Options {
             ambients: match r.combine.as_ref().map(|c| c.ambients.as_str()) {
                 Some("random") => Ambients::Random,
                 _ => Ambients::Tied,
             },
             skip: r.standalones.iter().map(|m| m.skip.clone()).collect(),
+            // Variants sharing another animal's menu entry leave the menu
+            // as their game is combined.
+            unlisted: c2_mods::variants::unlisted(&r.variants, &ids),
         };
         let games = Verified::roots(&found.games)?;
         let games_dir = PathBuf::from(format!("{}.games", out.display()));
         let built = build(bases, &games, &games_dir, &o)?;
         print!("{}", built.report);
         let v = vanilla(std::slice::from_ref(&games_dir))?;
-        let (sources, opts) = c2_mods::recipe::prepare(recipe_path, &r, &found.mods, &v)?;
+        let (sources, mut opts) = c2_mods::recipe::prepare(recipe_path, &r, &found.mods, &v)?;
+        opts.residents = built.residents(&ids);
         add_on_sources(&games_dir, sources, &built, &o, &opts)?
     };
     // The base game's own parts left out (they come first in the combined
@@ -391,12 +400,23 @@ pub fn build_recipe(
     if c2_mods::standalone::leave_out::push(&mut pack.vfs, &r.recipe.skip)? {
         tracing::info!("left out of the base game: {}", r.recipe.skip.to_arg());
     }
+    let mut layout = c2_vfs::MemBackend::new();
+    layout.insert(
+        "HUNTDAT/_MOBILE_CARDS.TXT",
+        if r.settings.mobile_card_layout {
+            b"1".to_vec()
+        } else {
+            b"0".to_vec()
+        },
+    );
+    pack.vfs.push("mobile menu layout", Box::new(layout));
     balance(&mut pack, balance_file)?;
     if let Some(p) = &r.settings.predation {
         if p.push(&mut pack.vfs) {
             pack.notes.push("predation settings applied".into());
         }
     }
+    c2_mods::weapon_rules::push(&mut pack.vfs, &r.settings.weapon_restrictions)?;
     if r.settings.rules.push(&mut pack.vfs)? {
         pack.notes.push("instance rules applied".into());
     }

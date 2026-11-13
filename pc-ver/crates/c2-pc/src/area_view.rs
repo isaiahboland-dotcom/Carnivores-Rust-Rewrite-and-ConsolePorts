@@ -137,6 +137,8 @@ pub struct AreaView {
     /// `(OptBrightness + 128) / 256`: textures, sky and fog colour.
     pub brightness: f32,
     start: Instant,
+    /// Fixed clock and sky isolation for native renderer diagnostics only.
+    pub(crate) capture: Option<(u32, bool)>,
     pub fps: f32,
 }
 
@@ -336,12 +338,27 @@ impl AreaView {
             fog_start: 0.6,
             brightness: 1.0,
             start: Instant::now(),
+            capture: None,
             fps: 0.0,
         })
     }
 
     pub fn globals(&self) -> &Globals {
         &self.globals
+    }
+
+    /// Diagnostic ablation of hardware-style object vertex lighting.
+    pub(crate) fn capture_without_vertex_light(&mut self, gpu: &Gpu) {
+        for (o, m) in self.area.rsc.objects.iter().zip(&mut self.models) {
+            let positions: Vec<_> = o
+                .model
+                .mesh
+                .vertices
+                .iter()
+                .map(|v| [v.x * 2.0, v.y * 2.0, v.z * -2.0])
+                .collect();
+            m.set_lighting(gpu, Vec::new(), &positions);
+        }
     }
 
     pub fn area(&self) -> &Area {
@@ -417,7 +434,7 @@ impl Scene for AreaView {
             }
         }
         // CreateMorphedObject: all instances of an animated object share one pose.
-        let t = self.start.elapsed().as_millis() as u32;
+        let t = self.render_time().as_millis() as u32;
         for (o, m) in self.area.rsc.objects.iter().zip(&self.models) {
             if let Some(p) = o.animation.as_ref().and_then(|a| pose_object(a, t)) {
                 if p.len() == o.model.mesh.vertices.len() {
@@ -470,6 +487,13 @@ pub const FADE_CELLS: f32 = 4.0;
 pub type ExtraDraw<'a> = dyn FnMut(&Gpu, &mut wgpu::RenderPass<'_>, &Globals, &Frustum) + 'a;
 
 impl AreaView {
+    fn render_time(&self) -> std::time::Duration {
+        self.capture.map_or_else(
+            || self.start.elapsed(),
+            |(ms, _)| std::time::Duration::from_millis(u64::from(ms)),
+        )
+    }
+
     fn ambient(&self) -> f32 {
         if self.area.cycle.is_some() && self.night_vision != Some(true) {
             1.0 - 0.88 * self.area.time_weights()[2]
@@ -488,7 +512,7 @@ impl AreaView {
         let far = self.radius as f32 * CELL;
         let view = self.cam.view();
         let time = self.area.time;
-        let t = self.start.elapsed();
+        let t = self.render_time();
         let proj = projection(aspect, far * 1.5, self.zoom);
         let frustum = Frustum::new(proj * view);
         self.globals.write(
@@ -525,6 +549,9 @@ impl AreaView {
             self.area.time_weights()[2],
         );
 
+        if self.capture.is_some_and(|(_, sky_only)| sky_only) {
+            return;
+        }
         let center = self.cam_cell();
         self.terrain.set_window(
             gpu,

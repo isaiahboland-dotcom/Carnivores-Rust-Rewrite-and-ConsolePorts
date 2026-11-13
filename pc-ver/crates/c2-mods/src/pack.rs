@@ -321,12 +321,44 @@ pub fn vanilla(bases: &[PathBuf]) -> Result<Vfs, ModError> {
     if let Some(l) = crate::triassic::layer(&v)? {
         v.push("Triassic compatibility rules", Box::new(l));
     }
+    // A game for an older Modder's Edition: its animals and spawn groups
+    // in today's keys, before the default tables below are fitted to them.
+    if let Some(l) = crate::legacy::layer(&v)? {
+        v.push(crate::legacy::LAYER, Box::new(l));
+    }
     // A dialect game without spawn tables (an engine placing by its own
     // rules): the Modder's Edition's default ones, so its animals come.
     if let Some(l) = crate::standalone::spawn_layer(&v)? {
         v.push(crate::standalone::SPAWN_LAYER, Box::new(l));
     }
     Ok(v)
+}
+
+/// Whether the add-on folder `dir` (game data under `root`) has no
+/// `_RES.TXT` or `mod.toml` of its own but a text file with an entry.
+fn pasted_entries(dir: &Path, root: &Path) -> bool {
+    if is_zip(root) || find_path(root, "HUNTDAT/_RES.TXT").is_some() {
+        return false;
+    }
+    let texts = |d: &Path| -> Vec<PathBuf> {
+        std::fs::read_dir(d)
+            .map(|rd| rd.flatten().map(|e| e.path()).collect())
+            .unwrap_or_default()
+    };
+    let mut files = texts(dir);
+    if root != dir {
+        files.extend(texts(root));
+    }
+    let name = |p: &Path, n: &str| {
+        p.file_name()
+            .is_some_and(|f| f.to_string_lossy().eq_ignore_ascii_case(n))
+    };
+    !files.iter().any(|p| name(p, "mod.toml"))
+        && files.iter().any(|p| {
+            p.is_file()
+                && p.extension().is_some_and(|e| e.eq_ignore_ascii_case("txt"))
+                && !crate::loose::is_note(p)
+        })
 }
 
 /// Reads a mod folder or `.zip`: its `mod.toml` if any (an empty `[files]`
@@ -338,6 +370,12 @@ pub fn load_mod(vanilla: &Vfs, dir: &Path) -> Result<ModSource, ModError> {
         }
         return Err(ModError::NoHuntdat(dir.to_path_buf()));
     };
+    // Files laid out under `HUNTDAT` with the entry to paste in a readme
+    // beside them: without rules of its own, only the readme says what the
+    // models are, so it is read as a loose add-on.
+    if pasted_entries(dir, &root) {
+        return load_loose(vanilla, dir, &|_| true);
+    }
     let backend = open_root(&root)?;
     let name = if is_zip(dir) {
         dir.file_stem()
@@ -426,6 +464,9 @@ pub struct Pack {
 #[derive(Debug, Clone, Default)]
 pub struct BuildOptions {
     pub variants: Vec<crate::variants::Group>,
+    /// Variant sources already in the base being built over: a recipe's
+    /// combined standalones and the base itself (`standalone::Built::residents`).
+    pub residents: Vec<crate::variants::Resident>,
     /// `(path, mod id)`: this mod's copy of the file wins.
     pub file_winners: Vec<(String, String)>,
     /// `(section, entry name, mod id)`: only this mod's change to the entry applies.
@@ -884,8 +925,13 @@ pub fn build_with(
     let mut mods: Vec<ModSource> = ord.into_iter().filter_map(|i| slots[i].take()).collect();
     // Snapshot variant assets before shared-path winner decisions discard a
     // source's copy. Those decisions still govern the ordinary shared files.
-    let (variant_members, variant_assets) =
-        crate::variants::preserve(&opts.variants, &vfs, &vanilla_res, &mut mods)?;
+    let (variant_members, variant_assets) = crate::variants::preserve(
+        &opts.variants,
+        &opts.residents,
+        &vfs,
+        &vanilla_res,
+        &mut mods,
+    )?;
     // File winners: drop the file from every other mod.
     for (path, winner) in &opts.file_winners {
         let k = key(path);
@@ -1101,7 +1147,13 @@ pub fn build_with(
         vfs.push("(merged hunter)", Box::new(mem));
     }
     if !opts.variants.is_empty() {
-        crate::variants::finish(&opts.variants, &variant_members, &mut merged.res, &mut vfs)?;
+        crate::variants::finish(
+            &opts.variants,
+            &opts.residents,
+            &variant_members,
+            &mut merged.res,
+            &mut vfs,
+        )?;
         notes.push(format!(
             "{} explicit variant group(s); private assets and VARIANTS.TOML generated",
             opts.variants.len()

@@ -6,6 +6,7 @@ pub mod balance;
 pub mod detect;
 pub mod hunter;
 pub mod ice_age;
+pub mod legacy;
 pub mod loose;
 pub mod manifest;
 pub mod mobile;
@@ -21,6 +22,7 @@ pub mod rules;
 pub mod standalone;
 mod triassic;
 pub mod variants;
+pub mod weapon_rules;
 
 use std::path::PathBuf;
 

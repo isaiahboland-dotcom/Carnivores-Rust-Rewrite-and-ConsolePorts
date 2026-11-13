@@ -61,6 +61,8 @@ fn roster() -> Vec<Species> {
 
 fn weapon(name: &str, shots: i32) -> WeaponInfo {
     WeaponInfo {
+        allow_tranq: true,
+        allow_trophy: true,
         name: name.into(),
         file: String::new(),
         pic: String::new(),
@@ -421,4 +423,18 @@ fn a_frozen_body_fails_its_kill() {
         "{:?}",
         kill.status
     );
+}
+
+/// Carnivores: Ice Age's animals run on other AI numbers than its own
+/// rules give them (`sourceAi`); a scenario names them by its own, as the
+/// original engine's menu does.
+#[test]
+fn an_animal_is_found_by_its_own_games_ai_number() {
+    let mut rhino = species(23, "Rhino");
+    rhino.tuning.source_ai = Some(13);
+    let all = [species(0, "Hunter"), species(13, "Other"), rhino];
+    // Without a source number, the AI it runs as.
+    assert_eq!(setup::resolve(&all[..2], &SpeciesRef::Ai(13)).ok(), Some(1));
+    assert_eq!(setup::resolve(&all[2..], &SpeciesRef::Ai(13)).ok(), Some(0));
+    assert!(setup::resolve(&all[2..], &SpeciesRef::Ai(23)).is_err());
 }

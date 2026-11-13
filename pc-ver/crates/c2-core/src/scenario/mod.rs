@@ -29,6 +29,18 @@ mod tests;
 #[cfg(test)]
 mod tests_behaviour;
 
+/// The clip of its model a character is playing. A dialect species numbers
+/// its phases in the order its rules name them (`MeeInfo::anim_index`), so
+/// the phase alone would not compare with the original engine's clip.
+pub(crate) fn model_clip(hunt: &crate::game::Hunt, c: &crate::dino::Character) -> usize {
+    hunt.herd
+        .species
+        .get(c.ctype)
+        .and_then(|s| s.mee.as_ref())
+        .and_then(|m| m.anim_index.get(c.phase).copied())
+        .unwrap_or(c.phase)
+}
+
 pub use behaviour::{stage_names, BehaviourPlan, BehaviourReport, Sample, Subject, Track};
 pub use director::{Director, Frontend, Headless, Screen, TickPlan};
 pub use inject::Inject;

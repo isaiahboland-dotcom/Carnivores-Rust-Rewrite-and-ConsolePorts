@@ -203,7 +203,9 @@ pub fn animate(
         }
 
         if c.state == 0 {
-            let mut attack = pdist <= reach && in_water && !m.dont_swim_away && h.alive;
+            // `AnimateFish`: `... && MyHealth && !ObservMode`.
+            let mut attack =
+                pdist <= reach && in_water && !m.dont_swim_away && h.alive && !h.observer;
             if attack {
                 c.afraid_time = 10 * 1024;
             }

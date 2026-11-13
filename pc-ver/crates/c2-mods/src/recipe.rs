@@ -85,6 +85,12 @@ pub struct Settings {
     /// PC menu: `mod`, `original`, `ice-age` or `mobile`.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub menu: String,
+    /// Preserve full map, dinosaur and weapon pictures in a six-card mobile grid.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub mobile_card_layout: bool,
+    /// Per-weapon ammo and trophy eligibility, matched by resource name.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub weapon_restrictions: Vec<crate::weapon_rules::WeaponRule>,
     /// Hunt pictures: the phone's or the PC's.
     #[serde(skip_serializing_if = "Pictures::is_auto")]
     pub pictures: Pictures,
@@ -744,6 +750,7 @@ pub fn prepare(
     vanilla: &Vfs,
 ) -> Result<(Vec<ModSource>, BuildOptions), ModError> {
     crate::variants::validate(&r.variants)?;
+    crate::variants::check_totals(&r.variants)?;
     if !r.variants.is_empty() && !r.recipe.skip.is_empty() {
         return Err(ModError::Recipe(
             "variant packs cannot yet renumber base parts through recipe.skip".into(),

@@ -29,6 +29,8 @@ fn portable_hunt_draws_and_fires_a_weapon() {
     let area = Area::flat(10);
     let player = Player::new(&area, (500, 500));
     let rifle = WeaponInfo {
+        allow_tranq: true,
+        allow_trophy: true,
         name: "Rifle".into(),
         file: String::new(),
         pic: String::new(),

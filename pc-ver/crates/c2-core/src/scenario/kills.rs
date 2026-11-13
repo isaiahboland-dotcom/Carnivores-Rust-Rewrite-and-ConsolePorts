@@ -257,7 +257,7 @@ impl KillWatch {
             None => Err("the body has no species".into()),
         };
         let pose = |c: &crate::dino::Character| Pose {
-            phase: c.phase,
+            phase: super::model_clip(hunt, c),
             ftime: c.ftime,
             at: [c.pos[0], c.pos[2]],
         };

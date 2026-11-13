@@ -182,6 +182,7 @@ struct Shown {
 pub const PROFILE_SAVE: u32 = 0;
 pub const PROFILE_RECORD: u32 = 1;
 const FOOTER: Rect = rect(0.0, 630.0, WIDTH, HEIGHT - 630.0);
+const SETTINGS_HELP: Rect = rect(0.0, 586.0, WIDTH, 30.0);
 const CONTENT: Rect = rect(0.0, 82.0, WIDTH, 550.0);
 
 const SETUP: [Page; 3] = [Page::Area, Page::Animals, Page::Gear];
@@ -662,7 +663,7 @@ impl Menu {
         if now == before {
             return;
         }
-        if now.page != before.page || now.loading != before.loading || matches!(now.page, Page::Settings | Page::Death | Page::Record) {
+        if now.page != before.page || now.loading != before.loading {
             self.full = true;
             return;
         }
@@ -679,6 +680,10 @@ impl Menu {
         if SETUP.contains(&now.page) {
             self.dirty.push(INFO);
             self.dirty.push(FOOTER);
+        }
+        if now.page == Page::Settings {
+            // The focused row's help line.
+            self.dirty.push(SETTINGS_HELP);
         }
     }
 
@@ -1266,7 +1271,7 @@ impl Menu {
             let w = measure(&self.font, 26.0, &value);
             c.text(&self.font, r.x + r.w - 24.0 - w, r.y + (r.h - 26.0) * 0.5, 26.0, GOLD, &value);
             if focused {
-                c.text_centered(&self.font, rect(0.0, 586.0, WIDTH, 30.0), 22.0, TEXT, help);
+                c.text_centered(&self.font, SETTINGS_HELP, 22.0, TEXT, help);
             }
         }
         c.fill(rect(0.0, 632.0, WIDTH, 2.0), EDGE);

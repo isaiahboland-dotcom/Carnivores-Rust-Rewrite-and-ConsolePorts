@@ -1,7 +1,7 @@
 # Wii U development priorities
 
 See the [port overview](README.md), [current frontend documentation](perf-probe/README.md),
-[build instructions](../README.md#wii-u-from-the-command-line-demo), and
+[build instructions](perf-probe/README.md#build-and-install-demo), and
 [technical assessment](../docs/WIIU.md). The earlier chronological roadmap is
 preserved locally in `(testing)/historical-notes/gameplan.md`.
 

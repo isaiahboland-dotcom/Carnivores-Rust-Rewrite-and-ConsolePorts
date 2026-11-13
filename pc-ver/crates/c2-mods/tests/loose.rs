@@ -757,3 +757,100 @@ fn zero_numbered_art_and_calls_do_not_create_slot_zero() {
         std::fs::remove_dir_all(dir).expect("cleanup");
     }
 }
+
+/// A dialect base: a spawn table makes it one.
+const DIALECT_RES: &str = "weapons {\n{\n name = 'Pistol'\n power = 1\n}\n}\ncharacters {\n{\n name = 'Hunter'\n file = 'hunter.car'\n ai = 0\n}\n{\n name = 'Parasaurolophus'\n ai = 10\n runAnim = 1\n spawninfo {\n  spawngroup = 0\n  spawnratio = 1\n }\n}\n}\nspawntable {\n spawngroup {\n  spawnmax = 4\n  spawnmin = 0\n  spawnrate = 1\n }\n}\n.\n";
+
+fn characters(pack: &c2_mods::Pack) -> Vec<c2_formats::res_txt::Block> {
+    let res = c2_formats::res_txt::ResTxt::parse(&String::from_utf8_lossy(
+        &pack.vfs.read("HUNTDAT/_RES.TXT").expect("res"),
+    ))
+    .expect("parse");
+    res.section("characters")
+        .expect("characters")
+        .blocks
+        .clone()
+}
+
+/// The sea add-ons' way: models under `HUNTDAT`, the entry to paste only in
+/// a readme beside it. Read as a folder mod, the entry was dropped and the
+/// animal never spawned.
+#[test]
+fn an_entry_in_a_readme_beside_huntdat_is_added() {
+    let base = tmp("readme-base");
+    write(
+        &base,
+        &[
+            ("HUNTDAT/_RES.TXT", DIALECT_RES.as_bytes()),
+            ("HUNTDAT/hunter.car", &model(&[0, 1])),
+        ],
+    );
+    let a = tmp("readme-a");
+    write(
+        &a,
+        &[
+            ("HUNTDAT/SEAFISH.car", &model(&[0, 1])),
+            (
+                "README.txt",
+                b"Paste before the end of characters:\n\n{\n name = 'Sea fish'\n file = 'seafish.car'\n ai = 33\n spawngroup{\n  spawnmax = 8\n  spawnmin = 0\n  spawnrate = 0.6\n }\n maxdepth = 10000\n mindepth = 800\n walkAnim = 0\n runAnim = 1\n}\n",
+            ),
+        ],
+    );
+    let bases = [base.clone()];
+    let v = vanilla(&bases).expect("vanilla");
+    let m = load_mod(&v, &a).expect("add-on");
+    let pack = build(&bases, vec![m]).expect("build");
+    let chars = characters(&pack);
+    let model_in = pack.vfs.resolve("huntdat/seafish.car").is_some();
+    let _ = std::fs::remove_dir_all(&base);
+    let _ = std::fs::remove_dir_all(&a);
+    let fish = chars
+        .iter()
+        .find(|b| b.get(&["name"]) == Some("'Sea fish'"))
+        .expect("the readme's entry");
+    assert_eq!(fish.get(&["ai"]), Some("33"));
+    assert!(fish.subs_named("spawngroup").next().is_some());
+    assert!(model_in);
+}
+
+/// An entry written for an older Modder's Edition (`clone = -4`, a spawn
+/// group of its own as `spawninfo`): added with today's keys, so it spawns.
+#[test]
+fn an_older_modders_edition_entry_is_added_in_todays_keys() {
+    let base = tmp("legacy-base");
+    write(
+        &base,
+        &[
+            ("HUNTDAT/_RES.TXT", DIALECT_RES.as_bytes()),
+            ("HUNTDAT/hunter.car", &model(&[0, 1])),
+        ],
+    );
+    let a = tmp("legacy-a");
+    write(
+        &a,
+        &[
+            ("lio.car", &model(&[0, 1, 2])),
+            (
+                "res.txt",
+                b"Put this under the mapambients section:\n\n{\n name = 'Lio'\n file = 'lio.car'\n clone  = -4\n maxdepth = 10000\n mindepth = 800\n walkAnim = 0\n runAnim = 1\n idleAnim = 2\n overwrite area1 {\n  spawninfo {\n  spawnrate = 0.5\n  spawnmax  = 3\n  spawnmin  = 2\n }\n}\n}\n",
+            ),
+        ],
+    );
+    let bases = [base.clone()];
+    let v = vanilla(&bases).expect("vanilla");
+    let m = load_mod(&v, &a).expect("add-on");
+    let pack = build(&bases, vec![m]).expect("build");
+    let chars = characters(&pack);
+    let _ = std::fs::remove_dir_all(&base);
+    let _ = std::fs::remove_dir_all(&a);
+    let lio = chars
+        .iter()
+        .find(|b| b.get(&["name"]) == Some("'Lio'"))
+        .expect("its entry");
+    assert_eq!(lio.get(&["ai"]), Some("33"));
+    assert!(lio.get(&["clone"]).is_none());
+    assert_eq!(lio.get(&["fishIdleAnim"]), Some("2"));
+    let area = lio.subs_named("overwrite area1").next().expect("its area");
+    let group = area.subs_named("spawngroup").next().expect("a spawn group");
+    assert_eq!(group.get(&["spawnmax"]), Some("3"));
+}

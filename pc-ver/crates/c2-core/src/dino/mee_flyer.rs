@@ -319,7 +319,7 @@ pub fn animate_dead(c: &mut Character, index: usize, sp: &Species, m: &MeeInfo, 
             c.activate_fx(index, sp, ctx);
         }
         // Only Ichthyornis sleeps off a dart, if it was not flying.
-        c.can_sleep = (ctx.tranq || c.darted)
+        c.can_sleep = c.tranquilized(ctx.tranq)
             && !on_water
             && icth
             && (c.death_phase == m.walk || c.death_phase == m.shake_land || c.idle_group.is_some());

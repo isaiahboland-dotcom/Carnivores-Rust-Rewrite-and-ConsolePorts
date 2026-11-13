@@ -35,6 +35,16 @@ pub struct PlaceOptions {
     pub max_ambient: Option<i32>,
 }
 
+/// Where an animal can be put down.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Habitat {
+    Land,
+    /// Brachiosaurs and Ichthyornis: shallows.
+    Wades,
+    /// Fish and Mosasaurus: water between these depths.
+    Swims(i32, i32),
+}
+
 /// Characters a Modder's Edition hunt may hold (`kCharacterCapacity`).
 const MEE_MAX_CHARS: usize = 256;
 
@@ -533,7 +543,7 @@ impl Herd {
             p[1] = area.land_height(p[0], p[2]);
             if !g.regions.iter().any(|r| in_region(r, p[0], p[2]))
                 || g.avoid.iter().any(|r| in_region(r, p[0], p[2]))
-                || check_place_collision_p(area, &mut p)
+                || self.spot_blocked(area, ctype, &mut p)
                 || (p[0] - px).abs() + (p[2] - pz).abs() < 256.0 * 40.0
             {
                 continue;
@@ -541,6 +551,7 @@ impl Herd {
             let Some(ctype) = self.select_variant(ctype, rng) else {
                 return;
             };
+            self.swim_height(area, ctype, &mut p);
             let mut c = Character {
                 ctype,
                 pos: p,
@@ -554,6 +565,42 @@ impl Herd {
             }
             self.chars.push(c);
             return;
+        }
+    }
+
+    /// Where a species of the dialect's water families may be put
+    /// (`Characters_AddSecondaryOne`'s choice of check).
+    pub(crate) fn habitat(&self, ctype: usize) -> Habitat {
+        use super::mee::mee_ai::{BRACH, BRACHDANGER, ICTH};
+        match self.species.get(ctype).and_then(|s| s.mee.as_ref()) {
+            Some(m) if super::mee::is_fish(m.ai) => Habitat::Swims(m.min_depth, m.max_depth),
+            Some(m) if matches!(m.ai, BRACH | BRACHDANGER | ICTH) => Habitat::Wades,
+            _ => Habitat::Land,
+        }
+    }
+
+    /// Whether `p` is no place for an animal of `ctype`: a fish needs
+    /// water of its depth (`CheckPlaceCollisionFishP`), a wader its
+    /// shallows (`CheckPlaceCollisionBrahiP`), the others dry ground
+    /// (`CheckPlaceCollisionP`).
+    pub(crate) fn spot_blocked(&self, area: &Area, ctype: usize, p: &mut [f32; 3]) -> bool {
+        match self.habitat(ctype) {
+            Habitat::Swims(lo, hi) => {
+                // Without depths in its entry (0 to 0) the original's
+                // check passes only on dry ground; a fish is kept to water.
+                area.land_up_h(p[0], p[2]) - area.land_height(p[0], p[2]) <= 0.0
+                    || super::check_place_collision_fish_p(area, p, lo as f32, hi as f32)
+            }
+            Habitat::Wades => super::check_place_collision_brahi_p(area, p),
+            Habitat::Land => check_place_collision_p(area, p),
+        }
+    }
+
+    /// A fish's height at a new spot: halfway down the water.
+    pub(crate) fn swim_height(&self, area: &Area, ctype: usize, p: &mut [f32; 3]) {
+        if let Habitat::Swims(..) = self.habitat(ctype) {
+            let (up, land) = (area.land_up_h(p[0], p[2]), area.land_height(p[0], p[2]));
+            p[1] = up - (up - land) / 2.0;
         }
     }
 
@@ -618,8 +665,9 @@ impl Herd {
                 continue;
             }
             if swimmer {
+                // Never on dry ground (an entry without depths: 0 to 0).
                 let (lo, hi) = t.and_then(|t| t.depth).unwrap_or((0, 0));
-                if wy < lo as f32 || wy > hi as f32 {
+                if wy <= 0.0 || wy < lo as f32 || wy > hi as f32 {
                     continue;
                 }
             }

@@ -92,6 +92,11 @@ pub struct Tuning {
     pub radar: Option<bool>,
     /// The dialect's own AI number (`info.ai` holds the family it runs as).
     pub mee_ai: Option<i32>,
+    /// The AI number the animal's own game gives it, where its rules were
+    /// rewritten onto another number (`sourceAi`: Carnivores: Ice Age's
+    /// 10-19 run on the dialect's 16 and 20-27). Scenarios name animals
+    /// by it, as the original engine's menu does.
+    pub source_ai: Option<i32>,
     /// Fish / mosasaur depth limits (`mindepth`, `maxdepth`).
     pub depth: Option<(i32, i32)>,
 }

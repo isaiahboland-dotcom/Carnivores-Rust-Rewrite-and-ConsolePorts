@@ -2,7 +2,7 @@
 //! no program move the system pointer): the left stick moves a drawn arrow,
 //! A clicks where it is, B is Escape (back), + is Enter. The menus read it
 //! as the mouse (`Input::cursor`, `clicked`), so every screen takes it as it
-//! is. Moving the mouse hides the arrow and the pad carries on from there.
+//! is. Moving the mouse or touching hides the arrow; the pad resumes there.
 //! The right stick and D-pad up / down scroll lists, as the mouse wheel.
 //! Off while the cursor is captured (the hunt reads the pad itself). While
 //! it shows, "A Select  B Back" sits in the bottom right.
@@ -95,6 +95,15 @@ impl PadCursor {
             }
             return;
         }
+        if input.touch_mode {
+            // Touch already supplied the menu pointer and button state. Stop
+            // overwriting its position with the last controller position, and
+            // relinquish the pad's button without releasing the finger's drag.
+            self.pos = input.cursor;
+            self.shown = false;
+            self.holding = false;
+            return;
+        }
         let pad = input.pad;
         // The right stick and the D-pad scroll lists, as the wheel does.
         input.scroll += pad.look[1] * SCROLL * dt;
@@ -127,7 +136,10 @@ impl PadCursor {
             input.mouse_down = false;
             self.holding = false;
         }
-        for (a, k) in [(Pad::Run, KeyCode::Escape), (Pad::Pause, KeyCode::Enter)] {
+        for (a, k) in [
+            (Pad::FireMode, KeyCode::Escape),
+            (Pad::Pause, KeyCode::Enter),
+        ] {
             if pad.pressed(a) {
                 input.key(k, true);
                 self.keys.push(k);

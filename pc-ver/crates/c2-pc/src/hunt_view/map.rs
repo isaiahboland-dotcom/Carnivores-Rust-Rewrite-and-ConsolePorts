@@ -191,6 +191,9 @@ impl HuntView {
                             [0.0, 0.97, 0.0, 1.0]
                         } else if self.hunt.is_huntable(c) {
                             [0.2, 0.55, 1.0, 1.0]
+                        } else if self.setup.pc.radar_water != 0 && self.hunt.is_swimmer(c) {
+                            // A setting: fish and Mosasaurus kinds, in cyan.
+                            [0.2, 0.95, 0.95, 1.0]
                         } else {
                             continue;
                         };

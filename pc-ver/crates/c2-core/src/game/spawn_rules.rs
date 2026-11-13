@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 
 use super::Hunt;
 use crate::area::Area;
-use crate::dino::{ai, check_place_collision_p, Character, Species};
+use crate::dino::{ai, Character, Species};
 use c2_formats::rules::Rules;
 
 /// Tries per animal before giving up on a crowded or watery map.
@@ -93,11 +93,13 @@ impl Hunt {
                 512.0 * 256.0 + (self.rng.si_rand(50 * 256) * 10) as f32,
             ];
             p[1] = area.land_height(p[0], p[2]);
+            // A fish or wader only where its kind can be (`Herd::spot_blocked`).
             if (p[0] - px).abs() + (p[2] - pz).abs() < 256.0 * 40.0
-                || check_place_collision_p(area, &mut p)
+                || self.herd.spot_blocked(area, ctype, &mut p)
             {
                 continue;
             }
+            self.herd.swim_height(area, ctype, &mut p);
             if !self.herd.spawn(ctype, p, &mut self.rng, opt_agres) {
                 // No model (or an AI not implemented): none will spawn.
                 break;

@@ -172,11 +172,11 @@ mod tests {
         let bottom = visible_rows(&GAME_OPTS, GAME_PANEL, last_start);
         assert!(bottom
             .iter()
-            .any(|(o, _)| matches!(o, Opt::PcToggle("Dynamic time", _))));
+            .any(|(o, _)| matches!(o, Opt::PcToggle("Fire reloads when empty", _))));
         assert!(matches!(bottom.last().unwrap().0, Opt::ClearTrophies));
         assert!(bottom
             .iter()
-            .any(|(o, _)| matches!(o, Opt::PcToggle("Advanced observer mode", _))));
+            .any(|(o, _)| matches!(o, Opt::PcToggle("Pause weapon / call pickers", _))));
         for first in 0..=last_start {
             let rows = visible_rows(&GAME_OPTS, GAME_PANEL, first);
             for (_, r) in &rows {

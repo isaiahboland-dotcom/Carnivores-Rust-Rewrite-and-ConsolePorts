@@ -1,7 +1,10 @@
 //! A game folder (the one holding `HUNTDAT/`) loaded for a scenario, with
-//! a hash of every file the run depends on. Nothing is copied or written.
+//! a hash of every file the run depends on. A game whose rules play
+//! rewrites (Carnivores: Ice Age, an older Modder's Edition game) is first
+//! prepared as play prepares it ([`Prepared`]); the user's folder is never
+//! written to.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use c2_core::area::{Area, TimeOfDay};
@@ -11,6 +14,63 @@ use c2_formats::car::Car;
 use c2_formats::res_txt::ResTxt;
 use c2_vfs::{DirBackend, Vfs};
 use sha2::{Digest, Sha256};
+
+/// The folder a scenario runs from: the game folder itself, or a
+/// temporary one with the rules play would generate for it
+/// (`c2_mods::vanilla`: Ice Age's AIs, compatibility rules, default spawn
+/// tables), its other files linked. Removed when dropped.
+pub struct Prepared {
+    dir: PathBuf,
+    temporary: bool,
+}
+
+impl Prepared {
+    pub fn new(game: &Path) -> Result<Self> {
+        let bases = [game.to_path_buf()];
+        let vfs = c2_mods::vanilla(&bases)
+            .with_context(|| format!("reading the game in {}", game.display()))?;
+        // One layer: the folder as it is.
+        if vfs.layers().len() <= 1 {
+            return Ok(Self {
+                dir: game.to_path_buf(),
+                temporary: false,
+            });
+        }
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.subsec_nanos());
+        let dir = std::env::temp_dir().join(format!(
+            "c2-regress-game-{}-{stamp:08x}",
+            std::process::id()
+        ));
+        let pack = c2_mods::build(&bases, Vec::new()).context("preparing the game's rules")?;
+        c2_mods::materialize(&pack, &dir).context("writing the prepared game")?;
+        let names: Vec<&str> = vfs
+            .layers()
+            .iter()
+            .skip(1)
+            .map(|l| l.name.as_str())
+            .collect();
+        tracing::info!("game prepared as for play: {}", names.join(", "));
+        Ok(Self {
+            dir,
+            temporary: true,
+        })
+    }
+
+    /// The folder holding `HUNTDAT/` to run from.
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+}
+
+impl Drop for Prepared {
+    fn drop(&mut self) {
+        if self.temporary {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+}
 
 pub struct Game {
     pub area_name: String,

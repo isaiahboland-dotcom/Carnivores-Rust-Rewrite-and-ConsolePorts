@@ -265,6 +265,10 @@ impl Editor {
         self.extras.values_read(values);
     }
 
+    pub(crate) fn catalog_read(&mut self, catalog: c2_mods::variants::Catalog) {
+        self.extras.catalog_read(catalog);
+    }
+
     pub(crate) fn base_matched(&mut self, game: PathBuf, id: Option<String>) {
         if self.base_match != BaseMatch::Checking(game.clone()) {
             return;
@@ -432,6 +436,15 @@ impl Editor {
         } else {
             panel(ui, |ui| extras.base_parts_ui(ui, r, &game, folders));
         }
+        ui.add_space(6.0);
+        panel(ui, |ui| {
+            ui.checkbox(
+                &mut r.settings.mobile_card_layout,
+                "Mobile card layout: six maps, dinosaurs or weapons per page",
+            );
+            ui.label("perfect for the modded dinosaurs that includes dinosaur summaries in the artwork png's!");
+            ui.small("Keeps full artwork, daylight and equipment options. Rebuild the Android package to apply.");
+        });
         for section in [rules::times_ui, rules::locks_ui] {
             ui.add_space(6.0);
             panel(ui, |ui| section(ui, &mut r.settings.rules));

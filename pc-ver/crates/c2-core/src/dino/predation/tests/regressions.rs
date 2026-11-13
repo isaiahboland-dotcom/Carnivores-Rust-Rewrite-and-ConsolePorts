@@ -2,6 +2,8 @@
 //! the hunter, unpriced carnivores hunting each other, and prey that kept
 //! fleeing a predator that had lost interest.
 
+use alloc::vec;
+
 use c2_formats::predation::Predation;
 
 use super::{fights, herd, run, species, ALLO, RAPTOR, REX, STEGO};

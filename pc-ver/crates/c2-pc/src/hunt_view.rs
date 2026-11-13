@@ -155,6 +155,9 @@ pub struct HuntView {
     acc_ms: f32,
     /// `RunMode` (toggled with the run key).
     run: bool,
+    last_jump_tap: Option<std::time::Instant>,
+    fire_was_down: bool,
+    empty_reload: Option<usize>,
     /// Crouching from the gamepad (D-pad up toggles it).
     pad_crouch: bool,
     /// The phone's on-screen buttons (`touch`).
@@ -180,6 +183,8 @@ pub struct HuntView {
     picker_held: bool,
     /// A pick key held down: which, and for how long (seconds).
     held_pick: Option<(Pick, f32)>,
+    pick_from_pad: bool,
+    picker_axis: i8,
     /// Seconds left of the new weapon's hexagon (the phone's look).
     weapon_flash: f32,
     seed: u32,

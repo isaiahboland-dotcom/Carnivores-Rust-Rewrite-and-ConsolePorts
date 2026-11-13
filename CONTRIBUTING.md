@@ -12,8 +12,8 @@ Report security issues privately as described in [SECURITY.md](SECURITY.md).
 
 ## Build and check
 
-Install stable Rust (1.88 or newer). On Linux, install the ALSA and udev
-development headers listed in the [README](README.md#what-you-need).
+Install stable Rust (1.95 or newer). On Linux, install the ALSA and udev
+development headers listed in the [build guide](docs/PLAYING.md#build-from-source).
 
 ```sh
 git clone https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts.git c2rs
@@ -31,6 +31,16 @@ cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace --all-features
 ```
 
+Dependencies are checked for licences, yanked versions and security advisories
+with cargo-deny; the policy is in `pc-ver/deny.toml`. To run it locally, install
+cargo-deny 0.20.2 (`cargo install cargo-deny --version 0.20.2 --locked`) and run
+`cargo deny --locked check advisories licenses bans sources` from `pc-ver/`.
+
+## Releases
+
+Release steps, versioning and bundle validation are in
+[docs/RELEASING.md](docs/RELEASING.md).
+
 ## Gameplay regression scenarios
 
 Unit tests do not show whether a change altered how the game plays. For any
@@ -45,7 +55,7 @@ request.
 ## Console builds
 
 Console builds need separate toolchains. Follow the [3DS guide](docs/3DS.md)
-or the [Wii U build instructions](README.md#wii-u-from-the-command-line-demo)
+or the [Wii U build instructions](wiiu-ver/perf-probe/README.md#build-and-install-demo)
 for nightly Rust and devkitPro setup. State which hardware or emulator you tested.
 
 ## Files you must not share

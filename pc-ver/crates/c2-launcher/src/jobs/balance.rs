@@ -26,8 +26,15 @@ pub(crate) struct Instance {
     pub base_skip: Skip,
     /// Standalone games and what of each is left out.
     pub standalones: Vec<(PathBuf, Skip)>,
+    /// The recipe source ID of each of `standalones`.
+    pub standalone_ids: Vec<String>,
+    /// Per standalone: its huntables that variants take off the menu
+    /// (`variants::unlisted`), as the build does.
+    pub unlisted: Vec<Vec<c2_mods::standalone::Unlisted>>,
     /// Add-ons in load order.
     pub mods: Vec<PathBuf>,
+    /// The recipe source ID of each add-on in `mods`.
+    pub mod_ids: Vec<String>,
     pub random_ambients: bool,
     /// Where the standalones are combined to be read (a folder this
     /// launcher owns: replaced on each read).
@@ -50,6 +57,7 @@ pub(crate) fn read_instance(i: Instance) -> Result<super::Completion, String> {
                 Ambients::Tied
             },
             skip,
+            unlisted: i.unlisted,
         };
         let built = build(&i.bases, &games, &i.scratch, &o).map_err(|e| e.to_string())?;
         let mut pack = add_ons(&i.scratch, &i.mods, &built, &o).map_err(|e| e.to_string())?;
@@ -58,4 +66,19 @@ pub(crate) fn read_instance(i: Instance) -> Result<super::Completion, String> {
         c2_mods::balance::read(&pack.vfs).map_err(|e| e.to_string())?
     };
     Ok(super::Completion::RecipeBalance(Box::new(values)))
+}
+
+/// The instance's dinosaurs and maps for the Variant manager: the base
+/// game's, each standalone's (as named in that game) and each add-on's.
+pub(crate) fn read_catalog(i: Instance) -> Result<super::Completion, String> {
+    let addons: Vec<(String, PathBuf)> = i.mod_ids.into_iter().zip(i.mods).collect();
+    let standalones: Vec<(String, PathBuf, Skip)> = i
+        .standalone_ids
+        .into_iter()
+        .zip(i.standalones)
+        .map(|(id, (dir, skip))| (id, dir, skip))
+        .collect();
+    let catalog =
+        c2_mods::variants::catalog(&i.bases, &standalones, &addons).map_err(|e| e.to_string())?;
+    Ok(super::Completion::VariantCatalog(Box::new(catalog)))
 }

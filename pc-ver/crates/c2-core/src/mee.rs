@@ -347,7 +347,9 @@ pub fn tuning(b: &Block) -> Tuning {
         jump_speed: speed("jmpspd"),
         radar: flag(b, "radar"),
         mee_ai,
-        depth: lo.zip(hi),
+        source_ai: b.get(&["sourceAi"]).map(c_atoi),
+        // A missing bound is 0, as the engine's zeroed entry has it.
+        depth: (lo.is_some() || hi.is_some()).then(|| (lo.unwrap_or(0), hi.unwrap_or(0))),
     }
 }
 

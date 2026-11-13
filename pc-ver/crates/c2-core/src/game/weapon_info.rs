@@ -13,6 +13,8 @@ use c2_formats::res_txt::WeaponDef;
 #[derive(Debug, Clone, PartialEq)]
 pub struct WeaponInfo {
     pub name: String,
+    pub allow_tranq: bool,
+    pub allow_trophy: bool,
     pub file: String,
     pub pic: String,
     pub power: f32,
@@ -33,7 +35,18 @@ pub struct WeaponInfo {
 
 impl WeaponInfo {
     pub fn from_def(d: &WeaponDef) -> Self {
+        let allowed = |key: &str| {
+            d.extra
+                .iter()
+                .rev()
+                .find(|e| e.key.eq_ignore_ascii_case(key))
+                .is_none_or(|e| {
+                    !matches!(e.value.trim().to_ascii_lowercase().as_str(), "0" | "false")
+                })
+        };
         Self {
+            allow_tranq: allowed("c2rs_allow_tranq"),
+            allow_trophy: allowed("c2rs_allow_trophy"),
             name: d.name.clone().unwrap_or_default(),
             file: d.file.clone().unwrap_or_default(),
             pic: d.pic.clone().unwrap_or_default(),
@@ -72,5 +85,29 @@ impl WeaponInfo {
     /// hand): a weapon with the Modder's Edition's keys.
     pub fn chambers(&self) -> bool {
         self.mee.is_some()
+    }
+}
+
+#[cfg(test)]
+mod restriction_tests {
+    use super::*;
+    use c2_formats::res_txt::{Block, Entry};
+    #[test]
+    fn weapon_restrictions_default_to_allowed_and_load_custom_keys() {
+        let mut block = Block::default();
+        let original = WeaponInfo::from_def(&WeaponDef::from_block(&block));
+        assert!(original.allow_tranq && original.allow_trophy);
+        block.entries = vec![
+            Entry {
+                key: "c2rs_allow_tranq".into(),
+                value: "0".into(),
+            },
+            Entry {
+                key: "c2rs_allow_trophy".into(),
+                value: "false".into(),
+            },
+        ];
+        let restricted = WeaponInfo::from_def(&WeaponDef::from_block(&block));
+        assert!(!restricted.allow_tranq && !restricted.allow_trophy);
     }
 }

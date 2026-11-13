@@ -12,6 +12,9 @@ pub(crate) struct Preserved {
     file: String,
     from: usize,
     menu_assets: Vec<(String, Vec<u8>)>,
+    /// A resident member's file values to move once merged
+    /// (`resident::swap`); `None` for an add-on's.
+    swaps: Option<Vec<(String, String)>>,
 }
 
 fn set(b: &mut Block, k: &str, value: String) {
@@ -29,12 +32,15 @@ fn source_matches(m: &ModSource, source: &str, child: &Option<String>) -> bool {
     }
 }
 
-fn read_asset(m: &ModSource, base: &Vfs, path: &str) -> Result<Vec<u8>, ModError> {
-    if let Some((_, disk)) = m.map.iter().find(|(p, _)| key(p) == key(path)) {
-        return std::fs::read(disk).map_err(crate::io(disk));
-    }
-    if m.map.is_empty() && m.files.iter().any(|p| key(p) == key(path)) {
-        return Ok(open_root(&m.root)?.read(path)?);
+/// `path` from the add-on `m`, else from the game it is built over.
+fn read_asset(m: Option<&ModSource>, base: &Vfs, path: &str) -> Result<Vec<u8>, ModError> {
+    if let Some(m) = m {
+        if let Some((_, disk)) = m.map.iter().find(|(p, _)| key(p) == key(path)) {
+            return std::fs::read(disk).map_err(crate::io(disk));
+        }
+        if m.map.is_empty() && m.files.iter().any(|p| key(p) == key(path)) {
+            return Ok(open_root(&m.root)?.read(path)?);
+        }
     }
     Ok(base.read(path)?)
 }
@@ -42,9 +48,10 @@ fn read_asset(m: &ModSource, base: &Vfs, path: &str) -> Result<Vec<u8>, ModError
 /// Copy referenced assets from their source before the VFS can shadow them.
 /// Resolve only actual file-valued strings, recursively including area/time
 /// overwrites. Paths that could escape the private namespace are rejected.
-fn assets(
+/// `m`: the add-on the character is from; `None` for one already in `base`.
+pub(super) fn assets(
     b: &mut Block,
-    m: &ModSource,
+    m: Option<&ModSource>,
     base: &Vfs,
     prefix: &str,
     out: &mut MemBackend,
@@ -55,7 +62,8 @@ fn assets(
             continue;
         }
         let path = format!("HUNTDAT/{}", value.replace('\\', "/"));
-        let exists = m.files.iter().any(|p| key(p) == key(&path)) || base.resolve(&path).is_some();
+        let exists = m.is_some_and(|m| m.files.iter().any(|p| key(p) == key(&path)))
+            || base.resolve(&path).is_some();
         if !exists {
             continue;
         }
@@ -74,6 +82,7 @@ fn assets(
 
 pub(crate) fn preserve(
     groups: &[Group],
+    residents: &[Resident],
     base: &Vfs,
     res: &ResTxt,
     mods: &mut [ModSource],
@@ -94,6 +103,52 @@ pub(crate) fn preserve(
                 .filter(|(_, m)| source_matches(m, &member.source, &member.child))
                 .map(|(i, _)| i)
                 .collect();
+            let prefix = format!("VARIANTS/{}/{}", g.id, member.id);
+            if matches.is_empty() && member.child.is_none() {
+                if let Some(found) =
+                    resident::resolve(residents, g, member, res, base, &prefix, &mut out)?
+                {
+                    let file = found
+                        .block
+                        .get(&["file"])
+                        .map(|f| f.trim().trim_matches('\'').to_string())
+                        .unwrap_or_default();
+                    if !file.starts_with(&format!("{prefix}/")) {
+                        return Err(bad(format!(
+                            "{}:{}: model is missing from the game",
+                            g.id, member.id
+                        )));
+                    }
+                    let owner = member.id == g.menu_owner;
+                    kept.push(Preserved {
+                        group: gi,
+                        member: mi,
+                        name: if owner {
+                            found
+                                .block
+                                .get(&["name"])
+                                .unwrap_or("")
+                                .trim()
+                                .trim_matches('\'')
+                                .to_string()
+                        } else {
+                            // The combine renamed it; keep the source's name.
+                            member
+                                .character
+                                .trim()
+                                .trim_matches('\'')
+                                .trim()
+                                .to_string()
+                        },
+                        key: found.key,
+                        file,
+                        from: 0,
+                        menu_assets: Vec::new(),
+                        swaps: Some(found.swaps),
+                    });
+                    continue;
+                }
+            }
             if matches.len() != 1 {
                 return Err(bad(format!("{}:{}: expected one source, found {} (collection child must use its folder name)", g.id, member.id, matches.len())));
             }
@@ -168,13 +223,7 @@ pub(crate) fn preserve(
                 .trim()
                 .trim_matches('\'')
                 .to_string();
-            assets(
-                &mut block,
-                m,
-                base,
-                &format!("VARIANTS/{}/{}", g.id, member.id),
-                &mut out,
-            )?;
+            assets(&mut block, Some(m), base, &prefix, &mut out)?;
             let file = block
                 .get(&["file"])
                 .unwrap_or("")
@@ -210,14 +259,14 @@ pub(crate) fn preserve(
                     if crate::loose::numbered(name).is_some_and(|(p, n)| {
                         n == from && ["dino", "call"].contains(&p.to_ascii_lowercase().as_str())
                     }) {
-                        menu_assets.push((path.clone(), read_asset(m, base, path)?));
+                        menu_assets.push((path.clone(), read_asset(Some(m), base, path)?));
                     }
                 }
             }
             let internal = if owner {
                 id.clone()
             } else {
-                format!("__variant_{}_{}", g.id, member.id)
+                private_name(&g.id, &member.id)
             };
             if !owner {
                 if res.section("characters").is_some_and(|s| {
@@ -278,6 +327,7 @@ pub(crate) fn preserve(
                 file,
                 from,
                 menu_assets,
+                swaps: None,
             });
         }
     }
@@ -304,6 +354,7 @@ fn token(g: &str, m: &str, file: &str, data: &[u8]) -> u64 {
 
 pub(crate) fn finish(
     groups: &[Group],
+    residents: &[Resident],
     kept: &[Preserved],
     res: &mut ResTxt,
     vfs: &mut Vfs,
@@ -364,6 +415,9 @@ pub(crate) fn finish(
                 return Err(bad("two groups resolved to the same character"));
             }
             let b = &mut chars.blocks[index];
+            if let Some(swaps) = &k.swaps {
+                resident::swap(b, swaps);
+            }
             if b.get(&["file"]).map(|f| f.trim().trim_matches('\'')) != Some(k.file.as_str()) {
                 return Err(bad(format!(
                     "{}: another add-on replaced member '{}'",
@@ -388,12 +442,16 @@ pub(crate) fn finish(
             });
         }
         let mut rule = group.clone();
-        // Direct add-ons keep source area file stems. Standalone remapping is
-        // deliberately rejected rather than binding a different packed area.
+        // Add-ons keep their area file stems. A combined standalone's (and,
+        // beside standalones, the base's) move to where the combine put them.
         for member in &mut rule.members {
             let mut maps: Vec<&mut AreaId> = member.maps.iter_mut().flatten().collect();
             maps.extend(member.map_weights.iter_mut().map(|w| &mut w.map));
             for map in maps {
+                if let Some(area) = resident::area(residents, &map.source, &map.area)? {
+                    map.source = BASE.into();
+                    map.area = area;
+                }
                 let path = format!("HUNTDAT/AREAS/{}.MAP", map.area);
                 let Some(found) = vfs.resolve(&path) else {
                     return Err(bad(format!("missing map {}:{}", map.source, map.area)));

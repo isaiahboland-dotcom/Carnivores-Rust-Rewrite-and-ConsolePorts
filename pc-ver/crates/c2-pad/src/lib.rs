@@ -23,6 +23,9 @@
 //! | right stick click | VR: recenter (standing height here, the menu in front); PC hunt: next light (off, flashlight, night vision) |
 
 //!
+//! PC and Android apply [`Frame::pc_layout`] for Xbox-labelled face buttons
+//! and left-stick sprint; other frontends retain the table above.
+//!
 //! `gilrs` reads the pads on PC; it has no Android backend, so the Android
 //! app feeds its pads' buttons and sticks in itself ([`Pads::button`],
 //! [`Pads::sticks`]).
@@ -140,6 +143,23 @@ pub struct Frame {
 }
 
 impl Frame {
+    /// Xbox-labelled layout used by the PC and Android frontends.
+    pub fn pc_layout(mut self) -> Self {
+        for values in [&mut self.held, &mut self.pressed] {
+            let old = *values;
+            for (to, from) in [
+                (Action::Jump, Action::Run),
+                (Action::FireMode, Action::Jump),
+                (Action::Call, Action::NextWeapon),
+                (Action::NextWeapon, Action::Call),
+                (Action::Run, Action::FireMode),
+            ] {
+                values[to as usize] = old[from as usize];
+            }
+        }
+        self
+    }
+
     /// `a` held, and pressed if it wasn't (on-screen buttons acting as a pad).
     pub fn hold(&mut self, a: Action, down: bool) {
         let i = a as usize;
@@ -291,6 +311,27 @@ impl Pads {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pc_layout_matches_xbox_labels_without_changing_the_console_frame() {
+        for (button, original, pc) in [
+            (Button::South, Action::Run, Action::Jump),
+            (Button::East, Action::Jump, Action::FireMode),
+            (Button::West, Action::NextWeapon, Action::Call),
+            (Button::North, Action::Call, Action::NextWeapon),
+            (Button::LeftThumb, Action::FireMode, Action::Run),
+        ] {
+            let mut f = Frame::default();
+            f.press(action(button).unwrap());
+            let mapped = f.pc_layout();
+            assert!(f.pressed(original));
+            assert!(mapped.pressed(pc) && mapped.held(pc));
+            assert!(!mapped.pressed(original));
+        }
+        let mut f = Frame::default();
+        f.press(Action::Reload);
+        assert!(f.pc_layout().pressed(Action::Reload));
+    }
 
     #[test]
     fn deadzone_is_round_and_rescaled() {

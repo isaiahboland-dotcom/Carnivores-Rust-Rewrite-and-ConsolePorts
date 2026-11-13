@@ -296,7 +296,7 @@ impl Subject {
                 let c = hunt.herd.chars.get(*hold.get(n)?)?;
                 Some(Sample {
                     at: [c.pos[0], c.pos[2]],
-                    phase: c.phase,
+                    phase: super::model_clip(hunt, c),
                     ftime: c.ftime,
                     scale: c.scale,
                 })

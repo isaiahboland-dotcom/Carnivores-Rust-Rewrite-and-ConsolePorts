@@ -21,6 +21,8 @@ pub(crate) enum Completion {
     Imported(PathBuf),
     /// The recipe editor's instance values (`balance::read_instance`).
     RecipeBalance(Box<c2_mods::balance::Balance>),
+    /// The recipe editor's variant choices (`variants::catalog`).
+    VariantCatalog(Box<c2_mods::variants::Catalog>),
     Pinned(
         Box<(
             crate::recipe_edit::Kind,

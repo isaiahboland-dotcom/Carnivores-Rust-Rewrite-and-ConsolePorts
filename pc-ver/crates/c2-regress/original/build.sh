@@ -22,9 +22,11 @@ clang $cflags -c "$here/behave.c" -o "$out/behave.o"
 # shellcheck disable=SC2086
 clang $cflags -c "$here/texture.c" -o "$out/texture.o"
 # shellcheck disable=SC2086
+clang $cflags -c "$here/scene.c" -o "$out/scene.o"
+# shellcheck disable=SC2086
 clang $cflags -c "$here/launch.c" -o "$out/launch.o"
 # shellcheck disable=SC2086
-lld-link /nologo /dll /safeseh:no /entry:DllMain /nodefaultlib /out:"$out/c2hook.dll" "$out/hook.o" "$out/script.o" "$out/kill.o" "$out/behave.o" "$out/texture.o" $libs
+lld-link /nologo /dll /safeseh:no /entry:DllMain /nodefaultlib /out:"$out/c2hook.dll" "$out/hook.o" "$out/script.o" "$out/kill.o" "$out/behave.o" "$out/texture.o" "$out/scene.o" $libs
 # shellcheck disable=SC2086
 lld-link /nologo /safeseh:no /subsystem:console /entry:start /nodefaultlib /out:"$out/c2launch.exe" "$out/launch.o" $libs
 echo "$out/c2launch.exe"

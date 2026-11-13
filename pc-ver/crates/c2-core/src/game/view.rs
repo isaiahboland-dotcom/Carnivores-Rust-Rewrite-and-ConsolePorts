@@ -207,20 +207,33 @@ impl Hunt {
     }
 
     pub fn life_info(&self, area: &Area) -> Option<LifeInfo> {
+        self.life_info_with_range(area, self.opts.render_r.max(self.opts.view_r))
+    }
+
+    /// Binocular identification within the renderer's active radius, in cells,
+    /// capped at 1,000 metres.
+    /// Backends drawing beyond the simulation's range can supply that radius
+    /// without extending AI activation or animal replacement distances.
+    pub fn life_info_with_range(&self, area: &Area, render_cells: i32) -> Option<LifeInfo> {
         if !self.bin_mode {
             return None;
         }
         let (cam, alpha, beta) = self.camera();
         let (sa, ca) = alpha.sin_cos();
         let (sb, cb) = beta.sin_cos();
-        let view_r = self.opts.view_r as f32 * 256.0;
+        // Hunt2.cpp::ScanLifeForms uses ctViewR, the original draw radius.
+        // Extended views must use their actual draw radius here as well.
+        let view_r = (render_cells.max(0) as f32 * crate::CELL).min(1000.0 * 64.0);
         let mut best: Option<(usize, f32)> = None;
         for (i, c) in self.herd.chars.iter().enumerate() {
             if c.health == 0 {
                 continue;
             }
+            // Aim and visibility must refer to the same point on the animal.
+            // The original checked aim at its feet but visibility 220 units up.
+            let target = [c.pos[0], c.pos[1] + 220.0 * c.scale, c.pos[2]];
             // RotateVector: into camera space.
-            let (x, y, z) = (c.pos[0] - cam[0], c.pos[1] - cam[1], c.pos[2] - cam[2]);
+            let (x, y, z) = (target[0] - cam[0], target[1] - cam[1], target[2] - cam[2]);
             let rx = x * ca + z * sa;
             let vz = z * ca - x * sa;
             let ry = y * cb - vz * sb;
@@ -229,13 +242,15 @@ impl Hunt {
                 continue;
             }
             let d = (rx * rx + ry * ry + rz * rz).sqrt();
-            if d > view_r || (rx.abs() + ry.abs()) / d > 0.15 {
+            // A narrow screen-space tolerance: zooming in requires finer aim.
+            // The old 0.15 cone could select animals ~150 m off-axis at 1 km.
+            if d > view_r || (rx.abs() + ry.abs()) * self.bin_power / -rz > 0.05 {
                 continue;
             }
             if best.is_some_and(|(_, bd)| d >= bd) {
                 continue;
             }
-            if trace_look(area, [c.pos[0], c.pos[1] + 220.0, c.pos[2]], cam).0 {
+            if trace_look(area, target, cam).0 {
                 continue;
             }
             best = Some((i, d));

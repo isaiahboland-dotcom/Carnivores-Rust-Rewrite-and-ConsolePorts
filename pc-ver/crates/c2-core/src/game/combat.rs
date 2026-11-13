@@ -57,7 +57,7 @@ impl Hunt {
         self.shots_made += 1;
 
         let info = self.weapons.info[cur].clone();
-        let dart = self.weapons.fires_darts(cur);
+        let dart = info.allow_tranq && (self.opts.tranq || self.weapons.fires_darts(cur));
         let under = self.player.underwater;
         let (da, db) = self.weapon_sway();
         let p = &self.player;
@@ -175,7 +175,7 @@ impl Hunt {
             r
         };
         let Some((hit, pos)) = res else { return };
-        self.apply_hit(area, info, hit, pos, false, dart, out);
+        self.apply_hit(area, info, self.weapons.current, hit, pos, false, dart, out);
     }
 
     /// A round's hit (`MakeShot` / `AnimateBullet`): impact effects, then
@@ -188,6 +188,7 @@ impl Hunt {
         &mut self,
         area: &Area,
         info: &WeaponInfo,
+        weapon: usize,
         hit: Hit,
         pos: [f32; 3],
         poon: bool,
@@ -244,7 +245,8 @@ impl Hunt {
         // The dialect's `registerDamage` also marks the animal hurt and
         // aware of the hunter.
         c.damaged = true;
-        c.darted = dart;
+        c.darted = dart && info.allow_tranq;
+        c.hit_weapon = Some(weapon);
         if let Some((rgb, ms)) = info.mee.as_ref().and_then(|m| m.radar) {
             c.tracked = Some((rgb, (ms > 0).then_some(ms)));
         }
@@ -355,7 +357,7 @@ impl Hunt {
                 .filter(|(h, _)| !(m.harpoon && matches!(h, Hit::Water)));
             if let Some((hit, pos)) = res {
                 let under = wet(pos[0], pos[1], pos[2]);
-                self.apply_hit(area, &info, hit, pos, under, b.dart, out);
+                self.apply_hit(area, &info, b.weapon, hit, pos, under, b.dart, out);
                 if m.retrieve && matches!(hit, Hit::Ground | Hit::Model) {
                     b.stuck = true;
                     b.pos = pos;

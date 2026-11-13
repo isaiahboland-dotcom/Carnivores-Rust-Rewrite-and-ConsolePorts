@@ -65,6 +65,7 @@ impl HuntView {
             return;
         }
         self.picker = Some(list.iter().position(|&i| i == cur).unwrap_or(0));
+        self.picker_axis = 0;
         self.picker_kind = kind;
         self.picker_held = held;
         self.acc_ms = 0.0;
@@ -76,8 +77,13 @@ impl HuntView {
             return true;
         }
         match kind {
-            Pick::Weapon => input.held(self.pick_key()),
-            Pick::Call => keys::held(input, self.hunt.room.options.keys.change_call),
+            Pick::Weapon => {
+                input.held(self.pick_key()) || input.pad.held(c2_pad::Action::NextWeapon)
+            }
+            Pick::Call => {
+                keys::held(input, self.hunt.room.options.keys.change_call)
+                    || input.pad.held(c2_pad::Action::Call)
+            }
         }
     }
 
@@ -113,6 +119,16 @@ impl HuntView {
     /// holding the key, letting it go picks.
     pub(super) fn update_picker(&mut self, input: &Input, row: usize) {
         let kind = self.picker_kind;
+        use c2_pad::Action as A;
+        if kind == Pick::Weapon && self.hunt.weapons.multi_ammo() && input.pad.pressed(A::FireMode)
+        {
+            if let Some(m) = self.hunt.swap_ammo() {
+                self.message = Some((m.into(), 2.0));
+            }
+        }
+        if kind == Pick::Call && input.pad.pressed(A::Recenter) {
+            self.toggle_beam();
+        }
         let list = self.pick_list(kind);
         let n = list.len();
         let key_again = match kind {
@@ -124,10 +140,25 @@ impl HuntView {
             return;
         }
         let mut row = row.min(n - 1);
-        let up =
-            input.pressed(KeyCode::ArrowUp) || input.pressed(KeyCode::KeyW) || input.scroll > 0.0;
-        let down =
-            input.pressed(KeyCode::ArrowDown) || input.pressed(KeyCode::KeyS) || input.scroll < 0.0;
+        let axis = if input.pad.walk[1] > 0.5 {
+            1
+        } else if input.pad.walk[1] < -0.5 {
+            -1
+        } else {
+            0
+        };
+        let axis_pressed = axis != 0 && axis != self.picker_axis;
+        self.picker_axis = axis;
+        let up = input.pressed(KeyCode::ArrowUp)
+            || input.pressed(KeyCode::KeyW)
+            || input.scroll > 0.0
+            || input.pad.pressed(A::Crouch)
+            || (axis_pressed && axis > 0);
+        let down = input.pressed(KeyCode::ArrowDown)
+            || input.pressed(KeyCode::KeyS)
+            || input.scroll < 0.0
+            || input.pad.pressed(A::NextCall)
+            || (axis_pressed && axis < 0);
         if up {
             row = (row + n - 1) % n;
         }
@@ -161,7 +192,12 @@ impl HuntView {
             row = r;
         }
         let let_go = self.picker_held && !self.pick_held(input, kind);
-        if digit.is_some() || input.pressed(KeyCode::Enter) || let_go || tap {
+        if digit.is_some()
+            || input.pressed(KeyCode::Enter)
+            || input.pad.pressed(A::Jump)
+            || let_go
+            || tap
+        {
             let pick = list.get(row).copied();
             match kind {
                 Pick::Weapon => {
@@ -295,7 +331,11 @@ impl HuntView {
                     .label(x + bw - aw - 12.0 * scale, ry, px, color, &ammo),
             );
         }
-        let hint = "Up/Down or 1-9, Enter (or let go) to take, Esc";
+        let hint = if self.pad_last {
+            "Stick / D-pad: choose, A / release: take"
+        } else {
+            "Up/Down or 1-9, Enter (or let go) to take, Esc"
+        };
         let hy = y + bh - lh;
         out.extend(self.hud.label(x + 8.0 * scale, hy, px, grey, hint));
         out
@@ -324,6 +364,33 @@ impl HuntView {
             })
             .collect();
         k.hexes(&self.hud, screen, &items, out);
+    }
+
+    pub(super) fn draw_picker_hint(&self, screen: (u32, u32), scale: f32, out: &mut Vec<Sprite>) {
+        if self.picker.is_none() {
+            return;
+        }
+        if self.setup.pc.hints != 0 && self.pad_last {
+            let hint = match self.picker_kind {
+                Pick::Weapon if self.hunt.weapons.multi_ammo() => {
+                    Some(("B", "Swap lethal / tranq"))
+                }
+                Pick::Call if self.setup.flashlight && self.view.area.cycle.is_some() => {
+                    Some(("R stick click", "Change flashlight beam"))
+                }
+                _ => None,
+            };
+            if let Some(hint) = hint {
+                self.hint_bar(
+                    out,
+                    screen,
+                    scale,
+                    screen.1 as f32 - 52.0 * scale,
+                    true,
+                    &[hint],
+                );
+            }
+        }
     }
 
     /// Whether key `vk` is bound to one of the hunt's actions.

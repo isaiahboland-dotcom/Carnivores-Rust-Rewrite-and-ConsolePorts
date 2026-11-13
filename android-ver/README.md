@@ -45,7 +45,10 @@ when running the launcher from this tree.
   its own `Android/data/<package>/files/`, so several instances sit side by side.
   The launcher relabels `c2rs.apk` with the SDK's newest build tools (`aapt2`,
   `zipalign`, `apksigner`, a platform's `android.jar`) and signs it with
-  `~/.android/debug.keystore`, made with `keytool` if missing. Renaming an instance
+  `~/.android/debug.keystore`, made with `keytool` if missing. It also links the
+  game's launcher icon (`HUNTDAT/MOBILE/ICON.PNG`, from the player's own APK) into
+  the app as `@mipmap/ic_launcher`; the engine APK from `build-apk.sh` has none.
+  Without the SDK, an unnamed instance uses `c2rs.apk` as it is. Renaming an instance
   later makes another app; uninstall the old one by hand.
 - **Build and install over adb** does that on the connected device (USB debugging
   on; adb from the tools folder, `PATH` or `$ANDROID_HOME/platform-tools`). The game
@@ -93,6 +96,41 @@ menus stay the phone's. The standalone's maps, animals and weapons come after th
 base's. Where they have no hexagon picture of the mobile game's kind, the hexagon
 shows their own menu picture (`AREAn`/`DINOn`/`WEAPONn.TGA`), cut to its shape. First checked with Carnivores Anachronous beside Dinosaur Hunter
 (12 areas, 28 animals, 15 weapons).
+
+### Full artwork cards
+
+For standalone art with stats printed into the dinosaur pictures (such as Genesis
+Redux 2.0), set `mobile_card_layout = true` under the recipe's `[settings]`.
+Rebuild the recipe and use the updated Android APK. The map, dinosaur and weapon selectors show six
+uncropped pictures per page, in two columns of three, with selection outlines,
+page arrows, Back/Next and hunter points. Daylight and equipment options stay
+available below the cards. The same option is in the launcher recipe editor’s
+Advanced page, labeled “Mobile card layout”. Other recipes retain the honeycomb.
+The built game's `HUNTDAT/_MOBILE_CARDS.TXT` carries this setting to Android.
+
+### Weapon restrictions in recipes
+
+Match weapons by their `_RES.TXT` names (case-insensitive):
+
+```toml
+[[settings.weapon_restrictions]]
+name = "Shotgun"
+allow_tranq = false
+allow_trophy = false
+```
+
+Omitted flags preserve the weapon's existing behavior (normally both allowed).
+`allow_tranq = false` keeps that weapon lethal even with Tranquilizer selected;
+it also keeps its full lethal ammo supply in Half Tranq mode. Other carried
+weapons still use their selected ammo. `allow_trophy = false` awards normal kill
+points but creates no trophy and sends no collection ship. The finishing shot's
+weapon decides, including projectiles that arrive after switching guns.
+Unknown or ambiguous weapon names fail the recipe build instead of silently
+ignoring a restriction. Rebuild both the recipe data and engine APK.
+
+Genesis Redux's Compound Bow is named `Turok-Bow` in its resource table, and
+its Over-Under Shotgun is `Shotgun`. Its configured points-only guns are
+`Shotgun` and `Rex-Wrecker`.
 
 ## Limits on Android (for now)
 

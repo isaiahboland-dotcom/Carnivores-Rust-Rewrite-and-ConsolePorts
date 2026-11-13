@@ -1,5 +1,7 @@
 //! Synthetic predation tests: made-up species on a flat area.
 
+use alloc::{boxed::Box, string::String, vec, vec::Vec};
+
 use c2_formats::car::{Animation, Car};
 use c2_formats::predation::{Animal, Diet, Predation, Priority};
 

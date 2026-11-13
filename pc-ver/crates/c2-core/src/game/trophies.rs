@@ -45,7 +45,9 @@ impl Hunt {
             return;
         };
         // Asleep, not dead: the hunt's tranquilizer, or a dart (multi ammo).
-        let tranq = self.opts.tranq || c.darted;
+        let tranq = c.tranquilized(self.opts.tranq);
+        let weapon = c.hit_weapon.unwrap_or(self.weapons.current);
+        let allow_trophy = self.weapons.info.get(weapon).is_none_or(|w| w.allow_trophy);
         if self.survival.is_some() {
             // No ship, trophy or score in a survival; the kill is recorded.
             let p = &self.player;
@@ -57,12 +59,12 @@ impl Hunt {
                 ctype: c.ctype,
                 score: 0,
                 range,
-                weapon: self.weapons.current,
+                weapon,
             });
             return;
         }
         let water = area.land_up_h(c.pos[0], c.pos[2]) - area.land_height(c.pos[0], c.pos[2]);
-        if water < 100.0 && !tranq {
+        if water < 100.0 && !tranq && allow_trophy {
             self.ship.tasks.push_back(index);
             let slot = crate::ship::ship_sound::CALL;
             out.push(GameEvent::Ship(ShipEvent::Sound { slot, at: None }));
@@ -95,22 +97,16 @@ impl Hunt {
                 .find(|&t| spots[t].chars.contains(&identity))
                 .or_else(|| (0..n).find(free))
         };
-        let base = self
-            .herd
-            .species
-            .get(c.ctype)
-            .map_or(0.0, |s| s.info.base_score);
+        // A variant scores by its parent's rules, whichever member was shot.
+        let rules = scoring_species(&self.herd.species, c.ctype);
+        let base = rules.map_or(0.0, |s| s.info.base_score);
         let mut score = base;
         if self.successes > 1 {
             score *= 1.0 + self.successes as f32 / 10.0;
         }
         // The original halves a kill that isn't a target; the Modder's
         // Edition doesn't (`SubmitDinoScore`: the line is commented out).
-        let dialect = self
-            .herd
-            .species
-            .get(c.ctype)
-            .is_some_and(|s| s.tuning.mee_ai.is_some());
+        let dialect = rules.is_some_and(|s| s.tuning.mee_ai.is_some());
         if !dialect && !self.is_target(c) {
             score /= 2.0;
         }
@@ -153,14 +149,14 @@ impl Hunt {
             ctype: c.ctype,
             score: score as i32,
             range,
-            weapon: self.weapons.current,
+            weapon,
         });
-        if let (false, Some(t)) = (tranq, t) {
+        if let (false, Some(t)) = (tranq || !allow_trophy, t) {
             let (y, mo, d, h, mi) = self.clock;
             self.room.bodies[t] = TrophyItem {
                 ctype: c.ctype as i32,
                 scale: c.scale,
-                weapon: self.weapons.current as i32,
+                weapon: weapon as i32,
                 score: score as i32,
                 phase: self.real_time & 3,
                 time: (h << 10) + mi,
@@ -291,4 +287,15 @@ impl Hunt {
         self.trophy_body = Some(to);
         true
     }
+}
+
+/// The species whose scoring rules a kill uses: a variant's parent's (its
+/// menu animal's), otherwise the species' own.
+fn scoring_species(
+    species: &[crate::dino::Species],
+    ctype: usize,
+) -> Option<&crate::dino::Species> {
+    let own = species.get(ctype)?;
+    let owner = own.variant.as_ref().map_or(ctype, |v| v.owner);
+    species.get(owner)
 }

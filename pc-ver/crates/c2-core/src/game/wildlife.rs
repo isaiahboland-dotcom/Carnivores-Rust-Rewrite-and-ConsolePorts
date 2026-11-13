@@ -244,6 +244,16 @@ impl Hunt {
 
     /// A huntable animal (a menu animal, picked or not), not an ambient,
     /// flyer or fish.
+    /// Whether `c` lives in the water (the dialect's fish and Mosasaurus
+    /// AIs): never a radar target of its own accord.
+    pub fn is_swimmer(&self, c: &crate::dino::Character) -> bool {
+        self.herd
+            .species
+            .get(c.ctype)
+            .and_then(|s| s.mee.as_ref())
+            .is_some_and(|m| crate::dino::mee::is_fish(m.ai))
+    }
+
     pub fn is_huntable(&self, c: &crate::dino::Character) -> bool {
         match self.herd.species.get(c.ctype).and_then(|s| s.mee.as_ref()) {
             Some(m) => (10..=29).contains(&m.ai),

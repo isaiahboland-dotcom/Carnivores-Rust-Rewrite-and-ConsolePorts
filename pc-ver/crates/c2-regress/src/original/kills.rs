@@ -253,6 +253,7 @@ pub fn run(o: &Original, dir: &Path, k: &KillPlan, area: &str) -> Result<bool> {
             })?;
             timeouts += usize::from(code.is_none());
             let hook_log = std::fs::read_to_string(game_dir.join("c2hook.log")).unwrap_or_default();
+            wine::require_hooks(&hook_log)?;
             log_all.push_str(&format!(
                 "--- {} run {} (exit {code:?})\n{hook_log}",
                 s.stage,

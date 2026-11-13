@@ -1,14 +1,20 @@
 //! Recipe-side variant identities and map-conditioned probability rules.
 //! These are authoring data, not `_RES.TXT` extensions.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
 use crate::ModError;
 
+mod catalog;
+mod distribution;
 mod pack;
+mod resident;
+pub use catalog::{catalog, Catalog, Dino, MapChoice, BASE};
+pub use distribution::{check_totals, distributions, weight_on, Distribution, TOTAL};
 pub(crate) use pack::{finish, preserve};
+pub use resident::{private_name, unlisted, Resident};
 
 pub const PATH: &str = "HUNTDAT/VARIANTS.TOML";
 
@@ -88,7 +94,7 @@ pub struct Group {
     pub members: Vec<Member>,
 }
 
-fn canonical(s: &str) -> String {
+pub fn canonical(s: &str) -> String {
     s.trim().trim_matches('\'').trim().to_ascii_lowercase()
 }
 
@@ -192,14 +198,7 @@ impl Group {
         let weights: Vec<f64> = self
             .members
             .iter()
-            .map(|m| {
-                if m.maps.as_ref().is_some_and(|maps| !maps.contains(map)) {
-                    return 0.0;
-                }
-                let overrides: BTreeMap<_, _> =
-                    m.map_weights.iter().map(|w| (&w.map, w.weight)).collect();
-                overrides.get(map).copied().unwrap_or(m.weight)
-            })
+            .map(|m| distribution::weight_on(m, Some(map)))
             .collect();
         // Scale first so even multiple f64::MAX weights normalize correctly.
         let max = weights.iter().copied().fold(0.0, f64::max);

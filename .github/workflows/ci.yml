@@ -7,6 +7,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: read
+
 jobs:
   pc:
     runs-on: ubuntu-latest
@@ -29,6 +32,24 @@ jobs:
       # Feature-gated code (hunt-diagnostics and others) is linted too.
       - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - run: cargo test --locked --workspace --all-features
+
+  # Builds the PC workspace with the declared rust-version (pc-ver/Cargo.toml).
+  msrv:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pc-ver
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable action; toolchain set below
+        with:
+          toolchain: "1.95"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: pc-ver
+          key: msrv-1.95
+      - run: cargo check --locked --workspace --all-targets --all-features
 
   # Keeps the shared format crate portable to the 3DS target.
   formats-3ds:

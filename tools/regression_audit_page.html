@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Regression audit</title>
+<style>
+:root{--bg:#14181f;--panel:#1c222c;--line:#39424f;--text:#e7edf5;--dim:#9aa7b8;--link:#94c8ff;
+  --ok:#57c784;--bad:#ff7b72;--warn:#f0b35a;--info:#7fb4ff;--off:#7d8794}
+@media(prefers-color-scheme:light){:root{--bg:#f5f6f8;--panel:#fff;--line:#cfd6df;--text:#1b2330;--dim:#5b6676;
+  --link:#0b5cad;--ok:#1a7f43;--bad:#c62828;--warn:#9a5b00;--info:#1f5fbf;--off:#6b7480}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,sans-serif}
+a{color:var(--link)}
+header{padding:1em 1.2em .4em}
+h1{margin:0;font-size:1.4em} h2{font-size:1.15em;margin:1.4em 0 .5em} h3{font-size:1em;margin:0}
+.dim{color:var(--dim)} .small{font-size:.87em}
+nav{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:.3em;padding:.5em 1.2em;background:var(--bg);border-bottom:1px solid var(--line)}
+button,select,input,textarea{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:.3em .55em}
+button{cursor:pointer} button:hover{border-color:var(--link)}
+nav button[aria-selected=true]{background:var(--link);color:var(--bg);border-color:var(--link);font-weight:600}
+main{padding:0 1.2em 4em}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.7em;margin:1em 0}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:.7em .9em}
+.tile b{display:block;font-size:1.5em}
+table{border-collapse:collapse;width:100%;background:var(--panel)}
+td,th{padding:.45em .6em;border:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-weight:600;white-space:nowrap}
+.scroll{overflow-x:auto}
+.chip{display:inline-block;padding:0 .5em;margin:.1em .2em .1em 0;border:1px solid var(--line);border-radius:999px;font-size:.82em;white-space:nowrap}
+.s-completed,.s-passed,.t-within-tolerance,.r-accepted{color:var(--ok);border-color:var(--ok)}
+.s-failed,.s-error,.s-timeout,.t-functional-failure,.t-capture-invalid,.v-failure,.r-confirmed{color:var(--bad);border-color:var(--bad)}
+.s-missing,.s-invalid,.s-interrupted,.t-over-tolerance,.t-parity-difference,.t-pose-collapsed,.v-difference,.r-investigating{color:var(--warn);border-color:var(--warn)}
+.s-blocked,.s-unsupported,.s-running,.v-coverage,.t-original-only,.t-rust-only,.r-pending{color:var(--off);border-color:var(--off)}
+.s-unsupported{border-style:dashed} .r-explained,.v-note{color:var(--info);border-color:var(--info)}
+.filters{display:flex;flex-wrap:wrap;gap:.45em;align-items:end;margin:1em 0 .5em;padding:.7em;background:var(--panel);border:1px solid var(--line);border-radius:8px}
+.filters label{display:flex;flex-direction:column;font-size:.8em;color:var(--dim);gap:.15em}
+.filters input[type=search]{width:17em} .filters input[type=number]{width:5.5em}
+.bar{display:flex;flex-wrap:wrap;gap:.5em;align-items:center;margin:.5em 0}
+.bar .grow{flex:1}
+details.section{border:1px solid var(--line);border-radius:8px;margin:.7em 0;background:var(--panel)}
+details.section>summary{cursor:pointer;padding:.5em .8em;font-weight:600}
+details.section>div{padding:0 .8em .8em}
+.row{display:grid;grid-template-columns:minmax(230px,300px) 1fr;gap:1em;padding:.8em 0;border-top:1px solid var(--line)}
+.shots{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:.6em}
+figure{margin:0;min-width:0} figcaption{font-size:.8em;color:var(--dim);display:flex;justify-content:space-between}
+img{display:block;width:100%;aspect-ratio:4/3;object-fit:contain;background:#000;border-radius:4px;cursor:zoom-in}
+.none{display:grid;place-items:center;aspect-ratio:4/3;border:1px dashed var(--line);border-radius:4px;color:var(--dim);font-size:.85em;text-align:center;padding:.5em}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:.7em;padding-top:.8em}
+.card{border:1px solid var(--line);border-radius:8px;padding:.5em;background:var(--bg);min-width:0}
+.card .shots{gap:.25em} .card h3{font-size:.86em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:.35em 0 .1em}
+.review{display:grid;gap:.3em;margin-top:.5em;align-content:start} .review textarea{min-height:2.6em;resize:vertical}
+.review input,.review textarea,.review select{width:100%}
+.finding{border:1px solid var(--line);border-left-width:4px;border-radius:8px;background:var(--panel);padding:.7em .9em;margin:.7em 0;display:grid;grid-template-columns:1fr minmax(220px,300px);gap:1em}
+.finding ul{margin:.3em 0;padding-left:1.2em} .finding .evidence{grid-column:1/-1}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:.3em 0;font-size:.85em}
+dialog{width:min(98vw,1900px);max-height:97vh;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:1em}
+dialog::backdrop{background:#000c}
+dialog .shots img{cursor:default;max-height:72vh;aspect-ratio:auto}
+.banner{border:1px solid var(--warn);color:var(--warn);border-radius:8px;padding:.5em .8em;margin:.6em 0}
+@media(max-width:800px){.row,.finding{grid-template-columns:1fr}.shots{grid-auto-flow:row}}
+</style>
+<header>
+  <h1>Regression audit <span id="audit-name" class="dim small"></span></h1>
+  <div id="headline" class="dim small"></div>
+</header>
+<nav id="tabs" role="tablist"></nav>
+<main id="view"></main>
+<dialog id="viewer"></dialog>
+<input type="file" id="import" accept="application/json" hidden>
+<script src="report-data.js"></script>
+<script>
+'use strict';
+const A = window.AUDIT || {groups: [], items: [], steps: [], findings: [], related: [], files: [], reviews: {}, statuses: ['pending']};
+const $ = (selector, node = document) => node.querySelector(selector);
+const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const href = path => String(path).split('/').map(encodeURIComponent).join('/');
+const percent = value => value == null ? 'unavailable' : (value * 100).toFixed(2) + '%';
+const TABS = [['overview', 'Overview'], ['findings', 'Findings'], ['gameplay', 'Gameplay comparisons'],
+  ['matched', 'Matched screenshots'], ['compact', 'Compact sweep'], ['full', 'Full sweep'], ['commands', 'Commands and files']];
+const TYPES = {'functional-failure': 'functional failure', 'parity-difference': 'kill/behaviour parity difference',
+  'over-tolerance': 'pixels over tolerance', 'within-tolerance': 'pixels within tolerance', 'capture-invalid': 'invalid capture',
+  'pose-collapsed': 'collapsed source pose', 'original-only': 'original capture only', 'rust-only': 'Rust capture only'};
+const DEFAULTS = {tab: 'overview', query: '', game: '', scenario: '', engines: '', area: '', subject: '', types: '', valid: '',
+  metric: '', review: '', min: '', max: '', sort: 'name', layout: 'full', size: '', page: '1', by: 'group', group: '',
+  severity: '', source: '', status: ''};
+let S = {...DEFAULTS}, current = [], viewing = -1, blink = false;
+
+/* ---------- item accessors ---------- */
+const groupOf = item => A.groups[item.g];
+const gameOf = item => item.game ?? groupOf(item).game ?? '';
+const scenarioOf = item => groupOf(item).scenario ?? groupOf(item).label;
+const picture = (item, role) => {
+  const file = item[role[0]], directory = groupOf(item).dirs[role];
+  return file && directory ? href(directory + '/' + file) : null;
+};
+const roles = item => groupOf(item).kind === 'gameplay' ? ['original', 'rust']
+  : groupOf(item).kind === 'matched' ? ['original', 'rust', 'diff'] : item.d ? ['rust', 'diff'] : ['rust'];
+const ROLE = {original: 'Original', rust: 'Rust', diff: 'Difference', image: 'Evidence'};
+
+/* ---------- human review: stored apart from capture results ---------- */
+const served = location.protocol.startsWith('http');
+const storeKey = 'c2-regression-reviews:' + A.audit;
+let reviews = {...A.reviews};
+const stamp = text => { let h = 5381; for (const c of text) h = (h * 33 ^ c.codePointAt(0)) >>> 0; return h.toString(36); };
+const itemStamp = item => stamp(JSON.stringify([item.o, item.r, item.d, item.pct, item.types, item.valid, item.detail]));
+const findingStamp = finding => stamp(JSON.stringify([finding.title, finding.detail]));
+const STAMPS = {};
+A.items.forEach(item => STAMPS[item.id] = itemStamp(item));
+A.findings.forEach(finding => STAMPS[finding.id] = findingStamp(finding));
+function merge(incoming) {
+  for (const [id, entry] of Object.entries(incoming || {}))
+    if (!reviews[id] || String(entry.updated) > String(reviews[id].updated)) reviews[id] = entry;
+}
+try { merge(JSON.parse(localStorage.getItem(storeKey) || '{}')); } catch (error) { /* storage unavailable */ }
+const stale = id => reviews[id] && reviews[id].stamp !== STAMPS[id];
+const statusOf = id => reviews[id] && !stale(id) ? reviews[id].status : 'pending';
+function persist() {
+  try { localStorage.setItem(storeKey, JSON.stringify(reviews)); } catch (error) { /* storage unavailable */ }
+  if (served) fetch('reviews.json', {method: 'PUT', body: JSON.stringify(exported())})
+    .then(response => note(response.ok ? 'Reviews saved to reviews.json' : 'Saving reviews.json failed'))
+    .catch(() => note('Saving reviews.json failed'));
+}
+const exported = () => ({schema: 1, audit: A.audit, reviews});
+function setReview(id, field, value) {
+  const entry = {status: 'pending', note: '', evidence: '', ...(stale(id) ? {note: reviews[id].note, evidence: reviews[id].evidence} : reviews[id])};
+  entry[field] = value; entry.stamp = STAMPS[id]; entry.updated = new Date().toISOString(); entry.audit = A.audit;
+  reviews[id] = entry;
+  persist();
+}
+const statusClass = status => 'r-' + status.split(' ')[0];
+function reviewEditor(id) {
+  const entry = reviews[id] || {}, status = statusOf(id);
+  return `<div class="review" data-review="${esc(id)}">
+    ${stale(id) ? `<span class="small chip s-missing">results changed since the “${esc(entry.status)}” review; status reset to pending</span>` : ''}
+    <select data-field="status" class="${statusClass(status)}" aria-label="Review status">${A.statuses.map(s => `<option${s === status ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select>
+    <textarea data-field="note" placeholder="Review notes">${esc(entry.note)}</textarea>
+    <input data-field="evidence" placeholder="Evidence (file, commit, report)" value="${esc(entry.evidence)}">
+  </div>`;
+}
+function note(text) { $('#headline').dataset.note = text; headline(); }
+
+/* ---------- state and navigation ---------- */
+function readHash() {
+  S = {...DEFAULTS};
+  for (const [key, value] of new URLSearchParams(location.hash.slice(1))) if (key in S) S[key] = value;
+}
+function go(patch, keepPage) {
+  Object.assign(S, patch);
+  if (!keepPage) S.page = '1';
+  const changed = Object.entries(S).filter(([key, value]) => value !== DEFAULTS[key]);
+  history.replaceState(null, '', '#' + new URLSearchParams(changed));
+  render();
+}
+const link = (patch, label, title = '') => `<a href="#" data-go='${esc(JSON.stringify(patch))}' title="${esc(title)}">${label}</a>`;
+
+/* ---------- filtering ---------- */
+function matches(item) {
+  const group = groupOf(item);
+  if (group.kind !== S.tab) return false;
+  if (S.group !== '' && item.g !== +S.group) return false;
+  if (S.game && gameOf(item) !== S.game) return false;
+  if (S.scenario && scenarioOf(item) !== S.scenario) return false;
+  if (S.area && item.area !== S.area) return false;
+  if (S.subject && item.subject !== S.subject) return false;
+  if (S.engines && (S.engines === 'unpaired' ? item.engines === 'both' || group.cells?.original.state === 'unsupported' : item.engines !== S.engines)) return false;
+  if (S.types && (S.types === 'none' ? item.types.length : !item.types.includes(S.types))) return false;
+  if (S.valid && item.valid !== S.valid) return false;
+  if (S.metric && (S.metric === 'measured') !== (item.pct != null)) return false;
+  if (S.review && statusOf(item.id) !== S.review) return false;
+  if (S.min !== '' && !(item.pct != null && item.pct * 100 >= +S.min)) return false;
+  if (S.max !== '' && !(item.pct != null && item.pct * 100 <= +S.max)) return false;
+  if (S.query) {
+    const text = [item.name, item.subject, item.phase, item.side, item.source, gameOf(item), scenarioOf(item), ...item.detail].join(' ').toLowerCase();
+    for (const term of S.query.toLowerCase().split(/\s+/).filter(Boolean))
+      if (term[0] === '-' && term.length > 1 ? text.includes(term.slice(1)) : !text.includes(term)) return false;
+  }
+  return true;
+}
+const SORTS = {
+  name: (a, b) => a.g - b.g || a.name.localeCompare(b.name, undefined, {numeric: true}),
+  'pct-desc': (a, b) => (b.pct ?? -1) - (a.pct ?? -1),
+  'pct-asc': (a, b) => (a.pct ?? 9) - (b.pct ?? 9),
+  subject: (a, b) => a.subject.localeCompare(b.subject) || a.name.localeCompare(b.name, undefined, {numeric: true}),
+  review: (a, b) => A.statuses.indexOf(statusOf(a.id)) - A.statuses.indexOf(statusOf(b.id)),
+};
+function facet(key, label, items, value, names = {}) {
+  const counts = new Map();
+  for (const item of items) for (const v of [].concat(value(item))) if (v !== '' && v != null) counts.set(v, (counts.get(v) || 0) + 1);
+  if (key === 'types') counts.set('none', items.filter(item => !item.types.length).length);
+  const options = [...counts].sort((a, b) => String(a[0]).localeCompare(String(b[0]), undefined, {numeric: true}));
+  return `<label>${label}<select data-filter="${key}"><option value="">any</option>${options.map(([v, n]) =>
+    `<option value="${esc(v)}"${String(v) === S[key] ? ' selected' : ''}>${esc(names[v] || v)} (${n})</option>`).join('')}</select></label>`;
+}
+function choice(key, label, options) {
+  return `<label>${label}<select data-filter="${key}">${options.map(([v, text]) =>
+    `<option value="${esc(v)}"${v === S[key] ? ' selected' : ''}>${esc(text)}</option>`).join('')}</select></label>`;
+}
+
+/* ---------- pictures ---------- */
+function figure(item, role, index) {
+  const url = picture(item, role);
+  const body = url ? `<img loading="lazy" src="${url}" alt="${esc(ROLE[role] + ' ' + item.name)}" data-open="${index}">`
+    : `<div class="none">No ${role === 'rust' ? 'Rust' : esc(ROLE[role].toLowerCase())} capture</div>`;
+  return `<figure>${body}<figcaption><span>${ROLE[role]}</span>${url ? `<a href="${url}" target="_blank" rel="noopener">open</a>` : ''}</figcaption></figure>`;
+}
+const chips = (item, withPercent) => item.types.map(type => `<span class="chip t-${type}">${esc(TYPES[type] || type)}</span>`).join('')
+  + (withPercent && item.pct != null ? `<span class="chip">${percent(item.pct)} changed</span>` : '');
+const title = item => groupOf(item).kind === 'gameplay' ? item.name
+  : `${item.subject} · ${item.phase || 'clip'} · ${item.side}`;
+function row(item, index) {
+  const group = groupOf(item);
+  return `<article class="row"><div>
+    <h3>${esc(title(item))}</h3>
+    <div class="small dim">${esc([gameOf(item), scenarioOf(item), item.area, item.phase].filter(Boolean).join(' · '))}</div>
+    <div>${chips(item)}<span class="chip ${statusClass(statusOf(item.id))}">${esc(statusOf(item.id))}</span></div>
+    <div class="small">Pixel difference: ${item.pct != null ? percent(item.pct) + ` (allowed ${percent(group.allowed)})` : '<span class="dim">unavailable — no valid pixel metric for this comparison</span>'}</div>
+    ${item.detail.map(line => `<div class="small">${esc(line)}</div>`).join('')}
+    ${reviewEditor(item.id)}
+  </div><div class="shots">${roles(item).map(role => figure(item, role, index)).join('')}</div></article>`;
+}
+function card(item, index) {
+  return `<article class="card"><div class="shots">${roles(item).map(role => figure(item, role, index)).join('')}</div>
+    <h3 title="${esc(title(item))}">${esc(title(item))}</h3>
+    <div class="small">${chips(item, true)}<span class="chip ${statusClass(statusOf(item.id))}">${esc(statusOf(item.id))}</span></div></article>`;
+}
+
+/* ---------- gallery tabs ---------- */
+function gallery() {
+  const inTab = A.items.filter(item => groupOf(item).kind === S.tab);
+  if (!inTab.length) return `<p class="banner">No ${esc(S.tab)} captures are recorded in this audit. Absent captures are missing coverage, not passing comparisons.</p>`;
+  current = A.items.filter(matches).sort(SORTS[S.sort] || SORTS.name);
+  const size = +(S.size || (S.layout === 'full' ? 24 : 96)), pages = Math.max(1, Math.ceil(current.length / size));
+  const page = Math.min(pages, Math.max(1, +S.page || 1)), first = (page - 1) * size;
+  const gameplay = S.tab === 'gameplay';
+  const filters = `<div class="filters">
+    <label>Search (space = and, -word = not)<input type="search" data-filter="query" value="${esc(S.query)}" placeholder="asset, weapon, clip, checkpoint"></label>
+    ${facet('game', 'Game', inTab, gameOf)}
+    ${gameplay ? facet('scenario', 'Scenario', inTab, scenarioOf) : facet('group', 'Capture set', inTab, item => item.g, Object.fromEntries(A.groups.map((g, i) => [i, g.label])))}
+    ${gameplay ? facet('area', 'Area', inTab, item => item.area) : ''}
+    ${facet('subject', gameplay ? 'Weapon / animal / screen' : 'Asset', inTab, item => item.subject)}
+    ${gameplay || S.tab === 'matched' ? choice('engines', 'Engines', [['', 'any'], ['both', 'original + Rust'], ['original', 'original only'], ['rust', 'Rust only'], ['unpaired', 'unpaired (native expected)']]) : ''}
+    ${facet('types', 'Discrepancy', inTab, item => item.types, {...TYPES, none: 'none recorded'})}
+    ${gameplay ? '' : choice('valid', 'Capture validity', [['', 'any'], ['valid', 'valid'], ['invalid', 'invalid']])}
+    ${gameplay ? '' : `<label>Changed ≥ %<input type="number" min="0" max="100" step="0.1" data-filter="min" value="${esc(S.min)}"></label>
+      <label>Changed ≤ %<input type="number" min="0" max="100" step="0.1" data-filter="max" value="${esc(S.max)}"></label>`}
+    ${choice('review', 'Review status', [['', 'any'], ...A.statuses.map(s => [s, s])])}
+    ${choice('sort', 'Sort', [['name', 'name'], ['subject', 'asset / subject'], ...(gameplay ? [] : [['pct-desc', 'largest difference first'], ['pct-asc', 'smallest difference first']]), ['review', 'review status']])}
+    ${choice('by', 'Sections', [['group', 'capture set'], ['subject', 'asset / subject'], ['none', 'none']])}
+    ${choice('layout', 'View', [['full', 'full comparison'], ['compact', 'compact grid']])}
+    ${choice('size', 'Per page', [['', 'auto'], ['12', '12'], ['24', '24'], ['48', '48'], ['96', '96'], ['192', '192']])}
+    <button data-reset>Reset filters</button></div>`;
+  const pager = `<div class="bar"><span><b>${current.length}</b> of ${inTab.length} comparisons</span><span class="grow"></span>
+    <button data-page="${page - 1}"${page <= 1 ? ' disabled' : ''}>Previous</button>
+    <span>Page <input type="number" min="1" max="${pages}" value="${page}" data-filter="page" style="width:5em"> of ${pages}</span>
+    <button data-page="${page + 1}"${page >= pages ? ' disabled' : ''}>Next</button></div>`;
+  // Sections regroup a page, so a difference ranking is shown as one flat list.
+  const by = S.sort.startsWith('pct') ? 'none' : S.by, sections = new Map();
+  current.slice(first, first + size).forEach((item, offset) => {
+    const key = by === 'none' ? '' : by === 'subject' ? item.subject : item.g;
+    if (!sections.has(key)) sections.set(key, []);
+    sections.get(key).push([item, first + offset]);
+  });
+  const draw = entries => S.layout === 'full' ? entries.map(([item, index]) => row(item, index)).join('')
+    : `<div class="grid">${entries.map(([item, index]) => card(item, index)).join('')}</div>`;
+  const body = [...sections].map(([key, entries]) => {
+    if (by === 'none') return draw(entries);
+    const group = by === 'group' ? A.groups[key] : null;
+    const head = group ? `${esc(group.label)} <span class="dim small">${groupLinks(group)}</span>` : esc(key);
+    return `<details class="section" open><summary>${head} <span class="dim small">· ${entries.length} on this page</span></summary>
+      <div>${group ? `<p class="small dim">${esc(group.note)}</p>` : ''}${draw(entries)}</div></details>`;
+  }).join('');
+  return filters + pager + (body || '<p class="dim">No comparisons match these filters.</p>') + pager;
+}
+const REPORTS = {original: 'original report', rust: 'Rust report', pdf: 'side-by-side PDF', comparison: 'comparison.json'};
+const groupLinks = group => Object.entries(group.reports || {}).map(([key, path]) =>
+  `<a href="${href(path)}" target="_blank" rel="noopener">${REPORTS[key] || key}</a>`).join(' · ');
+
+/* ---------- viewer ---------- */
+function openViewer(index) {
+  viewing = Math.max(0, Math.min(current.length - 1, index));
+  const item = current[viewing], shown = roles(item), paired = picture(item, 'original') && picture(item, 'rust');
+  const shots = blink && paired ? `<figure><img id="blink" src="${picture(item, 'original')}" alt="blink comparison" data-a="${picture(item, 'original')}" data-b="${picture(item, 'rust')}">
+      <figcaption><span id="blink-label">Original</span><span>click or press B to switch</span></figcaption></figure>`
+    : shown.map(role => figure(item, role, viewing)).join('');
+  $('#viewer').innerHTML = `<div class="bar"><h3>${esc(title(item))}</h3><span class="dim small">${esc(groupOf(item).label)} · ${viewing + 1} of ${current.length}</span>
+    <span class="grow"></span><span class="small">${groupLinks(groupOf(item))}</span>
+    <button data-step="-1" title="Left arrow">Previous</button><button data-step="1" title="Right arrow">Next</button>
+    ${paired ? `<button data-blink>${blink ? 'Side by side' : 'Blink compare'}</button>` : ''}<button data-close title="Esc">Close</button></div>
+    <div class="shots">${shots}</div>
+    <div class="row" style="border:0"><div>${reviewEditor(item.id)}</div><div><div>${chips(item)}</div>
+      <div class="small">Pixel difference: ${item.pct != null ? percent(item.pct) + ` (allowed ${percent(groupOf(item).allowed)})` : 'unavailable — no valid pixel metric'}</div>
+      ${item.detail.map(line => `<div class="small">${esc(line)}</div>`).join('')}</div></div>`;
+  if (!$('#viewer').open) $('#viewer').showModal();
+}
+function flip() {
+  const image = $('#blink');
+  if (!image) return;
+  const second = image.getAttribute('src') === image.dataset.a;
+  image.src = second ? image.dataset.b : image.dataset.a;
+  $('#blink-label').textContent = second ? 'Rust' : 'Original';
+}
+
+/* ---------- overview ---------- */
+const cell = (state, text) => `<span class="chip s-${esc(state)}">${esc(text ?? state)}</span>`;
+function overview() {
+  const count = (list, test) => list.filter(test).length;
+  const passed = count(A.steps, s => s.status === 'passed');
+  const reviewable = [...A.findings, ...A.items.filter(item => item.types.some(t => t !== 'within-tolerance'))];
+  const tiles = [
+    [`${passed}/${A.steps.length}`, 'commands passed', {tab: 'commands', status: passed === A.steps.length ? '' : 'not-passed'}],
+    [A.findings.length, 'findings', {tab: 'findings'}],
+    [count(A.findings, f => f.severity === 'failure'), 'failures', {tab: 'findings', severity: 'failure'}],
+    [count(A.items, i => groupOf(i).kind === 'gameplay' && i.engines === 'both'), 'paired gameplay checkpoints', {tab: 'gameplay', engines: 'both'}],
+    [count(A.items, i => groupOf(i).kind === 'matched'), 'matched screenshots', {tab: 'matched'}],
+    [count(A.items, i => i.types.includes('over-tolerance')), 'over pixel tolerance', {tab: 'matched', types: 'over-tolerance', sort: 'pct-desc', layout: 'compact'}],
+    [count(A.items, i => groupOf(i).kind === 'compact'), 'compact sweep captures', {tab: 'compact', layout: 'compact'}],
+    [count(A.items, i => groupOf(i).kind === 'full'), 'full sweep captures', {tab: 'full', layout: 'compact'}],
+    [`${count(reviewable, r => statusOf(r.id) !== 'pending')}/${reviewable.length}`, 'findings and discrepancies reviewed', {tab: 'findings', review: 'pending'}],
+  ].map(([value, label, patch]) => `<div class="tile"><b>${value}</b>${link(patch, label)}</div>`).join('');
+  const engine = c => `${cell(c.state)}${c.captures != null ? ` <span class="small">${c.captures} captures</span>` : ''}
+    <div class="small dim">${esc(c.detail || '')}</div><div class="small">${c.report ? `<a href="${href(c.report)}" target="_blank" rel="noopener">report</a>` : ''}
+    ${c.log ? ` <a href="${href(c.log)}" target="_blank" rel="noopener">log</a>` : ''}</div>`;
+  const gameplay = A.groups.map((group, index) => [group, index]).filter(([group]) => group.kind === 'gameplay').map(([group, index]) => {
+    const n = group.counts, native = group.cells.original.state !== 'unsupported', parity = Object.keys(group.parity).length;
+    const failed = Object.values(group.failed).reduce((sum, stages) => sum + Object.keys(stages).length, 0);
+    return `<tr><td>${esc(group.game)}</td><td>${link({tab: 'gameplay', group: String(index)}, esc(group.scenario))}</td>
+      <td>${engine(group.cells.original)}</td><td>${engine(group.cells.rust)}</td>
+      <td>${native ? `${n.paired} paired<div class="small dim">${n.original_only} original only · ${n.rust_only} Rust only</div>` : '<span class="dim">no native reference</span>'}</td>
+      <td>${failed ? cell('failed', failed + ' failed stages') : ''}${parity ? cell('missing', parity + ' stages differ') : ''}${!failed && !parity ? (native && n.paired ? cell('completed', 'no recorded difference') : '<span class="dim">not compared</span>') : ''}
+        <div class="small dim">pixel metric unavailable</div></td><td class="small">${groupLinks(group)}</td></tr>`;
+  }).join('');
+  const texture = A.groups.map((group, index) => [group, index]).filter(([group]) => group.kind !== 'gameplay').map(([group, index]) => {
+    const items = A.items.filter(item => item.g === index), s = group.summary;
+    return `<tr><td>${link({tab: group.kind, group: String(index)}, esc(group.label))}</td><td>${group.kind === 'matched' ? 'original + Rust' : 'Rust only'}</td>
+      <td>${items.length}</td><td>${items.filter(i => i.valid === 'invalid').length}</td>
+      <td>${items.filter(i => i.types.includes('over-tolerance')).length}</td>
+      ${s && s.count ? ['mean', 'median', 'p95', 'maximum'].map(k => `<td>${percent(s[k])}</td>`).join('') : '<td colspan="4" class="dim">pixel metric unavailable</td>'}
+      <td>${percent(group.allowed)}</td><td class="small">${groupLinks(group)}</td></tr>`;
+  }).join('');
+  return `${A.interrupted ? '<p class="banner">Audit interrupted; remaining steps were not run.</p>' : ''}
+    <div class="tiles">${tiles}</div>
+    <h2>Gameplay coverage by game, scenario and engine</h2>
+    <p class="small dim">Completed = the run passed and recorded captures. Failed = captures exist but a stage failed. Invalid = the run recorded no captures.
+      Missing = no run was recorded. Blocked = a prerequisite did not pass. Unsupported = no native adapter configured for this game; nothing is substituted.
+      Completion describes captures, never image parity.</p>
+    <div class="scroll"><table><tr><th>Game</th><th>Scenario</th><th>Original engine</th><th>Rust engine</th><th>Checkpoints</th><th>Recorded results</th><th>Reports</th></tr>${gameplay || '<tr><td colspan="7" class="dim">No gameplay captures configured or reached.</td></tr>'}</table></div>
+    <h2>Screenshot comparison sets</h2>
+    <p class="small dim">Changed-pixel fractions use equal weight per valid capture and the unchanged review thresholds. They are not an overall engine accuracy percentage.</p>
+    <div class="scroll"><table><tr><th>Set</th><th>Engines</th><th>Captures</th><th>Invalid</th><th>Over tolerance</th><th>Mean</th><th>Median</th><th>p95</th><th>Maximum</th><th>Allowed</th><th>Reports</th></tr>${texture || '<tr><td colspan="11" class="dim">No screenshot sets configured or reached.</td></tr>'}</table></div>
+    ${A.related.length ? `<h2>Related audits</h2><ul>${A.related.map(r => `<li>${r.exists ? `<a href="${href(r.path)}">${esc(r.path)}</a>` : `${esc(r.path)} ${cell('missing', 'report no longer exists')}`}</li>`).join('')}</ul>` : ''}
+    <h2>Scope</h2>
+    <p class="small">Only configured games and suites are covered; hardware and emulator checks need separate runs. Gameplay scenarios load the supplied folders as-is:
+      normal Ice Age play applies an additional rules layer first, so raw-folder Ice Age results are diagnostic, not a score for the normal-play path.
+      Matched screenshots replay the Rust pose and camera in the original engine and do not run animal AI. This report never approves or publishes baselines and never archives or prunes media.</p>`;
+}
+
+/* ---------- findings ---------- */
+function findings() {
+  const list = A.findings.filter(f => (!S.severity || f.severity === S.severity) && (!S.source || f.source === S.source)
+    && (!S.review || statusOf(f.id) === S.review)
+    && (!S.query || (f.title + ' ' + f.detail.join(' ')).toLowerCase().includes(S.query.toLowerCase())));
+  const colour = {failure: 'var(--bad)', difference: 'var(--warn)', coverage: 'var(--off)', note: 'var(--info)'};
+  const evidence = f => (f.evidence || []).map(pair => `<div class="evidence"><div class="small">${esc(pair.label)}</div><div class="shots">${['image', 'original', 'rust'].map(role =>
+    pair[role] ? `<figure><a href="${href(pair[role])}" target="_blank" rel="noopener"><img loading="lazy" style="aspect-ratio:auto" src="${href(pair[role])}" alt="${esc(ROLE[role])} evidence"></a><figcaption><span>${ROLE[role]}</span></figcaption></figure>`
+      : (pair.missing || []).includes(role) ? `<div class="none">${ROLE[role]} evidence file is missing</div>` : '').join('')}</div></div>`).join('');
+  return `<div class="filters">
+    <label>Search<input type="search" data-filter="query" value="${esc(S.query)}"></label>
+    ${facet('severity', 'Kind', A.findings, f => f.severity, {failure: 'failure', difference: 'difference', coverage: 'coverage gap', note: 'note'})}
+    ${facet('source', 'Source', A.findings, f => f.source, {derived: 'derived from results', declared: 'declared in configuration'})}
+    ${choice('review', 'Review status', [['', 'any'], ...A.statuses.map(s => [s, s])])}
+    <button data-reset>Reset filters</button></div>
+    <p class="small dim">Derived findings restate recorded results. Declared findings are tracked investigations from the audit configuration. No finding is accepted automatically.</p>
+    <div class="bar"><b>${list.length}</b> of ${A.findings.length} findings</div>
+    ${list.map(f => `<article class="finding" style="border-left-color:${colour[f.severity] || 'var(--line)'}"><div>
+      <h3>${esc(f.title)}</h3>
+      <div><span class="chip v-${esc(f.severity)}">${esc(f.severity)}</span><span class="chip">${esc(f.source)}</span>${f.state ? `<span class="chip">${esc(f.state)}</span>` : ''}</div>
+      ${f.detail.length ? `<ul class="small">${f.detail.map(line => `<li>${esc(line)}</li>`).join('')}</ul>` : ''}
+      <div class="small">${f.view ? link(f.view, 'Show captures') : ''} ${(f.links || []).map(l => `<a href="${href(l.href)}" target="_blank" rel="noopener">${esc(l.label)}</a>`).join(' ')}
+        ${(f.references || []).map(r => `<code>${esc(r)}</code>`).join(' ')}</div>
+    </div>${reviewEditor(f.id)}${evidence(f)}</article>`).join('') || '<p class="dim">No findings match these filters.</p>'}`;
+}
+
+/* ---------- commands and files ---------- */
+function commands() {
+  const list = A.steps.filter(s => !S.status || (S.status === 'not-passed' ? s.status !== 'passed' : s.status === S.status));
+  return `<div class="filters">${choice('status', 'Status', [['', 'any'], ['not-passed', 'not passed'], ...[...new Set(A.steps.map(s => s.status))].map(s => [s, s])])}</div>
+    <div class="scroll"><table><tr><th>Step</th><th>Status</th><th>Seconds</th><th>Log</th></tr>${list.map(s => `<tr>
+      <td><details><summary>${esc(s.name)}</summary><div class="small dim">Directory: ${esc(s.cwd)}</div><pre>${esc(s.command)}</pre></details>
+        ${s.reason ? `<div class="small">${esc(s.reason)}</div>` : ''}${s.excerpt.length ? `<pre>${esc(s.excerpt.join('\n'))}</pre>` : ''}</td>
+      <td>${cell(s.status)}${s.exit_code == null ? '' : ` exit ${esc(s.exit_code)}`}</td><td>${esc(s.seconds)}</td>
+      <td>${s.log ? `<a href="${href(s.log)}" target="_blank" rel="noopener">log</a>` : ''}</td></tr>`).join('')}</table></div>
+    <h2>Child reports and machine-readable results</h2>
+    <p class="small"><a href="audit.json">audit.json</a> · <a href="config.json">config.json</a> · <a href="report-data.js">report-data.js</a></p>
+    <ul class="small">${A.files.map(path => `<li><a href="${href(path)}" target="_blank" rel="noopener">${esc(path)}</a></li>`).join('')}</ul>`;
+}
+
+/* ---------- shell ---------- */
+function headline() {
+  const done = Object.keys(reviews).filter(id => STAMPS[id] && statusOf(id) !== 'pending').length;
+  $('#headline').innerHTML = `Private local results · generated ${esc(A.generated)} · human approval pending ·
+    ${done} reviews recorded ${served ? '(saved to reviews.json)' : '(kept in this browser; export to keep them with the audit)'}
+    · <a href="#" data-export>Export reviews</a> · <a href="#" data-import>Import reviews</a>
+    ${$('#headline').dataset.note ? ` · <b>${esc($('#headline').dataset.note)}</b>` : ''}`;
+}
+function render() {
+  $('#audit-name').textContent = A.audit || '';
+  $('#tabs').innerHTML = TABS.map(([id, label]) => {
+    const n = id === 'findings' ? A.findings.length : id === 'commands' ? A.steps.length
+      : id === 'overview' ? null : A.items.filter(item => groupOf(item).kind === id).length;
+    return `<button role="tab" aria-selected="${S.tab === id}" data-tab="${id}">${label}${n == null ? '' : ` (${n})`}</button>`;
+  }).join('');
+  $('#view').innerHTML = S.tab === 'overview' ? overview() : S.tab === 'findings' ? findings() : S.tab === 'commands' ? commands() : gallery();
+  headline();
+}
+document.addEventListener('click', event => {
+  const t = event.target;
+  if (t.dataset.tab) return go({...DEFAULTS, tab: t.dataset.tab});
+  if (t.dataset.go) { event.preventDefault(); return go({...DEFAULTS, ...JSON.parse(t.dataset.go)}); }
+  if ('reset' in t.dataset) return go({...DEFAULTS, tab: S.tab});
+  if (t.dataset.page) return go({page: t.dataset.page}, true);
+  if (t.dataset.open) return openViewer(+t.dataset.open);
+  if (t.dataset.step) return openViewer(viewing + +t.dataset.step);
+  if ('blink' in t.dataset) { blink = !blink; return openViewer(viewing); }
+  if (t.id === 'blink') return flip();
+  if ('close' in t.dataset) return $('#viewer').close();
+  if ('export' in t.dataset) {
+    event.preventDefault();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(exported(), null, 2) + '\n'], {type: 'application/json'}));
+    a.download = 'reviews.json';
+    a.click();
+  }
+  if ('import' in t.dataset) { event.preventDefault(); $('#import').click(); }
+});
+document.addEventListener('change', event => {
+  const t = event.target, review = t.closest('[data-review]');
+  if (review && t.dataset.field) {
+    setReview(review.dataset.review, t.dataset.field, t.value);
+    if (t.dataset.field === 'status') $('#viewer').open ? openViewer(viewing) : render();
+    return headline();
+  }
+  if (t.dataset.filter) return go({[t.dataset.filter]: t.value}, t.dataset.filter === 'page');
+  if (t.id === 'import' && t.files[0]) t.files[0].text().then(text => {
+    merge(JSON.parse(text).reviews); persist(); note('Reviews imported'); render();
+  }).catch(() => note('That file is not a reviews.json export'));
+});
+document.addEventListener('keydown', event => {
+  if (!$('#viewer').open || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName)) return;
+  if (event.key === 'ArrowRight') openViewer(viewing + 1);
+  if (event.key === 'ArrowLeft') openViewer(viewing - 1);
+  if (event.key.toLowerCase() === 'b') blink ? flip() : (blink = true, openViewer(viewing));
+});
+$('#viewer').addEventListener('close', render);
+addEventListener('hashchange', () => { readHash(); render(); });
+readHash();
+render();
+if (served) fetch('reviews.json').then(r => r.ok ? r.json() : {}).then(saved => { merge(saved.reviews); render(); }).catch(() => {});
+</script>
+</html>

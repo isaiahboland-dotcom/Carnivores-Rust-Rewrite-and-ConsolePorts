@@ -15,7 +15,8 @@ menu_owner = "classic"
 id = "classic"
 source = "classic-rex"
 character = "Tyrannosaurus"
-weight = 75
+weight = 100
+map_weights = [{ map = { source = "base", area = "area1" }, weight = 75 }]
 
 [[variants.members]]
 id = "striped"
@@ -23,7 +24,6 @@ source = "striped-rex"
 character = "Tyrannosaurus"
 weight = 25
 maps = [{ source = "base", area = "area1" }]
-map_weights = [{ map = { source = "base", area = "area1" }, weight = 75 }]
 "#;
 
 fn area(n: usize) -> AreaId {
@@ -50,36 +50,33 @@ fn recipe_retains_variant_rules_and_ordinary_recipes_omit_them() {
 
 #[test]
 fn eligibility_precedes_overrides_and_normalization() {
+    let close = |got: Vec<f64>, want: &[f64]| {
+        assert_eq!(got.len(), want.len());
+        for (g, w) in got.iter().zip(want) {
+            assert!((g - w).abs() < 1e-9, "{got:?} != {want:?}");
+        }
+    };
     let mut group = Recipe::parse(RECIPE).expect("parse").variants.remove(0);
-    assert_eq!(
+    // area1: classic 75 (its override), striped 25 (its default, limited to area1).
+    close(
         group.probabilities(&area(1)).expect("weights"),
-        vec![0.5, 0.5]
+        &[0.75, 0.25],
     );
-    assert_eq!(
-        group.probabilities(&area(2)).expect("weights"),
-        vec![1.0, 0.0]
-    );
-    group.members[1].map_weights.clear();
-    assert_eq!(
-        group.probabilities(&area(1)).expect("weights"),
-        vec![0.75, 0.25]
-    );
+    // area2: classic 100 (default); striped is limited to area1.
+    close(group.probabilities(&area(2)).expect("weights"), &[1.0, 0.0]);
+    group.members[0].map_weights.clear();
+    // Without the override classic's 100 normalizes against striped's 25.
+    close(group.probabilities(&area(1)).expect("weights"), &[0.8, 0.2]);
     group.members[0].maps = Some(Vec::new());
-    assert_eq!(
-        group.probabilities(&area(2)).expect("weights"),
-        vec![0.0, 0.0]
-    );
+    close(group.probabilities(&area(2)).expect("weights"), &[0.0, 0.0]);
     group.members[0].maps = None;
     group.members[0].weight = 0.0;
-    assert_eq!(
-        group.probabilities(&area(2)).expect("weights"),
-        vec![0.0, 0.0]
-    );
+    close(group.probabilities(&area(2)).expect("weights"), &[0.0, 0.0]);
 }
 
 #[test]
 fn weight_defaults_and_empty_map_lists_survive_serialization() {
-    let recipe = Recipe::parse(&RECIPE.replace("weight = 75\n", "")).expect("parse");
+    let recipe = Recipe::parse(&RECIPE.replace("weight = 100\n", "")).expect("parse");
     assert_eq!(recipe.variants[0].members[0].weight, 1.0);
     let mut recipe = recipe;
     recipe.variants[0].members[1].maps = Some(Vec::new());
@@ -97,7 +94,7 @@ fn invalid_and_ambiguous_rules_fail_validation() {
         invalid.members[0].weight = weight;
         assert!(validate(&[invalid]).is_err());
         let mut invalid = group.clone();
-        invalid.members[1].map_weights[0].weight = weight;
+        invalid.members[0].map_weights[0].weight = weight;
         assert!(validate(&[invalid]).is_err());
     }
     let mut invalid = group.clone();
@@ -111,11 +108,11 @@ fn invalid_and_ambiguous_rules_fail_validation() {
     invalid.menu_owner = "missing".into();
     assert!(validate(&[invalid]).is_err());
     let mut invalid = group.clone();
-    let duplicate = invalid.members[1].map_weights[0].clone();
-    invalid.members[1].map_weights.push(duplicate);
+    let duplicate = invalid.members[0].map_weights[0].clone();
+    invalid.members[0].map_weights.push(duplicate);
     assert!(validate(&[invalid]).is_err());
     let mut invalid = group.clone();
-    invalid.members[1].maps = Some(Vec::new());
+    invalid.members[0].maps = Some(Vec::new());
     assert!(validate(&[invalid]).is_err(), "override on excluded map");
     assert!(
         validate(&[group.clone(), group]).is_err(),
@@ -273,5 +270,62 @@ fn building_retains_same_name_characters_and_private_assets() {
             .expect("replacement model"),
         b"striped"
     );
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn a_base_game_animal_can_own_a_group_of_add_on_variants() {
+    use c2_mods::variants::{Packed, PATH};
+    use c2_mods::{build_with, load_mod, vanilla};
+    let root = std::env::temp_dir().join(format!("c2-variant-base-owner-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let write = |file: &str, data: &[u8]| {
+        let path = root.join(file);
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        std::fs::write(path, data).expect("write");
+    };
+    let base = "characters {\n{\n name = 'Hunter'\n ai = 0\n}\n\
+{\n name = 'Tyrannosaurus'\n ai = 18\n file = 'rex.car'\n}\n}\n.\n";
+    write("base/HUNTDAT/_RES.TXT", base.as_bytes());
+    write("base/HUNTDAT/rex.car", b"vanilla");
+    write("base/HUNTDAT/AREAS/AREA1.MAP", b"map");
+    let addon = base.replace(
+        "'Tyrannosaurus'\n ai = 18\n file = 'rex.car'",
+        "'Striped'\n ai = 18\n file = 'striped.car'",
+    );
+    write("striped-rex/HUNTDAT/_RES.TXT", addon.as_bytes());
+    write("striped-rex/HUNTDAT/striped.car", b"striped");
+    let bases = vec![root.join("base")];
+    let vfs = vanilla(&bases).expect("base");
+    let sources = vec![load_mod(&vfs, &root.join("striped-rex")).expect("source")];
+    let mut recipe = c2_mods::recipe::new_recipe("test", "test", "", &sources).expect("pin");
+    recipe.variants = Recipe::parse(
+        &RECIPE
+            .replace("source = \"classic-rex\"", "source = \"base\"")
+            .replace(
+                "character = \"Tyrannosaurus\"\nweight = 25",
+                "character = \"Striped\"\nweight = 25",
+            ),
+    )
+    .expect("rules")
+    .variants;
+    let locations = c2_mods::recipe::locate(&recipe, std::slice::from_ref(&root));
+    let (sources, opts) =
+        c2_mods::recipe::prepare(&root, &recipe, &locations, &vfs).expect("prepare");
+    let pack = build_with(&bases, sources, &opts).expect("build");
+    let data: Packed =
+        toml::from_str(&String::from_utf8(pack.vfs.read(PATH).expect("side file")).expect("utf8"))
+            .expect("packed rules");
+    let models: Vec<Vec<u8>> = data.groups[0]
+        .members
+        .iter()
+        .map(|m| {
+            pack.vfs
+                .read(&format!("HUNTDAT/{}", m.file))
+                .expect("model")
+        })
+        .collect();
+    assert_eq!(models, [b"vanilla".to_vec(), b"striped".to_vec()]);
+    assert_eq!(data.groups[0].slot, 0);
     std::fs::remove_dir_all(root).expect("cleanup");
 }

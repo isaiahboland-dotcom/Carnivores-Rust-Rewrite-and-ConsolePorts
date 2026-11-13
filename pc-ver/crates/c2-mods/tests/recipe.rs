@@ -176,6 +176,7 @@ fn settings_round_trip_and_stay_out_when_unset() {
     use c2_mods::recipe::{Settings, Source};
     let plain = Recipe::parse("[recipe]\nid = \"a\"\n").expect("parse");
     assert!(!plain.to_toml().contains("settings"));
+    assert!(!plain.settings.mobile_card_layout);
     let text =
         "[recipe]\nid = \"a\"\n\n[settings]\nmenu = \"mobile\"\nsurvival = [\"classic\"]\n\n\
                 [settings.pictures]\nscope = \"mobile\"\n\n[settings.tuning]\nshotgun = \"pc\"\n";
@@ -351,4 +352,23 @@ fn a_missing_or_broken_hash_list_is_an_error() {
     let any = Recipe::parse("[recipe]\nid = \"r\"\n").expect("parse");
     assert_eq!(read_base(&recipe, &any), Ok(None), "no base: any game");
     let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn mobile_card_layout_is_an_opt_in_recipe_setting() {
+    let recipe = Recipe::parse(
+        r#"[recipe]
+id = "cards"
+[settings]
+mobile_card_layout = true
+"#,
+    )
+    .unwrap();
+    assert!(recipe.settings.mobile_card_layout);
+    assert!(
+        Recipe::parse(&recipe.to_toml())
+            .unwrap()
+            .settings
+            .mobile_card_layout
+    );
 }

@@ -1,6 +1,8 @@
 //! An area past the `.MAP`'s 254 kinds of object, loaded through its side
 //! files (`AREAn.OBX`, `AREAn.RSX`; docs/EXPANSION.md).
 
+#![cfg(any(feature = "std", feature = "portable-load"))]
+
 use c2_core::area::{TimeOfDay, NO_OBJECT};
 use c2_formats::map::{self, Map, CELLS, HALF_CELLS};
 use c2_formats::obx::{self, Obx};

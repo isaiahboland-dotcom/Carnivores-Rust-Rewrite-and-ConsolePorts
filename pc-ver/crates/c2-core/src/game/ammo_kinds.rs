@@ -30,7 +30,7 @@ impl Weapons {
     pub fn split_tranq(&mut self) {
         self.multi = true;
         for i in 0..self.info.len().min(Bits::LEN) {
-            if !self.present.has(i) {
+            if !self.present.has(i) || !self.info[i].allow_tranq {
                 continue;
             }
             let chambers = self.info[i].chambers();
@@ -89,7 +89,10 @@ impl Weapons {
 
     /// Loads weapon `i`'s other kind; false if it has none.
     pub fn swap_kind(&mut self, i: usize) -> bool {
-        if !self.multi || self.stash.get(i).is_none_or(|s| s.rounds() == 0) {
+        if !self.info.get(i).is_some_and(|w| w.allow_tranq)
+            || !self.multi
+            || self.stash.get(i).is_none_or(|s| s.rounds() == 0)
+        {
             return false;
         }
         let s = &mut self.stash[i];
@@ -110,7 +113,8 @@ impl Weapons {
 
     /// Whether weapon `i` fires darts now.
     pub fn fires_darts(&self, i: usize) -> bool {
-        self.darts.get(i).copied().unwrap_or(false)
+        self.info.get(i).is_some_and(|w| w.allow_tranq)
+            && self.darts.get(i).copied().unwrap_or(false)
     }
 }
 

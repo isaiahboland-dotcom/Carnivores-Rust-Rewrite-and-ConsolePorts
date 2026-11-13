@@ -54,6 +54,30 @@ pub struct Options {
     pub ambients: Ambients,
     /// Per game (in `games` order): what of it is left out. Missing: none.
     pub skip: Vec<Skip>,
+    /// Per game (in `games` order): huntables kept as characters but taken
+    /// off the menu. Missing: none.
+    pub unlisted: Vec<Vec<Unlisted>>,
+}
+
+/// A standalone's huntable kept as a character but taken off the menu, as
+/// a left-out huntable is: a variant sharing another animal's menu entry
+/// (`crate::variants`). References to its menu slot go with it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unlisted {
+    /// Its name on the game's own menu (compared as `variants::canonical`).
+    pub name: String,
+    /// The name its character gets, which no menu entry has.
+    pub rename: String,
+}
+
+/// Where one game's parts are in the combined game.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Placed {
+    /// Its characters: name in the game (`variants::canonical`) -> name in
+    /// the combined game (renamed on a clash, or an [`Unlisted`] rename).
+    pub characters: Vec<(String, String)>,
+    /// Its kept areas: own stem (`area2`) -> stem in the combined game.
+    pub areas: Vec<(String, String)>,
 }
 
 mod dialect;
@@ -353,11 +377,20 @@ pub struct Built {
     pub base_areas: u32,
     /// Characters of the base game (the games' come after).
     pub base_chars: usize,
+    /// The base game's own characters and areas (unchanged by combining).
+    pub base: Placed,
+    /// Each game's characters and areas, in `games` order.
+    pub games: Vec<Placed>,
 }
 
 /// Builds the modpack: `bases` (vanilla, then the Modder's Edition overlay)
 /// plus `games`, written to `out` (a folder this tool made, or empty).
 pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> Result<Built> {
+    if o.unlisted.len() > games.len() {
+        return Err(fail(
+            "unlisted huntables given for more games than there are",
+        ));
+    }
     let vfs = crate::vanilla(bases)?;
     let res = ResTxt::parse(&String::from_utf8_lossy(&vfs.read("HUNTDAT/_RES.TXT")?))?;
     // The base's menu: its `_MENU.TXT`, or its `_RES.TXT` when that lists
@@ -387,6 +420,16 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
         .collect();
     let base_area_count = base_menu.areas.len() as u32;
     let base_chars = blocks(&res, "characters").len();
+    let base = Placed {
+        characters: blocks(&res, "characters")
+            .iter()
+            .filter_map(|b| b.get(&["name"]).map(unquote))
+            .map(|n| (crate::variants::canonical(&n), n))
+            .collect(),
+        areas: (1..=base_area_count)
+            .map(|n| (format!("area{n}"), format!("area{n}")))
+            .collect(),
+    };
 
     // The hunter model all kills are merged into.
     let hunter_file = blocks(&res, "characters")
@@ -425,6 +468,7 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
         files: Vec::new(),
         weapon_cars,
         slugs: HashSet::new(),
+        placed: Vec::new(),
     };
     // The base's own animals stay on the base's maps.
     let base_areas: Vec<u32> = (1..=base_area_count).collect();
@@ -441,7 +485,8 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
         }
     }
     for (gi, dir) in games.iter().enumerate() {
-        c.add(dir, &o.skip.get(gi).cloned().unwrap_or_default())?;
+        let unlisted = o.unlisted.get(gi).map(Vec::as_slice).unwrap_or_default();
+        c.add(dir, &o.skip.get(gi).cloned().unwrap_or_default(), unlisted)?;
     }
 
     let (n_areas, n_dinos, n_weapons) = (c.n_areas, c.n_dinos, c.n_weapons);
@@ -473,6 +518,8 @@ pub fn build(bases: &[PathBuf], games: &[PathBuf], out: &Path, o: &Options) -> R
         report,
         base_areas: base_area_count,
         base_chars,
+        base,
+        games: c.placed,
     })
 }
 
@@ -492,6 +539,21 @@ pub fn add_ons(
         .map(|a| crate::load_mod(&v, a))
         .collect::<Result<Vec<_>>>()?;
     add_on_sources(games, sources, built, o, &crate::BuildOptions::default())
+}
+
+impl Built {
+    /// The base and each game (`ids`: their recipe source IDs, in `games`
+    /// order) as variant sources already in the combined game.
+    pub fn residents(&self, ids: &[String]) -> Vec<crate::variants::Resident> {
+        let one = |source: &str, p: &Placed| crate::variants::Resident {
+            source: source.into(),
+            characters: p.characters.clone(),
+            areas: p.areas.clone(),
+        };
+        std::iter::once(one(crate::variants::BASE, &self.base))
+            .chain(ids.iter().zip(&self.games).map(|(id, p)| one(id, p)))
+            .collect()
+    }
 }
 
 /// [`add_ons`] for add-ons already read against the combined game (a

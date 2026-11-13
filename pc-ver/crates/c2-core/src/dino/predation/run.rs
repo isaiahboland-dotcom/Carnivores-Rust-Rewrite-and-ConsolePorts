@@ -568,5 +568,6 @@ fn view(x: f32, y: f32, z: f32) -> HunterView {
         head_y: 220.0,
         alive: true,
         underwater: false,
+        observer: false,
     }
 }

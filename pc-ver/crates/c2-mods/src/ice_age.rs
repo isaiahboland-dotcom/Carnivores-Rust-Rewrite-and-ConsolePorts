@@ -10,7 +10,8 @@
 //! (`_RES ICE AGE.TXT`, which runs Ice Age in it), written out here as
 //! ours; the animals' own numbers (health, mass, scores, senses) stay the
 //! player's file's. Differences from that file: Ice Age's own models (its
-//! Diatryma without the added swim animation), no trophy-room spots (Ice
+//! Diatryma without the added swim animation, and its kill synchronized
+//! as in the original), no trophy-room spots (Ice
 //! Age's room places trophies as the original), and no halved score for an
 //! animal that isn't a target (as every dialect game here).
 
@@ -90,7 +91,9 @@ const RULES: &[Rule] = &[
                 killtype{\nhunterAnim = 6\neatAnim = 7\nhunterSync = TRUE\nscream = TRUE\n}\n\
                 waterLevel = 100\nweaveRange = 3072\n",
     },
-    // Diatryma: the dialect runs it as a spinosaur (jump, slide).
+    // Diatryma: the dialect runs it as a spinosaur (jump, slide). Its kill
+    // is the original's (the body on the killer, clips 7 and 8, measured
+    // in IceAge.exe), not the dialect's rules' body 200 units off.
     Rule {
         ia: 14,
         ai: 16,
@@ -100,7 +103,7 @@ const RULES: &[Rule] = &[
                 deathtype{\ndieAnim = 6\nsleepAnim = 7\n}\n\
                 idlegroup{\nanim = 2\nstartChance = 0.0703125\nendChance = 1\ninstantRepeat = TRUE\n}\n\
                 idlegroup{\nanim = 3\nstartChance = 0.0703125\nendChance = 1\ninstantRepeat = TRUE\n}\n\
-                killtype{\nhunterAnim = 7\nhunterOffset = 200\neatAnim = 8\nscream = TRUE\n}\n\
+                killtype{\nhunterAnim = 7\neatAnim = 8\nhunterSync = TRUE\nscream = TRUE\n}\n\
                 waterLevel = 140\nweaveRange = 1648\n",
     },
     // Giant deer.
@@ -221,8 +224,17 @@ fn from_donor(b: &Block, all: &[Block]) -> Option<String> {
     let mut e = crate::mobile::make_entry(&donor, name, file, &roles, false);
     // Its own numbers; the slot's conditions as Ice Age's (`character`).
     e.entries.retain(|x| {
-        !["callno", "dogsmell", "collectrad", "blor", "blog", "blob"]
-            .contains(&x.key.to_ascii_lowercase().as_str())
+        // (`sourceai`: the donor's number in Ice Age's rules, not its.)
+        ![
+            "callno",
+            "dogsmell",
+            "collectrad",
+            "blor",
+            "blog",
+            "blob",
+            "sourceai",
+        ]
+        .contains(&x.key.to_ascii_lowercase().as_str())
             && !x.key.to_ascii_lowercase().starts_with("cam")
     });
     e.subs.retain(|x| {
@@ -297,6 +309,10 @@ fn character(b: &Block, slot: &mut usize, all: &[Block]) -> String {
             );
         }
         t += rule.map_or("", |r| r.lines);
+        // Its number in Ice Age's own rules (scenarios name it by that).
+        if rule.is_some() {
+            t += &format!("sourceAi = {ia}\n");
+        }
         t += "bloR = 112\nbloG = 0\nbloB = 0\n";
     }
     t + "}\n"
@@ -714,6 +730,29 @@ mod tests {
         let kill = h.subs_named("killtype").next().unwrap();
         assert_eq!(kill.get(&["hunterAnim"]), Some("5"));
         assert!(h.get(&["iaDonor"]).is_none() && h.get(&["roles"]).is_none());
+        // Ice Age's own number stays the Wolf's alone.
+        let chars = &d.section("characters").unwrap().blocks;
+        assert_eq!(chars[0].get(&["sourceAi"]), Some("12"));
+        assert!(h.get(&["sourceAi"]).is_none());
+    }
+
+    /// Measured in the original (`docs/REGRESSION.md`, kill animations):
+    /// the body lies on the Diatryma, hunter clip 7, killer clip 8.
+    #[test]
+    fn the_diatryma_kills_as_in_the_original() {
+        let res = ResTxt::parse(
+            "characters {\n{\n name = 'Mammoth'\n file = 'mamm.car'\n ai = 17\n}\n\
+             {\n name = 'Diatryma'\n file = 'diatr.car'\n ai = 14\n}\n}\n.\n",
+        )
+        .unwrap();
+        let d = ResTxt::parse(&to_dialect(&res)).unwrap();
+        let b = &d.section("characters").unwrap().blocks[1];
+        assert_eq!(b.get(&["sourceAi"]), Some("14"));
+        let kill = b.subs_named("killtype").next().unwrap();
+        assert_eq!(kill.get(&["hunterAnim"]), Some("7"));
+        assert_eq!(kill.get(&["eatAnim"]), Some("8"));
+        assert_eq!(kill.get(&["hunterSync"]), Some("TRUE"));
+        assert!(kill.get(&["hunterOffset"]).is_none());
     }
 
     #[test]

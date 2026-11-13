@@ -142,6 +142,7 @@ fn standalones_are_renumbered_tied_to_their_maps_and_original_ones_converted() {
         &Options {
             ambients: Ambients::Tied,
             skip: Vec::new(),
+            unlisted: Vec::new(),
         },
     )
     .expect("combine");
@@ -251,6 +252,7 @@ fn standalones_are_renumbered_tied_to_their_maps_and_original_ones_converted() {
         &Options {
             ambients: Ambients::Tied,
             skip: Vec::new(),
+            unlisted: Vec::new(),
         },
     )
     .expect("add-ons");
@@ -371,6 +373,7 @@ prices {\n start = 100\n area = 30\n dino = 40\n weapon = 7\n}\n.\n",
         &Options {
             ambients: Ambients::Tied,
             skip: Vec::new(),
+            unlisted: Vec::new(),
         },
     )
     .expect("combine");
@@ -450,6 +453,7 @@ fn left_out_parts_are_not_combined_and_the_rest_closes_up() {
                 weapons: vec![1],
                 ..Default::default()
             }],
+            unlisted: Vec::new(),
         },
     )
     .expect("combine");
@@ -530,6 +534,7 @@ fn a_base_without_menu_txt_uses_its_res_txt_as_the_menu() {
     let o = Options {
         ambients: Ambients::Tied,
         skip: vec![],
+        unlisted: Vec::new(),
     };
     let built = build(std::slice::from_ref(&base), &[a], &out, &o).expect("build");
     assert_eq!(built.base_areas, 1);
@@ -646,6 +651,7 @@ prices {\n start = 100\n area = 50\n dino = 60\n dino = 65\n weapon = 9\n}\n.\n"
     let o = Options {
         ambients: Ambients::Tied,
         skip: vec![],
+        unlisted: Vec::new(),
     };
     build(
         std::slice::from_ref(&base),

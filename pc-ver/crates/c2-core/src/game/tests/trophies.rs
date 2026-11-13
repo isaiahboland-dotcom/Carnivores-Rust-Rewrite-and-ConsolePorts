@@ -291,3 +291,34 @@ fn dynamic_night_bonus_replaces_classic_bonus_at_kill_time() {
         ));
     }
 }
+
+#[test]
+fn a_variant_scores_by_its_parents_rules() {
+    use crate::dino::variants::Variant;
+    // The parent (type 1) is a Modder's Edition dialect animal, or not; the
+    // variant (type 2) has its own, lower score and no dialect.
+    let score = |parent_dialect: bool| {
+        let (area, mut hunt, _) = setup(false);
+        hunt.herd.species.push(hunt.herd.species[1].clone());
+        for (i, token) in [(1, 101), (2, 102)] {
+            let sp = &mut hunt.herd.species[i];
+            sp.variant = Some(Variant {
+                owner: 1,
+                token,
+                choices: vec![],
+            });
+            sp.tuning.mee_ai = None;
+        }
+        hunt.herd.species[1].info.base_score = 100.0;
+        hunt.herd.species[1].tuning.mee_ai = parent_dialect.then_some(ai::STEGO);
+        hunt.herd.species[2].info.base_score = 10.0;
+        hunt.herd.chars[0].ctype = 2;
+        hunt.opts.targets = Bits::NONE;
+        hunt.add_ship_task(&area, 0, &mut Vec::new());
+        hunt.room.score
+    };
+    // Not a target and not a dialect kill: halved, from the parent's 100.
+    assert_eq!(score(false), 50);
+    // The parent's dialect keeps the full score.
+    assert_eq!(score(true), 100);
+}

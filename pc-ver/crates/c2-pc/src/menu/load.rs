@@ -474,7 +474,10 @@ impl Menu {
         let mut m = Self {
             mobile,
             mobile_page: 0,
-            comb_page: 0,
+            comb_page: [0; 3],
+            mobile_card_layout: find_file(&huntdat, "_MOBILE_CARDS.TXT")
+                .and_then(|p| std::fs::read_to_string(p).ok())
+                .is_some_and(|s| s.trim() == "1"),
             kit,
             record: Default::default(),
             clear_armed: false,

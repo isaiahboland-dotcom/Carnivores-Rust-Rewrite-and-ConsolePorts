@@ -79,6 +79,8 @@ pub(super) fn info(ai_id: i32) -> DinoInfo {
 
 pub(super) fn rifle() -> WeaponInfo {
     WeaponInfo {
+        allow_tranq: true,
+        allow_trophy: true,
         name: "Rifle".into(),
         file: String::new(),
         pic: String::new(),

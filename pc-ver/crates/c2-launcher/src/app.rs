@@ -255,6 +255,11 @@ impl Launcher {
                         editor.values_read(*values);
                     }
                 }
+                Ok(crate::jobs::Completion::VariantCatalog(catalog)) => {
+                    if let Some(editor) = &mut self.ui.recipe_edit {
+                        editor.catalog_read(*catalog);
+                    }
+                }
                 Ok(crate::jobs::Completion::ApkBase { out, for_recipe }) => {
                     self.apk_base_done(out, for_recipe)
                 }

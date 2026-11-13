@@ -9,5 +9,6 @@ mod support;
 mod survival;
 mod trophies;
 mod trophy_room;
+mod view;
 mod weapons;
 mod wildlife;

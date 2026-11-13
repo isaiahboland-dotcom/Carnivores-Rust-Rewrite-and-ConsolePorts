@@ -128,6 +128,19 @@ fn for_ice_age(name: &str) -> bool {
     n.contains("ice age") || n.contains("iceage") || n.contains("ice_age")
 }
 
+/// A folder of a copy for Carnivores+ (`Carnivores+ version`), a different
+/// game from the base Carnivores 2.
+fn for_plus(name: &str) -> bool {
+    name.contains("carnivores+")
+        || name.contains("carnivores plus")
+        || name.contains("carnivores_plus")
+}
+
+/// A folder of a copy for plain Carnivores 2 (`Carnivores 2 version`).
+fn for_c2(name: &str) -> bool {
+    !for_plus(name) && (name.contains("carnivores 2") || name.contains("carnivores2"))
+}
+
 /// The files to consider, after dropping variant folders that don't fit:
 /// the Modder's Edition's or the original's, and Ice Age's or Carnivores
 /// 2's (`ice`: the base is Ice Age) where both are given.
@@ -147,6 +160,10 @@ fn gather(dir: &Path, dialect: bool, ice: bool, notes: &mut Vec<String>, out: &m
             let n = lower_name(p);
             !for_ice_age(&n) && (*k != Variant::Other || n.contains("carnivores"))
         });
+    // A copy for Carnivores 2 and one for Carnivores+ (the Dracorex): the
+    // base is Carnivores 2, so the Carnivores+ copy is left out.
+    let plus_split = subs.iter().any(|p| for_c2(&lower_name(p)))
+        && subs.iter().any(|p| for_plus(&lower_name(p)));
     for p in &entries {
         if !p.is_dir() {
             out.push(p.clone());
@@ -155,6 +172,10 @@ fn gather(dir: &Path, dialect: bool, ice: bool, notes: &mut Vec<String>, out: &m
         let name = lower_name(p);
         if name.contains("legacy") {
             notes.push(format!("skipped `{}` (for another game)", p.display()));
+            continue;
+        }
+        if plus_split && for_plus(&name) {
+            notes.push(format!("skipped `{}` (for Carnivores+)", p.display()));
             continue;
         }
         let v = variant(&name);
@@ -425,9 +446,17 @@ pub fn read_only(dir: &Path, base: &Vfs, keep: &dyn Fn(&Path) -> bool) -> Result
         })?)
         .replace('\r', "");
         for (before, body) in blocks_in(&text) {
-            let Some((section, b)) = entry(&body) else {
+            let Some((section, mut b)) = entry(&body) else {
                 continue;
             };
+            // An entry written for an older Modder's Edition (`clone`, a
+            // spawn group of its own): in today's keys.
+            if dialect && section == "characters" && crate::legacy::modernize(&mut b) {
+                let note = "entry in an older Modder's Edition's keys: read as today's";
+                if !out.notes.iter().any(|n| n == note) {
+                    out.notes.push(note.into());
+                }
+            }
             if !out.texts.contains(t) {
                 out.texts.push(t.clone());
             }
@@ -865,6 +894,23 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(c2, ["DINO9.tga"]);
         assert_eq!(ia, ["DINO10.tga"]);
+    }
+
+    #[test]
+    fn the_carnivores_plus_copy_is_left_out() {
+        let dir = std::env::temp_dir().join(format!("c2-mods-plus-{}", std::process::id()));
+        for (d, f) in [
+            ("Carnivores 2 version", "DINO2.tga"),
+            ("Carnivores+ version", "DINO2.tga"),
+        ] {
+            std::fs::create_dir_all(dir.join(d)).unwrap_or_else(|e| panic!("{e}"));
+            std::fs::write(dir.join(d).join(f), b"x").unwrap_or_else(|e| panic!("{e}"));
+        }
+        let (mut notes, mut out) = (Vec::new(), Vec::new());
+        gather(&dir, true, false, &mut notes, &mut out);
+        std::fs::remove_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(out.len(), 1);
+        assert!(out[0].to_string_lossy().contains("Carnivores 2 version"));
     }
 
     #[test]

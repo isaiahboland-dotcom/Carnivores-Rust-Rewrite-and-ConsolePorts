@@ -3,8 +3,10 @@ import importlib.util
 import json
 from pathlib import Path
 import struct
+import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('original_review', Path(__file__).with_name('texture-review-original.py'))
 original = importlib.util.module_from_spec(spec)
@@ -74,6 +76,38 @@ def recipe():
 
 
 class NativeAdapterTests(unittest.TestCase):
+    def test_native_launch_stages_a_long_script_path_without_changing_its_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prefix, game = root/'prefix', root/'game'
+            prefix.mkdir(); game.mkdir()
+            (prefix/'system.reg').write_text('synthetic')
+            folder = root/('a'*90)/('b'*90)/('c'*90)
+            folder.mkdir(parents=True)
+            script = folder/'original-script.txt'
+            script.write_bytes(b'20 texture jobs.bin\n400 exit\n')
+            self.assertGreater(len(str(script)), 260)
+            with patch.object(original.subprocess, 'run', return_value=
+                              subprocess.CompletedProcess([], 0, stdout=b'', stderr=b'')) as run:
+                original.run_wine(prefix, root/'hook', game, game/'v_soft.ren', script, 1)
+            self.assertEqual((game/'c2-regression-script.txt').read_bytes(), script.read_bytes())
+            launch = next(call for call in run.call_args_list
+                          if 'c2launch.exe' in str(call.args[0]))
+            self.assertEqual(launch.kwargs['env']['C2H_SCRIPT'], 'c2-regression-script.txt')
+
+    def test_wine_startup_failure_preserves_stderr_and_stops_its_prefix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            failed = subprocess.CalledProcessError(
+                1, ['wineboot', '-i'], stderr=b'wineserver: bind: Operation not permitted\n')
+            with patch.object(original.subprocess, 'run', side_effect=[
+                    failed, subprocess.CompletedProcess([], 0), subprocess.CompletedProcess([], 0)]) as run:
+                with self.assertRaisesRegex(ValueError, 'Operation not permitted'):
+                    original.run_wine(root/'prefix', root/'hook', root/'game',
+                                      root/'game/v_soft.ren', root/'script', 1)
+            self.assertEqual([call.args[0] for call in run.call_args_list][1:],
+                             [['wineserver', '-k'], ['wineserver', '-w']])
+
     def test_classic_and_dynamic_profiles_locate_checked_code_and_writable_globals(self):
         for dynamic, capacity in [(False, 1024), (True, 8192)]:
             result = original.native_profile(executable(dynamic))

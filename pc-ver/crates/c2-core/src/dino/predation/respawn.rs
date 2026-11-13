@@ -17,6 +17,7 @@ use crate::portable_math::FloatMath;
 
 use super::run::Goal;
 use crate::area::Area;
+use crate::dino::place::Habitat;
 use crate::dino::{check_place_collision_p, Character, Ctx, Herd, HunterView};
 use crate::rng::MsRand;
 
@@ -39,10 +40,11 @@ impl Herd {
             {
                 continue;
             }
-            let Some(pos) = self.spot(i, ctx.area, ctx.hunter, ctx.rng, sight) else {
+            let Some(mut pos) = self.spot(i, ctx.area, ctx.hunter, ctx.rng, sight) else {
                 self.chars[i].predation.respawn = RETRY_MS;
                 continue;
             };
+            self.swim_height(ctx.area, self.chars[i].ctype, &mut pos);
             let old = &self.chars[i];
             let Some(ctype) = self.select_variant(old.ctype, ctx.rng) else {
                 continue;
@@ -91,6 +93,9 @@ impl Herd {
             let p = match group {
                 Some(g) => self.mee_spot(area, from, rng, &mut tr, g, c.ctype, None)?,
                 None => match stock_spot(area, from, rng) {
+                    // Dry ground: an animal of the water waits for a
+                    // group with a region to come back in.
+                    Some(_) if self.habitat(c.ctype) != Habitat::Land => return None,
                     Some(p) => p,
                     None => continue,
                 },

@@ -15,6 +15,8 @@ use super::{LABEL, PACKAGE};
 const MANIFEST: &str = include_str!("../../../../../android-ver/AndroidManifest.xml");
 /// The engine library in the APK (android-ver/build-apk.sh).
 const LIB: &str = "lib/arm64-v8a/libc2_android.so";
+/// The launcher icon's resource name (`@mipmap/ic_launcher`).
+const ICON_NAME: &str = "ic_launcher";
 
 /// The SDK tools a renamed APK needs.
 pub struct Sdk {
@@ -75,8 +77,9 @@ fn version_key(p: &Path) -> Vec<u32> {
         .collect()
 }
 
-/// The app's manifest with `label` and `package`.
-pub fn manifest(label: &str, package: &str) -> Result<String, String> {
+/// The app's manifest with `label` and `package`; `icon` points it at the
+/// launcher icon `compile_icon` links in.
+pub fn manifest(label: &str, package: &str, icon: bool) -> Result<String, String> {
     let swap = |text: &str, from: &str, to: &str| {
         (text.matches(from).count() == 1)
             .then(|| text.replacen(from, to, 1))
@@ -87,11 +90,34 @@ pub fn manifest(label: &str, package: &str) -> Result<String, String> {
         &format!("package=\"{PACKAGE}\""),
         &format!("package=\"{package}\""),
     )?;
+    let icon = if icon {
+        format!(" android:icon=\"@mipmap/{ICON_NAME}\"")
+    } else {
+        String::new()
+    };
     swap(
         &m,
         &format!("android:label=\"{LABEL}\""),
-        &format!("android:label=\"{}\"", xml_escape(label.trim())),
+        &format!("android:label=\"{}\"{icon}", xml_escape(label.trim())),
     )
+}
+
+/// The compiled launcher icon: `png` as `mipmap/ic_launcher`, linked by
+/// `aapt2` into `work`; returns the compiled resources.
+fn compile_icon(sdk: &Sdk, png: &[u8], work: &Path) -> Result<PathBuf, String> {
+    let io = |e: std::io::Error| e.to_string();
+    let res = work.join("icon-res");
+    let dir = res.join("mipmap-xxxhdpi-v4");
+    fs::create_dir_all(&dir).map_err(io)?;
+    fs::write(dir.join(format!("{ICON_NAME}.png")), png).map_err(io)?;
+    let out = work.join("icon.zip");
+    run(Command::new(&sdk.aapt2)
+        .arg("compile")
+        .arg("--dir")
+        .arg(&res)
+        .arg("-o")
+        .arg(&out))?;
+    Ok(out)
 }
 
 fn xml_escape(s: &str) -> String {
@@ -101,13 +127,15 @@ fn xml_escape(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
-/// `apk` relabelled as `label` with package `package`, built in `work`;
-/// returns the signed APK.
+/// `apk` relabelled as `label` with package `package`, given the game's
+/// launcher icon `icon` (PNG) when there is one, built in `work`; returns
+/// the signed APK.
 pub fn renamed_apk(
     sdk: &Sdk,
     apk: &Path,
     label: &str,
     package: &str,
+    icon: Option<&[u8]>,
     work: &Path,
 ) -> Result<PathBuf, String> {
     let io = |e: std::io::Error| e.to_string();
@@ -116,16 +144,21 @@ pub fn renamed_apk(
     }
     fs::create_dir_all(work).map_err(io)?;
     let xml = work.join("AndroidManifest.xml");
-    fs::write(&xml, manifest(label, package)?).map_err(io)?;
+    fs::write(&xml, manifest(label, package, icon.is_some())?).map_err(io)?;
+    let icon = icon.map(|png| compile_icon(sdk, png, work)).transpose()?;
     let unsigned = work.join("unsigned.apk");
-    run(Command::new(&sdk.aapt2)
-        .arg("link")
+    let mut link = Command::new(&sdk.aapt2);
+    link.arg("link")
         .arg("-o")
         .arg(&unsigned)
         .arg("--manifest")
         .arg(&xml)
         .arg("-I")
-        .arg(&sdk.android_jar))?;
+        .arg(&sdk.android_jar);
+    if let Some(res) = &icon {
+        link.arg("-R").arg(res);
+    }
+    run(&mut link)?;
     copy_lib(apk, &unsigned)?;
     let aligned = work.join("aligned.apk");
     run(Command::new(&sdk.zipalign)
@@ -231,10 +264,17 @@ mod tests {
 
     #[test]
     fn the_manifest_takes_the_name_and_package() {
-        let m = manifest("Ice Age & <C2>", "io.github.c2rs.ice_age").unwrap_or_default();
+        let m = manifest("Ice Age & <C2>", "io.github.c2rs.ice_age", false).unwrap_or_default();
         assert!(m.contains("package=\"io.github.c2rs.ice_age\""));
         assert!(m.contains("android:label=\"Ice Age &amp; &lt;C2&gt;\""));
         assert!(!m.contains("package=\"io.github.c2rs\""));
+        assert!(!m.contains("android:icon"));
+    }
+
+    #[test]
+    fn the_manifest_points_at_the_icon_when_there_is_one() {
+        let m = manifest("c2rs", "io.github.c2rs", true).unwrap_or_default();
+        assert!(m.contains("android:label=\"c2rs\" android:icon=\"@mipmap/ic_launcher\""));
     }
 
     /// The manifest is bumped with each release: versionName is the
@@ -262,8 +302,9 @@ mod tests {
         assert!(version_key(Path::new("android-36.1")) > version_key(Path::new("android-36")));
     }
 
-    /// Against the real SDK: `C2RS_APK=path/c2rs.apk C2RS_OUT=dir cargo
-    /// test -p c2-launcher -- --ignored renames_a_real_apk`.
+    /// Against the real SDK: `C2RS_APK=path/c2rs.apk C2RS_OUT=dir
+    /// [C2RS_ICON=icon.png] cargo test -p c2-launcher -- --ignored
+    /// renames_a_real_apk`.
     #[test]
     #[ignore = "needs the Android SDK and a built c2rs.apk"]
     fn renames_a_real_apk() -> Result<(), String> {
@@ -274,7 +315,16 @@ mod tests {
         };
         let (apk, out) = (var("C2RS_APK")?, var("C2RS_OUT")?);
         let sdk = find_sdk()?;
-        let signed = renamed_apk(&sdk, &apk, "C2 Test", "io.github.c2rs.c2_test", &out)?;
+        let icon = std::env::var_os("C2RS_ICON").map(|p| fs::read(p).map_err(|e| e.to_string()));
+        let icon = icon.transpose()?;
+        let signed = renamed_apk(
+            &sdk,
+            &apk,
+            "C2 Test",
+            "io.github.c2rs.c2_test",
+            icon.as_deref(),
+            &out,
+        )?;
         assert!(signed.is_file());
         Ok(())
     }

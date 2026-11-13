@@ -125,6 +125,7 @@ pub fn run(o: &Original, dir: &Path) -> Result<bool> {
             timeout: Duration::from_secs(300),
         })?;
         let hook_log = std::fs::read_to_string(game_dir.join("c2hook.log")).unwrap_or_default();
+        wine::require_hooks(&hook_log)?;
         log.push_str(&format!(
             "--- original run {} (exit {code:?})\n{hook_log}",
             r + 1

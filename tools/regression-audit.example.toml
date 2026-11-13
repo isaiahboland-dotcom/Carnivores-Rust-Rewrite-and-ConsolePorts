@@ -9,13 +9,13 @@ original_requires = ["build-original-hook"]
 [[test]]
 name = "workspace-all-features"
 cwd = "{repo}/pc-ver"
-argv = ["cargo", "test", "--locked", "--workspace", "--all-features", "--", "--test-threads=1"]
+argv = ["cargo", "test", "--locked", "--workspace", "--all-features", "--no-fail-fast", "--", "--test-threads=1"]
 env = { C2_ORIGINAL_DIR = "{repo}/source/c2-original", C2_ORIGINAL_HUNTDAT = "{repo}/source/c2-original/HUNTDAT" }
 
 [[test]]
 name = "portable-core"
 cwd = "{repo}/pc-ver"
-argv = ["cargo", "test", "--locked", "-p", "c2-core", "--no-default-features", "--features", "portable-hunt", "--", "--test-threads=1"]
+argv = ["cargo", "test", "--locked", "-p", "c2-core", "--no-default-features", "--features", "portable-hunt", "--no-fail-fast", "--", "--test-threads=1"]
 env = { C2_ORIGINAL_HUNTDAT = "{repo}/source/c2-original/HUNTDAT" }
 
 [[test]]
@@ -81,5 +81,26 @@ sources = ["pc-ice-age"]
 
 [[original_texture]]
 id = "genesis"
+game = "genesis-redux"  # report filter name; defaults to id
 path = "{repo}/source/mods-extracted/genesis-redux-2.0/Carnivores Genesis Redux Beta 2.0/- Game"
 sources = ["genesis-2-0", "genesis-2-0-critters"]
+
+# Tracked investigations shown under Findings beside the results derived from
+# this run. Evidence pictures (image, or an original/rust pair) are copied into
+# the audit so they outlive the run they came from. `view` opens the matching
+# captures of this audit: tab is gameplay, matched, compact or full.
+# [[finding]]
+# id = "EXAMPLE-ID"
+# title = "Short statement of the difference"
+# severity = "difference"          # failure, difference, coverage or note
+# state = "investigating"
+# summary = """
+# What is established so far.
+# What remains unverified.
+# """
+# references = ["docs/EXAMPLE.md"]
+# view = { tab = "gameplay", game = "c2", scenario = "kill_animations" }
+# evidence = [{ label = "Same checkpoint in both engines", original = "{repo}/path/original.png", rust = "{repo}/path/rust.png" }]
+
+# Links to earlier audits, e.g. a focused repair rerun.
+# related_reports = ["{repo}/regression-sim-recordings/PRIOR_AUDIT/report.html"]

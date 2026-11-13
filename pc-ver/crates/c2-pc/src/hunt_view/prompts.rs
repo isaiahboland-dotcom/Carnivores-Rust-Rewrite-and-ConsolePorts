@@ -18,7 +18,7 @@ impl HuntView {
                     })
             });
             let hint: &[(&str, &str)] = if self.pad_last {
-                &[("+", "Resume"), ("-", "Exit menu")]
+                &[("Start", "Resume"), ("Select", "Exit menu")]
             } else {
                 &[("P", "Resume"), ("Esc", "Exit menu")]
             };
@@ -26,7 +26,11 @@ impl HuntView {
         } else if self.hunt.map_mode {
             let y = screen.1 as f32 - 28.0 * scale;
             self.hint_bar(out, screen, scale, y, true, self.map_hints());
-        } else if self.setup.pc.hints != 0 && self.hunt.death.is_none() && !self.touch.on {
+        } else if self.setup.pc.hints != 0
+            && self.hunt.death.is_none()
+            && !self.touch.on
+            && self.picker.is_none()
+        {
             self.draw_control_hints(screen, scale, out);
         }
     }
@@ -96,16 +100,16 @@ impl HuntView {
         let teleport = self.hunt.can_teleport();
         if self.pad_last && !teleport {
             if zoom {
-                &[("R-stick", "Pointer"), ("R", "Close")]
+                &[("R-stick", "Pointer"), ("RB", "Close")]
             } else {
-                &[("R", "Close")]
+                &[("RB", "Close")]
             }
         } else if self.pad_last {
             &[
                 ("D-pad / R-stick", "Move"),
-                ("ZR", "Mark"),
+                ("RT", "Mark"),
                 ("A", "Go"),
-                ("R", "Close"),
+                ("RB", "Close"),
             ]
         } else if !zoom {
             if teleport {
@@ -150,9 +154,11 @@ impl HuntView {
             (keys::name(k.crouch), "Crouch"),
         ];
         let pad = [
-            ("R".to_string(), "Map"),
-            ("L".to_string(), "Binoculars"),
-            ("Y".to_string(), "Switch gun"),
+            ("RB".to_string(), "Map"),
+            ("LB".to_string(), "Binoculars"),
+            ("Y".to_string(), "Weapon (hold: choose)"),
+            ("X".to_string(), "Call (hold: choose)"),
+            ("L stick click".to_string(), "Sprint"),
             ("D-pad down".to_string(), "Next call"),
             ("A".to_string(), "Jump"),
             ("D-pad up".to_string(), "Crouch"),
@@ -162,6 +168,9 @@ impl HuntView {
         } else {
             keyboard.to_vec()
         };
+        if self.pad_last && self.hunt.opts.observer {
+            rows.retain(|(button, _)| !["X", "Y", "LB", "D-pad down"].contains(&button.as_str()));
+        }
         rows.extend(self.light_hints(self.pad_last));
         rows.extend(self.extra_hints(self.pad_last));
         let rows: Vec<(&str, &str)> = rows.iter().map(|(b, a)| (b.as_str(), *a)).collect();
@@ -188,6 +197,37 @@ impl HuntView {
             .map(|(b, a)| self.hud.label_width(px, b) + space + self.hud.label_width(px, a))
             .sum::<f32>()
             + gap * hints.len().saturating_sub(1) as f32;
+        // Keep all controller hints readable on phone and Deck screens.
+        let available = screen.0 as f32 - 32.0 * scale;
+        if width > available && hints.len() > 1 {
+            let mut lines = Vec::new();
+            let mut first = 0;
+            let mut used = 0.0;
+            for (i, (button, action)) in hints.iter().enumerate() {
+                let item =
+                    self.hud.label_width(px, button) + space + self.hud.label_width(px, action);
+                let next = used + if i > first { gap } else { 0.0 } + item;
+                if next > available && i > first {
+                    lines.push(&hints[first..i]);
+                    first = i;
+                    used = item;
+                } else {
+                    used = next;
+                }
+            }
+            lines.push(&hints[first..]);
+            for (i, line) in lines.iter().enumerate() {
+                self.hint_bar(
+                    out,
+                    screen,
+                    scale,
+                    y - (lines.len() - 1 - i) as f32 * 24.0 * scale,
+                    centre,
+                    line,
+                );
+            }
+            return;
+        }
         let pad = 8.0 * scale;
         let x0 = if centre {
             (screen.0 as f32 - width) / 2.0

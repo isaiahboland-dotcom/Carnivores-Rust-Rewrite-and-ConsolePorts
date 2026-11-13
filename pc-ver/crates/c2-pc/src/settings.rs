@@ -59,6 +59,10 @@ pub struct PcSettings {
     /// jump, crouch, for the pad or the keys, whichever was used last. The
     /// exit and pause prompts show theirs either way.
     pub hints: i32,
+    /// A fresh fire press requests a reload for an empty MEE weapon.
+    pub fire_reloads_empty: i32,
+    /// Freeze gameplay while the weapon or call picker is open.
+    pub pause_pickers: i32,
     /// Every huntable animal in the hunt menu (1 = on): a dialect game's
     /// roaming add-ons too, which their makers left out of the menu to be
     /// come across on their own maps; off, they only roam there.
@@ -79,6 +83,10 @@ pub struct PcSettings {
     /// Advanced observer mode (1 = on): observing, unlimited instant
     /// teleports, flying and stopping time.
     pub advanced_observer: i32,
+    /// Fish and Mosasaurus kinds on the radar (1 = on; off by default, not
+    /// in the original, whose radar never shows them): for finding them
+    /// when testing.
+    pub radar_water: i32,
     /// Starting survival points; zero derives the budget from menu prices.
     pub survival_budget: i32,
     /// Hardcore survival offered beside Classic and Modded (1 = on; off by
@@ -111,6 +119,8 @@ impl Default for PcSettings {
             map_zoom: 0,
             teleport: 0,
             hints: 0,
+            fire_reloads_empty: i32::from(cfg!(target_os = "android")),
+            pause_pickers: 1,
             all_huntable: 0,
             secret_dinos: 10,
             dynamic_time: 0,
@@ -118,6 +128,7 @@ impl Default for PcSettings {
             multi_ammo: 0,
             half_tranq: 1,
             advanced_observer: 0,
+            radar_water: 0,
             survival_budget: 0,
             hardcore_survival: 0,
             map_holsters: 1,
@@ -173,11 +184,14 @@ impl PcSettings {
                 "map_mobile" => s.map_mobile = i32::from(v != 0),
                 "map_zoom" => s.map_zoom = i32::from(v != 0),
                 "teleport" => s.teleport = i32::from(v != 0),
+                "fire_reloads_empty" => s.fire_reloads_empty = i32::from(v != 0),
+                "pause_pickers" => s.pause_pickers = i32::from(v != 0),
                 "button_hints" => s.hints = i32::from(v != 0),
                 "narrow_flashlight" => s.narrow_flashlight = i32::from(v != 0),
                 "multi_ammo" => s.multi_ammo = i32::from(v != 0),
                 "half_tranq" => s.half_tranq = i32::from(v != 0),
                 "advanced_observer" => s.advanced_observer = i32::from(v != 0),
+                "radar_water" => s.radar_water = i32::from(v != 0),
                 "dynamic_time" => s.dynamic_time = i32::from(v != 0),
                 "survival_budget" => s.survival_budget = v.max(0),
                 "hardcore_survival" => s.hardcore_survival = i32::from(v != 0),
@@ -205,7 +219,7 @@ impl PcSettings {
         };
         let text = format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nmodel_distance = {}\n\
-             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\n",
+             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\nfire_reloads_empty = {}\npause_pickers = {}\nradar_water = {}\n",
             s.render,
             s.fog,
             s.blood,
@@ -227,7 +241,10 @@ impl PcSettings {
             s.hardcore_survival,
             s.map_holsters,
             s.high_end_view,
-            s.render_scale
+            s.render_scale,
+            s.fire_reloads_empty,
+            s.pause_pickers,
+            s.radar_water
         );
         if let Some(dir) = path().parent() {
             let _ = std::fs::create_dir_all(dir);
@@ -267,6 +284,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn controller_settings_default_and_parse_explicit_preferences() {
+        let defaults = PcSettings::parse("");
+        assert_eq!(
+            defaults.fire_reloads_empty,
+            i32::from(cfg!(target_os = "android"))
+        );
+        assert_eq!(defaults.pause_pickers, 1);
+        let on = PcSettings::parse("fire_reloads_empty = 1\npause_pickers = 0\n");
+        assert_eq!((on.fire_reloads_empty, on.pause_pickers), (1, 0));
+        let off = PcSettings::parse("fire_reloads_empty = 0\npause_pickers = 1\n");
+        assert_eq!((off.fire_reloads_empty, off.pause_pickers), (0, 1));
+    }
+
+    #[test]
     fn survival_budget_defaults_to_auto_and_accepts_point_overrides() {
         assert_eq!(PcSettings::parse("").survival_budget, 0);
         assert_eq!(
@@ -302,6 +333,12 @@ mod tests {
         assert_eq!(PcSettings::parse("map_mobile = 1\n").map_zoom, 0);
         assert_eq!(PcSettings::parse("map_zoom = 1\n").map_zoom, 1);
         assert_eq!(PcSettings::parse("map_zoom = 0\n").map_zoom, 0);
+    }
+
+    #[test]
+    fn water_animals_on_the_radar_is_opt_in() {
+        assert_eq!(PcSettings::default().radar_water, 0);
+        assert_eq!(PcSettings::parse("radar_water = 1\n").radar_water, 1);
     }
 
     #[test]

@@ -15,7 +15,7 @@ pub(super) enum Opt {
     ClearTrophies,
 }
 
-pub(super) const GAME_OPTS: [Opt; 15] = [
+pub(super) const GAME_OPTS: [Opt; 18] = [
     Opt::Slider("Aggressiveness", |s| &mut s.options.agres),
     Opt::Slider("Density", |s| &mut s.options.dens),
     Opt::Slider("Sensitivity", |s| &mut s.options.sens),
@@ -30,10 +30,13 @@ pub(super) const GAME_OPTS: [Opt; 15] = [
     Opt::PcToggle("Map puts the gun away", |p| &mut p.map_holsters),
     Opt::PcToggle("Multi ammo", |p| &mut p.multi_ammo),
     Opt::PcToggle("Advanced observer mode", |p| &mut p.advanced_observer),
+    Opt::PcToggle("Water animals on radar", |p| &mut p.radar_water),
     Opt::PcSlider("Survival starting budget", |p| &mut p.survival_budget),
     Opt::PcToggle("Enable hardcore survival mode", |p| {
         &mut p.hardcore_survival
     }),
+    Opt::PcToggle("Fire reloads when empty", |p| &mut p.fire_reloads_empty),
+    Opt::PcToggle("Pause weapon / call pickers", |p| &mut p.pause_pickers),
     Opt::ClearTrophies,
 ];
 

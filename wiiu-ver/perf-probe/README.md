@@ -1,6 +1,6 @@
 ## Status: Wii U port
 
-Build and install: [repository instructions](../../README.md#wii-u-from-the-command-line-demo).
+Build and install: [repository instructions](#build-and-install-demo).
 The dated sections below record development experiments and their validation
 at the time; they are not a single current test report. Hardware captures
 referenced below are local, ignored files; see the [port overview](../README.md).
@@ -150,6 +150,11 @@ that come in waves and normal, hardcore or custom), the trophy room
 (`TROPHY.MAP`) and the hunter record (score, trophies, kills, best wave,
 longest shot, the last kills). Prices are still to come.
 
+During play, **D-pad Left + R** toggles the debug/FPS/metrics overlay on the
+GamePad or Pro Controller. It starts visible; hiding it leaves the gameplay HUD
+and messages visible. Hold either button and tap the other to toggle once.
+The button completing the combo does not also switch ammo/vsync or the map.
+
 In a hunt, + asks to leave (A yes, B no, Y restart unsaved) and D-pad Right
 pauses. Leaving saves the trophies and score to `trophy00.sav` (the
 original's format, with its character numbers, so it moves to and from the PC
@@ -278,7 +283,7 @@ right stick, A jumps, B toggles sprint, and D-pad up toggles crouch. This death-
 has not yet been visually verified in Cemu or tested on hardware.
 
 Build with the Rust and devkitPro procedure in the
-[repository README](../../README.md#wii-u-from-the-command-line-demo).
+[repository README](#build-and-install-demo).
 Shader and CMake changes must be rebuilt before testing.
 
 The world's shaders: `terrain.vert` with `terrain.frag` (cut-out) and with
@@ -586,3 +591,32 @@ C2_ORIGINAL_HUNTDAT="$PWD/source/c2-original/HUNTDAT" cargo test --offline --rel
 Rust release/RPX builds and these checks pass. Physical-console rendering,
 rotation/cell-crossing costs, fallback behavior and draw-call overhead are not
 yet validated for this candidate. The working static-scene-v1 package is retained.
+
+## Build and install (demo)
+
+Needs Rust nightly with `rust-src`, Docker (for the `devkitpro/devkitppc` image) and the
+third-party tools fetched into `wiiu-ver/tools/`, as described in
+[wiiu-ver/tools/README.md](../tools/README.md). From the repository root:
+
+```sh
+cargo +nightly build --release \
+  --manifest-path wiiu-ver/perf-probe/Cargo.toml \
+  --target wiiu-ver/perf-probe/powerpc-wiiu.json \
+  -Z json-target-spec -Z build-std=core,alloc,compiler_builtins
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$(pwd)/wiiu-ver/perf-probe:/src" -w /src devkitpro/devkitppc \
+  sh -c '/opt/devkitpro/devkitPPC/bin/powerpc-eabi-objcopy --remove-section .note.GNU-stack target/powerpc-wiiu/release/libc2_wiiu_terrain_probe.a target/wiiu-terrain.a && /opt/devkitpro/portlibs/wiiu/bin/powerpc-eabi-cmake -S . -B build && cmake --build build'
+
+# An install on the SD card: a game (as c2-cook takes it) and its own Wii U Menu entry.
+# It finds c2-cook, the app and wuhbtool in this tree's builds, $DEVKITPRO/tools/bin or PATH (or --tools DIR).
+cargo run --release --manifest-path pc-ver/Cargo.toml -p c2-launcher --bin c2-wiiu-builder -- \
+  --install carnivores-triassic \
+  --title "Carnivores Triassic" --sd SD -- --game "PATH/TO/Carnivores Triassic"
+```
+
+Everything after `--` goes to `c2-cook` (`--game`, `--overlay`, `--mods`, `--recipe`, `--balance`). Add
+`--rpx` for a Homebrew Launcher build instead of a `.wuhb` (it reads `wiiu/apps/carnivores-probe/`).
+To run it in Cemu, cook into Cemu's SD card (`c2-cook --target wiiu --out
+~/.local/share/Cemu/sdcard/wiiu/apps/carnivores-probe ...`) and start the `.rpx`. Hardware frame-time
+captures and session results are kept locally in the ignored `wiiu-ver/perf-probe/hardware-logs/` directory.
+Plan: [docs/WIIU.md](../../docs/WIIU.md).
