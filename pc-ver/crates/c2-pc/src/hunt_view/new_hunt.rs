@@ -240,7 +240,7 @@ fn hunt_options(o: &c2_formats::sav::Options, setup: &HuntSetup) -> HuntOptions 
 }
 
 /// The instance's settings on a hunt: predation (`_PREDATION.TXT`, when the
-/// recipe turns it on), the secret animals' cap, then its spawn rules.
+/// recipe turns it on), bounded fleeing, the secret animals' cap, then its spawn rules.
 fn apply_instance(hunt: &mut Hunt, area: &c2_core::area::Area, setup: &HuntSetup) {
     let huntdat = setup
         .map
@@ -256,6 +256,17 @@ fn apply_instance(hunt: &mut Hunt, area: &c2_core::area::Area, setup: &HuntSetup
     if hunt.herd.predation.is_some() {
         tracing::info!("predation on");
     }
+    // Bounded fleeing, when the player turned it on: the instance's limits
+    // (`_FLEE.TXT`), else the built-in ones.
+    hunt.herd.flee = (setup.pc.bounded_flee != 0).then(|| {
+        let bytes = find_file(
+            huntdat,
+            c2_formats::flee::PATH.trim_start_matches("HUNTDAT/"),
+        )
+        .and_then(|p| std::fs::read(p).ok());
+        tracing::info!("bounded fleeing on");
+        c2_core::dino::flee::FleeTable::load(bytes.as_deref(), &hunt.herd.species)
+    });
     let secret: Vec<bool> = (0..hunt.herd.species.len())
         .map(|ctype| {
             let c = c2_core::dino::Character {

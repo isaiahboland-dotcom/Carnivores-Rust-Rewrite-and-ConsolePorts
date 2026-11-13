@@ -11,6 +11,7 @@
 mod base_tab;
 pub use base_tab::BaseAsk;
 mod entries;
+mod flee;
 mod instance;
 mod predation;
 mod rules;
@@ -425,8 +426,8 @@ impl Editor {
     }
 
     /// The Advanced page: the base game's parts, the instance rules
-    /// (`rules`) and "Carnivores hunt herbivores" (`predation`), a panel
-    /// each.
+    /// (`rules`), "Carnivores hunt herbivores" (`predation`) and the custom
+    /// flee limits (`flee`), a panel each.
     pub fn advanced_ui(&mut self, ui: &mut egui::Ui, handle: &mut crate::jobs::Handle) {
         use crate::app::panel;
         let game = self.draft.game_dirs();
@@ -453,6 +454,8 @@ impl Editor {
         panel(ui, |ui| extras.spawn_ui(ui, r, &game, folders, handle));
         ui.add_space(6.0);
         panel(ui, |ui| extras.predation_ui(ui, r, &game, folders, handle));
+        ui.add_space(6.0);
+        panel(ui, |ui| extras.flee_ui(ui, r, &game, folders, handle));
     }
 
     /// Reads the instance's areas, animals and weapons again (after its

@@ -47,6 +47,9 @@ pub struct Settings {
     /// Performance: every tree and plant drawn as its far sprite, near ones
     /// too (for the standalones whose forests are slow on a 3DS).
     pub tree_sprites: bool,
+    /// Bounded fleeing (experimental): scared animals stay on the map and
+    /// a flight has limits.
+    pub bounded_flee: bool,
     /// Multi ammo: with the tranquilizer picked, the gear page asks Half
     /// tranq (rounds split, an ammo switch in the hunt) or Full tranq; and
     /// that answer.
@@ -139,6 +142,7 @@ impl Default for Settings {
             all_huntable: false,
             test_points: false,
             tree_sprites: false,
+            bounded_flee: false,
             multi_ammo: false,
             half_tranq: true,
             free_observer: false,
@@ -182,6 +186,7 @@ impl Settings {
                 ("all_huntable", v) => s.all_huntable = v != "0",
                 ("test_points", v) => s.test_points = v != "0",
                 ("tree_sprites", v) => s.tree_sprites = v != "0",
+                ("bounded_flee", v) => s.bounded_flee = v != "0",
                 ("multi_ammo", v) => s.multi_ammo = v != "0",
                 ("half_tranq", v) => s.half_tranq = v != "0",
                 ("advanced_observer", v) => s.free_observer = v != "0",
@@ -217,7 +222,7 @@ impl Settings {
                 "run_speed = {}\nambient = {}\nblood = {}\ndeath_animation = {}\n\
                  friendly = {}\nstealth_crouch = {}\nrandom_ambients = {}\ncrouch_button = {}\ngyro_aim = {}\n\
                  hunter = {}\nmap_mobile = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\n\
-                 test_points = {}\ntree_sprites = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\n",
+                 test_points = {}\ntree_sprites = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nbounded_flee = {}\n",
                 s.run_pct,
                 i32::from(s.ambient),
                 i32::from(s.blood),
@@ -236,7 +241,8 @@ impl Settings {
                 i32::from(s.tree_sprites),
                 i32::from(s.multi_ammo),
                 i32::from(s.half_tranq),
-                i32::from(s.free_observer)
+                i32::from(s.free_observer),
+                i32::from(s.bounded_flee)
             ),
         )
     }

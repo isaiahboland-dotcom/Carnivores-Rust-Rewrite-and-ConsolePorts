@@ -124,6 +124,8 @@ const HINTS: [f32; 4] = [164.0, 210.0, 140.0, 26.0];
 const TEST_PTS: [f32; 4] = [84.0, 210.0, 76.0, 26.0];
 /// Hunt options: every tree and plant as its sprite (performance).
 const O_SPRITES: [f32; 4] = [40.0, 168.0, 240.0, 24.0];
+/// Hunt options: bounded fleeing (experimental).
+const O_FLEE: [f32; 4] = [40.0, 192.0, 240.0, 18.0];
 
 const BAR_Y: f32 = 212.0;
 const BACK: [f32; 4] = [4.0, BAR_Y, 76.0, 24.0];
@@ -757,6 +759,7 @@ impl Menu {
             score_factor: 1.0,
             max_ambient: 0,
             dino_run_k: 1.0,
+            bounded_flee: false,
             blood: true,
             death_anim: true,
             friendly: false,
@@ -796,6 +799,7 @@ impl Menu {
             score_factor: self.extra().map_or(1.0, |e| e.2),
             max_ambient: self.settings.max_ambient(),
             dino_run_k: self.settings.run_pct as f32 / 100.0,
+            bounded_flee: self.settings.bounded_flee,
             blood: self.settings.blood,
             death_anim: self.settings.death_anim,
             friendly: self.settings.friendly,
@@ -1264,6 +1268,13 @@ impl Menu {
                         "Trees as flat sprites: faster forests".into()
                     } else {
                         "Trees as models near you".into()
+                    });
+                } else if inside(O_FLEE, x, y) {
+                    s.bounded_flee = !s.bounded_flee;
+                    self.focus = Some(if s.bounded_flee {
+                        "Scared animals stay on the map (experimental)".into()
+                    } else {
+                        "Scared animals flee as in the original".into()
                     });
                 } else if inside(O_STEALTH, x, y) {
                     s.stealth = !s.stealth;
@@ -1950,6 +1961,7 @@ impl Menu {
         toggles.push((O_FRIENDLY, s.friendly, "3DS friendly"));
         toggles.push((O_STEALTH, s.stealth, "Stealth crouch"));
         toggles.push((O_SPRITES, s.tree_sprites, "Trees as sprites"));
+        toggles.push((O_FLEE, s.bounded_flee, "Bounded fleeing (experimental)"));
         for (r, on, _) in &toggles {
             c.rect(*r, if *on { [60, 110, 60, 255] } else { PANEL });
         }
@@ -1993,7 +2005,7 @@ impl Menu {
             ("Hunt options (before each hunt)", TEXT),
             ("  Run speed, ambient animals, 3DS friendly", WHITE),
             ("  (seen from closer; off: 76 cells, as the", WHITE),
-            ("  phone), stealth crouch", WHITE),
+            ("  phone), stealth crouch, bounded fleeing", WHITE),
             ("  (crouch toggles, gyro aim, half as seen).", WHITE),
             ("", WHITE),
             ("Crouch: ZL (New 3DS); Hold L (tap L jumps);", TEXT),

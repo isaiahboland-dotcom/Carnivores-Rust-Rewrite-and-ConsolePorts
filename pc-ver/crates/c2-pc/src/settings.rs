@@ -107,6 +107,11 @@ pub struct PcSettings {
     /// Classic texture filter (1 = on, default off): point-sampled ground and
     /// model textures, as the original's software renderer. Off is bilinear.
     pub classic_filter: i32,
+    /// Bounded fleeing (1 = on, default off; not in the original): scared
+    /// animals aim inside the map and clear of cliffs and water, and a
+    /// flight ends at a distance or time limit (`_FLEE.TXT`, else built-in
+    /// defaults). Off is the original's fleeing.
+    pub bounded_flee: i32,
     /// Resolution slider, 0..=255 (Android only, not in the original): the
     /// frame is drawn at [`PcSettings::resolution_scale`] of the screen's
     /// pixels and the phone scales it up. 255 = every pixel.
@@ -142,6 +147,7 @@ impl Default for PcSettings {
             high_end_view: 0,
             pretty_underwater: 1,
             classic_filter: 0,
+            bounded_flee: 0,
             render_scale: 255,
         }
     }
@@ -207,6 +213,7 @@ impl PcSettings {
                 "map_holsters" => s.map_holsters = i32::from(v != 0),
                 "pretty_underwater" => s.pretty_underwater = i32::from(v != 0),
                 "classic_filter" => s.classic_filter = i32::from(v != 0),
+                "bounded_flee" => s.bounded_flee = i32::from(v != 0),
                 "high_end_view" => s.high_end_view = i32::from(v != 0),
                 "render_scale" => s.render_scale = v.clamp(0, 255),
                 "secret_dinos" => s.secret_dinos = v.clamp(0, 255),
@@ -230,7 +237,7 @@ impl PcSettings {
         };
         let text = format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nmodel_distance = {}\n\
-             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\nfire_reloads_empty = {}\npause_pickers = {}\nradar_water = {}\npretty_underwater = {}\nclassic_filter = {}\n",
+             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\nfire_reloads_empty = {}\npause_pickers = {}\nradar_water = {}\npretty_underwater = {}\nclassic_filter = {}\nbounded_flee = {}\n",
             s.render,
             s.fog,
             s.blood,
@@ -257,7 +264,8 @@ impl PcSettings {
             s.pause_pickers,
             s.radar_water,
             s.pretty_underwater,
-            s.classic_filter
+            s.classic_filter,
+            s.bounded_flee
         );
         if let Some(dir) = path().parent() {
             let _ = std::fs::create_dir_all(dir);
@@ -408,6 +416,12 @@ mod tests {
         assert_eq!(s.render_cells(74), MAX_RENDER_CELLS);
         s.fog = 1;
         assert_eq!(s.render_cells(74), 74);
+    }
+
+    #[test]
+    fn bounded_flee_is_opt_in_and_round_trips() {
+        assert_eq!(PcSettings::default().bounded_flee, 0);
+        assert_eq!(PcSettings::parse("bounded_flee = 1\n").bounded_flee, 1);
     }
 
     #[test]

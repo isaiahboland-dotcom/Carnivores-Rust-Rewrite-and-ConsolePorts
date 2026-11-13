@@ -177,6 +177,9 @@ pub struct Setup {
     /// Settings: blood, and the death camera.
     pub blood: bool,
     pub death_anim: bool,
+    /// Bounded fleeing (experimental here): scared animals stay on the map
+    /// and a flight has limits (`_FLEE.TXT`, else built-in ones).
+    pub bounded_flee: bool,
     /// Hunt options: "3DS friendly" (animals notice and chase the hunter
     /// from a shorter range), stealth crouch (ZL toggles; crouched: gyro
     /// aim, half as visible and loud), and 4 random ambient species
@@ -695,6 +698,9 @@ impl Game {
         // always come.
         if hunting && !inst.is_empty() {
             hunt.apply_spawn_rules(&area, &inst, &setup.area);
+        if setup.bounded_flee {
+            hunt.herd.flee = Some(load::flee(vfs, &hunt.herd.species));
+        }
         }
         // Shots carry and animals out of sight are re-placed past what is
         // drawn, which can be farther than `view_r`.
