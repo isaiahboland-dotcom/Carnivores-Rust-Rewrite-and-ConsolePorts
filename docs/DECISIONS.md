@@ -5035,3 +5035,23 @@ acceptance for the reported defect. Private evidence stays ignored.
   and replaced. They await maintainer approval before commit.
 - Genesis Redux joined the kill scenario for our engine. The original-engine
   kill hook does not support its executable (see REGRESSION.md, Limitations).
+
+## 2026-11-12 — Water transparency is a depth coefficient (PC)
+
+- The RSC water `transp` value is not a final alpha. Following `Hunt2.cpp`
+  (hardware path), each water vertex's alpha is
+  `((wlevel - HMap) * 2 + 4) * transp + dist / 256 + wdelta * 2`, clamped at 0,
+  multiplied by `6 / (down + 0.1)` (`down`: downward component of the unit
+  camera-to-ground-vertex direction) and capped at 255.
+- Previously `transp.clamp(0, 1)` was the alpha. Genesis AREA2 has
+  `transp = 0.001`, so its sea was invisible and the player saw and walked on
+  the seabed. Records with `transp >= 1` were opaque before and stay mostly
+  opaque now; shallow water near the camera becomes clearer, as in the original.
+- Not reproduced: the opaque rings beyond `ctViewR1 + 2` (Rust has no
+  `ctViewR1`; the formula already saturates well inside that range at normal
+  eye heights) and the underwater formula. While the camera is below a water's
+  level, that water keeps the previous clamped alpha. Water distance fog is unchanged.
+- The software renderer draws water opaque; this follows the hardware path the
+  PC renderer already uses. Not validated against a native hardware capture.
+- The VR (`c2-vr/src/terrain.rs`) and 3DS (`c2-3ds/src/world.rs`) water still
+  clamp `transp` and are not changed.

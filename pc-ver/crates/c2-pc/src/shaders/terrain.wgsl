@@ -23,7 +23,7 @@ struct Params {
 // cells[i].y = texture1 | flags << 16
 // cells[i].z = dawn light | day light << 8 | night light << 16
 @group(1) @binding(0) var<storage, read> cells: array<vec4<u32>>;
-// waters[i] = (level * 64, texture index, transparency, 0)
+// waters[i] = (level * 64, texture index, RSC transparency coefficient, 0)
 @group(1) @binding(1) var<storage, read> waters: array<vec4<f32>>;
 @group(1) @binding(2) var<uniform> params: Params;
 @group(1) @binding(3) var tex: texture_2d_array<f32>;
@@ -231,8 +231,25 @@ fn vs_water(@builtin(vertex_index) vid: u32, @location(0) chunk: vec4<i32>) -> V
     o.light = (168.0 - trunc(wdelta * 24.0)) / 255.0;
     o.layer = min(u32(wt.y), params.layers - 1u);
     o.dist = distance(p, g.cam_pos.xyz);
-    o.alpha = wt.z;
+    o.alpha = water_alpha(v, wt, o.dist, wdelta);
     return o;
+}
+
+// Hunt2.cpp (hardware path): the RSC transparency scales the water's depth
+// at this vertex; distance, shimmer and a grazing view add opacity, so
+// shallow water near the camera is clear and the far sea opaque.
+// Underwater views (a separate formula in the original) keep the
+// coefficient as alpha.
+fn water_alpha(v: vec2<i32>, wt: vec4<f32>, dist: f32, wdelta: f32) -> f32 {
+    if (g.cam_pos.y < wt.x) {
+        return clamp(wt.z, 0.0, 1.0);
+    }
+    let ground = vertex_height(v);
+    let to_ground = vec3<f32>(f32(v.x) * 256.0, ground, f32(v.y) * 256.0) - g.cam_pos.xyz;
+    let down = max(-normalize(to_ground).y, 0.0);
+    let depth = (wt.x - ground) / 64.0;
+    let a = max((depth * 2.0 + 4.0) * wt.z + dist / 256.0 + wdelta * 2.0, 0.0);
+    return min(a * 6.0 / (down + 0.1), 255.0) / 255.0;
 }
 
 @fragment

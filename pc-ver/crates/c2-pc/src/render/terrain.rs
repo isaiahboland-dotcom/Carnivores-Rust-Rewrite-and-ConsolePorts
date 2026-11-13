@@ -120,7 +120,9 @@ impl TerrainRenderer {
             .iter()
             .map(|w| {
                 let level = w.level as f32 * c2_core::H_SCALE;
-                [level, w.texture_index as f32, w.transp.clamp(0.0, 1.0), 0.0]
+                // `transp` is a depth coefficient (shaders/terrain.wgsl:
+                // water_alpha), not a final alpha: keep it unclamped.
+                [level, w.texture_index as f32, w.transp.max(0.0), 0.0]
             })
             .collect();
         if waters.is_empty() {
