@@ -223,12 +223,20 @@ the folder whose files match the hashes, and lists every missing or different
 file with the URL to get it. Only the listed files are used, so a recipe
 builds the same game everywhere.
 
+`[recipe] schema` is the recipe file format, an integer (missing means 1). A
+recipe with a newer schema than the build supports is refused with both
+numbers named; update the game to load it. `[recipe] version` is your own
+version of the pack, free text that is never compared. Keys the build does not
+read are ignored with a warning (in the log, and in `c2-cook`'s output), so an
+older build can still load a recipe written for a newer one. `[missions]` is
+reserved for a later version: it is accepted, reported as not implemented, and
+ignored.
+
 A recipe can also hold the choices made for its game, so the launcher's
 Instances tab can rebuild it later exactly as it was:
 ```toml
 [settings]
 menu = "mobile"              # mod, original, ice-age, mobile, game:<standalone id>
-survival = ["classic", "modded"]
 three_ds_target = "o3ds"     # or n3ds
 
 [settings.pictures]          # auto (default), pc or mobile

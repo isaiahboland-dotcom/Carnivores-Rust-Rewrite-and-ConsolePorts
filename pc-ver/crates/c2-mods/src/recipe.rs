@@ -18,7 +18,9 @@ use crate::res_merge::diff;
 use crate::ModError;
 
 mod base;
+mod schema;
 pub use base::*;
+pub use schema::{RESERVED, SCHEMA};
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -163,12 +165,15 @@ impl Tuning {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Info {
     pub id: String,
     pub name: String,
+    /// The author's version of the pack: free text, never compared.
     pub version: String,
+    /// The recipe file format ([`SCHEMA`]); missing: 1.
+    pub schema: u32,
     /// Expected base game: `bases/<base>.toml` next to the recipe lists its hashes.
     pub base: String,
     /// The base game's own areas, huntables and weapons left out
@@ -177,6 +182,19 @@ pub struct Info {
     /// and standalones combined beside it included.
     #[serde(skip_serializing_if = "crate::standalone::Skip::is_empty")]
     pub skip: crate::standalone::Skip,
+}
+
+impl Default for Info {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            version: String::new(),
+            schema: SCHEMA,
+            base: String::new(),
+            skip: Default::default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -243,8 +261,9 @@ pub struct PatchRef {
 }
 
 impl Recipe {
+    /// Parses a recipe ([`Recipe::parse_checked`] without its warnings).
     pub fn parse(text: &str) -> Result<Self, toml::de::Error> {
-        toml::from_str(text)
+        Self::parse_checked(text).map(|(r, _)| r)
     }
 
     pub fn load(path: &Path) -> Result<Self, ModError> {

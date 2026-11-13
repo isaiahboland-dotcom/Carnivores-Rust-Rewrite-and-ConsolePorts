@@ -353,7 +353,10 @@ pub fn build_recipe(
     out: &Path,
     accept_base: bool,
 ) -> Result<()> {
-    let r = c2_mods::recipe::Recipe::load(recipe_path)?;
+    let (r, warnings) = c2_mods::recipe::Recipe::load_checked(recipe_path)?;
+    for w in warnings {
+        tracing::warn!("{}: {w}", recipe_path.display());
+    }
     let found = verify(recipe_path, &r, bases, mods_dirs, accept_base)?;
     if let Some(e) = &found.base_problem {
         bail!("{e}");

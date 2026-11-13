@@ -255,10 +255,94 @@ fn the_repository_recipes_write_out_unchanged() {
     let found = c2_mods::recipe::find_recipes(&dir);
     assert!(!found.is_empty(), "no recipes under {}", dir.display());
     for p in found {
-        let r = c2_mods::recipe::Recipe::load(&p).expect("loads");
+        let (r, warnings) = c2_mods::recipe::Recipe::load_checked(&p).expect("loads");
         let again = c2_mods::recipe::Recipe::parse(&r.to_toml()).expect("reparses");
         assert_eq!(r, again, "{}", p.display());
+        // The published recipes (not the personal instances below them) use
+        // only keys this build reads, in a format it supports.
+        let personal = p.components().any(|c| c.as_os_str() == "instances");
+        if !personal {
+            assert!(warnings.is_empty(), "{}: {warnings:?}", p.display());
+            assert!(r.recipe.schema <= c2_mods::recipe::SCHEMA);
+        }
     }
+}
+
+/// `[recipe] schema` and the author's `version` say nothing about the game:
+/// a recipe with them builds the same pack, byte for byte, as one without.
+#[test]
+fn schema_and_version_leave_the_built_pack_unchanged() {
+    let base = tmp("ident-base");
+    write(
+        &base,
+        &[
+            ("HUNTDAT/_RES.TXT", RES.as_bytes()),
+            ("HUNTDAT/MENU/MENUM.TGA", b"menu"),
+        ],
+    );
+    let authoring = tmp("ident-mods");
+    write(
+        &authoring,
+        &[(
+            "Red/HUNTDAT/_RES.TXT",
+            RES.replace("power = 1", "power = 2").as_bytes(),
+        )],
+    );
+    let v = vanilla(std::slice::from_ref(&base)).expect("vanilla");
+    let red = load_mod(&v, &authoring.join("Red")).expect("mod");
+    let plain = new_recipe("ident", "Ident", "", &[red]).expect("recipe");
+    // The recipe as written before `schema` existed: no such key.
+    let old = plain
+        .to_toml()
+        .lines()
+        .filter(|l| !l.starts_with("schema"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut newer = plain.clone();
+    newer.recipe.version = "2.0 final".into();
+    let texts = [old, plain.to_toml(), newer.to_toml()];
+    let mut packs = Vec::new();
+    for (i, text) in texts.iter().enumerate() {
+        let rdir = tmp(&format!("ident-recipe-{i}"));
+        write(&rdir, &[("r.toml", text.as_bytes())]);
+        let rpath = rdir.join("r.toml");
+        let r = Recipe::load(&rpath).expect("load");
+        assert_eq!(r.recipe.schema, 1);
+        let found = locate(&r, std::slice::from_ref(&authoring));
+        let (sources, opts) = prepare(&rpath, &r, &found, &v).expect("prepare");
+        let pack = build_with(std::slice::from_ref(&base), sources, &opts).expect("build");
+        let out = tmp(&format!("ident-out-{i}"));
+        materialize(&pack, &out).expect("materialize");
+        packs.push(tree(&out));
+        let _ = std::fs::remove_dir_all(rdir);
+        let _ = std::fs::remove_dir_all(out);
+    }
+    assert!(!texts[0].contains("schema") && texts[1].contains("schema = 1"));
+    assert!(packs[0].contains_key("HUNTDAT/_RES.TXT"));
+    assert_eq!(packs[0], packs[1], "schema = 1 changed the pack");
+    assert_eq!(packs[1], packs[2], "the version string changed the pack");
+    for d in [base, authoring] {
+        let _ = std::fs::remove_dir_all(d);
+    }
+}
+
+/// Every file under `dir` (relative path, with `/`) and its bytes.
+fn tree(dir: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    fn walk(root: &Path, dir: &Path, out: &mut std::collections::BTreeMap<String, Vec<u8>>) {
+        for e in std::fs::read_dir(dir).expect("read dir").flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(root, &p, out);
+            } else {
+                let rel = p.strip_prefix(root).expect("under root");
+                let rel = rel.to_string_lossy().replace('\\', "/");
+                out.insert(rel, std::fs::read(&p).expect("read"));
+            }
+        }
+    }
+    let mut out = std::collections::BTreeMap::new();
+    walk(dir, dir, &mut out);
+    out
 }
 
 #[test]

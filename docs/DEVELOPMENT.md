@@ -253,7 +253,8 @@ A recipe describes a modpack **without containing any mod content**.
 [recipe]
 id = "ultimate-c2"
 name = "Ultimate Carnivores 2"
-version = "0.1"
+version = "0.1"                # the pack author's version (free text)
+schema = 1                     # recipe file format (missing: 1)
 base = "c2-vanilla"            # expected base game, verified by hashes
 
 [[mods]]

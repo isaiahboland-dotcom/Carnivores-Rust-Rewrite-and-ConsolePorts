@@ -436,7 +436,10 @@ fn merged_game(a: &Args, game: &Path) -> Result<Vfs> {
         .chain(a.overlays.iter().cloned())
         .collect();
     if let Some(r) = &a.recipe {
-        let recipe = c2_mods::recipe::Recipe::load(r)?;
+        let (recipe, warnings) = c2_mods::recipe::Recipe::load_checked(r)?;
+        for w in warnings {
+            eprintln!("{}: {w}", r.display());
+        }
         if !recipe.standalones.is_empty() {
             bail!(
                 "{} combines standalone games: build it first (c2-pc recipe build ... --out DIR), then --game DIR",

@@ -8,7 +8,8 @@
 [recipe]
 id = "example"
 name = "Example pack"
-version = "0.1"
+version = "0.1"              # your pack's version: free text, never compared
+schema = 1                   # the recipe file format; missing means 1
 base = "c2-vanilla"          # checked against bases/c2-vanilla.toml
 
 [[mods]]
