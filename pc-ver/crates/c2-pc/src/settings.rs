@@ -100,6 +100,13 @@ pub struct PcSettings {
     /// [`HIGH_END_RENDER_CELLS`] with the far ground in coarser levels, and
     /// objects fading between model and sprite instead of switching.
     pub high_end_view: i32,
+    /// Pretty underwater view (1 = on, the default): fog and a half-strength
+    /// tint in the water texture's mean colour, as the original's 3dfx
+    /// renderer. Off keeps the plain scene.
+    pub pretty_underwater: i32,
+    /// Classic texture filter (1 = on, default off): point-sampled ground and
+    /// model textures, as the original's software renderer. Off is bilinear.
+    pub classic_filter: i32,
     /// Resolution slider, 0..=255 (Android only, not in the original): the
     /// frame is drawn at [`PcSettings::resolution_scale`] of the screen's
     /// pixels and the phone scales it up. 255 = every pixel.
@@ -133,6 +140,8 @@ impl Default for PcSettings {
             hardcore_survival: 0,
             map_holsters: 1,
             high_end_view: 0,
+            pretty_underwater: 1,
+            classic_filter: 0,
             render_scale: 255,
         }
     }
@@ -196,6 +205,8 @@ impl PcSettings {
                 "survival_budget" => s.survival_budget = v.max(0),
                 "hardcore_survival" => s.hardcore_survival = i32::from(v != 0),
                 "map_holsters" => s.map_holsters = i32::from(v != 0),
+                "pretty_underwater" => s.pretty_underwater = i32::from(v != 0),
+                "classic_filter" => s.classic_filter = i32::from(v != 0),
                 "high_end_view" => s.high_end_view = i32::from(v != 0),
                 "render_scale" => s.render_scale = v.clamp(0, 255),
                 "secret_dinos" => s.secret_dinos = v.clamp(0, 255),
@@ -219,7 +230,7 @@ impl PcSettings {
         };
         let text = format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nmodel_distance = {}\n\
-             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\nfire_reloads_empty = {}\npause_pickers = {}\nradar_water = {}\n",
+             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\nfire_reloads_empty = {}\npause_pickers = {}\nradar_water = {}\npretty_underwater = {}\nclassic_filter = {}\n",
             s.render,
             s.fog,
             s.blood,
@@ -244,7 +255,9 @@ impl PcSettings {
             s.render_scale,
             s.fire_reloads_empty,
             s.pause_pickers,
-            s.radar_water
+            s.radar_water,
+            s.pretty_underwater,
+            s.classic_filter
         );
         if let Some(dir) = path().parent() {
             let _ = std::fs::create_dir_all(dir);
@@ -395,6 +408,22 @@ mod tests {
         assert_eq!(s.render_cells(74), MAX_RENDER_CELLS);
         s.fog = 1;
         assert_eq!(s.render_cells(74), 74);
+    }
+
+    #[test]
+    fn classic_filter_is_opt_in_and_parses() {
+        assert_eq!(PcSettings::default().classic_filter, 0);
+        assert_eq!(PcSettings::parse("classic_filter = 1\n").classic_filter, 1);
+    }
+
+    #[test]
+    fn pretty_underwater_is_on_by_default_and_round_trips() {
+        assert_eq!(PcSettings::default().pretty_underwater, 1);
+        assert_eq!(
+            PcSettings::parse("pretty_underwater = 0\n").pretty_underwater,
+            0
+        );
+        assert_eq!(PcSettings::parse("").pretty_underwater, 1);
     }
 
     #[test]

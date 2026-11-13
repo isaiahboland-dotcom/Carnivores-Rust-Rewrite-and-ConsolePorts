@@ -13,6 +13,11 @@ impl HuntView {
     ) {
         self.screen = screen;
         let aspect = screen.0.max(1) as f32 / screen.1.max(1) as f32;
+        let p = &self.hunt.player;
+        let fog = (p.underwater && self.setup.pc.pretty_underwater != 0)
+            .then(|| self.view.area().water_mean_rgb(p.x, p.z))
+            .flatten();
+        self.view.underwater_fog = fog;
         if !self.blacked_out() {
             self.draw_world(gpu, pass, aspect);
         }
@@ -20,6 +25,16 @@ impl HuntView {
         // HUD at an integer scale of the original's 640x480 layout.
         let scale = (screen.1 as f32 / 480.0).floor().max(1.0);
         let mut sprites = Vec::new();
+        // `RenderFSRect(0x80000000 + CurFogColor)`: half-strength water tint.
+        if let Some(c) = fog {
+            let k = self.view.brightness;
+            let tint = [c[0] * k, c[1] * k, c[2] * k, 0.5];
+            sprites.extend(
+                self.hud
+                    .rect(0.0, 0.0, screen.0 as f32, screen.1 as f32, tint),
+            );
+        }
+        self.draw_breath(screen, scale, &mut sprites);
         self.draw_optics(screen, &mut sprites);
         let ammo_start = sprites.len();
         sprites.extend(self.weapons.hud_sprites(&self.hud, &self.hunt, scale));
@@ -190,6 +205,19 @@ impl HuntView {
         }
     }
 
+    /// Breath bar while underwater: the original drowns by draining health,
+    /// so the bar shows the health left. It fades out quickly when nearly gone.
+    fn draw_breath(&self, screen: (u32, u32), scale: f32, out: &mut Vec<Sprite>) {
+        if !self.hunt.player.underwater || self.hunt.health <= 0 {
+            return;
+        }
+        let left = (self.hunt.health as f32 / c2_core::game::MAX_HEALTH as f32).clamp(0.0, 1.0);
+        let alpha = (left / BREATH_FADE_BELOW).min(1.0);
+        let (w, h) = (screen.0 as f32 * 0.25, 6.0 * scale);
+        let (x, y) = ((screen.0 as f32 - w) / 2.0, screen.1 as f32 * 0.9);
+        out.extend(self.hud.rect(x, y, w * left, h, [1.0, 1.0, 1.0, alpha]));
+    }
+
     /// Scope cross-hairs at the view model's aim point (`DrawOpticCross`).
     fn draw_scope_cross(&self, screen: (u32, u32), scale: f32, aspect: f32, out: &mut Vec<Sprite>) {
         if !self.hunt.scope_cross() {
@@ -298,3 +326,6 @@ impl HuntView {
         }
     }
 }
+
+/// The breath bar starts to fade out below this share of full health.
+const BREATH_FADE_BELOW: f32 = 0.25;

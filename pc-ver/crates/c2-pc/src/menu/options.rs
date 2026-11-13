@@ -51,7 +51,7 @@ pub(super) const HIGH_END_VIEW: &str = if cfg!(target_os = "android") {
 pub const RESOLUTION: &str = "Resolution";
 
 #[cfg(not(target_os = "android"))]
-pub(super) const VIDEO_OPTS: [Opt; 9] = [
+pub(super) const VIDEO_OPTS: [Opt; 11] = [
     Opt::Slider("View range", |s| &mut s.options.view_r),
     Opt::PcSlider("Render distance", |p| &mut p.render),
     Opt::Slider("Brightness", |s| &mut s.options.brightness),
@@ -61,10 +61,12 @@ pub(super) const VIDEO_OPTS: [Opt; 9] = [
     Opt::PcToggle("Map zoom / pan", |p| &mut p.map_zoom),
     Opt::PcToggle("Teleport (map)", |p| &mut p.teleport),
     Opt::PcToggle(HIGH_END_VIEW, |p| &mut p.high_end_view),
+    Opt::PcToggle("Pretty underwater view", |p| &mut p.pretty_underwater),
+    Opt::PcToggle("Classic texture filter", |p| &mut p.classic_filter),
 ];
 
 #[cfg(target_os = "android")]
-pub(super) const VIDEO_OPTS: [Opt; 10] = [
+pub(super) const VIDEO_OPTS: [Opt; 12] = [
     Opt::Slider("View range", |s| &mut s.options.view_r),
     Opt::PcSlider("Render distance", |p| &mut p.render),
     Opt::Slider("Brightness", |s| &mut s.options.brightness),
@@ -74,6 +76,8 @@ pub(super) const VIDEO_OPTS: [Opt; 10] = [
     Opt::PcToggle("Map zoom / pan", |p| &mut p.map_zoom),
     Opt::PcToggle("Teleport (map)", |p| &mut p.teleport),
     Opt::PcToggle(HIGH_END_VIEW, |p| &mut p.high_end_view),
+    Opt::PcToggle("Pretty underwater view", |p| &mut p.pretty_underwater),
+    Opt::PcToggle("Classic texture filter", |p| &mut p.classic_filter),
     Opt::PcSlider(RESOLUTION, |p| &mut p.render_scale),
 ];
 

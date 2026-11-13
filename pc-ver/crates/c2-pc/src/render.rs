@@ -645,7 +645,7 @@ impl ModelRenderer {
                 contents: ground,
                 usage: wgpu::BufferUsages::STORAGE,
             });
-        let sampler = gpu.sampler(true, false);
+        let sampler = gpu.sampler(crate::gpu::world_linear(), false);
         let group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("model tex"),
             layout: &tex_layout,

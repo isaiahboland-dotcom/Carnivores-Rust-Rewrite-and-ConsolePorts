@@ -136,11 +136,18 @@ pub struct AreaView {
     pub fog_start: f32,
     /// `(OptBrightness + 128) / 256`: textures, sky and fog colour.
     pub brightness: f32,
+    /// Underwater fog colour (the water texture's mean, 0..1 RGB): the
+    /// whole scene fades into it. Set by the hunt each frame.
+    pub underwater_fog: Option<[f32; 3]>,
     start: Instant,
     /// Fixed clock and sky isolation for native renderer diagnostics only.
     pub(crate) capture: Option<(u32, bool)>,
     pub fps: f32,
 }
+
+/// Underwater fog reaches full strength at this fraction of the view
+/// distance (the original's value is in its fog table, not reproduced).
+const UNDERWATER_FOG_END: f32 = 0.35;
 
 impl AreaView {
     pub fn load(gpu: &Gpu, map_path: &Path, time: TimeOfDay) -> Result<Self> {
@@ -336,6 +343,7 @@ impl AreaView {
             zoom: 1.0,
             radius: 74,
             fog_start: 0.6,
+            underwater_fog: None,
             brightness: 1.0,
             start: Instant::now(),
             capture: None,
@@ -445,6 +453,9 @@ impl Scene for AreaView {
     }
 
     fn clear_color(&self) -> [f64; 3] {
+        if let Some(c) = self.underwater_fog {
+            return c.map(|v| f64::from((v * self.brightness).clamp(0.0, 1.0)));
+        }
         if self.area.cycle.is_some() {
             let weights = self.area.time_weights();
             let rgb: [f32; 3] = core::array::from_fn(|k| {
@@ -522,7 +533,11 @@ impl AreaView {
                 proj,
                 eye: self.cam.pos,
                 fog_rgb: self.clear_color().map(|c| c as f32),
-                fog: (far * self.fog_start, far),
+                fog: if self.underwater_fog.is_some() {
+                    (0.0, far * UNDERWATER_FOG_END)
+                } else {
+                    (far * self.fog_start, far)
+                },
                 daylight: self.area.time_weights(),
                 stars: self.area.cycle.is_some(),
                 night_vision: self

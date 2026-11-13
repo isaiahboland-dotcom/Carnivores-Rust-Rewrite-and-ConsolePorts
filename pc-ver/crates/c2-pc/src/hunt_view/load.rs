@@ -53,6 +53,7 @@ impl HuntView {
         if let Some(kind) = setup.survival {
             survival_setup(&mut setup, kind)?;
         }
+        crate::gpu::set_classic_filter(setup.pc.classic_filter != 0);
         let mut view = AreaView::load(gpu, &setup.map, setup.time)?;
         view.narrow_flashlight = setup.pc.narrow_flashlight != 0;
         view.fly = false;

@@ -91,4 +91,57 @@ mod tests {
         assert_eq!(half(&px([9, 9, 9, 255], 3), 3, 1).len(), 4);
         assert_eq!(half(&px([9, 9, 9, 255], 1), 1, 1).len(), 4);
     }
+
+    /// `Resources.cpp: GenerateMipMap` on RGB555 texels, for reference.
+    fn original_half(a: &[u16], l: usize) -> Vec<u16> {
+        let mut d = vec![0u16; l * l];
+        for y in 0..l {
+            for x in 0..l {
+                let t = |dx: usize, dy: usize| a[x * 2 + dx + (y * 2 + dy) * 2 * l];
+                let avg = |sh: u32| {
+                    let s: u16 = [t(0, 0), t(1, 0), t(0, 1), t(1, 1)]
+                        .iter()
+                        .map(|c| (c >> sh) & 31)
+                        .sum();
+                    (s + 2) >> 2
+                };
+                d[x + y * l] = avg(0) | (avg(5) << 5) | (avg(10) << 10);
+            }
+        }
+        d
+    }
+
+    /// T4 (docs/TEXTURE-DETAIL.md): the RGBA8 mip, requantised to 5 bits per
+    /// channel, stays within one level of the original's 5-bit mip, and
+    /// within 8 as 8-bit values.
+    #[test]
+    fn matches_original_generate_mip_map_within_one_level() {
+        let l = 64usize;
+        let mut seed = 0x1234_5678u32;
+        let mut next = || {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (seed >> 16) as u16
+        };
+        let a: Vec<u16> = (0..4 * l * l).map(|_| next() & 0x7fff | 0x0400).collect();
+        let rgba = c2_core::color::image_to_rgba8(&a, false);
+        let mine = half(&rgba, 2 * l, 2 * l);
+        let theirs = original_half(&a, l);
+        let (mut worst5, mut worst8, mut sum8) = (0i32, 0i32, 0i64);
+        for (i, t) in theirs.iter().enumerate() {
+            let want = c2_core::color::rgb555_to_rgba8(*t, 255);
+            for k in 0..3 {
+                let m = i32::from(mine[i * 4 + k]);
+                worst8 = worst8.max((m - i32::from(want[k])).abs());
+                sum8 += i64::from((m - i32::from(want[k])).abs());
+                let c5 = i32::from((*t >> [10, 5, 0][k]) & 31);
+                worst5 = worst5.max(((m >> 3) - c5).abs());
+            }
+        }
+        eprintln!(
+            "T4 mip: worst 5-bit diff {worst5}, worst 8-bit diff {worst8}, mean 8-bit diff {:.3}",
+            sum8 as f64 / (theirs.len() * 3) as f64
+        );
+        assert!(worst5 <= 1, "5-bit diff {worst5}");
+        assert!(worst8 <= 8, "8-bit diff {worst8}");
+    }
 }

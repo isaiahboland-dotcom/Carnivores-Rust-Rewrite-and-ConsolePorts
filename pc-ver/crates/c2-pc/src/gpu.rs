@@ -12,6 +12,31 @@ pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 /// the most (docs/DECISIONS.md). The PC keeps its single level for now.
 pub const WORLD_MIPS: bool = cfg!(target_os = "android");
 
+/// Mip chain for world textures. `C2_DIAG_MIPS=0|1` overrides the platform
+/// default for texture-detail diagnostics (`docs/TEXTURE-DETAIL.md`).
+pub fn world_mips() -> bool {
+    match std::env::var("C2_DIAG_MIPS").as_deref() {
+        Ok("1") => true,
+        Ok("0") => false,
+        _ => WORLD_MIPS,
+    }
+}
+
+static CLASSIC_FILTER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Classic filter (Video option): point-sample ground and model textures, as
+/// the original's software renderer. Takes effect for the next area loaded.
+pub fn set_classic_filter(on: bool) {
+    CLASSIC_FILTER.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether world textures are bilinear. The classic filter option, or
+/// `C2_DIAG_FILTER=nearest` for diagnostics, selects point sampling.
+pub fn world_linear() -> bool {
+    !CLASSIC_FILTER.load(std::sync::atomic::Ordering::Relaxed)
+        && std::env::var("C2_DIAG_FILTER").as_deref() != Ok("nearest")
+}
+
 pub struct Gpu {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -302,7 +327,7 @@ impl Gpu {
         height: u32,
         layers: &[&[u8]],
     ) -> wgpu::TextureView {
-        self.texture_array_with(label, width, height, layers, WORLD_MIPS)
+        self.texture_array_with(label, width, height, layers, world_mips())
     }
 
     fn texture_array_with(

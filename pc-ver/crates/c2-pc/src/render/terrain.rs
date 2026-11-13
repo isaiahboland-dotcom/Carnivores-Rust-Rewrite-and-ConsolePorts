@@ -140,7 +140,7 @@ impl TerrainRenderer {
             layers.push(&fallback);
         }
         let view = gpu.world_texture_array("terrain textures", 128, 128, &layers);
-        let sampler = gpu.sampler(true, false);
+        let sampler = gpu.sampler(crate::gpu::world_linear(), false);
         let mut sky_map = area.rsc.sky_map.clone();
         sky_map.resize(128 * 128, 0);
 
