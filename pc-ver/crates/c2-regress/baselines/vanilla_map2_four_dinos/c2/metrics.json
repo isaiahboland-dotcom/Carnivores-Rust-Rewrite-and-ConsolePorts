@@ -2,65 +2,140 @@
   "checkpoints": [
     {
       "name": "warmup",
-      "state_hash": "cbdd39f90962d5c4",
+      "state_hash": "244c04cdee081e4d",
       "tick": 500
     },
     {
+      "name": "weapon_01_pistol_ready",
+      "state_hash": "5f2c3a1b03d9a9f6",
+      "tick": 545
+    },
+    {
       "name": "weapon_01_pistol_fire",
-      "state_hash": "a156ef7d320937e4",
+      "state_hash": "35f912a3b2406480",
       "tick": 560
     },
     {
+      "name": "weapon_01_pistol_after",
+      "state_hash": "d450d6d5844c84a8",
+      "tick": 575
+    },
+    {
+      "name": "weapon_02_shotgun_ready",
+      "state_hash": "c876f104cbf8ff9d",
+      "tick": 655
+    },
+    {
       "name": "weapon_02_shotgun_fire",
-      "state_hash": "1990cb056ea3b1b9",
+      "state_hash": "e530740d15482ed9",
       "tick": 715
     },
     {
+      "name": "weapon_02_shotgun_after",
+      "state_hash": "064403360a108be6",
+      "tick": 775
+    },
+    {
+      "name": "weapon_03_db_shotgun_ready",
+      "state_hash": "a4773a62d0a2c061",
+      "tick": 865
+    },
+    {
       "name": "weapon_03_db_shotgun_fire",
-      "state_hash": "abab306c2b63ae50",
+      "state_hash": "d9202d6f4baaaca1",
       "tick": 880
     },
     {
+      "name": "weapon_03_db_shotgun_after",
+      "state_hash": "0a6e1f4a8f0d8acb",
+      "tick": 895
+    },
+    {
+      "name": "weapon_04_x_bow_ready",
+      "state_hash": "85cb51a2f748dd5e",
+      "tick": 1000
+    },
+    {
       "name": "weapon_04_x_bow_fire",
-      "state_hash": "781a1d23edce4138",
+      "state_hash": "eb2d365cf25cb407",
       "tick": 1075
     },
     {
+      "name": "weapon_04_x_bow_after",
+      "state_hash": "e74ad07258dcdd87",
+      "tick": 1150
+    },
+    {
+      "name": "weapon_05_rifle_ready",
+      "state_hash": "af293adcba5a5ae0",
+      "tick": 1265
+    },
+    {
       "name": "weapon_05_rifle_fire",
-      "state_hash": "ef470ec362fb3813",
+      "state_hash": "5fe90f0613bcbc35",
       "tick": 1280
     },
     {
+      "name": "weapon_05_rifle_after",
+      "state_hash": "0e9c856b86592e75",
+      "tick": 1295
+    },
+    {
+      "name": "weapon_06_sniper_rifle_ready",
+      "state_hash": "05f857538ac17ad1",
+      "tick": 1368
+    },
+    {
       "name": "weapon_06_sniper_rifle_fire",
-      "state_hash": "d7d35fce89933a4a",
+      "state_hash": "358876e00de23240",
       "tick": 1406
     },
     {
+      "name": "weapon_06_sniper_rifle_after",
+      "state_hash": "515acb27a5b9ba63",
+      "tick": 1443
+    },
+    {
       "name": "binoculars_open",
-      "state_hash": "c4416f28e939868c",
+      "state_hash": "e706fb8f7dc9dc50",
       "tick": 1505
     },
     {
+      "name": "binoculars_closed",
+      "state_hash": "919bc2b77f8b7fb0",
+      "tick": 1537
+    },
+    {
       "name": "map_open",
-      "state_hash": "9d34fe3424441215",
-      "tick": 1539
+      "state_hash": "e98ba5d682f238d8",
+      "tick": 1569
+    },
+    {
+      "name": "map_closed",
+      "state_hash": "a636516629350703",
+      "tick": 1601
     },
     {
       "name": "call_icon_open",
-      "state_hash": "6fac9e0682d3d80e",
-      "tick": 1545
+      "state_hash": "9b7a254f6bd78f69",
+      "tick": 1605
+    },
+    {
+      "name": "call_icon_closed",
+      "state_hash": "afb250b4cb88c514",
+      "tick": 1809
     },
     {
       "name": "end",
-      "state_hash": "e585e081c6bf726d",
-      "tick": 1749
+      "state_hash": "afb250b4cb88c514",
+      "tick": 1809
     }
   ],
   "determinism": {
-    "checkpoints": 11,
+    "checkpoints": 26,
     "identical": true,
     "mismatches": [],
-    "repeats": 3
+    "repeats": 5
   },
   "entities": {
     "animals_end": 4,
@@ -68,6 +143,7 @@
   },
   "functional": {
     "animals_end": 4,
+    "animals_end_expected": 4,
     "animals_expected": 4,
     "animals_placed": [
       "T-Rex",
@@ -75,6 +151,9 @@
       "Stegosaurus",
       "Chasmosaurus"
     ],
+    "behaviours_detail": null,
+    "kills": null,
+    "kills_detail": [],
     "map": "AREA2",
     "panics": 0,
     "setup_error": null,
@@ -87,24 +166,25 @@
     "timeouts": 0,
     "weapon_registry": 6,
     "weapon_registry_expected": 6,
-    "weapons_fired_once": 6
+    "weapons_fired_once": 6,
+    "weapons_to_fire": 6
   },
   "memory": {
-    "peak_bytes": 66068480,
-    "process_bytes": 66068480
+    "peak_bytes": 67850240,
+    "process_bytes": 67850240
   },
   "render": {
     "frames": {
-      "average_fps": 3699.6994937962154,
+      "average_fps": 3656.2538775584303,
       "frame_time": {
-        "max_ms": 2.5038,
-        "mean_ms": 0.2702922228350802,
-        "median_ms": 0.2653,
-        "p95_ms": 0.3103,
-        "p99_ms": 0.3798,
-        "samples": 1813
+        "max_ms": 2.6227,
+        "mean_ms": 0.27350398344542176,
+        "median_ms": 0.2668,
+        "p95_ms": 0.3187,
+        "p99_ms": 0.3854,
+        "samples": 1933
       },
-      "one_percent_low_fps": 1249.375312343828
+      "one_percent_low_fps": 1272.094268880557
     },
     "gpu_memory": {
       "unavailable": "wgpu reports no GPU memory use"
@@ -112,96 +192,110 @@
     "gpu_time": {
       "unavailable": "no GPU timestamp queries; frame time includes the GPU wait"
     },
-    "process_peak_bytes": 433610752,
+    "process_peak_bytes": 434413568,
     "resolution": [
       960,
       540
     ]
   },
+  "render_state": {
+    "compared": 25,
+    "differences": [],
+    "identical": true,
+    "render_only": [
+      "weapon_picker_open",
+      "weapon_picker_closed",
+      "call_picker_open",
+      "call_picker_closed"
+    ]
+  },
   "result": "passed",
   "simulation": {
     "ai_update": {
-      "max_ms": 0.04052099958062172,
-      "mean_ms": 0.008280013342589787,
-      "median_ms": 0.005609999876469374,
-      "p95_ms": 0.02043999917805195,
-      "p99_ms": 0.023189999163150787,
-      "samples": 5247
+      "max_ms": 0.04693000018596649,
+      "mean_ms": 0.008644817029051339,
+      "median_ms": 0.005779999773949385,
+      "p95_ms": 0.02168099954724312,
+      "p99_ms": 0.026440000161528587,
+      "samples": 9045
     },
     "sections": {
       "afraid": {
-        "max_ms": 0.08025000244379044,
-        "mean_ms": 0.00010745854770359197,
+        "max_ms": 0.08004999905824661,
+        "mean_ms": 0.00010748402423047984,
         "median_ms": 0.00005999999848427251,
-        "p95_ms": 0.00007000000186963007,
-        "p99_ms": 0.00007000000186963007,
-        "samples": 5247
+        "p95_ms": 0.00007999999797903001,
+        "p99_ms": 0.00009000000136438757,
+        "samples": 9045
       },
       "dinos": {
-        "max_ms": 0.04052099958062172,
-        "mean_ms": 0.008280013342589787,
-        "median_ms": 0.005609999876469374,
-        "p95_ms": 0.02043999917805195,
-        "p99_ms": 0.023189999163150787,
-        "samples": 5247
+        "max_ms": 0.04693000018596649,
+        "mean_ms": 0.008644817029051339,
+        "median_ms": 0.005779999773949385,
+        "p95_ms": 0.02168099954724312,
+        "p99_ms": 0.026440000161528587,
+        "samples": 9045
       },
       "events": {
-        "max_ms": 0.0007900000200606883,
-        "mean_ms": 0.000034319038598841965,
+        "max_ms": 0.0004199999966658652,
+        "mean_ms": 0.0000353857371007219,
         "median_ms": 0.000029999999242136255,
         "p95_ms": 0.000039999998989515007,
         "p99_ms": 0.00004999999873689376,
-        "samples": 5247
+        "samples": 9045
       },
       "fx": {
-        "max_ms": 0.004540000110864639,
-        "mean_ms": 0.0001915035247034453,
+        "max_ms": 0.004220000002533197,
+        "mean_ms": 0.00018830403449859303,
         "median_ms": 0.000039999998989515007,
-        "p95_ms": 0.001120000029914081,
-        "p99_ms": 0.0011599999852478504,
-        "samples": 5247
+        "p95_ms": 0.0010999999940395355,
+        "p99_ms": 0.0011699999449774623,
+        "samples": 9045
       },
       "player": {
-        "max_ms": 0.0727899968624115,
-        "mean_ms": 0.0030823579370533173,
+        "max_ms": 0.0170499999076128,
+        "mean_ms": 0.003130348385587096,
         "median_ms": 0.0030400000978261232,
-        "p95_ms": 0.003169999923557043,
-        "p99_ms": 0.0032399999909102917,
-        "samples": 5247
+        "p95_ms": 0.003789999987930059,
+        "p99_ms": 0.004170000087469816,
+        "samples": 9045
       },
       "ship": {
-        "max_ms": 0.00039000000106170774,
-        "mean_ms": 0.00003649342389581413,
+        "max_ms": 0.0025500000920146704,
+        "mean_ms": 0.000037495410907704685,
         "median_ms": 0.000039999998989515007,
-        "p95_ms": 0.000039999998989515007,
-        "p99_ms": 0.000039999998989515007,
-        "samples": 5247
+        "p95_ms": 0.00004999999873689376,
+        "p99_ms": 0.00004999999873689376,
+        "samples": 9045
       },
       "weapon": {
-        "max_ms": 0.29534199833869934,
-        "mean_ms": 0.0004009881802139262,
-        "median_ms": 0.00007000000186963007,
+        "max_ms": 0.2939330041408539,
+        "mean_ms": 0.00038255555645158313,
+        "median_ms": 0.00005999999848427251,
         "p95_ms": 0.00007999999797903001,
         "p99_ms": 0.00011000000085914508,
-        "samples": 5247
+        "samples": 9045
       }
     },
     "tick_duration": {
-      "max_ms": 0.324033,
-      "mean_ms": 0.012197175528873632,
-      "median_ms": 0.00906,
-      "p95_ms": 0.0241,
-      "p99_ms": 0.02718,
-      "samples": 5247
+      "max_ms": 0.323613,
+      "mean_ms": 0.012591509784411216,
+      "median_ms": 0.00923,
+      "p95_ms": 0.02531,
+      "p99_ms": 0.03133,
+      "samples": 9045
     },
     "tick_ms": 10,
-    "ticks_per_run": 1749,
+    "ticks_per_run": 1809,
     "wall_ms_per_run": [
-      21.610362,
-      21.456501,
-      21.47765
+      22.514863,
+      22.440392,
+      22.425882,
+      22.402312,
+      25.30763
     ]
   },
+  "state_hash_version": 2,
   "ui": {
     "binoculars": "passed",
     "call_icon": "passed",

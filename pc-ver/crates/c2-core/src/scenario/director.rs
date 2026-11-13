@@ -225,7 +225,9 @@ impl Director {
         steps
     }
 
-    /// Every weapon, then every screen.
+    /// Every weapon, then every screen. Checkpoints are the original
+    /// engine's (`c2-regress`'s native script): each weapon ready, mid
+    /// fire and after its shot; each screen open and closed again.
     fn tour(s: &Scenario, weapons: &[String]) -> Vec<Step> {
         let mut steps = vec![];
         steps.extend(Self::opening(s));
@@ -235,10 +237,12 @@ impl Director {
                 Step::Begin(stage.clone(), None),
                 Step::Select(i),
                 Step::AwaitReady(i),
+                Step::Checkpoint(format!("{stage}_ready")),
                 Step::Fire(i),
                 Step::AwaitFireMid(i),
                 Step::Checkpoint(format!("{stage}_fire")),
                 Step::AwaitFireEnd,
+                Step::Checkpoint(format!("{stage}_after")),
                 Step::Holster,
                 Step::AwaitHidden,
                 Step::End,
@@ -256,6 +260,7 @@ impl Director {
             Step::ExpectCallChanged,
             Step::Checkpoint("call_icon_open".into()),
             Step::Expect(Screen::CallIcon, false),
+            Step::Checkpoint("call_icon_closed".into()),
             Step::End,
         ]);
         for screen in [Screen::WeaponPicker, Screen::CallPicker] {
@@ -265,7 +270,7 @@ impl Director {
         steps
     }
 
-    fn open_close(screen: Screen, settle: u32) -> [Step; 8] {
+    fn open_close(screen: Screen, settle: u32) -> [Step; 10] {
         let k = screen.key();
         [
             Step::Begin(k.into(), Some(screen)),
@@ -275,6 +280,8 @@ impl Director {
             Step::Checkpoint(format!("{k}_open")),
             Step::Press(screen, false),
             Step::Expect(screen, false),
+            Step::Wait(settle),
+            Step::Checkpoint(format!("{k}_closed")),
             Step::End,
         ]
     }

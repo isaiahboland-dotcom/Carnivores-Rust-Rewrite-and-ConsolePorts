@@ -46,9 +46,14 @@ pub fn verify_vanilla(manifest: &Value, list: &Path) -> Result<usize> {
         .context("manifest without content files")?;
     let mut problems = Vec::new();
     for f in files {
+        // A file play generated for the run (a prepared game's rules) is
+        // checked by the game folder's own file it was generated from.
         let (p, h) = (
             f["path"].as_str().unwrap_or_default().to_ascii_uppercase(),
-            f["sha256"].as_str().unwrap_or_default(),
+            f.get("source_sha256")
+                .unwrap_or(&f["sha256"])
+                .as_str()
+                .unwrap_or_default(),
         );
         match known.iter().find(|(k, _)| *k == p) {
             Some((_, k)) if k == h => {}
@@ -177,11 +182,14 @@ pub fn baseline_changes(old: (&Value, &Value), new: (&Value, &Value)) -> Vec<Str
             nf.get(k).unwrap_or(&Value::Null),
         );
     }
-    out.extend(
-        crate::compare::state_differences(ox, nx)
-            .into_iter()
-            .map(|d| format!("checkpoint state: {d}")),
-    );
+    match crate::compare::state_incomparable(ox, nx) {
+        Some(why) => out.push(format!("checkpoint state: not comparable ({why})")),
+        None => out.extend(
+            crate::compare::state_differences(ox, nx)
+                .into_iter()
+                .map(|d| format!("checkpoint state: {d}")),
+        ),
+    }
     out
 }
 
@@ -344,6 +352,15 @@ mod tests {
         )
         .unwrap();
         assert_eq!(verify_vanilla(&manifest(), &list).unwrap(), 2);
+        // Rules generated for the run are checked by the file they came
+        // from, not by their own hash.
+        let mut prepared = manifest();
+        prepared["content"]["files"][0]["source_sha256"] =
+            prepared["content"]["files"][0]["sha256"].clone();
+        prepared["content"]["files"][0]["sha256"] = json!("generated");
+        assert_eq!(verify_vanilla(&prepared, &list).unwrap(), 2);
+        prepared["content"]["files"][0]["source_sha256"] = json!("edited");
+        assert!(verify_vanilla(&prepared, &list).is_err());
         std::fs::write(&list, "[files]\n\"HUNTDAT/_RES.TXT\" = \"sha256:zz\"\n").unwrap();
         let e = verify_vanilla(&manifest(), &list).unwrap_err().to_string();
         assert!(

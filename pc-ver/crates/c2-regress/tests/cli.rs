@@ -30,7 +30,7 @@ fn lists_games_and_their_status() {
         .unwrap();
     assert!(o.status.success());
     let text = String::from_utf8_lossy(&o.stdout);
-    assert!(text.contains("vanilla_map2_four_dinos v2"));
+    assert!(text.contains("vanilla_map2_four_dinos v3"));
     assert!(text.contains("c1") && text.contains("Unsupported"));
     assert!(text.contains("fallen-kings") && text.contains("Planned"));
 }

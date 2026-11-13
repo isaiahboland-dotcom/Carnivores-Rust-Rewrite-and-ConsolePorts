@@ -1,15 +1,16 @@
 {
   "build": {
-    "commit": "398e58e25080",
+    "commit": "84ea324ba67f",
     "dirty": true,
     "profile": "release",
-    "version": "0.5.1"
+    "version": "0.5.3"
   },
   "content": {
     "files": [
       {
         "path": "HUNTDAT/_RES.TXT",
-        "sha256": "3ebc87a70039c323db5b37132a177133c89e9a5ccae5e8bccab6af9b43cdc507"
+        "sha256": "0bfdf87ad006203bbbf8704ed6a8d8d7232143fe62c427fe3fa3abac03639c15",
+        "source_sha256": "3ebc87a70039c323db5b37132a177133c89e9a5ccae5e8bccab6af9b43cdc507"
       },
       {
         "path": "HUNTDAT/AREAS/AREA4.MAP",
@@ -96,7 +97,7 @@
         "sha256": "3c792357ea86462f71b305a4a845b71fcbe5b13cc2f8cdf20281184266e86ff6"
       }
     ],
-    "sha256": "5f17564d45551b0dcc00200ff1e248e4b0b09528dbdccbdf281d55ce6c4b2682"
+    "sha256": "fe405536900285350393095f8952c2bf0408e8d089365172ecd4bb10633e0d00"
   },
   "game": {
     "area": "AREA4",
@@ -123,14 +124,14 @@
     ]
   },
   "scenario": {
-    "file_sha256": "2a9df197791560564f69f65c646bac25b21b983760f880e14540d1b39fc08d82",
+    "file_sha256": "c71955bab1cb08b4a9045033414cb4e6ad36aefb9381b56e3d9a3e667a7bae28",
     "id": "vanilla_map2_four_dinos",
-    "version": 2
+    "version": 3
   },
   "seed": 20261107,
   "settings": {
     "inject": null,
-    "repeats": 3,
+    "repeats": 5,
     "settle_ticks": 30,
     "tick_ms": 10,
     "time_of_day": "day",

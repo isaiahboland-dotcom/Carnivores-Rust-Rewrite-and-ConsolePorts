@@ -6,7 +6,7 @@
 
 [scenario]
 id = "standalone_map2_four_dinos"
-version = 1
+version = 2
 seed = 20261107
 # 10 ms ticks: 5 s of warm-up, 0.3 s on each open screen, 6 s per wait.
 warmup_ticks = 500

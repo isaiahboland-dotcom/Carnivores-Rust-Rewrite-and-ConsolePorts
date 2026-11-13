@@ -171,8 +171,15 @@ fn verdict(run_ok: bool, v: Option<&Verdict>, fail_on_warn: bool) -> (&'static s
             }
             _ => {}
         }
-        if v.same_state == Some(false) {
-            eprintln!("checkpoint state differs from the baseline (--same-state)");
+        match (&v.state_not_comparable, v.same_state) {
+            (Some(why), Some(_)) => {
+                eprintln!("checkpoint state could not be compared (--same-state): {why}");
+            }
+            (Some(why), None) => eprintln!("note: checkpoint state not compared: {why}"),
+            (None, Some(false)) => {
+                eprintln!("checkpoint state differs from the baseline (--same-state)");
+            }
+            _ => {}
         }
     }
     if !run_ok || v.is_some_and(|v| !v.passed()) {
@@ -286,7 +293,10 @@ fn run(a: &Args) -> Result<ExitCode> {
         } else {
             Some(Prepared::new(folder)?)
         };
-        let game = Game::load(prepared.as_ref().map_or(folder, Prepared::dir), area)?;
+        let mut game = Game::load(prepared.as_ref().map_or(folder, Prepared::dir), area)?;
+        if prepared.as_ref().is_some_and(Prepared::generated) {
+            game.note_sources(folder)?;
+        }
         // The original engine runs its own repeats (below).
         let ours = if original { 0 } else { repeat.max(1) };
         let runs: Vec<_> = (0..ours)

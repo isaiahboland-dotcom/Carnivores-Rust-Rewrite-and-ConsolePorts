@@ -5004,3 +5004,34 @@ acceptance for the reported defect. Private evidence stays ignored.
 - Trophy records, scoring and the save format are untouched. Packs cooked
   before this change have no portraits, so a room that needs the fallback shows
   plates only until the pack is re-cooked.
+
+## 2026-11-12 — Tour checkpoints match the original's; state hash version 2
+
+- The tour (`vanilla_map2_four_dinos` version 3, `standalone_map2_four_dinos`
+  version 2) now checkpoints each weapon `_ready`, `_fire` and `_after`, and
+  each screen `_open` and `_closed`: the names the original-engine script
+  already captured. Every tour checkpoint therefore pairs across the two
+  engines; the original's `metrics.json` lists all of them. Screens the
+  headless run does not have (the PC pickers) still checkpoint only in the
+  render pass.
+- `state_hash` gained the hunter's health and death, the open screens and the
+  call, each animal's alarm and target timers, shots in flight, the ship and
+  the effects (bursts, blood, water rings, snow). Its coverage is numbered
+  (`c2_core::scenario::STATE_HASH_VERSION`, 2) and written to `metrics.json`;
+  a run without the field is version 1.
+- Checkpoint state is reported as not comparable, with the reason, when either
+  run is the original engine's (it records no hashes) or the two runs' hash
+  versions differ. Before, each such checkpoint was listed as a difference.
+  `--same-state` fails in that case: nothing showed the state to be the same.
+- Kill and behaviour scenarios keep their versions. Their scripts are
+  unchanged; local baselines recorded before this change show state as not
+  comparable until recorded again.
+- A prepared game (Ice Age: rules generated as play generates them) could not
+  be published, since the generated `_RES.TXT` is not the release's file. The
+  manifest now also records the game folder's own hash for such a file
+  (`source_sha256`), and the vanilla check uses it. The content hash still
+  covers what the run read.
+- The four published baselines were recorded again (five repeats, identical)
+  and replaced. They await maintainer approval before commit.
+- Genesis Redux joined the kill scenario for our engine. The original-engine
+  kill hook does not support its executable (see REGRESSION.md, Limitations).

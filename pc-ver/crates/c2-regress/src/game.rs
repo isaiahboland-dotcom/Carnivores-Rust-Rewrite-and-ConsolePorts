@@ -62,6 +62,12 @@ impl Prepared {
     pub fn dir(&self) -> &Path {
         &self.dir
     }
+
+    /// Whether [`Self::dir`] holds rules generated for the game, rather
+    /// than being the game folder itself.
+    pub fn generated(&self) -> bool {
+        self.temporary
+    }
 }
 
 impl Drop for Prepared {
@@ -82,6 +88,9 @@ pub struct Game {
     pub files: Vec<(String, String)>,
     /// SHA-256 over `files`.
     pub content_hash: String,
+    /// `(path, sha256)` of the game folder's own file, for each of `files`
+    /// that play generated in its place ([`Self::note_sources`]).
+    pub sources: Vec<(String, String)>,
     /// The game's `_RES.TXT` is in the Modder's Edition dialect.
     pub dialect: bool,
 }
@@ -166,8 +175,44 @@ impl Game {
             weapons,
             files,
             content_hash: format!("{:x}", all.finalize()),
+            sources: Vec::new(),
             dialect: tables.is_some(),
         })
+    }
+
+    /// For a game loaded from a [`Prepared`] folder: records the hash of
+    /// `source`'s own file wherever the run read a generated one, so the
+    /// run can still be checked against the game's release
+    /// (`publish::verify_vanilla`).
+    pub fn note_sources(&mut self, source: &Path) -> Result<()> {
+        let mut vfs = Vfs::new();
+        let backend =
+            DirBackend::new(source).with_context(|| format!("indexing {}", source.display()))?;
+        vfs.push("game", Box::new(backend));
+        self.sources = self
+            .files
+            .iter()
+            .filter_map(|(p, h)| {
+                let own = vfs.read(p).map_or_else(|_| "missing".into(), |d| sha(&d));
+                (&own != h).then(|| (p.clone(), own))
+            })
+            .collect();
+        Ok(())
+    }
+
+    /// `files` for a manifest: `sha256` is what the run read;
+    /// `source_sha256` the game folder's own file where they differ.
+    pub fn files_json(&self) -> Vec<serde_json::Value> {
+        self.files
+            .iter()
+            .map(|(p, h)| {
+                let mut f = serde_json::json!({ "path": p, "sha256": h });
+                if let Some((_, own)) = self.sources.iter().find(|(s, _)| s == p) {
+                    f["source_sha256"] = serde_json::json!(own);
+                }
+                f
+            })
+            .collect()
     }
 
     pub fn weapon_names(&self) -> Vec<String> {

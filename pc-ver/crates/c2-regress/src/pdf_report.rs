@@ -35,16 +35,28 @@ fn clip(s: &str, n: usize) -> String {
 /// What a checkpoint shows, for the page heading.
 pub fn describe(cp: &str) -> String {
     if let Some(rest) = cp.strip_prefix("weapon_") {
-        let gun = rest.trim_end_matches("_fire");
-        return format!("Weapon {gun}: mid fire animation after its one shot");
+        for (suffix, what) in [
+            ("_ready", "drawn, before its shot"),
+            ("_fire", "mid fire animation after its one shot"),
+            ("_after", "ready again after its shot"),
+        ] {
+            if let Some(gun) = rest.strip_suffix(suffix) {
+                return format!("Weapon {gun}: {what}");
+            }
+        }
     }
     match cp {
         "warmup" => "After warm-up: the four animals at the anchor".into(),
         "binoculars_open" => "Binoculars raised".into(),
+        "binoculars_closed" => "Binoculars lowered again".into(),
         "map_open" => "Map open".into(),
+        "map_closed" => "Map closed again".into(),
         "call_icon_open" => "Change-call icon after switching call".into(),
+        "call_icon_closed" => "Change-call icon gone".into(),
         "weapon_picker_open" => "Change-gun picker open".into(),
+        "weapon_picker_closed" => "Change-gun picker closed again".into(),
         "call_picker_open" => "Change-call picker open".into(),
+        "call_picker_closed" => "Change-call picker closed again".into(),
         "end" => "End of the scenario: the four animals still present".into(),
         other => other.into(),
     }

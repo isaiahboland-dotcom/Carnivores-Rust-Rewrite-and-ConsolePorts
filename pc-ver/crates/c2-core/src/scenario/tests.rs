@@ -204,8 +204,16 @@ fn every_stage_passes_or_is_reported_unsupported() {
         .count();
     assert_eq!(fired, 3);
     let caps: Vec<&str> = r.hashes.iter().map(|h| h.0.as_str()).collect();
-    assert!(caps.contains(&"weapon_02_shotgun_fire"));
-    assert!(caps.contains(&"map_open"));
+    // The original engine's checkpoints, in its order.
+    let at = |n: &str| caps.iter().position(|c| *c == n).expect(n);
+    for gun in ["weapon_01_pistol", "weapon_02_shotgun", "weapon_03_rifle"] {
+        let [ready, fire, after] = ["ready", "fire", "after"].map(|s| at(&format!("{gun}_{s}")));
+        assert!(ready < fire && fire < after, "{gun}");
+    }
+    for screen in ["binoculars", "map", "call_icon"] {
+        assert!(at(&format!("{screen}_open")) < at(&format!("{screen}_closed")));
+    }
+    assert!(!caps.iter().any(|c| c.starts_with("weapon_picker")));
     assert_eq!(caps.last(), Some(&"end"));
 }
 

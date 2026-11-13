@@ -15,8 +15,8 @@ pub const FRAME_MS: u32 = 20;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Shot {
     pub stage: String,
-    /// File name without `.bmp`: a checkpoint name, or one with a suffix
-    /// (`_ready`, `_after`, `_closed`) used by the checks.
+    /// File name without `.bmp`: the checkpoint's name, as our engine's
+    /// director names it (`c2_core::scenario::Director`).
     pub name: String,
     pub frame: u32,
 }

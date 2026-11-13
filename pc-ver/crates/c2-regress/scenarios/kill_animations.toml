@@ -89,3 +89,15 @@ name = "Carnivores Triassic (Modder's Edition)"
 status = "supported"
 area = "AREA1"
 species = ["model:ta10f.car"]
+
+[[game]]
+id = "genesis-redux"
+name = "Carnivores Genesis Redux (Beta 2.0, standalone)"
+status = "supported"
+# Our engine only: the standalone's hunt executable has its own character
+# layout, which the original-engine kill hook does not read yet. Local
+# baselines only.
+area = "AREA2"
+# Tyrannosaurus, Carnotaurus (F) by character index (names repeat across
+# skins), as in standalone_map2_four_dinos.
+species = ["index:94", "index:92"]

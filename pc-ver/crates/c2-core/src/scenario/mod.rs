@@ -46,7 +46,9 @@ pub use director::{Director, Frontend, Headless, Screen, TickPlan};
 pub use inject::Inject;
 pub use kills::{hunter_clip, Arrange, KillPlan, KillReport, KillWatch, Pose};
 pub use record::{Event, EventKind, StageResult, Status};
-pub use setup::{build, layout, state_hash, Built, Cast, Hold, Layout, SetupError};
+pub use setup::{
+    build, layout, state_hash, Built, Cast, Hold, Layout, SetupError, STATE_HASH_VERSION,
+};
 
 /// Simulation step of every scenario, ms (the PC's and the 3DS's tick).
 pub const TICK_MS: i32 = 10;
@@ -113,7 +115,7 @@ impl Scenario {
     pub fn max_ticks(&self, weapons: usize) -> u32 {
         let per = self.timeout_ticks + self.settle_ticks;
         match &self.script {
-            Script::Tour => self.warmup_ticks + (8 + weapons as u32 * 5) * per,
+            Script::Tour => self.warmup_ticks + (12 + weapons as u32 * 5) * per,
             Script::Kills(k) => {
                 let kill = k.timeout_ticks.max(self.timeout_ticks) + k.mid_ticks + k.late_ticks + 4;
                 self.warmup_ticks + 4 * per + self.species.len() as u32 * kill

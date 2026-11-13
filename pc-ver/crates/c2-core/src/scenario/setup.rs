@@ -284,8 +284,19 @@ pub fn build(
     })
 }
 
-/// FNV-1a over the state a deterministic run must reproduce: the tick, the
-/// hunter, the weapon and every animal's pose, and the random stream.
+/// What [`state_hash`] covers; recorded with a run's hashes, so hashes of
+/// different versions are reported as not comparable, never as a change in
+/// the simulation.
+///
+/// 1: the tick, the hunter's pose, the weapon, each animal's pose, clip,
+/// state and health, the random stream. 2: also the hunter's health and
+/// death, the open screens and the call, each animal's alarm and target
+/// timers, shots in flight, the ship, and the effects (bursts, blood,
+/// water rings, snow).
+pub const STATE_HASH_VERSION: u32 = 2;
+
+/// FNV-1a over the state a deterministic run must reproduce
+/// ([`STATE_HASH_VERSION`]).
 pub fn state_hash(h: &Hunt) -> u64 {
     let mut x: u64 = 0xcbf2_9ce4_8422_2325;
     let mut eat = |v: u32| {
@@ -299,6 +310,11 @@ pub fn state_hash(h: &Hunt) -> u64 {
     for v in [p.x, p.y, p.z, p.alpha, p.beta] {
         eat(v.to_bits());
     }
+    eat(h.health as u32);
+    eat(u32::from(h.death.is_some()));
+    eat(u32::from(h.bin_mode) | u32::from(h.map_mode) << 1);
+    eat(h.target_call as u32);
+    eat(h.call_icon_time as u32);
     let w = &h.weapons;
     eat(w.current as u32);
     eat(w.state as u32);
@@ -306,6 +322,13 @@ pub fn state_hash(h: &Hunt) -> u64 {
     for &s in &w.shots_left {
         eat(s as u32);
     }
+    eat(h.bullets.len() as u32);
+    for b in &h.bullets {
+        for v in b.pos {
+            eat(v.to_bits());
+        }
+    }
+    eat(h.herd.chars.len() as u32);
     for c in &h.herd.chars {
         eat(c.ctype as u32);
         for v in [c.pos[0], c.pos[1], c.pos[2], c.alpha] {
@@ -315,6 +338,41 @@ pub fn state_hash(h: &Hunt) -> u64 {
         eat(c.ftime as u32);
         eat(c.state as u32);
         eat(c.health as u32);
+        eat(c.afraid_time as u32);
+        eat(c.tgtime as u32);
+    }
+    let ship = &h.ship;
+    for v in [ship.pos[0], ship.pos[1], ship.pos[2], ship.alpha] {
+        eat(v.to_bits());
+    }
+    eat(ship.state as u32);
+    eat(ship.ftime as u32);
+    eat(ship.tasks.len() as u32);
+    let fx = &h.effects;
+    eat(fx.bursts.len() as u32);
+    for p in fx.bursts.iter().flat_map(|b| &b.parts) {
+        for v in p.pos {
+            eat(v.to_bits());
+        }
+    }
+    eat(fx.blood.len() as u32);
+    for d in &fx.blood {
+        for v in d.pos {
+            eat(v.to_bits());
+        }
+        eat(d.life as u32);
+    }
+    eat(fx.rings.len() as u32);
+    for r in &fx.rings {
+        for v in r.pos {
+            eat(v.to_bits());
+        }
+        eat(r.ftime as u32);
+    }
+    for f in fx.snow.iter().flat_map(|s| &s.flakes) {
+        for v in f.pos {
+            eat(v.to_bits());
+        }
     }
     eat(h.rng.clone().rand() as u32);
     x

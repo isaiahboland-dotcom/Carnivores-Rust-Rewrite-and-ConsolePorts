@@ -250,6 +250,7 @@ pub fn write(dir: &Path, ctx: &RunContext) -> Result<bool> {
         "render": render,
         "determinism": determinism,
         "render_state": render_state,
+        "state_hash_version": c2_core::scenario::STATE_HASH_VERSION,
         "checkpoints": first.map(|r| r.checkpoints.iter().map(|c| json!({
             "name": c.name, "tick": c.tick, "state_hash": format!("{:016x}", c.hash),
         })).collect::<Vec<_>>()),
@@ -284,12 +285,7 @@ pub fn write(dir: &Path, ctx: &RunContext) -> Result<bool> {
 
 fn manifest(ctx: &RunContext) -> Value {
     let s = ctx.scenario;
-    let files: Vec<Value> = ctx
-        .game
-        .files
-        .iter()
-        .map(|(p, h)| json!({ "path": p, "sha256": h }))
-        .collect();
+    let files = ctx.game.files_json();
     json!({
         "scenario": { "id": ctx.file.id(), "version": ctx.file.version(),
                       "file_sha256": ctx.file.hash },

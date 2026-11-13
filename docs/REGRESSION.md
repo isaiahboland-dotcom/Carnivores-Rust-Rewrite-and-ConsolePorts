@@ -103,7 +103,7 @@ code, whoever wrote it.
 |---|---|---|
 | Functional (fails the comparison) | The map not loading, animals missing or dead, a weapon not firing exactly once, a screen that no longer opens, timeouts, panics, set-up errors | Strong, on any machine |
 | Determinism (`--repeat 3` or more) | A change that makes the simulation depend on timing, threads or uninitialised state | Strong, on any machine |
-| Checkpoint state hashes (manual, below) | Any change at all to the simulation: the hunter, the weapon, every animal's pose, the random stream, at every checkpoint | Strongest; only meaningful between runs on the same platform |
+| Checkpoint state hashes (manual, below) | A change to the hashed simulation state at any checkpoint: the hunter's pose, the weapon, the hunter's health, the open screens and the call, every animal's type, pose, clip, state, health and alarm and target timers, shots in flight, the ship, the effects (bursts, blood, water rings, snow) and the random stream (state hash version 2; hashes of another version, and original-engine runs, are reported as not comparable) | Strongest; only meaningful between runs on the same platform |
 | Visual (fails the comparison) | A rendering change larger than the tolerance | Only against your own baseline, same GPU and driver. Published baselines have no screenshots |
 | Performance (warns) | Slower frames or ticks, more memory | Only between runs on the same machine and settings. Published figures are reference only |
 
@@ -182,7 +182,7 @@ make the comparison fail.
 
 ## The canonical scenario: `vanilla_map2_four_dinos`
 
-File: `scenarios/vanilla_map2_four_dinos.toml` (version 2).
+File: `scenarios/vanilla_map2_four_dinos.toml` (version 3).
 
 1. Loads an area, daytime: the game's second (`HUNTDAT/AREAS/AREA2.MAP` /
    `.RSC`) for Carnivores 2, the fourth (`AREA4`) for Ice Age. Version 1
@@ -196,12 +196,15 @@ File: `scenarios/vanilla_map2_four_dinos.toml` (version 2).
    animal's edge is within 4° of the line of fire. Shots go straight ahead,
    so no animal can be hit.
 4. Warm-up: 500 ticks (5 s).
-5. Every weapon in `_RES.TXT` order: select, wait until ready, fire exactly
-   once (one tick of trigger), checkpoint mid fire animation, wait for it to
-   finish, put it away.
+5. Every weapon in `_RES.TXT` order: select, wait until ready (checkpoint
+   `_ready`), fire exactly once (one tick of trigger), checkpoint mid fire
+   animation (`_fire`), wait for it to finish (`_after`), put it away.
 6. Binoculars, the map, the change-call icon (the original's call switch:
    press, switch, wait until it closes), the PC's weapon picker and call
-   picker: each opened, checkpointed and closed.
+   picker: each opened, checkpointed (`_open`), closed and checkpointed
+   again (`_closed`). These are the original-engine script's checkpoint
+   names, so every tour checkpoint pairs across the two engines (since
+   scenario version 3; `standalone_map2_four_dinos` version 2).
 7. Checks that the four animals are still there.
 
 A game section may override `landing`, `yaw_deg` and `anchor_distance`
@@ -345,6 +348,7 @@ its killer. This scenario plays each kill and checks it.
 | `c2-addons` | Diabloceratops (synchronized toss), Saurophaganax (its own hunter model) | AREA1 |
 | `jphl` | JPHL Special Edition's own T-Rex (`t-rex.car`, not the Carnivores 2 one beside it) | AREA1 |
 | `triassic-mee` | Gojirasaurus (Triassic, Modder's Edition) | AREA1 |
+| `genesis-redux` | Tyrannosaurus, Carnotaurus (F), by character index. Our engine only (see [Limitations](#limitations)) | AREA2 |
 
 `c2-addons` takes any pack that holds both add-ons, for example one built
 from `recipes/c2-everything.toml`. The modded games pick their animals by
@@ -500,8 +504,8 @@ comparisons.
 
 | File | Contents |
 |---|---|
-| `manifest.json` | Scenario id, version and file hash; game and area; platform; build (version, commit, dirty, profile); content hash and the hash of every game file read; seed; settings; hardware; renderer (adapter, backend, resolution). |
-| `metrics.json` | Result; functional counts; UI screens; simulation tick and per-section timings; render frame statistics; memory; determinism across repeats; checkpoint state hashes. |
+| `manifest.json` | Scenario id, version and file hash; game and area; platform; build (version, commit, dirty, profile); content hash and the hash of every game file read (`source_sha256`: the game folder's own file, where play generated the one read; see [Prepared games](#prepared-games)); seed; settings; hardware; renderer (adapter, backend, resolution). |
+| `metrics.json` | Result; functional counts; UI screens; simulation tick and per-section timings; render frame statistics; memory; determinism across repeats; `state_hash_version` and the checkpoint state hashes. |
 | `events.jsonl` | One line per stage start/end, action, check and checkpoint, by tick, from the headless run and the render pass (`source`). |
 | `tick_times.csv` | Headless: each tick's sections (`prof::SECTIONS`) and total, ms. |
 | `frame_times.csv` | Render pass: each frame's update, render (including the GPU wait) and total, ms. |
@@ -533,7 +537,8 @@ not measured is written as `{"unavailable": "why"}`, never as zero:
 ### Determinism
 
 Each checkpoint records a hash of the hunt (tick, hunter, weapon, every
-animal's pose, the random stream). `--repeat N` runs the headless hunt N
+animal, shots, ship, effects, the random stream; `state_hash` in
+`c2-core/src/scenario/setup.rs` lists the fields). `--repeat N` runs the headless hunt N
 times; `metrics.json` `determinism.identical` says whether every repeat
 reached every checkpoint at the same tick with the same hash; repeats that
 disagree fail the run (exit code 1). One run reports determinism as
@@ -563,7 +568,7 @@ list must be a file of this repository; the manifest names it by its path
 from the repository root. It refuses failed runs, runs with `--inject`, runs
 without agreeing repeats (`--repeat` of 2 or more, `determinism.identical`
 true), runs of another text of the scenario than the one in
-`crates/c2-regress/scenarios/`, and runs that read any file not matching the list.
+`crates/c2-regress/scenarios/`, and runs that read any file not matching the list (a generated rules file is checked by the game's own file it was generated from).
 It does not overwrite a baseline already in the folder unless given
 `--replace`; either way it lists what changes against it (scenario, game
 content, build, results, determinism, checkpoint state). A test in the `pc` CI job checks the
@@ -626,8 +631,8 @@ headless run of the canonical scenario on Carnivores 2.
 | Platform | State |
 |---|---|
 | PC, Linux: Carnivores 2 | **Implemented and run**: headless and render pass, comparison, reports. |
-| PC, Linux: Ice Age | **Implemented and run**: area 4 (scenario version 2). All four animals are in view in the screenshots. |
-| PC, Linux: Dinosaur Hunter and Ice Age APKs (phone HUD) | **Implemented and run**: both pass, 7 weapons, 14 screenshots, headless x5 identical. |
+| PC, Linux: Ice Age | **Implemented and run**: area 4 (since scenario version 2). All four animals are in view in the screenshots. |
+| PC, Linux: Dinosaur Hunter and Ice Age APKs (phone HUD) | **Implemented and run**: both pass, 7 weapons, 33 screenshots, headless x5 identical. |
 | PC, Windows | Should build as on Linux; not run. Process memory is unavailable there. |
 | PC: Fallen Kings | **Planned** (no reference baseline yet). |
 | Original engines (Wine): Carnivores 2, Ice Age | **Implemented and run**: `--engine original`; see [Original engines](#original-engines). |
@@ -799,6 +804,10 @@ Carnivores 2's generic kill. See `docs/DECISIONS.md` (2026-11-08).
   number; add-on and Modder's Edition packs need their own executables).
   Killers are set down beside the hunter, so how an animal finds and
   stalks him is not covered.
+- Genesis Redux kills run in our engine only. Its hunt executable is a
+  current Modder's Engine build: the kill hook's `AddDeadBody` scan finds
+  no match in it and its `TCharacter` is not the stock 156-byte layout, so
+  `--engine original` stops with an error for that game.
 - Screenshots and frame times come from the PC renderer only.
 - The change-gun and change-call pickers exist only in the PC frontend:
   the headless run reports them as unsupported, and the render pass checks

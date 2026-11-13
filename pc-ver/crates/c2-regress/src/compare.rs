@@ -109,6 +109,10 @@ pub struct Verdict {
     /// `Some` when the comparison was asked to require identical
     /// checkpoint state (`--same-state`): whether it was.
     pub same_state: Option<bool>,
+    /// Why the two runs' checkpoint state cannot be compared, if it cannot
+    /// ([`state_incomparable`]). `--same-state` then fails: nothing showed
+    /// the state to be the same.
+    pub state_not_comparable: Option<String>,
     pub perf_warnings: usize,
     pub report: Value,
 }
@@ -120,6 +124,24 @@ impl Verdict {
     pub fn passed(&self) -> bool {
         self.functional_ok && !self.visual.failed() && self.same_state != Some(false)
     }
+}
+
+/// The hash coverage a run recorded (`c2_core::scenario::STATE_HASH_VERSION`);
+/// runs from before it was recorded are version 1.
+fn hash_version(m: &Value) -> u64 {
+    m["state_hash_version"].as_u64().unwrap_or(1)
+}
+
+/// Why the checkpoint state of two runs cannot be compared: the original
+/// engine records no state hashes, and hashes of different coverage differ
+/// without the simulation having changed.
+pub fn state_incomparable(base: &Value, cand: &Value) -> Option<String> {
+    if base["engine"] == "original" || cand["engine"] == "original" {
+        return Some("the original engine records no state hashes".into());
+    }
+    let (b, c) = (hash_version(base), hash_version(cand));
+    (b != c)
+        .then(|| format!("state hash version {b} against {c}: the hashes cover different state"))
 }
 
 /// Where the checkpoint state of two runs differs: names, ticks, hashes,
@@ -442,7 +464,12 @@ pub fn compare(base: &Path, cand: &Path, th: &Thresholds, same_state: bool) -> R
     let perf_warnings = perf["checks"]
         .as_array()
         .map_or(0, |c| c.iter().filter(|c| c["warning"] == true).count());
-    let state_diff = state_differences(&bm, &cm);
+    let state_not_comparable = state_incomparable(&bm, &cm);
+    let state_diff = match &state_not_comparable {
+        Some(_) => Vec::new(),
+        None => state_differences(&bm, &cm),
+    };
+    let state_identical = state_not_comparable.is_none() && state_diff.is_empty();
     // Another release of the game (or edited files): results may differ
     // for that reason alone.
     let content_matches = bman.pointer("/content/sha256") == cman.pointer("/content/sha256");
@@ -459,7 +486,11 @@ pub fn compare(base: &Path, cand: &Path, th: &Thresholds, same_state: bool) -> R
                     "max_differing_ratio": th.visual.max_differing_ratio, "checkpoints": shots },
         "performance": perf,
         "performance_warnings": perf_warnings,
-        "simulation_state_identical": state_diff.is_empty(),
+        "simulation_state_identical": match &state_not_comparable {
+            Some(_) => Value::Null,
+            None => json!(state_identical),
+        },
+        "simulation_state_not_comparable": &state_not_comparable,
         "simulation_state_required": same_state,
         "simulation_state_differences": &state_diff,
         "kill_parity": crate::kill_parity::compare(&bm, &cm),
@@ -471,7 +502,8 @@ pub fn compare(base: &Path, cand: &Path, th: &Thresholds, same_state: bool) -> R
     Ok(Verdict {
         functional_ok,
         visual,
-        same_state: same_state.then_some(state_diff.is_empty()),
+        same_state: same_state.then_some(state_identical),
+        state_not_comparable,
         perf_warnings,
         report,
     })
@@ -584,6 +616,44 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("warmup"));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn state_without_comparable_hashes_is_not_a_difference() {
+        let root = tmp("incomparable");
+        let th = Thresholds::default();
+        let base = run_dir(&root, "base", &manifest("a"), false);
+        let edit = |name: &str, f: &dyn Fn(&mut Value)| {
+            let d = run_dir(&root, name, &manifest("a"), false);
+            let mut m = read_json(&d.join("metrics.json")).unwrap();
+            f(&mut m);
+            write_json(&d.join("metrics.json"), &m).unwrap();
+            d
+        };
+        // The original engine: frames and screenshot hashes, no state.
+        let original = edit("original", &|m| {
+            m["engine"] = json!("original");
+            m["checkpoints"] = json!([{ "name": "warmup", "frame": 250 }]);
+        });
+        // Our engine with another hash coverage.
+        let newer = edit("newer", &|m| {
+            m["state_hash_version"] = json!(2);
+            m["checkpoints"][0]["state_hash"] = json!("bb");
+        });
+        for (cand, why) in [
+            (&original, "original engine"),
+            (&newer, "version 1 against 2"),
+        ] {
+            let v = compare(&base, cand, &th, false).unwrap();
+            assert!(v.passed(), "{why}");
+            assert!(v.state_not_comparable.as_deref().unwrap().contains(why));
+            assert_eq!(v.report["simulation_state_identical"], Value::Null);
+            assert_eq!(v.report["simulation_state_differences"], json!([]));
+            // Required and not shown to be the same: no pass.
+            let v = compare(&base, cand, &th, true).unwrap();
+            assert!(!v.passed() && v.same_state == Some(false), "{why}");
+        }
         std::fs::remove_dir_all(&root).unwrap();
     }
 }

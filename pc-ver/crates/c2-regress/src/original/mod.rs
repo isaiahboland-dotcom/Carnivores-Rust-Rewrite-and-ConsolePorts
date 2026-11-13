@@ -298,11 +298,6 @@ fn record(
         .shots
         .iter()
         .zip(&runs[0].1)
-        .filter(|(s, _)| {
-            !s.name.ends_with("_ready")
-                && !s.name.ends_with("_after")
-                && !s.name.ends_with("_closed")
-        })
         .map(|(s, h)| json!({ "name": s.name, "frame": s.frame, "screenshot_sha256": h }))
         .collect();
     let why_none = "the original's state is not read; its clock is virtual (20 ms a frame), so wall times say nothing";
@@ -345,12 +340,7 @@ fn record(
 /// What a run of the original was: scenario, game, the hunt executable and
 /// its command line, the hook and the game's files.
 pub(super) fn manifest(o: &Original, args: &str, exe: &Path, repeats: usize) -> Value {
-    let files: Vec<Value> = o
-        .game
-        .files
-        .iter()
-        .map(|(p, h)| json!({ "path": p, "sha256": h }))
-        .collect();
+    let files = o.game.files_json();
     let wine_version = std::process::Command::new("wine")
         .arg("--version")
         .output()

@@ -34,6 +34,11 @@ build), `metrics.json` (stage results, weapons fired, animals, UI screens,
 timings, memory, determinism, checkpoint state hashes) and `events.jsonl`
 (every action and check by tick).
 
+Ice Age runs with the rules play generates for it, so its manifest lists
+the generated `_RES.TXT` (`sha256`) and the release's own file it was
+generated from (`source_sha256`); the hash list is checked against the
+latter.
+
 Not included: screenshots (they are pictures of the game's own art), logs,
 and anything that identifies the machine (CPU, GPU, driver). There are no
 game files here, only their SHA-256 hashes, as in the recipes.
