@@ -58,6 +58,9 @@ bannertool (*)
 
 # Gameplay regression recordings (docs/REGRESSION.md): made from your game files
 regression-sim-recordings/
+# Regression screenshots and review captures are not published (too large for
+# the repository); the engine and tools stay so anyone can generate their own.
+/assets/regression-test/
 newest-mods-credits-etc
 
 # Android builds (android-ver/) and signing keys
