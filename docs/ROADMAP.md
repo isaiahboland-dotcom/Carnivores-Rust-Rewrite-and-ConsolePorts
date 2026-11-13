@@ -79,28 +79,11 @@ frame timings, so each change can be checked against these first readings.
   held scope and binoculars, and per-gun VR configs so modded guns can join VR hunts.
 - PS5 / PS VR2 dedicated port: research only.
 
-## Release maintenance
-
-Keep this file current when priorities or platform evidence change. Every release
-gets a tag, release notes and a short changelog entry; bump the workspace version in
-`pc-ver/Cargo.toml` and `versionName`/`versionCode` in `android-ver/AndroidManifest.xml`
-together (a c2-launcher test checks they match). Security work and remaining
-limits are documented in [SECURITY-HARDENING.md](SECURITY-HARDENING.md). Track
-reproducible bugs with platform, revision, steps and logs without distributing game
-assets or private machine identifiers.
-
 ## Further milestones and distribution
 
-- **Portable desktop releases:** provide `windows.zip` and `linux.tar` with the
-  launcher and required executable/runtime support for each release, excluding all
-  game/mod assets. Validate extraction, owned-base setup and play on fresh systems
-  before recommending Releases as the easiest GUI install path; retain manual setup.
 - **Add-on variants:** flag duplicate dinosaur names and allow intentional shared
   menu slots, with map-specific eligibility and weighted spawn rates. Reconcile this
   with compact skins and opt-in spawn groups in [EXPANSION.md](EXPANSION.md).
-- **Mobile and console polish:** correct modded Android picker/map artwork and
-  texture defects, finish console mobile UI and MEE weapon presentation, and add a
-  Wii U debug-metrics visibility toggle. Implementation requires platform validation.
 - **3DS compatibility:** user-overridable low-memory presets, ambient species from
   combined loaded rosters, and content-identified pack restrictions/compatibility
   profiles accompany the performance plan above.
@@ -110,6 +93,10 @@ assets or private machine identifiers.
 - **Expanded formats on consoles:** consider OBX/RSX only after cooker and console
   memory-budget checks; preserve original formats and existing PC support.
 
-Legacy documents disagree on milestone numbers (APK bases and PC VR both used M17;
-local notes later called PC VR M20). Platform names identify ongoing work here until
-numbering is reconciled across the development documentation.
+## Expanding upon the Advanced setting in the launcher
+- **All these should be optional and opt-in to avoid messing with the vanilla or intended mod experience** The recipe.toml will be expanded upon to support the configuration of advanced settings, allowing users to share their advanced configs for modpacks or expand upon their original mod. If no advanced features are turned on, these will be ignored, with a popup that notifies the player that a recipe they imported contains advanced settings and which advanced settings, and a quick way to disable if the user doesnt want to play with those advanced features. Allowing players who prefer the classic game, to avoid the advanced settings. Advanced settings are also hidden in the launcher by default. Go to settings in the launcher and enable advanced settings if desired. Also for performance, some of these settings may not be available on the wii u and 3ds due to hardware constraints with the 3ds being the most worrisome. the main focus will be to fully support these on android and PC while leaving the wii u and 3ds versions either dumbed down or disabled entirely. 
+- **Advanced Dinosaur/animal AI and Behavior** - Baby dinosaurs who try to hide behind their parents, smarter herd capabilities (cross species configurations allowing different species to herd together and configuration options to exclude/include certain species), advanced carnivore hunting (dynamic targeting of hunter and herbivores, for example: targetting bigger or slower dinosaurs over the hunter or stalking and ambushes), smart migration (hunger/thirst driven migration patterns and habitat preferences all configurable), and more player/dinosaur relationships (approach while crouching to a herbivore herd to gain trust after avoiding any distrurbances for a minute or two or smaller carnivores maybe responding differently to player stance, weapons and if the player trigggers a large carnivore sound)
+- **Lock a dinosaur to specific maps** the dinosaur selection can dynamically change in the menu depending on what map is chosen, allowing players to make certain maps a requirement to hunt certain dinosaurs. this can also only apply to only certain dinosaurs/maps as well.
+- **"secret" dinosaurs can be further configured** make dinosaurs that are not in the hunt menu but found randomly on a map or certain maps, unlockable in the hunt menu after being identified in a hunt (kill/binoculars/death), extend what maps they can be found on, and decide if there is a permanent point cost to unlock the dinosaur license in the menu. the permanent license option is **optional** they can remain harder to find if desired.
+- **lock weapons and equipment to certain maps** Allow the weapon selection list to be dynamically shown based on what map is chosen. this an also be only certain maps/equipment/weapons as well
+- **Custom menu for compatibility with more of the advanced settings** an advanced menu to support the advanced settings options. for example, when viewing a dinosaur, you can look at an advanced tab, that gives a 3d model of the dinosaur to spin around or shrink/zoom and see what maps it can be hunted on (for the advanced option of locking dinosaurs to specific maps), see what dinosaurs it prefers to hunt or herd-wtih (for advanced behaviors) and dinosaurs they are scared of (if any). Also in the menu, selecting a map will show what dinosaurs are available to hunt (if the advanced setting for locking dinosaurs to maps is enabled) and a total number of hidden "secret" dinosaurs that havent been found just yet - if any are discovered they will be added to the list but their name will glow a different color until the permanent license is unlocked.

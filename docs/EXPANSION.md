@@ -67,7 +67,11 @@ Recipe persistence, private asset/character preservation and per-map runtime
 selection are implemented for PC hunts. Explicit recipe groups retain all members
 and one shared menu slot; ordinary duplicate names still use replacement behavior.
 Initial placement, replacement spawns, predation respawns and survival waves share
-the seeded selector. Dedicated editor controls and percentage previews remain pending.
+the seeded selector. The launcher's Balance page has a Variant manager: one card
+per menu dinosaur, with its variants, percentages and map settings (see Editor
+below). Members may come from the base game, from add-ons and from standalone
+games combined beside the base; standalone areas are renumbered to the combined
+game's.
 
 Identity and persistence:
 
@@ -88,18 +92,37 @@ Identity and persistence:
   maps; an empty list permits none. Map identities use source ID plus source
   area ID, resolved to packed areas during preparation. Missing members, maps,
   or owners are errors, including members removed through Pick parts.
+- `source` is `base`, an add-on's recipe ID, or a standalone's recipe ID. A
+  standalone member names its character and maps as the standalone itself
+  does, before the combine renames a clashing name (`Raptor`, not
+  `Raptor (Game A)`) or renumbers its areas (`area2`, not `area7`).
+- Base and standalone members are already in the combined game, so they bind
+  to the character placed there; their models and sounds are copied to the
+  private `VARIANTS/` namespace like an add-on member's.
+- A standalone non-owner leaves the menu while the standalone is combined:
+  its slot, picture, call and price are removed and later slots close up, as
+  for a huntable left out through Pick parts. Its character is kept under the
+  group's private name. References to that slot from other characters
+  (`fearCall`, `charN` conditions) are dropped. A base-game animal can only
+  be its group's menu owner; base slots are never renumbered.
 
 Probability and eligibility:
 
 - Choose a variant for each individual spawn, after selecting the menu animal;
   variants do not multiply its population or create additional spawn groups.
-- Filter members by current map, then normalize their finite, nonnegative
-  weights: `P(member | animal, map) = weight / sum(eligible weights)`.
-  Zero disables a member. Negative, NaN and infinite values are errors.
-  Weights need not add to 100; the UI displays the resulting percentages.
-- Per-map weights override the member's default before normalization. A zero
-  total means the animal cannot spawn on that map; do not substitute an
-  ineligible member or bypass the rule through the selected-animal fallback.
+- A weight is a percentage of the animal's spawns. On each map, the weights of
+  the members eligible there must total 100 (`c2_mods::variants::check_totals`).
+  Nothing is normalized: a total other than 100 fails the build, and the editor
+  shows it. Zero disables a member. Negative, NaN and infinite values are errors.
+- A member's weight on a map is its per-map override when it has one, else its
+  default weight where its `maps` list allows the map, else 0. The default
+  distribution (maps with no override or limit) must total 100 as well.
+- Each map that has an override or is named in a `maps` list is a distribution
+  of its own, and must total 100 too.
+- Spawning normalizes the eligible weights (`weight / sum(eligible weights)`),
+  so a valid recipe spawns exactly at its percentages. A zero total still means
+  the animal cannot spawn on that map; do not substitute an ineligible member or
+  bypass the rule through the selected-animal fallback.
 - Use the hunt's seeded RNG and a stable persisted member order. Initial,
   replacement and survival spawning must use the same selector. With no
   variant data, preserve existing RNG consumption and spawn behavior.
@@ -115,7 +138,8 @@ menu_owner = "classic"
 id = "classic"
 source = "classic-rex"
 character = "Tyrannosaurus"
-weight = 75
+weight = 100
+map_weights = [{ map = { source = "base", area = "area1" }, weight = 75 }]
 
 [[variants.members]]
 id = "striped"
@@ -123,11 +147,23 @@ source = "striped-rex"
 character = "Tyrannosaurus"
 weight = 25
 maps = [{ source = "base", area = "area1" }]
-map_weights = [{ map = { source = "base", area = "area1" }, weight = 75 }]
 ```
 
-On `base:area1` these members have equal probability; elsewhere only `classic`
-is eligible. Group and member IDs use lowercase ASCII letters, digits, hyphens
+On `base:area1` the members are 75% and 25%; elsewhere only `classic` is
+eligible, at 100%. Every distribution here totals 100.
+
+Editor (launcher, Balance page, Variant manager):
+
+- A card is one menu dinosaur. Its dropdown lists the dinosaurs and sources
+  (for example "Stegosaurus — Base game" or "Stegosaurus — Skin pack"). The
+  card's group and member IDs come from that identity and are not shown.
+- Each variant row has its own dinosaur dropdown, percentage, map settings and
+  remove button. A dinosaur already on one row is not offered on another.
+- Map settings are a per-dinosaur list of overrides: a map, and a percentage
+  that replaces the default there. 0% turns the dinosaur off on that map. A
+  map limit written in the recipe file is shown and can be lifted.
+- The card's total and each map's total show in red until they reach 100%.
+  Removing a card removes only its recipe entry. Group and member IDs use lowercase ASCII letters, digits, hyphens
 and underscores. Character names retain source spelling; identity comparison
 uses the normalization described above. Source IDs are recipe IDs. A collection
 member additionally specifies `child`, the exact child folder name, independent

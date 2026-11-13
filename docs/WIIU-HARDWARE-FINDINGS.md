@@ -95,6 +95,13 @@ changed regions reduced work. Measured TV focus updates were approximately
 all menu operations fit a single display frame. Host comparisons checked that
 partial redraw output matched full redraw output.
 
+Settings, Record and Death focus changes now redraw only the affected rows
+(plus the Settings help line) instead of the full page. The startup log
+reports rasterization and `GX2Invalidate` time separately for each display
+("Menu: redraw N raster ...; invalidate ..."), so the next hardware run shows
+which one dominates. Rendering the TV menu texture at 1280×720 remains an
+option if rasterization is still over budget; it is untested.
+
 ## Apparent regressions and gameplay defects
 
 Severe slowdowns initially associated with nearby animals coincided with a

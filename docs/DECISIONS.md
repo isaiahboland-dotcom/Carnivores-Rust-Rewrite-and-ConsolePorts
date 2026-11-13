@@ -1,5 +1,112 @@
 # Decisions and deviations
 
+## 2026-11-12 — Android app icon from the player's own APK
+
+The Android package is always relabelled and signed by the launcher when the
+Android SDK's tools are found, named or not (the shared app keeps the `c2rs`
+name). The game's launcher icon (`HUNTDAT/MOBILE/ICON.PNG`, the largest
+`ic_launcher.png` of the player's mobile APK) is compiled with `aapt2` and linked
+into that APK as `@mipmap/ic_launcher`; the manifest refers to it only when the
+icon exists. Before this, neither path carried an icon, and the renamed APK was
+built from the manifest alone. The icon is game art, so it is made per player
+and never committed; the engine's `build-apk.sh` output still has no icon.
+Without the SDK, an unnamed instance keeps the engine APK as it is, and a named
+one stops with the SDK message. Device check of the home-screen icon pending
+(testing-needed.md).
+
+## 2026-11-12 — Older Modder's Edition rules, water animals, Ice Age regression runs
+
+**Older Modder's Edition rules are read as today's (`c2_mods::legacy`).**
+Games and add-on entries written before Modder's Edition 1.0.5 keep their
+animals in `oldambients` / `mapambients` sections, name the AI with
+`clone`, give each map ambient a spawn group of its own as
+`spawninfo { spawnrate spawnmax spawnmin xmin ... }` with `packMin` /
+`packMax` / `packDensity` beside it, and list idles as `idleAnim`. Neither
+the current Modder's Edition nor our reader takes any of that, so those
+animals were never placed: one such standalone placed 4 animals per map
+instead of 124-151, and add-on sea animals with `clone = -4` did not spawn.
+A layer in `c2_mods::vanilla` (before the default spawn tables) and the
+loose add-on reader rewrite them: the sections join `characters` (appended,
+so existing character indices and saved trophies keep their meaning),
+`clone` becomes `ai` where no `ai` is given, an own `spawninfo` becomes a
+`spawngroup` (bounds as its `region`, inside a `packgroup` when the animal
+comes in packs), `idleAnim` becomes `fishIdleAnim` for fish and one
+`idlegroup` (start 0.03125, end 0.5) for the others.
+
+- **Negative `clone` numbers are inferred, not sourced.** No source or
+  manual of those releases is at hand. The entries that use them are fish
+  (-3: depths), a Mosasaurus kind (-4: depths and a jump) and brachiosaurs
+  that kill (-5, -6), which is today's list from 30 on in order, so -n is
+  read as AI 29 + n. -1 and -2 are unseen.
+- **`clone` beside `ai` is ignored**, as the current engine does; in the
+  older files seen the two are equal.
+- **Not converted:** `corpseambients` (AI 6-9 are other animals now) is left
+  out; a menu animal's `packMin` / `packMax` stay unused, since its spawn
+  links come from the default tables.
+- **More animals per map** on such games raises their memory and step cost
+  on the consoles; the existing caps (`Herd::cap_placed`) still apply.
+
+**An add-on laid out under `HUNTDAT` with its entry only in a readme is
+read as a loose add-on.** Without a `_RES.TXT` or `mod.toml` of its own the
+readme is the only thing saying what its models are; read as a folder mod,
+its files were copied and the entry dropped.
+
+**Water animals are only put down in water (deviation).** A killed animal of
+a `moveForward` group is replaced where its kind can be
+(`Characters_AddSecondaryOne`: fish by depth, waders in shallows), which
+the port had checked as dry ground only, so fish and waders never came
+back. Predation respawn and extra spawns from rules use the same check
+(`Herd::spot_blocked`). Deviation: the engine's depth check passes a fish
+whose entry has no `mindepth` / `maxdepth` (0 to 0) only on dry ground; ours
+never places a fish where there is no water. A missing bound alone is 0, as
+in the engine.
+
+**An observer is left alone.** `AnimateFish` attacks only when
+`!ObservMode`, and the Giant deer's charge likewise; both were missing, so
+dangerous fish hunted and killed an observer. `HunterView::observer`
+carries the mode to the AIs, and a kill of an observer is dropped whatever
+reached him.
+
+**Water animals on the radar (PC setting, off by default).** "Water animals
+on radar" (`radar_water` in `c2rs.cfg`) shows fish and Mosasaurus kinds in
+cyan when the radar is on. Not in the original, whose radar shows them only
+when their entry says `radar = TRUE`. For finding them when testing.
+
+**`c2-regress` runs a game as play prepares it.** It loaded the folder as
+it was, so Carnivores: Ice Age ran Carnivores 2's AIs there and every Ice
+Age finding measured the wrong thing. It now builds the same layers as
+play (`c2_mods::vanilla`) into a temporary folder of links when any rules
+are generated, for the headless run and the render pass; the original
+engine still gets the user's folder. Consequences:
+
+- Scenarios name Ice Age's animals by Ice Age's own AI numbers (as the
+  original's menu does), which the rewritten rules replace. The layer
+  records each as `sourceAi`, and `ai:N` matches that first.
+- Recorded clips are the model's (`MeeInfo::anim_index`), not the dialect's
+  reading-order phase, so they compare with the original's.
+- **The original wins on the Diatryma's kill.** The Modder's Edition's Ice
+  Age rules put the body 200 units off, unsynchronized; in `IceAge.exe` it
+  lies on the killer. The rule is now `hunterSync` with no offset.
+- Result (headless): Woolly rhinoceros 6/7, Yeti 12/7 and Diatryma 7/8, all
+  on the killer, as measured in the original; run and death clips of the
+  Mammoth, Smilodon, Bear and Woolly rhinoceros match it (1; 4, 5, 5, 5),
+  and the Bear's death plays. The earlier "Ice Age kills differ from ours"
+  finding (2026-11-08) was the raw-folder load, except the Diatryma.
+- Every recorded Ice Age baseline, and the clip numbers in baselines of
+  other dialect games, are superseded and need recording again.
+
+## 2026-11-11 — Genesis color comparison requires matched scene rendering
+
+Preserve authored colors while investigating the reported Genesis vibrance
+difference. Fixed-camera native software/Rust controls validate differences
+in sky projection/fade, distance fog and hardware-style object vertex lighting.
+Flat neutral terrain light levels agree; disabling only diagnostic object
+vertex lighting brings the sampled palm close to software brightness. Keep
+that ablation confined to diagnostics: normal play currently follows hardware
+lighting, which requires its own native reference before claiming parity.
+Do not compensate with global color grading or relax pixel tolerances. See
+[controlled evidence and remaining scope](GENESIS-VIBRANCE.md).
+
 ## 2026-11-08 — Original-engine driver: (0,0) cursor centring, weapon timings
 
 The upward view in Genesis Redux's original-engine tour had two causes.
@@ -4955,6 +5062,61 @@ still have changed the hash.
 - Test: `scenario_file::tests::the_hash_ignores_crlf_line_endings`; the
   published-baselines test also passes in an `autocrlf=true` checkout.
 
+## 2026-11-11 — Binocular identification follows the active draw distance
+
+`Hunt2.cpp::ScanLifeForms` limits identification to `ctViewR * 256`, the
+original draw radius. The rewrite retained `HuntOptions::view_r` for this
+query while the PC/Android renderer gained a separate extended radius.
+At the default 74 cells this stopped identification at 296 m, even with
+visible animals farther away (256 world units per cell, 64 per metre).
+The legacy view slider maps to 42–104 cells (168–416 m); the extended
+render slider reaches 384 cells (1,536 m), or 1,024 cells (4,096 m) with
+high-end view. Original fog mode restricts rendering to the legacy range.
+
+Binoculars now default to `max(render_r, view_r)`. PC/Android pass the
+active `AreaView::radius` explicitly: high-end rendering may exceed the
+384-cell simulation cap used for animal replacement. AI detection,
+aggression, spawning and shot range are unchanged. This deliberately
+extends identification along with configured rendering, preserving the
+original range when using original rendering settings.
+
+Identification retains the original camera-to-animal 3D distance,
+inclusive far boundary, 512-unit minimum forward depth, aim tolerance,
+nearest living target and terrain line-of-sight check. Rendering culls
+animal origins by horizontal distance and frustum; fog ends at the draw
+radius, while projection clipping is at 1.5 times that radius. Binocular
+range uses the draw radius, not the projection margin or fog-start point.
+The existing line-of-sight query does not reject scenery objects; this
+change does not alter that behavior. Zoom changes magnification, not range.
+
+Synthetic regressions in `game/tests/view.rs` cover the original and
+extended boundaries, the 300 m report, both zoom endpoints, the high-end
+radius override, near/behind-camera limits, selection and terrain occlusion.
+Visual gameplay acceptance remains in `testing-needed.md`.
+
+## 2026-11-11 — Limit binocular range and tighten identification aim
+
+Gameplay feedback after extending identification reported overly broad selection
+and apparent identification behind mountains. Superseding the unrestricted range
+and original aim tolerance above, identification now stops at the smaller of the
+active render radius and 1,000 m (64,000 world units). High-end rendering does not
+raise this cap.
+
+The original 0.15 angular tolerance admitted targets roughly 150 m off-axis at
+1 km. Use `(abs(camera_x) + abs(camera_y)) * binocular_power / forward_depth <=
+0.05` instead: a narrower screen-space tolerance that tightens with zoom. Aim and
+terrain visibility now both use the animal's position plus 220 units times its
+scale vertically; previously aim used the origin while visibility used a fixed
+220-unit offset. Range is measured to that identification point. The HUD retains
+its existing player-to-animal distance measurement.
+
+The existing terrain trace was not changed: synthetic 900 m diagonal mountain
+occlusion passes with both terrain triangle orientations and both zoom endpoints.
+The reported gameplay mountain case has not been reproduced; do not treat these
+tests as visual acceptance. Seven binocular regressions cover range boundaries,
+zoom-sensitive horizontal/vertical aim, nearest living selection and occlusion.
+
+
 ## Model texture cutouts apply per face (2026-11-11)
 
 The PC renderer separates solid, cutout (`sfOpacity`), and blended
@@ -4978,6 +5140,160 @@ captures confirm restored crest coverage. Full-image pixel parity remains
 unresolved (filtering/rasterization differences are not waived). Gameplay
 verification confirmed the Dilophosaurus face fix on 2026-11-11, completing
 acceptance for the reported defect. Private evidence stays ignored.
+
+## 2026-11-12 — Master regression report: one page, results and review kept apart
+
+`tools/regression_audit.py` writes one `report.html` per audit: an overview
+with a coverage matrix, a findings list, and filterable, paged galleries for
+gameplay comparisons, matched original/Rust screenshots and the compact and
+full Rust sweeps. The page is a static file plus a generated `report-data.js`,
+so it opens from disk without a server or dependencies and never loads
+thousands of pictures at once.
+
+- **Coverage is not a verdict.** Each game, scenario and engine is completed,
+  failed, invalid (no captures), missing, blocked or unsupported. A game with
+  no native adapter is unsupported; no other game's pictures stand in for it.
+  A checkpoint captured by one engine only is unpaired, not a comparison.
+- **No invented percentages.** Changed-pixel fractions appear only for valid,
+  pose-matched captures, with the native review's unchanged threshold.
+  Gameplay pictures state that no pixel metric exists. An invalid capture has
+  no score.
+- **Findings restate results.** Derived findings come from recorded commands,
+  stages, parity checks and statistics. Tracked investigations are declared in
+  the private configuration (`[[finding]]`) and their evidence pictures are
+  copied into the audit, because a linked repair audit had already been removed
+  from disk when this was written.
+- **Review is human and separate.** Statuses and notes live in `reviews.json`,
+  never in capture results, and default to pending. A review is tied to a
+  fingerprint of the result it judged; when the result changes, the status
+  returns to pending and the notes are kept. `--serve` saves reviews through a
+  loopback-only server that can write that one file.
+
+The native tour captures `_ready`/`_fire`/`_after` per weapon while the Rust
+runner captures `_fire` only. The report shows the others as original-only.
+Adding the Rust checkpoints changes the scenario's checkpoint list, so it
+needs a scenario version bump and new baselines and is left for the pending
+baseline approval.
+
+Three reported runner weaknesses were confirmed in the source and fixed:
+
+- A native run whose executable lacks the `timeGetTime`, `PeekMessageA` or
+  `BitBlt` import was logged as `NOT FOUND` and continued untimed, unscripted
+  or uncaptured. It now fails as an infrastructure error. `GetAsyncKeyState`
+  and `CreateProcessA` stay optional: supported executables lack them.
+- `c2-regress` ignored unknown flags and flags without a value, so a mistyped
+  `--repeat` ran once. Both are now usage errors (exit code 2).
+- Run directories are named to the second; two runs of one game within a
+  second shared a directory. A taken name now gets a numeric suffix.
+
+Confirmed and left unchanged: comparing a Rust run with an original baseline
+lists every checkpoint as a state difference, because the original has no
+state hashes. It never fails the comparison unless `--same-state` is given,
+which is documented as same-platform only. The state hash covers the hunter's
+pose, the weapon, each animal and the random stream, not effects or the ship;
+extending it would invalidate every recorded hash and belongs with the
+baseline approval.
+
+
+## 2026-11-12 — Variant weights are percentages that must total 100
+
+- The `weight` of a variant member is its percentage of spawns. On every map
+  that has a distribution (the default one, and each map with an override or
+  a limit), the eligible members must total 100. `c2_mods::variants::check_totals`
+  enforces this when the recipe is prepared, so a build fails with the group and
+  distribution named. Totals are not normalized silently.
+- Spawning still normalizes the eligible weights, as before, so a valid recipe
+  spawns exactly at its percentages. Map overrides and limits resolve through
+  one function (`variants::weight_on`), shared by the runtime, the build check
+  and the editor.
+- Reason: a mod creator needs the chance printed in the recipe to be the chance
+  in the hunt. The earlier "weights need not add to 100" rule hid mistakes.
+- Compatibility: the variant feature is not yet in a release, and the repository's
+  only variant fixture was rewritten to a valid split. A recipe whose
+  distributions don't total 100 now fails with a message rather than building.
+- The launcher's Variant manager edits these percentages directly, and its
+  parent and variant dropdowns use the catalog read from the instance (base game
+  and add-ons). Standalone games are not offered as variant sources yet
+  (superseded by "Variant members from standalone games" below).
+
+## 2026-11-12 — Variant members from standalone games
+
+- A variant member's `source` may name a standalone the recipe combines. Its
+  `character` and map stems are the standalone's own; the build maps them to
+  the combined game through `standalone::Built::residents`.
+- A standalone non-owner is taken off the menu during the combine
+  (`standalone::Options::unlisted`), using the renumbering already used for
+  left-out huntables. Removing a slot after the combine would need a second
+  renumbering pass over pictures, calls, prices and `charN` conditions. The
+  character is renamed to the group's private name, so it never matches a
+  menu entry. References to the removed slot are dropped, as with Pick parts.
+- Base-game members (`source = "base"`) now resolve to the base's own
+  character. Before this change, `preserve` only matched add-ons, so a `base`
+  member offered by the Variant manager failed to build. A base animal can
+  only be a menu owner, because base slots are not renumbered.
+- Refused at build time: a member or map the standalone's Pick parts leave
+  out, and a base-game non-owner. The fixture is
+  `c2-mods/tests/standalone_variants.rs`.
+- The launcher's catalog lists each standalone's kept huntables and maps, and
+  the Balance read applies the same unlisting, so its rows match the build.
+
+
+## 2026-11-12 — README is the overview; play and build detail lives in docs
+
+- The README keeps the project summary, feature list, status, screenshots, a short
+  quick start, and links for everything else. The launcher guide, PC command line,
+  controls, PC options and survival rules moved to [docs/PLAYING.md](PLAYING.md). The
+  Wii U build commands moved to `wiiu-ver/perf-probe/README.md`; the Windows install
+  steps stay in [WINDOWS.md](WINDOWS.md). Links that pointed at removed README anchors
+  now point at their new locations.
+- Platform comparison images are all 960x540 (the 3DS capture is cropped top and
+  bottom to 16:9), and the grid uses fixed-width cells, so the tiles match on GitHub.
+  The Wii U tile is labelled "demo", matching the status table, not "Coming Soon".
+- The night screenshot is the area viewer at night (`c2-pc area --night`), which shows
+  the renderer's night-vision tint. An unequipped dynamic-time hunt at midnight is
+  nearly black and was not used.
+
+
+## 2026-11-12 — CI audit: cargo-deny policy, narrow advisory exceptions, MSRV job
+
+- `pc-ver/deny.toml` runs cargo-deny 0.20.2 (`advisories licenses bans sources`)
+  in the new **Audit** workflow, daily and on push/PR. Advisories are checked as
+  `unmaintained = "all"` and `unsound = "all"`, not only for the workspace.
+- Four unmaintained crates reach the tree through the eframe launcher stack:
+  `ttf-parser` (RUSTSEC-2026-0192, via sctk-adwaita), and `zbus_names`,
+  `zvariant`, `zvariant_derive` (RUSTSEC-2026-0371, -0370, -0372; zbus/atspi
+  accessibility). Each has a per-ID ignore with a reason. No workspace crate uses
+  them directly. The unmaintained count is four for the current lockfile, not the
+  six noted in the earlier audit; the difference was not reproduced.
+- Not ignored: RUSTSEC-2026-0486 (unsound `rustix` xattr buffer handling). Fixed by
+  updating the lockfile to rustix 1.1.6 (`cargo update -p rustix@1.1.5 --precise
+  1.1.6`); no other package changed version. All four cargo-deny checks pass.
+- Licences: `epaint_default_fonts` bundles OFL-1.1 and Ubuntu-font-1.0 font assets.
+  Both are allowed for that crate only.
+- The Parity workflow is renamed to state that it runs synthetic suites, not
+  original-asset parity, and writes the same scope note to the run summary.
+- MSRV: raised from 1.88 to **1.95** (`pc-ver/Cargo.toml`, the `msrv` CI job,
+  CONTRIBUTING). The locked set did not build on 1.88: eframe/egui/epaint 0.37 need
+  1.95, ordered-float 5.5 needs 1.90, uuid 1.28 needs 1.89. Pinning the GUI stack
+  back was rejected: it would hold the launcher on old egui for no platform gain.
+  1.95 is compatible with every target: the PC, Windows and Android builds use
+  stable (1.98 at the time of writing), the 3DS workspace uses a nightly newer than
+  1.95, and the 3DS, Wii U and Android workspaces declare no `rust-version` of
+  their own. Verified with `cargo +1.95 check --locked --workspace --all-targets
+  --all-features`.
+- Exceptions re-verified against `cargo tree`: all four unmaintained crates are
+  present (ttf-parser via winit/sctk-adwaita; zbus_names, zvariant, zvariant_derive
+  via accesskit_unix/atspi), and no exception is unused. The
+  `epaint_default_fonts` exception covers exactly OFL-1.1 and Ubuntu-font-1.0, the
+  only crate carrying them. Two yanked crates (async-executor, clipboard-win) are
+  reported as warnings only; they are transitive and have no advisory.
+- `windows.yml` gains a top-level `permissions: contents: read`; the redundant
+  job-level block on `msrv` is removed.
+- Dependabot: a weekly cargo entry for `/pc-ver` groups the eframe, egui, winit,
+  wgpu and naga families into one `gui-graphics` update.
+- Declined for now: CodeQL (Rust coverage and the repository's security-scanning
+  settings were not verified here) and 3DS/Wii U cross-build CI (see
+  SECURITY-HARDENING.md).
 
 ## 2026-11-12 — 3DS trophy room: memory-planned 2D fallback
 
@@ -5035,6 +5351,47 @@ acceptance for the reported defect. Private evidence stays ignored.
   and replaced. They await maintainer approval before commit.
 - Genesis Redux joined the kill scenario for our engine. The original-engine
   kill hook does not support its executable (see REGRESSION.md, Limitations).
+
+## 3DS pack: call-sound accounting and area sound caps (2026-11-12)
+
+- Call sounds and pictures (`K{id}_{v}`, `CALL{id}.TX`) are cooked in their
+  own `call{id}` scope. They were counted under whichever model was cooked
+  last (`cost.m:VELO2`, 15.4 MiB in a 22-area pack), so a hunt picking that
+  model was over-charged and every other hunt under-counted its calls.
+  `Setup::load_kb` adds `cost.call{id}` for each target. Packs cooked before
+  this still carry the figure under a model; they need a recook.
+- An area's random sounds and ambient loops are fitted to
+  `Profile::area_sound_kb` (4 MiB, both targets) by `c2-cook/src/area_sounds.rs`:
+  loops get at most half (45 s down to 8 s each), randoms get the rest (4 s
+  each at most, down to 0.5 s, with a 0.1 s fade-out when cut). An area under
+  its share is unchanged. Measured on the 22-area stress pack: AREA13's
+  linear figure fell from 15.1 MiB of sound alone to 6.9 MiB for the whole area.
+  De-duplicating identical PCM and a lower sample rate for randoms are not done
+  (the engine plays every clip at the pack's one rate).
+- `c2-cook --no-sound` writes a pack without any sound (`sound = 0` in
+  INFO.TXT); the app then starts without audio and does not load the DSP.
+  It exists to measure what sound costs in memory and frame time.
+
+## 2026-11-12 — Underwater fog and tint (PC, Android)
+
+- While `player.underwater`, the fog and clear colour become the mean colour of
+  the camera cell's water texture (`CalcMidColor` scaled by the brightness
+  option), as the original sets `FogsList[127].fogRGB` from `WaterList[w].fogRGB`.
+  A full-screen rectangle of that colour at 50% alpha is drawn under the HUD
+  (`RenderFSRect(0x80000000 + CurFogColor)`, Render3DFX.cpp:652). Alpha 0x80 is
+  read as half strength; it is not checked against Glide hardware.
+- Fog distance underwater is 0 to 35% of the view distance. The original keeps
+  the density in its fog table slot 127; that value is not reproduced.
+- The 3DS and VR have their own fog paths and are not changed. Water alpha,
+  resurfacing drops and reflections are separate, later phases.
+- The effect sits behind "Pretty underwater view" under the video options (PC and
+  Android lists), on by default because it is what the original's 3dfx path does.
+  The Android APK's base game looks better underwater than the PC base game; that
+  difference in the vanilla renderers is left alone.
+- A white breath bar shows while underwater (always, not tied to the toggle). The
+  original drowns by draining health (`MyHealth -= TimeDt * 12`), so the bar is
+  the health left; it fades out below 25% of full health.
+
 
 ## 2026-11-12 — Water transparency is a depth coefficient (PC)
 

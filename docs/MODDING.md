@@ -30,7 +30,12 @@ was decided:
   a new `.car` goes in `HUNTDAT`; `DINOn`/`CALLn`/`WEAPONn` menu files and
   call sounds go to their folders. Pictures and anything else are left out.
 - The `{ ... }` entries are read from its text files (readmes included).
-  An add-on with entries for several games: on a Modder's Edition base the
+  A folder with its files under `HUNTDAT` and no `_RES.TXT` of its own is
+  read the same way when a readme beside it holds the entry.
+- An entry written for an older Modder's Edition (`clone`, a `spawninfo`
+  with its own `spawnmax` / `spawnrate`, `idleAnim`) is read in today's
+  keys; the merge report says so.
+- An add-on with entries for several games: on a Modder's Edition base the
   one introduced as for the Modder's Edition is used, else the first.
   Trophy-room entries and "Legacy" folders are skipped; of a Modder's
   Edition folder and a plain one, the one matching the base is used.

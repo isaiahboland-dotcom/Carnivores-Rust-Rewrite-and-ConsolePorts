@@ -28,3 +28,7 @@ APK and Android SDK tools. The host builder executables alone do not supply thes
 Recipes contain credits, download links and hashes; download their content from
 the authors and select your own base game. The archive contains no `source/`,
 personal instances, game data or mod data.
+
+Both v0.5.3 release builds passed, and the downloaded archives were verified against the
+v0.5.3 tagged commit, including file hashes and Windows runtime dependencies. Gameplay and
+clean-machine testing remain pending; Windows remains experimental.

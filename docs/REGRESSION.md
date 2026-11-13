@@ -51,33 +51,129 @@ console hardware/emulator validation is separate. Every test/build entry
 accepts `name`, an argument-array `argv`, optional `cwd` and `env`. Commands
 run sequentially without shell expansion, so GPU tests do not compete.
 `{repo}` and `{audit}` are available in command arguments and paths.
+
+The Cargo test commands use `--no-fail-fast`: a failing test binary remains a
+failure, while the other binaries still run. This prevents one early failure
+from hiding the rest of the audit's coverage.
+
+Native captures need a session that permits Wine's local server sockets and
+display access. A restricted execution sandbox can reject `wineboot` with
+`wineserver: bind: Operation not permitted`; this is an infrastructure error,
+not an engine accuracy result. Run the audit with the appropriate execution
+permission instead of disabling the original-engine checks. Wine startup,
+desktop-configuration and path-conversion errors are fatal and retain their
+diagnostics. Prepared addon packs must contain readable area/model files;
+old pack symlinks into a cleaned `target/` directory must be rebuilt or the
+private configuration pointed at a complete pack with the required models.
+The native script is archived in its run directory and staged byte-for-byte
+under a short relative filename in the private game copy. This avoids Win32's
+260-character input-path buffer limit; unreadable or overlong hook script
+inputs are rejected instead of running an unscripted hunt and reporting a
+misleading gameplay failure.
+
+For a focused rerun, add `--only PATTERN` (a glob on step names, repeatable):
+`--only 'kill_animations-ice-age*'` runs that game's kill captures and their
+comparison, `--only 'texture-original-*'` the native texture references.
+Steps named in `capture_requires`/`original_requires` still run; everything
+else is skipped. A top-level
+`related_reports = ["{repo}/regression-sim-recordings/PRIOR_AUDIT/report.html"]`
+adds links to prior audits without replacing their results or approvals; a
+linked report that no longer exists is listed as missing.
+
 The native adapters currently cover the supported PC executables, not the
 Android games running on a device. APK Rust captures therefore do not imply
 an Android-original visual reference. Add explicit native references only
 when a capture adapter exists; do not substitute stock PC pictures for APKs.
 
-Outputs use a fresh ignored `regression-sim-recordings/audit-<UTC>-<id>/`:
-`report.html` links every child report, JSON result and command log, includes
-metric summaries, and embeds checkpoint pairs and native texture triptychs.
+Outputs use a fresh ignored `regression-sim-recordings/audit-<UTC>-<id>/`.
 `audit.json` records commands, exit codes, duration, blocked prerequisites and
-comparison coverage; `config.json` records requested coverage. Both are private.
-The report updates after each command; failures do not stop unrelated suites.
-Timeouts terminate the command process group. Ctrl-C retains a partial report.
+comparison coverage; `config.json` records requested coverage. The report
+updates after each command; failures do not stop unrelated suites. Timeouts
+terminate the command process group. Ctrl-C retains a partial report.
 Existing destinations are refused. Use `--out NEW_DIRECTORY` to choose one.
 
-Gameplay captures are paired by checkpoint filename and also exported together
-using `c2-regress pdf`. `compare ORIGINAL RUST` records functional/behaviour/kill
-comparisons; gameplay pictures are observational, since renderer and animal
-placement differ. Isolated native texture captures replay the Rust pose and
-camera and show original, Rust and difference images with the existing native
-validity and pixel-parity checks. A missing original capture is visible as
-incomplete coverage, never silently replaced with Rust or historical pictures.
+### Master report
+
+`report.html` is one page for the whole audit (`report-data.js` beside it holds
+its data; both are regenerated, never edited). Its tabs:
+
+| Tab | Contents |
+|---|---|
+| Overview | Totals, the coverage matrix (game × scenario × engine) and the pixel statistics of every screenshot set |
+| Findings | Every failed command, failed stage, kill/behaviour parity difference, pixel-tolerance exceedance and coverage gap derived from the results, plus the tracked investigations declared in the configuration |
+| Gameplay comparisons | Original and Rust captures of each checkpoint, paired by name |
+| Matched screenshots | Native, Rust and difference pictures of isolated animals at the same pose and camera |
+| Compact sweep / Full sweep | The routine two-sided sweep and the exhaustive all-animation sweep (Rust only) |
+| Commands and files | Each command with its log, and every child report and JSON result |
+
+Every gallery filters by game, scenario or capture set, asset/weapon/animal,
+engines present, discrepancy type, capture validity, changed-pixel range and
+review status; search takes several words and `-word` exclusions. Results sort
+by name, asset, difference or review status, page instead of scrolling, and
+show either as full comparisons (large pictures with details) or a compact
+grid. Clicking a picture opens a viewer with previous/next (arrow keys) and a
+blink comparison (`B`). Filters live in the address, so a view can be
+bookmarked; findings link to the captures they describe.
+
+Coverage states are separate from results. *Completed*: the run passed and
+recorded captures. *Failed*: captures exist but a stage failed. *Invalid*: the
+run recorded no captures. *Missing*: no run was recorded. *Blocked*: a
+prerequisite did not pass. *Unsupported*: no native adapter is configured for
+that game; nothing is substituted. A checkpoint captured by one engine only is
+listed as unpaired, never as a comparison. Both engines' tours capture
+`_ready`, `_fire` and `_after` for each weapon and `_open` and `_closed` for
+each screen; audits recorded before the Rust tour gained `_ready`, `_after`
+and `_closed` (2026-11-12) show those as original-only.
+
+Capture validity, pixel parity and functional results are separate fields.
+Gameplay pictures have no pixel metric (renderers and animal placement
+differ) and say so instead of showing a percentage. For matched screenshots
+the report shows each capture's changed-pixel fraction against the native
+review's unchanged threshold, and mean, median, p95 and maximum per set with
+equal weight per valid capture. These are not an engine accuracy percentage:
+backgrounds, rasterization and asset selection affect them. An invalid
+capture has no pixel score. A successful capture command establishes capture
+validity only; do not read its exit code as a fidelity verdict. A missing
+original capture is incomplete coverage, never replaced with Rust or
+historical pictures.
+
+Rebuild the report of an existing audit without rerunning anything (after a
+tool update, or to refresh declared findings from the configuration):
+
+```sh
+python3 tools/regression_audit.py --report latest
+python3 tools/regression_audit.py --report regression-sim-recordings/AUDIT --config source/regression-audit.toml
+```
+
+### Findings and review
+
+`[[finding]]` entries in the private configuration (see the example file)
+describe tracked investigations: id, title, summary, state, references, an
+optional `view` selecting the related captures, and evidence pictures. Evidence
+is copied into the audit's `evidence/` directory so it outlives the run it
+came from.
+
+Each finding and comparison has a review status (pending, investigating,
+confirmed issue, explained difference, accepted) with notes and evidence.
+Reviews are stored apart from the capture results, in `reviews.json`, and
+nothing is accepted automatically. A review whose underlying result has since
+changed is shown as pending with its notes kept. To save reviews straight
+into the audit directory, open the report through the local review server:
+
+```sh
+python3 tools/regression_audit.py --serve latest
+```
+
+It listens on the loopback interface only and writes nothing but
+`reviews.json`. When `report.html` is opened as a file instead, reviews stay
+in that browser; use *Export reviews* and place the downloaded `reviews.json`
+in the audit directory (or *Import reviews*) to keep them with the audit.
 
 An audit exits nonzero for any failed, blocked, timed-out or interrupted command,
 or missing comparison. It never approves/publishes baselines or archives/prunes
-media. Review the child reports and screenshots before following the existing
-baseline approval or [texture archival](TEXTURE-REVIEW.md#compact-sweeps-and-disk-use)
-workflow. `--dry-run` prints configuration without executing it.
+media. Review the report before following the existing baseline approval or
+[texture archival](TEXTURE-REVIEW.md#compact-sweeps-and-disk-use) workflow.
+`--dry-run` prints configuration without executing it.
 
 Synthetic orchestration/report tests (no game data, GPU or Wine):
 
@@ -86,8 +182,9 @@ python3 -m unittest discover -s tools -p 'test_regression_audit.py'
 ```
 
 These tests exercise continuation after failure, prerequisite blocking, timeouts,
-capture pairing, PDF invocation and report generation with synthetic fixtures.
-They do not establish visual fidelity or replace a full audit on owned game data.
+`--only`, capture pairing, coverage states, findings, review storage and the
+review server with synthetic fixtures. They do not establish visual fidelity
+or replace a full audit on owned game data.
 
 ## Validating a change
 
@@ -434,10 +531,13 @@ is taken before the frame that starts the death clip, and its frames are
 20 ms. On area 2's other side, 30 cells to the right, one spot stops a
 Chasmosaurus from running in both engines; the scenario uses the left.
 
-`ice-age` is not yet meaningful: `c2-regress` loads an Ice Age folder
-without the Ice Age rules layer that play applies (see Limitations), so
-its animals run Carnivores 2's AIs (its Bear runs as the T-Rex, and its
-death clip number is the T-Rex's).
+`ice-age` runs with the Ice Age rules play applies (since 2026-11-12; see
+[Prepared games](#prepared-games)). Headless, its run clip (1) and death
+clips (Mammoth 4, Smilodon 5, Bear 5, Woolly rhinoceros 5) match the
+original's. Run speeds per unit of size, original against ours: Mammoth
+1281 / 1073, Smilodon 1823 / 1867, Bear 1793 / 1792, Woolly rhinoceros
+576 / 1536. The Mammoth's gap and the original's low Woolly rhinoceros
+sample are not explained yet.
 
 Not covered yet: eating and idling (random choices that differ between
 engines), the spawn of a whole hunt, and the radar.
@@ -781,33 +881,50 @@ five kills pass in both originals.
 |---|---|---|
 | C2 T-Rex | 3, 9, carried; 7.9 s to kill | same; 8.0 s |
 | C2 Allosaurus | 0, 6, 179 units from the killer | same, 182 |
-| Ice Age Woolly rhinoceros | 6, 7, on the killer | 0, 6, 150 units away |
-| Ice Age Yeti | 12, 7, on the killer | 0, 6, 148 units away |
-| Ice Age Diatryma | 7, 8, on the killer; stays | 0, runs on (0, 1) |
+| Ice Age Woolly rhinoceros | 6, 7, on the killer | same (2026-11-12) |
+| Ice Age Yeti | 12, 7, on the killer | same (2026-11-12) |
+| Ice Age Diatryma | 7, 8, on the killer; stays | same clips, on the killer (2026-11-12) |
 
 Ice Age's `AddDeadBody` differs from Carnivores 2's. The body takes the
 killer's position, heading and scale, and the hunter clip `AI - 7`. The
-killer then plays a kill clip of its own. Our engine gives these killers
-Carnivores 2's generic kill. See `docs/DECISIONS.md` (2026-11-08).
+killer then plays a kill clip of its own. The 2026-11-08 column for ours
+(Carnivores 2's generic kill: 0, 6, 150 units away) came from loading the
+folder without Ice Age's rules; with them, as in play, the kills match
+(headless, `--no-render`). Whether the Diatryma stays afterwards has not
+been compared. See `docs/DECISIONS.md` (2026-11-12).
+
+## Prepared games
+
+`c2-regress run` and `species` read a game as play does. When play would
+generate rules for the folder (`c2_mods::vanilla`: Carnivores: Ice Age's
+AIs, an older Modder's Edition's rules, Triassic's compatibility rules,
+default spawn tables), the run uses a temporary folder holding those rules
+with the game's other files linked, for the headless pass and the render
+pass, and removes it afterwards. The game folder is never written to. A
+folder that needs none (Carnivores 2, a built pack) is used as it is.
+`--engine original` always runs the folder as it is.
+
+A game whose rules are rewritten onto other AI numbers keeps its own in
+`sourceAi`; `ai:N` in a scenario names an animal by its own game's number,
+as the original's menu does.
 
 ## Limitations
 
 - C1 is unsupported (no loader). Fallen Kings is not yet baselined.
-- `c2-regress` (headless and render pass) loads a game folder as it is.
-  Play builds the folder through `c2_mods::vanilla`, which adds the Ice
-  Age rules layer (`c2_mods::ice_age`), the Triassic compatibility rules
-  and default spawn tables. So every Ice Age run here, in every scenario,
-  plays Ice Age's animals with Carnivores 2's AIs, not as the game is
-  played. Fixing it changes the published Ice Age baselines.
+- Ice Age baselines recorded before 2026-11-12 ran Carnivores 2's AIs
+  (the folder was loaded without Ice Age's rules) and are superseded; the
+  published ones were recorded again with scenario version 3. Clip numbers
+  in older baselines of Modder's Edition games are the dialect's phases,
+  not the model's clips, and need recording again.
+- Genesis Redux kills run in our engine only. Its hunt executable is a
+  current Modder's Engine build: the kill hook's `AddDeadBody` scan finds
+  no match in it and its `TCharacter` is not the stock 156-byte layout, so
+  `--engine original` stops with an error for that game.
 - The kill scenario has no published baselines yet. Under the original it
   runs the stock games only (the original's menu picks animals by AI
   number; add-on and Modder's Edition packs need their own executables).
   Killers are set down beside the hunter, so how an animal finds and
   stalks him is not covered.
-- Genesis Redux kills run in our engine only. Its hunt executable is a
-  current Modder's Engine build: the kill hook's `AddDeadBody` scan finds
-  no match in it and its `TCharacter` is not the stock 156-byte layout, so
-  `--engine original` stops with an error for that game.
 - Screenshots and frame times come from the PC renderer only.
 - The change-gun and change-call pickers exist only in the PC frontend:
   the headless run reports them as unsupported, and the render pass checks
