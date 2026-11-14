@@ -83,7 +83,8 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
                 .starts_with(&name.to_ascii_lowercase())
         });
     }
-    let mut problems = 0;
+    // Failures are counted per kind, so the summary names what failed.
+    let mut hunt_problems = 0;
     for area_name in &areas {
         let area = c2_core::load::area_with(&vfs, area_name, TimeOfDay::Day, true)?;
         println!("{area_name}:");
@@ -256,7 +257,7 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
                 .count();
             let total = hunt.herd.chars.len();
             if !missing.is_empty() {
-                problems += 1;
+                hunt_problems += 1;
             }
             let slow: Vec<String> = c2_core::prof::SECTIONS
                 .iter()
@@ -275,18 +276,29 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
             );
         }
     }
-    if bench.is_none() && !trophy_room(&vfs, &info)? {
-        problems += 1;
-    }
+    let mut failed = Vec::new();
+    let mut survival_failed = 0;
+    let trophy_failed = bench.is_none() && !trophy_room(&vfs, &info)?;
     if bench.is_none() {
         for kind in SurvivalKind::ALL {
             if !survival(&vfs, &rules, kind) {
-                problems += 1;
+                survival_failed += 1;
             }
         }
     }
-    if problems > 0 {
-        anyhow::bail!("{problems} hunts with missing files");
+    if hunt_problems > 0 {
+        failed.push(format!("{hunt_problems} hunts with missing files"));
+    }
+    if trophy_failed {
+        failed.push("trophy room failed (animals off the map, see above)".into());
+    }
+    if survival_failed > 0 {
+        failed.push(format!(
+            "{survival_failed} survival modes failed (see above)"
+        ));
+    }
+    if !failed.is_empty() {
+        anyhow::bail!(failed.join("; "));
     }
     println!("ok");
     Ok(())

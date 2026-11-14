@@ -41,6 +41,9 @@ pub struct Row {
     pub game: bool,
     pub folder: Option<PathBuf>,
     pub status: Status,
+    /// The folder came from the last session and its check is still running:
+    /// a search hit may replace it. A folder the player picked is not replaced.
+    pub remembered: bool,
 }
 
 pub(crate) enum Msg {
@@ -139,6 +142,7 @@ impl Page {
                 game,
                 folder: used.and_then(|u| u.folders.get(&m.id).cloned()),
                 status: Status::Unset,
+                remembered: false,
             })
             .collect();
         let mut p = Page {
@@ -161,6 +165,7 @@ impl Page {
         for i in 0..p.rows.len() {
             if let Some(d) = p.rows[i].folder.clone() {
                 p.check_row(i, d);
+                p.rows[i].remembered = true;
             }
         }
         p.check_base(game_dirs);
@@ -237,6 +242,7 @@ impl Page {
         };
         row.folder = Some(dir.clone());
         row.status = Status::Checking;
+        row.remembered = false;
         self.requests.push(crate::jobs::recipe::Check::Row {
             index: i,
             dir,
@@ -297,7 +303,14 @@ impl Page {
     /// for the entries that have none yet: each found complete is taken.
     pub fn scan(&mut self, dirs: Vec<PathBuf>) {
         let open: Vec<usize> = (0..self.rows.len())
-            .filter(|&i| !matches!(self.rows[i].status, Status::Ok(_) | Status::Checking))
+            .filter(|&i| {
+                let r = &self.rows[i];
+                match r.status {
+                    Status::Ok(_) => false,
+                    Status::Checking => r.remembered,
+                    _ => true,
+                }
+            })
             .collect();
         if open.is_empty() || dirs.is_empty() {
             return;
@@ -337,12 +350,15 @@ impl Page {
                 Msg::Row(i, dir, l) => {
                     if let Some(r) = self.rows.get_mut(i) {
                         // The check of the row's folder, or a find for a row
-                        // still to do (a pick since then wins).
+                        // still to do; a find also replaces a remembered folder
+                        // whose check is still running. A pick since then wins.
                         if r.folder.as_ref() == Some(&dir)
                             || !matches!(r.status, Status::Checking | Status::Ok(_))
+                            || (r.remembered && r.status == Status::Checking)
                         {
                             r.folder = Some(dir);
                             r.status = status_of(&l);
+                            r.remembered = false;
                         }
                     }
                 }

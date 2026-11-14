@@ -220,6 +220,44 @@ fn entries_found_in_a_downloads_folder() {
     );
 }
 
+#[test]
+fn a_search_hit_replaces_a_remembered_folder_still_being_checked() {
+    let dir = std::env::temp_dir().join(format!("c2rs-recipe-replace-{}", std::process::id()));
+    let stale = dir.join("stale");
+    let hit = dir.join("downloads").join("Some Mod");
+    std::fs::create_dir_all(&stale).unwrap_or_else(|e| panic!("{e}"));
+    std::fs::create_dir_all(&hit).unwrap_or_else(|e| panic!("{e}"));
+    let r = "[recipe]\nid = \"t\"\nname = \"T\"\n\n[[mods]]\nid = \"some-mod\"\n";
+    let path = dir.join("t.toml");
+    std::fs::write(&path, r).unwrap_or_else(|e| panic!("{e}"));
+    let mut p = Page::open(&path, None, Vec::new(), Vec::new()).unwrap_or_else(|e| panic!("{e}"));
+    // The remembered folder's check is in flight (its result not yet back).
+    p.rows[0].folder = Some(stale.clone());
+    p.check_row(0, stale.clone());
+    p.rows[0].remembered = true;
+    p.requests.clear();
+    assert_eq!(p.rows[0].status, Status::Checking);
+    let found = c2_mods::recipe::Located {
+        id: "some-mod".into(),
+        url: String::new(),
+        root: Some(hit.clone()),
+        ..Default::default()
+    };
+    p.apply(vec![Msg::Row(0, hit.clone(), found)]);
+    assert_eq!(p.rows[0].folder.as_ref(), Some(&hit));
+    assert!(matches!(p.rows[0].status, Status::Ok(_)));
+    // The stale check's late result does not undo the hit.
+    let missing = c2_mods::recipe::Located {
+        id: "some-mod".into(),
+        url: String::new(),
+        ..Default::default()
+    };
+    p.apply(vec![Msg::Row(0, stale, missing)]);
+    assert_eq!(p.rows[0].folder.as_ref(), Some(&hit));
+    assert!(matches!(p.rows[0].status, Status::Ok(_)));
+    std::fs::remove_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+}
+
 mod job_tests {
     use super::*;
 
@@ -240,6 +278,7 @@ mod job_tests {
             game: false,
             folder: None,
             status: Status::Unset,
+            remembered: false,
         });
         p.check_row(0, temp.0.join("missing"));
         let mut handle = crate::jobs::Handle::default();
