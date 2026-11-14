@@ -5815,3 +5815,74 @@ launcher lacked: `[settings.dhc]` (`recipe_edit/dhc.rs`) and
 `[[settings.weapon_restrictions]]` (`recipe_edit/weapons.rs`). Both keep an
 entry only while it sets something, so opening and closing the panel does not
 change a recipe.
+
+## 2026-11-14 — 3DS memory plan: priorities, per-animal cost, pack 5
+
+The 3DS loaded animal models all-or-nothing (every ambient species, every
+pick, the instance's secret animals unconditionally) and checked memory once,
+pass or fail. A combined game's base alone was over the Old 3DS budget on 15
+of 22 areas of the stress instance. The hunt is now planned from the cooker's
+figures (`3ds-ver/c2-3ds/src/budget.rs`, host tests in `c2-cook`).
+
+- **Priority order.** The area, hunter, weapons and calls; one animal of
+  each pick; one secret animal; the picks up to the hunt's population; the
+  other secrets; ambient animals; aquatic animals; then the picks' limits
+  with what is left. A hunt is refused only when the first two do not fit,
+  and the menu names the costliest pick to drop.
+- **A pick is a menu slot.** A game can give one slot several characters
+  (a standalone's skin variants, each a model of its own; two dozen for
+  one slot in the stress instance). One of them is the pick's floor: the
+  first that fits in the rules' order (the ones the map's tables place
+  first), or each slot's cheapest when that would leave a later pick
+  without room. The other characters load one at a time with what is left
+  after ambient and aquatic animals. Before this, picking such a slot
+  loaded every character and no hunt with it fitted.
+- **Secrets.** A secret animal never costs a pick its place, but one comes
+  before the picks' second animals, so a hunt with room for it has one. The
+  instance's `secret` rules are tried before the map's own unpicked roamers.
+  The new `secret_dinos` setting (10 by default, as on PC; `lock
+  secret_dinos` fixes it) bounds the map's own; at 0 none come. As on PC it
+  does not bound the instance's `secret` rules, which memory alone limits.
+  The 3DS says that memory can allow fewer when the count is changed.
+- **Population aim.** The picks aim for the original's most
+  (`PlaceCharacters`: 8 + density / 30 + 5) shared between them, for
+  Modder's Edition tables too, whose own counts are not known before
+  placement. The plan gives limits per species; the game's own rules still
+  decide how many are placed under them.
+- **Ambient animals** are loaded a species at a time, each with an animal,
+  up to the setting's five; all their animals are priced as the costliest
+  loaded species', since placement shares them out. The original's
+  brachiosaurs (three, placed apart from the small animals) are planned
+  after them.
+- **Per-animal cost.** Linear: the animal's vertex buffer, 24 bytes a face
+  corner, from the cooker (`inst.m:{model}`); it was not counted before, so
+  the plan is stricter than the old check with many animals. Main memory:
+  `INST_HEAP_KB = 4` KiB an animal, a conservative constant that has not
+  been measured on hardware. A pack without a model's figure is charged
+  96 KiB linear.
+- **Area heap.** `heapbase.AREAn` is the measured loading peak with the
+  hunter alone; ambient models are then charged their `heap.m:*` on top.
+  On the original game the peak is the map's own load (24.0 MiB with or
+  without ambient models), so the plan errs high by the ambient models'
+  2 MiB.
+- **Pack version 5.** INFO.TXT gains `heapbase.*`, `ambients.*`, `inst.*`
+  and `water.*`. The app reads packs 4 and 5; a pack without the figures, a
+  survival and the trophy room load as before the plan.
+- **Limits live on the herd** (`Herd::caps`, `None` on every other
+  platform) rather than in `PlaceOptions`: `spawn` refuses a species at its
+  limit, so later spawns keep to the plan too. With no caps the placement
+  is unchanged (core test).
+- **Aquatic animals** (Modder's Edition AI 30-34 without a slot; the land
+  brachiosaur stays unloaded) are lowest priority, at most two of a species
+  and four in all, cheapest species first, on areas the cooker marks as
+  having water. `c2_core::game::AquaticRoam` removes the ones the map's
+  tables placed and puts each in the closest water of its kind at least
+  200 m (64 units a metre) from the hunter; one more than 400 m away is put
+  back the same way once a second, unless the closest water is no nearer
+  than where it is. This follow-the-hunter rule is not in the original; it
+  is off unless a frontend calls `Hunt::roam_aquatics` (the 3DS only).
+- **Repeated area sounds** are packed once, with `.SAME` files for the
+  other slots, and share linear memory on the console.
+- **Not done:** the map passes (a smaller object view, vertex buffers, chunk
+  textures) need frame times from hardware; no CPU-based population limit
+  was added (none existed).

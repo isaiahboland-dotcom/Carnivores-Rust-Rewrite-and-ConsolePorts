@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- 3DS: a hunt's memory is planned instead of checked pass or fail. The
+  picked animals come first (one of each at least), then secret animals,
+  ambient animals and, new on the 3DS, aquatic animals (fish, sea animals
+  and waders of Modder's Edition games), each as far as memory goes. The
+  menu shows "Dinos up to N, ambient M" and names the pick to drop when a
+  hunt does not fit. Packs must be cooked again for the plan (pack 5);
+  older packs load as before.
+- 3DS: a "Secret animals" hunt option for Modder's Edition games; ambient
+  animals read AUTO/OFF.
+- `c2-cook --plan PACK.c2pk` prints the 3DS memory plan for each area.
+- 3DS packs hold an area's repeated sound once.
 - Wii U: a Modder's Edition weapon with a muzzle flash (`muzzflash`) shows it
   (`MUZZ4.CAR`, as on the PC and Android) while firing.
 - Recipes can carry `[settings.world]`: zones (circles and polygons), player

@@ -1033,3 +1033,24 @@ menu, and every existing baseline is unaffected. Builds without
 `[settings.dhc]` write no `_DHC.TXT`. A `c2-regress` scenario that drives the
 terminal to a hunt and compares the resulting `HuntSetup` with the original
 menu's is still to be written.
+
+## 3DS memory plan
+
+Unit regressions on synthetic data (no game files); the 3DS modules build
+into `c2-cook` for them (`cargo test -p c2-cook` in `3ds-ver/`).
+
+| Test | Guards |
+|---|---|
+| `budget::tests::one_of_each_pick_is_all_a_full_console_gets`, `picks_that_do_not_fit_are_refused_and_the_costliest_named` | The floor: one animal of each of three big picks, or a refusal that names the pick to drop |
+| `budget::tests::ambient_animals_go_before_any_pick_does`, `ambient_animals_off_load_no_ambient_model` | Ambient animals are the first to go, species by species, down to none |
+| `budget::tests::aquatic_animals_take_only_what_is_left` | Aquatic animals only with water, cheapest first, never at the cost of picks or ambient animals |
+| `budget::tests::a_secret_animal_never_costs_a_pick_its_place`, `secrets_set_to_none_bring_no_roamer_of_the_map` | Secrets after the picks' floor; the instance's before the map's own; the setting at 0 |
+| `budget::tests::the_same_hunt_gets_the_same_plan` | Determinism |
+| `budget::tests::a_pack_without_the_figures_loads_as_before`, `a_survival_and_the_trophy_room_are_not_planned` | Pack 4, survival and the trophy room keep the previous loading |
+| `budget::tests::the_herd_gets_the_plans_limits` | Limits as `Herd::caps`, the instance's secrets on top |
+| `pack_budget::tests::the_3ds_reads_the_plan_figures_back` | INFO.TXT's `heapbase.*`, `ambients.*`, `inst.*`, `water.*` as the 3DS reads them |
+| `area_sounds::tests::repeated_sounds_point_at_their_first_copy` | An area's repeated sound is packed once |
+| `c2-core` `dino::tests::species_caps_stop_spawns_and_no_caps_change_nothing` | `Herd::caps`: limits hold at placement and later; `None` places exactly as before |
+| `c2-core` `game::tests::aquatic::*` | Aquatic animals start in the closest water past 200 m, return when left 400 m behind, stay when no water is closer |
+
+`c2-cook --plan PACK.c2pk` prints the plan for each area of a real pack.

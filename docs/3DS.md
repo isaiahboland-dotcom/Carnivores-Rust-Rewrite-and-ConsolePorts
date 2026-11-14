@@ -55,11 +55,19 @@ and best wave go in the record.
 **Settings** (kept in `/3ds/c2rs/settings.txt`):
 - **Dinosaur run speed**, 50–100%: every species' running speed times the
   same factor, so their differences stay; 100% is the original.
-- **Ambient animals** on/off: the small animals that score nothing
-  (Moschops, Gallimimus, the flyers, Dimetrodon, Brachiosaurus). On: at
-  most 4 small ones placed near you (the original places 5 + density/80;
-  more than a handful in view caused lag on Old 3DS). Off: none, and
-  they aren't loaded at all (less memory).
+- **Ambient animals** auto/off: the small animals that score nothing
+  (Moschops, Gallimimus, the flyers, Dimetrodon, Brachiosaurus). Auto: at
+  most 5 small ones placed near you (the original places 5 + density/80;
+  more than a handful in view caused lag on Old 3DS), and fewer, down to
+  none, when the picked animals leave too little memory (see
+  [Memory budget](#memory-budget)). Off: none, and they aren't loaded at
+  all.
+- **Secret animals** (hunt options, modded games with Modder's Edition
+  rules): the most unpicked animals a map's own tables may bring (none, 1,
+  3, 5, 10, 20, 50 or 255; 10 by default, as the PC's "Total number of
+  secret dinos on map"). It is an upper limit: memory decides how many
+  come, and the row says so when tapped. A recipe's `lock secret_dinos`
+  fixes the count and hides the row.
 - **3DS friendly** on/off (off by default): every animal, including modded
   and mobile ones, notices the hunter at 60% of the original distance and
   gives up the chase sooner (the PC's shortest view range, 42 cells), for
@@ -68,7 +76,9 @@ and best wave go in the record.
 
 **Play** walks through three touch steps (A = Next, B = Back, START =
 back to the title); the top screen sums up the picks, the points left and
-whether the hunt fits in memory.
+the hunt's memory plan: "Dinos up to N, ambient M, spare X MiB" (secret and
+aquatic animals on a line of their own when there is room for any), or
+which pick to drop when the hunt does not fit.
 1. **Area**: a hexagon grid of the areas; the time of day as sunset (dawn),
    sun (day) or moon (night).
 2. **Animals**: a hexagon grid of the huntable species; pick one or more.
@@ -235,8 +245,26 @@ bench 20,40,60 30   # the herd alone, 30 s per count, predation on and off
 - `c2-cook` measures the loading peak of each area with every animal and
   weapon (heap budget o3ds 34 MiB, n3ds 96) and estimates linear memory for
   a typical hunt (budget 22 MiB). It writes what each area, animal and
-  weapon takes (`cost.*` in `C2RS/INFO.TXT`); the menu adds up the picks
-  and won't start a hunt that doesn't fit.
+  weapon takes (`cost.*`, `heap.*` in `C2RS/INFO.TXT`), each area's heap
+  with the hunter alone (`heapbase.*`), its ambient models (`ambients.*`),
+  whether it has water (`water.*`) and the vertex buffer one animal of each
+  model takes while drawn (`inst.*`).
+- **The memory plan.** From those figures the app plans each hunt
+  (`c2-3ds/src/budget.rs`). Memory goes, in order, to: the area, hunter,
+  weapons and calls; one animal of each pick (a hunt is refused only when
+  this does not fit); one secret animal; the picks up to the population the
+  density option aims for; the other secret animals; ambient animals;
+  aquatic animals; and what is left raises the picks' limits. So ambient
+  animals are the first to go, and no animal is placed for a model that is
+  not loaded. A pack cooked before these figures (pack 4) loads as before.
+- **Aquatic animals** (fish, sea animals and waders of Modder's Edition
+  rules without a menu slot) come last, the cheapest species first, at most
+  two of a species and four in all, on areas with water. Each is put in the
+  closest water of its kind at least 200 m from the hunter, and one left
+  more than 400 m behind is put back the same way unless no water is closer.
+- `c2-cook --plan PACK.c2pk` prints the plan for every area of a pack (one
+  pick, and the three costliest picks and weapons) without a console.
+- An area's sound used for several slots is packed and loaded once.
 - Packs carry the `.RSC`/`.CAR` without textures or sounds. The app reads
   one light map from the `.MAP` and frees the rest of what only the PC uses
   after loading.
