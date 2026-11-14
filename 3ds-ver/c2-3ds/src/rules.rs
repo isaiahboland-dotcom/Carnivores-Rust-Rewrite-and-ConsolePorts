@@ -25,8 +25,11 @@ pub enum Role {
     /// offered in the menu, loaded when picked. `c2-cook` sorts models the
     /// same way for its memory figures.
     Roamer,
-    /// The big ambient wanderers (brachiosaur-like AIs, fish: 30 and up)
-    /// without a slot: not loaded on the 3DS (a couple of MiB each).
+    /// Fish, sea animals and waders (AI 30 and up) without a slot: loaded
+    /// last, with what memory the rest of the hunt leaves (`budget.rs`),
+    /// on maps with water.
+    Aquatic,
+    /// Not loaded on the 3DS: an ambient animal of other maps.
     Off,
 }
 

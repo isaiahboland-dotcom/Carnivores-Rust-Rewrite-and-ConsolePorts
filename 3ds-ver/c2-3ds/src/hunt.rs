@@ -143,7 +143,7 @@ impl Setup {
                 Role::Ambient => self.max_ambient > 0,
                 Role::Slot(k) => self.targets.has(k + 10),
                 Role::Roamer => self.roamers.iter().any(|r| r.char == i),
-                Role::Off => false,
+                Role::Off | Role::Aquatic => false,
             }
     }
 

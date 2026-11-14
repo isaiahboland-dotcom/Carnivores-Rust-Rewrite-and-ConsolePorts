@@ -1,5 +1,5 @@
 //! `c2-cook --check PACK`: loads a cooked pack the way `c2-3ds` does (its
-//! own `rules.rs`) and plays a short hunt for each animal on the PC, to find
+//! own `rules.rs`, `crate::rules`) and plays a short hunt for each animal on the PC, to find
 //! pack problems without a console: missing models, textures or sounds,
 //! animals that never spawn. A pack with classic survival plays a few of
 //! its waves too.
@@ -16,11 +16,7 @@ use c2_core::rng::MsRand;
 use c2_vfs::PackBackend;
 use c2_vfs::Vfs;
 
-#[path = "../../c2-3ds/src/rules.rs"]
-#[allow(dead_code)]
-mod rules;
-
-use rules::{Roam, Role, Rules};
+use crate::rules::{Roam, Role, Rules};
 
 static T0: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
 
@@ -94,7 +90,7 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
                 Some(Role::Hunter | Role::Ambient) => true,
                 Some(Role::Slot(k)) => targets.has(k + 10),
                 Some(Role::Roamer) => roamers.iter().any(|r| r.char == i),
-                Some(Role::Off) => false,
+                Some(Role::Off | Role::Aquatic) => false,
                 None => false,
             };
             let (mut species, cars) = c2_core::load::species_with(&vfs, &hr.res, &keep);

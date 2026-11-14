@@ -7,6 +7,7 @@
 #![feature(alloc_error_hook)]
 
 mod bench;
+mod budget;
 mod dhc_look;
 mod draw2d;
 mod gpu;

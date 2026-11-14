@@ -25,6 +25,12 @@ use c2_formats::cooked::{tile, write_pack, write_texture, TexFormat};
 use c2_vfs::{MemBackend, Vfs};
 
 mod area_sounds;
+/// The 3DS's memory plan, for its tests (the app itself only builds for
+/// the console).
+#[cfg(test)]
+#[path = "../../c2-3ds/src/budget.rs"]
+#[allow(dead_code)]
+mod budget;
 mod check;
 mod pack_budget;
 /// The 3DS's reading of INFO.TXT, for the tests of what is written here.
@@ -32,6 +38,10 @@ mod pack_budget;
 #[path = "../../c2-3ds/src/pack_info.rs"]
 #[allow(dead_code)]
 mod pack_info;
+/// The 3DS's reading of the pack's rules (`--check` hunts by them).
+#[path = "../../c2-3ds/src/rules.rs"]
+#[allow(dead_code)]
+mod rules;
 mod wiiu;
 
 const USAGE: &str = "usage:
