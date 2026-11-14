@@ -389,3 +389,66 @@ fn the_herd_gets_the_plans_limits() {
         None
     );
 }
+
+#[test]
+fn a_slot_with_several_characters_is_one_pick() {
+    // The second and third big animals are skin variants of the first's
+    // menu slot, each a model of its own.
+    let mut rules = rules(false);
+    rules.roles[ALLO] = Role::Slot(0);
+    rules.roles[VELO] = Role::Slot(0);
+    let req = Request {
+        targets: Bits::bit(10),
+        ambient_max: 0,
+        water: false,
+        ..three_picks()
+    };
+    // Room for one variant only: the hunt fits with the first that does.
+    let fixed = FIXED - 100;
+    let tight = plan(&pack(fixed + 1500 + 60, 30000, true), &rules, &req);
+    assert!(tight.fits);
+    assert_eq!(tight.huntables, vec![(REX, 1)]);
+    assert!(!tight.loads(ALLO) && !tight.loads(VELO));
+    // Too little for the first variant, enough for a cheaper one.
+    let cheaper = plan(&pack(fixed + 1200 + 50, 30000, true), &rules, &req);
+    assert!(cheaper.fits);
+    assert_eq!(cheaper.huntables, vec![(ALLO, 1)]);
+    // Too little for any: refused, the cheapest variant named.
+    let none = plan(&pack(fixed + 1000 + 49, 30000, true), &rules, &req);
+    assert!(!none.fits);
+    assert_eq!(none.drop, Some(VELO));
+    // The population first (twelve of the first variant), the other
+    // variants only with what is left after it.
+    let some = plan(
+        &pack(fixed + 1500 + 12 * 60 + 500, 30000, true),
+        &rules,
+        &req,
+    );
+    assert_eq!(some.huntables, vec![(REX, 20)]);
+    let plenty = plan(&pack(20000, 30000, true), &rules, &req);
+    let loaded: Vec<usize> = plenty.huntables.iter().map(|h| h.0).collect();
+    assert_eq!(loaded, vec![REX, ALLO, VELO]);
+    assert!(count(&plenty, REX) >= 12);
+}
+
+#[test]
+fn a_costly_first_variant_does_not_refuse_a_hunt_its_cheapest_fits() {
+    // Two slots: the first has a costly and a cheap character, the second
+    // one character. Only the cheap one leaves room for the second slot.
+    let mut rules = rules(false);
+    rules.roles[VELO] = Role::Slot(0);
+    let req = Request {
+        targets: Bits::bit(10) | Bits::bit(11),
+        ambient_max: 0,
+        water: false,
+        ..three_picks()
+    };
+    let fixed = FIXED - 50;
+    let p = plan(
+        &pack(fixed + 1000 + 50 + 1200 + 50, 30000, true),
+        &rules,
+        &req,
+    );
+    assert!(p.fits);
+    assert_eq!(p.huntables, vec![(VELO, 1), (ALLO, 1)]);
+}

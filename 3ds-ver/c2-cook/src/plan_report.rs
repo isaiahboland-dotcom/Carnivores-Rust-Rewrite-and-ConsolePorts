@@ -131,6 +131,21 @@ pub fn report(pack: &Path) -> Result<()> {
                 water: info.has_water(area),
                 ..Default::default()
             };
+            if std::env::var_os("C2COOK_DEBUG").is_some() {
+                for (c, r) in hr.roles.iter().enumerate() {
+                    if let Role::Slot(k) = r {
+                        if targets.has(k + 10) {
+                            let m = format!("m:{}", hr.keys[c]);
+                            eprintln!(
+                                "      pick char {c} slot {k} {} linear {} heap {}",
+                                hr.keys[c],
+                                info.cost(&m),
+                                info.heap(&m)
+                            );
+                        }
+                    }
+                }
+            }
             println!("{}", line(label, &plan(&info, &hr, &req)));
         }
     }

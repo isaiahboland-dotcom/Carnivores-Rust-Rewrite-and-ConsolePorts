@@ -6,7 +6,8 @@
 //!
 //! 1. The hunt itself: the area, the hunter, the carried weapons, the
 //!    picked animals' calls.
-//! 2. One animal of each picked species. A hunt whose picks don't fit is
+//! 2. One animal of each pick (a menu slot: of one of its characters,
+//!    when a game gives a slot several). A hunt whose picks don't fit is
 //!    refused ([`Plan::fits`]).
 //! 3. One secret animal (an instance rule's, else an unpicked roamer the
 //!    map's tables place), unless secrets are set to none. It never costs
@@ -15,7 +16,8 @@
 //! 5. The other secret animals.
 //! 6. Ambient animals: the first thing to go when memory is short.
 //! 7. Aquatic animals, the cheapest species first.
-//! 8. What is left raises the picks' limits.
+//! 8. What is left loads the picks' other characters (a slot's variants)
+//!    and raises the picks' limits.
 //!
 //! A pack without the plan's figures (`PackInfo::planned`), a survival and
 //! the trophy room load as they did before the plan ([`Plan::planned`] is
@@ -178,6 +180,7 @@ impl Plan {
 }
 
 /// The plan's working state: memory spent and models loaded so far.
+#[derive(Clone)]
 struct Spend<'a> {
     info: &'a PackInfo,
     rules: &'a HuntRules,
@@ -283,6 +286,33 @@ fn picked(req: &Request, c: usize, role: Role) -> bool {
     }
 }
 
+/// The picks: each menu slot's characters together (in the order to try
+/// them: the ones the map's tables place first), each picked roamer alone.
+fn pick_groups(rules: &HuntRules, req: &Request) -> Vec<Vec<usize>> {
+    let mut groups: Vec<(Option<usize>, Vec<usize>)> = Vec::new();
+    for (c, &role) in rules.roles.iter().enumerate() {
+        if !picked(req, c, role) {
+            continue;
+        }
+        let slot = match role {
+            Role::Slot(k) => Some(k),
+            _ => None,
+        };
+        match groups.iter_mut().find(|g| slot.is_some() && g.0 == slot) {
+            Some(g) => g.1.push(c),
+            None => groups.push((slot, vec![c])),
+        }
+    }
+    let mut groups: Vec<Vec<usize>> = groups.into_iter().map(|g| g.1).collect();
+    if let Some(t) = &rules.tables {
+        let here = |c: usize| t.characters.get(c).is_some_and(|ch| ch.spawns());
+        for g in &mut groups {
+            g.sort_by_key(|&c| !here(c));
+        }
+    }
+    groups
+}
+
 /// Unpicked roaming add-ons the map's tables place here.
 fn natives(rules: &HuntRules, req: &Request) -> Vec<usize> {
     let Some(t) = &rules.tables else {
@@ -338,28 +368,42 @@ pub fn plan(info: &PackInfo, rules: &HuntRules, req: &Request) -> Plan {
         used: fixed(info, rules, req, bare),
         models: hunters.map(|c| rules.keys[c].as_str()).collect(),
     };
-    let picks: Vec<usize> = (0..n).filter(|&c| picked(req, c, rules.roles[c])).collect();
+    // A pick is a menu slot. A game can give one slot several characters
+    // (its skin variants, each a model of its own): one of them is the
+    // pick's floor, the others come with what memory is left at the end.
+    let groups = pick_groups(rules, req);
     let mut p = Plan {
         planned: true,
         budget,
         max: vec![None; n],
         ..Default::default()
     };
-    // The picks' floor: one of each, or the hunt is refused.
-    let mut pick_n = vec![0usize; picks.len()];
-    for (i, &c) in picks.iter().enumerate() {
-        pick_n[i] = usize::from(s.add(c));
+    // The picks' floor: one animal of each, or the hunt is refused. Each
+    // slot's first character that fits; when that leaves a later pick
+    // without room, each slot's cheapest instead.
+    let cost = |c: usize| {
+        let k = model_kb(info, &rules.keys[c]);
+        k.linear + k.heap
+    };
+    let cheapest: Vec<usize> = groups
+        .iter()
+        .filter_map(|g| g.iter().copied().min_by_key(|&c| (cost(c), c)))
+        .collect();
+    let before = s.clone();
+    let mut floor: Vec<Option<usize>> = groups
+        .iter()
+        .map(|g| g.iter().copied().find(|&c| s.add(c)))
+        .collect();
+    if floor.contains(&None) {
+        s = before;
+        floor = cheapest.iter().map(|&c| s.add(c).then_some(c)).collect();
     }
-    if pick_n.contains(&0) || !s.used.within(budget) {
-        let cost = |c: usize| {
-            let k = model_kb(info, &rules.keys[c]);
-            k.linear + k.heap
-        };
-        p.drop = picks.iter().copied().max_by_key(|&c| cost(c));
+    if floor.contains(&None) || !s.used.within(budget) {
+        p.drop = cheapest.iter().copied().max_by_key(|&c| cost(c));
         // What the area and the picks' models take, for the menu.
         let mut seen: Vec<&str> = Vec::new();
         p.used = fixed(info, rules, req, bare);
-        for &c in &picks {
+        for &c in &cheapest {
             let k = rules.keys[c].as_str();
             if !seen.contains(&k) {
                 seen.push(k);
@@ -371,12 +415,14 @@ pub fn plan(info: &PackInfo, rules: &HuntRules, req: &Request) -> Plan {
         for c in (0..n).filter(|&c| rules.roles[c] == Role::Hunter) {
             p.max[c] = Some(usize::MAX);
         }
-        for &c in &picks {
+        for &c in &cheapest {
             p.max[c] = Some(1);
             p.huntables.push((c, 1));
         }
         return p;
     }
+    let picks: Vec<usize> = floor.into_iter().flatten().collect();
+    let mut pick_n = vec![1usize; picks.len()];
     p.fits = true;
     // One secret animal: the first that fits.
     let natives = if req.secret_max > 0 {
@@ -449,8 +495,23 @@ pub fn plan(info: &PackInfo, rules: &HuntRules, req: &Request) -> Plan {
     let mut aquatic_n = vec![0usize; aquatic.len()];
     s.grow(&aquatic, &mut aquatic_n, AQUATIC_MAX);
     p.spare = budget.left(s.used);
-    // What is left: the picks' limits, as far as it goes.
-    let free: Vec<(usize, usize)> = picks.iter().map(|&c| (c, usize::MAX)).collect();
+    // What is left: the picks' other characters (a slot's variants), one
+    // of each in turn, then every loaded pick's limit as far as it goes.
+    let longest = groups.iter().map(Vec::len).max().unwrap_or(0);
+    let variants: Vec<(usize, usize)> = (0..longest)
+        .flat_map(|k| groups.iter().filter_map(move |g| g.get(k).copied()))
+        .filter(|c| !picks.contains(c))
+        .map(|c| (c, 1))
+        .collect();
+    let mut variant_n = vec![0usize; variants.len()];
+    s.grow(&variants, &mut variant_n, usize::MAX);
+    let mut free: Vec<(usize, usize)> = picks.iter().map(|&c| (c, usize::MAX)).collect();
+    for (v, &k) in variants.iter().zip(&variant_n) {
+        if k > 0 {
+            free.push((v.0, usize::MAX));
+            pick_n.push(k);
+        }
+    }
     s.grow(&free, &mut pick_n, HUNTABLE_LIMIT);
 
     let counted = |list: &[(usize, usize)], tally: &[usize]| -> Vec<(usize, usize)> {
@@ -460,7 +521,7 @@ pub fn plan(info: &PackInfo, rules: &HuntRules, req: &Request) -> Plan {
             .filter(|x| x.1 > 0)
             .collect()
     };
-    p.huntables = counted(&aimed, &pick_n);
+    p.huntables = counted(&free, &pick_n);
     p.rule_secrets = counted(&rule, &rule_n);
     p.native_secrets = counted(&native, &native_n);
     p.aquatic = counted(&aquatic, &aquatic_n);
