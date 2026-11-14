@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 use std::ffi::c_void;
+use std::rc::Rc;
 
 use c2_core::game::{GameEvent, Hunt};
 use c2_core::ship::ship_sound;
@@ -109,9 +110,10 @@ struct Ambient {
 
 pub struct Sound {
     rate: f32,
-    clips: HashMap<SoundId, Clip>,
-    ambients: Vec<Option<Clip>>,
-    underwater: Option<Clip>,
+    /// Shared: an area can use one sound for several slots (`.SAME`).
+    clips: HashMap<SoundId, Rc<Clip>>,
+    ambients: Vec<Option<Rc<Clip>>>,
+    underwater: Option<Rc<Clip>>,
     voices: Vec<Option<Voice>>,
     /// Per ambience channel.
     ambient: [Option<Ambient>; 2],
@@ -228,18 +230,42 @@ impl Sound {
             else {
                 continue;
             };
+            let clip = Rc::new(clip);
             match parse_name(n.rsplit('/').next().unwrap_or(&n)) {
                 Some(Name::Id(id)) => {
                     s.clips.insert(id, clip);
                 }
-                Some(Name::Ambient(k)) => {
-                    if s.ambients.len() <= k {
-                        s.ambients.resize_with(k + 1, || None);
-                    }
-                    s.ambients[k] = Some(clip);
-                }
+                Some(Name::Ambient(k)) => s.keep_ambient(k, clip),
                 Some(Name::Underwater) => s.underwater = Some(clip),
                 None => {}
+            }
+        }
+        // The area's slots that repeat another's sound (`{slot}.SAME`
+        // names it): the same memory.
+        let same: Vec<(String, String)> = vfs
+            .files()
+            .filter_map(|(_, r)| {
+                let slot = r
+                    .path
+                    .strip_prefix("C2RS/SND/")?
+                    .strip_prefix(&area_dir)?
+                    .strip_suffix(".SAME")?;
+                let first = String::from_utf8(vfs.read(&r.path).ok()?).ok()?;
+                Some((slot.to_string(), first.trim().to_string()))
+            })
+            .collect();
+        for (slot, first) in same {
+            let clip = match parse_name(&first) {
+                Some(Name::Id(id)) => s.clips.get(&id).cloned(),
+                Some(Name::Ambient(k)) => s.ambients.get(k).cloned().flatten(),
+                _ => None,
+            };
+            match (parse_name(&slot), clip) {
+                (Some(Name::Id(id @ SoundId::Random(_))), Some(clip)) => {
+                    s.clips.insert(id, clip);
+                }
+                (Some(Name::Ambient(k)), Some(clip)) => s.keep_ambient(k, clip),
+                _ => {}
             }
         }
         // The loaded animals' sounds, by model (`C2RS/SND/M/{key}/{k}`); the
@@ -255,12 +281,20 @@ impl Sound {
                         .ok()
                         .and_then(|d| Clip::new(&d))
                     {
-                        s.clips.insert(SoundId::Species { ctype, sound }, clip);
+                        s.clips
+                            .insert(SoundId::Species { ctype, sound }, Rc::new(clip));
                     }
                 }
             }
         }
         Ok(s)
+    }
+
+    fn keep_ambient(&mut self, k: usize, clip: Rc<Clip>) {
+        if self.ambients.len() <= k {
+            self.ambients.resize_with(k + 1, || None);
+        }
+        self.ambients[k] = Some(clip);
     }
 
     /// Plays what this tick's events start, follows the camera, fades the

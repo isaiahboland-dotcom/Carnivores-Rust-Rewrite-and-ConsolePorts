@@ -933,11 +933,29 @@ fn cook_area(c: &mut Cooker, vfs: &Vfs, name: &str) -> Result<bool> {
         .collect();
     let (randoms, loops) =
         area_sounds::fit(randoms, loops, SAMPLE_RATE, profile.area_sound_kb * 1024);
-    for (k, pcm) in randoms.iter().enumerate() {
-        c.sound(&format!("{name}/R{k}"), pcm, SAMPLE_RATE, 1, 16);
-    }
-    for (k, pcm) in loops.iter().enumerate() {
-        c.sound(&format!("{name}/A{k}"), pcm, SAMPLE_RATE, 1, 16);
+    // A sound an area uses for several slots goes in once: the others
+    // are `.SAME` files naming it, and the 3DS shares its memory.
+    let slots: Vec<(String, &[u8])> = randoms
+        .iter()
+        .enumerate()
+        .map(|(k, pcm)| (format!("R{k}"), pcm.as_slice()))
+        .chain(
+            loops
+                .iter()
+                .enumerate()
+                .map(|(k, pcm)| (format!("A{k}"), pcm.as_slice())),
+        )
+        .collect();
+    let same = area_sounds::same_as(&slots.iter().map(|s| s.1).collect::<Vec<_>>());
+    for ((slot, pcm), same) in slots.iter().zip(same) {
+        match same {
+            Some(first) if c.sound_on => c.add(
+                format!("C2RS/SND/{name}/{slot}.SAME"),
+                slots[first].0.clone().into_bytes(),
+            ),
+            Some(_) => {}
+            None => c.sound(&format!("{name}/{slot}"), pcm, SAMPLE_RATE, 1, 16),
+        }
     }
     c.add(
         format!("HUNTDAT/AREAS/{name}.RSC"),

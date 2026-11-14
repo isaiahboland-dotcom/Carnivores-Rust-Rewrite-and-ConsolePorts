@@ -106,9 +106,34 @@ pub fn fit(
     (randoms, loops)
 }
 
+/// For each sound, the first earlier one with the same samples (`None`:
+/// the first of its kind, or silence). Areas reuse a sound for several
+/// slots; the pack holds it once, with `.SAME` files naming it for the
+/// others, and the 3DS loads it once.
+pub fn same_as(sounds: &[&[u8]]) -> Vec<Option<usize>> {
+    (0..sounds.len())
+        .map(|i| {
+            if sounds[i].is_empty() {
+                return None;
+            }
+            (0..i).find(|&j| sounds[j] == sounds[i])
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repeated_sounds_point_at_their_first_copy() {
+        let (a, b, none): (&[u8], &[u8], &[u8]) = (&[1, 2, 3, 4], &[1, 2, 3, 5], &[]);
+        let same = same_as(&[a, b, a, none, b, a, none]);
+        assert_eq!(
+            same,
+            vec![None, None, Some(0), None, Some(1), Some(0), None]
+        );
+    }
 
     #[test]
     fn long_loops_are_cut_without_a_seam() {
