@@ -26,6 +26,12 @@ use c2_vfs::{MemBackend, Vfs};
 
 mod area_sounds;
 mod check;
+mod pack_budget;
+/// The 3DS's reading of INFO.TXT, for the tests of what is written here.
+#[cfg(test)]
+#[path = "../../c2-3ds/src/pack_info.rs"]
+#[allow(dead_code)]
+mod pack_info;
 mod wiiu;
 
 const USAGE: &str = "usage:
@@ -656,6 +662,9 @@ struct Cooker {
     /// Main memory a loaded model takes, by scope, KiB (about its cooked
     /// file).
     heap: BTreeMap<String, usize>,
+    /// Face corners of the model cooked in each scope: one animal of it
+    /// takes a vertex buffer that long while it is drawn (`inst.*`).
+    corners: BTreeMap<String, usize>,
 }
 
 impl Cooker {
@@ -676,7 +685,10 @@ impl Cooker {
     fn car(&mut self, vfs: &Vfs, path: &str, snd: &str) -> Result<Vec<u8>> {
         let mut car =
             c2_formats::car::parse(&vfs.read(path)?).with_context(|| format!("parsing {path}"))?;
-        let rgba = PreparedModel::from_mesh(&car.mesh).texture_rgba;
+        let prepared = PreparedModel::from_mesh(&car.mesh);
+        self.corners
+            .insert(self.scope.clone(), prepared.faces.len() * 3);
+        let rgba = prepared.texture_rgba;
         car.mesh.texture = Vec::new();
         let before = anim_bytes(&car);
         while anim_bytes(&car) > self.profile.anim_kb * 1024 {
@@ -1134,6 +1146,7 @@ fn main() -> Result<()> {
         sound_rate: profile.sound_rate,
         sound_on: !a.no_sound,
         heap: BTreeMap::new(),
+        corners: BTreeMap::new(),
     };
     let infos: Vec<DinoInfo> = res.characters.iter().map(DinoInfo::from_def).collect();
     let winfos: Vec<WeaponInfo> = res.weapons.iter().map(WeaponInfo::from_def).collect();
@@ -1469,6 +1482,15 @@ fn main() -> Result<()> {
     let mut over_areas: Vec<String> = Vec::new();
     let mut worst = false;
     let mut base_heap = BTreeMap::new();
+    // The same without the ambient animals, and which models those are:
+    // with them the 3DS budgets the ambient animals itself (`budget.rs`).
+    let mut bare_heap = BTreeMap::new();
+    let mut ambients_by_area = BTreeMap::new();
+    let hunters: Vec<String> = infos
+        .iter()
+        .filter(|d| d.ai == 0)
+        .map(|d| c2_formats::cooked::model_key(&d.file))
+        .collect();
     for name in &areas {
         let here: Vec<String> = match &rules.raw {
             // The trophy room loads the hunter and what is on display.
@@ -1491,6 +1513,15 @@ fn main() -> Result<()> {
         let base = load_peak(&c.entries, name, rules.dialect, &here, &[])? / 1024;
         let lin = sum("hunt") + sum(name) + ambient;
         base_heap.insert(name.clone(), base);
+        let (bare, ambient_models): (Vec<String>, Vec<String>) =
+            here.iter().cloned().partition(|k| hunters.contains(k));
+        let bare_kb = if ambient_models.is_empty() {
+            base
+        } else {
+            load_peak(&c.entries, name, rules.dialect, &bare, &[])? / 1024
+        };
+        bare_heap.insert(name.clone(), bare_kb);
+        ambients_by_area.insert(name.clone(), ambient_models);
         println!(
             "    {name:<8} heap {:>5.1} + {:>4.1} MiB, linear {:>5.1} + {:>4.1} MiB",
             mib(base),
@@ -1535,7 +1566,7 @@ fn main() -> Result<()> {
     // What each piece costs, for the 3DS menu to check a hunt fits:
     // linear memory (`cost.`) and main memory (`heap.`), KiB.
     let mut info = format!(
-        "pack = 4\ntarget = {}\ndialect = {}\nareas = {}\nview = {}\ndetail = {}\n\
+        "pack = 5\ntarget = {}\ndialect = {}\nareas = {}\nview = {}\ndetail = {}\n\
          object_view = {}\nsound_rate = {}\nsound = {}\nlinear_kb = {}\nheap_kb = {}\n",
         profile.name,
         u8::from(rules.dialect),
@@ -1548,17 +1579,19 @@ fn main() -> Result<()> {
         profile.linear_kb,
         profile.heap_kb,
     );
-    for (scope, kinds) in &c.linear {
-        if scope != "menu" {
-            info += &format!("cost.{scope} = {}\n", kinds.values().sum::<usize>());
-        }
-    }
-    for (scope, kb) in &c.heap {
-        info += &format!("heap.{scope} = {kb}\n");
-    }
-    for (area, kb) in &base_heap {
-        info += &format!("heap.{area} = {kb}\n");
-    }
+    info += &pack_budget::lines(&pack_budget::Figures {
+        linear: c
+            .linear
+            .iter()
+            .filter(|(scope, _)| *scope != "menu")
+            .map(|(scope, kinds)| (scope.clone(), kinds.values().sum()))
+            .collect(),
+        heap: c.heap.clone(),
+        area_heap: base_heap,
+        area_heap_bare: bare_heap,
+        ambients: ambients_by_area,
+        corners: c.corners.clone(),
+    });
     info += &format!("addons = {}\n", u8::from(addons));
     let snowy = snowy(&vfs, &areas);
     if !snowy.is_empty() {

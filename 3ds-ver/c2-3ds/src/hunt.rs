@@ -2,7 +2,6 @@
 //! simulation's controls.
 
 use c2_formats::bits::Bits;
-use std::collections::HashMap;
 
 use anyhow::Result;
 use c2_core::area::{Area, TimeOfDay};
@@ -29,106 +28,10 @@ pub const TICK_MS: u32 = 20;
 /// Most ticks run in one frame (40 ms of game time).
 pub const MAX_TICKS: u32 = 4;
 
-/// The INFO.TXT `pack` this build reads: 4 = every area, animal model
-/// (by file, `C2RS/M/`) and weapon; calls by menu slot; `cost.*` (linear)
-/// and `heap.*` (main memory) lines; `dialect` for Modder's Edition rules.
-pub const PACK_VERSION: u32 = 4;
-
-fn kv(text: &str) -> HashMap<String, String> {
-    text.lines()
-        .filter_map(|l| l.split_once('='))
-        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
-        .collect()
-}
-
-/// `C2RS/INFO.TXT`: what the cooker put in the pack.
-#[derive(Debug, Clone)]
-pub struct PackInfo {
-    /// Pack layout version (`pack` in INFO.TXT).
-    pub pack: u32,
-    pub target: String,
-    /// `AREA1`.. and `TROPHY`, as packed.
-    pub areas: Vec<String>,
-    pub view: u32,
-    /// Ground at full detail this far (`view` in packs from before it).
-    pub detail: u32,
-    pub object_view: u32,
-    /// Sample rate of the pack's sounds.
-    pub sound_rate: u32,
-    /// Whether the pack has sounds (`c2-cook --no-sound` leaves them out).
-    pub sound: bool,
-    /// Linear memory a hunt may use, and what each piece takes (KiB):
-    /// `hunt` (always), `AREAn`, `m:{model}`, `wpn{i}`.
-    pub linear_kb: usize,
-    pub costs: HashMap<String, usize>,
-    /// Main memory: the budget, each area's loading peak with the hunter
-    /// and ambient animals (`AREAn`), and each model and weapon.
-    pub heap_kb: usize,
-    pub heaps: HashMap<String, usize>,
-    /// Areas where it snows by their `.c2map` (Ice Age's beside C2's).
-    pub snow: Vec<String>,
-    /// Where each roaming add-on (character index) spawns, as the cooker
-    /// worked it out (`roam.N = AREA3,AREA7`); `None` in older packs.
-    pub roam_areas: Option<HashMap<usize, Vec<String>>>,
-    /// Whether the game has add-ons (`None` in older packs).
-    pub addons: Option<bool>,
-}
+pub use crate::pack_info::{PackInfo, PACK_OLDEST, PACK_VERSION};
+use crate::pack_info::kv;
 
 impl PackInfo {
-    pub fn parse(text: &str) -> Self {
-        let m = kv(text);
-        let get = |k: &str| m.get(k).cloned().unwrap_or_default();
-        let num = |k: &str, d: u32| get(k).parse().unwrap_or(d);
-        Self {
-            pack: num("pack", 1),
-            target: get("target"),
-            areas: get("areas")
-                .split(',')
-                .map(str::trim)
-                .filter(|a| !a.is_empty())
-                .map(str::to_string)
-                .collect(),
-            view: num("view", 42),
-            detail: num("detail", num("view", 42)),
-            object_view: num("object_view", 28),
-            sound_rate: num("sound_rate", c2_core::sound::SAMPLE_RATE),
-            sound: num("sound", 1) != 0,
-            linear_kb: num("linear_kb", 16 * 1024) as usize,
-            costs: Self::prefixed(&m, "cost."),
-            heap_kb: num("heap_kb", 34 * 1024) as usize,
-            heaps: Self::prefixed(&m, "heap."),
-            roam_areas: m.contains_key("roam_map").then(|| {
-                m.iter()
-                    .filter_map(|(k, v)| {
-                        let i = k.strip_prefix("roam.")?.parse().ok()?;
-                        Some((i, v.split(',').map(|a| a.trim().to_string()).collect()))
-                    })
-                    .collect()
-            }),
-            addons: m.get("addons").map(|v| v.trim() != "0"),
-            snow: get("snow")
-                .split(',')
-                .map(str::trim)
-                .filter(|a| !a.is_empty())
-                .map(str::to_string)
-                .collect(),
-        }
-    }
-
-    fn prefixed(m: &HashMap<String, String>, prefix: &str) -> HashMap<String, usize> {
-        m.iter()
-            .filter_map(|(k, v)| Some((k.strip_prefix(prefix)?.to_string(), v.parse().ok()?)))
-            .collect()
-    }
-
-    pub fn cost(&self, piece: &str) -> usize {
-        self.costs.get(piece).copied().unwrap_or(0)
-    }
-
-    pub fn heap(&self, piece: &str) -> usize {
-        self.heaps.get(piece).copied().unwrap_or(0)
-    }
-
     /// How to draw `area` (`C2RS/AREAn/INFO.TXT`).
     pub fn draw_info(&self, vfs: &Vfs, area: &str) -> DrawInfo {
         let m = kv(&String::from_utf8_lossy(

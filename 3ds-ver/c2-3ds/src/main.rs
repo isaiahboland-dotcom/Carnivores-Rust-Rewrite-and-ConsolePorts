@@ -12,6 +12,7 @@ mod draw2d;
 mod gpu;
 mod hunt;
 mod menu;
+mod pack_info;
 mod rules;
 mod save;
 mod instance_rules;
@@ -33,7 +34,7 @@ use glam::{Mat4, Vec3};
 
 use crate::draw2d::{Canvas, WHITE};
 use crate::gpu::Gpu;
-use crate::hunt::{Game, PackInfo, Pad, Setup, PACK_VERSION};
+use crate::hunt::{Game, PackInfo, Pad, Setup, PACK_OLDEST, PACK_VERSION};
 use crate::menu::Menu;
 use crate::shot::Script;
 use crate::ui::{Tap, Ui};
@@ -844,9 +845,9 @@ fn run(pack: &Path, apt: &Apt, hid: &mut Hid, gfx: &Gfx) -> Result<()> {
         &vfs.read("C2RS/INFO.TXT")
             .context("not a c2rs pack (no C2RS/INFO.TXT)")?,
     ));
-    if info.pack != PACK_VERSION {
+    if !(PACK_OLDEST..=PACK_VERSION).contains(&info.pack) {
         anyhow::bail!(
-            "this pack is version {}, this app reads version {PACK_VERSION}; cook it again",
+            "this pack is version {}, this app reads versions {PACK_OLDEST} to {PACK_VERSION}; cook it again",
             info.pack
         );
     }
