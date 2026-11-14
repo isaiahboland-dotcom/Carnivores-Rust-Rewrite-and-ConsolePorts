@@ -27,9 +27,12 @@ use crate::gpu::{Gpu, Texture, BOTTOM_W, TOP_W};
 use crate::hunt::{PackInfo, Setup};
 use crate::rules::{Roam, Role, Rules};
 
+mod terminal;
+mod terminal_draw;
 mod tranq;
 use crate::settings::Settings;
 use crate::ui::load;
+pub use terminal::Keys;
 
 /// Accessories (`EQUIPn.TGA`), in `prices.acces` order. The original's
 /// fourth, Double Ammo, isn't offered on the 3DS: the extra ammo gear takes
@@ -119,7 +122,9 @@ const TELEPORT: [f32; 4] = [164.0, 156.0, 140.0, 24.0];
 const MULTI_AMMO: [f32; 4] = [16.0, 182.0, 140.0, 24.0];
 const FREE_OBSERVER: [f32; 4] = [164.0, 182.0, 140.0, 24.0];
 /// Settings: the controls shown in a hunt (beside Back).
-const HINTS: [f32; 4] = [164.0, 210.0, 140.0, 26.0];
+const HINTS: [f32; 4] = [164.0, 210.0, 74.0, 26.0];
+/// Settings: the DHC OS terminal look for the hunt setup (beside Hints).
+const DHC: [f32; 4] = [242.0, 210.0, 74.0, 26.0];
 /// Settings: unlimited points for testing (beside Back).
 const TEST_PTS: [f32; 4] = [84.0, 210.0, 76.0, 26.0];
 /// Hunt options: every tree and plant as its sprite (performance).
@@ -138,6 +143,36 @@ const TEXT: Rgba = [160, 210, 130, 255];
 const DIM: Rgba = [110, 110, 110, 255];
 const RED: Rgba = [240, 80, 60, 255];
 const DIMMED: Rgba = [140, 140, 140, 255];
+/// The colours a settings screen is drawn in: the menu's own, or the DHC
+/// OS terminal's (its setting on).
+struct Look {
+    bg: Rgba,
+    panel: Rgba,
+    /// A toggle that is on, a bar's fill.
+    on: Rgba,
+    label: Rgba,
+    value: Rgba,
+    title: Rgba,
+}
+
+const CLASSIC_LOOK: Look = Look {
+    bg: BG,
+    panel: PANEL,
+    on: [60, 110, 60, 255],
+    label: TEXT,
+    value: WHITE,
+    title: GOLD,
+};
+
+const TERMINAL_LOOK: Look = Look {
+    bg: crate::dhc_look::BG,
+    panel: crate::dhc_look::PANEL,
+    on: crate::dhc_look::LO,
+    label: crate::dhc_look::MD,
+    value: crate::dhc_look::HI,
+    title: crate::dhc_look::HI,
+};
+
 /// Roaming add-ons (no call), as the grid rim and the hunt map show them.
 const BLUE: Rgba = [120, 180, 255, 255];
 /// Space between hexagons.
@@ -355,6 +390,9 @@ pub struct Menu {
     classic_survival: bool,
     /// Choosing which survival (more than one offered).
     survival_pick: bool,
+    /// The DHC OS terminal's state (`terminal`), used when its setting is
+    /// on.
+    term: terminal::Term,
 }
 
 pub(crate) fn title(vfs: &Vfs, file: &str, fallback: String) -> String {
@@ -599,10 +637,12 @@ impl Menu {
             observer: false,
             focus: None,
             message: None,
+            term: terminal::Term::placeholder(),
         };
         if m.remaining() < 0 {
             m.picked_equip = Bits::NONE;
         }
+        m.term = terminal::Term::new(vfs, &m, m.settings.dhc_terminal);
         Ok(m)
     }
 
@@ -774,6 +814,7 @@ impl Menu {
             survival: None,
             half_tranq: false,
             free_observer: false,
+            dhc_terminal: self.settings.dhc_terminal,
         }
     }
 
@@ -814,6 +855,7 @@ impl Menu {
             survival: self.survival.filter(|_| !self.observer),
             half_tranq: self.half_tranq(),
             free_observer: self.settings.free_observer,
+            dhc_terminal: self.settings.dhc_terminal,
         }
     }
 
@@ -1042,6 +1084,10 @@ impl Menu {
     /// The menu pictures this screen shows loaded, the others let go: the
     /// grid page's, and the picked area's (the top screen's).
     pub fn sync_pics(&mut self, vfs: &Vfs) {
+        if self.terminal_active() {
+            self.term_sync(vfs);
+            return;
+        }
         let shown = |m: &Self, step: Step| {
             if m.step == step {
                 m.grid_of(step).cells
@@ -1203,6 +1249,13 @@ impl Menu {
                     self.focus = Some("Tap the map in a hunt; 5 s, then a minute".into());
                 } else if inside(HINTS, x, y) {
                     s.hints = !s.hints;
+                } else if inside(DHC, x, y) {
+                    s.dhc_terminal = !s.dhc_terminal;
+                    self.focus = Some(if s.dhc_terminal {
+                        "DHC OS terminal: L/R pages, A picks".into()
+                    } else {
+                        "The hexagon menu".into()
+                    });
                 } else if inside(MULTI_AMMO, x, y) && !rect_locked(MULTI_AMMO) {
                     s.multi_ammo = !s.multi_ammo;
                     self.focus = Some("Tranq asks: half lethal/half darts, or all".into());
@@ -1478,6 +1531,32 @@ impl Menu {
     /// Both screens for this frame (call between `Gpu::begin` and `end`).
     pub fn draw(&mut self, gpu: &mut Gpu) {
         self.c.new_frame();
+        if self.terminal_active() || self.terminal_booting() {
+            let mut c = std::mem::replace(&mut self.c, Canvas::new(None));
+            gpu.begin_2d(None);
+            self.term_draw_top(&mut c, gpu);
+            c.flush(gpu);
+            gpu.begin_2d(Some([1, 6, 3]));
+            self.term_draw_bottom(&mut c, gpu);
+            c.flush(gpu);
+            self.c = c;
+            return;
+        }
+        if self.settings.dhc_terminal && self.step == Step::Settings {
+            // The settings in the terminal's colours, on both screens.
+            let mut c = std::mem::replace(&mut self.c, Canvas::new(None));
+            let look = &TERMINAL_LOOK;
+            gpu.begin_2d(None);
+            c.rect([0.0, 0.0, TOP_W as f32, 240.0], look.bg);
+            c.flush(gpu);
+            self.draw_settings_top(&mut c, gpu, look);
+            c.flush(gpu);
+            gpu.begin_2d(Some([look.bg[0], look.bg[1], look.bg[2]]));
+            self.draw_settings(&mut c, gpu, look);
+            c.flush(gpu);
+            self.c = c;
+            return;
+        }
         self.draw_top(gpu);
         self.draw_bottom(gpu);
     }
@@ -1613,7 +1692,7 @@ impl Menu {
                 return;
             }
             Step::Settings => {
-                self.draw_settings(&mut c, gpu);
+                self.draw_settings(&mut c, gpu, &CLASSIC_LOOK);
                 self.c = c;
                 return;
             }
@@ -1831,15 +1910,15 @@ impl Menu {
     }
 
     /// The settings screen (bottom).
-    fn draw_settings(&self, c: &mut Canvas, gpu: &mut Gpu) {
+    fn draw_settings(&self, c: &mut Canvas, gpu: &mut Gpu, look: &Look) {
         let s = self.settings;
-        c.rect(BACK, PANEL);
+        c.rect(BACK, look.panel);
         c.rect(
             CLEAR_TROPHIES,
             if self.clear_armed {
                 [140, 60, 30, 255]
             } else {
-                PANEL
+                look.panel
             },
         );
         c.flush(gpu);
@@ -1855,13 +1934,14 @@ impl Menu {
             "Clear trophies".into()
         };
         let r = CLEAR_TROPHIES;
-        c.text_c(gpu, r[0] + r[2] / 2.0, r[1] + 9.0, 1.0, WHITE, &t);
+        c.text_c(gpu, r[0] + r[2] / 2.0, r[1] + 9.0, 1.0, look.value, &t);
         let toggles = [
             (BLOOD, s.blood, "Blood"),
             (DEATH_ANIM, s.death_anim, "Death anim"),
             (MAP_STYLE, s.map_mobile, "Mobile map"),
             (TELEPORT, s.teleport, "Teleport"),
             (HINTS, s.hints, "Hints"),
+            (DHC, s.dhc_terminal, "DHC"),
             (ALL_HUNTABLE, s.all_huntable, "All dinos"),
             (TEST_PTS, s.test_points, "Test"),
             (MULTI_AMMO, s.multi_ammo, "Multi ammo"),
@@ -1872,17 +1952,17 @@ impl Menu {
             .filter(|t| !rect_locked(t.0))
             .collect();
         for &(r, on, _) in &toggles {
-            c.rect(r, if on { [60, 110, 60, 255] } else { PANEL });
+            c.rect(r, if on { look.on } else { look.panel });
         }
-        c.rect(CROUCH_KEY, PANEL);
-        c.rect(GYRO, PANEL);
+        c.rect(CROUCH_KEY, look.panel);
+        c.rect(GYRO, look.panel);
         c.flush(gpu);
         c.text_c(
             gpu,
             CROUCH_KEY[0] + CROUCH_KEY[2] / 2.0,
             CROUCH_KEY[1] + 10.0,
             1.0,
-            WHITE,
+            look.value,
             &format!("Crouch: {}", s.crouch_key.name()),
         );
         c.text_c(
@@ -1890,29 +1970,29 @@ impl Menu {
             GYRO[0] + GYRO[2] / 2.0,
             GYRO[1] + 10.0,
             1.0,
-            WHITE,
+            look.value,
             &format!("Gyro aim: {}%", s.gyro_pct),
         );
         let o = self.save.options;
         let values = [o.agres, o.dens, o.sens];
         for (&(_, top), v) in GAME_OPTS.iter().zip(values) {
-            c.rect([OPT_BAR_X, top, OPT_BAR_W, OPT_BAR_H], PANEL);
+            c.rect([OPT_BAR_X, top, OPT_BAR_W, OPT_BAR_H], look.panel);
             let f = v.clamp(0, 255) as f32 / 255.0;
             c.rect(
                 [OPT_BAR_X, top, OPT_BAR_W * f.max(0.02), OPT_BAR_H],
-                [60, 110, 60, 255],
+                look.on,
             );
         }
         c.flush(gpu);
         for ((name, top), v) in GAME_OPTS.iter().zip(values) {
-            c.text(gpu, 16.0, top + 5.0, 1.0, TEXT, name);
+            c.text(gpu, 16.0, top + 5.0, 1.0, look.label, name);
             let pct = format!("{}%", v.clamp(0, 255) * 100 / 255);
             c.text_c(
                 gpu,
                 OPT_BAR_X + OPT_BAR_W / 2.0,
                 top + 5.0,
                 1.0,
-                WHITE,
+                look.value,
                 &pct,
             );
         }
@@ -1923,7 +2003,7 @@ impl Menu {
                 r[0] + r[2] / 2.0,
                 r[1] + r[3] / 2.0 - 4.0,
                 1.0,
-                WHITE,
+                look.value,
                 &t,
             );
         }
@@ -1932,7 +2012,7 @@ impl Menu {
             BACK[0] + BACK[2] / 2.0,
             BAR_Y + 8.0,
             1.0,
-            WHITE,
+            look.value,
             "Back",
         );
     }
@@ -1997,23 +2077,24 @@ impl Menu {
     }
 
     /// What the settings do (top).
-    fn draw_settings_top(&self, c: &mut Canvas, gpu: &mut Gpu) {
+    fn draw_settings_top(&self, c: &mut Canvas, gpu: &mut Gpu, look: &Look) {
         let lines = [
-            ("Settings", GOLD),
-            ("Aggressive / Density / Sensitivity: as the", TEXT),
-            ("  original's game options (tap the bars)", WHITE),
-            ("Hunt options (before each hunt)", TEXT),
-            ("  Run speed, ambient animals, 3DS friendly", WHITE),
-            ("  (seen from closer; off: 76 cells, as the", WHITE),
-            ("  phone), stealth crouch, bounded fleeing", WHITE),
-            ("  (crouch toggles, gyro aim, half as seen).", WHITE),
-            ("", WHITE),
-            ("Crouch: ZL (New 3DS); Hold L (tap L jumps);", TEXT),
-            ("  D-Pad Up (walk, run, crouch in turn)", WHITE),
-            ("", WHITE),
-            ("Blood / Death animation", TEXT),
-            ("  Off: no blood sprays or trails; when", WHITE),
-            ("  you die, a black screen and the prompt.", WHITE),
+            ("Settings", look.title),
+            ("Aggressive / Density / Sensitivity: as the", look.label),
+            ("  original's game options (tap the bars)", look.value),
+            ("Hunt options (before each hunt)", look.label),
+            ("  Run speed, ambient animals, 3DS friendly", look.value),
+            ("  (seen from closer; off: 76 cells, as the", look.value),
+            ("  phone), stealth crouch, bounded fleeing", look.value),
+            ("  (crouch toggles, gyro aim, half as seen).", look.value),
+            ("", look.value),
+            ("Crouch: ZL (New 3DS); Hold L (tap L jumps);", look.label),
+            ("  D-Pad Up (walk, run, crouch in turn)", look.value),
+            ("", look.value),
+            ("Blood / Death animation", look.label),
+            ("  Off: no blood sprays or trails; when", look.value),
+            ("  you die, a black screen and the prompt.", look.value),
+            ("DHC: the DinoHunt Corp terminal look", look.label),
         ];
         for (i, (l, col)) in lines.iter().enumerate() {
             c.text(gpu, 12.0, 14.0 + 14.0 * i as f32, 1.0, *col, l);
@@ -2076,7 +2157,7 @@ impl Menu {
             return;
         }
         if self.step == Step::Settings {
-            self.draw_settings_top(&mut c, gpu);
+            self.draw_settings_top(&mut c, gpu, &CLASSIC_LOOK);
             self.c = c;
             return;
         }

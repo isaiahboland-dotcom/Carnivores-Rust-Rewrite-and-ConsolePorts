@@ -588,7 +588,24 @@ impl Ui {
                 c.text(gpu, 4.0, 4.0 + 10.0 * i as f32, 1.0, WHITE, l);
             }
         }
-        if hunt.show_exit() {
+        if hunt.show_exit() && game.setup.dhc_terminal {
+            // The DHC OS terminal's look: a field-link panel, same keys.
+            use crate::dhc_look::{frame, BG, HI, LINE, LO, MD};
+            let r = [52.0, 74.0, 296.0, 94.0];
+            frame(c, r, BG, LINE);
+            c.rect([r[0] + 6.0, r[1] + 17.0, r[2] - 12.0, 1.0], LINE);
+            c.flush(gpu);
+            c.text(gpu, r[0] + 10.0, r[1] + 6.0, 1.0, LO, "DHC-OS // FIELD LINK");
+            c.text(gpu, r[0] + 10.0, r[1] + 24.0, 2.0, HI, "LEAVE THE HUNT?");
+            let mut rows = vec!["A  LEAVE AND SAVE"];
+            if !hunt.opts.trophy {
+                rows.push("Y  RESTART (NOT SAVED)");
+            }
+            rows.push("B  RESUME");
+            for (i, l) in rows.iter().enumerate() {
+                c.text(gpu, r[0] + 10.0, r[1] + 48.0 + i as f32 * 12.0, 1.0, MD, l);
+            }
+        } else if hunt.show_exit() {
             c.text_c(gpu, cx, 104.0, 2.0, WHITE, "Leave the hunt?");
             c.text_c(gpu, cx, 128.0, 1.0, WHITE, "A = yes   B = no");
             c.text_c(

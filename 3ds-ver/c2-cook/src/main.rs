@@ -487,8 +487,16 @@ fn merged_game(a: &Args, game: &Path) -> Result<Vfs> {
         if let Some(f) = &recipe.settings.flee {
             f.push(&mut vfs);
         }
+        // The DHC OS terminal's rules (an Advanced setting): `_DHC.TXT`.
+        if let Some(d) = &recipe.settings.dhc {
+            d.push(&mut vfs)?;
+        }
+        // World zones, player starts and extraction points: `_WORLD.TXT`.
+        if let Some(w) = &recipe.settings.world {
+            w.push(&mut vfs)?;
+        }
         // Times of day, locked settings and spawn rules: `_RULES.TXT`.
-        recipe.settings.rules.push(&mut vfs)?;
+        recipe.settings.push_rules(&mut vfs)?;
         // What looks wrong in the recipe's settings (warnings only).
         use c2_mods::validate::{validate, Names, Platform};
         let platform = if a.target.as_deref() == Some("wiiu") {
@@ -1169,6 +1177,8 @@ fn main() -> Result<()> {
         c2_formats::predation::PATH,
         c2_formats::flee::PATH,
         c2_formats::rules::PATH,
+        c2_formats::dhc::PATH,
+        c2_formats::world::PATH,
     ] {
         if vfs.resolve(p).is_some() {
             c.copy(&vfs, p)?;

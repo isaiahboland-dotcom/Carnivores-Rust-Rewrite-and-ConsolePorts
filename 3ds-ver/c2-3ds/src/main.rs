@@ -7,6 +7,7 @@
 #![feature(alloc_error_hook)]
 
 mod bench;
+mod dhc_look;
 mod draw2d;
 mod gpu;
 mod hunt;
@@ -358,8 +359,8 @@ fn read_pad(hid: &Hid, held: KeyPad, down: KeyPad, touch: &mut Touch) -> (Pad, O
         select_weapon: None,
         select_call: None,
         resupply: false,
-    };
         switch_mode: false,
+    };
     (pad, tap)
 }
 
@@ -438,29 +439,59 @@ fn menu(
     if let Some(n) = note {
         m.set_message(n);
     }
+    // L was used for L+SELECT (a screenshot) while held: its release is
+    // not the terminal's Back.
+    let mut l_combo = false;
     while io.apt.main_loop() {
         let (held, down) = io.keys();
         let (_, mut tap) = read_pad(io.hid, held, down, &mut io.touch);
         if let Some(t) = io.script_tap() {
             tap = Some(t);
         }
-        let mut pick = tap.and_then(|(x, y)| m.tap(x, y));
-        if down.contains(KeyPad::A) {
-            pick = pick.or_else(|| m.next());
+        if held.contains(KeyPad::L) && down.contains(KeyPad::SELECT) {
+            l_combo = true;
         }
-        if down.contains(KeyPad::B) {
-            m.back();
+        let l_up = io.hid.keys_up().contains(KeyPad::L);
+        let l_back = l_up && !l_combo;
+        if l_up {
+            l_combo = false;
         }
-        if down.contains(KeyPad::START) {
-            m.start_button();
-        }
-        // A grid with pages: the D-Pad turns them.
-        if down.contains(KeyPad::DPAD_LEFT) {
-            m.flip_page(-1);
-        }
-        if down.contains(KeyPad::DPAD_RIGHT) {
-            m.flip_page(1);
-        }
+        let pick = if m.terminal_active() || m.terminal_booting() {
+            // The DHC OS terminal: lists and pages (`menu::terminal`).
+            let k = menu::Keys {
+                up: down.contains(KeyPad::DPAD_UP),
+                down: down.contains(KeyPad::DPAD_DOWN),
+                left: down.contains(KeyPad::DPAD_LEFT),
+                right: down.contains(KeyPad::DPAD_RIGHT),
+                a: down.contains(KeyPad::A),
+                b: down.contains(KeyPad::B),
+                x: down.contains(KeyPad::X),
+                y: down.contains(KeyPad::Y),
+                l: l_back,
+                r: down.contains(KeyPad::R),
+                start: down.contains(KeyPad::START),
+            };
+            m.term_input(k, tap)
+        } else {
+            let mut pick = tap.and_then(|(x, y)| m.tap(x, y));
+            if down.contains(KeyPad::A) {
+                pick = pick.or_else(|| m.next());
+            }
+            if down.contains(KeyPad::B) {
+                m.back();
+            }
+            if down.contains(KeyPad::START) {
+                m.start_button();
+            }
+            // A grid with pages: the D-Pad turns them.
+            if down.contains(KeyPad::DPAD_LEFT) {
+                m.flip_page(-1);
+            }
+            if down.contains(KeyPad::DPAD_RIGHT) {
+                m.flip_page(1);
+            }
+            pick
+        };
         if m.quit || io.quit() {
             return Ok(None);
         }
@@ -654,6 +685,7 @@ fn hunt(
             Some(Tap::Binoculars) => pad.binoculars = true,
             Some(Tap::Pause) => pad.pause = true,
             Some(Tap::Resupply) => pad.resupply = true,
+            Some(Tap::ModeSwitch) => pad.switch_mode = true,
             Some(Tap::AmmoSwitch) => {
                 if let Some(m) = game.hunt.swap_ammo() {
                     message = Some((m.to_string(), frame + 120));
@@ -685,7 +717,6 @@ fn hunt(
             fps = fps * 0.9 + (1.0 / dt) * 0.1;
         }
         let t_upd = ticks();
-            Some(Tap::ModeSwitch) => pad.switch_mode = true,
         if let Some(m) = game.trophy_buttons(&mut pad) {
             message = Some((m, frame + 120));
         }

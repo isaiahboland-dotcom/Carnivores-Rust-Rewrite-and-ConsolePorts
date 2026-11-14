@@ -126,6 +126,8 @@ struct Simulation {
     weapon_ids: Vec<usize>,
     weapon_icons: Vec<Option<c2_formats::tga::Picture>>,
     weapon_names: Vec<alloc::string::String>,
+    /// The muzzle flash's model (`MUZZ4.CAR`) and its actor-atlas slot.
+    muzzle: Option<(c2_formats::car::Car, usize)>,
     /// The actor atlas's models (256x256 slots) and their radii; which
     /// slot each character and carried weapon has.
     actor_models: Vec<PreparedModel>,
@@ -171,10 +173,10 @@ const PAUSE: u32 = 1 << 25;
 /// Y in advanced observer mode: stop or start time (menu.h `IN_*`).
 const AMMO_SWITCH: u32 = 1 << 16;
 const TIME_STOP: u32 = 1 << 17;
-
-/// Sound kinds for `c2_play_sound` / `c2_sound_clip` (slots within each):
 /// A tap on the GamePad's weapon strip: switch the gun's firing mode.
 const MODE_SWITCH: u32 = 1 << 19;
+
+/// Sound kinds for `c2_play_sound` / `c2_sound_clip` (slots within each):
 /// effects (steps 0-5, underwater 6, the hunter's screams 7-10), calls
 /// (call n's answers at 3n..3n+2), the area's random sounds and ambient
 /// loops, the carried weapons (`KIND_WEAPON` + slot), then the characters
@@ -210,10 +212,10 @@ pub struct HudState {
     lethal: i32,
     tranq: i32,
     darts: u32,
-}
-#[no_mangle]
     /// The gun's firing mode when it has two: 1 semi auto, 2 full auto; 0 otherwise.
     mode: u32,
+}
+#[no_mangle]
 pub extern "C" fn c2_hud_state(ptr: *mut core::ffi::c_void, out: *mut HudState) {
     let sim = unsafe { &*ptr.cast::<Simulation>() };
     let w = &sim.hunt.weapons;
@@ -228,9 +230,9 @@ pub extern "C" fn c2_hud_state(ptr: *mut core::ffi::c_void, out: *mut HudState) 
         lethal: if w.multi_ammo() { w.kinds(w.current).0 } else { -1 },
         tranq: w.kinds(w.current).1,
         darts: w.fires_darts(w.current) as u32,
+        mode: if w.has_mode_switch() { 1 + u32::from(w.fire_mode[w.current] == 1) } else { 0 },
     }; }
 }
-        mode: if w.has_mode_switch() { 1 + u32::from(w.fire_mode[w.current] == 1) } else { 0 },
 #[no_mangle]
 pub extern "C" fn c2_hunt_dead(ptr: *mut core::ffi::c_void, shots: *mut u32, kills: *mut u32) -> u32 {
     let sim = unsafe { &*ptr.cast::<Simulation>() };
@@ -376,6 +378,7 @@ pub extern "C" fn c2_hunt_load(ui: *mut core::ffi::c_void, seed: u32, result: *m
     };
     let char_slot = l.cars.iter().map(|c| c.as_ref().map(&mut slot_of)).collect();
     let weapon_slot = l.weapon_cars.iter().map(&mut slot_of).collect();
+    let muzzle = l.muzzle.map(|c| { let id = slot_of(&c); (c, id) });
     let cycle = (choice.dynamic_time != 0 && !choice.trophy()).then(|| c2_core::day_cycle::DayCycle::new(area.time));
     let daylight_mean = core::array::from_fn(|i| {
         let m = &area.map.light[i];
@@ -413,6 +416,7 @@ pub extern "C" fn c2_hunt_load(ui: *mut core::ffi::c_void, seed: u32, result: *m
         weapon_ids: l.weapon_ids,
         weapon_icons: l.weapon_icons,
         weapon_names: l.weapon_names,
+        muzzle,
         actor_models,
         actor_radii,
         char_slot,
@@ -925,6 +929,17 @@ pub extern "C" fn c2_actor_vertices(ptr: *mut core::ffi::c_void, positions: *mut
                     let y = v[1]*cb - vz*sb; let depth = -(vz*cb + v[1]*sb);
                     [x*0.75*zoom, y*1.333*zoom, hunt_setup::gun_clip_z(depth), depth]
                 };
+                // The muzzle flash (`MUZZ4.CAR` at the fire animation's time,
+                // turned by its roll), where the weapon is, as on the PC.
+                if let (Some((mc, mid)), Some(gamma), false) = (&sim.muzzle, sim.hunt.weapons.muzzle, sim.hunt.player.underwater) {
+                    if let (Some(mm), Some(a)) = (sim.actor_models.get(*mid), mc.animations.first()) {
+                        if let Some(fp) = c2_core::model::pose_car(a, mc.mesh.vertices.len(), ftime.max(0) as u32) {
+                            let (sg, cg) = (libm::sinf(gamma), libm::cosf(gamma));
+                            let rolled: alloc::vec::Vec<[f32; 3]> = fp.iter().map(|p| [cg * p[0] - sg * p[1], cg * p[1] + sg * p[0], p[2]]).collect();
+                            emit(mm, &rolled, *mid, &project);
+                        }
+                    }
+                }
                 emit(model, &posed, model_slot, &project);
                 if let Some(&last) = posed.last() {
                     let p = project(last);

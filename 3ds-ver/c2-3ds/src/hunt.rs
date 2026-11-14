@@ -211,6 +211,8 @@ pub struct Setup {
     /// Advanced observer mode (with the observer): unlimited instant
     /// teleports, flying and stopping time.
     pub free_observer: bool,
+    /// The DHC OS terminal's look (setting): the exit prompt takes it.
+    pub dhc_terminal: bool,
 }
 
 /// The most snowflakes on the 3DS (an area asks for up to 2000).
@@ -398,10 +400,10 @@ pub struct Pad {
     pub select_call: Option<i32>,
     /// Use one extra ammo refill.
     pub resupply: bool,
-}
-
     /// From the bottom screen: switch the gun's firing mode.
     pub switch_mode: bool,
+}
+
 /// Frees what the 3DS doesn't need once the GPU has its copies.
 fn trim(area: &mut Area, cars: &mut [Option<Car>]) {
     area.rsc.textures = Vec::new();
@@ -991,9 +993,9 @@ impl Game {
             toggle_weapon: pad.toggle_weapon,
             select_weapon: select,
             toggle_binoculars: pad.binoculars,
+            switch_mode: pad.switch_mode,
             call: pad.call && self.setup.callable(self.hunt.target_call),
             ..Default::default()
-            switch_mode: pad.switch_mode,
         };
         // At most `MAX_TICKS` per frame: past that the game slows down
         // instead of spending ever longer catching up (a slow tick would
@@ -1009,9 +1011,9 @@ impl Game {
             input.toggle_weapon = false;
             input.select_weapon = None;
             input.toggle_binoculars = false;
+            input.switch_mode = false;
             input.call = false;
             self.acc_ms -= TICK_MS as f32;
-            input.switch_mode = false;
             self.ticks_last += 1;
         }
     }

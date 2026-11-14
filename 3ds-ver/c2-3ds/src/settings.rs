@@ -58,6 +58,9 @@ pub struct Settings {
     /// Advanced observer mode: observing, unlimited instant teleports,
     /// flying and stopping time.
     pub free_observer: bool,
+    /// The DinoHunt Corp terminal as the hunt setup's look (off by
+    /// default; not in the original).
+    pub dhc_terminal: bool,
 }
 
 /// How the hunter crouches.
@@ -146,6 +149,7 @@ impl Default for Settings {
             multi_ammo: false,
             half_tranq: true,
             free_observer: false,
+            dhc_terminal: false,
         }
     }
 }
@@ -190,6 +194,7 @@ impl Settings {
                 ("multi_ammo", v) => s.multi_ammo = v != "0",
                 ("half_tranq", v) => s.half_tranq = v != "0",
                 ("advanced_observer", v) => s.free_observer = v != "0",
+                ("dhc_terminal", v) => s.dhc_terminal = v != "0",
                 ("gyro_aim", v) => {
                     if let Ok(n) = v.parse::<i32>() {
                         s.gyro_pct = n.clamp(GYRO_STEPS[0], 100);
@@ -222,7 +227,7 @@ impl Settings {
                 "run_speed = {}\nambient = {}\nblood = {}\ndeath_animation = {}\n\
                  friendly = {}\nstealth_crouch = {}\nrandom_ambients = {}\ncrouch_button = {}\ngyro_aim = {}\n\
                  hunter = {}\nmap_mobile = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\n\
-                 test_points = {}\ntree_sprites = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nbounded_flee = {}\n",
+                 test_points = {}\ntree_sprites = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nbounded_flee = {}\ndhc_terminal = {}\n",
                 s.run_pct,
                 i32::from(s.ambient),
                 i32::from(s.blood),
@@ -242,7 +247,8 @@ impl Settings {
                 i32::from(s.multi_ammo),
                 i32::from(s.half_tranq),
                 i32::from(s.free_observer),
-                i32::from(s.bounded_flee)
+                i32::from(s.bounded_flee),
+                i32::from(s.dhc_terminal)
             ),
         )
     }

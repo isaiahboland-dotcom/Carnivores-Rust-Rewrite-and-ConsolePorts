@@ -179,6 +179,9 @@ pub struct Loaded {
     pub weapon_ids: Vec<usize>,
     pub weapon_icons: Vec<Option<Picture>>,
     pub weapon_names: Vec<String>,
+    /// The muzzle flash's model (`HUNTDAT/MUZZ4.CAR`), when a carried weapon's
+    /// dialect asks for one.
+    pub muzzle: Option<Car>,
     pub calls: Vec<Call>,
     /// Steps (HWALK1-3, FOOTW1-3), underwater, the hunter's screams
     /// (HUM_DIE1-4), as `c2_sound_clip`'s effects.
@@ -306,7 +309,11 @@ pub fn load(install: Option<&Install>, choice: &HuntChoice, room: &Save, seed: u
             .collect(),
         _ => Vec::new(),
     };
-    let mut budget = MODEL_SLOTS - carried.len();
+    // A dialect's muzzle flash takes a model slot of its own.
+    let wants_muzzle = carried.iter().any(|&i| {
+        rules.res.weapons.get(i).is_some_and(|d| c2_core::game::WeaponInfo::from_def(d).mee.is_some_and(|m| m.muzz_flash))
+    });
+    let mut budget = MODEL_SLOTS - carried.len() - usize::from(wants_muzzle);
     for (i, r) in rules.roles.iter().enumerate() {
         if keep[i] && *r != Role::Ambient {
             budget = budget.saturating_sub(1);
@@ -367,7 +374,15 @@ pub fn load(install: Option<&Install>, choice: &HuntChoice, room: &Save, seed: u
     if infos.is_empty() && !carried.is_empty() {
         return Err(-13);
     }
+    let muzzle = (wants_muzzle && !weapon_cars.is_empty())
+        .then(|| install.vfs.read("HUNTDAT/MUZZ4.CAR").ok().and_then(|d| c2_formats::car::parse(&d).ok()))
+        .flatten()
+        .filter(|c| !c.animations.is_empty());
     let mut hunt = new_hunt(&area, species, infos, anims, choice, rules.tables.as_ref(), targets, &roamers, room, seed, survival_budget(install))?;
+    // The flash lasts its model's animation.
+    if let Some(a) = muzzle.as_ref().and_then(|c| c.animations.first()) {
+        hunt.weapons.muzzle_ms = c2_core::model::car_anim_duration_ms(a).max(1) as i32;
+    }
     hunt.area_no = c2_formats::mee::area_of(&area_file).map_or(0, |n| n as i32);
     // Predation (an instance setting, experimental here): the install's
     // `_PREDATION.TXT`, when its recipe turns it on.
@@ -411,7 +426,7 @@ pub fn load(install: Option<&Install>, choice: &HuntChoice, room: &Save, seed: u
         }
     }
     let fx = FX_FILES.iter().map(|f| pcm(install, &format!("HUNTDAT/SOUNDFX/{f}"))).collect();
-    Ok(Loaded { area, hunt, cars, weapon_cars, weapon_ids, weapon_icons, weapon_names, calls, fx, tables: rules.tables, targets, roamers })
+    Ok(Loaded { area, hunt, cars, weapon_cars, weapon_ids, weapon_icons, weapon_names, muzzle, calls, fx, tables: rules.tables, targets, roamers })
 }
 
 /// A new hunt like `previous` (same animals, weapons and options) with the

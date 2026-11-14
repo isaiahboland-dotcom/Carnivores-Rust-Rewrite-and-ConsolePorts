@@ -13,6 +13,12 @@ impl Menu {
         self.save.options.tranq != 0 && self.settings.multi_ammo && self.settings.half_tranq
     }
 
+    /// A button while asking (the terminal): Half or Full.
+    pub(super) fn answer_tranq_key(&mut self, half: bool) {
+        let r = if half { Self::TRANQ } else { Self::OBSERVE };
+        self.answer_tranq(r[0] + 1.0, r[1] + 1.0);
+    }
+
     /// A tap while asking: Half (the Tranq button) or Full (Observe);
     /// elsewhere on the row keeps asking.
     pub(super) fn answer_tranq(&mut self, x: f32, y: f32) {
