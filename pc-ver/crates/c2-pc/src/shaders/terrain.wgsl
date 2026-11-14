@@ -140,6 +140,10 @@ fn vertex_height(v: vec2<i32>) -> f32 {
     return f32(cell_at(c.x, c.y).x & 0xffu) * 64.0;
 }
 
+fn water_index(v: vec2<i32>) -> u32 {
+    return (cell_at(v.x, v.y).x >> 16u) & 0xffu;
+}
+
 fn vertex_light(v: vec2<i32>) -> f32 {
     let c = clamp(v, vec2<i32>(0), vec2<i32>(MAP - 1));
     let vc = cell_at(c.x, c.y);
@@ -168,6 +172,15 @@ fn edge_neighbour(v: vec2<i32>, l: LodCell) -> vec2<i32> {
     return vec2<i32>(0);
 }
 
+// The ground's height at vertex `v` of cell `l`, as drawn (see edge_neighbour).
+fn ground_height(v: vec2<i32>, l: LodCell) -> f32 {
+    let e = edge_neighbour(v, l);
+    if (e.x != 0 || e.y != 0) {
+        return (vertex_height(v - e) + vertex_height(v + e)) * 0.5;
+    }
+    return vertex_height(v);
+}
+
 @vertex
 fn vs_ground(@builtin(vertex_index) vid: u32, @location(0) chunk: vec4<i32>) -> VOut {
     let l = lod_cell(vid, chunk);
@@ -179,11 +192,10 @@ fn vs_ground(@builtin(vertex_index) vid: u32, @location(0) chunk: vec4<i32>) -> 
     let flags = here.y >> 16u;
     let d = corner(vid % 6u, (flags & FM_REVERSE) != 0u);
     let v = c + d * l.step;
-    var h = vertex_height(v);
+    let h = ground_height(v, l);
     var light = vertex_light(v);
     let e = edge_neighbour(v, l);
     if (e.x != 0 || e.y != 0) {
-        h = (vertex_height(v - e) + vertex_height(v + e)) * 0.5;
         light = (vertex_light(v - e) + vertex_light(v + e)) * 0.5;
     }
     let p = vec3<f32>(f32(v.x) * 256.0, h, f32(v.y) * 256.0);
@@ -207,16 +219,28 @@ fn vs_water(@builtin(vertex_index) vid: u32, @location(0) chunk: vec4<i32>) -> V
     }
     let c = l.c;
     let s = l.step;
-    // ProcessMapW: all four corners must be water cells.
-    let w = (cell_at(c.x, c.y).x >> 16u) & 0xffu;
-    if (w == 255u
-        || ((cell_at(c.x + s, c.y).x >> 16u) & 0xffu) == 255u
-        || ((cell_at(c.x, c.y + s).x >> 16u) & 0xffu) == 255u
-        || ((cell_at(c.x + s, c.y + s).x >> 16u) & 0xffu) == 255u
-        || w >= arrayLength(&waters)) {
+    let ends = array<vec2<i32>, 4>(c, c + vec2<i32>(s, 0), c + vec2<i32>(0, s), c + vec2<i32>(s, s));
+    // The first water corner's record (top-left first, as ProcessMapW).
+    var w = 255u;
+    for (var k = 0u; k < 4u; k++) {
+        w = water_index(ends[k]);
+        if (w != 255u) {
+            break;
+        }
+    }
+    if (w >= arrayLength(&waters)) {
         return degenerate();
     }
     let wt = waters[w];
+    // ProcessMapW: all four corners must be water cells. A coarser cell
+    // (high-end view) spans water narrower than itself, so it also takes
+    // dry corners whose drawn ground is above the water: that ground hides
+    // the water there by depth, as the bank does at full detail.
+    for (var k = 0u; k < 4u; k++) {
+        if (water_index(ends[k]) == 255u && (l.level == 0u || ground_height(ends[k], l) <= wt.x)) {
+            return degenerate();
+        }
+    }
     let d = corner(vid % 6u, false);
     let v = c + d * s;
     let p = vec3<f32>(f32(v.x) * 256.0, wt.x, f32(v.y) * 256.0);
