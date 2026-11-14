@@ -160,8 +160,19 @@ Nintendo ports keep their own mappings.
   water instead of off the edge, a flight ends after a limited distance or time, and repeated
   noises cannot keep an animal afraid. Limits come from the instance's recipe (see
   [MODDING.md](MODDING.md#flee-limits-bounded-fleeing)) or built-in defaults.
-- **Predation** is an advanced setting for instances (launcher: the recipe editor's Advanced tab),
-  off unless a recipe turns it on. See [MODDING.md](MODDING.md#predation-carnivores-hunt-herbivores).
+- **Predation** is part of the advanced instance setting Advanced Dinosaur Behavior and AI
+  (launcher: the recipe editor's Advanced tab), off unless a recipe turns it on. See [MODDING.md](MODDING.md#predation-carnivores-hunt-herbivores).
+- **DHC OS terminal** (Options > Game, or the launcher's instance editor > Base game > Menu; off by
+  default; not in Play Vanilla; replaces any menu style, the Android menus too): the hunter list, main menu and hunt
+  setup as a DinoHunt Corp terminal, with the game's own pictures, descriptions and prices. Arrow
+  keys, wheel or the pad's pointer move; Enter, Space or a click picks; Left/Right, Tab or **1**-**4**
+  switch between AREA, TARGETS, ARMS and GEAR; **T** changes the time of day; **F** deploys; Esc goes
+  back. The budget shows the account after the permits and the kill-score multiplier of the gear
+  picked. The hunter list (log in, register with the waiver, delete), the options screen, the quit
+  prompt and the hunt's exit prompt (Esc) are in the same look; **Change
+  hunter** opens it from the terminal. **Classic menu** returns to the original menu until the game restarts. **DHC OS CRT
+  effects** adds scanlines. A recipe can restrict what each island issues
+  ([MODDING.md](MODDING.md#dhc-os-terminal-rules)).
 
 ### Survival
 
@@ -179,6 +190,17 @@ enabled. Console memory and wave limits still apply.
 "Enable hardcore survival mode" and a third choice appears. It has Modded's waves, but at a night
 that never ends, as pitch black as the dynamic day cycle's midnight, with the flashlight, the radar
 and the shotgun.
+
+### Hardcore hunt
+
+An instance can turn on a hardcore ruleset for its hunts (the launcher's
+Advanced page; [rules](HARDCORE-HUNT.md)). In such a hunt:
+
+- The map opens first: click the drop-off spot, then the pickup zone.
+- `G` calls the ship to the pickup zone. Stand in the zone while it hovers to
+  leave with your trophies. Leaving with `Esc` loses them.
+- With every weapon empty you hold a knife: fire stabs, and `F` dodges to the
+  side you are strafing (right otherwise).
 
 ## PC VR (early)
 

@@ -229,9 +229,10 @@ numbers named; update the game to load it. `[recipe] version` is your own
 version of the pack, free text that is never compared. Keys the build does not
 read are ignored with a warning (in the log, and in `c2-cook`'s output), so an
 older build can still load a recipe written for a newer one; a mistyped key
-(`max_distnace` under `[settings.flee]`) shows up the same way. `[missions]` is
-reserved for a later version: it is accepted, reported as not implemented, and
-ignored.
+(`max_distnace` under `[settings.flee]`) shows up the same way. A top-level
+`[missions]` table is reserved: it is accepted, reported as not implemented,
+and ignored. Missions are written as
+[`[[settings.world.missions]]`](#missions).
 
 The launcher saves a recipe by editing the file in place: comments, key order
 and blank lines stay as written, a changed value keeps the comment beside it,
@@ -262,10 +263,18 @@ Unset values keep the launcher's choice. The launcher lists every recipe
 under `recipes/`, any folder deep. `recipes/instances/testing/` is ignored
 by git, for your own.
 
-### Predation (carnivores hunt herbivores)
+### Advanced Dinosaur Behavior and AI
 
-An advanced instance setting, off unless the recipe turns it on (launcher:
-the recipe editor's Advanced tab). Not part of the original game, and
+An advanced instance setting (launcher: the recipe editor's Advanced tab)
+for animal behavior beyond the original game. Every part is opt-in; with
+none turned on the animals behave exactly as in the original. Predation,
+below, is the part implemented today. The planned parts (archetypes,
+senses, needs and migration, herds, species relationships, player trust)
+are specified in [BEHAVIOR.md](BEHAVIOR.md).
+
+#### Predation (carnivores hunt herbivores)
+
+Off unless the recipe turns it on. Not part of the original game, and
 experimental everywhere: on maps where many animals spawn close together,
 chases and fights pile up and get chaotic. It is tested on PC; on the 3DS,
 Wii U, Android and VR it may also cause lag or game-breaking bugs.
@@ -457,6 +466,14 @@ release.
 `c2-parity scan <dir>` parses every `.CAR`, `.3DF`, `.MAP`, `.RSC` and
 `_RES.TXT` under a directory and reports anything malformed.
 
+### Hardcore hunt
+
+`[settings.hunt]` (the launcher's Advanced page) is an opt-in ruleset for an
+instance's hunts: equipment limits, drop-off and pickup zones with extraction
+by ship, ammunition drops, a knife, and carnivores that circle before they
+attack. Each rule works on its own. PC only so far. The rules, their defaults
+and the recipe keys are in [HARDCORE-HUNT.md](HARDCORE-HUNT.md).
+
 ### Flee limits (bounded fleeing)
 
 An advanced instance setting on the recipe editor's Advanced tab, opt-in and
@@ -486,3 +503,196 @@ max_distance = 40        # unset keys inherit the global value, then the default
   field, whether or not custom limits are on.
 - Carnivores that are chasing are never limited; fish, flyers and
   brachiosaurs keep their own movement.
+
+### World zones, player starts and extraction points
+
+`[settings.world]` holds shapes and points drawn on the areas' maps: zones
+(circles and polygons), player starts and extraction points. It is an advanced
+setting, opt-in and not part of the original game. **Nothing in a hunt uses
+these entries yet**: this is the shared data that the planned spawn rules,
+flee limits and missions will refer to by `id`, so a recipe can already carry
+them and a build already ships them.
+```toml
+[settings.world]
+enabled = true
+min_extraction_gap = 0.25    # least start-to-extraction distance, as a
+                             # fraction of the map's side (0-1; unset: no rule)
+
+[[settings.world.zones]]
+id = "marsh"                 # one word: letters, digits, - and _ (at most 32)
+area = "Vengar Peninsula"    # as the balance editor names it
+shape = "circle"
+center = [512.0, 300.5]
+radius = 40.0                # 0.5-1024 cells
+tags = ["no_spawn"]
+
+[[settings.world.zones]]
+id = "ridge"
+area = "Vengar Peninsula"
+shape = "polygon"
+points = [[100.0, 100.0], [200.0, 100.0], [150.0, 220.0]]
+
+[[settings.world.spawns]]
+id = "beach"
+area = "Vengar Peninsula"
+at = [100.0, 200.0]
+
+[[settings.world.extractions]]
+id = "pad"
+area = "Vengar Peninsula"
+at = [300.0, 400.0]
+```
+- Coordinates are map cells as floats, `[x, z]`: world units / 256, the unit
+  of the Modder's Edition `region{}` rectangles and of the flee limits. A map
+  is 1024 cells a side. They are never picture pixels.
+- A polygon has 3 to 64 points in order, either winding; the last joins the
+  first. Its edges may not cross or touch, and it must enclose some area.
+- Zone ids are unique in the recipe; so are start ids, and extraction ids.
+  Tags are free words for now; later settings give some a meaning.
+- The recipe is where the entries are written and shared. The build derives
+  `HUNTDAT/_WORLD.TXT` from it (one section per map), because packs on the
+  consoles and Android never see the recipe; do not edit that file by hand.
+- Entries that can't be used are left out of the build and reported as
+  warnings: an area the game lacks, an id that is not one word or is used
+  before, an unusable shape, a point with no position. A zone or point
+  outside the map, and an area where no start is `min_extraction_gap` from
+  an extraction point, are warned about and kept.
+- Off, absent or empty: no `_WORLD.TXT`, and the build is unchanged. Play
+  Vanilla leaves the section out.
+
+**The map editor.** The launcher's recipe editor draws these for you:
+Advanced page, **World zones: map editor**. Choose an area and it shows the
+area's overview, the picture the game's map screen uses, read from the
+instance's game (the base game must be set; add-ons without a folder yet are
+left out).
+- **Circle**: press at the centre and drag out to the rim.
+- **Polygon**: click each corner in turn; click the first corner again, or
+  **Finish**, to close it. An outline whose edges cross is refused.
+- **Player start**, **Extraction point**: click the spot.
+- **Select / move**: click an entry to select it, then drag its squares (a
+  circle's centre and rim, a polygon's corners) or the point itself.
+  - Drag inside a polygon to move the whole of it; it stops at the map's
+    edges with its shape kept.
+  - Drag from an edge of the selected polygon to add a corner there (the
+    small dots mark the edges; a polygon holds 64 corners at most).
+  - Right-click a corner to remove it. A polygon keeps at least 3.
+- The readout under the map gives the cell under the pointer. The list below
+  it holds the area's entries; the selected one's id, tags and numbers can be
+  typed. Positions are kept to a tenth of a cell.
+- The editor changes only the recipe (saved with the editor's **Save**, which
+  keeps the file's comments). Entries on areas the instance does not have are
+  kept and counted, not shown.
+
+### Missions
+
+A mission is a fixed challenge on one area: the recipe sets the time of day,
+the animals on the map, the weapons and the equipment; the hunter enters by
+one of the mission's entry points, makes the kills it asks for and leaves by
+one of its exit points. Missions are part of `[settings.world]` and use its
+player starts and extraction points.
+
+**Status: editor and data only.** Missions are saved in the recipe, checked
+and built into `HUNTDAT/_WORLD.TXT`; no game lists or plays them yet. They
+will be listed by the [DHC OS terminal](#dhc-os-terminal-rules) only: with the
+original menus, and on platforms without the terminal, an instance's missions
+are hidden.
+
+```toml
+[[settings.world.missions]]
+id = "rex-run"                   # letters, digits, - and _
+name = "Rex run"                 # shown in the mission list; unset: the id
+area = "Vengar Peninsula"        # the area's name, as the balance editor lists it
+time = "night"                   # dawn, day (default) or night
+entries = ["beach"]              # ids of [[settings.world.spawns]] on that area
+exits = ["pad"]                  # ids of [[settings.world.extractions]] there
+animals = ["Tyrannosaurus Rex", "Velociraptor"]
+weapons = ["Shotgun"]
+equipment = ["Radar"]            # as the DHC islands name it; none listed: none
+time_limit = 600                 # seconds (30-86400); unset: no limit
+requires = ["first-steps"]       # missions to complete before this is offered
+kills = [
+    { name = "Tyrannosaurus Rex", count = 1 },
+    { count = 3 },               # no name: any of the mission's animals
+]
+```
+- The lists are the mission's whole loadout: the player does not pick.
+- A mission needs at least one usable entry and one usable exit on its own
+  area; without them, on an area the game lacks, or with an id that is not one
+  word or is used before, it is left out of the build and warned about.
+- Also warned about and kept: an unknown time, animal, weapon or equipment
+  name; no animals or weapons; no kill required (reaching an exit then
+  completes it); a kill of an animal the mission does not list; a count or
+  time limit out of range (clamped); a requirement that names no mission,
+  itself, or a mission that requires it back; every mission requiring another
+  (none offered at the start); with `min_extraction_gap`, no exit far enough
+  from an entry; missions with `[settings.world]` off.
+- Play Vanilla leaves the section out.
+
+**The mission editor.** Recipe editor, Advanced page, **Missions**: add a
+mission (it starts on the area the map editor shows, with every start and
+extraction point drawn there), then set its name, area, time, entry and exit
+points, animals, weapons, equipment, time limit, the missions that unlock it
+and its kill requirements. Each mission lists what the validator finds wrong
+with it. The panel warns when the DHC OS terminal is off, because the
+instance's missions would then be hidden.
+
+### Weapon restrictions
+
+`[[settings.weapon_restrictions]]` fixes, per weapon, whether it may fire
+tranquilizer darts and whether its kills count as trophies. Unset, a weapon is
+as the game has it (both allowed). The build writes `c2rs_allow_tranq` and
+`c2rs_allow_trophy` into the weapon's `_RES.TXT` entry; a name that matches no
+weapon, or more than one, stops the build. Kept by Play Vanilla. The recipe
+editor's Advanced page has a row per weapon (**Weapon restrictions**).
+
+```toml
+[[settings.weapon_restrictions]]
+name = "Sniper rifle"
+allow_tranq = false
+allow_trophy = true
+```
+
+### DHC OS terminal rules
+
+The **DHC OS terminal** is an optional in-universe front end (DinoHunt Corp)
+for the main menu and hunt setup. Players turn it on in the game's options
+or the launcher's Menu panel (**DHC OS terminal**, off by default). On, it
+replaces whichever menu style is picked, the Android (APK) menus too. It is never shown in Play Vanilla, and
+**Classic menu** in the terminal returns to the original menu until the game
+restarts. It lists what the original menu lists, with the same pictures,
+descriptions, prices and account, and starts the hunt the same way.
+
+A recipe can give the terminal rules, by hand or in the recipe editor's
+Advanced page (**DHC OS terminal rules**: the defaults, a row per animal and
+a row per area). Without `[settings.dhc]` (or with `enabled = false`) nothing
+is written and the terminal offers everything the original menu offers.
+```toml
+[settings.dhc]
+enabled = true
+discovery = "sighting"       # off (default), sighting, scan or kill
+licence_cost = 200           # score points (0-100000; default 200)
+
+[[settings.dhc.animals]]
+name = "Velociraptor"        # _RES.TXT name, case ignored
+discovery = "kill"           # unset: the default above
+licence_cost = 500           # unset: the default above
+
+[[settings.dhc.islands]]
+area = "Vengar Peninsula"    # the area's name, as the balance editor lists it
+animals = ["Parasaurolophus", "Pachycephalosaurus"]   # empty: every animal
+weapons = ["Pistol", "Shotgun"]                       # empty: every weapon
+equipment = ["Radar"]        # Camouflage, Radar, Cover Scent, Double Ammo,
+                             # Night Vision, Flashlight; empty: all
+times = ["dawn", "day"]      # empty: every time the instance offers
+```
+- Island lists restrict what the terminal issues on that area: other items
+  show as RESTRICTED, and picks made elsewhere that the island does not allow
+  are dropped on arrival. They do not change what spawns: that is
+  `[settings.rules]` (`hidden`, `secrets`, area caps).
+- `discovery` and `licence_cost` are read and validated now; secret-animal
+  discovery and licences are a later phase and change nothing yet. Licences
+  will cost the original score points, never a second currency.
+- The built game gets `HUNTDAT/_DHC.TXT` (areas by map name, `AREA1`). PC
+  and 3DS (`c2-cook` packs it; the 3DS applies the island rules in its
+  terminal look only, not in the hexagon menu yet). Wii U and VR keep the
+  original menu, and the build warns.

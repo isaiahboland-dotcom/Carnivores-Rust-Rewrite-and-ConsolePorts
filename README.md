@@ -31,7 +31,7 @@ The project also explores what AI can do when adapting code to very different sy
 The core game is the original Carnivores 2. These optional features go beyond it. Most are off by default.
 
 - **Dynamic time:** an optional 60-minute day/night cycle, with night vision and a flashlight as equipment. See [Dynamic time](docs/DYNAMIC_TIME.md).
-- **Predation:** an advanced setting where carnivores hunt herbivores. See [Predation](docs/MODDING.md#predation-carnivores-hunt-herbivores).
+- **Advanced Dinosaur Behavior and AI:** an advanced setting; today, predation (carnivores hunt herbivores). See [Predation](docs/MODDING.md#predation-carnivores-hunt-herbivores) and the [planned behavior](docs/BEHAVIOR.md).
 - **Survival:** Classic and Modded wave modes, and an optional hardcore night. See [Playing on PC](docs/PLAYING.md#survival).
 - **Mods, combined automatically:** add-ons, Modder's Edition games, standalone games and mobile-game animals in one install. See [Modding](docs/MODDING.md) and [recipes](#mods-and-recipes).
 - **Multi ammo, advanced observer and map zoom:** PC options for tranquilizer splits, free-flying observer hunts and a zoomable map. See [PC options](docs/PLAYING.md#pc-options).

@@ -1,5 +1,42 @@
 # Decisions and deviations
 
+## 2026-11-13 — Hardcore hunt ruleset
+
+An opt-in recipe section, `[settings.hunt]`, written as `hunt` lines in
+`_RULES.TXT`; regular hunts and Hardcore survival are unchanged, and Play
+Vanilla leaves it out. Each rule is independent. Implemented on PC; other
+platforms skip the lines ([HARDCORE-HUNT.md](HARDCORE-HUNT.md)).
+
+- **Zones**: the player picks the drop-off and pickup spots on a map before
+  a hardcore hunt. They must be 48 cells apart (configurable).
+- **Extraction**: the called ship takes 5 s to arrive and hovers 30 s; the
+  player escapes by being in the zone at any time during the hover. The 30 s
+  cooldown starts when the ship leaves.
+- **Leaving by the exit prompt forfeits the hunt** (trophies and points
+  discarded, as a death). It is reported as `Outcome::Died`, so no frontend
+  needs a new case.
+- **Knife**: knife kills give no points and no trophy. The knife is built
+  in, not a `_RES.TXT` weapon, so saved weapon indices are unchanged.
+- **Hesitation**: a carnivore circles the hunter; with the hunter's back
+  turned (more than 90 degrees from his view direction) it lunges, or, if
+  too big to lunge, makes its normal kill. **When its time is up it attacks
+  anyway.** Which species hesitate, lunge or ignore the rule is set per
+  species in the Advanced page; unlisted ones go by diet and size.
+- **A lunge kills** like the normal attack; only the knife's dodge avoids it.
+- **Second predator**: inside the encounter window it attacks at once if its
+  menu price is above 300; otherwise it hesitates and attacks when the
+  hunter's back is turned to it. "Price above 300 or back turned" is read as
+  "or". On the original's prices only the T-Rex (500) is above 300.
+- **No AI code is changed.** A circling animal's AI is given a waypoint on a
+  circle round the hunter, the mechanism survival's waypoints already use;
+  the dodge makes every animal's target a waypoint for 0.6 s. With no
+  ruleset, the herd step and the random stream are as before.
+- **Not `HuntOptions` or `HuntInput`**: the ruleset lives in `Hunt::hardcore`
+  and is driven by methods (`start_hardcore`, `pick_zone`, `call_ship`,
+  `dodge`), so the console frontends compile unchanged.
+- **Placeholders**: drops and the knife have no model or sound (no game
+  asset fits); PC draws them on the HUD.
+
 ## 2026-11-12 — Android app icon from the player's own APK
 
 The Android package is always relabelled and signed by the launcher when the
@@ -5514,3 +5551,267 @@ field-by-field treatment is in [RECIPE-SETTINGS.md](RECIPE-SETTINGS.md).
   go to `recipe-<slug>.classic.games`, not the enhanced `.games` folder,
   because `standalone::build` rewrites its output folder on every build.
 - PC first. Console Play Vanilla is planned separately and needs hardware.
+
+
+## 2026-11-13 — Advanced Dinosaur Behavior and AI (the setting's name and scope)
+
+The launcher's predation panel becomes **Advanced Dinosaur Behavior and AI**,
+the umbrella for every animal behavior beyond the original game. Predation
+("Carnivores hunt herbivores") is its first, implemented part; the planned
+parts (archetypes, capabilities, senses, needs and migration, herds with
+juveniles and circle defense, friend/foe lists, auto mode, player trust)
+are specified in `docs/BEHAVIOR.md`.
+
+- **The recipe key stays `[settings.predation]`.** Renaming it would break
+  every recipe that uses it for a label change. New parts get their own
+  `[settings.behavior]` section and `HUNTDAT/_BEHAVIOR.TXT` side file;
+  `_PREDATION.TXT` is unchanged.
+- **Steer the original AIs, don't replace them.** As predation does, new
+  behavior gives the existing AIs a target or a point to reach or flee, so
+  clips, speeds and kills stay each species' own.
+- **Explicit values win over archetype defaults, which win over auto
+  mode's guesses.** Auto mode never enables player trust and never makes a
+  herbivore a predator; trust is off per species by default and needs a
+  second explicit opt-in for carnivores.
+- Play Vanilla leaves the whole setting out, as it does predation today.
+- **Two kinds of relationship.** Animal-to-animal `friends` only decide who
+  herds together and who flees from or defends against danger together.
+  The hunter relationship (`hunter`: wary, trusted, friendly) is separate,
+  so a mod can make animals that like the hunter's company: trusted and
+  friendly animals are drawn to him, and on danger they keep with him only
+  if he follows them, otherwise they run without him. Killing a trusted or
+  friendly animal scores as any other kill.
+
+
+## 2026-11-13 — DHC OS terminal: rules file, shared model, PC first
+
+An optional in-universe terminal (DinoHunt Corp) stands in for the main menu
+and hunt setup. It is opt-in per player (options, `dhc_terminal` in
+`c2rs.cfg`, off by default); recipes give it rules through `[settings.dhc]`.
+
+- **Own side file, not `_RULES.TXT` keys.** `[settings.dhc]` becomes
+  `HUNTDAT/_DHC.TXT` (`c2_formats::dhc`, line format like `_PREDATION.TXT`,
+  `no_std`). The terminal's rules (discovery, licence costs, island
+  allow-lists) are menu rules; `_RULES.TXT` keeps the spawn side (`hide`,
+  `secret`, area caps), which the terminal does not duplicate. Absent or
+  `enabled = false`: no file, byte-identical builds.
+- **Islands are named as the balance editor names areas** in the recipe and
+  written by map name (`AREA1`), as `[settings.rules]` does. An empty list
+  allows everything of its kind; all three times is no restriction.
+- **Licences spend the original score points** (`Save::score`), default 200,
+  per-animal overrides win. No second currency. Discovery and licensing are
+  parsed and validated now and implemented in a later phase; progress will
+  live in a separate versioned side file beside `trophy0N.sav`, which is
+  never extended.
+- **Shared model in `c2-core::dhc`** (`no_std` + `alloc`): the catalog (what
+  the platform's menu loaded, by its own indices), the rules resolver, and
+  the terminal's screens and actions as pure state. Time moves only through
+  `Terminal::step`, so actions and steps replay identically. It produces a
+  platform-neutral `Loadout` rather than the PC's `HuntSetup`, which lives
+  in `c2-pc` and holds PC-only settings; each platform maps the loadout to
+  its own hunt start.
+- **The terminal applies the original menu's limits too** (instance times of
+  day, `--max-picks`, the hardcore ruleset's firearm cap and barred gear),
+  and the PC hands its loadout to the original menu's `launch_hunt`, whose
+  checks still apply. The terminal cannot start a hunt the original menu
+  would refuse.
+- **The PC view is `c2-pc/src/menu/terminal/`**, not a separate `c2-pc/src/dhc/`:
+  it reuses the menu's loaded columns (names, prices, `PICS` pictures,
+  `.TXM`/`.NFO` texts), its account and its hunt start, so it is a menu
+  screen. Pictures are the game's; there is no ASCII art and no hard-coded
+  data.
+- **One switch, two places.** The launcher's Menu panel (instance editor >
+  Base game) reads and writes the same `dhc_terminal` key in the game's
+  `c2rs.cfg` as the in-game option, touching no other line, instead of a
+  launcher setting passed as a flag that could disagree with it. It applies
+  to every instance, as the game's settings file does.
+- **Play Vanilla never shows it**: the classic recipe drops `[settings.dhc]`,
+  the options rows are hidden, and the menu checks `classic::on()`.
+- **The hunter list, waiver and delete prompt take the terminal's look**
+  when it is on (they come before sign-in, so `terminal_style` does not need
+  a hunter). They share their save handling with the original screens
+  (`register.rs`: `submit_name`, `accept_waiver`, `delete_picked`); only
+  drawing and keys differ. The waiver text is ours (the original's is a
+  picture). The main menu gains CHANGE HUNTER (`Outcome::Hunters`).
+- **The boot log plays once per run**, before the hunter list when that is
+  the first screen, and any key skips it. CRT scanlines
+  are a separate option, off by default for readability.
+- **Kill-score multipliers shown in the budget** are the original's
+  (`Game.cpp`, `AddScore`: tranquilizer ×1.25, radar ×0.70, cover scent
+  ×0.80, camouflage ×0.85).
+- **3DS: pages, not tabs** (`c2-3ds/src/menu/terminal.rs`,
+  `terminal_draw.rs`). The 3DS hunt setup already walks Area, Animals, Gear
+  and the hunt options with Back and Next, so the terminal keeps those steps
+  as pages: the bottom screen lists the step's items, the top screen shows
+  the focused one (picture, description, budget, earnings, memory). L and R
+  are Back and Next (L acts on release unless SELECT was pressed, so
+  L+SELECT screenshots keep working). Picks, prices, the three-pick limit,
+  memory, roaming add-ons, extra ammo and the hunt start stay the 3DS menu's
+  own; `c2_core::dhc::Rules` supplies the island filter and
+  `terminal::boot_log` the boot log, so the 3DS does not use the shared
+  `Terminal` state machine, whose catalog has no room for the 3DS-only
+  rows. Reduced effects as planned: no scanlines, flicker or noise. Only the
+  focused item's picture is loaded (the grid loads a page of them). The
+  title, Settings, Hunter, hunt options and Survival keep their look for
+  now; the hexagon menu does not apply island rules yet.
+- **Options and prompts follow the look.** With the terminal on, the PC
+  options screen draws its rows in GAME / VIDEO / CONTROLS panels (same
+  rows, rectangles and handling as the original screen; the board's hit
+  regions are off, Back is the status bar's), the quit prompt and the
+  hunt's exit prompt are terminal panels with the same keys, and on the
+  3DS the settings screen takes the terminal's colours (one `Look` for both
+  schemes, no second layout) and the hunt's exit prompt is a terminal
+  panel. The palette is shared: `c2-pc/src/menu/terminal/palette.rs`,
+  `c2-3ds/src/dhc_look.rs`.
+- **The terminal overrides the phone (APK) menus** (2026-11-14). With an
+  APK-built base the switch used to do nothing: `terminal_style` required no
+  phone kit, so the launcher's DHC OS checkbox lost to the Android menu
+  style. Now the switch wins over every menu style, Android included; the
+  options screen takes the terminal's panels instead of the phone's pages.
+  The hunt keeps the phone's touch prompts (exit and pause are touch
+  hexagons there; the terminal's exit panel has keys only).
+- **The terminal's options are three tabs** (2026-11-14): GAME, VIDEO and
+  CONTROLS (`1`-`3`, Tab, or a click), in the hunt setup's tab style,
+  instead of three panels copied from the original's board, where GAME
+  scrolled and VIDEO's last rows were cut off. GAME and VIDEO are one
+  full-width column with values and sliders aligned on the right (20-unit
+  rows, so GAME's 20 rows fit without scrolling); CONTROLS has the keys
+  left and the mouse right. Same rows and handling as the original screen
+  (`option_rows`, `key_rows`); the original look keeps its board.
+
+## 2026-11-14 — World zones: recipe section, side file and coordinates
+
+`[settings.world]` holds zones, player starts and extraction points for the
+planned spawn, flee and mission settings. This first part is data only: no
+hunt reads it yet.
+
+- **The recipe is the only source.** Zones are written and shared in
+  `recipe.toml`; the build derives `HUNTDAT/_WORLD.TXT`
+  (`c2_formats::world`, a line format like `_FLEE.TXT`, `no_std`) because
+  packs on the consoles and Android never see the recipe. No new `_RES.TXT`
+  keys. The file is written only when the section is on and has entries, so
+  other builds are byte-identical.
+- **Coordinates are map cells as floats** (world units / 256), `[x, z]`: the
+  unit of the Modder's Edition `region{}` rectangles and of `_FLEE.TXT`.
+  Never picture pixels, so an editor's zoom or radar resolution cannot change
+  what a recipe means. The recipe holds them as 64-bit floats so they are
+  written as short decimals; the side file and the engine use 32-bit.
+- **Shapes** are a circle (centre and radius; an editor derives the radius
+  from a rim point) or a simple polygon of 3 to 64 vertices in either
+  winding. Self-intersecting and zero-area polygons are rejected rather than
+  given an even-odd meaning. The geometry (`c2_formats::zone`) is plain
+  arithmetic in `c2-formats`, so every platform answers "is this point in
+  the zone" the same way.
+- **Areas by name in the recipe, by map in the file.** A recipe names an area
+  as the balance editor lists it; the build writes the map's name (`area3`,
+  a `.c2map`'s stem), one `area` section per map. Unlike `[settings.dhc]`,
+  the recipe does not also accept the map's name: the validator knows only
+  the names, and would warn about an entry the build accepts.
+- **A zone is one plain table**, not an enum tagged by `shape`: serde's
+  tagged enums drop unknown keys without reporting them (the reason
+  `[settings.flee]` is read through plain structs).
+- **Ids** are single words (letters, digits, `-`, `_`), unique per kind
+  across the recipe, since later settings refer to them without naming the
+  area. A start and an extraction point may share an id.
+- **Unusable entries are left out and warned about**, like names the game
+  lacks elsewhere; a recipe still loads and builds. Entries outside the map
+  are kept with a warning.
+- **`min_extraction_gap`** is a fraction of the map's side, so it keeps its
+  meaning if maps of other sizes arrive. The validator warns when an area
+  with both starts and extraction points has no pair that far apart.
+- **Play Vanilla drops the section** (`classic::Advanced::World`).
+- **No engine loader yet.** `c2-core` gains its reader with the first part
+  that uses zones, rather than loading data nothing consumes.
+
+## 2026-11-14 — Launcher map editor for world zones
+
+The recipe editor's Advanced page draws `[settings.world]` on an area's
+overview picture (`c2-launcher/src/recipe_edit/world.rs`, `world_map.rs`,
+`world_edit.rs`).
+
+- **The overview picture moved to `c2-formats`** (`c2_formats::overview`,
+  from `Hunt::map_image`, which now calls it). It is `GenerateMapImage`
+  unchanged and needs the `.MAP` and the `.RSC`'s textures and waters, not
+  the `.MAP` alone. The launcher draws the hunt's own map without depending
+  on `c2-core`. The engine's load-time rule "texture `0xffff` is texture 1"
+  is applied inside it, so the picture from the raw files equals the hunt's
+  (tested in `c2-core`).
+- **The picture is read from the instance's game as the editor builds it**
+  (the job that reads prices and scores, `jobs/balance.rs`), not from a pack
+  built earlier: the editor has no such pack, and the recipe being edited
+  may differ from the last build. One background read at a time, as the
+  other panels do; entries can be edited while it runs or if it fails.
+- **Edits are in cells.** The picture's place on screen converts pointer
+  positions to cells and back (`world_edit::View`); nothing is stored in
+  pixels, so the picture's size does not change a recipe. Positions are kept
+  on the map and rounded to a tenth of a cell (the picture is 4 cells per
+  pixel, so finer values are not meaningful by hand).
+- **A drag begins where the button went down**, not where the toolkit
+  recognises it as a drag a few points later; a circle's centre is the press
+  position.
+- **The polygon tool's Finish/Cancel row is always shown** while the tool is
+  chosen: a row appearing after the first click moved the map under the
+  pointer and misplaced the next corner (found by the headless UI test).
+- **Polygons are outlined, not filled**: the toolkit fills convex shapes
+  only. An unusable zone is drawn red and explained in the list.
+- The editor writes only the recipe. A zone's `area` is the name the balance
+  editor lists, which is what the build resolves.
+- **Polygon editing in the Select tool** (`world_edit::hit`): a press takes,
+  in order, a square within reach, an edge of the selected polygon, then the
+  polygon it is inside (the selected one first, else the last drawn; a
+  circle drawn over an unselected polygon is in the way).
+  - A drag from inside moves the polygon whole. Each frame's position is
+    computed from the corners at the press plus the pointer's travel, so
+    rounding to a tenth of a cell does not accumulate. The travel is limited
+    as one so the shape is kept at the map's edges; a polygon typed partly
+    off the map is not squeezed back, it only moves further in.
+  - A drag from an edge adds a corner at the nearest point of that edge and
+    carries it. Only the selected polygon's edges do this, and a plain click
+    adds nothing, so corners are not added by accident.
+  - A right-click on a corner removes it, down to 3. Select drags are by the
+    primary button only.
+  - A polygon whose edges cross still has an inside for this purpose
+    (even-odd), so one dragged into a tangle can be moved and repaired.
+
+## 2026-11-14 — Missions: recipe data, side file and editor
+
+Missions (ADV-WORLD phase 9, decided 2026-11-13 as fixed challenges rather
+than scripts) get their recipe section, side-file lines and launcher editor
+before any game plays them, as world zones did.
+
+- **`[[settings.world.missions]]`, not a top-level `[missions]`.** A mission
+  is made of the section's player starts and extraction points, is built into
+  the same `_WORLD.TXT` and is dropped by Play Vanilla with it. The top-level
+  name stays reserved.
+- **Several entries and exits.** A mission lists the starts it may begin at
+  and the extraction points it may end at (`entries`, `exits`), not one of
+  each: the hunter is given a choice of where to come in and where to get
+  out. This replaces the single `entry`/`exit` of the 2026-11-13 plan.
+- **The lists are the loadout.** `animals`, `weapons` and `equipment` are
+  what the mission has; an empty equipment list is none carried. Unlike a DHC
+  island's lists, an empty list is not "everything".
+- **Kills are `{ name, count }`**; a requirement without a name counts any of
+  the mission's animals, which covers both "kill N" and "kill these".
+- **Side file.** A `mission <id>` line inside an area starts a mission; its
+  own lines (`title`, `time`, `entry`, `exit`, `animal`, `weapon`,
+  `equipment`, `kill`, `limit`, `requires`) follow until the next entry, with
+  names as the rest of the line, as `_DHC.TXT` writes an island. Engines that
+  predate missions skip the lines. The build resolves entries and exits
+  against the area's own points and leaves out a mission that has none, so a
+  game never reads a mission it cannot start or end.
+- **Missions are offered from the DHC OS terminal only** (for now). The
+  original menus have no place for a mission list. The terminal is the
+  player's own switch, which a recipe cannot see, so the launcher's mission
+  editor warns when it is off, and the validator warns for platforms without
+  a terminal (Wii U, VR).
+- **Not done:** the terminal's mission list, playing a mission (fixed
+  extraction through the hardcore hunt's ship, locked picks, the time limit),
+  mission records and unlock state. The validator's checks that need a map
+  (dry ground, reachability, ammunition against the kill count) wait for
+  those.
+
+The same change adds the two Advanced panels the recipe format had and the
+launcher lacked: `[settings.dhc]` (`recipe_edit/dhc.rs`) and
+`[[settings.weapon_restrictions]]` (`recipe_edit/weapons.rs`). Both keep an
+entry only while it sets something, so opening and closing the panel does not
+change a recipe.

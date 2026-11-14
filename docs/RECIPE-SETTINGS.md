@@ -37,8 +37,12 @@ Treatments:
 | `[[settings.weapon_restrictions]]` | per-weapon ammo and trophy eligibility | Kept |
 | `[settings.rules] times` | times of day offered | Kept |
 | `[settings.rules] hidden` | animals kept off the hunt menu | Kept |
-| `[settings.predation]` | carnivores hunt herbivores | **Off** (no `_PREDATION.TXT`) |
+| `[settings.predation]` | Advanced Dinosaur Behavior and AI: carnivores hunt herbivores | **Off** (no `_PREDATION.TXT`) |
 | `[settings.flee]` | custom bounded-flee limits | **Off** (no `_FLEE.TXT`) |
+| `[settings.hunt]` | hardcore hunt ruleset ([HARDCORE-HUNT.md](HARDCORE-HUNT.md)) | **Off** (no `hunt` lines in `_RULES.TXT`) |
+| `[settings.dhc]` | DHC OS terminal rules: discovery, licence costs, island allow-lists ([MODDING.md](MODDING.md#dhc-os-terminal-rules)) | **Off** (no `_DHC.TXT`; the terminal never shows) |
+| `[settings.world]` | zones, player starts and extraction points on the maps ([MODDING.md](MODDING.md#world-zones-player-starts-and-extraction-points)) | **Off** (no `_WORLD.TXT`) |
+| `[[settings.world.missions]]` | fixed challenges that use those points ([MODDING.md](MODDING.md#missions)) | **Off** (with `[settings.world]`) |
 | `[[settings.rules.areas]]` | per-area huntable caps | **Off** |
 | `[[settings.rules.secrets]]` | secret animals spawned per area | **Off** |
 | `[settings.rules.locks]` | settings the instance fixes | **Off** (no locks in the classic `_RULES.TXT`; see below) |
@@ -86,6 +90,8 @@ below says **Off**.
 | `hardcore_survival` | 0 | hardcore survival offered | **Off** |
 | `dynamic_time` | 0 | day/night cycle, night vision, flashlight | **Off** |
 | `map_zoom` | 0 | map zoom and panning | **Off** |
+| `dhc_terminal` | 0 | the DHC OS terminal as main menu and hunt setup | **Off** (row hidden) |
+| `dhc_crt` | 0 | the terminal's CRT scanlines | Kept (no effect: no terminal) |
 
 The classic session applies these as an in-memory override, the way instance
 locks already apply (`c2-pc/src/instance_rules.rs`). The override is never
@@ -148,7 +154,11 @@ target lacks (`c2_mods::validate`).
 | Predation (`_PREDATION.TXT`) | Yes | Yes (the PC game) | Yes | Experimental | Yes |
 | Custom flee limits (`_FLEE.TXT`) | Yes, with Bounded fleeing on | Yes (the PC game) | Experimental | No option yet | No |
 | Times, hidden animals, locks, spawn rules (`_RULES.TXT`) | Yes | Yes (the PC game) | Yes | Yes | No |
+| Hardcore hunt (`hunt` lines in `_RULES.TXT`) | Yes | Yes (the PC game; no touch buttons) | No: regular hunts | No: regular hunts | No: regular hunts |
 | Variants | Yes | Yes (the PC game) | No: the cooker refuses them | No: refused at install | Not checked |
+| DHC OS terminal (`_DHC.TXT`) | Yes, with its option on | Untested (the PC game; no touch layout yet) | Yes, with Settings > DHC on (hunt setup pages; untested on hardware) | No: original menu | No |
+| World zones (`_WORLD.TXT`) | Data only: built and shipped, not used by hunts yet | Data only | Data only (copied into the pack) | Not shipped | Not used |
+| Missions (`mission` entries in `_WORLD.TXT`) | Data only: not listed or played yet (planned in the DHC OS terminal) | Data only | Data only | Hidden: no terminal | Hidden: no terminal |
 
 Console Play Vanilla is planned as a separate task: a second, classic pack
 built beside the enhanced one with `recipe build --classic`, in the existing

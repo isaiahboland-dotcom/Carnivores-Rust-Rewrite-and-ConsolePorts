@@ -959,3 +959,77 @@ Automated, no game data (`cargo test -p c2-core --lib flee`,
 - The setting is `None` unless a player turns it on, so every existing
   baseline and the parity suites are unaffected; the unchanged `c2-core`
   suite passes.
+
+## Hardcore hunt
+
+Synthetic unit tests only so far (no scenario): see "Regression tests" in
+[HARDCORE-HUNT.md](HARDCORE-HUNT.md). A hunt without the ruleset must keep its
+state hashes: the ruleset draws from the hunt's random stream only when it is
+on.
+
+## World zones
+
+Synthetic unit tests, no game data: `cargo test -p c2-formats zone` (point in
+circle and polygon in either winding, a concave polygon, signed area, radius
+range, degenerate and self-intersecting polygons rejected),
+`cargo test -p c2-formats world` (`_WORLD.TXT` round trip, lookups by map and
+id, junk lines, repeated ids, the gap clamped) and `cargo test -p c2-mods
+world` (the recipe section to the side file, area names to map names, save and
+load, mistyped keys reported, each validation warning by key, the gap rule,
+off or empty writing nothing). `-p c2-mods classic` covers Play Vanilla
+dropping the section.
+
+Missions: `cargo test -p c2-formats mission` (a mission's lines round trip
+inside their area; repeated or unusable `mission` lines take their own lines
+with them, an unknown line does not end a mission, counts and limits clamped)
+and `cargo test -p c2-mods mission` (the recipe section to the side file:
+entries and exits resolved against the area's own points, missions without
+them left out, requirements on missing missions dropped; each warning by key;
+requirement cycles; the gap rule; the Wii U and VR warning is in `validate`).
+`cargo test -p c2-launcher recipe_edit::missions` covers the editor: the
+terminal-off warning, a new mission's id and points, duplicate and remove, and
+a headless layout of a full mission.
+
+The other Advanced panels: `cargo test -p c2-launcher recipe_edit::dhc`
+(entries that set nothing are not kept; a headless layout that changes
+nothing), `recipe_edit::weapons` and `recipe_edit::pick`.
+
+The launcher's map editor: `cargo test -p c2-launcher world` (picture
+position to cell and back at two picture sizes, positions kept on the map to a
+tenth of a cell, fresh ids, grips found and moved, the entry under the
+pointer, tags; and, with a headless UI, a circle dragged out, moved by its
+centre, a polygon closed on its first corner, points placed and a zone picked
+by a click; a picture for another area or of the wrong size is dropped).
+Polygon editing is in the same run: what a press takes hold of (square, then
+the selected polygon's edge, then the inside), corners added and removed with
+the limits of 3 and 64, a polygon moved whole without drift and stopped at
+the map's edge; and, with the headless UI, a polygon dragged from inside, a
+corner dragged out of an edge and corners removed by right-click.
+`cargo test -p c2-core --lib the_map_image` checks that the overview made
+from the files alone (`c2_formats::overview`) is the hunt's map picture.
+
+Nothing in a hunt reads `_WORLD.TXT` yet, so every baseline is unaffected.
+The parts that will use it must keep hashes unchanged when the file is absent.
+
+`cargo test -p c2-core --lib crouching_does_not_cancel_an_alarm` locks the
+current behaviour ahead of the planned awareness states: with stealth crouch
+on, an animal already alarmed keeps its fear timer and state when the hunter
+crouches and backs away, in the original AIs and in the dialect's.
+
+## DHC OS terminal
+
+Synthetic unit tests, no game data: `cargo test -p c2-formats dhc`
+(`_DHC.TXT` round trip, defaults, clamping, junk lines),
+`cargo test -p c2-mods dhc` and `-p c2-mods classic` (the recipe section, the
+area-name to map-name translation, Play Vanilla dropping it, validation
+warnings), and `cargo test -p c2-core --lib dhc` (every terminal action, the
+island filter, an empty rule set offering the original menu, budget and
+area-swap pricing, platform limits, the deploy sequence and its loadout, the
+original's earnings multipliers, and the same actions giving the same state).
+
+The terminal is a menu: it never touches the simulation, so hunts started
+from it carry the same state hashes as the same hunt picked in the original
+menu, and every existing baseline is unaffected. Builds without
+`[settings.dhc]` write no `_DHC.TXT`. A `c2-regress` scenario that drives the
+terminal to a hunt and compares the resulting `HuntSetup` with the original
+menu's is still to be written.

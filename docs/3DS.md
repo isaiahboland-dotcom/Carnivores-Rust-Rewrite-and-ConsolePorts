@@ -85,6 +85,22 @@ whether the hunt fits in memory.
    **Adv observer** (Settings) gives observer hunts unlimited instant
    teleports (tap the map), flying and stopping time.
 
+**DHC OS terminal** (Settings > **DHC**, off by default): the same three
+steps as pages of a DinoHunt Corp terminal. The bottom screen lists the
+step's items (mark, name, price, or RESTRICTED when the recipe's island
+rules leave it out); the top screen shows the focused item's picture, name,
+price and description, the area and time picked, the budget meter, the
+kill-score multiplier of the gear and the memory figure. D-Pad Up/Down moves,
+Left/Right pages a long list, **A** or a tap picks, **X** (or the middle
+button) changes the time of day, **R** / **R NEXT** goes on, **L** / **B** /
+**L BACK** goes back (L on release, so L+SELECT still takes a screenshot),
+START returns to the title. The gear page lists weapons, gear, extra ammo,
+Tranquilizer and Observer; with Multi ammo, **A** answers Half tranq and
+**Y** Full tranq. A short boot log plays once a run (any button skips). The
+Settings take the terminal's colours too, and in a hunt START's exit prompt
+is a terminal panel (A leave, Y restart, B resume). The title, Hunter, the
+hunt options and Survival keep their look.
+
 Each hexagon shows its price; picks can't cost more than your score, as in
 the original. Leaving a hunt saves your score and trophies to
 `/3ds/c2rs/trophy00.sav` (the original's format; a new hunter starts with
@@ -129,6 +145,9 @@ saving.
   left.
 - Tap a call to select it; tap the selected one to call (ZR also calls).
 - Ammo: use an extra ammo refill (the red number is how many are left).
+- A gun with two firing modes (semi and full auto): a **Mode** button in the
+  same place, with the mode loaded under it. Multi ammo has the place first.
+  Reloading and racking stay automatic.
 - Half tranq (multi ammo): a **Switch** button left of Ammo, with the
   loaded kind under its label ("lethal" or "tranq"), swaps them; the
   weapon cards show both counts (`L7 T7`). When one kind runs out the
@@ -145,9 +164,6 @@ saving.
 
 ## `.cia` builds from the command line
 The 3DS builder can make a `.cia` without its window (the packs are
-- A gun with two firing modes (semi and full auto): a **Mode** button in the
-  same place, with the mode loaded under it. Multi ammo has the place first.
-  Reloading and racking stay automatic.
 `c2-cook`'s):
 ```
 c2-3ds-builder --cia NAME --tools DIR --out SD_DIR [--target o3ds|n3ds] [--art-from GAME_DIR] [--icon PNG] [--banner PNG] [--sound WAV]

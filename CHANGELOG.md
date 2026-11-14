@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Wii U: a Modder's Edition weapon with a muzzle flash (`muzzflash`) shows it
+  (`MUZZ4.CAR`, as on the PC and Android) while firing.
+- Recipes can carry `[settings.world]`: zones (circles and polygons), player
+  starts and extraction points on the areas' maps, in map cells. Builds write
+  them to `HUNTDAT/_WORLD.TXT`; hunts do not use them yet. Play Vanilla leaves
+  the section out.
+- Launcher: a map editor on the recipe editor's Advanced page draws those
+  zones and points on an area's overview picture. A polygon can be moved
+  whole, given a corner by dragging from an edge, and lose one by a
+  right-click.
+- Recipes can carry `[[settings.world.missions]]`: fixed challenges with an
+  area, time of day, animals, weapons, equipment, entry and exit points, kill
+  requirements, an optional time limit and unlock requirements. They are
+  checked and built into `_WORLD.TXT`; no game lists or plays them yet.
+- Launcher: the recipe editor's Advanced page gains a mission editor, the DHC
+  OS terminal's rules (discovery, licence costs, what each area offers) and
+  per-weapon restrictions (tranquilizer darts, trophies). The mission editor
+  warns when the DHC OS terminal is off, since missions will be listed there
+  only.
 - Read rules written for older Modder's Edition releases (`clone`, ambient
   sections, per-animal spawn info, `idleAnim`), in games and in add-on
   entries. Their map ambients, brachiosaurs and sea animals now spawn.
