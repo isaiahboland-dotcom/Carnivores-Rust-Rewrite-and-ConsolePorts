@@ -180,6 +180,23 @@ impl Menu {
             1 => self.choice.dinos.count(),
             _ => self.choice.weapons.count_ones() as usize,
         };
+        // The hardcore hunt ruleset: gear it leaves out, and its firearm cap.
+        let hc = crate::instance_rules::get().hunt;
+        if self.choice.survival.is_none() {
+            let barred = [
+                (1, hc.no_radar),
+                (2, hc.no_cover_scent),
+                (4, hc.no_night_vision),
+            ];
+            if col == 3 && barred.contains(&(r, true)) && self.choice.equip & bit as u32 == 0 {
+                return;
+            }
+            if col == 2 && adding && hc.max_firearms.is_some_and(|n| count >= n as usize) {
+                self.choice.focus = Some((col, r));
+                self.choice.full = Some(col);
+                return;
+            }
+        }
         if adding && MAX_PICKS.get().is_some_and(|&cap| count >= cap) {
             self.choice.focus = Some((col, r));
             self.choice.full = Some(col);
@@ -478,6 +495,11 @@ impl Menu {
             self.text(out, 420.0, 566.0, 12.0, HOVER, &why);
         } else if let Some(col) = c.full {
             let what = if col == 1 { "animals" } else { "weapons" };
+            let hc = crate::instance_rules::get().hunt.max_firearms;
+            let cap = match hc.filter(|_| col == 2) {
+                Some(n) if cap == 0 || (n as usize) < cap => n as usize,
+                _ => cap,
+            };
             let note = format!("Limit reached: {cap} {what} per hunt");
             self.text(out, 420.0, 566.0, 12.0, HOVER, &note);
         }

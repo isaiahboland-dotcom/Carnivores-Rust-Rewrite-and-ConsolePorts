@@ -11,11 +11,14 @@ impl Scene for Menu {
         matches!(self.screen, Screen::Register)
     }
 
-    fn update(&mut self, _gpu: &Gpu, _dt: f32, input: &Input) {
+    fn update(&mut self, _gpu: &Gpu, dt: f32, input: &Input) {
         let (s, ox, oy) = self.canvas();
         self.cursor = input.cursor.map(|(x, y)| ((x - ox) / s, (y - oy) / s));
         let p = self.cursor;
         match self.screen {
+            Screen::Register | Screen::Waiver | Screen::Delete if self.terminal_style() => {
+                self.update_term_login(dt, input)
+            }
             Screen::Register => {
                 let r = self.reg.region(p);
                 self.update_register(input, r);
@@ -32,6 +35,7 @@ impl Scene for Menu {
                 let r = self.main_board().region(p);
                 self.update_main(input, r);
             }
+            Screen::Quit if self.terminal_style() => self.update_term_quit(input),
             Screen::Quit => {
                 let r = self.quit_board.region(p);
                 if (input.clicked && r == 1) || input.pressed(KeyCode::KeyY) {
@@ -40,7 +44,7 @@ impl Scene for Menu {
                     || input.pressed(KeyCode::KeyN)
                     || input.pressed(KeyCode::Escape)
                 {
-                    self.screen = Screen::Main;
+                    self.go_home();
                 }
             }
             Screen::Credits => {
@@ -56,10 +60,16 @@ impl Scene for Menu {
                 self.update_setup(input, r);
             }
             Screen::Options => {
-                let r = self.options.region(p);
+                // The terminal's look has no board: none of its regions.
+                let r = if self.terminal_style() {
+                    0
+                } else {
+                    self.options.region(p)
+                };
                 self.update_options(input, r);
             }
             Screen::Loading => {}
+            Screen::Terminal => self.update_terminal(dt, input),
         }
     }
 
@@ -72,6 +82,9 @@ impl Scene for Menu {
         let mut out = Vec::new();
         let p = self.cursor;
         match self.screen {
+            Screen::Register | Screen::Waiver | Screen::Delete if self.terminal_style() => {
+                self.draw_term_login(&mut out)
+            }
             Screen::Register => self.draw_register(&mut out, self.reg.region(p)),
             Screen::Waiver => self.board(&mut out, &self.waiver, &[self.waiver.region(p)]),
             Screen::Delete => {
@@ -83,6 +96,7 @@ impl Scene for Menu {
                 }
             }
             Screen::Main => self.draw_main(&mut out, self.main_board().region(p)),
+            Screen::Quit if self.terminal_style() => self.draw_term_quit(&mut out),
             Screen::Quit => {
                 let r = self.quit_board.region(p);
                 self.board(&mut out, &self.quit_board, &[r]);
@@ -90,11 +104,13 @@ impl Scene for Menu {
             Screen::Credits => self.board(&mut out, &self.credits, &[]),
             Screen::Setup if self.mobile.is_some() => self.draw_mobile(&mut out),
             Screen::Setup => self.draw_setup(&mut out, self.setup.region(p)),
+            Screen::Options if self.terminal_style() => self.draw_options(&mut out, 0),
             Screen::Options => self.draw_options(&mut out, self.options.region(p)),
             Screen::Loading => {
                 self.draw_loading(&mut out);
                 self.shown_loading = true;
             }
+            Screen::Terminal => self.draw_terminal(&mut out),
         }
         if self.tranq_ask && matches!(self.screen, Screen::Setup) {
             self.draw_tranq_ask(&mut out);

@@ -45,6 +45,8 @@ impl Launcher {
 
     /// The game closed: its time added to the instance's.
     pub(super) fn played(&mut self, instance: Option<PathBuf>, secs: u64, error: Option<String>) {
+        // The game's options may have changed its settings file.
+        crate::game_cfg::refresh();
         if let Some(p) = instance {
             *self.cfg.playtime.entry(p).or_default() += secs;
             self.save();

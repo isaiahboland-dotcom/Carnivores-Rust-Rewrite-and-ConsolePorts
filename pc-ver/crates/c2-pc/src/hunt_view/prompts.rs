@@ -56,8 +56,56 @@ impl HuntView {
             .map(|k| k.popup(&self.hud, screen, "Paused", out))
     }
 
+    /// Asking to leave in the DHC OS terminal's look (its option on): a
+    /// panel with the same keys as `EXIT.TGA`'s prompt.
+    fn draw_term_exit(&self, screen: (u32, u32), scale: f32, out: &mut Vec<Sprite>) {
+        use crate::menu::palette::{BG, HI, LINE, LO, MD};
+        let (sw, sh) = (screen.0 as f32, screen.1 as f32);
+        let (w, h) = (460.0 * scale, 176.0 * scale);
+        let (x, y) = ((sw - w) / 2.0, (sh - h) / 2.0);
+        out.extend(
+            self.hud
+                .rect(x - scale, y - scale, w + 2.0 * scale, h + 2.0 * scale, LINE),
+        );
+        out.extend(self.hud.rect(x, y, w, h, [BG[0], BG[1], BG[2], 0.94]));
+        let px = 14.0 * scale;
+        let small = 12.0 * scale;
+        let line = |out: &mut Vec<Sprite>, row: f32, size: f32, c: [f32; 4], t: &str| {
+            out.extend(
+                self.hud
+                    .label(x + 20.0 * scale, y + row * scale, size, c, t),
+            );
+        };
+        line(out, 16.0, small, LO, "DHC-OS // FIELD LINK");
+        out.extend(self.hud.rect(
+            x + 12.0 * scale,
+            y + 36.0 * scale,
+            w - 24.0 * scale,
+            scale,
+            LINE,
+        ));
+        line(out, 48.0, px, HI, "LEAVE THE HUNT?");
+        let keys = if self.pad_last {
+            ["A", "Y", "B"]
+        } else {
+            ["Y", "R", "N"]
+        };
+        let rows = [
+            format!("[{}] LEAVE AND SAVE", keys[0]),
+            format!("[{}] RESTART (THIS HUNT IS NOT SAVED)", keys[1]),
+            format!("[{}] RESUME", keys[2]),
+        ];
+        for (i, r) in rows.iter().enumerate() {
+            line(out, 82.0 + i as f32 * 26.0, px, MD, r);
+        }
+    }
+
     /// Asking to leave: `EXIT.TGA` and its hints, or the kit's menu.
     fn draw_exit(&self, screen: (u32, u32), scale: f32, out: &mut Vec<Sprite>) {
+        if self.kit.is_none() && crate::menu::terminal_look(&self.setup.pc) {
+            self.draw_term_exit(screen, scale, out);
+            return;
+        }
         let mut below = screen.1 as f32 / 2.0;
         if let Some((id, w, h)) = self
             .exit_img

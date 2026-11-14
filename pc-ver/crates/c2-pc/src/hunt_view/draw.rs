@@ -42,6 +42,7 @@ impl HuntView {
         self.draw_kill_notice(screen, scale, &mut sprites);
         self.draw_survival(&mut sprites, ammo_end, screen, scale);
         self.draw_teleport_countdown(screen, scale, &mut sprites);
+        self.draw_hardcore(screen, scale, &mut sprites);
         self.draw_life_info(screen, scale, &mut sprites);
         self.draw_scope_cross(screen, scale, aspect, &mut sprites);
         self.draw_map(screen, scale, &mut sprites);

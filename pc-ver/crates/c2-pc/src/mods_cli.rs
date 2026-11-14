@@ -436,8 +436,18 @@ pub fn build_recipe(
             pack.notes.push("flee limits applied".into());
         }
     }
+    if let Some(d) = &r.settings.dhc {
+        if d.push(&mut pack.vfs)? {
+            pack.notes.push("DHC terminal rules applied".into());
+        }
+    }
+    if let Some(w) = &r.settings.world {
+        if w.push(&mut pack.vfs)? {
+            pack.notes.push("world zones applied".into());
+        }
+    }
     c2_mods::weapon_rules::push(&mut pack.vfs, &r.settings.weapon_restrictions)?;
-    if r.settings.rules.push(&mut pack.vfs)? {
+    if r.settings.push_rules(&mut pack.vfs)? {
         pack.notes.push("instance rules applied".into());
     }
     // What looks wrong in the recipe's settings (warnings only).

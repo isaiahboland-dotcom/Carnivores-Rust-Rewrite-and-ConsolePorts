@@ -23,6 +23,9 @@ pub(crate) enum Completion {
     RecipeBalance(Box<c2_mods::balance::Balance>),
     /// The recipe editor's variant choices (`variants::catalog`).
     VariantCatalog(Box<c2_mods::variants::Catalog>),
+    /// The map editor's picture of an area: its name and RGBA8 pixels
+    /// (`balance::read_overview`).
+    AreaOverview(Box<(String, Vec<u8>)>),
     Pinned(
         Box<(
             crate::recipe_edit::Kind,

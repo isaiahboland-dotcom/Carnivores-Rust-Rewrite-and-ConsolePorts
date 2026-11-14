@@ -265,6 +265,12 @@ impl Launcher {
                         editor.catalog_read(*catalog);
                     }
                 }
+                Ok(crate::jobs::Completion::AreaOverview(picture)) => {
+                    if let Some(editor) = &mut self.ui.recipe_edit {
+                        let (area, rgba) = *picture;
+                        editor.overview_read(area, rgba);
+                    }
+                }
                 Ok(crate::jobs::Completion::ApkBase { out, for_recipe }) => {
                     self.apk_base_done(out, for_recipe)
                 }

@@ -4,17 +4,25 @@
 //! game folder checked against the recipe's base hashes and pinned
 //! overlays), Add-ons (`entries`: standalone games and add-ons, each with
 //! its folder, load order and parts), Balance (`instance`) and, when
-//! Settings shows it, Advanced (the base game's parts, `rules` and
-//! `predation`). The recipe (shareable: credits, links, hashes) is written
+//! Settings shows it, Advanced (the base game's parts and a panel for each
+//! advanced recipe section). The recipe (shareable: credits, links, hashes) is written
 //! over its file on save; the folders (`Draft`) are kept by the launcher.
 
 mod base_tab;
+mod dhc;
 pub use base_tab::BaseAsk;
 mod entries;
 mod flee;
+mod hunt;
 mod instance;
+mod missions;
+mod pick;
 mod predation;
 mod rules;
+mod weapons;
+mod world;
+mod world_edit;
+mod world_map;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -252,6 +260,10 @@ impl Editor {
         self.extras.catalog_read(catalog);
     }
 
+    pub(crate) fn overview_read(&mut self, area: String, rgba: Vec<u8>) {
+        self.extras.overview_read(area, rgba);
+    }
+
     pub(crate) fn base_matched(&mut self, game: PathBuf, id: Option<String>) {
         if self.base_match != BaseMatch::Checking(game.clone()) {
             return;
@@ -406,8 +418,11 @@ impl Editor {
     }
 
     /// The Advanced page: the base game's parts, the instance rules
-    /// (`rules`), "Carnivores hunt herbivores" (`predation`) and the custom
-    /// flee limits (`flee`), a panel each.
+    /// (`rules`), weapon restrictions (`weapons`), "Advanced Dinosaur
+    /// Behavior and AI" (`predation`), the custom flee limits (`flee`), the
+    /// hardcore hunt ruleset (`hunt`), the map editor for world zones
+    /// (`world`), the DHC OS terminal's rules (`dhc`) and the mission editor
+    /// (`missions`), a panel each.
     pub fn advanced_ui(&mut self, ui: &mut egui::Ui, handle: &mut crate::jobs::Handle) {
         use crate::app::panel;
         let game = self.draft.game_dirs();
@@ -433,9 +448,19 @@ impl Editor {
         ui.add_space(6.0);
         panel(ui, |ui| extras.spawn_ui(ui, r, &game, folders, handle));
         ui.add_space(6.0);
+        panel(ui, |ui| extras.weapons_ui(ui, r, &game, folders, handle));
+        ui.add_space(6.0);
         panel(ui, |ui| extras.predation_ui(ui, r, &game, folders, handle));
         ui.add_space(6.0);
         panel(ui, |ui| extras.flee_ui(ui, r, &game, folders, handle));
+        ui.add_space(6.0);
+        panel(ui, |ui| extras.hunt_ui(ui, r, &game, folders, handle));
+        ui.add_space(6.0);
+        panel(ui, |ui| extras.world_ui(ui, r, &game, folders, handle));
+        ui.add_space(6.0);
+        panel(ui, |ui| extras.dhc_ui(ui, r, &game, folders, handle));
+        ui.add_space(6.0);
+        panel(ui, |ui| extras.missions_ui(ui, r, &game, folders, handle));
     }
 
     /// Reads the instance's areas, animals and weapons again (after its

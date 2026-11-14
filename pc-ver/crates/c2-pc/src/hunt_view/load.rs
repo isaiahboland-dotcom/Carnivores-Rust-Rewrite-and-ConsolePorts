@@ -53,6 +53,13 @@ impl HuntView {
         if let Some(kind) = setup.survival {
             survival_setup(&mut setup, kind)?;
         }
+        // The hardcore hunt ruleset may leave night vision out.
+        if setup.survival.is_none() {
+            let huntdat = setup.map.parent().and_then(|p| p.parent());
+            if huntdat.is_some_and(|d| crate::instance_rules::read(d).hunt.no_night_vision) {
+                setup.night_vision = false;
+            }
+        }
         crate::gpu::set_classic_filter(setup.pc.classic_filter != 0);
         let mut view = AreaView::load(gpu, &setup.map, setup.time)?;
         view.narrow_flashlight = setup.pc.narrow_flashlight != 0;

@@ -116,6 +116,11 @@ pub struct PcSettings {
     /// frame is drawn at [`PcSettings::resolution_scale`] of the screen's
     /// pixels and the phone scales it up. 255 = every pixel.
     pub render_scale: i32,
+    /// The DinoHunt Corp terminal as the main menu and hunt setup (1 = on;
+    /// off by default, not in the original). Never in Play Vanilla.
+    pub dhc_terminal: i32,
+    /// The terminal's CRT scanlines (1 = on; off by default, for reading).
+    pub dhc_crt: i32,
 }
 
 impl Default for PcSettings {
@@ -149,6 +154,8 @@ impl Default for PcSettings {
             classic_filter: 0,
             bounded_flee: 0,
             render_scale: 255,
+            dhc_terminal: 0,
+            dhc_crt: 0,
         }
     }
 }
@@ -225,6 +232,8 @@ impl PcSettings {
                 "render_scale" => s.render_scale = v.clamp(0, 255),
                 "secret_dinos" => s.secret_dinos = v.clamp(0, 255),
                 "all_huntable" => s.all_huntable = i32::from(v != 0),
+                "dhc_terminal" => s.dhc_terminal = i32::from(v != 0),
+                "dhc_crt" => s.dhc_crt = i32::from(v != 0),
                 _ => {}
             }
         }
@@ -262,7 +271,7 @@ impl PcSettings {
         let s = self;
         format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nmodel_distance = {}\n\
-             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\nfire_reloads_empty = {}\npause_pickers = {}\nradar_water = {}\npretty_underwater = {}\nclassic_filter = {}\nbounded_flee = {}\n",
+             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\nfire_reloads_empty = {}\npause_pickers = {}\nradar_water = {}\npretty_underwater = {}\nclassic_filter = {}\nbounded_flee = {}\ndhc_terminal = {}\ndhc_crt = {}\n",
             s.render,
             s.fog,
             s.blood,
@@ -290,7 +299,9 @@ impl PcSettings {
             s.radar_water,
             s.pretty_underwater,
             s.classic_filter,
-            s.bounded_flee
+            s.bounded_flee,
+            s.dhc_terminal,
+            s.dhc_crt
         )
     }
 

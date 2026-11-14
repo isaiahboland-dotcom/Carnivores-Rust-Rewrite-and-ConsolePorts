@@ -43,7 +43,9 @@ mod register;
 mod roster;
 mod scene;
 mod setup;
+mod terminal;
 mod tranq_ask;
+pub(crate) use terminal::{palette, terminal_look};
 
 use board::*;
 use draw::wrap;
@@ -64,6 +66,9 @@ enum Screen {
     Setup,
     Options,
     Loading,
+    /// The DinoHunt Corp terminal (`terminal`), standing in for the main
+    /// menu and hunt setup when its option is on.
+    Terminal,
 }
 
 /// Hunt setup choices.
@@ -168,6 +173,8 @@ pub struct Menu {
     binding: Option<usize>,
     /// The phone-style options' tab: game, controls, video.
     opt_tab: usize,
+    /// The terminal-look options' tab: game, video, controls.
+    term_opt_tab: usize,
     game_scroll: option_scroll::Scroll,
     drag: Option<Opt>,
     /// Hunt to start after the loading picture has been shown.
@@ -193,6 +200,8 @@ pub struct Menu {
     clear_armed: bool,
     /// Multi ammo's Half / Full tranq question is open.
     tranq_ask: bool,
+    /// The terminal, once opened.
+    term: Option<terminal::TermView>,
 }
 
 /// Menu style (`--menu-art`): a game folder whose menu frames, hit maps
@@ -239,6 +248,12 @@ impl Menu {
             "register" => Screen::Register,
             "loading" => Screen::Loading,
             "quit" => Screen::Quit,
+            // The terminal, on for this run only (not stored).
+            "terminal" | "terminal-hunt" | "terminal-boot" | "terminal-login"
+            | "terminal-waiver" | "terminal-delete" | "terminal-options" | "terminal-quit" => {
+                self.show_terminal(screen);
+                return Ok(());
+            }
             _ => anyhow::bail!("unknown screen {screen:?}"),
         };
         Ok(())
@@ -286,7 +301,9 @@ impl Menu {
     fn sign_in(&mut self, i: usize) {
         self.player = Some(i);
         self.restore_choice();
-        self.screen = Screen::Main;
+        // A different hunter: the terminal is rebuilt for them.
+        self.term = None;
+        self.go_home();
     }
 
     /// Accessories are kept in the save (`ScentMode`, `CamoMode`, `RadarMode`,

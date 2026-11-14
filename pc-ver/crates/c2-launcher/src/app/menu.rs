@@ -135,7 +135,29 @@ impl Launcher {
         if wants_ia {
             changed |= self.ice_age_folder_ui(ui);
         }
+        if !three_ds {
+            self.dhc_terminal_ui(ui);
+        }
         changed
+    }
+
+    /// The DHC OS terminal switch: the game's own `dhc_terminal` setting
+    /// (the same as its Options > Game row), for every instance.
+    fn dhc_terminal_ui(&mut self, ui: &mut egui::Ui) {
+        use crate::game_cfg::{flag, set_flag, DHC_TERMINAL};
+        let mut on = flag(DHC_TERMINAL);
+        if ui
+            .checkbox(&mut on, "DHC OS terminal (main menu and hunt setup)")
+            .changed()
+        {
+            if let Err(e) = set_flag(DHC_TERMINAL, on) {
+                self.ui.note = Some((format!("Saving the game's settings: {e}"), RED));
+            }
+        }
+        help(
+            ui,
+            "An in-universe DinoHunt Corp terminal in place of the main menu and hunt setup,              with the game's own pictures and prices. On, it takes over from the menu chosen above,              the Android menus too (the hunt keeps the phone's touch controls). The same switch              as the game's Options > Game > DHC OS terminal, for every instance. Never shown in              Play Vanilla. PC and Android only for now.",
+        );
     }
 
     fn pc_menu_choices(&mut self, ui: &mut egui::Ui) -> bool {

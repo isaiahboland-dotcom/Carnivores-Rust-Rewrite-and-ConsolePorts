@@ -33,7 +33,9 @@ pub(super) fn shown(opts: &[Opt]) -> Vec<Opt> {
         .copied()
         .filter(|o| match o {
             Opt::PcToggle(n, _) | Opt::PcSlider(n, _) => {
-                !crate::instance_rules::hides(n) && !crate::classic::hides(n)
+                !crate::instance_rules::hides(n)
+                    && !crate::classic::hides(n)
+                    && !(crate::classic::on() && n.starts_with("DHC OS"))
             }
             _ => true,
         })

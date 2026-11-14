@@ -10,7 +10,7 @@ use c2_core::game::SurvivalKind;
 
 const USAGE: &str = "usage:
   c2-pc play  <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR... [--accept-base] [--classic]] [--balance FILE]
-              [--screen main|stats|hunt|options|credits|register|quit|loading]
+              [--screen main|stats|hunt|options|credits|register|quit|loading|terminal|terminal-hunt|terminal-login|terminal-waiver|terminal-delete|terminal-options|terminal-quit]
               [--script 'X,Y;'TEXT;enter;esc'] [--shot out.png]
   c2-pc balance <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]...   (prints prices and scores as a balance file)
   c2-pc mobile <APK> --base <GAME_DIR> [--overlay DIR]... --out <DIR>   (the mobile game's animals as add-ons)
@@ -33,7 +33,7 @@ const USAGE: &str = "usage:
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
   c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--models] [--foliage CELLS] [--high-end] [--shot out.png]
   c2-pc hunt  <AREA.MAP|TROPHY.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all]
-              [--weapon N] [--bino] [--pause] [--exit] [--message TEXT] [--kill] [--plaque] [--pick] [--call] [--fill] [--die AI,MS[,NAME]] [--observer] [--player N] [--survival classic|modded] [--seed N]\n              [--touch] [--shot out.png]   (--touch: an APK game's phone buttons, as after a touch)
+              [--weapon N] [--bino] [--pause] [--exit] [--dhc-terminal] [--message TEXT] [--kill] [--plaque] [--pick] [--call] [--fill] [--die AI,MS[,NAME]] [--observer] [--player N] [--survival classic|modded] [--seed N]\n              [--touch] [--shot out.png]   (--touch: an APK game's phone buttons, as after a touch)
 
 model: drag to orbit, wheel zoom, [ ] next/prev file, N/P next/prev animation, Space pause
 area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distance
@@ -506,7 +506,11 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
                 },
                 reg: o.num("player", 0i32)?,
                 from_menu: false,
-                pc: settings::PcSettings::load(),
+                // --dhc-terminal: the terminal's look for this run (shots).
+                pc: settings::PcSettings {
+                    dhc_terminal: i32::from(o.has("dhc-terminal")),
+                    ..settings::PcSettings::load()
+                },
             };
             Box::new(move |g| {
                 let mut h = hunt_view::HuntView::load(g, setup)?;

@@ -157,7 +157,7 @@ pub(super) fn locks_ui(ui: &mut egui::Ui, r: &mut Rules) {
 }
 
 /// `names` with any of `kept` it lacks (marked as not in this game).
-fn with_missing(names: &[String], kept: &[String]) -> Vec<(String, bool)> {
+pub(super) fn with_missing(names: &[String], kept: &[String]) -> Vec<(String, bool)> {
     let mut v: Vec<(String, bool)> = names.iter().map(|n| (n.clone(), true)).collect();
     for k in kept {
         if !k.is_empty() && !names.iter().any(|n| n.eq_ignore_ascii_case(k)) {

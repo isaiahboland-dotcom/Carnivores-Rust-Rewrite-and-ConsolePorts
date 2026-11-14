@@ -39,6 +39,7 @@ mod debug;
 mod draw;
 mod extras;
 mod gauges;
+mod hardcore;
 mod lights;
 pub(crate) use lights::bought as lights_bought;
 mod load;

@@ -15,7 +15,7 @@ pub(super) enum Opt {
     ClearTrophies,
 }
 
-pub(super) const GAME_OPTS: [Opt; 18] = [
+pub(super) const GAME_OPTS: [Opt; 20] = [
     Opt::Slider("Aggressiveness", |s| &mut s.options.agres),
     Opt::Slider("Density", |s| &mut s.options.dens),
     Opt::Slider("Sensitivity", |s| &mut s.options.sens),
@@ -37,8 +37,13 @@ pub(super) const GAME_OPTS: [Opt; 18] = [
     }),
     Opt::PcToggle("Fire reloads when empty", |p| &mut p.fire_reloads_empty),
     Opt::PcToggle("Pause weapon / call pickers", |p| &mut p.pause_pickers),
+    Opt::PcToggle(DHC_TERMINAL, |p| &mut p.dhc_terminal),
+    Opt::PcToggle("DHC OS CRT effects", |p| &mut p.dhc_crt),
     Opt::ClearTrophies,
 ];
+
+/// The terminal's switch (its rows are hidden in Play Vanilla).
+pub(super) const DHC_TERMINAL: &str = "DHC OS terminal";
 
 /// Experimental on Android: phones vary far more than PCs.
 pub(super) const HIGH_END_VIEW: &str = if cfg!(target_os = "android") {
@@ -118,6 +123,9 @@ pub(super) const ACTIONS: [(&str, KeyField); 17] = [
 impl Menu {
     /// The option rows of each panel with their rectangles.
     pub(super) fn option_rows(&self) -> Vec<(Opt, Rect)> {
+        if self.terminal_style() {
+            return terminal::term_layout(self.term_opt_tab).0;
+        }
         let mut out = Vec::new();
         let (game, video) = (
             option_scroll::shown(&GAME_OPTS),
@@ -139,6 +147,20 @@ impl Menu {
             ));
         }
         out
+    }
+
+    /// The key-binding rows (index into `ACTIONS`) with their rectangles:
+    /// the CONTROLS tab's in the terminal's look, else the keys panel.
+    pub(super) fn key_rows(&self) -> Vec<(usize, Rect)> {
+        if self.terminal_style() {
+            return terminal::term_layout(self.term_opt_tab).1;
+        }
+        (0..ACTIONS.len())
+            .map(|i| {
+                let y = KEYS_PANEL.1 + i as f32 * 20.0;
+                (i, (KEYS_PANEL.0, y, KEYS_PANEL.2, 20.0))
+            })
+            .collect()
     }
 
     pub(super) fn slider_value(&self, r: Rect) -> Option<i32> {
@@ -169,20 +191,28 @@ impl Menu {
             }
             return;
         }
-        if self.kit.is_some() {
+        if self.kit.is_some() && !self.terminal_style() {
             self.update_kit_options(input);
             return;
         }
-        if input.pressed(KeyCode::Escape) || (input.clicked && region == 4) {
+        if input.pressed(KeyCode::Escape)
+            || (input.clicked && region == 4)
+            || self.term_back_clicked(input)
+        {
             self.store_me();
             self.pc.store();
-            self.screen = Screen::Main;
+            self.go_home();
+            return;
+        }
+        if self.terminal_style() && self.term_options_tabs(input) {
             return;
         }
         if !input.mouse_down {
             self.drag = None;
         }
-        self.scroll_game_options(input, false);
+        if !self.terminal_style() {
+            self.scroll_game_options(input, false);
+        }
         let rows = self.option_rows();
         if input.clicked {
             let on_clear = rows
@@ -199,13 +229,7 @@ impl Menu {
                 return;
             }
             self.clear_armed = false;
-            for (i, _) in ACTIONS.iter().enumerate() {
-                let r = (
-                    KEYS_PANEL.0,
-                    KEYS_PANEL.1 + i as f32 * 20.0,
-                    KEYS_PANEL.2,
-                    20.0,
-                );
+            for (i, r) in self.key_rows() {
                 if inside(self.cursor, r) {
                     self.binding = Some(i);
                     return;
@@ -259,25 +283,53 @@ impl Menu {
     }
 
     pub(super) fn draw_options(&self, out: &mut Vec<Sprite>, region: u8) {
-        self.board(out, &self.options, &[region]);
-        if self.kit.is_some() {
+        // The terminal's look: panels instead of the board, its colours.
+        let term = self.terminal_style();
+        let (label_c, hover_c, value_c) = if term {
+            (palette::MD, palette::HI, palette::HI)
+        } else {
+            ([0.85, 0.7, 0.5, 1.0], SAND, SAND)
+        };
+        if term {
+            self.draw_term_options_frame(out);
+        } else {
+            self.board(out, &self.options, &[region]);
+        }
+        if self.kit.is_some() && !term {
             self.draw_kit_options(out);
             return;
         }
         let Some(s) = self.me() else { return };
         let mut copy = s.clone();
-        self.draw_game_scroll(out, false);
+        if !term {
+            self.draw_game_scroll(out, false);
+        }
+        // The terminal's values line up with its sliders, at the right.
+        let value_x = |r: Rect| {
+            if term {
+                r.0 + r.2 - 128.0 - 8.0
+            } else {
+                r.0 + SLIDER_X
+            }
+        };
+        let slider = |out: &mut Vec<Sprite>, x0: f32, y: f32, v: i32| {
+            if term {
+                self.term_slider(out, x0, y, v);
+            } else {
+                self.image_native(out, self.slider, x0, y);
+                let kx = x0 + 4.0 + v.clamp(0, 255) as f32 * 120.0 / 255.0 - 4.0;
+                self.image_native(out, self.knob, kx, y + 1.0);
+            }
+        };
         for (o, r) in self.option_rows() {
             let hover = inside(self.cursor, r);
-            let color = if hover { SAND } else { [0.85, 0.7, 0.5, 1.0] };
+            let color = if hover { hover_c } else { label_c };
             match o {
                 Opt::Slider(name, f) => {
                     self.text(out, r.0, r.1 + 4.0, 12.0, color, name);
                     let v = *f(&mut copy);
                     let x0 = r.0 + r.2 - 128.0 - 8.0;
-                    self.image_native(out, self.slider, x0, r.1 + 4.0);
-                    let kx = x0 + 4.0 + v.clamp(0, 255) as f32 * 120.0 / 255.0 - 4.0;
-                    self.image_native(out, self.knob, kx, r.1 + 5.0);
+                    slider(out, x0, r.1 + 4.0, v);
                 }
                 Opt::PcSlider(name, f) => {
                     let budget = name == "Survival starting budget";
@@ -300,23 +352,21 @@ impl Menu {
                         } else {
                             v.to_string()
                         };
-                        self.text(out, r.0, slider_y, 10.0, SAND, &value);
+                        self.text(out, r.0, slider_y, 10.0, value_c, &value);
                     }
                     let x0 = r.0 + r.2 - 128.0 - 8.0;
-                    self.image_native(out, self.slider, x0, slider_y);
                     let v = if budget { v / 10 } else { v };
-                    let kx = x0 + 4.0 + v.clamp(0, 255) as f32 * 120.0 / 255.0 - 4.0;
-                    self.image_native(out, self.knob, kx, slider_y + 1.0);
+                    slider(out, x0, slider_y, v);
                 }
                 Opt::Toggle(name, labels, f) => {
                     self.text(out, r.0, r.1 + 4.0, 12.0, color, name);
                     let v = labels[usize::from(*f(&mut copy) != 0)];
-                    self.text(out, r.0 + SLIDER_X, r.1 + 4.0, 12.0, SAND, v);
+                    self.text(out, value_x(r), r.1 + 4.0, 12.0, value_c, v);
                 }
                 Opt::PcToggle(name, f) => {
                     self.text(out, r.0, r.1 + 4.0, 12.0, color, name);
                     let v = ["Off", "On"][usize::from(*f(&mut self.pc.clone()) != 0)];
-                    self.text(out, r.0 + SLIDER_X, r.1 + 4.0, 12.0, SAND, v);
+                    self.text(out, value_x(r), r.1 + 4.0, 12.0, value_c, v);
                 }
                 Opt::ClearTrophies => {
                     let n = copy
@@ -334,11 +384,11 @@ impl Menu {
                 }
             }
         }
-        for (i, (name, f)) in ACTIONS.iter().enumerate() {
-            let y = KEYS_PANEL.1 + i as f32 * 20.0;
-            let r = (KEYS_PANEL.0, y, KEYS_PANEL.2, 20.0);
+        for (i, r) in self.key_rows() {
+            let (name, f) = &ACTIONS[i];
+            let y = r.1;
             let hover = inside(self.cursor, r);
-            let color = if hover { SAND } else { [0.85, 0.7, 0.5, 1.0] };
+            let color = if hover { hover_c } else { label_c };
             self.text(out, r.0, y + 4.0, 12.0, color, name);
             let key = if self.binding == Some(i) {
                 "press a key...".to_string()
@@ -348,7 +398,7 @@ impl Menu {
             let kc = if self.binding == Some(i) {
                 PICKED
             } else {
-                SAND
+                value_c
             };
             self.text(out, r.0 + 170.0, y + 4.0, 12.0, kc, &key);
         }

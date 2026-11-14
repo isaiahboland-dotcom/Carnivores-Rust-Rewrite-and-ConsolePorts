@@ -147,6 +147,7 @@ impl HuntView {
                     }
                     let t = &self.hunt.teleport;
                     let status = match (t.pending, t.cooldown, self.teleport_pick) {
+                        _ if !self.hunt.can_teleport() => String::new(),
                         (Some((_, ms)), _, _) => format!("Teleporting in {}s", (ms + 999) / 1000),
                         (None, ms, _) if ms > 0 => {
                             format!("Teleport ready in {}s", (ms + 999) / 1000)
@@ -211,6 +212,13 @@ impl HuntView {
                         ));
                     }
                 }
+                // Hardcore hunt: the zones, the drops, and what to pick.
+                let (zones, picking) = self.hardcore_map((ox, oy), scale);
+                sprites.extend(zones);
+                if let Some(t) = picking {
+                    let px = 8.0 * (screen.1 as f32 / 480.0).max(1.0).round();
+                    decorations.extend(self.hud.label(ox, oy + 262.0 * scale, px, [1.0; 4], &t));
+                }
                 let markers = sprites.split_off(markers_start);
                 sprites.extend(
                     markers
@@ -218,7 +226,10 @@ impl HuntView {
                         .filter_map(|s| self.map_viewport.project(s, &self.hud)),
                 );
                 sprites.extend(decorations);
-                if self.setup.pc.map_zoom != 0 || self.hunt.can_teleport() {
+                if self.setup.pc.map_zoom != 0
+                    || self.hunt.can_teleport()
+                    || self.hunt.deploying().is_some()
+                {
                     self.map_viewport.pointer(&self.hud, sprites);
                 }
             }

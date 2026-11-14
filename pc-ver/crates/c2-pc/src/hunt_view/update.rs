@@ -267,6 +267,7 @@ impl HuntView {
             hin.fire = false;
         }
         self.update_map_input(input, dt, &k, &mut hin);
+        self.update_hardcore(input, &k, &mut hin);
         self.run_ticks(hin, dt);
         self.handle_events();
         self.age_notices(dt);

@@ -482,6 +482,7 @@ impl Menu {
             record: Default::default(),
             clear_armed: false,
             tranq_ask: false,
+            term: None,
             hud,
             game_dir,
             huntdat,
@@ -527,6 +528,7 @@ impl Menu {
             },
             binding: None,
             opt_tab: 0,
+            term_opt_tab: 0,
             game_scroll: option_scroll::Scroll::default(),
             drag: None,
             launch: None,
@@ -537,6 +539,11 @@ impl Menu {
         };
         m.restore_choice();
         m.offer_animals();
+        if m.screen == Screen::Main && m.terminal_on() {
+            m.enter_terminal();
+        } else if m.screen == Screen::Register {
+            m.boot_before_login();
+        }
         Ok(m)
     }
 

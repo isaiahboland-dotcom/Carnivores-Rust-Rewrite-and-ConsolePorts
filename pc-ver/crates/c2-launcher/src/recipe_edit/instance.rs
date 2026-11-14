@@ -40,6 +40,8 @@ pub(super) struct Extras {
     /// The base game's parts, and the folders (game, overlays) read.
     base_parts: Option<(Vec<PathBuf>, Option<Parts>)>,
     addon_names: Option<(Instance, Vec<(String, String)>)>,
+    /// The map editor (`super::world`).
+    pub(super) world: super::world::State,
 }
 
 /// The game folder in `dir` (the folder as given, if none is found).
@@ -235,6 +237,7 @@ impl Extras {
             self.catalog = None;
             self.catalog_reading = false;
         }
+        self.world.failed(error);
         if self.reading {
             self.error = Some(error.into());
             self.values = None;

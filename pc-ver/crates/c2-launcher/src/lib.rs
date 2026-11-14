@@ -11,6 +11,7 @@ mod balance;
 mod cia;
 mod config;
 mod console;
+mod game_cfg;
 mod instances;
 mod jobs;
 mod publish;

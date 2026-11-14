@@ -1,7 +1,9 @@
-//! The recipe editor's Advanced page: "Carnivores hunt herbivores"
-//! (`[settings.predation]`, `c2_mods::predation`): the switch, whom
-//! carnivores go for first, carnivore fights, the food chain (by price, one
-//! apex, or an order of the player's own) and each animal's tags.
+//! The recipe editor's Advanced page: "Advanced Dinosaur Behavior and AI".
+//! Its first part is "Carnivores hunt herbivores" (`[settings.predation]`,
+//! `c2_mods::predation`): the switch, whom carnivores go for first,
+//! carnivore fights, the food chain (by price, one apex, or an order of the
+//! player's own) and each animal's tags. The planned parts are in
+//! `docs/BEHAVIOR.md`.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -65,7 +67,8 @@ fn shift(list: &mut Vec<String>, from: usize, to: usize) {
 }
 
 impl Extras {
-    /// The Advanced page's predation settings: whether one changed.
+    /// The Advanced page's "Advanced Dinosaur Behavior and AI" panel (today
+    /// its predation settings): whether one changed.
     pub(super) fn predation_ui(
         &mut self,
         ui: &mut egui::Ui,
@@ -76,11 +79,18 @@ impl Extras {
     ) -> bool {
         let mut p = r.settings.predation.clone().unwrap_or_default();
         let before = p.clone();
-        ui.checkbox(
-            &mut p.enabled,
-            RichText::new("Carnivores hunt herbivores (experimental)")
+        ui.label(
+            RichText::new("Advanced Dinosaur Behavior and AI")
                 .color(SAND)
                 .strong(),
+        );
+        help(
+            ui,
+            "Optional behavior beyond the original game. Each part is off until you turn it on.",
+        );
+        ui.checkbox(
+            &mut p.enabled,
+            RichText::new("Carnivores hunt herbivores (experimental)").color(TEXT),
         )
         .on_hover_text(
             "Not in the original game. Carnivores chase and kill the animals below them on the \
