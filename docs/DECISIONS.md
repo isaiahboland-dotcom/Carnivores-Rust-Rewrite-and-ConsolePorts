@@ -5886,3 +5886,53 @@ figures (`3ds-ver/c2-3ds/src/budget.rs`, host tests in `c2-cook`).
 - **Not done:** the map passes (a smaller object view, vertex buffers, chunk
   textures) need frame times from hardware; no CPU-based population limit
   was added (none existed).
+
+
+## 2026-11-14 — High-end view: coarse water and the levels' reach (AUDIT-V1/V2/V3)
+
+Three reported defects in the PC ground levels (`render/terrain.rs`,
+`shaders/terrain.wgsl`; high-end view, and Android past 128 cells), each
+reproduced with fixed-camera, fixed-clock `c2-pc area --shot` captures on
+the vanilla areas before any change.
+
+- **V2, coarse water — fixed.** `vs_water` applied `ProcessMapW`'s rule
+  (all four corners water cells) at every level. A level's corners are 2, 4
+  or 8 map cells apart, so a river or pond narrower than that, and the
+  shoreline belt, lost its water while the coarse ground still dipped to
+  the bed: bare bed showed where full detail has water. On the processed
+  vanilla maps the 8-cell level dropped 6–24% of the full-detail water
+  quads (AREA3 24%). A coarser cell now also takes dry corners whose drawn
+  ground (`ground_height`, with the levels' edge averaging) is above the
+  water: that ground hides the water by depth, as the bank does at full
+  detail. Dropped quads fall to 0.1–1.5%. Full detail keeps the original
+  rule; its captures are pixel-identical. Test:
+  `render::water_tests::narrow_water_survives_coarse_levels` (GPU).
+- **V3, levels past the radius — fixed.** The levels were drawn out to the
+  coarsest level's edge (`LOD_FINE_CELLS << (levels - 1)`): 512 cells for
+  a 300-cell radius, against the full-detail window's square of `radius`
+  cells. The far plane (1.5 × radius) clipped the excess, which was fully
+  fogged. Chunks (`window_chunks`) and cells (`lod_cell`) now stop at the
+  first cell past `radius` from the camera's cell, along each axis: 13–35%
+  fewer ground cells submitted for radii 129–600, none fewer at 1024. In
+  four of five A/B views the image is pixel-identical; in the fifth,
+  terrain beyond the radius had drawn as a flat fog-coloured patch over the
+  sky (up to 9 levels per channel), now sky as in the full-detail path. Test:
+  `render::terrain::tests::levels_stop_at_the_radius_and_still_cover_it`.
+- **V1, far-shore z-fighting — not reproduced; no change.** The 2026-11-06
+  entry predicted far-shore flicker from the 32-bit standard-Z depth buffer
+  (near plane 16). Raising the near plane to 256 or 512 changes 3–207 pixels
+  of 1280×720 per view: one-pixel shifts where water meets ground, and
+  overlapping sprites. Moving the camera by one unit changes the same number
+  of pixels at either near plane. No band of alternating water and ground
+  appeared, at 1024 cells (high, grazing and coast views) or at 384. Water
+  sits at least one height step (64 units) from the ground, except where a
+  corner's height equals the level (0–99 quads per vanilla map; at any
+  distance, and in the original too). That gap is wider than the depth step
+  anywhere on the map. Reverse Z stays unneeded until a capture shows it.
+
+`c2-vr` mirrors the terrain `Params` (now 48 bytes, one level); its test
+reads the size from the shader. Before this change it left the level count
+at 0, and it still draws without the per-chunk instance buffer the shader
+has read since the Android ground levels, so its ground is probably not
+drawn. That was found while reading, not checked in a headset, and is left
+for a separate change.

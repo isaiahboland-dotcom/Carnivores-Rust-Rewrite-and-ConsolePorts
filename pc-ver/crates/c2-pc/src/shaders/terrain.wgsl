@@ -16,7 +16,11 @@ struct Params {
     // first, each level is a square ring twice the size of the one inside
     // it, its cells twice as large (PC high-end view only).
     levels: u32,
-    _pad: u32,
+    // Cells drawn from the camera's cell `eye` along each axis: the
+    // coarsest level reaches past it and stops at the first cell beyond.
+    reach: i32,
+    eye: vec2<i32>,
+    _pad: vec2<u32>,
 };
 
 // cells[i].x = height | light << 8 | water << 16 | water phase << 24
@@ -122,8 +126,11 @@ fn lod_cell(vid: u32, chunk: vec4<i32>) -> LodCell {
     o.c = chunk.xy + vec2<i32>(i32(ci % 16u), i32(ci / 16u)) * o.step;
     let r = o.c - center();
     let outer = half_width() << o.level;
+    let e = o.c - params.eye;
     o.ok = o.level < params.levels
         && r.x >= -outer && r.x < outer && r.y >= -outer && r.y < outer
+        && e.x < params.reach && e.x + o.step > -params.reach
+        && e.y < params.reach && e.y + o.step > -params.reach
         && o.c.x >= 0 && o.c.y >= 0 && o.c.x + o.step <= MAP - 1 && o.c.y + o.step <= MAP - 1;
     if (o.level > 0u) {
         // The level inside draws this part.

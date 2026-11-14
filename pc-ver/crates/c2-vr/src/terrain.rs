@@ -64,7 +64,13 @@ struct Params {
     layers: u32,
     time_ms: u32,
     clouds: u32,
+    levels: u32,
+    reach: u32,
+    eye: [i32; 2],
 }
+
+/// Bytes of [`Params`] (with the shader's padding).
+const PARAMS_SIZE: u64 = 48;
 
 fn floats(v: &[f32]) -> Vec<u8> {
     v.iter().flat_map(|f| f.to_ne_bytes()).collect()
@@ -88,12 +94,22 @@ impl Globals {
 
 impl Params {
     fn bytes(&self) -> Vec<u8> {
-        let mut v = Vec::with_capacity(32);
+        let mut v = Vec::with_capacity(PARAMS_SIZE as usize);
         for i in self.origin {
             v.extend(i.to_ne_bytes());
         }
-        for u in [self.width, self.layers, self.time_ms, self.clouds, 0, 0] {
+        for u in [
+            self.width,
+            self.layers,
+            self.time_ms,
+            self.clouds,
+            self.levels,
+            self.reach,
+        ] {
             v.extend(u.to_ne_bytes());
+        }
+        for i in [self.eye[0], self.eye[1], 0, 0] {
+            v.extend(i.to_ne_bytes());
         }
         v
     }
@@ -347,7 +363,7 @@ impl TerrainScene {
                     gpu.buffer(globals_size, uniform)?,
                     gpu.buffer(globals_size, uniform)?,
                 ];
-                let p = gpu.buffer(32, uniform)?;
+                let p = gpu.buffer(PARAMS_SIZE, uniform)?;
                 let s0 = dev.allocate_descriptor_sets(
                     &vk::DescriptorSetAllocateInfo::default()
                         .descriptor_pool(pool)
@@ -659,6 +675,10 @@ impl TerrainScene {
             time_ms: self.start.elapsed().as_millis() as u32,
             // Game.cpp sets Clouds = TRUE; there is no option to turn it off.
             clouds: 1,
+            // One full-detail level, as the original.
+            levels: 1,
+            reach: RADIUS,
+            eye: [center.0, center.1],
         };
         self.params[f.slot].write(0, &params.bytes());
         // Sprites turn to the head's heading (`FlyCam` yaw: 0 looks to -z).
@@ -779,7 +799,19 @@ mod tests {
     #[test]
     fn uniforms_match_the_shaders() {
         assert_eq!(Globals::default().bytes().len(), 192);
-        assert_eq!(Params::default().bytes().len(), 32);
+        assert_eq!(Params::default().bytes().len() as u64, PARAMS_SIZE);
+        // The size the shader declares, so a field added there fails here.
+        let src = format!("{COMMON}\n{TERRAIN}\n{TERRAIN_VR}");
+        let module = naga::front::wgsl::parse_str(&src).expect("terrain shader parses");
+        let params = module
+            .types
+            .iter()
+            .find(|(_, t)| t.name.as_deref() == Some("Params"))
+            .map(|(_, t)| &t.inner);
+        let Some(naga::TypeInner::Struct { span, .. }) = params else {
+            panic!("no Params struct in terrain.wgsl");
+        };
+        assert_eq!(u64::from(*span), PARAMS_SIZE);
     }
 
     #[test]

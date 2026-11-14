@@ -13,7 +13,10 @@ struct TerrainParams {
     time_ms: u32,
     clouds: u32,
     levels: u32,
-    pad: u32,
+    /// Cells drawn from `eye` (each axis): the coarsest level stops here.
+    reach: u32,
+    eye: [i32; 2],
+    pad: [u32; 2],
 }
 
 /// Half-width, in cells, of the full-detail square when the ground is
@@ -36,6 +39,43 @@ pub fn window(center: (i32, i32), radius: u32, lod: bool) -> (u32, (i32, i32), u
     let s = 1 << (levels - 1);
     let snap = |v: i32| v.div_euclid(s) * s;
     (LOD_FINE_CELLS, (snap(center.0), snap(center.1)), levels)
+}
+
+/// Whether the square of `span` cells at `o` overlaps the square of
+/// `reach.1` cells around cell `reach.0` (the radius asked for: the
+/// coarsest level is wider, `shaders/terrain.wgsl: lod_cell` keeps the same
+/// cells).
+fn within_reach(o: (i32, i32), span: i32, reach: ((i32, i32), i32)) -> bool {
+    let ((ex, ey), r) = reach;
+    let axis = |v: i32, e: i32| v - e < r && v + span - e > -r;
+    axis(o.0, ex) && axis(o.1, ey)
+}
+
+/// The window's chunks on the map and within `reach`, each level's
+/// (top-left map cell, map cells across, level), before frustum culling.
+fn window_chunks(
+    center: (i32, i32),
+    half: i32,
+    levels: u32,
+    reach: ((i32, i32), i32),
+) -> impl Iterator<Item = ((i32, i32), i32, i32)> {
+    let map = c2_formats::map::MAP_SIZE as i32;
+    let per_side = (half * 2 + CHUNK_CELLS - 1) / CHUNK_CELLS;
+    (0..levels as i32).flat_map(move |level| {
+        let span = CHUNK_CELLS << level;
+        let first = (center.0 - (half << level), center.1 - (half << level));
+        let inner = if level > 0 { half << (level - 1) } else { 0 };
+        (0..per_side * per_side).filter_map(move |k| {
+            let o = (first.0 + k % per_side * span, first.1 + k / per_side * span);
+            let inside = |v: i32| v >= -inner && v + span <= inner;
+            if level > 0 && inside(o.0 - center.0) && inside(o.1 - center.1) {
+                return None; // the level inside draws all of it
+            }
+            let end = (o.0 + span, o.1 + span);
+            let on_map = end.0 > 0 && end.1 > 0 && o.0 < map - 1 && o.1 < map - 1;
+            (on_map && within_reach(o, span, reach)).then_some((o, span, level))
+        })
+    })
 }
 
 /// Cells per side of a drawn chunk of ground, in its level's cells.
@@ -261,7 +301,8 @@ impl TerrainRenderer {
         time_ms: u32,
         frustum: &Frustum,
     ) {
-        let (half, center, levels) = window(center, radius, lod);
+        let eye = center;
+        let (half, center, levels) = window(eye, radius, lod);
         let p = TerrainParams {
             origin: [center.0 - half as i32, center.1 - half as i32],
             width: half * 2,
@@ -270,11 +311,13 @@ impl TerrainRenderer {
             // Game.cpp sets Clouds = TRUE; there is no option to turn it off.
             clouds: 1,
             levels,
-            pad: 0,
+            reach: radius,
+            eye: [eye.0, eye.1],
+            pad: [0; 2],
         };
         gpu.queue
             .write_buffer(&self.params, 0, bytemuck::bytes_of(&p));
-        self.cull(center, half as i32, levels, frustum);
+        self.cull(center, half as i32, levels, (eye, radius as i32), frustum);
         if self.chunks.len() > self.capacity {
             self.capacity = self.chunks.len().next_power_of_two();
             self.instances = Self::instance_buffer(gpu, self.capacity);
@@ -285,42 +328,30 @@ impl TerrainRenderer {
         }
     }
 
-    /// Fills `chunks` with the visible ground chunks of each level, then the
-    /// visible chunks with water.
-    fn cull(&mut self, center: (i32, i32), half: i32, levels: u32, frustum: &Frustum) {
-        let map = c2_formats::map::MAP_SIZE as i32;
-        let per_side = (half * 2 + CHUNK_CELLS - 1) / CHUNK_CELLS;
+    /// Fills `chunks` with the visible ground chunks of each level within
+    /// `reach` (the camera's cell and radius), then the visible chunks with water.
+    fn cull(
+        &mut self,
+        center: (i32, i32),
+        half: i32,
+        levels: u32,
+        reach: ((i32, i32), i32),
+        frustum: &Frustum,
+    ) {
         let mut water = Vec::new();
         self.chunks.clear();
-        for level in 0..levels as i32 {
-            let step = 1 << level;
-            let span = CHUNK_CELLS * step;
-            let first = (center.0 - (half << level), center.1 - (half << level));
-            let inner = if level > 0 { half << (level - 1) } else { 0 };
-            for ky in 0..per_side {
-                for kx in 0..per_side {
-                    let o = (first.0 + kx * span, first.1 + ky * span);
-                    let rel = (o.0 - center.0, o.1 - center.1);
-                    let inside = |v: i32| v >= -inner && v + span <= inner;
-                    if level > 0 && inside(rel.0) && inside(rel.1) {
-                        continue; // the level inside draws all of it
-                    }
-                    let end = (o.0 + span, o.1 + span);
-                    if end.0 <= 0 || end.1 <= 0 || o.0 >= map - 1 || o.1 >= map - 1 {
-                        continue;
-                    }
-                    let (top, wet) = self.blocks.over(o, end);
-                    let cell = c2_core::CELL;
-                    let min = Vec3::new(o.0 as f32 * cell, 0.0, o.1 as f32 * cell);
-                    let max = Vec3::new(end.0 as f32 * cell, top, end.1 as f32 * cell);
-                    if !frustum.sees_box(min, max) {
-                        continue;
-                    }
-                    self.chunks.push([o.0, o.1, level, 0]);
-                    if wet {
-                        water.push([o.0, o.1, level, 0]);
-                    }
-                }
+        for (o, span, level) in window_chunks(center, half, levels, reach) {
+            let end = (o.0 + span, o.1 + span);
+            let (top, wet) = self.blocks.over(o, end);
+            let cell = c2_core::CELL;
+            let min = Vec3::new(o.0 as f32 * cell, 0.0, o.1 as f32 * cell);
+            let max = Vec3::new(end.0 as f32 * cell, top, end.1 as f32 * cell);
+            if !frustum.sees_box(min, max) {
+                continue;
+            }
+            self.chunks.push([o.0, o.1, level, 0]);
+            if wet {
+                water.push([o.0, o.1, level, 0]);
             }
         }
         self.ground_chunks = self.chunks.len() as u32;
@@ -373,5 +404,61 @@ mod tests {
         assert!(LOD_FINE_CELLS << (levels - 1) >= 1024);
         assert_eq!(window((0, 0), 129, true).2, 2);
         assert_eq!(window((0, 0), 384, true).2, 3);
+    }
+
+    /// How many window chunks cover each cell of `eye`'s `radius` square,
+    /// and the farthest any chunk reaches from `eye` along an axis.
+    fn coverage(eye: (i32, i32), radius: u32, lod: bool) -> (Vec<u8>, i32) {
+        let (half, center, levels) = window(eye, radius, lod);
+        let r = radius as i32;
+        let side = (2 * r) as usize;
+        let mut hits = vec![0u8; side * side];
+        let mut farthest = 0;
+        for (o, span, _) in window_chunks(center, half as i32, levels, (eye, r)) {
+            for y in o.1..o.1 + span {
+                for x in o.0..o.0 + span {
+                    let (dx, dy) = (x - eye.0, y - eye.1);
+                    farthest = farthest.max(dx.abs()).max(dy.abs());
+                    if (-r..r).contains(&dx) && (-r..r).contains(&dy) {
+                        hits[(dy + r) as usize * side + (dx + r) as usize] += 1;
+                    }
+                }
+            }
+        }
+        (hits, farthest)
+    }
+
+    // AUDIT-V3: the levels used to be drawn out to the coarsest level's
+    // edge (512 cells for a 300-cell radius), past the fog and the radius.
+    #[test]
+    fn levels_stop_at_the_radius_and_still_cover_it() {
+        for (eye, radius) in [((515, 509), 300), ((512, 512), 129), ((600, 450), 1024)] {
+            let (hits, farthest) = coverage(eye, radius, true);
+            let r = radius as i32;
+            let side = (2 * r) as usize;
+            for (i, &n) in hits.iter().enumerate() {
+                let (x, y) = (eye.0 - r + (i % side) as i32, eye.1 - r + (i / side) as i32);
+                // Off the map (and its last row/column) the shader drops
+                // the cells of a chunk that is partly on it.
+                let on_map = (0..1023).contains(&x) && (0..1023).contains(&y);
+                assert!(
+                    n == 1 || !on_map && n == 0,
+                    "cell ({x}, {y}), radius {radius}: {n}"
+                );
+            }
+            let (_, _, levels) = window(eye, radius, true);
+            let coarsest = CHUNK_CELLS << (levels - 1);
+            assert!(
+                farthest < r + coarsest,
+                "radius {radius}: chunks reach {farthest}"
+            );
+        }
+    }
+
+    #[test]
+    fn one_level_keeps_every_chunk_of_its_window() {
+        let (hits, farthest) = coverage((300, 400), 74, false);
+        assert!(hits.iter().all(|&n| n == 1));
+        assert!(farthest < 74 + CHUNK_CELLS);
     }
 }
