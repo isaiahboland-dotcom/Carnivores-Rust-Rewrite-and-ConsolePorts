@@ -116,6 +116,16 @@ pub struct Settings {
     /// Custom limits for bounded fleeing (Advanced tab, `crate::flee`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub flee: Option<crate::flee::Flee>,
+    /// The hardcore hunt ruleset (Advanced tab, `crate::hunt`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hunt: Option<crate::hunt::Hunt>,
+    /// The DinoHunt Corp terminal's rules (`crate::dhc`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dhc: Option<crate::dhc::Dhc>,
+    /// Zones, player starts and extraction points on the areas' maps
+    /// (`crate::world`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub world: Option<crate::world::World>,
     /// Times of day, settings fixed by the instance and spawn rules (the
     /// Advanced tab, `crate::rules`).
     #[serde(skip_serializing_if = "crate::rules::Rules::is_empty")]
@@ -125,6 +135,18 @@ pub struct Settings {
 impl Settings {
     pub fn is_empty(&self) -> bool {
         *self == Settings::default()
+    }
+
+    /// Puts `_RULES.TXT` over `vfs`: the instance rules and the hardcore
+    /// hunt ruleset (nothing when neither changes the game). True when it
+    /// did.
+    pub fn push_rules(&self, vfs: &mut c2_vfs::Vfs) -> Result<bool, crate::ModError> {
+        let hunt = self
+            .hunt
+            .as_ref()
+            .map(|h| h.to_format())
+            .unwrap_or_default();
+        self.rules.push_with(vfs, hunt)
     }
 }
 

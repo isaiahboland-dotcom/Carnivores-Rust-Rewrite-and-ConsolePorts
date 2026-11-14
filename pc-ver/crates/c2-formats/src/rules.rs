@@ -16,6 +16,7 @@
 //! secret 2 AREA1,AREA3 Tyrannosaurus   ; 2 more on AREA1 and AREA3
 //! secret 1 * Velociraptor
 //! hide Tyrannosaurus         ; in the game, but not in the hunt menu
+//! hunt max_firearms 2        ; the hardcore hunt ruleset ([`crate::hardcore`])
 //! ```
 
 #[cfg(not(feature = "std"))]
@@ -101,6 +102,8 @@ pub struct Rules {
     pub secrets: Vec<Secret>,
     /// Animals kept off the hunt menu (they still roam, as secrets).
     pub hidden: Vec<String>,
+    /// The hardcore hunt ruleset (`hunt` lines); default: every rule off.
+    pub hunt: crate::hardcore::Hunt,
 }
 
 /// Whether map `stem` is one of `areas` (empty: every area).
@@ -244,6 +247,7 @@ impl Rules {
                         r.hidden.push(name);
                     }
                 }
+                "hunt" => r.hunt.parse_line(words),
                 _ => {}
             }
         }
@@ -278,6 +282,7 @@ impl Rules {
         for h in &self.hidden {
             s += &format!("hide {h}\n");
         }
+        self.hunt.lines(&mut s);
         s
     }
 }
@@ -304,6 +309,7 @@ mod tests {
                 },
             ],
             hidden: vec!["Raptor #2".into(), "Rex".into()],
+            ..Rules::default()
         }
     }
 

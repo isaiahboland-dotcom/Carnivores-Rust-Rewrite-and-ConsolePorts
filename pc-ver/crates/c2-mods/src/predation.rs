@@ -1,5 +1,6 @@
-//! A recipe's `[settings.predation]` (the launcher's advanced instance
-//! setting "Carnivores hunt herbivores"): written into the built game as
+//! A recipe's `[settings.predation]` ("Carnivores hunt herbivores", the
+//! first part of the launcher's advanced setting "Advanced Dinosaur
+//! Behavior and AI", `docs/BEHAVIOR.md`): written into the built game as
 //! `HUNTDAT/_PREDATION.TXT` ([`c2_formats::predation`]), which every
 //! platform's engine reads at the start of a hunt.
 //!

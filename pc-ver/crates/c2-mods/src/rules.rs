@@ -179,18 +179,29 @@ impl Rules {
                 .map(|h| h.trim().to_string())
                 .filter(|h| !h.is_empty())
                 .collect(),
+            hunt: Default::default(),
         }
     }
 
     /// The layer to put over the built game in `vfs`; `None` when the
     /// rules change nothing there.
     pub fn layer(&self, vfs: &Vfs) -> Result<Option<MemBackend>, ModError> {
+        self.layer_with(vfs, Default::default())
+    }
+
+    /// [`Rules::layer`], with the hardcore hunt ruleset's lines in the file.
+    pub fn layer_with(
+        &self,
+        vfs: &Vfs,
+        hunt: c2_formats::hardcore::Hunt,
+    ) -> Result<Option<MemBackend>, ModError> {
         let maps = if self.areas.is_empty() && self.secrets.is_empty() {
             Vec::new()
         } else {
             crate::balance::area_maps(vfs)?
         };
-        let f = self.to_format(&maps);
+        let mut f = self.to_format(&maps);
+        f.hunt = hunt;
         if f.is_empty() {
             return Ok(None);
         }
@@ -202,7 +213,16 @@ impl Rules {
     /// Puts the layer over `vfs` (nothing when it changes nothing). True
     /// when it did.
     pub fn push(&self, vfs: &mut Vfs) -> Result<bool, ModError> {
-        Ok(match self.layer(vfs)? {
+        self.push_with(vfs, Default::default())
+    }
+
+    /// [`Rules::push`], with the hardcore hunt ruleset's lines in the file.
+    pub fn push_with(
+        &self,
+        vfs: &mut Vfs,
+        hunt: c2_formats::hardcore::Hunt,
+    ) -> Result<bool, ModError> {
+        Ok(match self.layer_with(vfs, hunt)? {
             Some(l) => {
                 vfs.push("rules", Box::new(l));
                 true

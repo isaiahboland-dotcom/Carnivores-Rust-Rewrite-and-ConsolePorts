@@ -5,12 +5,15 @@
 pub mod balance;
 pub mod classic;
 pub mod detect;
+pub mod dhc;
 pub mod flee;
+pub mod hunt;
 pub mod hunter;
 pub mod ice_age;
 pub mod legacy;
 pub mod loose;
 pub mod manifest;
+pub mod mission;
 pub mod mobile;
 mod mobile_anims;
 pub mod mobile_base;
@@ -26,6 +29,7 @@ mod triassic;
 pub mod validate;
 pub mod variants;
 pub mod weapon_rules;
+pub mod world;
 
 use std::path::PathBuf;
 

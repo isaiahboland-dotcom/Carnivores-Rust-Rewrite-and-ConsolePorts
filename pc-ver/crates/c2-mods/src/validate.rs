@@ -79,8 +79,14 @@ pub fn validate(r: &Recipe, names: Option<&Names>, platform: Platform) -> Vec<Wa
     let mut out = Vec::new();
     let mut warn = |key: String, message: String| out.push(Warning { key, message });
     ranges(r, &mut warn);
+    hunt_ranges(r, &mut warn);
+    dhc_values(r, &mut warn);
     if let Some(n) = names {
         unknown_names(r, n, &mut warn);
+    }
+    if let Some(w) = &r.settings.world {
+        crate::world::check(w, names.map(|n| n.areas.as_slice()), &mut warn);
+        crate::mission::check(w, names, &mut warn);
     }
     platform_support(r, platform, &mut warn);
     out
@@ -276,9 +282,182 @@ fn unknown_names(r: &Recipe, n: &Names, warn: &mut impl FnMut(String, String)) {
             );
         }
     }
+    if let Some(d) = &s.dhc {
+        for (i, a) in d.animals.iter().enumerate() {
+            check(
+                format!("settings.dhc.animals[{i}].name"),
+                &a.name,
+                &n.animals,
+                "animal",
+            );
+        }
+        for (i, isl) in d.islands.iter().enumerate() {
+            check(
+                format!("settings.dhc.islands[{i}].area"),
+                &isl.area,
+                &n.areas,
+                "area",
+            );
+            for (j, a) in isl.animals.iter().enumerate() {
+                check(
+                    format!("settings.dhc.islands[{i}].animals[{j}]"),
+                    a,
+                    &n.animals,
+                    "animal",
+                );
+            }
+            for (j, w) in isl.weapons.iter().enumerate() {
+                check(
+                    format!("settings.dhc.islands[{i}].weapons[{j}]"),
+                    w,
+                    &n.weapons,
+                    "weapon",
+                );
+            }
+        }
+    }
+    if let Some(h) = &s.hunt {
+        for (i, a) in h.predators.iter().enumerate() {
+            check(
+                format!("settings.hunt.predators[{i}].name"),
+                &a.name,
+                &n.animals,
+                "animal",
+            );
+        }
+    }
+}
+
+/// `[settings.hunt]`: values outside their ranges and unknown reactions.
+fn hunt_ranges(r: &Recipe, warn: &mut impl FnMut(String, String)) {
+    use c2_formats::hardcore as h;
+    let Some(s) = &r.settings.hunt else { return };
+    let e = s.extraction.unwrap_or_default();
+    let p = s.second_predator.unwrap_or_default();
+    for (key, v, range) in [
+        ("max_firearms", s.max_firearms, h::FIREARMS_RANGE),
+        ("ammo_drops", s.ammo_drops, h::DROPS_RANGE),
+        ("hesitation_s", s.hesitation_s, (0, h::SECONDS_RANGE.1)),
+        ("back_angle", s.back_angle, h::BACK_ANGLE_RANGE),
+        ("extraction.arrive_s", e.arrive_s, h::SECONDS_RANGE),
+        ("extraction.hover_s", e.hover_s, h::SECONDS_RANGE),
+        (
+            "extraction.cooldown_s",
+            e.cooldown_s,
+            (0, h::SECONDS_RANGE.1),
+        ),
+        ("extraction.min_distance", e.min_distance, h::ZONE_GAP_RANGE),
+        ("second_predator.window_s", p.window_s, h::SECONDS_RANGE),
+    ] {
+        if let Some(v) = v.filter(|v| !(range.0..=range.1).contains(v)) {
+            warn(
+                format!("settings.hunt.{key}"),
+                format!("{v} is outside {}..={}; it is clamped", range.0, range.1),
+            );
+        }
+    }
+    for (i, a) in s.predators.iter().enumerate() {
+        if h::Reaction::from_key(a.reaction.trim()).is_none() {
+            warn(
+                format!("settings.hunt.predators[{i}].reaction"),
+                format!(
+                    "\"{}\" is not a reaction (circle_lunge, circle_eat, ignore); the animal is skipped",
+                    a.reaction
+                ),
+            );
+        }
+    }
+}
+
+/// `[settings.dhc]`: discovery modes, licence costs, equipment and times.
+fn dhc_values(r: &Recipe, warn: &mut impl FnMut(String, String)) {
+    use c2_formats::dhc as d;
+    let Some(s) = &r.settings.dhc else { return };
+    let mode = |key: String, v: &str, fallback: &str, warn: &mut dyn FnMut(String, String)| {
+        if !v.trim().is_empty() && d::Discovery::from_key(v).is_none() {
+            warn(
+                key,
+                format!("{v:?} is not off, sighting, scan or kill; {fallback} is used"),
+            );
+        }
+    };
+    let (lo, hi) = d::LICENCE_RANGE;
+    let cost = |key: String, v: Option<u32>, warn: &mut dyn FnMut(String, String)| {
+        if let Some(v) = v.filter(|v| !(lo..=hi).contains(v)) {
+            warn(key, format!("{v} is outside {lo}..={hi}; {hi} is used"));
+        }
+    };
+    mode("settings.dhc.discovery".into(), &s.discovery, "off", warn);
+    cost("settings.dhc.licence_cost".into(), s.licence_cost, warn);
+    for (i, a) in s.animals.iter().enumerate() {
+        let at = format!("settings.dhc.animals[{i}]");
+        mode(format!("{at}.discovery"), &a.discovery, "the default", warn);
+        cost(format!("{at}.licence_cost"), a.licence_cost, warn);
+    }
+    for (i, isl) in s.islands.iter().enumerate() {
+        for (j, e) in isl.equipment.iter().enumerate() {
+            if !crate::dhc::EQUIPMENT
+                .iter()
+                .any(|x| x.eq_ignore_ascii_case(e.trim()))
+            {
+                warn(
+                    format!("settings.dhc.islands[{i}].equipment[{j}]"),
+                    format!("{e:?} is not equipment the menus offer; ignored"),
+                );
+            }
+        }
+        for (j, t) in isl.times.iter().enumerate() {
+            if !d::TIMES.iter().any(|x| x.eq_ignore_ascii_case(t.trim())) {
+                warn(
+                    format!("settings.dhc.islands[{i}].times[{j}]"),
+                    format!("{t:?} is not dawn, day or night; ignored"),
+                );
+            }
+        }
+    }
 }
 
 fn platform_support(r: &Recipe, p: Platform, warn: &mut impl FnMut(String, String)) {
+    // The DHC terminal is in the PC game (and the Android build of it) and
+    // on the 3DS.
+    if r.settings.dhc.as_ref().is_some_and(|d| d.enabled)
+        && matches!(p, Platform::WiiU | Platform::Vr)
+    {
+        warn(
+            "settings.dhc".into(),
+            format!(
+                "{} has no DHC OS terminal yet; its original menu is used and these rules are unused",
+                p.name()
+            ),
+        );
+    }
+    // Missions are listed by the DHC terminal only.
+    if r.settings
+        .world
+        .as_ref()
+        .is_some_and(|w| w.enabled && !w.missions.is_empty())
+        && matches!(p, Platform::WiiU | Platform::Vr)
+    {
+        warn(
+            "settings.world.missions".into(),
+            format!(
+                "{} has no DHC OS terminal yet; missions are hidden there",
+                p.name()
+            ),
+        );
+    }
+    // The hardcore hunt ruleset runs in the PC game only so far.
+    if r.settings.hunt.as_ref().is_some_and(|h| h.is_active())
+        && matches!(p, Platform::ThreeDs | Platform::WiiU | Platform::Vr)
+    {
+        warn(
+            "settings.hunt".into(),
+            format!(
+                "{} does not play the hardcore hunt ruleset yet; hunts there are regular hunts",
+                p.name()
+            ),
+        );
+    }
     // `c2-cook` refuses variant packs: their runtime is the PC game's.
     if !r.variants.is_empty() && matches!(p, Platform::ThreeDs | Platform::WiiU) {
         warn(
@@ -311,6 +490,28 @@ mod tests {
         Recipe::parse(&format!("[recipe]\nid = \"r\"\n{extra}")).unwrap_or_else(|e| panic!("{e}"))
     }
 
+    #[test]
+    fn hardcore_hunt_ranges_names_and_platforms() {
+        let r = parse(
+            "[settings.hunt]\nenabled = true\nmax_firearms = 99\nback_angle = 5\n\
+             extraction = { hover_s = 0 }\n\
+             [[settings.hunt.predators]]\nname = \"Velociraptor\"\nreaction = \"leap\"\n\
+             [[settings.hunt.predators]]\nname = \"Gone\"\nreaction = \"ignore\"\n",
+        );
+        assert_eq!(
+            keys(&r, Platform::Pc),
+            [
+                "settings.hunt.max_firearms",
+                "settings.hunt.back_angle",
+                "settings.hunt.extraction.hover_s",
+                "settings.hunt.predators[0].reaction",
+                "settings.hunt.predators[1].name",
+            ]
+        );
+        assert!(keys(&r, Platform::ThreeDs).contains(&"settings.hunt".to_string()));
+        assert!(!keys(&r, Platform::Android).contains(&"settings.hunt".to_string()));
+    }
+
     fn names() -> Names {
         let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect();
         Names {
@@ -325,6 +526,62 @@ mod tests {
             .into_iter()
             .map(|w| w.key)
             .collect()
+    }
+
+    #[test]
+    fn dhc_values_names_and_platforms() {
+        let r = parse(
+            "[settings.dhc]\nenabled = true\ndiscovery = \"smell\"\nlicence_cost = 200000\n\
+             [[settings.dhc.animals]]\nname = \"Moa\"\ndiscovery = \"kill\"\n\
+             [[settings.dhc.islands]]\narea = \"Atlantis\"\nanimals = [\"Velociraptor\", \"Dodo\"]\n\
+             weapons = [\"Pistol\", \"Laser\"]\nequipment = [\"Radar\", \"Jetpack\"]\n\
+             times = [\"day\", \"noon\"]\n",
+        );
+        assert_eq!(
+            keys(&r, Platform::Pc),
+            [
+                "settings.dhc.discovery",
+                "settings.dhc.licence_cost",
+                "settings.dhc.islands[0].equipment[1]",
+                "settings.dhc.islands[0].times[1]",
+                "settings.dhc.animals[0].name",
+                "settings.dhc.islands[0].area",
+                "settings.dhc.islands[0].animals[1]",
+                "settings.dhc.islands[0].weapons[1]",
+            ]
+        );
+        assert!(keys(&r, Platform::WiiU).contains(&"settings.dhc".to_string()));
+        assert!(!keys(&r, Platform::ThreeDs).contains(&"settings.dhc".to_string()));
+        assert!(!keys(&r, Platform::Android).contains(&"settings.dhc".to_string()));
+    }
+
+    #[test]
+    fn missions_are_checked_and_hidden_without_a_terminal() {
+        let r = parse(
+            "[settings.world]\nenabled = true\n\
+             [[settings.world.missions]]\nid = \"m\"\narea = \"Atlantis\"\n",
+        );
+        let k = keys(&r, Platform::WiiU);
+        assert!(k.contains(&"settings.world.missions".to_string()), "{k:?}");
+        assert!(k.contains(&"settings.world.missions[0].entries".to_string()));
+        let k = keys(&r, Platform::Pc);
+        assert!(!k.contains(&"settings.world.missions".to_string()), "{k:?}");
+    }
+
+    #[test]
+    fn world_zones_are_checked_with_the_games_areas() {
+        let r = parse(
+            "[settings.world]\nenabled = true\n\
+             [[settings.world.zones]]\nid = \"a\"\narea = \"Atlantis\"\nshape = \"circle\"\n\
+             center = [10.0, 10.0]\nradius = 2000.0\n",
+        );
+        assert_eq!(
+            keys(&r, Platform::Pc),
+            [
+                "settings.world.zones[0].area",
+                "settings.world.zones[0].shape"
+            ]
+        );
     }
 
     #[test]

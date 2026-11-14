@@ -25,6 +25,12 @@ pub enum Advanced {
     Predation,
     /// `[settings.flee]`, enabled.
     FleeLimits,
+    /// `[settings.hunt]`, enabled with a rule set.
+    HardcoreHunt,
+    /// `[settings.dhc]`, enabled (the DinoHunt Corp terminal's rules).
+    Dhc,
+    /// `[settings.world]`, enabled with zones or points.
+    World,
     /// `[[settings.rules.areas]]` with a huntable cap.
     AreaCaps,
     /// `[[settings.rules.secrets]]` that spawn something.
@@ -39,6 +45,9 @@ impl Advanced {
         match self {
             Advanced::Predation => "settings.predation".into(),
             Advanced::FleeLimits => "settings.flee".into(),
+            Advanced::HardcoreHunt => "settings.hunt".into(),
+            Advanced::Dhc => "settings.dhc".into(),
+            Advanced::World => "settings.world".into(),
             Advanced::AreaCaps => "settings.rules.areas".into(),
             Advanced::Secrets => "settings.rules.secrets".into(),
             Advanced::ForcedOn(l) => format!("settings.rules.locks.{}", l.key()),
@@ -48,8 +57,15 @@ impl Advanced {
     /// What it is, for the launcher.
     pub fn label(self) -> String {
         match self {
-            Advanced::Predation => "Predation (carnivores hunt herbivores)".into(),
+            Advanced::Predation => {
+                "Advanced Dinosaur Behavior and AI: Predation (carnivores hunt herbivores)".into()
+            }
             Advanced::FleeLimits => "Custom flee limits".into(),
+            Advanced::HardcoreHunt => "Hardcore hunt ruleset".into(),
+            Advanced::Dhc => {
+                "DHC OS terminal rules (licences, discovery, island restrictions)".into()
+            }
+            Advanced::World => "World zones, player starts and extraction points".into(),
             Advanced::AreaCaps => "Huntable animals capped per area".into(),
             Advanced::Secrets => "Secret animals per area".into(),
             Advanced::ForcedOn(l) => format!("Forces on: {}", lock_label(l)),
@@ -71,6 +87,9 @@ pub fn remove(r: &mut Recipe, a: Advanced) {
     match a {
         Advanced::Predation => s.predation = None,
         Advanced::FleeLimits => s.flee = None,
+        Advanced::HardcoreHunt => s.hunt = None,
+        Advanced::Dhc => s.dhc = None,
+        Advanced::World => s.world = None,
         Advanced::AreaCaps => s.rules.areas.clear(),
         Advanced::Secrets => s.rules.secrets.clear(),
         Advanced::ForcedOn(l) => match s.rules.locks.field(l) {
@@ -128,6 +147,15 @@ pub fn advanced_summary(r: &Recipe) -> Vec<Advanced> {
     if s.flee.as_ref().is_some_and(|f| f.enabled) {
         out.push(Advanced::FleeLimits);
     }
+    if s.hunt.as_ref().is_some_and(|h| h.is_active()) {
+        out.push(Advanced::HardcoreHunt);
+    }
+    if s.dhc.as_ref().is_some_and(|d| d.enabled) {
+        out.push(Advanced::Dhc);
+    }
+    if s.world.as_ref().is_some_and(|w| w.is_active()) {
+        out.push(Advanced::World);
+    }
     if s.rules.areas.iter().any(|a| a.max_huntable.is_some()) {
         out.push(Advanced::AreaCaps);
     }
@@ -145,13 +173,17 @@ pub fn advanced_summary(r: &Recipe) -> Vec<Advanced> {
 }
 
 /// The recipe a classic build uses: `r` without predation, custom flee
-/// limits, spawn rules and locks. Everything else, `times` and `hidden`
+/// limits, the hardcore hunt ruleset, the DHC terminal's rules, world zones,
+/// spawn rules and locks. Everything else, `times` and `hidden`
 /// included, is kept, so the classic `_RULES.TXT` holds only those.
 pub fn classic_recipe(r: &Recipe) -> Recipe {
     let mut c = r.clone();
     let s = &mut c.settings;
     s.predation = None;
     s.flee = None;
+    s.hunt = None;
+    s.dhc = None;
+    s.world = None;
     s.rules.areas.clear();
     s.rules.secrets.clear();
     s.rules.locks = Default::default();
@@ -195,6 +227,10 @@ mod tests {
         let r = parse(
             "[settings.predation]\nenabled = true\n\
              [settings.flee]\nenabled = true\n\
+             [settings.hunt]\nenabled = true\nno_radar = true\n\
+             [settings.dhc]\nenabled = true\n\
+             [settings.world]\nenabled = true\n\
+             [[settings.world.spawns]]\nid = \"s\"\narea = \"Vengar Peninsula\"\nat = [9.0, 9.0]\n\
              [settings.rules.locks]\ndynamic_time = true\nteleport = true\nmulti_ammo = false\n\
              [[settings.rules.areas]]\narea = \"Vengar Peninsula\"\nmax_huntable = 3\n\
              [[settings.rules.secrets]]\nanimal = \"Tyrannosaurus Rex\"\ncount = 2\n",
@@ -204,6 +240,9 @@ mod tests {
             [
                 Advanced::Predation,
                 Advanced::FleeLimits,
+                Advanced::HardcoreHunt,
+                Advanced::Dhc,
+                Advanced::World,
                 Advanced::AreaCaps,
                 Advanced::Secrets,
                 Advanced::ForcedOn(Lock::DynamicTime),
@@ -225,6 +264,10 @@ mod tests {
              [[settings.weapon_restrictions]]\nname = \"Pistol\"\nallow_trophy = false\n\
              [settings.predation]\nenabled = true\n\
              [settings.flee]\nenabled = true\n\
+             [settings.hunt]\nenabled = true\nno_radar = true\n\
+             [settings.dhc]\nenabled = true\nlicence_cost = 50\n\
+             [settings.world]\nenabled = true\n\
+             [[settings.world.spawns]]\nid = \"s\"\narea = \"Vengar Peninsula\"\nat = [9.0, 9.0]\n\
              [settings.rules]\ntimes = [\"day\"]\nhidden = [\"Velociraptor\"]\n\
              [settings.rules.locks]\nteleport = true\nsecret_dinos = 4\n\
              [[settings.rules.areas]]\narea = \"Vengar Peninsula\"\nmax_huntable = 3\n\
@@ -242,7 +285,9 @@ mod tests {
             (&s.rules.times, &s.rules.hidden),
             (&o.rules.times, &o.rules.hidden)
         );
-        assert!(s.predation.is_none() && s.flee.is_none());
+        assert!(s.predation.is_none() && s.flee.is_none() && s.hunt.is_none());
+        assert!(s.dhc.is_none() && o.dhc.is_some());
+        assert!(s.world.is_none() && o.world.is_some());
         assert!(s.rules.locks.is_empty());
         assert!(s.rules.areas.is_empty() && s.rules.secrets.is_empty());
         // The rules file it writes: the times and hidden animals only.
@@ -255,6 +300,10 @@ mod tests {
     const ALL: &str = "[settings.balance]\nstart = 200\n\
          [settings.predation]\nenabled = true\npriority = \"prey\"\ncarnivore_fights = true\n\
          [settings.flee]\nenabled = true\nmax_distance = 40\n\
+         [settings.hunt]\nenabled = true\nmax_firearms = 2\n\
+         [settings.dhc]\nenabled = true\ndiscovery = \"kill\"\n\
+         [settings.world]\nenabled = true\n\
+         [[settings.world.spawns]]\nid = \"s\"\narea = \"Vengar Peninsula\"\nat = [9.0, 9.0]\n\
          [settings.rules]\ntimes = [\"day\"]\n\
          [settings.rules.locks]\nteleport = true\nsecret_dinos = 4\n\
          [[settings.rules.areas]]\narea = \"Vengar Peninsula\"\nmax_huntable = 3\n\
@@ -276,6 +325,9 @@ mod tests {
             match a {
                 Advanced::Predation => s.predation = r.settings.predation.clone(),
                 Advanced::FleeLimits => s.flee = r.settings.flee.clone(),
+                Advanced::HardcoreHunt => s.hunt = r.settings.hunt.clone(),
+                Advanced::Dhc => s.dhc = r.settings.dhc.clone(),
+                Advanced::World => s.world = r.settings.world.clone(),
                 Advanced::AreaCaps => s.rules.areas = r.settings.rules.areas.clone(),
                 Advanced::Secrets => s.rules.secrets = r.settings.rules.secrets.clone(),
                 Advanced::ForcedOn(_) => s.rules.locks.teleport = Some(true),
@@ -303,6 +355,7 @@ mod tests {
         x.settings.flee = r.settings.flee.clone();
         assert_eq!(x, r, "only those two sections changed");
         for a in [
+            Advanced::HardcoreHunt,
             Advanced::AreaCaps,
             Advanced::Secrets,
             Advanced::ForcedOn(Lock::Teleport),
@@ -318,6 +371,7 @@ mod tests {
         let r = parse(
             "[settings.predation]\nenabled = false\ncarnivore_fights = true\n\
              [settings.flee]\nenabled = false\n\
+             [settings.world]\nenabled = true\nmin_extraction_gap = 0.5\n\
              [[settings.rules.areas]]\narea = \"Vengar Peninsula\"\n\
              [[settings.rules.secrets]]\nanimal = \"Tyrannosaurus Rex\"\ncount = 0\n",
         );
