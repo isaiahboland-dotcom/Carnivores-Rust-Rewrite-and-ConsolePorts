@@ -11,6 +11,7 @@ mod audio;
 mod combat;
 mod death;
 mod events;
+pub mod hardcore;
 mod mee_weapon;
 mod observer;
 mod options;
@@ -30,6 +31,7 @@ mod wildlife;
 
 pub use death::{death_cam_view, DeathCam};
 pub use events::{GameEvent, HuntKill};
+pub use hardcore::Hardcore;
 pub use mee_weapon::{Aqua, MeeWeapon};
 pub use options::{HuntInput, HuntOptions, MAX_CALL};
 pub use session::Outcome;

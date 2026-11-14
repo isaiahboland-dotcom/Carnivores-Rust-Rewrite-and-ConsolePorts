@@ -27,6 +27,12 @@ impl Hunt {
         if self.paused && self.health > 0 {
             return;
         }
+        // Hardcore hunt: nothing moves until the zones are picked.
+        if self.deploying().is_some() {
+            // The exit prompt still leaves.
+            self.exit_step(dt);
+            return;
+        }
         if self.time_stopped && self.free_observer() && self.health > 0 {
             self.stopped_tick(area, input, dt, out);
             return;
@@ -141,7 +147,8 @@ impl Hunt {
                     scream,
                 } => {
                     // An observer is never a kill, whatever reached him.
-                    if !self.opts.observer {
+                    // Nor does a strike land mid-dodge (hardcore hunt).
+                    if !self.opts.observer && !self.dodging() {
                         self.kill_hunter(area, Some(index), kind, scream, out);
                     }
                 }
@@ -239,6 +246,7 @@ impl Hunt {
         self.exit_step(dt);
         self.survival_step(area, dt, out);
         self.teleport_step(area, dt, out);
+        self.hardcore_step(area, dt, out);
         if (self.opts.observer || self.opts.trophy) && self.health > 0 {
             self.health = MAX_HEALTH;
         }
@@ -246,8 +254,11 @@ impl Hunt {
         let mut sev = Vec::new();
         let player = [self.player.x, self.player.y, self.player.z];
         let (view_r, rt, anim) = (self.opts.view_r, self.real_time, self.ship_anim_ms);
-        self.ship
-            .step(area, &mut self.herd, player, view_r, rt, dt, anim, &mut sev);
+        // While extraction flies the ship, trophy pickups wait.
+        if !self.extraction_flies_ship() {
+            self.ship
+                .step(area, &mut self.herd, player, view_r, rt, dt, anim, &mut sev);
+        }
         for e in sev {
             if let ShipEvent::Removed { index } = e {
                 self.remove_character(index);

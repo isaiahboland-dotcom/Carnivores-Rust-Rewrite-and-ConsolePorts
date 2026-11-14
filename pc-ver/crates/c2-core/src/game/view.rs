@@ -45,59 +45,9 @@ impl Hunt {
     }
 
     /// `GenerateMapImage`: the 256x256 overview (1 pixel per 4 cells) made
-    /// from each cell's texture at the 32x32 mip level (16x16 for water).
+    /// from each cell's texture ([`c2_formats::overview`]).
     pub fn map_image(area: &Area) -> Vec<u16> {
-        let mip = |src: &[u16], l: usize| -> Vec<u16> {
-            // GenerateMipMap: average 2x2 per 5-bit channel, rounded.
-            let mut d = vec![0u16; l * l];
-            for y in 0..l {
-                for x in 0..l {
-                    let at = |dx: usize, dy: usize| {
-                        u32::from(
-                            src.get((y * 2 + dy) * l * 2 + x * 2 + dx)
-                                .copied()
-                                .unwrap_or(0),
-                        )
-                    };
-                    let px = [at(0, 0), at(1, 0), at(0, 1), at(1, 1)];
-                    let ch = |sh: u32| {
-                        ((px.iter().map(|p| (p >> sh) & 31).sum::<u32>() + 2) >> 2) as u16
-                    };
-                    d[y * l + x] = (ch(10) << 10) | (ch(5) << 5) | ch(0);
-                }
-            }
-            d
-        };
-        let mips: Vec<(Vec<u16>, Vec<u16>)> = area
-            .rsc
-            .textures
-            .iter()
-            .map(|t| {
-                let b = mip(t, 64);
-                let c = mip(&b, 32);
-                let d = mip(&c, 16);
-                (c, d)
-            })
-            .collect();
-        let mut out = vec![0u16; 256 * 256];
-        for y in 0..256 {
-            for x in 0..256 {
-                let i = (y << 2) * c2_formats::map::MAP_SIZE + (x << 2);
-                let px = if area.map.flags[i] & crate::area::cell_flags::WATER != 0 {
-                    let t = area
-                        .rsc
-                        .waters
-                        .get(usize::from(area.map.water[i]))
-                        .map_or(0, |w| w.texture_index.max(0) as usize);
-                    mips.get(t).map_or(0, |(_, d)| d[(y & 15) * 16 + (x & 15)])
-                } else {
-                    let t = usize::from(area.map.texture1[i]);
-                    mips.get(t).map_or(0, |(c, _)| c[(y & 31) * 32 + (x & 31)])
-                };
-                out[y * 256 + x] = px;
-            }
-        }
-        out
+        c2_formats::overview::image(&area.map, &area.rsc)
     }
 
     /// `ToggleBinocular` and the +/- power keys.

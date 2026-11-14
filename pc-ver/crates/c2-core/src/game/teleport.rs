@@ -39,7 +39,11 @@ impl Hunt {
     /// Whether teleporting is on for this hunt (the option, not in a
     /// survival or the trophy room).
     pub fn can_teleport(&self) -> bool {
-        (self.opts.teleport || self.free_observer()) && self.survival.is_none() && !self.opts.trophy
+        (self.opts.teleport || self.free_observer())
+            && self.survival.is_none()
+            && !self.opts.trophy
+            // Hardcore hunt: the map is picking the zones.
+            && self.deploying().is_none()
     }
 
     /// Starts a teleport to world (`x`, `z`) (the nearest dry ground the
@@ -95,18 +99,21 @@ impl Hunt {
     }
 }
 
+/// Whether cell (`x`, `z`) is dry ground the hunter can walk on.
+pub(super) fn dry(area: &Area, x: i32, z: i32) -> bool {
+    let walk = crate::collide::WALK_CELLS;
+    walk.contains(&x)
+        && walk.contains(&z)
+        && area.map.flags[crate::area::idx(x as usize, z as usize)]
+            & (crate::area::cell_flags::WATER_ANY | crate::area::cell_flags::NO_WAY)
+            == 0
+}
+
 /// The dry cell nearest world (`x`, `z`) within the hunter's reach (up to
 /// 16 cells round), as world coordinates of its centre.
-fn landing(area: &Area, x: f32, z: f32) -> Option<(f32, f32)> {
+pub(super) fn landing(area: &Area, x: f32, z: f32) -> Option<(f32, f32)> {
     let (cx, cz) = ((x / CELL) as i32, (z / CELL) as i32);
-    let walk = crate::collide::WALK_CELLS;
-    let dry = |x: i32, z: i32| {
-        walk.contains(&x)
-            && walk.contains(&z)
-            && area.map.flags[crate::area::idx(x as usize, z as usize)]
-                & (crate::area::cell_flags::WATER_ANY | crate::area::cell_flags::NO_WAY)
-                == 0
-    };
+    let dry = |x: i32, z: i32| dry(area, x, z);
     (0..=16).find_map(|r: i32| {
         (-r..=r)
             .flat_map(|dz| (-r..=r).map(move |dx| (dx, dz)))

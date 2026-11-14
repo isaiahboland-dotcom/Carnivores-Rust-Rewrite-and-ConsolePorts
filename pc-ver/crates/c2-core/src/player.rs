@@ -251,6 +251,19 @@ impl Player {
         }
     }
 
+    /// Moves the hunter `d` units to his right (negative: left), stopped
+    /// by what stops his walking (the hardcore hunt's dodge).
+    pub fn shove(&mut self, area: &Area, d: f32) {
+        let (sa, ca) = self.alpha.sin_cos();
+        let n = 1 + (d.abs() / 32.0) as u32;
+        for _ in 0..n {
+            self.x += ca * d / n as f32;
+            self.z += sa * d / n as f32;
+            area.check_collision(&mut self.x, &mut self.z, self.y);
+            self.push_out_of_obstacles();
+        }
+    }
+
     /// The tail of `CheckCollision` in the trophy room.
     fn push_out_of_obstacles(&mut self) {
         for &[ox, oz, cr] in &self.obstacles {

@@ -16,6 +16,7 @@ pub mod area;
 pub mod collide;
 pub mod color;
 pub mod day_cycle;
+pub mod dhc;
 #[cfg(any(feature = "std", feature = "portable-dino"))]
 pub mod dino;
 #[cfg(any(feature = "std", feature = "portable-hunt"))]

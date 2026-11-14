@@ -3,6 +3,7 @@
 mod ammo_kinds;
 mod combat;
 mod death;
+mod hardcore;
 mod session;
 mod spawn_rules;
 mod support;

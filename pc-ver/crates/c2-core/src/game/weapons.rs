@@ -261,6 +261,43 @@ impl Weapons {
         }
     }
 
+    /// Only the first `n` carried weapons stay (the hardcore hunt ruleset's
+    /// firearm cap); the rest are left behind.
+    pub fn keep_first(&mut self, n: usize) {
+        let mut kept = 0;
+        let mut first = None;
+        for i in 0..self.info.len().min(Bits::LEN) {
+            if !self.present.has(i) {
+                continue;
+            }
+            if kept < n {
+                kept += 1;
+                first.get_or_insert(i);
+                continue;
+            }
+            self.present.clear(i);
+            self.shots_left[i] = 0;
+            self.ammo_mag[i] = 0;
+            self.chambered[i] = 0;
+            self.mag_shots[i] = 0;
+            self.stash[i] = Default::default();
+        }
+        if !self.present.has(self.current) {
+            self.current = first.unwrap_or(0);
+            self.target = self.current;
+        }
+    }
+
+    /// One more load of rounds in every carried weapon's reserve (an
+    /// ammunition drop).
+    pub fn add_load(&mut self) {
+        for i in 0..self.info.len().min(Bits::LEN) {
+            if self.present.has(i) {
+                self.shots_left[i] += self.info[i].shots.max(0);
+            }
+        }
+    }
+
     /// All the rounds weapon `i` has: chambered, left and the spare
     /// magazine's (the dialect's "no weapon" test).
     pub fn rounds(&self, i: usize) -> i32 {
@@ -324,6 +361,13 @@ impl Weapons {
     }
 
     /// The current weapon's dialect extras, if any.
+    /// Whether the weapon in hand has two firing modes to switch between
+    /// (`semiAuto` and `fullAuto`, with a `modAnim`).
+    pub fn has_mode_switch(&self) -> bool {
+        self.mee().is_some_and(|m| m.semi_auto && m.full_auto)
+            && self.cur_anims().ms[weapon_anim::MODE] != 0
+    }
+
     pub fn mee(&self) -> Option<&MeeWeapon> {
         self.info.get(self.current).and_then(|i| i.mee.as_ref())
     }
@@ -337,10 +381,3 @@ impl Weapons {
         )
     }
 }
-    /// Whether the weapon in hand has two firing modes to switch between
-    /// (`semiAuto` and `fullAuto`, with a `modAnim`).
-    pub fn has_mode_switch(&self) -> bool {
-        self.mee().is_some_and(|m| m.semi_auto && m.full_auto)
-            && self.cur_anims().ms[weapon_anim::MODE] != 0
-    }
-

@@ -51,6 +51,9 @@ pub struct Herd {
     pub predation: Option<Box<predation::run::Predators>>,
     /// Bounded fleeing, when the player turns it on (`None`: the original's).
     pub flee: Option<Box<flee::FleeTable>>,
+    /// Predator hesitation, when the hardcore hunt ruleset turns it on
+    /// (`None`: the original's attack).
+    pub hesitation: Option<Box<super::hesitate::Hesitation>>,
 }
 
 impl Herd {
@@ -64,6 +67,9 @@ impl Herd {
         if self.predation.is_some() {
             predation::run::Predators::forget(&mut self.chars, index);
         }
+        if let Some(h) = self.hesitation.as_deref_mut() {
+            h.forget(index);
+        }
     }
 
     /// `AnimateCharacters`.
@@ -76,6 +82,10 @@ impl Herd {
     pub fn step_scheduled(&mut self, ctx: &mut Ctx<'_>, distant: bool) {
         let hunter = ctx.hunter;
         let base_dt = ctx.dt;
+        let base_run_k = ctx.run_k;
+        if let Some(h) = self.hesitation.as_deref_mut() {
+            h.begin(&self.chars, base_dt);
+        }
         for p in &mut self.packs {
             p.alert_prev = core::mem::take(&mut p.alert);
             p.attack_prev = core::mem::take(&mut p.attack);
@@ -86,6 +96,7 @@ impl Herd {
         }
         for i in 0..self.chars.len() {
             ctx.dt = base_dt;
+            ctx.run_k = base_run_k;
             self.chars[i].predation.tick(base_dt);
             self.chars[i].flee_tick(base_dt);
             let steer = self
@@ -185,6 +196,15 @@ impl Herd {
             }
             ctx.flee = self.flee.as_deref().map(|t| t.limits(c.ctype));
             ctx.target = target_of(c, hunter, steer);
+            // Hesitation: a waypoint round the hunter while it circles.
+            if let Some(h) = self.hesitation.as_deref_mut() {
+                let free = steer.is_none() && c.lure.is_none();
+                let s = h.steer(i, c, sp, hunter, base_dt, free);
+                if let (Some(t), true) = (s.target, free) {
+                    ctx.target = t;
+                }
+                ctx.run_k = base_run_k * s.run_k;
+            }
             ctx.struck = None;
             // Pack alarms and attacks are about the player: a member after
             // (or running from) another animal raises neither.
@@ -205,6 +225,7 @@ impl Herd {
         ctx.struck = None;
         ctx.flee = None;
         ctx.dt = base_dt;
+        ctx.run_k = base_run_k;
     }
 }
 

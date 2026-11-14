@@ -281,14 +281,7 @@ impl Hunt {
                 self.add_secondary_one(area, ct);
             }
         } else {
-            c.aware_hunter = true;
-            c.afraid_time = 60 * 1000;
-            if c.ai != ai::TREX || c.state == 0 {
-                c.state = 2;
-            }
-            if mee || c.ai != ai::BRACH {
-                c.blood_ttime += 90000;
-            }
+            wound(c, mee);
         }
         let c = &mut self.herd.chars[index];
         if c.ai == ai::TREX {
@@ -380,5 +373,18 @@ impl Hunt {
         }
         kept.append(&mut self.bullets);
         self.bullets = kept;
+    }
+}
+
+/// A hit an animal lives through: it knows of the hunter, is alarmed for a
+/// minute and bleeds (`dialect`: its species runs the dialect's AI).
+pub(super) fn wound(c: &mut crate::dino::Character, dialect: bool) {
+    c.aware_hunter = true;
+    c.afraid_time = 60 * 1000;
+    if c.ai != ai::TREX || c.state == 0 {
+        c.state = 2;
+    }
+    if dialect || c.ai != ai::BRACH {
+        c.blood_ttime += 90000;
     }
 }

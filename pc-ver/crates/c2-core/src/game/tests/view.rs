@@ -1,6 +1,7 @@
 //! Binocular range and selection regressions using synthetic terrain/animals.
 
 use super::support::setup;
+use crate::area::Area;
 use crate::game::Hunt;
 #[cfg(not(feature = "std"))]
 #[allow(unused_imports)]
@@ -161,4 +162,49 @@ fn distant_mountain_blocks_centered_animals_for_both_terrain_diagonals() {
             assert!(hunt.life_info(&area).is_none());
         }
     }
+}
+
+/// The overview is made from the files alone ([`c2_formats::overview`]), so
+/// the launcher's map editor shows the hunt's own map: land by its texture's
+/// 32x32 mip, water by the water's texture, a missing texture as texture 1.
+#[test]
+fn the_map_image_is_the_same_from_the_files_as_in_a_hunt() {
+    let flat = Area::flat(10);
+    let (mut map, mut rsc) = (flat.map.clone(), flat.rsc.clone());
+    let texture = |seed: u16| -> Vec<u16> {
+        (0..128 * 128)
+            .map(|i| (i as u16).wrapping_mul(seed) & 0x7fff)
+            .collect()
+    };
+    rsc.textures = vec![texture(7), texture(31), texture(113)];
+    rsc.waters = vec![c2_formats::rsc::Water {
+        texture_index: 2,
+        level: 5,
+        transp: 0.5,
+        fog_rgb: 0,
+    }];
+    let size = c2_formats::map::MAP_SIZE;
+    for z in 0..size {
+        for x in 0..size {
+            let i = z * size + x;
+            if x < 300 {
+                map.texture1[i] = 0xffff;
+            } else if x > 700 {
+                map.flags[i] |= crate::area::cell_flags::WATER;
+                map.water[i] = 0;
+            }
+        }
+    }
+    let raw = c2_formats::overview::image(&map, &rsc);
+    let area = Area::new(map, rsc, crate::area::TimeOfDay::Day);
+    assert_eq!(Hunt::map_image(&area), raw);
+    // Texture 1 on the left, texture 0 in the middle, the water's on the right.
+    let px = |x: usize| raw[100 * 256 + x];
+    assert_ne!(px(10), px(100));
+    assert_ne!(px(100), px(200));
+    assert_ne!(px(10), 0);
+    assert_eq!(
+        c2_formats::overview::image_rgba8(&area.map, &area.rsc).len(),
+        256 * 256 * 4
+    );
 }

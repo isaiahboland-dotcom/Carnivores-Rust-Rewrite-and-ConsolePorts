@@ -7,7 +7,8 @@ use super::Hunt;
 pub enum Outcome {
     /// Left alive: the trophy room should be saved.
     Exited,
-    /// Died (or quit while dead): this hunt's trophies are discarded.
+    /// Died (or quit while dead, or forfeited a hardcore hunt by leaving
+    /// without the ship): this hunt's trophies are discarded.
     Died,
 }
 
@@ -44,6 +45,8 @@ impl Hunt {
     }
 
     /// Y / Enter at the prompt: leave (in 4 s if alive).
+    /// With extraction as the way out (the hardcore hunt ruleset), leaving
+    /// alive this way forfeits the hunt.
     pub fn confirm_exit(&mut self) {
         if self.show_exit() && self.exit_time == 0 {
             self.exit_time = if self.health > 0 { 4000 } else { 1 };
@@ -67,7 +70,20 @@ impl Hunt {
         if self.exit_time > 0 {
             return;
         }
-        if self.health > 0 {
+        if self.health > 0 && !self.exit_forfeits() {
+            self.leave_alive();
+        } else {
+            self.outcome = Some(Outcome::Died);
+        }
+    }
+
+    /// Left alive: folds this hunt into the totals, updates the rank and
+    /// ends the hunt as [`Outcome::Exited`].
+    pub(super) fn leave_alive(&mut self) {
+        if self.outcome.is_some() {
+            return;
+        }
+        {
             let r = &mut self.room;
             r.last = c2_formats::sav::Stats {
                 shots_made: self.shots_made as i32,
@@ -86,9 +102,7 @@ impl Hunt {
             } else {
                 0
             };
-            self.outcome = Some(Outcome::Exited);
-        } else {
-            self.outcome = Some(Outcome::Died);
         }
+        self.outcome = Some(Outcome::Exited);
     }
 }

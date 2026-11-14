@@ -30,6 +30,7 @@ mod flee_tests;
 mod flyer;
 mod herbivore;
 mod herd;
+pub mod hesitate;
 mod huntable;
 pub mod mee;
 mod mee_ambient;
@@ -207,7 +208,7 @@ pub struct Character {
 }
 
 /// What the AI sees of the hunter.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct HunterView {
     /// `CameraAlpha`: where the hunter is looking (yaw).
     pub alpha: f32,
@@ -241,7 +242,7 @@ pub enum TargetKind {
 /// The target of one AI step: where it is, what it is, and what the animal
 /// knows of it. [`Herd::step`] sets it per character; other callers leave
 /// the default, which it overwrites.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Target {
     pub view: HunterView,
     pub kind: TargetKind,

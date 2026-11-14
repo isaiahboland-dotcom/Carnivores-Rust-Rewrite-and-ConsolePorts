@@ -15,6 +15,10 @@ impl Hunt {
         input: &HuntInput,
         out: &mut Vec<GameEvent>,
     ) {
+        // Hardcore hunt: every firearm empty, the trigger is the knife's.
+        if self.knife_input(area, input, out) {
+            return;
+        }
         if let Some(w) = input.select_weapon {
             if self.weapons.ftime == 0 {
                 if self.weapons.rounds(w) == 0 {

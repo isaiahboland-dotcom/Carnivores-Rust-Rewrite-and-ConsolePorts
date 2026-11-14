@@ -95,6 +95,43 @@ fn friendly_and_stealth_shorten_noticing() {
     );
 }
 
+/// Stealth crouch only makes the hunter harder to notice. An animal already
+/// alarmed stays alarmed when he crouches: the check never clears fear, and
+/// (outside the dialect) skips alarmed animals altogether.
+#[test]
+fn crouching_does_not_cancel_an_alarm() {
+    for dialect in [false, true] {
+        let (area, mut hunt, _) = setup(false);
+        hunt.opts.stealth = true;
+        hunt.wind.speed = 0.0;
+        if dialect {
+            let m = crate::dino::mee::MeeInfo::new(ai::STEGO);
+            hunt.herd.species[1].mee = Some(Box::new(m));
+        }
+        let c = &mut hunt.herd.chars[0];
+        c.pos = [hunt.player.x, c.pos[1], hunt.player.z - 2000.0];
+        (c.lookx, c.lookz) = (0.0, 1.0);
+        hunt.check_afraid(&area);
+        let (fear, state) = (hunt.herd.chars[0].afraid_time, hunt.herd.chars[0].state);
+        assert!(fear > 0 && state != 0, "noticed standing: {fear} {state}");
+        assert!(hunt.herd.chars[0].aware_hunter);
+
+        // Crouched and backed off to where a calm animal would not notice.
+        hunt.player.head_y = 110.0;
+        hunt.player.z += 30_000.0;
+        for _ in 0..50 {
+            hunt.check_afraid(&area);
+        }
+        let c = &hunt.herd.chars[0];
+        assert_eq!(
+            (c.afraid_time, c.state),
+            (fear, state),
+            "dialect: {dialect}"
+        );
+        assert!(c.aware_hunter);
+    }
+}
+
 #[test]
 fn dialect_calls_go_by_menu_slot() {
     let (area, mut hunt, car) = setup(false);

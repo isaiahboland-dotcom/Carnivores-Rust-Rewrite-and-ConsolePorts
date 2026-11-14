@@ -112,6 +112,9 @@ pub struct Hunt {
     /// the clock hold still; the camera moves).
     pub flying: bool,
     pub time_stopped: bool,
+    /// The hardcore hunt ruleset, when the instance turns it on
+    /// ([`Hunt::start_hardcore`]; `None`: a regular hunt).
+    pub hardcore: Option<alloc::boxed::Box<super::hardcore::Hardcore>>,
 }
 
 impl Hunt {
@@ -188,6 +191,7 @@ impl Hunt {
             teleport: Teleport::default(),
             flying: false,
             time_stopped: false,
+            hardcore: None,
             player,
             herd,
             weapons,
