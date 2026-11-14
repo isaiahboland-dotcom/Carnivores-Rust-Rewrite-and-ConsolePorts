@@ -217,9 +217,7 @@ impl Hunt {
     /// `modAnim`, switches between them.
     pub(super) fn switch_mode(&mut self, out: &mut Vec<GameEvent>) {
         let w = &mut self.weapons;
-        let both = w.mee().is_some_and(|m| m.semi_auto && m.full_auto);
-        if !both || w.cur_anims().ms[wa::MODE] == 0 || w.state != WeaponState::Ready || w.ftime != 0
-        {
+        if !w.has_mode_switch() || w.state != WeaponState::Ready || w.ftime != 0 {
             return;
         }
         w.state = WeaponState::Switching;

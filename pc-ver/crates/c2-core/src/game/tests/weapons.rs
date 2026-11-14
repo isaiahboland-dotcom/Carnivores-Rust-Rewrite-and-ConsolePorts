@@ -209,6 +209,39 @@ fn a_rack_weapon_racks_after_each_shot_and_switches_mode() {
 }
 
 #[test]
+fn console_auto_chamber_reloads_and_racks_without_input() {
+    // The consoles have no reload or rack button: `auto_chamber` does both.
+    let idle = HuntInput::default();
+    // A one-by-one weapon: emptying the chamber starts a full reload.
+    let (area, mut h, car) = chamber_weapon(" reload = 2\n rldAnimFull = 3\n", &[]);
+    h.opts.auto_chamber = true;
+    let cars = [Some(&car), Some(&car)];
+    let mut ev = Vec::new();
+    assert_eq!((h.weapons.chambered[0], h.weapons.shots_left[0]), (2, 4));
+    shoot(&mut h, &area, &car, &mut ev);
+    shoot(&mut h, &area, &car, &mut ev);
+    assert_eq!(h.weapons.state, WeaponState::Reloading, "on its own");
+    weapon_ticks(&mut h, &area, &cars, idle, 12, &mut ev);
+    assert_eq!(h.weapons.state, WeaponState::Ready);
+    assert_eq!((h.weapons.chambered[0], h.weapons.shots_left[0]), (2, 2));
+    // A must-rack weapon: the next round is chambered after the shot.
+    let (area, mut h, car) =
+        chamber_weapon(" rckAnim = 5\n mustRack = TRUE\n", &[weapon_anim::RACK]);
+    h.opts.auto_chamber = true;
+    let cars = [Some(&car), Some(&car)];
+    shoot(&mut h, &area, &car, &mut ev);
+    weapon_ticks(&mut h, &area, &cars, idle, 12, &mut ev);
+    assert_eq!((h.weapons.chambered[0], h.weapons.shots_left[0]), (1, 4));
+    // Without it the same weapon waits for the rack key.
+    let (area, mut h, car) =
+        chamber_weapon(" rckAnim = 5\n mustRack = TRUE\n", &[weapon_anim::RACK]);
+    let cars = [Some(&car), Some(&car)];
+    shoot(&mut h, &area, &car, &mut ev);
+    weapon_ticks(&mut h, &area, &cars, idle, 12, &mut ev);
+    assert_eq!(h.weapons.chambered[0], 0, "by hand without auto_chamber");
+}
+
+#[test]
 fn a_magazine_weapon_swaps_for_its_spare_and_auto_reloads() {
     let (area, mut h, car) = chamber_weapon(" rldAnimFull = 3\n autoReload = TRUE\n", &[]);
     let mut ev = Vec::new();

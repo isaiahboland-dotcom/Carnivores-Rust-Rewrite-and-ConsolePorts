@@ -81,6 +81,8 @@ pub enum Tap {
     Resupply,
     /// Multi ammo: load the other kind (lethal / tranquilizer).
     AmmoSwitch,
+    /// Switch the gun's firing mode (semi / full auto).
+    ModeSwitch,
     /// Advanced observer: fly or walk; stop or start time.
     Fly,
     TimeStop,
@@ -374,7 +376,7 @@ impl Ui {
             format!("Bagged: {}", h.successes)
         };
         c.text_c(gpu, cx, 180.0, 1.0, WHITE, &state);
-        let slim = h.weapons.multi_ammo();
+        let slim = extras::slim(h);
         if let Some(m) = message {
             // Beside the ammo switch when there is one.
             let (mx, n) = if slim { (189.0, 14) } else { (cx, 22) };

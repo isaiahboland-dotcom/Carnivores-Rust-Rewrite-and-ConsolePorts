@@ -145,6 +145,9 @@ saving.
 
 ## `.cia` builds from the command line
 The 3DS builder can make a `.cia` without its window (the packs are
+- A gun with two firing modes (semi and full auto): a **Mode** button in the
+  same place, with the mode loaded under it. Multi ammo has the place first.
+  Reloading and racking stay automatic.
 `c2-cook`'s):
 ```
 c2-3ds-builder --cia NAME --tools DIR --out SD_DIR [--target o3ds|n3ds] [--art-from GAME_DIR] [--icon PNG] [--banner PNG] [--sound WAV]

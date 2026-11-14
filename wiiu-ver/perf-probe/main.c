@@ -80,7 +80,7 @@ typedef struct { float x, z; uint32_t rgba; } RadarBlip;
 extern void c2_set_radar(void *, uint32_t);
 extern uint32_t c2_radar_blips(void *, RadarBlip *, uint32_t);
 typedef struct { int32_t ammo; uint32_t weapon_ready; int32_t call; int32_t weapon; uint32_t kills; uint32_t prompt;
-                 int32_t lethal, tranq; uint32_t darts; } HudState;
+                 int32_t lethal, tranq; uint32_t darts; uint32_t mode; } HudState;
 extern void c2_hud_state(void *, HudState *);
 extern uint32_t c2_hunt_dead(void *, uint32_t *, uint32_t *);
 extern int32_t c2_restart_hunt(void *, uint32_t);
@@ -321,6 +321,7 @@ static void hud_update(GX2Texture *tex, const HudState *hud, const char *weapon,
      * the loaded one marked with +. */
     if (weapon && hud->lethal >= 0)
         snprintf(line, sizeof(line), "%sLETHAL:%d %sTRANQ:%d", hud->darts ? "" : "+", hud->lethal, hud->darts ? "+" : "", hud->tranq);
+    else if (weapon && hud->mode) snprintf(line, sizeof(line), "%s %d %s", weapon, hud->ammo, hud->mode == 2 ? "FULL" : "SEMI");
     else if (weapon) snprintf(line, sizeof(line), "%s %d", weapon, hud->ammo);
     else snprintf(line, sizeof(line), "%s", unarmed);
     perf_line(tex, 0, line);
@@ -1156,6 +1157,7 @@ end_load:
                     if (zoom_hit(touch.x, touch.y)) { drc_zoom = !drc_zoom; hud_dirty = 1; }
                     else if (tele_pick && confirm_hit(touch.x, touch.y)) { c2_teleport(sim, tele_x, tele_z); tele_pick = 0; }
                     else if (menu.teleport && map_view_touch(drc_uv, touch.x, touch.y, &tx, &tz)) { tele_pick = 1; tele_x = tx * 256.0f; tele_z = tz * 256.0f; }
+                    else if (touch.x < 187 && touch.y < 32 && hud.mode && !hud.prompt) flags |= IN_MODE_SWITCH; /* the weapon strip */
                     else if (touch.x < 187) {
                         int slot=(touch.y/120)*2+(touch.x>=94);
                         if(slot<(int)carried_weapons) flags |= 64 | ((uint32_t)slot<<16);
@@ -1308,7 +1310,7 @@ end_load:
                 prev_call_page = call_page;
                 GX2Invalidate(GX2_INVALIDATE_MODE_CPU_TEXTURE, icons_tex.surface.image, icons_tex.surface.imageSize);
             }
-            if (hud.call != prev_hud.call || hud.weapon != prev_hud.weapon || hud.ammo != prev_hud.ammo || hud.weapon_ready != prev_hud.weapon_ready || hud.kills != prev_hud.kills || hud.lethal != prev_hud.lethal || hud.tranq != prev_hud.tranq || hud.darts != prev_hud.darts || hud_dirty) { char weapon[24]; hud_update(&hud_tex, &hud, c2_weapon_label(sim, (uint32_t)hud.weapon, weapon, sizeof(weapon)) ? NULL : weapon, menu.mode == MODE_TROPHY ? "TROPHY ROOM" : "OBSERVER", drc_zoom); prev_hud = hud; hud_dirty = 0; }
+            if (hud.call != prev_hud.call || hud.weapon != prev_hud.weapon || hud.ammo != prev_hud.ammo || hud.weapon_ready != prev_hud.weapon_ready || hud.kills != prev_hud.kills || hud.lethal != prev_hud.lethal || hud.tranq != prev_hud.tranq || hud.darts != prev_hud.darts || hud.mode != prev_hud.mode || hud_dirty) { char weapon[24]; hud_update(&hud_tex, &hud, c2_weapon_label(sim, (uint32_t)hud.weapon, weapon, sizeof(weapon)) ? NULL : weapon, menu.mode == MODE_TROPHY ? "TROPHY ROOM" : "OBSERVER", drc_zoom); prev_hud = hud; hud_dirty = 0; }
             {
                 float *op = GX2RLockBufferEx(&overlay_pos, 0), *ou = GX2RLockBufferEx(&overlay_uv, 0);
                 if (!op || !ou) OSFatal("Overlay: buffer lock failed");

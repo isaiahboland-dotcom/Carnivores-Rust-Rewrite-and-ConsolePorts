@@ -823,14 +823,19 @@ those keys keep the original's model.
   for its animation's length, turned by a random roll, with the view model. The HUD
   shows the chamber picture (`picc`), the chambered rounds, the reserve after
   room for a full load, the spare magazine below, and the round flash
-  (`FLASH1..4.TGA`, a step each). The rounds' slide during a reload is not
-  drawn.
+  (`FLASH1..4.TGA`, a step each). During a reload the rounds going in slide
+  from the reserve to the chamber over the reload animation (PC HUD; the
+  count itself changes when the animation ends, as in the game).
 - **Keys**: the dialect gives reload, rack and firing mode to the original's
   Look up, Strafe and Turn right bindings, and they still do their old jobs too. Here they get their own:
   R, F and V on PC (free in the default map), and D-pad Left, D-pad Right and
   the left stick click on a pad. The consoles have no buttons left (the
   owner's layout), so there `HuntOptions::auto_chamber` reloads and racks on
-  their own. Their counters show all the rounds a weapon has. The muzzle
+  their own, and the fire-mode switch is a touch control: a **Mode** button
+  on the 3DS bottom screen (in the multi ammo switch's place, shown only for a
+  gun with two modes) and a tap on the GamePad's weapon strip on Wii U (the
+  strip also names the mode). Manual reload and rack buttons are not added.
+  Their counters show all the rounds a weapon has. The muzzle
   flash, round models, chamber picture and click/collect sounds are PC only
   for now.
 - Checked: `tests/dialect_weapons.rs` (`C2_GAMES_DIR`) loads all 70 weapons of

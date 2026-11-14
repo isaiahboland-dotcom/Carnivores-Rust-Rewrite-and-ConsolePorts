@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use c2_core::game::{Hunt, WeaponAnims, WeaponInfo};
+use c2_core::game::{weapon_anim, Hunt, WeaponAnims, WeaponInfo, WeaponState};
 use c2_core::model::{car_anim_duration_ms, pose_car, PreparedModel};
 use c2_formats::car;
 use c2_formats::res_txt::WeaponDef;
@@ -503,8 +503,8 @@ impl WeaponAssets {
 
     /// The dialect's rounds (`DrawPostObjects`): the chamber picture, the
     /// rounds chambered, the reserve after room for a full load, the spare
-    /// magazine below, and the round flash after a shot. (The rounds'
-    /// slide during a reload is not drawn.)
+    /// magazine below, and the round flash after a shot. During a reload
+    /// the rounds going in slide from the reserve to the chamber.
     fn chamber_sprites(
         &self,
         hud: &Hud,
@@ -538,8 +538,37 @@ impl WeaponAssets {
         };
         let chambered = w.chambered[cur];
         icons(chambered, 6.0, y0, out);
-        let left = w.shots_left[cur];
-        icons(left, 9.0 + ch * bw, y0, out);
+        let mut left = w.shots_left[cur];
+        let reserve_x = 9.0 + ch * bw;
+        // A reload in progress: the rounds going in leave the reserve row
+        // (their count is only moved when it ends) and slide to the chamber
+        // as the animation runs; the rest of the reserve closes up behind.
+        let slot = match w.state {
+            WeaponState::Reloading => Some(weapon_anim::RELOAD),
+            WeaponState::PartReload => Some(weapon_anim::PART),
+            _ => None,
+        };
+        let moving = slot
+            .filter(|_| w.info[cur].reload != 0)
+            .map_or(0, |_| w.ammo_in.clamp(0, left.min(MAX_ICONS)));
+        if let (Some(slot), true) = (slot, moving > 0) {
+            let total = w.cur_anims().ms[slot].max(1) as f32;
+            let p = (w.ftime as f32 / total).clamp(0.0, 1.0);
+            for i in 0..moving {
+                let from = reserve_x + i as f32 * bw;
+                let to = 6.0 + (chambered + i) as f32 * bw;
+                out.push(Sprite::new(
+                    img,
+                    (from + (to - from) * p) * scale,
+                    y0 * scale,
+                    scale,
+                ));
+            }
+            left -= moving;
+            icons(left, reserve_x + moving as f32 * bw * (1.0 - p), y0, out);
+        } else {
+            icons(left, reserve_x, y0, out);
+        }
         if left > MAX_ICONS {
             let x = (9.0 + ch * bw + bw + 4.0) * scale;
             let px = 8.0 * scale.max(1.0).round();

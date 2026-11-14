@@ -3,6 +3,8 @@
 //! - Multi ammo (Half tranq): an ammo switch under the map, "Switch" with
 //!   the kind loaded ("lethal" / "tranq") under it; the other buttons
 //!   narrow beside it. The weapon cards show both counts.
+//! - A gun with two firing modes (semi / full auto): a "Mode" button in the
+//!   same place, with the mode loaded under it, when multi ammo is off.
 //! - Advanced observer mode: Fly and Time (stop / go) in the weapon
 //!   column, which an observer has no weapons for.
 //!
@@ -26,10 +28,21 @@ pub(super) const FLY: [f32; 4] = [4.0, 4.0, LEFT_W - 8.0, 30.0];
 pub(super) const TIME: [f32; 4] = [4.0, 40.0, LEFT_W - 8.0, 30.0];
 const BLUE: Rgba = [120, 180, 255, 255];
 
-/// The under-map buttons' places: ammo (refills), binoculars, pause; with
-/// multi ammo, narrowed beside the switch.
+/// Whether the gun in hand shows a mode button (multi ammo has the slot
+/// first).
+fn mode_button(h: &Hunt) -> bool {
+    !h.weapons.multi_ammo() && h.death.is_none() && h.weapons.has_mode_switch()
+}
+
+/// Whether the under-map buttons narrow beside a switch button.
+pub(super) fn slim(h: &Hunt) -> bool {
+    h.weapons.multi_ammo() || mode_button(h)
+}
+
+/// The under-map buttons' places: ammo (refills), binoculars, pause;
+/// narrowed beside the ammo or mode switch.
 pub(super) fn buttons(h: &Hunt) -> [[f32; 4]; 3] {
-    if h.weapons.multi_ammo() {
+    if slim(h) {
         SLIM
     } else {
         [AMMO, BINOC, PAUSE]
@@ -40,6 +53,9 @@ pub(super) fn buttons(h: &Hunt) -> [[f32; 4]; 3] {
 pub(super) fn tap(h: &Hunt, x: f32, y: f32) -> Option<Tap> {
     if h.weapons.multi_ammo() && inside(SWITCH, x, y) {
         return Some(Tap::AmmoSwitch);
+    }
+    if mode_button(h) && inside(SWITCH, x, y) {
+        return Some(Tap::ModeSwitch);
     }
     if h.free_observer() {
         if inside(FLY, x, y) {
@@ -75,6 +91,9 @@ pub(super) fn panels(c: &mut Canvas, h: &Hunt) {
             },
         );
     }
+    if mode_button(h) {
+        c.rect(SWITCH, PANEL);
+    }
     if h.free_observer() {
         c.rect(FLY, if h.flying { HILITE } else { PANEL });
         c.rect(TIME, if h.time_stopped { HILITE } else { PANEL });
@@ -91,6 +110,16 @@ pub(super) fn labels(c: &mut Canvas, gpu: &mut Gpu, h: &Hunt) {
             ("tranq", BLUE)
         } else {
             ("lethal", GOLD)
+        };
+        c.text_c(gpu, cx, SWITCH[1] + 26.0, 1.0, col, t);
+    }
+    if mode_button(h) {
+        let cx = SWITCH[0] + SWITCH[2] / 2.0;
+        c.text_c(gpu, cx, SWITCH[1] + 8.0, 1.0, WHITE, "Mode");
+        let (t, col) = if h.weapons.fire_mode[h.weapons.current] == 1 {
+            ("full", GOLD)
+        } else {
+            ("semi", BLUE)
         };
         c.text_c(gpu, cx, SWITCH[1] + 26.0, 1.0, col, t);
     }

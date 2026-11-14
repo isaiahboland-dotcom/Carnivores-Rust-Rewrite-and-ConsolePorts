@@ -359,6 +359,7 @@ fn read_pad(hid: &Hid, held: KeyPad, down: KeyPad, touch: &mut Touch) -> (Pad, O
         select_call: None,
         resupply: false,
     };
+        switch_mode: false,
     (pad, tap)
 }
 
@@ -684,6 +685,7 @@ fn hunt(
             fps = fps * 0.9 + (1.0 / dt) * 0.1;
         }
         let t_upd = ticks();
+            Some(Tap::ModeSwitch) => pad.switch_mode = true,
         if let Some(m) = game.trophy_buttons(&mut pad) {
             message = Some((m, frame + 120));
         }

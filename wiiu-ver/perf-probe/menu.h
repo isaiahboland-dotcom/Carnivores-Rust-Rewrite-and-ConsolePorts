@@ -14,6 +14,8 @@ enum { IN_CALL_SHIFT = 26, IN_NIGHT_VISION = 1024, IN_FLASHLIGHT = 2048 };
 /* D-pad Left: multi ammo's ammo switch (advanced observer: fly); Y in advanced
  * observer mode: stop / start time (lib.rs AMMO_SWITCH, TIME_STOP). */
 enum { IN_AMMO_SWITCH = 1 << 16, IN_TIME_STOP = 1 << 17 };
+/* A tap on the GamePad's weapon strip: the gun's firing mode (lib.rs MODE_SWITCH). */
+enum { IN_MODE_SWITCH = 1 << 19 };
 /* The hunter's files (menu.rs PROFILE_*). */
 enum { PROFILE_SAVE = 0, PROFILE_RECORD = 1 };
 static const char *profile_files[2] = {"trophy00.sav", "trophy00.rec"};

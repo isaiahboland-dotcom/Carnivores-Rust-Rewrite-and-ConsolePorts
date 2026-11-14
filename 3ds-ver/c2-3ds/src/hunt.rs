@@ -400,6 +400,8 @@ pub struct Pad {
     pub resupply: bool,
 }
 
+    /// From the bottom screen: switch the gun's firing mode.
+    pub switch_mode: bool,
 /// Frees what the 3DS doesn't need once the GPU has its copies.
 fn trim(area: &mut Area, cars: &mut [Option<Car>]) {
     area.rsc.textures = Vec::new();
@@ -991,6 +993,7 @@ impl Game {
             toggle_binoculars: pad.binoculars,
             call: pad.call && self.setup.callable(self.hunt.target_call),
             ..Default::default()
+            switch_mode: pad.switch_mode,
         };
         // At most `MAX_TICKS` per frame: past that the game slows down
         // instead of spending ever longer catching up (a slow tick would
@@ -1008,6 +1011,7 @@ impl Game {
             input.toggle_binoculars = false;
             input.call = false;
             self.acc_ms -= TICK_MS as f32;
+            input.switch_mode = false;
             self.ticks_last += 1;
         }
     }

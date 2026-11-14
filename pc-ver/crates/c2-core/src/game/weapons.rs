@@ -337,3 +337,10 @@ impl Weapons {
         )
     }
 }
+    /// Whether the weapon in hand has two firing modes to switch between
+    /// (`semiAuto` and `fullAuto`, with a `modAnim`).
+    pub fn has_mode_switch(&self) -> bool {
+        self.mee().is_some_and(|m| m.semi_auto && m.full_auto)
+            && self.cur_anims().ms[weapon_anim::MODE] != 0
+    }
+

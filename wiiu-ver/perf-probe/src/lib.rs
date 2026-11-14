@@ -173,6 +173,8 @@ const AMMO_SWITCH: u32 = 1 << 16;
 const TIME_STOP: u32 = 1 << 17;
 
 /// Sound kinds for `c2_play_sound` / `c2_sound_clip` (slots within each):
+/// A tap on the GamePad's weapon strip: switch the gun's firing mode.
+const MODE_SWITCH: u32 = 1 << 19;
 /// effects (steps 0-5, underwater 6, the hunter's screams 7-10), calls
 /// (call n's answers at 3n..3n+2), the area's random sounds and ambient
 /// loops, the carried weapons (`KIND_WEAPON` + slot), then the characters
@@ -210,6 +212,8 @@ pub struct HudState {
     darts: u32,
 }
 #[no_mangle]
+    /// The gun's firing mode when it has two: 1 semi auto, 2 full auto; 0 otherwise.
+    mode: u32,
 pub extern "C" fn c2_hud_state(ptr: *mut core::ffi::c_void, out: *mut HudState) {
     let sim = unsafe { &*ptr.cast::<Simulation>() };
     let w = &sim.hunt.weapons;
@@ -226,6 +230,7 @@ pub extern "C" fn c2_hud_state(ptr: *mut core::ffi::c_void, out: *mut HudState) 
         darts: w.fires_darts(w.current) as u32,
     }; }
 }
+        mode: if w.has_mode_switch() { 1 + u32::from(w.fire_mode[w.current] == 1) } else { 0 },
 #[no_mangle]
 pub extern "C" fn c2_hunt_dead(ptr: *mut core::ffi::c_void, shots: *mut u32, kills: *mut u32) -> u32 {
     let sim = unsafe { &*ptr.cast::<Simulation>() };
@@ -604,7 +609,7 @@ pub extern "C" fn c2_move_tick(
     sim.hunt.opts.dynamic_night = sim.cycle.map(|c| c.is_night());
     sim.hunt.opts.night_vision_active = sim.night_vision;
     let before = sim.hunt.real_time;
-    sim.hunt.tick(&sim.area, &cars, &HuntInput { controls, toggle_weapon, fire: flags & 16 != 0, call: flags & 32 != 0, select_weapon: if flags & 4096 != 0 && !sim.hunt.weapons.info.is_empty() { Some((sim.hunt.weapons.current+1) % sim.hunt.weapons.info.len()) } else { select_weapon }, ..Default::default() }, 16, &mut sim.events);
+    sim.hunt.tick(&sim.area, &cars, &HuntInput { controls, toggle_weapon, fire: flags & 16 != 0, switch_mode: flags & MODE_SWITCH != 0, call: flags & 32 != 0, select_weapon: if flags & 4096 != 0 && !sim.hunt.weapons.info.is_empty() { Some((sim.hunt.weapons.current+1) % sim.hunt.weapons.info.len()) } else { select_weapon }, ..Default::default() }, 16, &mut sim.events);
     if sim.hunt.health <= 0 { sim.death_ms += 16; }
     if let Some(cycle) = &mut sim.cycle { cycle.advance(sim.hunt.real_time.wrapping_sub(before) as u32); }
     sim.notice.tick(16);
