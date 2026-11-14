@@ -2,6 +2,7 @@
 //! [`c2_formats::rules`]), read when the menu loads the pack: the times of
 //! day offered, the settings the instance fixes (the ones the 3DS has:
 //! mobile map, teleport, all dinos huntable, multi ammo, advanced observer,
+//! the secret animals' count
 //! and the survival budget), animals kept off the hunt menu, and the spawn
 //! rules a hunt applies.
 //!
@@ -49,6 +50,9 @@ pub fn apply(mut s: Settings, r: &Rules) -> Settings {
         if let Some(f) = field(&mut s, l) {
             *f = v != 0;
         }
+        if l == Lock::SecretDinos {
+            s.secret_dinos = v.clamp(0, 255);
+        }
     }
     s
 }
@@ -60,6 +64,9 @@ pub fn unapply(mut s: Settings, own: &Settings, r: &Rules) -> Settings {
     for &(l, _) in &r.locks {
         if let (Some(f), Some(o)) = (field(&mut s, l), field(&mut own, l)) {
             *f = *o;
+        }
+        if l == Lock::SecretDinos {
+            s.secret_dinos = own.secret_dinos;
         }
     }
     s

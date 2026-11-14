@@ -17,7 +17,9 @@ use c2_formats::car::Car;
 use c2_formats::sav::Save;
 use c2_vfs::Vfs;
 
+use crate::budget::{Plan, Request};
 use crate::rules::{HuntRules, Roam, Role, Rules};
+use c2_formats::rules::Rules as InstRules;
 use crate::world::DrawInfo;
 
 /// Simulation step: 20 ms, half the PC's rate. Every animal costs about
@@ -80,6 +82,9 @@ pub struct Setup {
     /// the animals' running speed (0.5..=1).
     pub max_ambient: i32,
     pub dino_run_k: f32,
+    /// Setting: unpicked animals the map's own tables may bring at most
+    /// (0: none); memory can allow fewer (`budget.rs`).
+    pub secret_max: u32,
     /// Bounded fleeing (experimental here): scared animals stay on the map
     /// and a flight has limits (`_FLEE.TXT`, else built-in ones).
     pub bounded_flee: bool,
@@ -133,20 +138,6 @@ impl Setup {
         self.area.eq_ignore_ascii_case("TROPHY")
     }
 
-    /// Whether character `i` is loaded: the hunter, the ambient animals
-    /// unless they are turned off, the targets and picked roamers; in the
-    /// trophy room, every species (the trophies).
-    pub fn keeps_char(&self, i: usize, role: Role) -> bool {
-        self.trophy()
-            || match role {
-                Role::Hunter => true,
-                Role::Ambient => self.max_ambient > 0,
-                Role::Slot(k) => self.targets.has(k + 10),
-                Role::Roamer => self.roamers.iter().any(|r| r.char == i),
-                Role::Off | Role::Aquatic => false,
-            }
-    }
-
     /// Whether call id `id` can be called: roamers' slots can't (their
     /// add-ons supply no call; they score +10% instead).
     pub fn callable(&self, id: i32) -> bool {
@@ -157,70 +148,63 @@ impl Setup {
         self.weapons.iter().collect()
     }
 
-    /// Memory the hunt's loads take (KiB: linear, main), by `c2-cook`'s
-    /// figures: the area with the hunter and ambient animals, each other
-    /// character `keep` loads and the carried weapons.
-    pub fn load_kb(
-        &self,
-        info: &PackInfo,
-        rules: &HuntRules,
-        keep: &dyn Fn(usize, Role) -> bool,
-    ) -> (usize, usize) {
-        let mut lin = info.cost("hunt") + info.cost(&self.area);
-        let mut heap = info.heap(&self.area);
-        for (c, &role) in rules.roles.iter().enumerate() {
-            if !keep(c, role) {
-                continue;
-            }
-            let m = format!("m:{}", rules.keys[c]);
-            lin += info.cost(&m);
-            // The hunter and ambient animals are in the area's figure.
-            if matches!(role, Role::Slot(_) | Role::Roamer) {
-                heap += info.heap(&m);
-            }
-        }
-        for w in self.carried() {
-            lin += info.cost(&format!("wpn{w}"));
-            heap += info.heap(&format!("wpn{w}"));
-        }
-        // The targets' calls (sounds and button picture), loaded per pick.
-        // Packs from before `call{id}` scopes counted them with a model.
-        if !self.trophy() {
-            lin += (10..Bits::LEN)
-                .filter(|&id| self.targets.has(id))
-                .map(|id| info.cost(&format!("call{id}")))
-                .sum::<usize>();
-        }
-        (lin, heap)
-    }
-
-    /// The roaming add-ons not picked whose tables put them on this map:
-    /// loaded as far as memory allows after the picks, so they roam it as
-    /// their makers meant (the menu lists them with "All dinos huntable").
-    pub fn native_roamers(&self, info: &PackInfo, rules: &HuntRules) -> Vec<usize> {
-        let Some(t) = &rules.tables else {
-            return Vec::new();
-        };
+    /// The instance's secret animals for this area (`_RULES.TXT`), one
+    /// entry per species: its character, how many, and the rule's name
+    /// for it. None in a survival or the trophy room.
+    pub fn rule_secrets(&self, rules: &HuntRules, inst: &InstRules) -> Vec<(usize, usize, String)> {
         if self.trophy() || self.survival.is_some() {
             return Vec::new();
         }
-        let (mut lin, mut heap) = self.load_kb(info, rules, &|i, r| self.keeps_char(i, r));
-        let mut out = Vec::new();
-        for (i, &role) in rules.roles.iter().enumerate() {
-            let here = t.characters.get(i).is_some_and(|c| c.spawns());
-            if role != Role::Roamer || self.keeps_char(i, role) || !here {
+        let names: Vec<String> = rules
+            .res
+            .characters
+            .iter()
+            .map(|d| c2_core::dino::DinoInfo::from_def(d).name)
+            .collect();
+        let mut out: Vec<(usize, usize, String)> = Vec::new();
+        for s in inst.secrets_on(&self.area) {
+            let Some(c) = c2_core::game::index_named(names.iter().map(String::as_str), &s.name)
+            else {
                 continue;
-            }
-            let m = format!("m:{}", rules.keys[i]);
-            let (l, h) = (info.cost(&m), info.heap(&m));
-            let fits = lin + l <= info.linear_kb && heap + h <= info.heap_kb;
-            if info.costs.contains_key(&m) && fits {
-                lin += l;
-                heap += h;
-                out.push(i);
+            };
+            match out.iter_mut().find(|e| e.0 == c) {
+                Some(e) => e.1 += s.count as usize,
+                None => out.push((c, s.count as usize, s.name.clone())),
             }
         }
         out
+    }
+
+    /// The hunt's memory plan (`budget.rs`): which models load and how
+    /// many animals of each are placed. `density` is the hunt's option;
+    /// `ambient_only`, the species "Random ambients" drew.
+    pub fn plan(
+        &self,
+        info: &PackInfo,
+        rules: &HuntRules,
+        inst: &InstRules,
+        density: i32,
+        ambient_only: Option<Vec<usize>>,
+    ) -> Plan {
+        let secrets = self.rule_secrets(rules, inst);
+        crate::budget::plan(
+            info,
+            rules,
+            &Request {
+                area: self.area.clone(),
+                hunting: !self.trophy() && self.survival.is_none(),
+                targets: self.targets,
+                roamers: self.roamers.iter().map(|r| r.char).collect(),
+                weapons: self.carried(),
+                ambient_max: usize::try_from(self.max_ambient).unwrap_or(0),
+                ambient_only,
+                secret_max: self.secret_max as usize,
+                rule_secrets: secrets.iter().map(|s| (s.0, s.1)).collect(),
+                // `PlaceCharacters`: 8 + density / 30 and up to 5 more.
+                huntable_want: usize::try_from(8 + density / 30 + 5).unwrap_or(8),
+                water: false,
+            },
+        )
     }
 }
 
@@ -250,6 +234,8 @@ pub struct Game {
     pub ask: Option<TrophyAsk>,
     /// The trophy room's memory plan (`None` outside it).
     pub trophy_plan: Option<trophy_room::RoomPlan>,
+    /// The hunt's memory plan: what was loaded and the animals' limits.
+    pub plan: Plan,
     /// The gyroscope, on for a stealth hunt: raw-to-degrees/s.
     gyro: Option<f32>,
     /// Extra ammo refills left.
@@ -343,6 +329,7 @@ fn next_seed(s: u32) -> u32 {
 fn new_hunt(
     area: &Area,
     setup: &Setup,
+    plan: &Plan,
     species: &[c2_core::dino::Species],
     tables: Option<&c2_formats::mee::Tables>,
     weapon_info: &[(c2_core::game::WeaponInfo, c2_core::game::WeaponAnims)],
@@ -395,7 +382,8 @@ fn new_hunt(
                 density: o.dens,
                 opt_agres: o.agres,
                 targets: setup.targets,
-                max_ambient: Some(setup.max_ambient),
+                // The plan's: the setting, or fewer when memory is short.
+                max_ambient: Some(i32::try_from(plan.ambients_max).unwrap_or(0)),
             },
         );
     }
@@ -537,38 +525,34 @@ impl Game {
                 .collect();
             pick(&all, 4, seed)
         });
-        let natives = setup.native_roamers(&info, &rules);
-        // The instance's secret animals for this area (`_RULES.TXT`) are
-        // loaded too: each takes memory like a pick.
-        let inst = load::rules(vfs);
+        // The memory plan: the picks, then the instance's secret animals
+        // (`_RULES.TXT`) and the map's own roamers, ambient animals and
+        // aquatic ones as far as memory goes (`budget.rs`).
+        let mut inst = load::rules(vfs);
         let hunting = !setup.trophy() && setup.survival.is_none();
-        let names: Vec<String> = rules
-            .res
-            .characters
-            .iter()
-            .map(|d| c2_core::dino::DinoInfo::from_def(d).name)
-            .collect();
-        let secrets: Vec<usize> = if hunting {
-            inst.secrets_on(&setup.area)
-                .filter_map(|s| c2_core::game::index_named(names.iter().map(String::as_str), &s.name))
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let plan = setup.plan(&info, &rules, &inst, room.options.dens, ambients);
         let (mut species, cars) = load::species_with(vfs, &rules.res, &|i| {
-            if secrets.contains(&i) {
-                return true;
-            }
             if setup.trophy() {
                 return trophies.contains(&i) || rules.roles.get(i) == Some(&Role::Hunter);
             }
-            if let Some(a) = &ambients {
-                if rules.roles.get(i) == Some(&Role::Ambient) {
-                    return setup.max_ambient > 0 && a.contains(&i);
-                }
-            }
-            rules.roles.get(i).is_some_and(|&r| setup.keeps_char(i, r)) || natives.contains(&i)
+            plan.loads(i)
         });
+        // The secrets as planned: memory can allow fewer than the rules ask.
+        if plan.planned {
+            let asked = setup.rule_secrets(&rules, &inst);
+            inst.secrets = plan
+                .rule_secrets
+                .iter()
+                .filter_map(|&(c, count)| {
+                    let name = asked.iter().find(|a| a.0 == c)?.2.clone();
+                    Some(c2_formats::rules::Secret {
+                        name,
+                        count: u32::try_from(count).unwrap_or(u32::MAX),
+                        areas: Vec::new(),
+                    })
+                })
+                .collect();
+        }
         if let Some(t) = &rules.tables {
             c2_core::mee::tune(&mut species, t);
         }
@@ -588,6 +572,7 @@ impl Game {
         let mut hunt = new_hunt(
             &area,
             &setup,
+            &plan,
             &species,
             rules.tables.as_ref(),
             &weapon_info,
@@ -609,11 +594,12 @@ impl Game {
             hunt.herd.flee = Some(load::flee(vfs, &hunt.herd.species));
         }
         // A dialect game's tables can place a dozen ambients or more:
-        // the setting's cap, as the original's placement has.
+        // the plan's cap (the setting's, or fewer), as the original's
+        // placement has.
         if rules.tables.is_some() && !setup.trophy() {
-            let max = usize::try_from(setup.max_ambient).unwrap_or(0);
-            hunt.herd
-                .cap_placed(max, |ct| rules.roles.get(ct) == Some(&Role::Ambient));
+            hunt.herd.cap_placed(plan.ambients_max, |ct| {
+                rules.roles.get(ct) == Some(&Role::Ambient)
+            });
         }
         // The instance's spawn rules, after the caps: its extra animals
         // always come.
@@ -676,6 +662,7 @@ impl Game {
             gait: 0,
             ask: None,
             trophy_plan,
+            plan,
             gyro: gyro_on(setup_stealth),
             resupplies,
         })

@@ -25,19 +25,19 @@ use c2_formats::cooked::{tile, write_pack, write_texture, TexFormat};
 use c2_vfs::{MemBackend, Vfs};
 
 mod area_sounds;
-/// The 3DS's memory plan, for its tests (the app itself only builds for
-/// the console).
-#[cfg(test)]
+/// The 3DS's memory plan, for `--plan` and its tests (the app itself only
+/// builds for the console).
 #[path = "../../c2-3ds/src/budget.rs"]
 #[allow(dead_code)]
 mod budget;
 mod check;
 mod pack_budget;
-/// The 3DS's reading of INFO.TXT, for the tests of what is written here.
-#[cfg(test)]
+/// The 3DS's reading of INFO.TXT, for `--plan` and the tests of what is
+/// written here.
 #[path = "../../c2-3ds/src/pack_info.rs"]
 #[allow(dead_code)]
 mod pack_info;
+mod plan_report;
 /// The 3DS's reading of the pack's rules (`--check` hunts by them).
 #[path = "../../c2-3ds/src/rules.rs"]
 #[allow(dead_code)]
@@ -58,6 +58,10 @@ const USAGE: &str = "usage:
   c2-cook --check <PACK.c2pk>   loads a pack as the 3DS does and plays a short
                                 hunt for each animal (finds missing files);
                                 with --bench NAME, that animal up close, killed
+
+  c2-cook --plan <PACK.c2pk>    the memory plan the 3DS makes for each area:
+                                animals, secrets, ambient and aquatic animals
+                                that fit with one pick and with the costliest
 
   --overlay  a game folder copied over GAME_DIR first (e.g. the Modder's
              Edition, which most add-ons are made for); repeatable
@@ -258,6 +262,8 @@ fn load_peak(
 struct Args {
     game: Option<PathBuf>,
     check: Option<PathBuf>,
+    /// `--plan PACK`: print the 3DS's memory plan for each area.
+    plan: Option<PathBuf>,
     bench: Option<String>,
     overlays: Vec<PathBuf>,
     mods: Vec<PathBuf>,
@@ -295,6 +301,7 @@ fn parse_args() -> Result<Args> {
                 .extend(c2_mods::expand_addons(std::path::Path::new(&val()?))),
             "--overlay" => a.overlays.push(val()?.into()),
             "--check" => a.check = Some(val()?.into()),
+            "--plan" => a.plan = Some(val()?.into()),
             "--bench" => a.bench = Some(val()?),
             "--recipe" => a.recipe = Some(val()?.into()),
             "--mods" => a.mods_dirs.push(val()?.into()),
@@ -1133,6 +1140,9 @@ fn main() -> Result<()> {
         )
         .init();
     let a = parse_args()?;
+    if let Some(p) = &a.plan {
+        return plan_report::report(p);
+    }
     if let Some(p) = &a.check {
         return check::check(p, a.bench.as_deref());
     }

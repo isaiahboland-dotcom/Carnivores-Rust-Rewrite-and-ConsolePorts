@@ -243,10 +243,13 @@ enum Pick {
 struct Memory {
     linear: (usize, usize),
     heap: (usize, usize),
+    /// Whether the hunt fits: the area and one of each pick.
+    fits: bool,
 }
 
-/// Area, time, animals, weapons, ambient on.
-type MemKey = (usize, usize, Bits, Bits, bool);
+/// Area, time, animals, weapons, ambient on, random ambients, secret
+/// animals, density.
+type MemKey = (usize, usize, Bits, Bits, bool, bool, i32, i32);
 
 /// One cell of a hexagon grid: centre and radius.
 type Cell = (f32, f32, f32);
@@ -730,6 +733,9 @@ impl Menu {
             self.dino_mask(),
             self.picked_weapons,
             self.settings.ambient,
+            self.settings.random_ambients,
+            self.settings.secret_dinos,
+            self.save.options.dens,
         );
         if let Some((k, m)) = self.mem.get() {
             if k == key {
@@ -744,10 +750,20 @@ impl Menu {
             setup.targets,
             &setup.roamers,
         );
-        let (lin, heap) = setup.load_kb(i, &rules, &|c, role| setup.keeps_char(c, role));
+        // "Random ambients" draws its four species when the hunt loads:
+        // the first four stand in for them here.
+        let ambients = setup.random_ambients.then(|| {
+            (0..rules.roles.len())
+                .filter(|&c| rules.roles[c] == Role::Ambient)
+                .take(4)
+                .collect()
+        });
+        let inst = crate::instance_rules::get();
+        let plan = setup.plan(i, &rules, &inst, self.save.options.dens, ambients);
         let m = Memory {
-            linear: (lin, i.linear_kb),
-            heap: (heap, i.heap_kb),
+            linear: (plan.used.linear, i.linear_kb),
+            heap: (plan.used.heap, i.heap_kb),
+            fits: plan.fits,
         };
         self.mem.set(Some((key, m)));
         m
@@ -769,8 +785,7 @@ impl Menu {
         if self.remaining() < 0 {
             return Err("Not enough points");
         }
-        let m = self.memory();
-        if m.linear.0 > m.linear.1 || m.heap.0 > m.heap.1 {
+        if !self.memory().fits {
             return Err("Too much for this console");
         }
         Ok(())
@@ -799,6 +814,7 @@ impl Menu {
             score_factor: 1.0,
             max_ambient: 0,
             dino_run_k: 1.0,
+            secret_max: 0,
             bounded_flee: false,
             blood: true,
             death_anim: true,
@@ -840,6 +856,7 @@ impl Menu {
             score_factor: self.extra().map_or(1.0, |e| e.2),
             max_ambient: self.settings.max_ambient(),
             dino_run_k: self.settings.run_pct as f32 / 100.0,
+            secret_max: self.settings.secret_dinos.clamp(0, 255) as u32,
             bounded_flee: self.settings.bounded_flee,
             blood: self.settings.blood,
             death_anim: self.settings.death_anim,
@@ -888,10 +905,7 @@ impl Menu {
         // Keep an affordable starting animal before spending memory on giants.
         // Equal-price candidates retain their randomized order.
         order.sort_by_key(|&i| self.dinos[i].1.price);
-        let fits = |m: &Self| {
-            let mem = m.memory();
-            mem.linear.0 <= mem.linear.1 && mem.heap.0 <= mem.heap.1
-        };
+        let fits = |m: &Self| m.memory().fits;
         let classic = self.survival == Some(SurvivalKind::Classic);
         // Load as many eligible species as this console's memory permits.
         for &i in &order {

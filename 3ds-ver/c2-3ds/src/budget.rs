@@ -62,12 +62,6 @@ impl Kb {
         }
     }
 
-    fn times(self, n: usize) -> Kb {
-        Kb {
-            linear: self.linear * n,
-            heap: self.heap * n,
-        }
-    }
 
     pub fn within(self, o: Kb) -> bool {
         self.linear <= o.linear && self.heap <= o.heap
@@ -138,6 +132,9 @@ pub struct Plan {
     /// Memory planned for, and the console's.
     pub used: Kb,
     pub budget: Kb,
+    /// What was left before the picks' limits were raised with it (the
+    /// last step): the room the hunt has to spare.
+    pub spare: Kb,
 }
 
 impl Plan {
@@ -352,6 +349,15 @@ pub fn plan(info: &PackInfo, rules: &HuntRules, req: &Request) -> Plan {
                 p.used = p.used.plus(model_kb(info, k));
             }
         }
+        // The menu refuses the hunt; one started all the same (a test
+        // script's) loads its picks and nothing else.
+        for c in (0..n).filter(|&c| rules.roles[c] == Role::Hunter) {
+            p.max[c] = Some(usize::MAX);
+        }
+        for &c in &picks {
+            p.max[c] = Some(1);
+            p.huntables.push((c, 1));
+        }
         return p;
     }
     p.fits = true;
@@ -425,6 +431,7 @@ pub fn plan(info: &PackInfo, rules: &HuntRules, req: &Request) -> Plan {
     let aquatic: Vec<(usize, usize)> = aquatic.into_iter().map(|c| (c, AQUATIC_EACH)).collect();
     let mut aquatic_n = vec![0usize; aquatic.len()];
     s.grow(&aquatic, &mut aquatic_n, AQUATIC_MAX);
+    p.spare = budget.left(s.used);
     // What is left: the picks' limits, as far as it goes.
     let free: Vec<(usize, usize)> = picks.iter().map(|&c| (c, usize::MAX)).collect();
     s.grow(&free, &mut pick_n, HUNTABLE_LIMIT);
@@ -570,6 +577,7 @@ fn unplanned(info: &PackInfo, rules: &HuntRules, req: &Request, budget: Kb) -> P
         drop: None,
         used,
         budget,
+        spare: budget.left(used),
     }
 }
 

@@ -5,7 +5,8 @@ use crate::dir;
 
 /// Small ambient animals around the hunter at most, when on: more than a
 /// handful in view costs frames on an Old 3DS. 5 (owner, 2026-11-01), for
-/// dialect games' spawn tables too.
+/// dialect games' spawn tables too. The hunt's memory plan (`budget.rs`)
+/// allows fewer, down to none, when the picks leave too little memory.
 pub const AMBIENT_CAP: i32 = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -61,6 +62,10 @@ pub struct Settings {
     /// The DinoHunt Corp terminal as the hunt setup's look (off by
     /// default; not in the original).
     pub dhc_terminal: bool,
+    /// Secret animals: unpicked ones a modded game's own tables bring on
+    /// a map, at most (0..=255, 0: none; the PC's "Total number of secret
+    /// dinos on map"). Memory can allow fewer (`budget.rs`).
+    pub secret_dinos: i32,
 }
 
 /// How the hunter crouches.
@@ -150,6 +155,7 @@ impl Default for Settings {
             half_tranq: true,
             free_observer: false,
             dhc_terminal: false,
+            secret_dinos: 10,
         }
     }
 }
@@ -195,6 +201,11 @@ impl Settings {
                 ("half_tranq", v) => s.half_tranq = v != "0",
                 ("advanced_observer", v) => s.free_observer = v != "0",
                 ("dhc_terminal", v) => s.dhc_terminal = v != "0",
+                ("secret_dinos", v) => {
+                    if let Ok(n) = v.parse::<i32>() {
+                        s.secret_dinos = n.clamp(0, 255);
+                    }
+                }
                 ("gyro_aim", v) => {
                     if let Ok(n) = v.parse::<i32>() {
                         s.gyro_pct = n.clamp(GYRO_STEPS[0], 100);
@@ -227,7 +238,7 @@ impl Settings {
                 "run_speed = {}\nambient = {}\nblood = {}\ndeath_animation = {}\n\
                  friendly = {}\nstealth_crouch = {}\nrandom_ambients = {}\ncrouch_button = {}\ngyro_aim = {}\n\
                  hunter = {}\nmap_mobile = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\n\
-                 test_points = {}\ntree_sprites = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nbounded_flee = {}\ndhc_terminal = {}\n",
+                 test_points = {}\ntree_sprites = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nbounded_flee = {}\ndhc_terminal = {}\nsecret_dinos = {}\n",
                 s.run_pct,
                 i32::from(s.ambient),
                 i32::from(s.blood),
@@ -248,7 +259,8 @@ impl Settings {
                 i32::from(s.half_tranq),
                 i32::from(s.free_observer),
                 i32::from(s.bounded_flee),
-                i32::from(s.dhc_terminal)
+                i32::from(s.dhc_terminal),
+                s.secret_dinos
             ),
         )
     }
