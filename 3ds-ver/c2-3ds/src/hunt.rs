@@ -202,7 +202,7 @@ impl Setup {
                 rule_secrets: secrets.iter().map(|s| (s.0, s.1)).collect(),
                 // `PlaceCharacters`: 8 + density / 30 and up to 5 more.
                 huntable_want: usize::try_from(8 + density / 30 + 5).unwrap_or(8),
-                water: false,
+                water: info.has_water(&self.area),
             },
         )
     }
@@ -603,6 +603,11 @@ impl Game {
             hunt.herd.cap_placed(plan.ambients_max, |ct| {
                 rules.roles.get(ct) == Some(&Role::Ambient)
             });
+        }
+        // Aquatic animals the plan has room for: in the closest water,
+        // and kept near the hunter (`c2_core::game::AquaticRoam`).
+        if hunting && !plan.aquatic.is_empty() {
+            hunt.roam_aquatics(&area, &plan.aquatic);
         }
         // The instance's spawn rules, after the caps: its extra animals
         // always come.

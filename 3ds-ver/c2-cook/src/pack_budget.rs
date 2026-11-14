@@ -22,11 +22,13 @@ pub struct Figures {
     pub ambients: BTreeMap<String, Vec<String>>,
     /// Face corners of each model, by scope (`m:{model}`).
     pub corners: BTreeMap<String, usize>,
+    /// Areas with water (aquatic animals are planned for these only).
+    pub water: Vec<String>,
 }
 
 /// The lines: `cost.*` (linear), `heap.*` (main), and for the memory plan
-/// `heapbase.AREAn`, `ambients.AREAn` and `inst.m:{model}` (the vertex
-/// buffer one drawn animal of the model takes, linear).
+/// `heapbase.AREAn`, `ambients.AREAn`, `inst.m:{model}` (the vertex
+/// buffer one drawn animal of the model takes, linear) and `water.AREAn`.
 pub fn lines(f: &Figures) -> String {
     let mut out = String::new();
     for (scope, kb) in &f.linear {
@@ -46,6 +48,9 @@ pub fn lines(f: &Figures) -> String {
             "inst.{scope} = {}\n",
             (corners * VERTEX_BYTES).div_ceil(1024)
         );
+    }
+    for area in &f.water {
+        out += &format!("water.{area} = 1\n");
     }
     out
 }
@@ -80,6 +85,7 @@ mod tests {
                 ("wpn0", 900),
                 ("hunt", 50),
             ]),
+            water: vec!["AREA1".to_string()],
         }
     }
 
@@ -99,6 +105,7 @@ mod tests {
         // 300 corners of 24 bytes round up to 8 KiB; 4096 are 96 KiB.
         assert_eq!(info.insts.get("m:MOSH"), Some(&8));
         assert_eq!(info.insts.get("m:TREX"), Some(&96));
+        assert!(info.has_water("AREA1") && !info.has_water("TROPHY"));
     }
 
     #[test]

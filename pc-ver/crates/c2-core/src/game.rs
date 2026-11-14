@@ -6,6 +6,7 @@
 //! `AnimateProcesses` (wind), `AddDeadBody`, `ProcessDemoMovement`.
 
 mod ammo_kinds;
+mod aquatic;
 mod arms;
 mod audio;
 mod combat;
@@ -29,6 +30,7 @@ mod weapon_info;
 mod weapons;
 mod wildlife;
 
+pub use aquatic::{has_water, AquaticRoam, FAR_M as AQUATIC_FAR_M, NEAR_M as AQUATIC_NEAR_M};
 pub use death::{death_cam_view, DeathCam};
 pub use events::{GameEvent, HuntKill};
 pub use hardcore::Hardcore;

@@ -128,7 +128,7 @@ pub fn report(pack: &Path) -> Result<()> {
                 secret_max: SECRET_MAX,
                 rule_secrets: rule_secrets.clone(),
                 huntable_want: 8 + DENSITY / 30 + 5,
-                water: true,
+                water: info.has_water(area),
                 ..Default::default()
             };
             println!("{}", line(label, &plan(&info, &hr, &req)));

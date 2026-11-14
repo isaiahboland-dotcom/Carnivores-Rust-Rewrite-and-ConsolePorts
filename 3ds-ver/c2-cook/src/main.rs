@@ -824,9 +824,10 @@ impl Cooker {
     }
 }
 
-/// One area: its map and slimmed RSC, terrain atlas, object textures, the
+/// One area (returns whether it has water): its map and slimmed RSC,
+/// terrain atlas, object textures, the
 /// three skies, the overview map and its sounds, under `C2RS/{name}/`.
-fn cook_area(c: &mut Cooker, vfs: &Vfs, name: &str) -> Result<()> {
+fn cook_area(c: &mut Cooker, vfs: &Vfs, name: &str) -> Result<bool> {
     c.scope = name.to_string();
     let map_path = format!("HUNTDAT/AREAS/{name}.MAP");
     // Forests denser than the original's densest are thinned, the same for
@@ -857,6 +858,7 @@ fn cook_area(c: &mut Cooker, vfs: &Vfs, name: &str) -> Result<()> {
         }
     }
     let area = c2_core::load::area(vfs, name, TimeOfDay::Day)?;
+    let water = c2_core::game::has_water(&area);
     let profile = c.profile;
     // Terrain textures in one atlas, square, power-of-two.
     let n = area.rsc.textures.len().max(1);
@@ -945,7 +947,7 @@ fn cook_area(c: &mut Cooker, vfs: &Vfs, name: &str) -> Result<()> {
         format!("C2RS/{name}/INFO.TXT"),
         format!("terrain_tile = {t}\natlas_cols = {cols}\nterrain_count = {n}\n").into_bytes(),
     );
-    Ok(())
+    Ok(water)
 }
 
 /// The pack's rules, read the way the 3DS reads them.
@@ -1429,8 +1431,12 @@ fn main() -> Result<()> {
         c.copy(&vfs, &path)?;
     }
 
+    // Areas with water: where the 3DS plans aquatic animals.
+    let mut wet = Vec::new();
     for name in &areas {
-        cook_area(&mut c, &vfs, name)?;
+        if cook_area(&mut c, &vfs, name)? && !name.eq_ignore_ascii_case("TROPHY") {
+            wet.push(name.clone());
+        }
     }
     // Memory. For each area, the base: the area, the hunter and the
     // ambient animals (measured loading peak; linear memory). Then each
@@ -1611,6 +1617,7 @@ fn main() -> Result<()> {
         area_heap_bare: bare_heap,
         ambients: ambients_by_area,
         corners: c.corners.clone(),
+        water: wet,
     });
     info += &format!("addons = {}\n", u8::from(addons));
     let snowy = snowy(&vfs, &areas);

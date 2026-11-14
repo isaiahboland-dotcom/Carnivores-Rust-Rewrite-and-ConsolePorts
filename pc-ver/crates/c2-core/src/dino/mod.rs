@@ -67,6 +67,7 @@ pub(crate) use collide::{
 };
 pub use herbivore::HerbivoreParams;
 pub use herd::{Herd, Pack};
+pub(crate) use place::Habitat;
 pub use place::PlaceOptions;
 pub use small::SmallParams;
 pub use species::{anim, stock_ai, DinoInfo, Species, Tuning};

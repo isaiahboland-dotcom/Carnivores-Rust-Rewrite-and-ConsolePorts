@@ -25,11 +25,13 @@ pub enum Role {
     /// offered in the menu, loaded when picked. `c2-cook` sorts models the
     /// same way for its memory figures.
     Roamer,
-    /// Fish, sea animals and waders (AI 30 and up) without a slot: loaded
+    /// Fish, sea animals and waders (AI 30 to 34) without a slot: loaded
     /// last, with what memory the rest of the hunt leaves (`budget.rs`),
-    /// on maps with water.
+    /// on maps with water, and kept near the hunter
+    /// (`c2_core::game::AquaticRoam`).
     Aquatic,
-    /// Not loaded on the 3DS: an ambient animal of other maps.
+    /// Not loaded on the 3DS: an ambient animal of other maps, a land
+    /// wanderer of AI 35 and up.
     Off,
 }
 
@@ -216,6 +218,10 @@ impl Rules {
                     None if (0..10).contains(&d.ai) && elsewhere(i) => Role::Off,
                     None if (0..10).contains(&d.ai) => Role::Ambient,
                     None if (10..30).contains(&d.ai) => Role::Roamer,
+                    // The dialect's waders and swimmers (brachiosaurs,
+                    // fish, Mosasaurus, Ichthyornis); its land brachiosaur
+                    // and anything later stay out.
+                    None if (30..=34).contains(&d.ai) => Role::Aquatic,
                     None => Role::Off,
                 }
             })

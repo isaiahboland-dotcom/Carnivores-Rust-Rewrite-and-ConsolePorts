@@ -138,6 +138,7 @@ impl Hunt {
         if !self.opts.trophy {
             self.herd.step_scheduled(&mut ctx, self.opts.distant_ai);
         }
+        self.step_aquatics(area, dt);
         self.prof.mark(2);
         for e in dev {
             match e {

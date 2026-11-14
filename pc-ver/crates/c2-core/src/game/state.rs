@@ -76,6 +76,9 @@ pub struct Hunt {
     pub kills: Vec<HuntKill>,
     /// A survival (README M13) instead of a hunt.
     pub survival: Option<Survival>,
+    /// Aquatic animals kept near the hunter (the consoles'; `None`: the
+    /// game's own placement, as on PC).
+    pub aquatic: Option<super::aquatic::AquaticRoam>,
     /// Distance walked / time spent this hunt (`TrophyRoom.Last.path/time`).
     pub path: f32,
     pub time_s: f32,
@@ -203,6 +206,7 @@ impl Hunt {
             health: MAX_HEALTH,
             death: None,
             survival: None,
+            aquatic: None,
             objects_on_look: 0,
             bullets: Vec::new(),
             recoil: [0.0; 2],

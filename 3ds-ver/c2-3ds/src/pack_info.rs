@@ -55,6 +55,9 @@ pub struct PackInfo {
     /// Linear memory one animal of a model takes while it is drawn
     /// (`inst.m:{model}`, KiB): its own vertex buffer.
     pub insts: HashMap<String, usize>,
+    /// Areas with water (`water.AREAn = 1`): aquatic animals are planned
+    /// for these only.
+    pub water: HashMap<String, usize>,
     /// Areas where it snows by their `.c2map` (Ice Age's beside C2's).
     pub snow: Vec<String>,
     /// Where each roaming add-on (character index) spawns, as the cooker
@@ -96,6 +99,7 @@ impl PackInfo {
                 .filter_map(|(k, v)| Some((k.strip_prefix("ambients.")?.to_string(), list(v))))
                 .collect(),
             insts: Self::prefixed(&m, "inst."),
+            water: Self::prefixed(&m, "water."),
             roam_areas: m.contains_key("roam_map").then(|| {
                 m.iter()
                     .filter_map(|(k, v)| {
@@ -121,6 +125,11 @@ impl PackInfo {
 
     pub fn heap(&self, piece: &str) -> usize {
         self.heaps.get(piece).copied().unwrap_or(0)
+    }
+
+    /// Whether `area` has water an aquatic animal could use.
+    pub fn has_water(&self, area: &str) -> bool {
+        self.water.get(area).is_some_and(|&w| w != 0)
     }
 
     /// Whether the pack has the memory plan's figures for `area`: its
