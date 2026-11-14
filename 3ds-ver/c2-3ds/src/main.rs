@@ -114,6 +114,23 @@ fn clock_ms() -> f64 {
     ticks() as f64 / TICKS_PER_SEC * 1000.0
 }
 
+/// The hunt's memory plan (`budget.rs`) beside what is on the map: the
+/// most picked, secret, ambient and aquatic animals it allows.
+fn plan_line(game: &hunt::Game) -> String {
+    let p = &game.plan;
+    if !p.planned {
+        return format!("plan: none, {} animals", game.hunt.herd.chars.len());
+    }
+    format!(
+        "plan: dinos {} secret {} ambient {} aquatic {}; {} animals",
+        p.huntables_max(),
+        p.secrets(),
+        p.ambients_max,
+        p.aquatic.iter().map(|a| a.1).sum::<usize>(),
+        game.hunt.herd.chars.len()
+    )
+}
+
 /// The last frame's tick count and each part's mean / worst ms per tick
 /// (`c2_core::prof::SECTIONS`, by initial).
 fn tick_line(game: &hunt::Game) -> String {
@@ -793,7 +810,7 @@ fn hunt(
             .filter(|m| m.1 > frame)
             .map(|m| m.0.clone());
         let debug = format!(
-            "{} {fps:.0}fps cmd {:.0}% {}\n{}\nms: sim {:.1} world {:.1} 2d {:.1} wait {:.1}\n{}",
+            "{} {fps:.0}fps cmd {:.0}% {}\n{}\nms: sim {:.1} world {:.1} 2d {:.1} wait {:.1}\n{}\n{}",
             game.info.target,
             gpu.cmdbuf_usage() * 100.0,
             mem_line(),
@@ -805,6 +822,7 @@ fn hunt(
             ms[2],
             ms[3],
             tick_line(&game),
+            plan_line(&game),
         );
         let t_ui = ticks();
         ui.new_frame();

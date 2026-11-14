@@ -434,18 +434,13 @@ impl Menu {
         } else if let Some(m) = &self.message {
             (m.to_uppercase(), AMBER)
         } else {
-            let m = self.memory();
-            let over = m.linear.0 > m.linear.1 || m.heap.0 > m.heap.1;
-            (
-                format!(
-                    "MEM {}/{} + {}/{} MIB",
-                    m.heap.0 / 1024,
-                    m.heap.1 / 1024,
-                    m.linear.0 / 1024,
-                    m.linear.1 / 1024
-                ),
-                if over { RED } else { LO },
-            )
+            // The memory plan: animals and room to spare, or what to drop.
+            if self.memory().fits {
+                let line = self.plan_line().to_uppercase();
+                (line.trim_start_matches("READY. ").to_string(), LO)
+            } else {
+                (self.too_much_line().to_uppercase(), RED)
+            }
         };
         c.text(gpu, 8.0, 229.0, 1.0, mc, &cut(&msg, 48));
         if self.roamer_picked() && !self.observer {

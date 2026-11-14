@@ -27,9 +27,12 @@ use crate::gpu::{Gpu, Texture, BOTTOM_W, TOP_W};
 use crate::hunt::{PackInfo, Setup};
 use crate::rules::{Roam, Role, Rules};
 
+mod plan;
 mod terminal;
 mod terminal_draw;
 mod tranq;
+
+use plan::{MemKey, Memory, O_SECRET};
 use crate::settings::Settings;
 use crate::ui::load;
 pub use terminal::Keys;
@@ -111,7 +114,7 @@ const O_SPEED_UP: [f32; 4] = [264.0, 20.0, 36.0, 28.0];
 const O_AMBIENT: [f32; 4] = [40.0, 56.0, 240.0, 24.0];
 const O_RANDOM: [f32; 4] = [40.0, 84.0, 240.0, 24.0];
 const O_FRIENDLY: [f32; 4] = [40.0, 112.0, 240.0, 24.0];
-const O_STEALTH: [f32; 4] = [40.0, 140.0, 240.0, 24.0];
+const O_STEALTH: [f32; 4] = [40.0, 140.0, 118.0, 24.0];
 const BLOOD: [f32; 4] = [16.0, 130.0, 140.0, 24.0];
 const DEATH_ANIM: [f32; 4] = [164.0, 130.0, 140.0, 24.0];
 /// Settings: the mobile game's map look; teleporting by the map.
@@ -127,8 +130,9 @@ const HINTS: [f32; 4] = [164.0, 210.0, 74.0, 26.0];
 const DHC: [f32; 4] = [242.0, 210.0, 74.0, 26.0];
 /// Settings: unlimited points for testing (beside Back).
 const TEST_PTS: [f32; 4] = [84.0, 210.0, 76.0, 26.0];
-/// Hunt options: every tree and plant as its sprite (performance).
-const O_SPRITES: [f32; 4] = [40.0, 168.0, 240.0, 24.0];
+/// Hunt options: every tree and plant as its sprite (performance), beside
+/// the stealth crouch; the row below is the secret animals' (`plan.rs`).
+const O_SPRITES: [f32; 4] = [162.0, 140.0, 118.0, 24.0];
 /// Hunt options: bounded fleeing (experimental).
 const O_FLEE: [f32; 4] = [40.0, 192.0, 240.0, 18.0];
 
@@ -236,20 +240,6 @@ enum Pick {
     /// renders from its model.
     Roamer(Roam),
 }
-
-/// What memory the picks need and what the console has, KiB: linear, then
-/// main memory.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Memory {
-    linear: (usize, usize),
-    heap: (usize, usize),
-    /// Whether the hunt fits: the area and one of each pick.
-    fits: bool,
-}
-
-/// Area, time, animals, weapons, ambient on, random ambients, secret
-/// animals, density.
-type MemKey = (usize, usize, Bits, Bits, bool, bool, i32, i32);
 
 /// One cell of a hexagon grid: centre and radius.
 type Cell = (f32, f32, f32);
@@ -720,53 +710,6 @@ impl Menu {
             }
         }
         (targets, roamers)
-    }
-
-    /// Memory the picks need, against what the console has: the area with
-    /// the hunter and ambient animals, then each loaded model and weapon
-    /// (`c2-cook`'s figures; which model an animal uses can depend on the
-    /// area in Modder's Edition rules).
-    fn memory(&self) -> Memory {
-        let key = (
-            self.area,
-            self.time,
-            self.dino_mask(),
-            self.picked_weapons,
-            self.settings.ambient,
-            self.settings.random_ambients,
-            self.settings.secret_dinos,
-            self.save.options.dens,
-        );
-        if let Some((k, m)) = self.mem.get() {
-            if k == key {
-                return m;
-            }
-        }
-        let i = &self.info;
-        let setup = self.setup();
-        let rules = self.rules.hunt_with(
-            &setup.area,
-            TIMES[self.time].0,
-            setup.targets,
-            &setup.roamers,
-        );
-        // "Random ambients" draws its four species when the hunt loads:
-        // the first four stand in for them here.
-        let ambients = setup.random_ambients.then(|| {
-            (0..rules.roles.len())
-                .filter(|&c| rules.roles[c] == Role::Ambient)
-                .take(4)
-                .collect()
-        });
-        let inst = crate::instance_rules::get();
-        let plan = setup.plan(i, &rules, &inst, self.save.options.dens, ambients);
-        let m = Memory {
-            linear: (plan.used.linear, i.linear_kb),
-            heap: (plan.used.heap, i.heap_kb),
-            fits: plan.fits,
-        };
-        self.mem.set(Some((key, m)));
-        m
     }
 
     fn can_hunt(&self) -> Result<(), &'static str> {
@@ -1310,8 +1253,11 @@ impl Menu {
             }
             Step::Options => {
                 let offered = self.random_ambients_offered();
+                // The secret animals' row (`plan.rs`), taken below.
+                let secret = inside(O_SECRET, x, y) && self.secrets_offered();
                 let s = &mut self.settings;
-                if inside(O_SPEED_DOWN, x, y) {
+                if secret {
+                } else if inside(O_SPEED_DOWN, x, y) {
                     s.run_pct = (s.run_pct - 5).max(50);
                 } else if inside(O_SPEED_UP, x, y) {
                     s.run_pct = (s.run_pct + 5).min(100);
@@ -1320,6 +1266,14 @@ impl Menu {
                     s.run_pct = (50 + (f * 50.0 / 5.0).round() as i32 * 5).clamp(50, 100);
                 } else if inside(O_AMBIENT, x, y) {
                     s.ambient = !s.ambient;
+                    self.focus = Some(if s.ambient {
+                        format!(
+                            "As many as memory leaves, up to {}",
+                            crate::settings::AMBIENT_CAP
+                        )
+                    } else {
+                        "No ambient animals".into()
+                    });
                 } else if inside(O_RANDOM, x, y) && offered {
                     s.random_ambients = !s.random_ambients;
                 } else if inside(O_FRIENDLY, x, y) {
@@ -1350,6 +1304,9 @@ impl Menu {
                     } else {
                         "Crouch while held".into()
                     });
+                }
+                if secret {
+                    self.tap_secrets();
                 }
             }
             Step::Gear => {
@@ -2053,13 +2010,21 @@ impl Menu {
             toggles.push((O_RANDOM, s.random_ambients, "Random ambients (4)"));
         }
         toggles.push((O_FRIENDLY, s.friendly, "3DS friendly"));
-        toggles.push((O_STEALTH, s.stealth, "Stealth crouch"));
-        toggles.push((O_SPRITES, s.tree_sprites, "Trees as sprites"));
+        toggles.push((O_STEALTH, s.stealth, "Stealth"));
+        toggles.push((O_SPRITES, s.tree_sprites, "Sprites"));
         toggles.push((O_FLEE, s.bounded_flee, "Bounded fleeing (experimental)"));
         for (r, on, _) in &toggles {
             c.rect(*r, if *on { [60, 110, 60, 255] } else { PANEL });
         }
+        let secrets = self.secrets_offered();
+        if secrets {
+            c.rect(O_SECRET, PANEL);
+        }
         c.flush(gpu);
+        if secrets {
+            let (r, t) = (O_SECRET, self.secrets_label());
+            c.text_c(gpu, r[0] + r[2] / 2.0, r[1] + 8.0, 1.0, WHITE, &t);
+        }
         c.text_c(
             gpu,
             160.0,
@@ -2085,8 +2050,14 @@ impl Menu {
             "+",
         );
         for (r, on, name) in toggles {
-            let t = format!("{name}: {}", if on { "ON" } else { "OFF" });
-            c.text_c(gpu, 160.0, r[1] + 8.0, 1.0, WHITE, &t);
+            // Ambient animals on: as many as the memory plan leaves.
+            let state = match (on, r == O_AMBIENT) {
+                (true, true) => "AUTO",
+                (true, false) => "ON",
+                (false, _) => "OFF",
+            };
+            let t = format!("{name}: {state}");
+            c.text_c(gpu, r[0] + r[2] / 2.0, r[1] + 8.0, 1.0, WHITE, &t);
         }
     }
 
@@ -2312,21 +2283,17 @@ impl Menu {
             }
         }
 
-        // Will it fit?
-        let m = self.memory();
-        let over = m.linear.0 > m.linear.1 || m.heap.0 > m.heap.1;
+        // Will it fit? The memory plan: how many animals, and what is
+        // to spare; a hunt that doesn't fit names the pick to drop.
+        let over = !self.memory().fits;
+        let ready = self.step == Step::Options || self.trophy();
+        if let (true, Ok(()), Some(t)) = (ready, self.can_hunt(), self.plan_extras()) {
+            c.text(gpu, 8.0, 178.0, 1.0, DIM, &t);
+        }
         let (msg, col) = match (self.step, self.can_hunt()) {
-            (_, Ok(())) if self.step == Step::Options || self.trophy() => (
-                format!(
-                    "Ready. Memory {}/{} + {}/{} MiB",
-                    m.heap.0 / 1024,
-                    m.heap.1 / 1024,
-                    m.linear.0 / 1024,
-                    m.linear.1 / 1024
-                ),
-                TEXT,
-            ),
-            (Step::Options, Err(e)) => (e.to_string(), if over { RED } else { DIM }),
+            (_, Ok(())) if ready => (self.plan_line(), TEXT),
+            (Step::Options, Err(_)) if over => (self.too_much_line(), RED),
+            (Step::Options, Err(e)) => (e.to_string(), DIM),
             // Taken by the arm above.
             (Step::Options, Ok(())) => (String::new(), DIM),
             (Step::Area, _) => ("Pick a place and the time of day".into(), DIM),
