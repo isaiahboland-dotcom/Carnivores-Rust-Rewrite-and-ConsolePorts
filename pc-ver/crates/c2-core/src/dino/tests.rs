@@ -280,12 +280,12 @@ fn impossible_spawn_group_does_not_starve_later_targets() {
     assert!(herd.chars.iter().all(|c| c.ctype == 1));
 }
 
-#[test]
-fn mee_placement_follows_groups_and_packs() {
+/// A dialect game's tables: three solo animals of character 1 in one
+/// spawn group, two packs of three of character 2 in another.
+fn mee_tables() -> c2_formats::mee::Tables {
     use c2_formats::mee::{
         Character as MeeChar, PackGroup, PackLink, Region, SpawnGroup, SpawnLink, Tables,
     };
-    let area = Area::flat(10);
     let region = Region {
         xmin: 300,
         xmax: 900,
@@ -302,7 +302,7 @@ fn mee_placement_follows_groups_and_packs() {
         group: g,
         ratio: 1.0,
     };
-    let t = Tables {
+    Tables {
         spawn_groups: vec![group(3), group(2)],
         pack_groups: vec![PackGroup {
             min: 3,
@@ -328,7 +328,13 @@ fn mee_placement_follows_groups_and_packs() {
         snow: None,
         survival: None,
         trophy_start: None,
-    };
+    }
+}
+
+#[test]
+fn mee_placement_follows_groups_and_packs() {
+    let area = Area::flat(10);
+    let t = mee_tables();
     let mut herd = Herd {
         species: vec![
             species(ai::HUNTER, 2),
@@ -375,6 +381,51 @@ fn mee_placement_follows_groups_and_packs() {
     herd.species[1].info.ai = -1;
     herd.place_mee(&area, hunter, &mut rng, &t, 128);
     assert_eq!(count(&herd, 1), 0);
+}
+
+#[test]
+fn species_caps_stop_spawns_and_no_caps_change_nothing() {
+    let area = Area::flat(10);
+    let t = mee_tables();
+    let hunter = (50.0 * 256.0, 50.0 * 256.0);
+    let place = |caps: Option<Vec<Option<usize>>>| {
+        let mut herd = Herd {
+            species: vec![
+                species(ai::HUNTER, 2),
+                species(ai::PARA, 8),
+                species(ai::VELO, 8),
+            ],
+            caps,
+            ..Default::default()
+        };
+        let mut rng = MsRand::new(7);
+        herd.place_mee(&area, hunter, &mut rng, &t, 128);
+        (herd, rng)
+    };
+    let count = |h: &Herd, ct: usize| h.chars.iter().filter(|c| c.ctype == ct).count();
+    let spots = |h: &Herd| h.chars.iter().map(|c| (c.ctype, c.pos)).collect::<Vec<_>>();
+    // No caps, and caps that limit nothing, place the same animals at the
+    // same spots as before caps existed (the PC's placement).
+    let (free, _) = place(None);
+    assert_eq!((count(&free, 1), count(&free, 2)), (3, 6));
+    let (loose, _) = place(Some(vec![None, None, Some(usize::MAX)]));
+    assert_eq!(spots(&free), spots(&loose));
+    // A console's plan: two parasaurs, four raptors, never more.
+    let (mut capped, mut rng) = place(Some(vec![None, Some(2), Some(4)]));
+    assert_eq!((count(&capped, 1), count(&capped, 2)), (2, 4));
+    // Packs still point at their own leaders.
+    for c in &capped.chars {
+        if let Some(p) = c.pack {
+            assert_eq!(capped.chars[capped.packs[p].leader].pack, Some(p));
+        }
+    }
+    // Later spawns keep to the caps too; a species past the list is free.
+    assert!(!capped.spawn(1, [0.0; 3], &mut rng, 128));
+    assert!(!capped.spawn(2, [0.0; 3], &mut rng, 128));
+    assert_eq!((count(&capped, 1), count(&capped, 2)), (2, 4));
+    // A cap of none places none of the species.
+    let (none, _) = place(Some(vec![None, Some(0)]));
+    assert_eq!((count(&none, 1), count(&none, 2)), (0, 6));
 }
 
 pub(super) fn dist(c: &Character, h: &HunterView) -> f32 {

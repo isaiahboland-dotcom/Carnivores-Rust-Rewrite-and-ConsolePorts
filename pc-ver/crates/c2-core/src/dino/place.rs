@@ -62,7 +62,8 @@ impl Herd {
     }
 
     /// Adds a character, unless its species has no model (a cooked pack
-    /// with only some species, or a `.CAR` that failed to load).
+    /// with only some species, or a `.CAR` that failed to load) or is at
+    /// its cap ([`Herd::caps`]).
     pub(crate) fn spawn(
         &mut self,
         ctype: usize,
@@ -79,6 +80,14 @@ impl Herd {
             .get(ctype)
             .is_some_and(|s| s.ani_time.is_empty() || s.info.ai < 0)
         {
+            return false;
+        }
+        // A console's memory plan allows no more of this species.
+        let cap = self
+            .caps
+            .as_ref()
+            .and_then(|c| c.get(ctype).copied().flatten());
+        if cap.is_some_and(|max| self.chars.iter().filter(|c| c.ctype == ctype).count() >= max) {
             return false;
         }
         let mut c = Character {

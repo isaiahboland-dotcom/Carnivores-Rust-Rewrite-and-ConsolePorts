@@ -361,3 +361,31 @@ fn a_survival_and_the_trophy_room_are_not_planned() {
     assert!(p.fits && !p.planned);
     assert!(p.native_secrets.is_empty() && p.rule_secrets.is_empty());
 }
+
+#[test]
+fn the_herd_gets_the_plans_limits() {
+    let req = Request {
+        rule_secrets: vec![(SHARK, 3), (REX, 2)],
+        ..three_picks()
+    };
+    let p = plan(&pack(20000, 30000, true), &rules(false), &req);
+    let Some(caps) = p.caps() else {
+        panic!("a planned hunt has caps");
+    };
+    // The hunter and the small ambient animals have no limit of their own.
+    assert_eq!((caps[HUNTER], caps[1]), (None, None));
+    assert_eq!(caps[BRACH], Some(3));
+    // A pick's limit, the instance's secrets of its species on top.
+    assert_eq!(caps[ALLO], Some(count(&p, ALLO)));
+    assert_eq!(caps[REX], Some(count(&p, REX) + 2));
+    // A species loaded for the instance's secrets alone: only those.
+    assert_eq!(
+        caps[SHARK],
+        Some(3 + p.aquatic.iter().find(|a| a.0 == SHARK).map_or(0, |a| a.1))
+    );
+    // Without a plan the game's own populations stand.
+    assert_eq!(
+        plan(&pack(20000, 30000, false), &rules(false), &req).caps(),
+        None
+    );
+}

@@ -62,7 +62,6 @@ impl Kb {
         }
     }
 
-
     pub fn within(self, o: Kb) -> bool {
         self.linear <= o.linear && self.heap <= o.heap
     }
@@ -148,6 +147,24 @@ impl Plan {
         self.huntables
             .iter()
             .fold(0usize, |n, h| n.saturating_add(h.1))
+    }
+
+    /// The limits as the herd takes them (`Herd::caps`): per character
+    /// the most of it, the instance's secrets on top of a pick's own.
+    /// `None` without a plan: the game's own populations.
+    pub fn caps(&self) -> Option<Vec<Option<usize>>> {
+        if !self.planned {
+            return None;
+        }
+        let secret = |c: usize| {
+            let of_c = self.rule_secrets.iter().filter(|s| s.0 == c);
+            of_c.map(|s| s.1).sum::<usize>()
+        };
+        let cap = |(c, max): (usize, &Option<usize>)| match *max {
+            Some(usize::MAX) | None => None,
+            Some(k) => Some(k + secret(c)),
+        };
+        Some(self.max.iter().enumerate().map(cap).collect())
     }
 
     /// Secret animals planned in all.

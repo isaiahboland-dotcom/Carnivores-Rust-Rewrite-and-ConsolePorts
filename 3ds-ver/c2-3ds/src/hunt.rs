@@ -369,6 +369,9 @@ fn new_hunt(
         herd.trophy_spots = t.trophies.clone();
     }
     herd.portrait_stands = portrait_stands;
+    // The memory plan's limits: no more of a species than was planned
+    // for, at placement or later.
+    herd.caps = plan.caps();
     if trophy {
         herd.place_trophies(area, &room, &mut rng);
     } else if let Some(t) = tables {

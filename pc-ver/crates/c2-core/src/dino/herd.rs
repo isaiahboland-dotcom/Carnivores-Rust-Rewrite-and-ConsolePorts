@@ -54,6 +54,11 @@ pub struct Herd {
     /// Predator hesitation, when the hardcore hunt ruleset turns it on
     /// (`None`: the original's attack).
     pub hesitation: Option<Box<super::hesitate::Hesitation>>,
+    /// The most characters of each species (by type; `None`, or a type
+    /// past the list: no limit), for a console's memory plan: [`Herd::spawn`]
+    /// adds none beyond it, at placement or later. `None` (the PC): the
+    /// populations the game's own rules give.
+    pub caps: Option<Vec<Option<usize>>>,
 }
 
 impl Herd {
