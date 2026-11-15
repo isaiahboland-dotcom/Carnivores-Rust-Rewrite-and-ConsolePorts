@@ -12,15 +12,15 @@ mod dhc_look;
 mod draw2d;
 mod gpu;
 mod hunt;
+mod instance_rules;
 mod menu;
 mod pack_info;
 mod rules;
 mod save;
-mod instance_rules;
 mod settings;
 mod shot;
-mod stands;
 mod sound;
+mod stands;
 mod ui;
 mod world;
 
@@ -563,7 +563,9 @@ fn low_memory_notice(vfs: &Vfs, gpu: &mut Gpu, io: &mut Io) {
     let mut c = Canvas::new(ui::load(vfs, "C2RS/FONT.TX"));
     while io.apt.main_loop() {
         let (_, down) = io.keys();
-        let tapped = read_pad(io.hid, KeyPad::empty(), down, &mut io.touch).1.is_some();
+        let tapped = read_pad(io.hid, KeyPad::empty(), down, &mut io.touch)
+            .1
+            .is_some();
         if down.intersects(KeyPad::A | KeyPad::START) || tapped {
             return;
         }
@@ -574,7 +576,14 @@ fn low_memory_notice(vfs: &Vfs, gpu: &mut Gpu, io: &mut Io) {
         for (k, line) in LINES.iter().enumerate() {
             c.text_c(gpu, 200.0, 84.0 + 14.0 * k as f32, 1.0, WHITE, line);
         }
-        c.text_c(gpu, 200.0, 200.0, 1.0, [150, 150, 150, 255], "Press A to continue");
+        c.text_c(
+            gpu,
+            200.0,
+            200.0,
+            1.0,
+            [150, 150, 150, 255],
+            "Press A to continue",
+        );
         gpu.begin_2d(Some([0, 0, 0]));
         gpu.end();
         io.frame += 1;

@@ -600,7 +600,14 @@ impl Ui {
             frame(c, r, BG, LINE);
             c.rect([r[0] + 6.0, r[1] + 17.0, r[2] - 12.0, 1.0], LINE);
             c.flush(gpu);
-            c.text(gpu, r[0] + 10.0, r[1] + 6.0, 1.0, LO, "DHC-OS // FIELD LINK");
+            c.text(
+                gpu,
+                r[0] + 10.0,
+                r[1] + 6.0,
+                1.0,
+                LO,
+                "DHC-OS // FIELD LINK",
+            );
             c.text(gpu, r[0] + 10.0, r[1] + 24.0, 2.0, HI, "LEAVE THE HUNT?");
             let mut rows = vec!["A  LEAVE AND SAVE"];
             if !hunt.opts.trophy {

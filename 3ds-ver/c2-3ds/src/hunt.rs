@@ -6,10 +6,10 @@ use c2_formats::bits::Bits;
 use anyhow::Result;
 use c2_core::area::{Area, TimeOfDay};
 use c2_core::dino::{Herd, PlaceOptions};
+use c2_core::game::trophy_room;
 use c2_core::game::{
     GameEvent, Hunt, HuntInput, HuntOptions, SurvivalKind, SurvivalOptions, Weapons,
 };
-use c2_core::game::trophy_room;
 use c2_core::load;
 use c2_core::player::{Controls, Player};
 use c2_core::rng::MsRand;
@@ -19,8 +19,8 @@ use c2_vfs::Vfs;
 
 use crate::budget::{Plan, Request};
 use crate::rules::{HuntRules, Roam, Role, Rules};
-use c2_formats::rules::Rules as InstRules;
 use crate::world::DrawInfo;
+use c2_formats::rules::Rules as InstRules;
 
 /// Simulation step: 20 ms, half the PC's rate. Every animal costs about
 /// 0.1 ms a step on an Old 3DS; the original updates once per frame with
@@ -30,8 +30,8 @@ pub const TICK_MS: u32 = 20;
 /// Most ticks run in one frame (40 ms of game time).
 pub const MAX_TICKS: u32 = 4;
 
-pub use crate::pack_info::{PackInfo, PACK_OLDEST, PACK_VERSION};
 use crate::pack_info::kv;
+pub use crate::pack_info::{PackInfo, PACK_OLDEST, PACK_VERSION};
 
 impl PackInfo {
     /// How to draw `area` (`C2RS/AREAn/INFO.TXT`).
@@ -491,7 +491,10 @@ impl Game {
             let hunter = (0..rules.roles.len()).filter(|&i| rules.roles[i] == Role::Hunter);
             let base_linear_kb = info.cost("hunt")
                 + info.cost(&setup.area)
-                + hunter.filter_map(model).map(|m| info.cost(&m)).sum::<usize>();
+                + hunter
+                    .filter_map(model)
+                    .map(|m| info.cost(&m))
+                    .sum::<usize>();
             let budget = trophy_room::Budget {
                 linear_kb: info.linear_kb,
                 heap_kb: info.heap_kb,
@@ -506,9 +509,10 @@ impl Game {
                 })
             };
             let has_portrait = |i: usize| {
-                rules.keys.get(i).is_some_and(|k| {
-                    vfs.resolve(&format!("C2RS/MENU/R/{k}.TX")).is_some()
-                })
+                rules
+                    .keys
+                    .get(i)
+                    .is_some_and(|k| vfs.resolve(&format!("C2RS/MENU/R/{k}.TX")).is_some())
             };
             let p = trophy_room::plan(
                 &room.bodies,

@@ -543,11 +543,7 @@ fn survival_hunt(
         opts,
         room,
     );
-    Some(SurvivalHunt {
-        area,
-        hunt,
-        cars,
-    })
+    Some(SurvivalHunt { area, hunt, cars })
 }
 
 /// A survival on Mount Ravan with every animal loaded, its waves bought

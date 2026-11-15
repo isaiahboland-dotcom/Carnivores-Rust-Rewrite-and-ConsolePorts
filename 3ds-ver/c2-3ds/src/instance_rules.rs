@@ -29,7 +29,11 @@ pub fn load(vfs: &Vfs) -> Rules {
 
 /// The rules in force (empty before a pack is loaded).
 pub fn get() -> Rules {
-    RULES.lock().ok().and_then(|g| g.clone()).unwrap_or_default()
+    RULES
+        .lock()
+        .ok()
+        .and_then(|g| g.clone())
+        .unwrap_or_default()
 }
 
 /// The 3DS setting a lock fixes, if the 3DS has it.
