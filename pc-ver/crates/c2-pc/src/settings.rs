@@ -121,6 +121,19 @@ pub struct PcSettings {
     pub dhc_terminal: i32,
     /// The terminal's CRT scanlines (1 = on; off by default, for reading).
     pub dhc_crt: i32,
+    /// Animated waves (1 = on; off by default, not in the original, whose
+    /// water is flat): the modernized Modder's Edition's three-sine swell
+    /// on open water (`shaders/terrain.wgsl: wave_offset`).
+    pub modern_waves: i32,
+    /// Water depth tint (1 = on; off by default, not in the original):
+    /// under water, the fog, the screen's wash and the ground darken with
+    /// depth in the water's own hue (`water_tint`), in place of the pretty
+    /// underwater view's even tint.
+    pub modern_water_tint: i32,
+    /// Sun and moon glow (1 = on; off by default, not in the original): a
+    /// halo around the sun and the moon, a warm band along the day's
+    /// horizon and a slightly darker zenith (`shaders/sky.wgsl: sky_glow`).
+    pub modern_sky_glow: i32,
 }
 
 impl Default for PcSettings {
@@ -156,6 +169,9 @@ impl Default for PcSettings {
             render_scale: 255,
             dhc_terminal: 0,
             dhc_crt: 0,
+            modern_waves: 0,
+            modern_water_tint: 0,
+            modern_sky_glow: 0,
         }
     }
 }
@@ -234,6 +250,9 @@ impl PcSettings {
                 "all_huntable" => s.all_huntable = i32::from(v != 0),
                 "dhc_terminal" => s.dhc_terminal = i32::from(v != 0),
                 "dhc_crt" => s.dhc_crt = i32::from(v != 0),
+                "modern_waves" => s.modern_waves = i32::from(v != 0),
+                "modern_water_tint" => s.modern_water_tint = i32::from(v != 0),
+                "modern_sky_glow" => s.modern_sky_glow = i32::from(v != 0),
                 _ => {}
             }
         }
@@ -271,7 +290,7 @@ impl PcSettings {
         let s = self;
         format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nmodel_distance = {}\n\
-             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\nfire_reloads_empty = {}\npause_pickers = {}\nradar_water = {}\npretty_underwater = {}\nclassic_filter = {}\nbounded_flee = {}\ndhc_terminal = {}\ndhc_crt = {}\n",
+             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\nfire_reloads_empty = {}\npause_pickers = {}\nradar_water = {}\npretty_underwater = {}\nclassic_filter = {}\nbounded_flee = {}\ndhc_terminal = {}\ndhc_crt = {}\nmodern_waves = {}\nmodern_water_tint = {}\nmodern_sky_glow = {}\n",
             s.render,
             s.fog,
             s.blood,
@@ -301,7 +320,10 @@ impl PcSettings {
             s.classic_filter,
             s.bounded_flee,
             s.dhc_terminal,
-            s.dhc_crt
+            s.dhc_crt,
+            s.modern_waves,
+            s.modern_water_tint,
+            s.modern_sky_glow
         )
     }
 
@@ -468,6 +490,21 @@ mod tests {
             0
         );
         assert_eq!(PcSettings::parse("").pretty_underwater, 1);
+    }
+
+    #[test]
+    fn modern_graphics_are_opt_in_and_round_trip() {
+        let d = PcSettings::parse("blood = 1\n");
+        assert_eq!(d, PcSettings::default());
+        assert_eq!(
+            (d.modern_waves, d.modern_water_tint, d.modern_sky_glow),
+            (0, 0, 0)
+        );
+        for key in ["modern_waves", "modern_water_tint", "modern_sky_glow"] {
+            let on = PcSettings::parse(&format!("{key} = 1\n"));
+            assert_ne!(on, d, "{key}");
+            assert_eq!(PcSettings::parse(&on.to_text()), on, "{key}");
+        }
     }
 
     #[test]

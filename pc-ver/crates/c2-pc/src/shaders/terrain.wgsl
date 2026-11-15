@@ -20,12 +20,15 @@ struct Params {
     // coarsest level reaches past it and stops at the first cell beyond.
     reach: i32,
     eye: vec2<i32>,
-    _pad: vec2<u32>,
+    // Animated waves on open water (PC option, `wave_offset`).
+    waves: u32,
+    _pad: u32,
 };
 
 // cells[i].x = height | light << 8 | water << 16 | water phase << 24
 // cells[i].y = texture1 | flags << 16
 // cells[i].z = dawn light | day light << 8 | night light << 16
+// cells[i].w = RandomMap here | RandomMap at (x + 7, y + 11) << 16 (0..1023)
 @group(1) @binding(0) var<storage, read> cells: array<vec4<u32>>;
 // waters[i] = (level * 64, texture index, RSC transparency coefficient, 0)
 @group(1) @binding(1) var<storage, read> waters: array<vec4<f32>>;
@@ -37,6 +40,7 @@ struct Params {
 
 const MAP: i32 = 1024;
 const FM_REVERSE: u32 = 0x10u;
+const FM_WATER: u32 = 0x80u;
 // TCMIN/TCMAX from Hunt.h: half-texel inset to avoid bleeding.
 const TC_MIN: f32 = 0.0073947906;
 const TC_MAX: f32 = 0.9926052;
@@ -252,7 +256,9 @@ fn vs_water(@builtin(vertex_index) vid: u32, @location(0) chunk: vec4<i32>) -> V
     let v = c + d * s;
     let p = vec3<f32>(f32(v.x) * 256.0, wt.x, f32(v.y) * 256.0);
     var o: VOut;
-    o.clip = g.view_proj * vec4<f32>(p, 1.0);
+    // Only the drawn position sways: the light, alpha, fog and texture are
+    // the flat water's.
+    o.clip = g.view_proj * vec4<f32>(p + wave_offset(v, l), 1.0);
     o.world = p;
     o.uv = mix(vec2<f32>(TC_MIN), vec2<f32>(TC_MAX), vec2<f32>(d));
     // Hunt2.cpp: Light = 168 - (int)(wdelta * 24), wdelta = sin(-pi/2 +
@@ -264,6 +270,49 @@ fn vs_water(@builtin(vertex_index) vid: u32, @location(0) chunk: vec4<i32>) -> V
     o.dist = distance(p, g.cam_pos.xyz);
     o.alpha = water_alpha(v, wt, o.dist, wdelta);
     return o;
+}
+
+// Animated waves (PC option, not in the original, whose water is flat): the
+// modernized Modder's Edition's swell, Effects.cpp: PreCashGroundModel. Three
+// sines per axis (amplitudes WWave1..3Amp, t = RealTime / 200 * WWaveSpeed,
+// the height 0.8 of the sideways sway) move each open-water vertex; bank
+// vertices (in the water's quads, not fmWater) stay put, so the shore keeps
+// its line. That engine reads a 32x32 table per frame, which repeats with a
+// seam every 32 cells; here the map position runs on unwrapped.
+// The sway fades out over the 8 cells before the last 4 of the full-detail
+// window (theirs stops at ctViewR - 4), where the coarser levels, drawn
+// flat, take over.
+fn wave_offset(v: vec2<i32>, l: LodCell) -> vec3<f32> {
+    let cell = cell_at(v.x, v.y);
+    if (params.waves == 0u || l.level != 0u || ((cell.y >> 16u) & FM_WATER) == 0u) {
+        return vec3<f32>(0.0);
+    }
+    let c = abs(v - center());
+    let e = abs(v - params.eye);
+    let edge = min(half_width() - max(c.x, c.y), params.reach - max(e.x, e.y));
+    let fade = clamp((f32(edge) - 4.0) / 8.0, 0.0, 1.0);
+    let t = f32(params.time_ms) / 200.0 * 0.5;
+    let px = f32(v.x) * 0.5;
+    let py = f32(v.y) * 0.5;
+    let r1 = f32(cell.w & 0xffffu) * 0.01;
+    let r2 = f32(cell.w >> 16u) * 0.01;
+    let amp = vec3<f32>(14.58, 8.10, 5.00) * fade;
+    let x = vec3<f32>(
+        sin(px + py + t),
+        sin(px * 1.5 - py * 0.7 + t * 1.3 + r1),
+        sin(px * 2.3 + py * 1.2 + t * 2.1 + r2),
+    );
+    let y = vec3<f32>(
+        sin(px * 0.8 + py * 0.6 + t * 0.9),
+        sin(px * 1.2 - py * 0.9 + t * 1.1 + r1),
+        sin(px * 2.0 + py * 1.5 + t * 1.8 + r2),
+    );
+    let z = vec3<f32>(
+        sin(1.5707964 + px + py + t),
+        sin(1.0471976 + px * 1.5 - py * 0.7 + t * 1.3 + r2),
+        sin(0.7853982 + px * 2.3 + py * 1.2 + t * 2.1 + r1),
+    );
+    return vec3<f32>(dot(x, amp), dot(y, amp) * 0.8, dot(z, amp));
 }
 
 // Hunt2.cpp (hardware path): the RSC transparency scales the water's depth
@@ -281,6 +330,20 @@ fn water_alpha(v: vec2<i32>, wt: vec4<f32>, dist: f32, wdelta: f32) -> f32 {
     let depth = (wt.x - ground) / 64.0;
     let a = max((depth * 2.0 + 4.0) * wt.z + dist / 256.0 + wdelta * 2.0, 0.0);
     return min(a * 6.0 / (down + 0.1), 255.0) / 255.0;
+}
+
+// The ground. Under water with the depth tint on (PC option, not in the
+// original), the water absorbs its colour by depth, the water's own hue the
+// least (the modernized Modder's Edition's terrain.frag); the water's
+// surface and the models are left as they are, as there.
+@fragment
+fn fs_ground(i: VOut) -> @location(0) vec4<f32> {
+    let c = textureSample(tex, samp, i.uv, i.layer);
+    var lit = surface_light(c.rgb, i.light, i.world);
+    if (any(g.water.xyz < vec3<f32>(1.0))) {
+        lit = max(lit * g.water.xyz, vec3<f32>(0.01));
+    }
+    return vec4<f32>(fogged(lit, i.dist), i.alpha);
 }
 
 @fragment

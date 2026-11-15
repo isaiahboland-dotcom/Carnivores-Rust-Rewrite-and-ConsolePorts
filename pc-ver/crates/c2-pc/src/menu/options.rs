@@ -13,6 +13,8 @@ pub(super) enum Opt {
     PcToggle(&'static str, fn(&mut PcSettings) -> &mut i32),
     /// Removes every trophy not locked (asked first: a second click).
     ClearTrophies,
+    /// A group's heading over the rows after it; not a setting.
+    Header(&'static str),
 }
 
 pub(super) const GAME_OPTS: [Opt; 20] = [
@@ -52,11 +54,15 @@ pub(super) const HIGH_END_VIEW: &str = if cfg!(target_os = "android") {
     "High-end view"
 };
 
+/// The heading of the looks taken from the modernized Modder's Edition,
+/// each its own switch, all off by default.
+pub(super) const MODERN_GRAPHICS: &str = "Modern graphics";
+
 /// The Android-only Resolution row (the phone scales the frame up).
 pub const RESOLUTION: &str = "Resolution";
 
 #[cfg(not(target_os = "android"))]
-pub(super) const VIDEO_OPTS: [Opt; 12] = [
+pub(super) const VIDEO_OPTS: [Opt; 16] = [
     Opt::Slider("View range", |s| &mut s.options.view_r),
     Opt::PcSlider("Render distance", |p| &mut p.render),
     Opt::Slider("Brightness", |s| &mut s.options.brightness),
@@ -69,10 +75,14 @@ pub(super) const VIDEO_OPTS: [Opt; 12] = [
     Opt::PcToggle("Pretty underwater view", |p| &mut p.pretty_underwater),
     Opt::PcToggle("Classic texture filter", |p| &mut p.classic_filter),
     Opt::PcToggle("Bounded fleeing", |p| &mut p.bounded_flee),
+    Opt::Header(MODERN_GRAPHICS),
+    Opt::PcToggle("Animated waves", |p| &mut p.modern_waves),
+    Opt::PcToggle("Water depth tint", |p| &mut p.modern_water_tint),
+    Opt::PcToggle("Sun and moon glow", |p| &mut p.modern_sky_glow),
 ];
 
 #[cfg(target_os = "android")]
-pub(super) const VIDEO_OPTS: [Opt; 13] = [
+pub(super) const VIDEO_OPTS: [Opt; 17] = [
     Opt::Slider("View range", |s| &mut s.options.view_r),
     Opt::PcSlider("Render distance", |p| &mut p.render),
     Opt::Slider("Brightness", |s| &mut s.options.brightness),
@@ -86,6 +96,10 @@ pub(super) const VIDEO_OPTS: [Opt; 13] = [
     Opt::PcToggle("Classic texture filter", |p| &mut p.classic_filter),
     Opt::PcToggle("Bounded fleeing", |p| &mut p.bounded_flee),
     Opt::PcSlider(RESOLUTION, |p| &mut p.render_scale),
+    Opt::Header(MODERN_GRAPHICS),
+    Opt::PcToggle("Animated waves", |p| &mut p.modern_waves),
+    Opt::PcToggle("Water depth tint", |p| &mut p.modern_water_tint),
+    Opt::PcToggle("Sun and moon glow", |p| &mut p.modern_sky_glow),
 ];
 
 pub(super) const MOUSE_OPTS: [Opt; 3] = [
@@ -135,7 +149,7 @@ impl Menu {
             let first = if panel == GAME_PANEL {
                 self.game_scroll.first
             } else {
-                0
+                self.video_scroll.first
             };
             out.extend(option_scroll::visible_rows(opts, panel, first));
         }
@@ -211,7 +225,7 @@ impl Menu {
             self.drag = None;
         }
         if !self.terminal_style() {
-            self.scroll_game_options(input, false);
+            self.scroll_options(input, false);
         }
         let rows = self.option_rows();
         if input.clicked {
@@ -252,7 +266,7 @@ impl Menu {
                         *v = i32::from(*v == 0);
                         self.offer_animals();
                     }
-                    Opt::ClearTrophies => {}
+                    Opt::ClearTrophies | Opt::Header(_) => {}
                 }
             }
         }
@@ -302,7 +316,7 @@ impl Menu {
         let Some(s) = self.me() else { return };
         let mut copy = s.clone();
         if !term {
-            self.draw_game_scroll(out, false);
+            self.draw_option_scroll(out, false);
         }
         // The terminal's values line up with its sliders, at the right.
         let value_x = |r: Rect| {
@@ -325,6 +339,7 @@ impl Menu {
             let hover = inside(self.cursor, r);
             let color = if hover { hover_c } else { label_c };
             match o {
+                Opt::Header(name) => self.text(out, r.0, r.1 + 4.0, 12.0, value_c, name),
                 Opt::Slider(name, f) => {
                     self.text(out, r.0, r.1 + 4.0, 12.0, color, name);
                     let v = *f(&mut copy);

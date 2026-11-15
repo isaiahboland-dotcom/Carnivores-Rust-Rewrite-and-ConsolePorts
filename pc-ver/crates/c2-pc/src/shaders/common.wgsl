@@ -11,6 +11,14 @@ struct Globals {
     daylight: vec4<f32>,
     // xyz: camera forward, w: flashlight mode (0 off, 1 broad, 2 narrow).
     torch: vec4<f32>,
+    // xyz: what the water over the camera lets through of the ground's colour
+    // (PC option `modern_water_tint`; ones otherwise).
+    water: vec4<f32>,
+    // xyz: direction to the sun (world), w: sky glow on (PC option
+    // `modern_sky_glow`).
+    sun: vec4<f32>,
+    // xyz: direction to the moon.
+    moon: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> g: Globals;

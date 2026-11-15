@@ -46,6 +46,35 @@ fn star_field(direction: vec3<f32>) -> f32 {
         * smoothstep(0.04, 0.25, direction.y);
 }
 
+// A halo around the sun or moon at direction `body`: a Gaussian of the
+// angle from it, `radius` wide (radians), its colour running from `core` to
+// `rim` over that radius.
+fn halo(direction: vec3<f32>, body: vec3<f32>, radius: f32, core: vec3<f32>, rim: vec3<f32>) -> vec3<f32> {
+    let d = distance(direction, body) / radius;
+    return mix(core, rim, clamp(d, 0.0, 1.0)) * exp(-d * d);
+}
+
+// Sun and moon glow (PC option, not in the original): the modernized
+// Modder's Edition's sky.frag. `clear`: how much of the sky shows through the
+// horizon's fade (their sky fog). Returns the light to add to the sky.
+// Their halos are 80 (sun) and 110 (moon) pixels wide around the body's
+// place on the screen; here the same angle at a 1080-line screen, around its
+// direction, so they keep their size at any resolution and grow with the
+// binoculars. Nothing is traced in front of the sun (their SkyTraceK = 1,
+// as for our sun): the ground drawn over the sky hides the halo.
+fn sky_glow(direction: vec3<f32>, clear: f32) -> vec3<f32> {
+    let day = 1.0 - g.daylight.z;
+    // A warm band along the horizon, by day only.
+    let up = max(direction.y, 0.0);
+    let horizon = vec3<f32>(1.0, 0.85, 0.6) * exp(-up * up * 20.0) * 0.15 * clear * day;
+    let through = 1.0 - (1.0 - clear) * 0.5;
+    let sun = halo(direction, g.sun.xyz, 0.089, vec3<f32>(1.0, 0.95, 0.8), vec3<f32>(0.9, 0.85, 1.0))
+        * 0.18 * day;
+    let moon = halo(direction, g.moon.xyz, 0.122, vec3<f32>(0.85, 0.90, 1.0), vec3<f32>(0.72, 0.80, 1.0))
+        * 0.10 * g.daylight.z;
+    return horizon + (sun + moon) * through;
+}
+
 @fragment
 fn fs_sky(i: SkyOut) -> @location(0) vec4<f32> {
     // Texture space: 0.002 texels per world unit, scrolled by
@@ -63,7 +92,13 @@ fn fs_sky(i: SkyOut) -> @location(0) vec4<f32> {
     let stars = star_field(direction) * g.daylight.w * smoothstep(0.05, 0.85, g.daylight.z);
     // Stars emit light: night ambient darkening must not extinguish them.
     // Keep night-vision grading, cloud texture and the existing horizon fade.
-    return vec4<f32>(texel(c.rgb) + grade_texel(vec3(0.78, 0.85, 1.0)) * stars, a);
+    var sky = texel(c.rgb) + grade_texel(vec3(0.78, 0.85, 1.0)) * stars;
+    if (g.sun.w > 0.5) {
+        // The zenith a little darker than the horizon (1 to 0.92), then the
+        // glow: light, like the stars, so the night's dimming leaves it.
+        sky = sky * (1.0 - 0.08 * max(direction.y, 0.0)) + grade_texel(sky_glow(direction, a));
+    }
+    return vec4<f32>(sky, a);
 }
 
 struct SunIn {

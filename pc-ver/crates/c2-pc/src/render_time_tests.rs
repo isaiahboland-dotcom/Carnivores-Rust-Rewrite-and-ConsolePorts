@@ -27,6 +27,8 @@ fn time_blending_pipelines_validate() -> anyhow::Result<()> {
             narrow_flashlight: false,
             time_s: 0.0,
             brightness: 1.0,
+            absorb: [1.0; 3],
+            sky: Default::default(),
         },
     );
     if let Some(error) = pollster::block_on(errors.pop()) {
@@ -72,6 +74,8 @@ fn sky_pixels_blend_at_midpoint_and_return_to_day() -> anyhow::Result<()> {
                     narrow_flashlight: false,
                     time_s: 0.0,
                     brightness: 1.0,
+                    absorb: [1.0; 3],
+                    sky: Default::default(),
                 },
             );
             self.sky
@@ -175,6 +179,8 @@ fn flashlight_and_manual_night_vision_change_actual_pixels() -> anyhow::Result<(
                 narrow_flashlight,
                 time_s: 0.,
                 brightness: 1.,
+                absorb: [1.0; 3],
+                sky: Default::default(),
             },
         );
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
@@ -286,6 +292,8 @@ fn dynamic_stars_fade_and_stay_fixed_when_walking() -> anyhow::Result<()> {
                     narrow_flashlight: false,
                     time_s: 0.,
                     brightness: 1.,
+                    absorb: [1.0; 3],
+                    sky: Default::default(),
                 },
             );
             self.sky
@@ -353,5 +361,100 @@ fn dynamic_stars_fade_and_stay_fixed_when_walking() -> anyhow::Result<()> {
         difference < energy(&night) / 100,
         "stars moved with the camera: {difference}"
     );
+    Ok(())
+}
+
+// Sun and moon glow (2026-11-14): off leaves the sky alone; on, a halo
+// around the sun by day and the moon by night, and a darker zenith.
+#[test]
+#[ignore = "requires an available wgpu adapter"]
+fn sky_glow_lights_the_sky_around_the_sun_and_moon() -> anyhow::Result<()> {
+    use crate::scene::Scene;
+    /// A grey sky seen straight up.
+    struct GlowScene {
+        sky: SkyRenderer,
+        globals: Globals,
+        night: f32,
+        light: SkyLight,
+    }
+    impl Scene for GlowScene {
+        fn title(&self) -> String {
+            "synthetic glow".into()
+        }
+        fn update(&mut self, _: &Gpu, _: f32, _: &crate::input::Input) {}
+        fn clear_color(&self) -> [f64; 3] {
+            [0.0; 3]
+        }
+        fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, _: (u32, u32)) {
+            let view = glam::camera::rh::view::look_at_mat4(Vec3::ZERO, Vec3::Y, Vec3::Z);
+            self.globals.write(
+                gpu,
+                &FrameParams {
+                    view,
+                    proj: glam::camera::rh::proj::directx::perspective(1.0, 1.0, 1.0, 100000.0),
+                    eye: Vec3::ZERO,
+                    fog_rgb: [0.0; 3],
+                    fog: (0.0, 100000.0),
+                    daylight: [0.0, 1.0 - self.night, self.night],
+                    stars: false,
+                    night_vision: 0.0,
+                    ambient: 1.0,
+                    flashlight: false,
+                    narrow_flashlight: false,
+                    time_s: 0.0,
+                    brightness: 1.0,
+                    absorb: [1.0; 3],
+                    sky: self.light,
+                },
+            );
+            self.sky
+                .draw(gpu, pass, &self.globals, view, [0.0; 3], self.night);
+        }
+    }
+    const SIZE: u32 = 16;
+    let (gpu, target) = Gpu::offscreen((SIZE, SIZE))?;
+    let crate::gpu::Target::Offscreen { texture } = target else {
+        unreachable!()
+    };
+    let view = texture.create_view(&Default::default());
+    let frame = crate::gpu::Frame::new(&gpu, (SIZE, SIZE));
+    let globals = Globals::new(&gpu);
+    let images = core::array::from_fn(|_| [100u8, 100, 100, 255].repeat(256 * 256));
+    let sky = SkyRenderer::new(&gpu, &globals, &images, [None, None]);
+    let mut scene = GlowScene {
+        sky,
+        globals,
+        night: 0.0,
+        light: SkyLight::default(),
+    };
+    // The red of the middle pixel (the zenith) and of a corner's.
+    let mut sample = |night, light| -> anyhow::Result<([u8; 2], Vec<u8>)> {
+        scene.night = night;
+        scene.light = light;
+        crate::scene::render(&gpu, &mut scene, &view, &frame);
+        let pixels = gpu.read_rgba(&texture)?;
+        let middle = ((SIZE / 2 * SIZE + SIZE / 2) * 4) as usize;
+        Ok(([pixels[middle], pixels[0]], pixels))
+    };
+    let (up, away) = ([0.0, 1.0, 0.0], [1.0, 0.0, 0.0]);
+    let light = |sun, moon, glow| SkyLight { sun, moon, glow };
+
+    // Off: where the sun is changes nothing.
+    let (off, picture) = sample(0.0, light(up, away, false))?;
+    assert_eq!(picture, sample(0.0, light(away, up, false))?.1);
+    assert!(off[0].abs_diff(100) <= 2, "{off:?}");
+
+    // By day the sun's halo, not the moon's; the corner is outside it.
+    let (day, _) = sample(0.0, light(up, away, true))?;
+    assert!(day[0] > off[0] + 15, "no halo at the sun: {day:?}");
+    assert!(day[1] <= off[1] + 2, "halo reaches the corner: {day:?}");
+    let (no_sun, _) = sample(0.0, light(away, up, true))?;
+    assert!(no_sun[0] < off[0], "zenith not darker: {no_sun:?}");
+
+    // By night the moon's, fainter.
+    let (moonlit, _) = sample(1.0, light(away, up, true))?;
+    let (moonless, _) = sample(1.0, light(up, away, true))?;
+    assert!(moonlit[0] > moonless[0] + 12, "{moonlit:?} {moonless:?}");
+    assert!(moonlit[0] < day[0]);
     Ok(())
 }

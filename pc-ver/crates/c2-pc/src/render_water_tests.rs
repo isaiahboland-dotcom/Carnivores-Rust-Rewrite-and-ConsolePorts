@@ -1,7 +1,8 @@
 //! Water alpha regression (docs/DECISIONS.md, 2026-11-12: water transparency
 //! is a depth coefficient). Genesis AREA2's sea has RSC `transp = 0.001`;
 //! using it as the final alpha made the whole sea invisible. Also: water
-//! narrower than a coarse cell of the high-end view's levels (AUDIT-V2).
+//! narrower than a coarse cell of the high-end view's levels (AUDIT-V2), and
+//! the animated waves option (2026-11-14).
 
 use super::*;
 use crate::scene::Scene;
@@ -21,6 +22,9 @@ struct Shallows {
     globals: Globals,
     water: bool,
     pitch: f32,
+    waves: bool,
+    /// What the water over the camera lets through (ones: no depth tint).
+    absorb: [f32; 3],
 }
 
 impl Scene for Shallows {
@@ -35,9 +39,9 @@ impl Scene for Shallows {
         let eye = Vec3::new(512.5 * 256.0, EYE_Y, 512.5 * 256.0);
         let forward = Vec3::new(0.0, self.pitch.sin(), -self.pitch.cos());
         let view = glam::camera::rh::view::look_at_mat4(eye, eye + forward, Vec3::Y);
-        let frustum = write_globals(gpu, &self.globals, view, eye);
+        let frustum = write_globals(gpu, &self.globals, view, eye, self.absorb);
         self.terrain
-            .set_window(gpu, (512, 512), 48, false, 2, 0, &frustum);
+            .set_window(gpu, (512, 512), 48, false, 2, 0, self.waves, &frustum);
         self.terrain.draw_ground(pass, &self.globals);
         if self.water {
             self.terrain.draw_water(pass, &self.globals);
@@ -46,7 +50,7 @@ impl Scene for Shallows {
 }
 
 /// Unfogged full daylight from `eye` with `view`; the frame's frustum.
-fn write_globals(gpu: &Gpu, globals: &Globals, view: Mat4, eye: Vec3) -> Frustum {
+fn write_globals(gpu: &Gpu, globals: &Globals, view: Mat4, eye: Vec3, absorb: [f32; 3]) -> Frustum {
     let proj = crate::camera::projection(1.0, 64.0 * 256.0, 1.0);
     globals.write(
         gpu,
@@ -64,6 +68,8 @@ fn write_globals(gpu: &Gpu, globals: &Globals, view: Mat4, eye: Vec3) -> Frustum
             narrow_flashlight: false,
             time_s: 0.0,
             brightness: 1.0,
+            absorb,
+            sky: Default::default(),
         },
     );
     Frustum::new(proj * view)
@@ -116,6 +122,8 @@ fn shallow_low_coefficient_water_is_visible() -> anyhow::Result<()> {
         globals,
         water: false,
         pitch: 0.0,
+        waves: false,
+        absorb: [1.0; 3],
     };
     let mut render = |water, pitch| -> anyhow::Result<Vec<u8>> {
         scene.water = water;
@@ -178,9 +186,9 @@ impl Scene for Channel {
             512.5 * 256.0,
         );
         let view = glam::camera::rh::view::look_at_mat4(eye, eye - Vec3::Y, Vec3::NEG_Z);
-        let frustum = write_globals(gpu, &self.globals, view, eye);
+        let frustum = write_globals(gpu, &self.globals, view, eye, [1.0; 3]);
         self.terrain
-            .set_window(gpu, (512, 512), 384, true, 2, 0, &frustum);
+            .set_window(gpu, (512, 512), 384, true, 2, 0, false, &frustum);
         self.terrain.draw_ground(pass, &self.globals);
         self.terrain.draw_water(pass, &self.globals);
     }
@@ -244,5 +252,127 @@ fn narrow_water_survives_coarse_levels() -> anyhow::Result<()> {
     // The old rule dropped every coarse quad with a dry corner, leaving the
     // red bed bare (blue 0).
     assert!(middle[1] > 40.0, "channel without water: {middle:?}");
+    Ok(())
+}
+
+/// Looking straight down on open water about four cells across, its
+/// texture striped so that moved vertices show.
+struct Swell {
+    terrain: TerrainRenderer,
+    globals: Globals,
+    waves: bool,
+}
+
+impl Scene for Swell {
+    fn title(&self) -> String {
+        "synthetic swell".into()
+    }
+    fn update(&mut self, _: &Gpu, _: f32, _: &crate::input::Input) {}
+    fn clear_color(&self) -> [f64; 3] {
+        [0.0; 3]
+    }
+    fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, _: (u32, u32)) {
+        let eye = Vec3::new(512.5 * 256.0, LEVEL as f32 * 64.0 + 500.0, 512.5 * 256.0);
+        let view = glam::camera::rh::view::look_at_mat4(eye, eye - Vec3::Y, Vec3::NEG_Z);
+        let frustum = write_globals(gpu, &self.globals, view, eye, [1.0; 3]);
+        self.terrain
+            .set_window(gpu, (512, 512), 48, false, 2, 1000, self.waves, &frustum);
+        self.terrain.draw_ground(pass, &self.globals);
+        self.terrain.draw_water(pass, &self.globals);
+    }
+}
+
+/// [`shallows`] with nearly opaque water, each cell's texture half blue,
+/// half green; `open`: the cells are open water (`fmWater`), else all bank.
+fn striped(open: bool) -> Area {
+    let mut area = shallows();
+    area.rsc.textures[1] = (0..128 * 128)
+        .map(|i| if i % 128 < 64 { BLUE } else { 0x03e0 })
+        .collect();
+    area.rsc.waters[0].transp = 4.0;
+    if !open {
+        area.map.flags.fill(0);
+    }
+    area
+}
+
+#[test]
+#[ignore = "requires an available wgpu adapter; run with --test-threads=1"]
+fn waves_move_open_water_only_when_on() -> anyhow::Result<()> {
+    let (gpu, target) = Gpu::offscreen((SIZE, SIZE))?;
+    let crate::gpu::Target::Offscreen { texture } = target else {
+        unreachable!()
+    };
+    let output = texture.create_view(&Default::default());
+    let frame = crate::gpu::Frame::new(&gpu, (SIZE, SIZE));
+    let render = |open, waves| -> anyhow::Result<Vec<u8>> {
+        let globals = Globals::new(&gpu);
+        let terrain = TerrainRenderer::new(&gpu, &globals, &striped(open));
+        let mut scene = Swell {
+            terrain,
+            globals,
+            waves,
+        };
+        crate::scene::render(&gpu, &mut scene, &output, &frame);
+        gpu.read_rgba(&texture)
+    };
+    // Pixels whose blue or green differs clearly: a stripe's edge moved.
+    let moved = |a: &[u8], b: &[u8]| {
+        a.chunks(4)
+            .zip(b.chunks(4))
+            .filter(|(p, q)| (1..3).any(|c| p[c].abs_diff(q[c]) > 40))
+            .count()
+    };
+    let flat = render(true, false)?;
+    assert_eq!(flat, render(true, false)?, "the flat water is not stable");
+    let swell = render(true, true)?;
+    let n = moved(&flat, &swell);
+    assert!(n > 40, "waves on moved {n} pixels");
+    // Bank vertices never move, so the shore keeps its line.
+    assert_eq!(render(false, false)?, render(false, true)?);
+    Ok(())
+}
+
+// The depth tint (2026-11-14): the ground loses colour by what the water
+// lets through; the water's surface does not.
+#[test]
+#[ignore = "requires an available wgpu adapter; run with --test-threads=1"]
+fn depth_tint_absorbs_the_ground_not_the_surface() -> anyhow::Result<()> {
+    let (gpu, target) = Gpu::offscreen((SIZE, SIZE))?;
+    let crate::gpu::Target::Offscreen { texture } = target else {
+        unreachable!()
+    };
+    let output = texture.create_view(&Default::default());
+    let frame = crate::gpu::Frame::new(&gpu, (SIZE, SIZE));
+    let globals = Globals::new(&gpu);
+    let mut area = shallows();
+    area.rsc.waters[0].transp = 400.0; // opaque from here
+    let terrain = TerrainRenderer::new(&gpu, &globals, &area);
+    let mut scene = Shallows {
+        terrain,
+        globals,
+        water: false,
+        pitch: -0.3,
+        waves: false,
+        absorb: [1.0; 3],
+    };
+    let mut render = |water, absorb| -> anyhow::Result<Vec<u8>> {
+        scene.water = water;
+        scene.absorb = absorb;
+        crate::scene::render(&gpu, &mut scene, &output, &frame);
+        gpu.read_rgba(&texture)
+    };
+    let tint = [0.5, 1.0, 1.0];
+    let bed = mean(&render(false, [1.0; 3])?, 24..40);
+    let deep = mean(&render(false, tint)?, 24..40);
+    assert!(bed[0] > 60.0, "seabed {bed:?}");
+    let ratio = deep[0] / bed[0];
+    assert!((ratio - 0.5).abs() < 0.05, "seabed kept {ratio} of its red");
+    let surface = render(true, [1.0; 3])?;
+    assert_eq!(surface, render(true, tint)?);
+    // The water of the camera's own chunk is there: its ground is below
+    // the view, and chunks were culled by their ground alone.
+    let near = mean(&surface, 50..SIZE);
+    assert!(near[0] < 1.0 && near[2] > 120.0, "bare bed: {near:?}");
     Ok(())
 }

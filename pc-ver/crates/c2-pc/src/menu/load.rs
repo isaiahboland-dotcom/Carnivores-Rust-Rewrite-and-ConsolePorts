@@ -530,6 +530,7 @@ impl Menu {
             opt_tab: 0,
             term_opt_tab: 0,
             game_scroll: option_scroll::Scroll::default(),
+            video_scroll: option_scroll::Scroll::default(),
             drag: None,
             launch: None,
             shown_loading: false,

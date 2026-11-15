@@ -31,7 +31,7 @@ const USAGE: &str = "usage:
   c2-pc texture-review --manifest FILE --out NEW_DIR [--baseline RUN_DIR] [--limit N] [--keep-models]
   c2-pc scene-review --manifest FILE --out NEW_DIR   (private native scene/sky diagnostic)
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
-  c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--models] [--foliage CELLS] [--high-end] [--shot out.png]
+  c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--models] [--foliage CELLS] [--high-end] [--waves] [--sky-glow] [--shot out.png]
   c2-pc hunt  <AREA.MAP|TROPHY.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all]
               [--weapon N] [--bino] [--pause] [--exit] [--dhc-terminal] [--message TEXT] [--kill] [--plaque] [--pick] [--call] [--fill] [--die AI,MS[,NAME]] [--observer] [--player N] [--survival classic|modded] [--seed N]\n              [--touch] [--shot out.png]   (--touch: an APK game's phone buttons, as after a touch)
 
@@ -690,9 +690,12 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
             // --models: far objects as models too (no sprites).
             let models = o.has("models");
             // --foliage CELLS: objects as models out to CELLS; --high-end:
-            // the far ground in levels and the model/sprite fade.
+            // the far ground in levels and the model/sprite fade; --waves:
+            // animated waves; --sky-glow: sun and moon glow.
             let foliage = o.value("foliage").map(str::parse::<f32>).transpose()?;
             let high_end = o.has("high-end");
+            let waves = o.has("waves");
+            let sky_glow = o.has("sky-glow");
             Box::new(move |g| {
                 let mut a = area_view::AreaView::load(g, &path, time)?;
                 if models {
@@ -701,6 +704,8 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
                     a.sprite_cells = Some(c);
                 }
                 a.high_end = high_end;
+                a.modern_waves = waves;
+                a.modern_sky_glow = sky_glow;
                 if let Some(c) = cam {
                     a.cam.pos = glam::Vec3::new(c[0], c[1], c[2]);
                     a.cam.yaw = c[3];

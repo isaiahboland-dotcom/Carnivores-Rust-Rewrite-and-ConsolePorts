@@ -176,6 +176,8 @@ pub struct Menu {
     /// The terminal-look options' tab: game, video, controls.
     term_opt_tab: usize,
     game_scroll: option_scroll::Scroll,
+    /// The board's Video panel, likewise.
+    video_scroll: option_scroll::Scroll,
     drag: Option<Opt>,
     /// Hunt to start after the loading picture has been shown.
     launch: Option<HuntSetup>,

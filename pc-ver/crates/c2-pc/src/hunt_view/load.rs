@@ -417,6 +417,8 @@ fn fit_view(view: &mut AreaView, hunt: &Hunt, setup: &HuntSetup) {
     };
     view.radius = drawn.max(hunt.opts.view_r) as u32;
     view.high_end = setup.pc.high_end_view != 0;
+    view.modern_waves = setup.pc.modern_waves != 0;
+    view.modern_sky_glow = setup.pc.modern_sky_glow != 0;
     // Past the original range, fog only softens the far edge.
     if hunt.opts.render_r > hunt.opts.view_r {
         view.fog_start = 0.85;

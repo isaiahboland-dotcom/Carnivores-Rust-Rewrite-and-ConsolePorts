@@ -73,6 +73,9 @@ below says **Off**.
 | `high_end_view` | 0 | far ground levels, object fades | Kept |
 | `pretty_underwater` | 1 | underwater fog and tint | Kept |
 | `classic_filter` | 0 | point-sampled textures | Kept |
+| `modern_waves` | 0 | animated waves on open water | Kept |
+| `modern_water_tint` | 0 | underwater tint by depth, in the water's hue | Kept |
+| `modern_sky_glow` | 0 | sun and moon halos, horizon band | Kept |
 | `render_scale` | 255 | Android resolution slider | Kept |
 | `pause_pickers` | 1 | pickers pause gameplay | Kept |
 | `map_holsters` | 1 | map puts the gun away | Kept |

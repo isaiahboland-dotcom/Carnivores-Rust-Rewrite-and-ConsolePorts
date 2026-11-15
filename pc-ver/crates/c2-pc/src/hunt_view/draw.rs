@@ -14,10 +14,19 @@ impl HuntView {
         self.screen = screen;
         let aspect = screen.0.max(1) as f32 / screen.1.max(1) as f32;
         let p = &self.hunt.player;
-        let fog = (p.underwater && self.setup.pc.pretty_underwater != 0)
+        let pc = &self.setup.pc;
+        let fog = (p.underwater && (pc.pretty_underwater != 0 || pc.modern_water_tint != 0))
             .then(|| self.view.area().water_mean_rgb(p.x, p.z))
             .flatten();
+        // The depth tint: the fog and the wash darken in the water's hue.
+        let depth = if fog.is_some() && pc.modern_water_tint != 0 {
+            self.water_depth()
+        } else {
+            None
+        };
+        let fog = fog.map(|c| crate::water_tint::deepened(c, depth.unwrap_or(0.0)));
         self.view.underwater_fog = fog;
+        self.view.water_depth = depth.unwrap_or(0.0);
         if !self.blacked_out() {
             self.draw_world(gpu, pass, aspect);
         }
@@ -28,7 +37,8 @@ impl HuntView {
         // `RenderFSRect(0x80000000 + CurFogColor)`: half-strength water tint.
         if let Some(c) = fog {
             let k = self.view.brightness;
-            let tint = [c[0] * k, c[1] * k, c[2] * k, 0.5];
+            let alpha = depth.map_or(0.5, crate::water_tint::wash_alpha);
+            let tint = [c[0] * k, c[1] * k, c[2] * k, alpha];
             sprites.extend(
                 self.hud
                     .rect(0.0, 0.0, screen.0 as f32, screen.1 as f32, tint),
@@ -204,6 +214,17 @@ impl HuntView {
                     .text(x, y + 16.0 * scale * i as f32, scale, green, l),
             );
         }
+    }
+
+    /// How deep the camera is in the water over it, 0..1
+    /// (`water_tint::depth_factor`); `None` out of water.
+    fn water_depth(&self) -> Option<f32> {
+        let (eye, _, _) = self.hunt.camera();
+        let area = self.view.area();
+        let cell = |v: f32| (v / c2_core::CELL).max(0.0) as usize;
+        let surface = area.water_level(cell(eye[0]), cell(eye[2]))?;
+        let floor = area.land_height(eye[0], eye[2]);
+        Some(crate::water_tint::depth_factor(surface, eye[1], floor))
     }
 
     /// Breath bar while underwater: the original drowns by draining health,

@@ -28,6 +28,9 @@ pub struct GlobalsData {
     pub misc: [f32; 4],
     pub daylight: [f32; 4],
     pub torch: [f32; 4],
+    pub water: [f32; 4],
+    pub sun: [f32; 4],
+    pub moon: [f32; 4],
 }
 
 /// Per-frame values shared by every shader.
@@ -47,6 +50,22 @@ pub struct FrameParams {
     pub time_s: f32,
     /// `(OptBrightness + 128) / 256`, applied to every texture.
     pub brightness: f32,
+    /// What the water the camera is under lets through of the ground's
+    /// colour, per channel (`water_tint`); ones: nothing absorbed.
+    pub absorb: [f32; 3],
+    pub sky: SkyLight,
+}
+
+/// Where the sun and moon are, for the sky's glow (PC option
+/// `modern_sky_glow`).
+#[derive(Clone, Copy, Default)]
+pub struct SkyLight {
+    /// `Sun3dPos`: the sun's offset from the camera, world axes.
+    pub sun: [f32; 3],
+    /// The moon's.
+    pub moon: [f32; 3],
+    /// The glow is on.
+    pub glow: bool,
 }
 
 pub struct Globals {
@@ -105,6 +124,15 @@ impl Globals {
                 } else {
                     1.0
                 })
+                .to_array(),
+            water: [f.absorb[0], f.absorb[1], f.absorb[2], 0.0],
+            sun: Vec3::from(f.sky.sun)
+                .normalize_or_zero()
+                .extend(f32::from(f.sky.glow))
+                .to_array(),
+            moon: Vec3::from(f.sky.moon)
+                .normalize_or_zero()
+                .extend(0.0)
                 .to_array(),
         };
         gpu.queue.write_buffer(&self.buf, 0, bytemuck::bytes_of(&d));

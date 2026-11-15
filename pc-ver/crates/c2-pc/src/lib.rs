@@ -41,6 +41,7 @@ mod sounds;
 mod texture_review;
 #[cfg(test)]
 mod texture_review_tests;
+mod water_tint;
 mod weapons;
 
 #[cfg(target_os = "android")]

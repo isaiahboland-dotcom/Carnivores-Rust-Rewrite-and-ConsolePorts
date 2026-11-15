@@ -133,7 +133,8 @@ mod tests {
             Opt::Slider(n, _)
             | Opt::Toggle(n, _, _)
             | Opt::PcSlider(n, _)
-            | Opt::PcToggle(n, _) => n,
+            | Opt::PcToggle(n, _)
+            | Opt::Header(n) => n,
             Opt::ClearTrophies => "clear trophies",
         }
     }

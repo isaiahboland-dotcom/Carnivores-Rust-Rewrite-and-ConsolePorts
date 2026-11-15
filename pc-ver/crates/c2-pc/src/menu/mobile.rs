@@ -1096,7 +1096,7 @@ impl Menu {
         if !input.mouse_down {
             self.drag = None;
         }
-        self.scroll_game_options(input, true);
+        self.scroll_options(input, true);
         let (rows, _) = self.kit_rows();
         if input.clicked {
             if let Some(t) = Self::kit_tabs()
@@ -1148,7 +1148,7 @@ impl Menu {
                         *v = i32::from(*v == 0);
                         self.offer_animals();
                     }
-                    KitRow::Opt(Opt::ClearTrophies) => {}
+                    KitRow::Opt(Opt::ClearTrophies | Opt::Header(_)) => {}
                 }
             }
         }
@@ -1205,7 +1205,7 @@ impl Menu {
     }
 
     pub(super) fn draw_kit_options(&self, out: &mut Vec<Sprite>) {
-        self.draw_game_scroll(out, true);
+        self.draw_option_scroll(out, true);
         use super::kit::{PALE, RED, STONE};
         let Some(s) = self.me() else { return };
         let mut copy = s.clone();
@@ -1340,6 +1340,7 @@ impl Menu {
                     label(out, n);
                     value(out, ["Off", "On"][usize::from(*f(&mut pc) != 0)], PALE);
                 }
+                KitRow::Opt(Opt::Header(n)) => label(out, n),
                 KitRow::Opt(Opt::ClearTrophies) => {
                     label(out, "Remove unlocked trophies");
                     if self.clear_armed {

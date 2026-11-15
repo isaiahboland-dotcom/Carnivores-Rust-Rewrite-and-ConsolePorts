@@ -160,6 +160,16 @@ Nintendo ports keep their own mappings.
   water instead of off the edge, a flight ends after a limited distance or time, and repeated
   noises cannot keep an animal afraid. Limits come from the instance's recipe (see
   [MODDING.md](MODDING.md#flee-limits-bounded-fleeing)) or built-in defaults.
+- **Modern graphics** (Options > Video, each off by default): looks taken from the modernized
+  Modder's Edition Engine, each with its own switch, on any game. They change the picture only.
+  - **Animated waves** (`modern_waves`): open water rises and sways in a slow swell instead of lying
+    flat. The shoreline and distant water (the far levels of High-end view) stay still.
+  - **Water depth tint** (`modern_water_tint`): under water, the view darkens the deeper you
+    are, in the water's own colour (brown swamp water turns dark brown, the sea dark blue), and
+    the bed loses the colours that water absorbs. It takes the place of Pretty underwater view's
+    even tint and works with that option on or off.
+  - **Sun and moon glow** (`modern_sky_glow`): a soft halo around the sun and the moon, a warm
+    band along the horizon by day, and a slightly darker sky overhead.
 - **Predation** is part of the advanced instance setting Advanced Dinosaur Behavior and AI
   (launcher: the recipe editor's Advanced tab), off unless a recipe turns it on. See [MODDING.md](MODDING.md#predation-carnivores-hunt-herbivores).
 - **DHC OS terminal** (Options > Game, or the launcher's instance editor > Base game > Menu; off by

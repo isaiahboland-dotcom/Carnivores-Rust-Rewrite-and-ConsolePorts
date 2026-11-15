@@ -42,21 +42,63 @@ pub(super) fn shown(opts: &[Opt]) -> Vec<Opt> {
         .collect()
 }
 
+/// The board's scrolling panels.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Panel {
+    Game,
+    Video,
+}
+
+impl Panel {
+    fn rect(self) -> Rect {
+        match self {
+            Panel::Game => GAME_PANEL,
+            Panel::Video => VIDEO_PANEL,
+        }
+    }
+
+    fn opts(self) -> Vec<Opt> {
+        match self {
+            Panel::Game => shown(&GAME_OPTS),
+            Panel::Video => shown(&VIDEO_OPTS),
+        }
+    }
+}
+
+/// A row's height on the board: the two labelled sliders take two lines.
+fn row_height(o: &Opt) -> f32 {
+    if matches!(
+        o,
+        Opt::PcSlider(
+            "Total number of secret dinos on map" | "Survival starting budget",
+            _
+        )
+    ) {
+        38.0
+    } else {
+        OPT_ROW
+    }
+}
+
+/// The rows to scroll past before the rest of `opts` fits `height`.
+fn max_first(opts: &[Opt], height: f32) -> usize {
+    let mut used = 0.0;
+    let mut count = 0;
+    for o in opts.iter().rev() {
+        used += row_height(o);
+        if used > height {
+            break;
+        }
+        count += 1;
+    }
+    opts.len().saturating_sub(count)
+}
+
 pub(super) fn visible_rows(opts: &[Opt], panel: Rect, first: usize) -> Vec<(Opt, Rect)> {
     let mut rows = Vec::new();
     let mut y = panel.1;
     for o in opts.iter().skip(first) {
-        let height = if matches!(
-            o,
-            Opt::PcSlider(
-                "Total number of secret dinos on map" | "Survival starting budget",
-                _
-            )
-        ) {
-            38.0
-        } else {
-            OPT_ROW
-        };
+        let height = row_height(o);
         if y + height > panel.1 + panel.3 {
             break;
         }
@@ -67,36 +109,27 @@ pub(super) fn visible_rows(opts: &[Opt], panel: Rect, first: usize) -> Vec<(Opt,
 }
 
 impl Menu {
-    fn game_scroll_layout(&self, mobile: bool) -> (Rect, Rect, Rect, usize) {
+    /// Where `which` scrolls from (`first`).
+    pub(super) fn scroll_of(&self, which: Panel) -> &Scroll {
+        match which {
+            Panel::Game => &self.game_scroll,
+            Panel::Video => &self.video_scroll,
+        }
+    }
+
+    /// The panel, its up and down arrows and the farthest it scrolls. The
+    /// phone-style screen scrolls its GAME tab only.
+    fn scroll_layout(&self, mobile: bool, which: Panel) -> (Rect, Rect, Rect, usize) {
         let panel = if mobile {
             (40.0, 60.0, 720.0, 378.0)
         } else {
-            GAME_PANEL
+            which.rect()
         };
-        let opts = shown(&GAME_OPTS);
+        let opts = which.opts();
         let max = if mobile {
             opts.len().saturating_sub(9)
         } else {
-            let mut height = 0.0;
-            let mut count = 0;
-            for o in opts.iter().rev() {
-                height += if matches!(
-                    o,
-                    Opt::PcSlider(
-                        "Total number of secret dinos on map" | "Survival starting budget",
-                        _
-                    )
-                ) {
-                    38.0
-                } else {
-                    OPT_ROW
-                };
-                if height > panel.3 {
-                    break;
-                }
-                count += 1;
-            }
-            opts.len().saturating_sub(count)
+            max_first(&opts, panel.3)
         };
         let x = panel.0 + panel.2 + 2.0;
         (
@@ -106,24 +139,39 @@ impl Menu {
             max,
         )
     }
-    pub(super) fn scroll_game_options(&mut self, input: &Input, mobile: bool) {
-        if mobile && self.opt_tab != 0 {
+
+    /// Scrolls the option panels: the board's two, or the phone-style
+    /// screen's GAME tab.
+    pub(super) fn scroll_options(&mut self, input: &Input, mobile: bool) {
+        if mobile {
+            if self.opt_tab == 0 {
+                self.scroll_panel(input, true, Panel::Game);
+            }
             return;
         }
-        let (panel, up, down, max) = self.game_scroll_layout(mobile);
-        let old = self.game_scroll.first;
+        self.scroll_panel(input, false, Panel::Game);
+        self.scroll_panel(input, false, Panel::Video);
+    }
+
+    fn scroll_panel(&mut self, input: &Input, mobile: bool, which: Panel) {
+        let (panel, up, down, max) = self.scroll_layout(mobile, which);
+        let mut scroll = std::mem::take(match which {
+            Panel::Game => &mut self.game_scroll,
+            Panel::Video => &mut self.video_scroll,
+        });
+        let old = scroll.first;
         if inside(self.cursor, panel) {
-            self.game_scroll.wheel(input.scroll, max);
+            scroll.wheel(input.scroll, max);
         }
         // Touch: dragging the list a row's height moves it a row (not
         // while a slider is held).
         let y = self.cursor.map(|c| c.1);
-        self.game_scroll.grab = match (self.game_scroll.grab, y) {
+        scroll.grab = match (scroll.grab, y) {
             (_, Some(y)) if mobile && input.mouse_down && self.drag.is_none() => {
-                match self.game_scroll.grab {
+                match scroll.grab {
                     Some(from) => {
                         let rows = ((y - from) / OPT_ROW).trunc();
-                        self.game_scroll.wheel(rows, max);
+                        scroll.wheel(rows, max);
                         Some(from + rows * OPT_ROW)
                     }
                     None => (input.clicked && inside(self.cursor, panel)).then_some(y),
@@ -133,31 +181,40 @@ impl Menu {
         };
         if input.clicked {
             if inside(self.cursor, up) {
-                self.game_scroll.first = self.game_scroll.first.saturating_sub(1);
+                scroll.first = scroll.first.saturating_sub(1);
             }
             if inside(self.cursor, down) {
-                self.game_scroll.first = (self.game_scroll.first + 1).min(max);
+                scroll.first = (scroll.first + 1).min(max);
             }
         }
-        self.game_scroll.first = self.game_scroll.first.min(max);
-        if old != self.game_scroll.first {
+        scroll.first = scroll.first.min(max);
+        if old != scroll.first {
             self.drag = None;
             self.clear_armed = false;
         }
+        *match which {
+            Panel::Game => &mut self.game_scroll,
+            Panel::Video => &mut self.video_scroll,
+        } = scroll;
     }
-    pub(super) fn draw_game_scroll(&self, out: &mut Vec<Sprite>, mobile: bool) {
+    pub(super) fn draw_option_scroll(&self, out: &mut Vec<Sprite>, mobile: bool) {
         if mobile && self.opt_tab != 0 {
             return;
         }
-        let (_, up, down, max) = self.game_scroll_layout(mobile);
-        if max == 0 {
-            return;
-        }
-        for (r, label, enabled) in [
-            (up, "^", self.game_scroll.first > 0),
-            (down, "v", self.game_scroll.first < max),
-        ] {
-            self.text(out, r.0, r.1, 16.0, if enabled { SAND } else { DIM }, label);
+        let panels: &[Panel] = if mobile {
+            &[Panel::Game]
+        } else {
+            &[Panel::Game, Panel::Video]
+        };
+        for &which in panels {
+            let (_, up, down, max) = self.scroll_layout(mobile, which);
+            if max == 0 {
+                continue;
+            }
+            let first = self.scroll_of(which).first;
+            for (r, label, enabled) in [(up, "^", first > 0), (down, "v", first < max)] {
+                self.text(out, r.0, r.1, 16.0, if enabled { SAND } else { DIM }, label);
+            }
         }
     }
 }
@@ -191,6 +248,36 @@ mod tests {
             }
         }
     }
+    // The Video panel holds nine rows; its options past the ninth were
+    // out of reach on the board.
+    #[test]
+    fn every_video_option_is_reachable_on_the_board() {
+        let max = max_first(&VIDEO_OPTS, VIDEO_PANEL.3);
+        assert!(max > 0);
+        let bottom = visible_rows(&VIDEO_OPTS, VIDEO_PANEL, max);
+        assert_eq!(bottom.len(), VIDEO_OPTS.len() - max);
+        assert!(bottom
+            .iter()
+            .any(|(o, _)| matches!(o, Opt::PcToggle("Animated waves", _))));
+        for first in 0..=max {
+            for (_, r) in visible_rows(&VIDEO_OPTS, VIDEO_PANEL, first) {
+                assert!(r.1 >= VIDEO_PANEL.1 && r.1 + r.3 <= VIDEO_PANEL.1 + VIDEO_PANEL.3);
+            }
+        }
+    }
+
+    // A heading is never the last row shown with its options scrolled off.
+    #[test]
+    fn modern_graphics_heading_sits_above_its_options() {
+        let at = VIDEO_OPTS
+            .iter()
+            .position(|o| matches!(o, Opt::Header("Modern graphics")));
+        let waves = VIDEO_OPTS
+            .iter()
+            .position(|o| matches!(o, Opt::PcToggle("Animated waves", _)));
+        assert!(at.is_some() && at.map(|i| i + 1) == waves);
+    }
+
     #[test]
     fn trackpad_accumulates_and_bounds_do_not_store_overscroll() {
         let mut s = Scroll::default();

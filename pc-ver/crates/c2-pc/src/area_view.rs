@@ -126,6 +126,10 @@ pub struct AreaView {
     /// High-end view: the far ground in coarser levels and objects fading
     /// between model and sprite over [`FADE_CELLS`].
     pub high_end: bool,
+    /// Animated waves on open water (`settings::PcSettings::modern_waves`).
+    pub modern_waves: bool,
+    /// Sun and moon glow (`settings::PcSettings::modern_sky_glow`).
+    pub modern_sky_glow: bool,
     pub cam: FlyCam,
     /// Free-fly controls; off when another scene drives the camera.
     pub fly: bool,
@@ -139,6 +143,9 @@ pub struct AreaView {
     /// Underwater fog colour (the water texture's mean, 0..1 RGB): the
     /// whole scene fades into it. Set by the hunt each frame.
     pub underwater_fog: Option<[f32; 3]>,
+    /// How deep the camera is in that water, 0..1 (`water_tint`), with the
+    /// depth tint on: the ground loses colour by it. 0: no tint.
+    pub water_depth: f32,
     start: Instant,
     /// Fixed clock and sky isolation for native renderer diagnostics only.
     pub(crate) capture: Option<(u32, bool)>,
@@ -338,12 +345,15 @@ impl AreaView {
             sprites,
             sprite_cells: Some(SPRITE_CELLS),
             high_end: false,
+            modern_waves: false,
+            modern_sky_glow: false,
             cam,
             fly: true,
             zoom: 1.0,
             radius: 74,
             fog_start: 0.6,
             underwater_fog: None,
+            water_depth: 0.0,
             brightness: 1.0,
             start: Instant::now(),
             capture: None,
@@ -526,6 +536,12 @@ impl AreaView {
         let t = self.render_time();
         let proj = projection(aspect, far * 1.5, self.zoom);
         let frustum = Frustum::new(proj * view);
+        let sun = self.area.cycle.map_or(time.sun_pos(), |c| {
+            let w = c.weights();
+            let dawn = TimeOfDay::Dusk.sun_pos();
+            let day = TimeOfDay::Day.sun_pos();
+            core::array::from_fn(|k| dawn[k] * (1.0 - w[1]) + day[k] * w[1])
+        });
         self.globals.write(
             gpu,
             &FrameParams {
@@ -548,6 +564,14 @@ impl AreaView {
                 narrow_flashlight: self.narrow_flashlight,
                 time_s: t.as_secs_f32(),
                 brightness: self.brightness,
+                absorb: self.underwater_fog.map_or([1.0; 3], |c| {
+                    crate::water_tint::transmitted(c, self.water_depth)
+                }),
+                sky: crate::render::SkyLight {
+                    sun,
+                    moon: TimeOfDay::Night.sun_pos(),
+                    glow: self.modern_sky_glow,
+                },
             },
         );
         self.sky.draw(
@@ -555,12 +579,7 @@ impl AreaView {
             pass,
             &self.globals,
             view,
-            self.area.cycle.map_or(time.sun_pos(), |c| {
-                let w = c.weights();
-                let dawn = TimeOfDay::Dusk.sun_pos();
-                let day = TimeOfDay::Day.sun_pos();
-                core::array::from_fn(|k| dawn[k] * (1.0 - w[1]) + day[k] * w[1])
-            }),
+            sun,
             self.area.time_weights()[2],
         );
 
@@ -575,6 +594,7 @@ impl AreaView {
             self.high_end || GROUND_LEVELS_ALWAYS,
             self.area.rsc.textures.len() as u32,
             t.as_millis() as u32,
+            self.modern_waves,
             &frustum,
         );
         self.terrain.draw_ground(pass, &self.globals);

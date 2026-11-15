@@ -5936,3 +5936,142 @@ at 0, and it still draws without the per-chunk instance buffer the shader
 has read since the Android ground levels, so its ground is probably not
 drawn. That was found while reading, not checked in a headset, and is left
 for a separate change.
+
+## 2026-11-14 — Modern graphics: animated waves (`modern_waves`)
+
+The looks of the modernized Modder's Edition Engine become PC options, one
+switch each in `c2rs.cfg`, under a "Modern graphics" heading in Options >
+Video. They are off by default and change the picture only, so the vanilla
+baselines and hunt rules are untouched, and they work on any game (vanilla,
+a Modder's Edition base or overlay). They are display settings: Play
+Vanilla keeps the player's values, as it does for high-end view
+(`RECIPE-SETTINGS.md`). The 3DS and Wii U do not get them. Its source is read
+as reference only, like the original's.
+
+**Animated waves** is the first. That engine (`Effects.cpp`:
+`PreCashGroundModel`) moves each open-water vertex by three sines per axis:
+amplitudes 14.58, 8.10 and 5.00 units sideways, 0.8 of that in height,
+`t = RealTime / 200 * 0.5`, the second and third phased by `RandomMap` at
+the vertex and at (x + 7, y + 11). `vs_water` (`shaders/terrain.wgsl`:
+`wave_offset`) does the same per vertex on the GPU; `cells[i].w`, unused
+until now, carries the two `RandomMap` values.
+
+- Only vertices of open-water cells (`fmWater`) move, as there. The bank
+  vertices of the water's quads stay put, so the shoreline does not open.
+- Only the drawn position moves. The water's light, alpha, fog and texture
+  coordinates are the flat water's, so the original shimmer is unchanged.
+- That engine fills a 32x32 table once per frame and reads it by
+  `[y & 31][x & 31]`; the swell repeats with a phase seam every 32 cells.
+  Here the map position is not wrapped, so there is no seam.
+- That engine stops the waves at `ctViewR - 4` cells, in its fog. Our render
+  distance reaches past the fog, so the waves fade to nothing over the 8
+  cells before the last 4 of the full-detail window. The coarser levels of
+  high-end view are drawn flat: their vertices are 2 to 8 cells apart, and
+  the fade leaves no step where the levels meet.
+- The hunter's underwater state is the game's (`Player::underwater`), not
+  the drawn surface's: swimming, a crest can pass over the eye and show the
+  surface from below for a moment. Accepted, as that engine does.
+
+`TerrainParams` takes the switch in one of its two padding words (still 48
+bytes); `c2-vr` writes zeros there and draws flat water. Viewer:
+`c2-pc area MAP --waves`.
+
+The board's Video panel holds nine rows and had twelve: Pretty underwater
+view, Classic texture filter and Bounded fleeing could not be reached on
+the original-style options screen (the terminal and phone-style screens
+showed them). The panel now scrolls like the Game panel (`option_scroll`).
+
+Tests: `render::water_tests::waves_move_open_water_only_when_on` (GPU: off
+is stable, on moves the water, all-bank water is identical on or off),
+`settings::tests::modern_graphics_are_opt_in_and_round_trip`,
+`option_scroll::tests::every_video_option_is_reachable_on_the_board`.
+
+While testing the depth tint: the terrain's chunks were culled by a box
+up to their highest ground (`render/terrain.rs: Blocks`), and the water was
+drawn from the chunks that survived. Water lies above its bed, so a chunk
+whose ground was all below the view lost its surface: over deep water, the
+nearest few cells of the camera's own chunk. The box now reaches the water's
+level (plus the waves' crest). Test:
+`render::water_tests::depth_tint_absorbs_the_ground_not_the_surface` (its
+last assertion).
+
+## 2026-11-14 — Modern graphics: water depth tint (`modern_water_tint`)
+
+The second switch. Under water, the original fades the scene into the water
+texture's mean colour and washes the screen with it at half strength
+(pretty underwater view). The modernized Modder's Edition darkens that
+colour with the camera's depth, absorbing the colour's weaker channels
+faster (`Core/WaterColor.h: ModulateWaterColorByDepth`): per channel
+`exp(-d * k)`, `k = 0.40 + 2.20 * (1 - channel / max)`. `d`
+(`Controls.cpp: CameraWaterDepthFactor`) is the eye's depth below the
+surface over the larger of 1024 units and the water's depth there, 0..1.
+`c2-pc/src/water_tint.rs` holds the same math. With the switch on:
+
+- the underwater fog colour is the mean colour at that depth;
+- the screen's wash is that colour at `0.44 + 0.30 * d`
+  (`GLRenderer.cpp: DrawUnderwaterOverlay`) instead of 0.5;
+- the ground is multiplied by what the water lets through, never below
+  0.01 (`terrain.frag`): `Globals.water` in `common.wgsl`, read by the
+  ground's own fragment entry `fs_ground`. The water's surface and the
+  models are not, as there.
+
+The base colour stays our texture mean (`Area::water_mean_rgb`, the
+original's `CalcMidColor`). The switch also works with pretty underwater
+view off: on, it is the underwater view. That engine's other underwater
+changes (fog density by depth, a vertical fog gradient, a dimmer sun) are
+not ported; the fog's reach is unchanged.
+
+`Globals` grows by one `vec4` (now 240 bytes). `c2-vr` has its own fragment
+entries and does not read it.
+
+Tests: `water_tint::tests` (the surface is untinted, brown stays brown and
+blue blue, shallow water never reaches full depth),
+`render::water_tests::depth_tint_absorbs_the_ground_not_the_surface` (GPU).
+
+## 2026-11-14 — Modern graphics: sun and moon glow (`modern_sky_glow`)
+
+The third switch, from that engine's `sky.frag`, added to the cloud plane
+in `shaders/sky.wgsl` (`sky_glow`); the original's additive sun and moon are
+drawn over it as before.
+
+- The sky is darkened towards the zenith: 1 at the horizon, 0.92 overhead.
+- By day, a warm band along the horizon: `(1, 0.85, 0.6) * exp(-y^2 * 20) *
+  0.15`, `y` the view direction's height.
+- A halo around the sun (strength 0.18, warm white to cool white) and the
+  moon (0.10, blue-white), a Gaussian of the distance from the body.
+
+Differences from that engine:
+
+- Its halos are 80 (sun) and 110 (moon) pixels wide around the body's place
+  on the screen, at any resolution. Here they are angles around the body's
+  direction, 0.089 and 0.122 rad: those pixels at a 1080-line screen and
+  our field of view. The halo keeps its size at any resolution and grows
+  with the binoculars, and the shader needs no screen position: `Globals`
+  takes the sun's and the moon's directions (`sun`, `moon`; now 272 bytes).
+- Its sun visibility (`SkyTraceK`) is taken as 1, as for our sun: nothing
+  is traced in front of it. The ground and objects are drawn over the sky
+  and hide the halo.
+- Its sky fog (a screen-space estimate) is our sky's own fade to the fog
+  colour at the horizon: the band and halos fade with it.
+- With dynamic time the sun's terms scale by the day's weight and the
+  moon's by the night's, as the two bodies do.
+- The halos are added as light, like the dynamic-time stars: night-vision
+  grading applies, the night's ambient dimming does not.
+- Its pocket fog and camera-in-fog blends on the sky belong to local fog
+  volumes, which are not drawn (below).
+
+Viewer: `c2-pc area MAP --sky-glow`. Test:
+`render::time_tests::sky_glow_lights_the_sky_around_the_sun_and_moon` (GPU:
+off, the sun's place changes nothing; on, the halo is at the sun by day and
+at the moon by night, and the zenith is darker).
+
+**Fog sun scatter is not ported yet.** That engine's fourth look adds a warm
+glow, `pow(dot(view, sun), 8)`, to its local fog volumes
+(`terrain.frag`: `vFog`). The PC renderer has only the distance fog: the
+map's fog zones (`FogsMap`, the RSC's fog list; the original's
+`CalcFogLevel_Gradient` in `renderd3d.cpp`) are parsed and not drawn. The
+glow has nothing to light until they are. Drawing them is original
+behaviour, on by default, and changes the picture of every map that has
+fog zones, so it is its own change with its own baselines; the scatter
+switch follows it. The sun's direction it needs is in `Globals` now.
+

@@ -16,7 +16,8 @@ struct TerrainParams {
     /// Cells drawn from `eye` (each axis): the coarsest level stops here.
     reach: u32,
     eye: [i32; 2],
-    pad: [u32; 2],
+    waves: u32,
+    pad: u32,
 }
 
 /// Half-width, in cells, of the full-detail square when the ground is
@@ -85,27 +86,37 @@ const CHUNK_VERTICES: u32 = (CHUNK_CELLS * CHUNK_CELLS * 6) as u32;
 const BLOCK: usize = 16;
 const BLOCKS: usize = c2_formats::map::MAP_SIZE / BLOCK;
 
-/// Per 16x16 map cells: the highest ground and whether any cell has
-/// water, to cull chunks without looking at every cell.
+/// How far above its level the water's surface is drawn at most
+/// (`shaders/terrain.wgsl: wave_offset`: 0.8 of the three amplitudes).
+const WAVE_CREST: f32 = 24.0;
+
+/// Per 16x16 map cells: the highest ground or water surface and whether
+/// any cell has water, to cull chunks without looking at every cell.
 struct Blocks {
     top: Vec<f32>,
     water: Vec<bool>,
 }
 
 impl Blocks {
-    fn new(m: &c2_formats::map::Map) -> Self {
+    fn new(area: &c2_core::area::Area) -> Self {
+        let m = &area.map;
         let mut top = vec![0.0f32; BLOCKS * BLOCKS];
         let mut water = vec![false; BLOCKS * BLOCKS];
         let size = c2_formats::map::MAP_SIZE;
         for i in 0..m.height.len().min(size * size) {
             let b = (i / size / BLOCK) * BLOCKS + (i % size) / BLOCK;
             top[b] = top[b].max(f32::from(m.height[i]) * c2_core::H_SCALE);
-            water[b] |= m.water[i] != 255;
+            // The water lies above its bed: a chunk whose ground is all
+            // below the view can still show its surface.
+            if let Some(level) = area.water_level(i % size, i / size) {
+                top[b] = top[b].max(level + WAVE_CREST);
+                water[b] = true;
+            }
         }
         Self { top, water }
     }
 
-    /// Highest ground and any water over map cells `min..=max`.
+    /// Highest ground or water and any water over map cells `min..=max`.
     fn over(&self, min: (i32, i32), max: (i32, i32)) -> (f32, bool) {
         let last = BLOCKS as i32 - 1;
         let b = |v: i32| (v.max(0) as usize / BLOCK).min(last as usize);
@@ -118,6 +129,12 @@ impl Blocks {
         }
         (top, water)
     }
+}
+
+/// `RandomMap[y & 31][x & 31]` (0..1023), for the shader's waves.
+fn random(area: &c2_core::area::Area, x: usize, y: usize) -> u32 {
+    let r = area.random_map.get((y & 31) * 32 + (x & 31)).copied();
+    r.unwrap_or(0).clamp(0, 1023) as u32
 }
 
 pub struct TerrainRenderer {
@@ -140,7 +157,8 @@ impl TerrainRenderer {
         let cells: Vec<[u32; 4]> = (0..m.height.len())
             .map(|i| {
                 let size = c2_formats::map::MAP_SIZE;
-                let phase = area.water_phase(i % size, i / size);
+                let (x, y) = (i % size, i / size);
+                let phase = area.water_phase(x, y);
                 [
                     u32::from(m.height[i])
                         | u32::from(area.light_map()[i]) << 8
@@ -150,7 +168,7 @@ impl TerrainRenderer {
                     u32::from(m.light[0][i])
                         | u32::from(m.light[1][i]) << 8
                         | u32::from(m.light[2][i]) << 16,
-                    0,
+                    random(area, x, y) | random(area, x + 7, y + 11) << 16,
                 ]
             })
             .collect();
@@ -253,24 +271,24 @@ impl TerrainRenderer {
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &wgpu::vertex_attr_array![0 => Sint32x4],
         })];
-        let desc = |label, vs, blend| PipelineDesc {
+        let desc = |label, vs, fs, blend| PipelineDesc {
             label,
             module: &module,
             layout: &pl,
             vs,
-            fs: "fs",
+            fs,
             buffers: &buffers,
             blend,
         };
-        let ground = pipeline(gpu, desc("ground", "vs_ground", Blend::Opaque));
-        let water = pipeline(gpu, desc("water", "vs_water", Blend::Alpha));
+        let ground = pipeline(gpu, desc("ground", "vs_ground", "fs_ground", Blend::Opaque));
+        let water = pipeline(gpu, desc("water", "vs_water", "fs", Blend::Alpha));
         let capacity = 1024;
         Self {
             ground,
             water,
             group,
             params,
-            blocks: Blocks::new(m),
+            blocks: Blocks::new(area),
             chunks: Vec::new(),
             ground_chunks: 0,
             instances: Self::instance_buffer(gpu, capacity),
@@ -289,7 +307,8 @@ impl TerrainRenderer {
 
     /// Sets the square window of cells to draw, centred on `center` cell;
     /// with `lod`, past [`LOD_FINE_CELLS`] in coarser levels (see [`window`]).
-    /// Only the chunks of it that `frustum` may see are drawn.
+    /// Only the chunks of it that `frustum` may see are drawn. `waves`:
+    /// open water sways (`shaders/terrain.wgsl: wave_offset`).
     #[allow(clippy::too_many_arguments)]
     pub fn set_window(
         &mut self,
@@ -299,6 +318,7 @@ impl TerrainRenderer {
         lod: bool,
         layers: u32,
         time_ms: u32,
+        waves: bool,
         frustum: &Frustum,
     ) {
         let eye = center;
@@ -313,7 +333,8 @@ impl TerrainRenderer {
             levels,
             reach: radius,
             eye: [eye.0, eye.1],
-            pad: [0; 2],
+            waves: u32::from(waves),
+            pad: 0,
         };
         gpu.queue
             .write_buffer(&self.params, 0, bytemuck::bytes_of(&p));
