@@ -5,6 +5,7 @@
 //! its waves too.
 
 use c2_formats::bits::Bits;
+use c2_formats::res_txt::c_atof;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -83,112 +84,36 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
     let mut hunt_problems = 0;
     for area_name in &areas {
         let area = c2_core::load::area_with(&vfs, area_name, TimeOfDay::Day, true)?;
+        // Dusk and night: placement and targets only (time-bound overwrites).
+        let other_times = [TimeOfDay::Dusk, TimeOfDay::Night]
+            .into_iter()
+            .map(|t| Ok((t, c2_core::load::area_with(&vfs, area_name, t, true)?)))
+            .collect::<Result<Vec<_>>>()?;
         println!("{area_name}:");
         for (name, targets, roamers) in &picks {
-            let hr = rules.hunt_with(area_name, TimeOfDay::Day, *targets, roamers);
-            let keep = |i: usize| match hr.roles.get(i) {
-                Some(Role::Hunter | Role::Ambient) => true,
-                Some(Role::Slot(k)) => targets.has(k + 10),
-                Some(Role::Roamer) => roamers.iter().any(|r| r.char == i),
-                Some(Role::Off | Role::Aquatic) => false,
-                None => false,
+            let pick = Pick {
+                area_name,
+                targets: *targets,
+                roamers,
+                view,
             };
-            let (mut species, cars) = c2_core::load::species_with(&vfs, &hr.res, &keep);
-            let mut missing = Vec::new();
-            for (i, car) in cars.iter().enumerate() {
-                if !keep(i) {
-                    continue;
-                }
-                let key = &hr.keys[i];
-                match car {
-                    None => missing.push(format!("model of #{i} ({key})")),
-                    Some(c) => {
-                        if vfs.resolve(&format!("C2RS/M/{key}.TX")).is_none() {
-                            missing.push(format!("texture {key}"));
-                        }
-                        // Empty sounds aren't packed; none at all is a problem.
-                        let found = (0..c.sounds.len())
-                            .filter(|k| vfs.resolve(&format!("C2RS/SND/M/{key}/{k}.PCM")).is_some())
-                            .count();
-                        if found == 0 && !c.sounds.is_empty() {
-                            missing.push(format!("sounds of {key}"));
-                        }
-                    }
+            for (time, area) in other_times.iter().filter(|_| bench.is_none()) {
+                let p = pick.place(&vfs, &rules, area, *time);
+                if p.not_target() {
+                    hunt_problems += 1;
+                    println!("  {name:<32} MISSING: not a hunt target at {time:?}");
                 }
             }
-            if let Some(t) = &hr.tables {
-                c2_core::mee::tune(&mut species, t);
-            }
-            for i in (0..species.len()).filter(|&i| keep(i)) {
-                let sp = &species[i];
-                if sp.mee.as_ref().is_some_and(|m| m.anim_index.is_empty())
-                    && !sp.ani_time.is_empty()
-                {
-                    missing.push(format!("animation keys of #{i} ({})", sp.info.name));
-                }
-                let still = sp
-                    .mee
-                    .as_ref()
-                    .is_some_and(|m| m.run_speed <= 0.0 && m.walk_speed <= 0.0);
-                let picked = matches!(hr.roles.get(i), Some(Role::Slot(_) | Role::Roamer));
-                if still && picked && !sp.ani_time.is_empty() {
-                    missing.push(format!("speeds of #{i} ({}): it can't move", sp.info.name));
-                }
-            }
-            let wanted: Vec<usize> = (0..hr.roles.len())
-                .filter(|&i| keep(i) && matches!(hr.roles[i], Role::Slot(_) | Role::Roamer))
-                .collect();
-            // What else a pick brings (animals sharing its slot).
-            let loads: Vec<String> = wanted
-                .iter()
-                .filter_map(|&i| hr.res.characters.get(i)?.name.clone())
-                .collect();
+            let Placed {
+                mut hunt,
+                cars,
+                wanted,
+                missing,
+                notes,
+                loads,
+            } = pick.place(&vfs, &rules, &area, TimeOfDay::Day);
             if loads.len() > 1 {
                 println!("  {name}: loads {}", loads.join(", "));
-            }
-            let mut rng = MsRand::new(7);
-            let cell = area.landings.first().copied().unwrap_or((512, 512));
-            let player = Player::new(&area, cell);
-            let mut herd = Herd {
-                species,
-                ..Default::default()
-            };
-            match &hr.tables {
-                Some(t) => herd.place_mee(&area, (player.x, player.z), &mut rng, t, 128),
-                None => herd.place(
-                    &area,
-                    (player.x, player.z),
-                    &mut rng,
-                    PlaceOptions {
-                        density: 128,
-                        opt_agres: 128,
-                        targets: *targets,
-                        max_ambient: Some(4),
-                    },
-                ),
-            }
-            let opts = HuntOptions {
-                targets: *targets,
-                view_r: view,
-                render_r: view,
-                ..Default::default()
-            };
-            let room = c2_core::profile::new_player("check", 0, 0);
-            let mut hunt = Hunt::new(
-                &area,
-                player,
-                herd,
-                Weapons::new(vec![], vec![], c2_formats::bits::Bits::NONE, false),
-                rng,
-                opts,
-                room,
-            );
-            // The pick hunts something: one of its animals placed is a
-            // target (a game may bring others with it, kept off the radar).
-            let picked = |c: &c2_core::dino::Character| wanted.contains(&c.ctype);
-            let placed: Vec<_> = hunt.herd.chars.iter().filter(|c| picked(c)).collect();
-            if !placed.is_empty() && !placed.iter().any(|c| hunt.is_target(c)) {
-                missing.push("not a hunt target".into());
             }
             let car_refs: Vec<_> = cars.iter().map(Option::as_ref).collect();
             let mut out = Vec::new();
@@ -262,12 +187,17 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
                 .map(|(n, p)| format!("{n} {p:.2}"))
                 .collect();
             println!(
-                "  {name:<32} {placed:>2} placed ({total} animals in all), tick {mean:.3} ms (worst {worst:.2}) {}{still}{}",
+                "  {name:<32} {placed:>2} placed ({total} animals in all), tick {mean:.3} ms (worst {worst:.2}) {}{still}{}{}",
                 slow.join(" "),
                 if missing.is_empty() {
                     String::new()
                 } else {
                     format!("  MISSING: {}", missing.join(", "))
+                },
+                if notes.is_empty() {
+                    String::new()
+                } else {
+                    format!("  NOTE: {}", notes.join(", "))
                 }
             );
         }
@@ -283,7 +213,9 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
         }
     }
     if hunt_problems > 0 {
-        failed.push(format!("{hunt_problems} hunts with missing files"));
+        failed.push(format!(
+            "{hunt_problems} hunts with problems (MISSING above)"
+        ));
     }
     if trophy_failed {
         failed.push("trophy room failed (animals off the map, see above)".into());
@@ -298,6 +230,167 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
     }
     println!("ok");
     Ok(())
+}
+
+/// One pick (a menu animal or a roamer) on one area.
+struct Pick<'a> {
+    area_name: &'a str,
+    targets: Bits,
+    roamers: &'a [Roam],
+    view: i32,
+}
+
+/// A pick placed as the 3DS places it, with what it lacks.
+struct Placed {
+    hunt: Hunt,
+    cars: Vec<Option<c2_formats::car::Car>>,
+    /// The picked characters (`_RES.TXT` indices).
+    wanted: Vec<usize>,
+    missing: Vec<String>,
+    /// Findings that are the mod's intent, not failures.
+    notes: Vec<String>,
+    /// The names a pick loads (animals sharing its slot).
+    loads: Vec<String>,
+}
+
+impl Placed {
+    /// Some of the pick's animals are placed and none is a target (a game
+    /// may bring others with it, kept off the radar).
+    fn not_target(&self) -> bool {
+        let placed: Vec<_> = (self.hunt.herd.chars.iter())
+            .filter(|c| self.wanted.contains(&c.ctype))
+            .collect();
+        !placed.is_empty() && !placed.iter().any(|c| self.hunt.is_target(c))
+    }
+}
+
+impl Pick<'_> {
+    /// The rules, models and placement of this pick at `time`.
+    fn place(
+        &self,
+        vfs: &Vfs,
+        rules: &Rules,
+        area: &c2_core::area::Area,
+        time: TimeOfDay,
+    ) -> Placed {
+        let (targets, roamers) = (self.targets, self.roamers);
+        let hr = rules.hunt_with(self.area_name, time, targets, roamers);
+        let keep = |i: usize| match hr.roles.get(i) {
+            Some(Role::Hunter | Role::Ambient) => true,
+            Some(Role::Slot(k)) => targets.has(k + 10),
+            Some(Role::Roamer) => roamers.iter().any(|r| r.char == i),
+            Some(Role::Off | Role::Aquatic) => false,
+            None => false,
+        };
+        let (mut species, cars) = c2_core::load::species_with(vfs, &hr.res, &keep);
+        let mut missing = Vec::new();
+        let mut notes = Vec::new();
+        for (i, car) in cars.iter().enumerate() {
+            if !keep(i) {
+                continue;
+            }
+            let key = &hr.keys[i];
+            match car {
+                None => missing.push(format!("model of #{i} ({key})")),
+                Some(c) => {
+                    if vfs.resolve(&format!("C2RS/M/{key}.TX")).is_none() {
+                        missing.push(format!("texture {key}"));
+                    }
+                    // Empty sounds aren't packed; none at all is a problem.
+                    let found = (0..c.sounds.len())
+                        .filter(|k| vfs.resolve(&format!("C2RS/SND/M/{key}/{k}.PCM")).is_some())
+                        .count();
+                    if found == 0 && !c.sounds.is_empty() {
+                        missing.push(format!("sounds of {key}"));
+                    }
+                }
+            }
+        }
+        if let Some(t) = &hr.tables {
+            c2_core::mee::tune(&mut species, t);
+        }
+        for i in (0..species.len()).filter(|&i| keep(i)) {
+            let sp = &species[i];
+            if sp.mee.as_ref().is_some_and(|m| m.anim_index.is_empty()) && !sp.ani_time.is_empty() {
+                missing.push(format!("animation keys of #{i} ({})", sp.info.name));
+            }
+            let still = sp
+                .mee
+                .as_ref()
+                .is_some_and(|m| m.run_speed <= 0.0 && m.walk_speed <= 0.0);
+            let picked = matches!(hr.roles.get(i), Some(Role::Slot(_) | Role::Roamer));
+            if still && picked && !sp.ani_time.is_empty() {
+                // Both speeds written as zero: a prop the mod placed on
+                // purpose (corpses, sound objects). Unwritten: a data fault.
+                let written = |k: &str| {
+                    (hr.tables.as_ref())
+                        .and_then(|t| t.characters.get(i)?.block.get(&[k]).map(c_atof))
+                        .is_some_and(|v| v <= 0.0)
+                };
+                let line = format!("#{i} ({}) can't move", sp.info.name);
+                if written("runspd") && written("wlkspd") {
+                    notes.push(format!("{line}: zero speeds as written (a prop)"));
+                } else {
+                    missing.push(format!("speeds of {line}"));
+                }
+            }
+        }
+        let wanted: Vec<usize> = (0..hr.roles.len())
+            .filter(|&i| keep(i) && matches!(hr.roles[i], Role::Slot(_) | Role::Roamer))
+            .collect();
+        let loads = (wanted.iter())
+            .filter_map(|&i| hr.res.characters.get(i)?.name.clone())
+            .collect();
+        let mut rng = MsRand::new(7);
+        let cell = area.landings.first().copied().unwrap_or((512, 512));
+        let player = Player::new(area, cell);
+        let mut herd = Herd {
+            species,
+            ..Default::default()
+        };
+        match &hr.tables {
+            Some(t) => herd.place_mee(area, (player.x, player.z), &mut rng, t, 128),
+            None => herd.place(
+                area,
+                (player.x, player.z),
+                &mut rng,
+                PlaceOptions {
+                    density: 128,
+                    opt_agres: 128,
+                    targets,
+                    max_ambient: Some(4),
+                },
+            ),
+        }
+        let opts = HuntOptions {
+            targets,
+            view_r: self.view,
+            render_r: self.view,
+            ..Default::default()
+        };
+        let room = c2_core::profile::new_player("check", 0, 0);
+        let hunt = Hunt::new(
+            area,
+            player,
+            herd,
+            Weapons::new(vec![], vec![], c2_formats::bits::Bits::NONE, false),
+            rng,
+            opts,
+            room,
+        );
+        let mut p = Placed {
+            hunt,
+            cars,
+            wanted,
+            missing,
+            notes,
+            loads,
+        };
+        if p.not_target() {
+            p.missing.push("not a hunt target".into());
+        }
+        p
+    }
 }
 
 /// The trophy room as the 3DS opens it (`hunt.rs`): its map, the rules
@@ -496,10 +589,16 @@ fn play_waves(s: &mut SurvivalHunt, o: SurvivalOptions) -> bool {
     let mut out = Vec::new();
     let mut near = f32::MAX;
     let mut shown = 0;
+    // The survival's last message (why a wave didn't come).
+    let mut said = None;
     for t in 0..15_000u32 {
         hunt.health = c2_core::game::MAX_HEALTH;
         hunt.tick(area, &car_refs, &HuntInput::default(), 20, &mut out);
-        out.clear();
+        for e in out.drain(..) {
+            if let c2_core::game::GameEvent::Message(m) = e {
+                said = Some(m);
+            }
+        }
         let alive: Vec<usize> = (0..hunt.herd.chars.len())
             .filter(|&i| hunt.herd.chars[i].wave > 0 && hunt.herd.chars[i].health > 0)
             .collect();
@@ -535,6 +634,14 @@ fn play_waves(s: &mut SurvivalHunt, o: SurvivalOptions) -> bool {
         if shown >= 5 {
             break;
         }
+    }
+    if shown == 0 {
+        let survivors = (hunt.herd.chars.iter()).filter(|c| c.wave > 0).count();
+        println!(
+            "  MISSING: no wave came in 300 s (wave {}, {survivors} wave animals placed; last said: {})",
+            hunt.wave(),
+            said.as_deref().unwrap_or("nothing")
+        );
     }
     shown > 0
 }

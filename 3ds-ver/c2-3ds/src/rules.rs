@@ -22,8 +22,9 @@ pub enum Role {
     /// A menu animal: loaded when its slot is picked (call id 10 + slot).
     Slot(usize),
     /// A huntable AI (10-29) without a menu slot (add-ons that only roam):
-    /// offered in the menu, loaded when picked. `c2-cook` sorts models the
-    /// same way for its memory figures.
+    /// offered in the menu; once picked, [`Rules::hunt_with`] resolves it
+    /// as a [`Role::Slot`] under its roaming slot. `c2-cook` sorts models
+    /// the same way for its memory figures.
     Roamer,
     /// Fish, sea animals and waders (AI 30 to 34) without a slot: loaded
     /// last, with what memory the rest of the hunt leaves (`budget.rs`),
@@ -153,7 +154,8 @@ impl Rules {
     /// [`Rules::hunt`] as played: picked animals (and picked roamers) come
     /// on this map even if their tables put them on others
     /// (`c2_core::mee::spawn_picked_anywhere`); each picked roamer takes its
-    /// call slot (`callNo`), so it loads and hunts as a menu animal.
+    /// call slot as `callNo` and `menuSlot` (`c2_core::mee::read_hunt`, as
+    /// on PC), so it loads and hunts as a menu animal: [`Role::Slot`].
     pub fn hunt_with(
         &self,
         area: &str,
@@ -172,16 +174,8 @@ impl Rules {
                     },
                     picked: targets.down(10),
                 };
-                let chars: Vec<usize> = roamers.iter().map(|r| r.char).collect();
-                let mut m = c2_core::mee::read_picked_anywhere(raw, &h, &chars);
-                for r in roamers {
-                    if let Some(c) = m.tables.characters.get_mut(r.char) {
-                        c.block.entries.push(c2_formats::res_txt::Entry {
-                            key: "callNo".into(),
-                            value: r.slot.to_string(),
-                        });
-                    }
-                }
+                let slots: Vec<(usize, usize)> = roamers.iter().map(|r| (r.char, r.slot)).collect();
+                let m = c2_core::mee::read_hunt(raw, &h, &slots);
                 (m.res, Some(m.tables))
             }
             (None, Some(v)) => (v.clone(), None),

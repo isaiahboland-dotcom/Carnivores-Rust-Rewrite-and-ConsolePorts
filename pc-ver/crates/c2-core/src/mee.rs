@@ -287,6 +287,17 @@ pub fn picked_roamers(h: &Hunt, roamers: &[(usize, usize)]) -> Vec<usize> {
         .collect()
 }
 
+/// A hunt as played, on every platform: [`read_picked_anywhere`] brings
+/// the picked animals and picked roamers (`roamers`: (character, slot)) to
+/// this map, then [`pick_roamers`] gives each picked roamer its slot as
+/// both `callNo` and `menuSlot`, so it is a target like a menu animal.
+pub fn read_hunt(res: &ResTxt, h: &Hunt, roamers: &[(usize, usize)]) -> MeeHunt {
+    let chars = picked_roamers(h, roamers);
+    let mut m = read_picked_anywhere(res, h, &chars);
+    pick_roamers(h, &mut m.tables, roamers);
+    m
+}
+
 /// Picked roamers take their slot as `callNo`, so they hunt as menu
 /// animals (after [`read_picked_anywhere`] brought them to this map).
 pub fn pick_roamers(h: &Hunt, tables: &mut Tables, roamers: &[(usize, usize)]) {
@@ -671,6 +682,38 @@ mod tests {
         pick_roamers(&unpicked, &mut t, &roamers);
         assert_eq!(t.characters[3].block.get(&["callNo"]), Some("0"));
         assert_eq!(tuning(&t.characters[3].block).menu_slot, Some(-1));
+    }
+
+    /// A dialect roamer: huntable AI, no `callNo`, no menu slot, its radar
+    /// flag off (as the add-ons that failed `c2-cook --check` are written).
+    const ROAMER_RES: &str = "characters {\n{\n name = 'Hunter'\n ai = 0\n}\n\
+         {\n name = 'Raptor'\n ai = 12\n callNo = 0\n}\n\
+         {\n name = 'Roamer'\n file = 'roamer.car'\n ai = 10\n radar = FALSE\n}\n}\n.\n";
+
+    #[test]
+    fn a_picked_roamer_is_resolved_under_its_slot() {
+        // Regression: the 3DS pushed `callNo` after `read_picked_anywhere`
+        // but kept its `menuSlot = -1`, so `Hunt::is_target` said no.
+        let res = ResTxt::parse(ROAMER_RES).unwrap_or_else(|e| panic!("{e}"));
+        let roamers = roamers(&res, 64);
+        assert_eq!(roamers, [(2, 64)]);
+        let h = Hunt {
+            area: Some(1),
+            time: 1,
+            picked: c2_formats::bits::Bits::bit(64),
+        };
+        let m = read_hunt(&res, &h, &roamers);
+        let b = &m.tables.characters[2].block;
+        assert_eq!(tuning(b).menu_slot, Some(64));
+        assert_eq!(b.get(&["radar"]), Some("TRUE"));
+        assert!(m.tables.characters[2].spawns(), "comes on this map");
+        // Not picked: still a roamer, with no menu identity.
+        let off = Hunt {
+            picked: c2_formats::bits::Bits::bit(0),
+            ..h
+        };
+        let m = read_hunt(&res, &off, &roamers);
+        assert_eq!(tuning(&m.tables.characters[2].block).menu_slot, Some(-1));
     }
 
     #[test]

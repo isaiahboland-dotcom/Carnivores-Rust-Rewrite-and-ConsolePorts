@@ -1,5 +1,36 @@
 # Decisions and deviations
 
+## 2026-11-15 — Picked roamers are resolved once, in core
+
+`c2-cook --check` reported "not a hunt target" for every picked roaming
+add-on in four large dialect packs, and none for a menu animal. The 3DS
+`Rules::hunt_with` gave a picked roamer its slot as `callNo` after
+`spawn_picked_anywhere` had already written `menuSlot = -1` for it, so
+`Hunt::is_target` took the menu-identity branch and returned false. The
+authored `radar` flag was never consulted, which is why it made no
+difference. PC was correct: it called `mee::pick_roamers`, which sets both
+keys. Effects on the 3DS: the map showed the pick as an ordinary animal, and
+a map rule's cap on picked animals (`apply_spawn_rules`) did not count it.
+Scoring was unaffected: dialect kills are never halved for not being a
+target (`trophies.rs`).
+
+- `c2_core::mee::read_hunt` is now the single resolution step for a hunt
+  with roamers (`read_picked_anywhere`, then `pick_roamers`). PC
+  (`hunt_view/load.rs`) and 3DS (`rules.rs`) both call it. This implements
+  the 2026-11-02 rule that selected roamers take their temporary menu slot
+  in the resolved tables; no design change.
+- On the 3DS a picked roamer now resolves as `Role::Slot(slot)`; unpicked
+  roamers stay `Role::Roamer`. Budget, plan and check code already treat a
+  roamer's slot bit in `targets` as picked, so no caller changed.
+- Slot numbering is unchanged and platform-specific: the 3DS numbers
+  roamers from `ROAM_SLOT0` (64) or past the menu's own slots, PC from its
+  menu roster. Each platform passes its own `(character, slot)` pairs.
+- `c2-cook --check` also places every pick at dusk and night (placement and
+  target test only, no 60 s run), because time-bound overwrites can change a
+  boss's entry, and reports why a survival brought no wave.
+- Regression test: `mee::tests::a_picked_roamer_is_resolved_under_its_slot`
+  (synthetic `_RES.TXT`).
+
 ## 2026-11-15 — 3DS pictures: larger cells and more pages, not larger textures
 
 Dinosaur and weapon pictures looked too small in large modpacks. Measured:

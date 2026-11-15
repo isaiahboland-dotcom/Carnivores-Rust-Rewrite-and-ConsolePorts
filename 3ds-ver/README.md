@@ -108,23 +108,26 @@ not averages; the details are in [Hardware results](#hardware-results-2026-11-08
   - *The costliest picks don't fit together.* Each animal fits alone, but the most expensive
     ones together don't. The menu says when picks are too much.
 - **`c2-cook --check`** loads the pack the way the 3DS does and simulates 60 s of every menu
-  animal and every roamer alone on each area, plus the trophy room and both survival modes. Its
-  last line, "N hunts with missing files", counts every failed item, survival included.
+  animal and every roamer alone on each area, plus the trophy room and both survival modes. Each
+  pick is also placed at dusk and at night (placement and target test only). Its last line,
+  "N hunts with problems", counts every failed item, survival included; `NOTE:` lines are the
+  mod's intent, not failures.
 
 | Check finding | What it means on the 3DS | Real limit? |
 |---|---|---|
 | Survival: `MISSING: its area` | Survival is played on AREA5 with the shotgun. A game without an AREA5 has no survival on the 3DS. | Yes: game feature |
-| Survival: a roster but no wave | The survival starts, but no wave reached the hunter in 5 simulated minutes. | Not diagnosed: may be a bug |
-| `not a hunt target` on a roamer (`(roams)`) | Modder's Edition roamers are hidden from the 3DS menu unless **all huntable** is on. Picked that way, they spawn but show blue on the map instead of green. Scoring is unaffected. | No: cosmetic |
+| Survival: a roster but no wave | The survival starts, but no wave reached the hunter in 5 simulated minutes. The line ends with the survival's last message. | Not diagnosed: may be a bug |
+| `not a hunt target` on a roamer (`(roams)`) | A loader bug, fixed on 2026-11-15: the 3DS gave a picked roamer its call slot but not its menu identity, so it showed as an ordinary animal on the map and escaped a map's cap on picked animals. Scoring was unaffected. Results below dated before the fix still list these. | Fixed |
 | `not a hunt target` on a menu animal | The pick is placed, but none of the placed animals counts as a target (it isn't drawn green). | Not diagnosed |
-| `speeds of ... it can't move` | The mod gives that entry zero speeds. In every case below, it is a prop the mod placed on purpose. | No: the mod's data |
+| `NOTE: ... can't move: zero speeds as written` | The mod writes both speeds as zero: a prop placed on purpose (a corpse, a sound object). | No: the mod's data |
+| `speeds of ... can't move` | The entry has no usable speeds and doesn't write them as zero. | Yes: data fault |
 
 ### Summary
 
 | Game / pack | Check | Memory (o3ds) | Survival | Old 3DS fps |
 |---|---|---|---|---|
 | Carnivores 2 + Android (`c2-android`) | ok | costliest picks don't fit together | yes | 30 |
-| Carnivores 2 + every add-on (`c2-everything`) | 35, roamers only | costliest picks don't fit together | yes | to measure |
+| Carnivores 2 + every add-on (`c2-everything`) | ok | costliest picks don't fit together | yes | to measure |
 | Dinosaur Hunter APK (`c2-apk`) | ok | costliest picks don't fit together | yes | 30–31 |
 | Ice Age + Android (`ice-age-android`) | ok | fits | yes | 26–30 |
 | Ice Age APK (`ice-age-apk`) | ok | fits | yes | 30–45 |
@@ -132,15 +135,15 @@ not averages; the details are in [Hardware results](#hardware-results-2026-11-08
 | Desperation | ok | fits | yes | to measure |
 | Gobi Desert | ok | fits | yes | 27–30 |
 | Reborn | ok | costliest picks don't fit together | yes | 24–30 |
-| Mandibles | 1 | fits | modded: no wave | to measure |
+| Mandibles | 2 | fits | none (no AREA5 in the 2026-11-14 pack) | to measure |
 | Jurassic Park Hunter 3 | 2 | fits | none (no AREA5) | to measure |
 | JPHL Special Edition | 2 | AREA4 to AREA6 over budget with every ambient | no wave | 17–35; AREA4–5 won't start |
-| Genesis Redux | 9 | costliest picks don't fit together | modded: no wave | won't start a hunt |
-| C2 De-Extinct | 12 | fits | none (no AREA5) | to measure |
-| Anachronous | 78, roamers only | fits | yes | 30–57 |
-| CClassic MEE | 152, roamers only | fits | yes | 24–30 |
-| Triassic MEE | 135 | costliest picks don't fit together | yes | to measure |
-| Fallen Kings | 153 | costliest picks don't fit together | yes | to measure |
+| Genesis Redux | 1 | costliest picks don't fit together | modded: no wave | won't start a hunt |
+| C2 De-Extinct | 2 | fits | none (no AREA5) | to measure |
+| Anachronous | ok | fits | yes | 30–57 |
+| CClassic MEE | ok | fits | yes | 24–30 |
+| Triassic MEE | ok | costliest picks don't fit together | yes | to measure |
+| Fallen Kings | 1 | costliest picks don't fit together | modded: no wave | to measure |
 
 ### Hardware results (2026-11-08)
 
@@ -200,9 +203,8 @@ What the readings show:
 
 ### Per game
 
-**Carnivores 2 + every add-on (`c2-everything`).** The 35 findings are the add-on roamers
-(Achillobator, Agathaumas, Anatotitan, Lifranyx, Majungasaurus, Manospondylus, Suchomimus) on each
-area: cosmetic.
+**Carnivores 2 + every add-on (`c2-everything`).** Passes the check since the roamer fix. The
+35 earlier findings were the picked add-on roamers on each area.
 
 **Reborn.** Passes the check. The costliest picks don't fit together.
 
@@ -216,33 +218,31 @@ findings).
 with every ambient animal; fewer ambients may fit. Classic and modded survival both start but no
 wave came (both findings); survival is played on AREA5, one of the tight areas.
 
-**Genesis Redux.** The costliest picks don't fit together. The Utahraptor roamer isn't a target
-on all 8 areas (cosmetic). The modded survival had no wave (the 9th finding).
+**Genesis Redux.** The costliest picks don't fit together. The modded survival had no wave (the
+one finding): no wave animal was ever placed ("Survival spawn blocked"); not diagnosed.
 
-**C2 De-Extinct.** Two areas and no AREA5, so no survival (2 findings). The Amargasaurus,
-Dimetrodon, Iguanodon, Oviraptor and Pachycephalosaurus roamers aren't targets (cosmetic).
+**C2 De-Extinct.** Two areas and no AREA5, so no survival (both findings).
 
-**Anachronous.** All 78 findings are roamers (Alvarezsaurus, Andalgalornis, Bicentenaria,
-Carnotaurus, Genyodectes, Gualicho, Pampaphoneus, Provelosaurus, Rauisuchus), some in more than
-one roamer entry: cosmetic.
+**Anachronous.** Passes the check since the roamer fix (78 earlier findings, all picked roamers).
 
-**CClassic MEE.** All 152 findings are 15 roamers on 8 areas (Allosaurus, Coelurus, Laelaps,
-Lifranyx, Agathaumas, Seismosaurus, Therizinosaurus and others): cosmetic.
+**CClassic MEE.** Passes the check since the roamer fix. The 152 earlier findings were 15 picked
+roamers on 8 areas.
 
-**Triassic MEE.** The costliest picks don't fit together. Twelve roamers aren't targets on all 9
-areas (cosmetic). The "can't move" T-Rex, Velociraptor, Stegosaurus, Parasaurolophus and
-Allosaurus are the mod's corpse props (`FX/Corpses/*.car`, zero speeds): meant to lie still.
+**Triassic MEE.** Passes the check since the roamer fix (135 earlier findings, all picked
+roamers). The costliest picks don't fit together. The notes on T-Rex, Velociraptor, Stegosaurus,
+Parasaurolophus and Allosaurus are the mod's corpse props (zero speeds as written): meant to lie
+still.
 
-**Fallen Kings.** The largest pack (469 MiB). The costliest picks don't fit together. Ten roamers
-aren't targets (cosmetic). Five menu animals, mostly the mod's bosses, aren't counted as targets
-(not diagnosed): Alpha Tanycolagreus, Beast of the Everglades, Foghorn Monster, King
-Iguanosaurus and Small Carnivores. The "can't move" Foghorn is the Foghorn Monster's sound object
-(`FOGHORNSFX.car`), meant to stay put.
+**Fallen Kings.** The largest pack (469 MiB). The costliest picks don't fit together. The bosses
+are roamers in this pack, not menu animals; they and the other roamers were the earlier "not a
+hunt target" findings and now pass, at day, dusk and night. The Foghorn note is the Foghorn
+Monster's sound object, meant to stay put. The modded survival had no wave (the one finding):
+"Survival spawn blocked", as in Genesis Redux.
 
 ### Open items
-- Survival with no wave: JPHL (both modes), Mandibles and Genesis Redux (modded).
-- Fallen Kings' boss menu animals not counted as targets.
-- `--check` labels survival and trophy-room failures as "hunts with missing files".
+- Survival with no wave: JPHL (both modes); Genesis Redux and Fallen Kings (modded: no wave
+  animal is ever placed, "Survival spawn blocked").
+- Hardware: picked roamers show green on the map (fixed in the 2026-11-15 loader change).
 - JPHL AREA4–5 don't start even with minimal picks; Genesis Redux doesn't start a hunt. Both
   need further testing and possibly specific optimziations
 - Repeatable 3DS runs (fixed spawn, view direction, animal count and settings) so builds can be
