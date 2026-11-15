@@ -140,6 +140,10 @@ pub struct HuntView {
     map_cursor: Option<(f32, f32)>,
     /// The window's size at the last draw (taps on the light buttons).
     screen: (u32, u32),
+    /// The terminal-look exit prompt: the focused button (leave, restart,
+    /// resume) and the pointer last frame (hovering focuses on motion).
+    exit_focus: usize,
+    exit_cursor: Option<(f32, f32)>,
     map_viewport: map_viewport::MapViewport,
     teleport_pick: Option<(f32, f32)>,
     call_imgs: Vec<Option<usize>>,
@@ -270,6 +274,10 @@ impl Scene for HuntView {
 
     fn grab_cursor(&self) -> bool {
         true
+    }
+
+    fn free_cursor(&self) -> bool {
+        self.term_exit_prompt()
     }
 
     fn handles_escape(&self) -> bool {

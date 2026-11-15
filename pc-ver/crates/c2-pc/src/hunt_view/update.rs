@@ -342,8 +342,14 @@ impl HuntView {
         if input.pressed(KeyCode::Escape) || pad.pressed(Pad::Exit) {
             self.hunt.press_escape();
         }
+        let term_prompt = self.term_exit_prompt();
+        if term_prompt {
+            self.term_exit_input(input);
+        } else {
+            self.exit_focus = 0;
+        }
         if input.pressed(KeyCode::KeyY)
-            || input.pressed(KeyCode::Enter)
+            || (!term_prompt && input.pressed(KeyCode::Enter))
             || (prompt && pad.pressed(Pad::Jump))
         {
             self.hunt.confirm_exit();

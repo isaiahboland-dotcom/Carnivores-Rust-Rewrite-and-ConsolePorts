@@ -121,6 +121,9 @@ pub struct PcSettings {
     pub dhc_terminal: i32,
     /// The terminal's CRT scanlines (1 = on; off by default, for reading).
     pub dhc_crt: i32,
+    /// The hunt setup starts from the last hunt's picks (1 = on; off by
+    /// default, not in the original).
+    pub remember_hunt: i32,
     /// Animated waves (1 = on; off by default, not in the original, whose
     /// water is flat): the modernized Modder's Edition's three-sine swell
     /// on open water (`shaders/terrain.wgsl: wave_offset`).
@@ -169,6 +172,7 @@ impl Default for PcSettings {
             render_scale: 255,
             dhc_terminal: 0,
             dhc_crt: 0,
+            remember_hunt: 0,
             modern_waves: 0,
             modern_water_tint: 0,
             modern_sky_glow: 0,
@@ -250,6 +254,7 @@ impl PcSettings {
                 "all_huntable" => s.all_huntable = i32::from(v != 0),
                 "dhc_terminal" => s.dhc_terminal = i32::from(v != 0),
                 "dhc_crt" => s.dhc_crt = i32::from(v != 0),
+                "remember_hunt" => s.remember_hunt = i32::from(v != 0),
                 "modern_waves" => s.modern_waves = i32::from(v != 0),
                 "modern_water_tint" => s.modern_water_tint = i32::from(v != 0),
                 "modern_sky_glow" => s.modern_sky_glow = i32::from(v != 0),
@@ -290,7 +295,7 @@ impl PcSettings {
         let s = self;
         format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nmodel_distance = {}\n\
-             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\nfire_reloads_empty = {}\npause_pickers = {}\nradar_water = {}\npretty_underwater = {}\nclassic_filter = {}\nbounded_flee = {}\ndhc_terminal = {}\ndhc_crt = {}\nmodern_waves = {}\nmodern_water_tint = {}\nmodern_sky_glow = {}\n",
+             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\nfire_reloads_empty = {}\npause_pickers = {}\nradar_water = {}\npretty_underwater = {}\nclassic_filter = {}\nbounded_flee = {}\ndhc_terminal = {}\ndhc_crt = {}\nmodern_waves = {}\nmodern_water_tint = {}\nmodern_sky_glow = {}\nremember_hunt = {}\n",
             s.render,
             s.fog,
             s.blood,
@@ -323,7 +328,8 @@ impl PcSettings {
             s.dhc_crt,
             s.modern_waves,
             s.modern_water_tint,
-            s.modern_sky_glow
+            s.modern_sky_glow,
+            s.remember_hunt
         )
     }
 

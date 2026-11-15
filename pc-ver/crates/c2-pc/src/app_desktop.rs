@@ -26,6 +26,8 @@ struct Running {
     last: Instant,
     pads: c2_pad::Pads,
     pad_cursor: PadCursor,
+    /// The cursor was freed for a prompt (and is grabbed again after it).
+    freed: bool,
 }
 
 /// Captures (or releases) the cursor; returns whether it is now captured.
@@ -105,6 +107,7 @@ impl App {
             input,
             last: Instant::now(),
             pad_cursor,
+            freed: false,
             pads: {
                 let pads = c2_pad::Pads::new();
                 for name in pads.names() {
@@ -235,6 +238,14 @@ impl ApplicationHandler for App {
                 r.pad_cursor.apply(&mut r.input, r.frame.size, dt);
                 r.scene.update(&r.gpu, dt, &r.input);
                 r.input.end_frame();
+                let free = r.scene.free_cursor();
+                if free && r.input.grabbed {
+                    r.input.grabbed = grab(&r.window, false);
+                    r.freed = true;
+                } else if !free && r.freed {
+                    r.freed = false;
+                    r.input.grabbed = grab(&r.window, r.scene.grab_cursor());
+                }
                 r.pad_cursor.after_frame(&mut r.input);
                 let Some(Target::Window { surface, config }) = &r.target else {
                     return;

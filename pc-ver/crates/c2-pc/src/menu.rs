@@ -33,6 +33,7 @@ use c2_formats::bits::Bits;
 mod board;
 mod draw;
 pub(crate) mod kit;
+mod last_hunt;
 mod layout;
 mod load;
 mod main_menu;
@@ -326,6 +327,7 @@ impl Menu {
         if self.remaining() < 0 {
             self.choice.equip = 0;
         }
+        self.recall_hunt();
     }
 
     fn store_me(&self) {

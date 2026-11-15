@@ -60,9 +60,7 @@ impl HuntView {
     /// panel with the same keys as `EXIT.TGA`'s prompt.
     fn draw_term_exit(&self, screen: (u32, u32), scale: f32, out: &mut Vec<Sprite>) {
         use crate::menu::palette::{BG, HI, LINE, LO, MD};
-        let (sw, sh) = (screen.0 as f32, screen.1 as f32);
-        let (w, h) = (460.0 * scale, 176.0 * scale);
-        let (x, y) = ((sw - w) / 2.0, (sh - h) / 2.0);
+        let ((x, y, w, h), rows) = term_exit_rects(screen, scale);
         out.extend(
             self.hud
                 .rect(x - scale, y - scale, w + 2.0 * scale, h + 2.0 * scale, LINE),
@@ -90,13 +88,68 @@ impl HuntView {
         } else {
             ["Y", "R", "N"]
         };
-        let rows = [
+        let labels = [
             format!("[{}] LEAVE AND SAVE", keys[0]),
             format!("[{}] RESTART (THIS HUNT IS NOT SAVED)", keys[1]),
             format!("[{}] RESUME", keys[2]),
         ];
-        for (i, r) in rows.iter().enumerate() {
-            line(out, 82.0 + i as f32 * 26.0, px, MD, r);
+        for (i, r) in labels.iter().enumerate() {
+            let on = i == self.exit_focus;
+            if on {
+                let (rx, ry, rw, rh) = rows[i];
+                out.extend(
+                    self.hud
+                        .rect(rx, ry, rw, rh, [LINE[0], LINE[1], LINE[2], 0.45]),
+                );
+            }
+            line(out, 82.0 + i as f32 * 26.0, px, if on { HI } else { MD }, r);
+        }
+    }
+
+    /// Whether the exit prompt is the terminal-look panel (clickable).
+    pub(super) fn term_exit_prompt(&self) -> bool {
+        self.hunt.show_exit() && self.kit.is_none() && crate::menu::terminal_look(&self.setup.pc)
+    }
+
+    /// Runs button `i` of the exit prompt: leave, restart, resume.
+    pub(super) fn exit_button(&mut self, i: usize) {
+        match i {
+            0 => self.hunt.confirm_exit(),
+            1 if !self.hunt.opts.trophy => self.restart(),
+            2 => self.hunt.exit_prompt = false,
+            _ => {}
+        }
+    }
+
+    /// The terminal-look prompt's buttons by keys (up/down, Enter) and
+    /// the pointer (hover focuses, a click runs).
+    pub(super) fn term_exit_input(&mut self, input: &Input) {
+        let moved = input.cursor != self.exit_cursor;
+        self.exit_cursor = input.cursor;
+        if input.pressed(KeyCode::ArrowDown) || input.pressed(KeyCode::Tab) {
+            self.exit_focus = (self.exit_focus + 1) % 3;
+        }
+        if input.pressed(KeyCode::ArrowUp) {
+            self.exit_focus = (self.exit_focus + 2) % 3;
+        }
+        let (_, rows) =
+            term_exit_rects(self.screen, (self.screen.1 as f32 / 480.0).floor().max(1.0));
+        let hit = rows.iter().position(|&(x, y, w, h)| {
+            input
+                .cursor
+                .is_some_and(|(px, py)| px >= x && py >= y && px < x + w && py < y + h)
+        });
+        if let Some(i) = hit {
+            if moved {
+                self.exit_focus = i;
+            }
+            if input.clicked && !input.grabbed {
+                self.exit_button(i);
+                return;
+            }
+        }
+        if input.pressed(KeyCode::Enter) || input.pressed(KeyCode::NumpadEnter) {
+            self.exit_button(self.exit_focus);
         }
     }
 
@@ -297,4 +350,22 @@ impl HuntView {
             x += self.hud.label_width(px, a) + gap;
         }
     }
+}
+
+/// The terminal-look exit panel and its three buttons' rows.
+type PanelRects = ((f32, f32, f32, f32), [(f32, f32, f32, f32); 3]);
+
+fn term_exit_rects(screen: (u32, u32), scale: f32) -> PanelRects {
+    let (sw, sh) = (screen.0 as f32, screen.1 as f32);
+    let (w, h) = (460.0 * scale, 176.0 * scale);
+    let (x, y) = ((sw - w) / 2.0, (sh - h) / 2.0);
+    let row = |i: usize| {
+        (
+            x + 12.0 * scale,
+            y + (82.0 + i as f32 * 26.0 - 4.0) * scale,
+            w - 24.0 * scale,
+            24.0 * scale,
+        )
+    };
+    ((x, y, w, h), [row(0), row(1), row(2)])
 }

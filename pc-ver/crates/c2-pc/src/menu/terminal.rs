@@ -33,6 +33,9 @@ pub(super) struct TermView {
     pub(super) map: [Vec<usize>; 4],
     /// The pointer last frame (hovering focuses only when it moves).
     pub(super) last_cursor: Option<(f32, f32)>,
+    /// Per tab: the list's first shown row (the wheel scrolls it without
+    /// moving the focus).
+    pub(super) first: [usize; 4],
 }
 
 /// The game's `_DHC.TXT`, when the recipe has one.
@@ -179,21 +182,30 @@ impl Menu {
         // The accessories the save keeps, and the last area and time.
         let c = &self.choice;
         let back = |tab: usize, i: usize| map[tab].iter().position(|&x| x == i);
+        // The last hunt's animals and weapons come back only when asked.
+        let again = self.pc.remember_hunt != 0;
+        let picked = |tab: usize, has: &dyn Fn(usize) -> bool| -> Vec<usize> {
+            (0..map[tab].len())
+                .filter(|&k| again && has(map[tab][k]))
+                .collect()
+        };
         let keep = Loadout {
             area: back(0, c.area).unwrap_or(0),
-            animals: Vec::new(),
-            weapons: Vec::new(),
+            animals: picked(1, &|i| c.dinos.has(i)),
+            weapons: picked(2, &|i| c.weapons >> i & 1 != 0),
             equipment: (0..32)
                 .filter(|&b| c.equip & (1 << b) != 0)
                 .filter_map(|b| back(3, b))
                 .collect(),
             time: c.time,
+            observer: c.observer,
         };
         term.restore(&keep);
         TermView {
             term,
             map,
             last_cursor: None,
+            first: [0; 4],
         }
     }
 
@@ -240,6 +252,7 @@ impl Menu {
     }
 
     pub(super) fn update_terminal(&mut self, dt: f32, input: &Input) {
+        let tranq = self.tranq();
         let hits = self.terminal_hits();
         let Some(v) = &mut self.term else {
             self.screen = Screen::Main;
@@ -248,6 +261,8 @@ impl Menu {
         let moved = self.cursor != v.last_cursor;
         v.last_cursor = self.cursor;
         let t = &mut v.term;
+        // The question for the tranquilizer's ammo is up: it takes the input.
+        t.tranq = tranq;
         t.step(dt);
         let mut acts = Vec::new();
         let key = |k| input.pressed(k);
@@ -271,6 +286,8 @@ impl Menu {
                 (KeyCode::Space, Action::Confirm),
                 (KeyCode::Escape, Action::Back),
                 (KeyCode::KeyT, Action::CycleTime),
+                (KeyCode::KeyQ, Action::ToggleTranq),
+                (KeyCode::KeyO, Action::ToggleObserver),
                 (KeyCode::KeyF, Action::Deploy),
                 (KeyCode::F5, Action::Deploy),
             ] {
@@ -291,11 +308,14 @@ impl Menu {
                     }
                 }
             }
-            // The wheel (and the pad's D-pad) moves the focus.
-            if input.scroll > 0.0 {
-                acts.push(Action::Up);
-            } else if input.scroll < 0.0 {
-                acts.push(Action::Down);
+            // The wheel scrolls the setup's lists, leaving the focus; the
+            // main menu's rows all show, so there it moves the focus.
+            if t.screen != TScreen::Setup {
+                if input.scroll > 0.0 {
+                    acts.push(Action::Up);
+                } else if input.scroll < 0.0 {
+                    acts.push(Action::Down);
+                }
             }
             // The pointer: hover focuses, a click picks.
             for (r, hit) in &hits {
@@ -307,14 +327,32 @@ impl Menu {
                     Hit::Row(i) if moved => acts.push(Action::Focus(i)),
                     Hit::Tab(tab) if input.clicked => acts.push(Action::Tab(tab)),
                     Hit::Time if input.clicked => acts.push(Action::CycleTime),
+                    Hit::Tranq if input.clicked => acts.push(Action::ToggleTranq),
+                    Hit::Observer if input.clicked => acts.push(Action::ToggleObserver),
                     Hit::Deploy if input.clicked => acts.push(Action::Deploy),
                     Hit::Back if input.clicked => acts.push(Action::Back),
                     _ => {}
                 }
             }
         }
+        let (tab, before) = (t.tab.index(), t.rows[t.tab.index()]);
         for a in acts {
             t.act(a);
+        }
+        // Keep a focus the keys moved in view; the wheel scrolls apart.
+        if t.screen == TScreen::Setup {
+            let (vis, n) = (draw::visible_rows(), t.cat.list(t.tab).len());
+            let (now, row) = (t.tab.index(), t.rows[t.tab.index()]);
+            let first = &mut v.first[now];
+            if now != tab || row != before {
+                *first = (*first).clamp((row + 1).saturating_sub(vis), row);
+            }
+            if input.scroll > 0.0 {
+                *first = first.saturating_sub(1);
+            } else if input.scroll < 0.0 {
+                *first += 1;
+            }
+            *first = (*first).min(n.saturating_sub(vis));
         }
         if let Some(o) = t.take_outcome() {
             self.terminal_outcome(o);
@@ -329,6 +367,13 @@ impl Menu {
                     find_file(&self.huntdat, "AREAS").and_then(|a| find_file(&a, "TROPHY.MAP"))
                 {
                     self.start(trophy, TimeOfDay::Day, Bits::NONE, 0, false, false);
+                }
+            }
+            Outcome::ToggleTranq => {
+                self.toggle_tranq();
+                let tranq = self.tranq();
+                if let Some(v) = &mut self.term {
+                    v.term.tranq = tranq;
                 }
             }
             Outcome::Options => self.screen = Screen::Options,
@@ -352,6 +397,7 @@ impl Menu {
         let mut c = Choice {
             area: col(0, l.area).unwrap_or(0),
             time: l.time.min(2),
+            observer: l.observer,
             ..Default::default()
         };
         for i in l.animals.iter().filter_map(|&i| col(1, i)) {
@@ -379,6 +425,8 @@ pub(super) enum Hit {
     Row(usize),
     Tab(Tab),
     Time,
+    Tranq,
+    Observer,
     Deploy,
     Back,
 }

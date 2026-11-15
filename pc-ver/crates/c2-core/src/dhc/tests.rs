@@ -265,6 +265,7 @@ fn deploy_needs_targets_and_arms_then_runs_its_sequence() {
         weapons: vec![1],
         equipment: vec![],
         time: 1,
+        observer: false,
     };
     assert_eq!(t.take_outcome(), Some(Outcome::Deploy(want.clone())));
     assert_eq!(t.screen, Screen::Setup);
@@ -301,6 +302,7 @@ fn a_restored_loadout_keeps_only_what_is_allowed_and_affordable() {
         weapons: vec![0, 1],
         equipment: vec![0, 1],
         time: 0,
+        observer: false,
     });
     let l = t.loadout();
     assert_eq!((l.area, l.animals, l.weapons), (1, vec![1], vec![]));
@@ -332,4 +334,26 @@ fn the_same_actions_give_the_same_state() {
     };
     assert_eq!(run(), run());
     assert!(matches!(run().0, Some(Outcome::Deploy(_))));
+}
+
+#[test]
+fn an_observer_needs_no_arms_or_funds() {
+    let mut t = setup(0, rules());
+    assert!(t.deploy_problem().is_some());
+    t.act(Action::ToggleObserver);
+    assert!(t.observer);
+    assert_eq!(t.deploy_problem(), None);
+    t.act(Action::Tab(Tab::Arms));
+    t.act(Action::Pick(0));
+    assert_eq!(t.spent(), 0);
+    assert!(t.loadout().observer);
+    t.act(Action::ToggleObserver);
+    assert!(!t.observer);
+}
+
+#[test]
+fn the_tranquilizer_is_the_platforms_to_flip() {
+    let mut t = setup(100, Rules::default());
+    t.act(Action::ToggleTranq);
+    assert_eq!(t.take_outcome(), Some(Outcome::ToggleTranq));
 }

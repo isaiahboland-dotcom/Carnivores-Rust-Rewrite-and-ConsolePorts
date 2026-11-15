@@ -53,7 +53,7 @@ impl Scene for Menu {
                     self.screen = Screen::Main;
                 }
             }
-            Screen::Setup if self.tranq_ask => self.update_tranq_ask(input),
+            Screen::Setup | Screen::Terminal if self.tranq_ask => self.update_tranq_ask(input),
             Screen::Setup if self.mobile.is_some() => self.update_mobile(input),
             Screen::Setup => {
                 let r = self.setup.region(p);
@@ -112,7 +112,7 @@ impl Scene for Menu {
             }
             Screen::Terminal => self.draw_terminal(&mut out),
         }
-        if self.tranq_ask && matches!(self.screen, Screen::Setup) {
+        if self.tranq_ask && matches!(self.screen, Screen::Setup | Screen::Terminal) {
             self.draw_tranq_ask(&mut out);
         }
         self.hud.draw(gpu, pass, screen, &out);

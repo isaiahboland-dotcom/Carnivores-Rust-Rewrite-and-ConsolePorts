@@ -14,6 +14,12 @@ pub trait Scene {
     fn grab_cursor(&self) -> bool {
         false
     }
+    /// Show the pointer for now (a prompt to click) although the cursor is
+    /// grabbed otherwise.
+    #[cfg_attr(target_os = "android", allow(dead_code))]
+    fn free_cursor(&self) -> bool {
+        false
+    }
     /// The scene uses Escape itself (otherwise it releases the cursor / quits).
     #[cfg_attr(target_os = "android", allow(dead_code))]
     fn handles_escape(&self) -> bool {

@@ -161,4 +161,6 @@ pub struct Loadout {
     pub equipment: Vec<usize>,
     /// 0 dawn, 1 day, 2 night.
     pub time: usize,
+    /// Observer mode: watch the animals, unarmed and free.
+    pub observer: bool,
 }

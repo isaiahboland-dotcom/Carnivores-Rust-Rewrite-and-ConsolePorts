@@ -80,6 +80,10 @@ pub enum Action {
     CycleTime,
     SetTime(usize),
     Deploy,
+    /// The tranquilizer on or off (the platform keeps the setting).
+    ToggleTranq,
+    /// Observer mode: no weapons or fees, just watching the animals.
+    ToggleObserver,
     /// Skip the boot log or the deploy sequence.
     Skip,
 }
@@ -88,6 +92,8 @@ pub enum Action {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
     Deploy(Loadout),
+    /// Flip the tranquilizer setting (then set [`Terminal::tranq`]).
+    ToggleTranq,
     TrophyRoom,
     Options,
     /// The hunter list (sign in as another, register, delete).
@@ -146,6 +152,8 @@ pub struct Terminal {
     pub score: i32,
     /// The tranquilizer option (earnings ×1.25).
     pub tranq: bool,
+    /// Observer mode: the picks cost nothing and no arms are needed.
+    pub observer: bool,
     pub screen: Screen,
     pub tab: Tab,
     pub main_row: usize,
@@ -176,6 +184,7 @@ impl Terminal {
             rules,
             score,
             tranq: false,
+            observer: false,
             screen: if boot { Screen::Boot } else { Screen::Main },
             tab: Tab::Area,
             main_row: 0,
@@ -308,6 +317,8 @@ impl Terminal {
                 self.go(Screen::Main);
             }
             Action::CycleTime => self.cycle_time(),
+            Action::ToggleTranq => self.outcome = Some(Outcome::ToggleTranq),
+            Action::ToggleObserver => self.toggle_observer(),
             Action::SetTime(t) if self.rules.allows_time(&self.cat, self.area, t) => self.time = t,
             Action::Deploy => match self.deploy_problem() {
                 None => self.go(Screen::Deploy),
@@ -334,8 +345,21 @@ impl Terminal {
         self.rules.allows(&self.cat, self.area, tab, i)
     }
 
-    /// What the picks cost.
+    /// Observer mode on or off; off, picks the account can't pay go.
+    fn toggle_observer(&mut self) {
+        self.observer = !self.observer;
+        if !self.observer && self.remaining() < 0 {
+            for p in &mut self.picks {
+                p.iter_mut().for_each(|b| *b = false);
+            }
+        }
+    }
+
+    /// What the picks cost (nothing to an observer).
     pub fn spent(&self) -> i32 {
+        if self.observer {
+            return 0;
+        }
         Tab::ALL
             .into_iter()
             .flat_map(|t| {
@@ -354,7 +378,7 @@ impl Terminal {
     /// Whether picking item `i` of `tab` (not yet picked) is affordable.
     pub fn affordable(&self, tab: Tab, i: usize) -> bool {
         let price = self.cat.list(tab).get(i).map_or(0, |it| it.price);
-        if self.picked(tab, i) || price <= 0 {
+        if self.observer || self.picked(tab, i) || price <= 0 {
             return true;
         }
         let swap = if tab == Tab::Area {
@@ -449,10 +473,10 @@ impl Terminal {
         if !self.rules.allows_time(&self.cat, l.area, l.time) {
             return Some(Notice::TimeUnavailable);
         }
-        if l.animals.is_empty() {
+        if l.animals.is_empty() && !self.observer {
             return Some(Notice::NoTargets);
         }
-        if l.weapons.is_empty() {
+        if l.weapons.is_empty() && !self.observer {
             return Some(Notice::NoArms);
         }
         let lim = &self.rules.limits;
@@ -485,12 +509,14 @@ impl Terminal {
             weapons: self.picked_list(Tab::Arms),
             equipment: self.picked_list(Tab::Gear),
             time: self.time,
+            observer: self.observer,
         }
     }
 
     /// Picks `l` as far as the rules and the account allow (a loadout kept
     /// from an earlier hunt, or read from a save edited by hand).
     pub fn restore(&mut self, l: &Loadout) {
+        self.observer = l.observer;
         if l.area < self.cat.areas.len() {
             self.area = l.area;
         }

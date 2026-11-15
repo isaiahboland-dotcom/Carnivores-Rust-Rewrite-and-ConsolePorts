@@ -25,6 +25,8 @@ const ROW: f32 = 20.0;
 const BUDGET: Rect = (16.0, 476.0, 768.0, 88.0);
 const METER: Rect = (28.0, 506.0, 560.0, 12.0);
 const TIME_RECT: Rect = (24.0, 524.0, 180.0, 18.0);
+const TRANQ_RECT: Rect = (350.0, 524.0, 110.0, 18.0);
+const OBSERVER_RECT: Rect = (470.0, 524.0, 130.0, 18.0);
 const DEPLOY_RECT: Rect = (612.0, 494.0, 160.0, 56.0);
 pub(super) const BACK_RECT: Rect = (12.0, 572.0, 120.0, 22.0);
 
@@ -41,18 +43,11 @@ fn main_rect(i: usize) -> Rect {
     )
 }
 
-fn visible_rows() -> usize {
+pub(super) fn visible_rows() -> usize {
     ((LIST.3 - 16.0) / ROW) as usize
 }
 
-/// The list's first shown row, keeping the focused one in view.
-fn first_row(t: &Terminal) -> usize {
-    let row = t.rows[t.tab.index()];
-    (row + 1).saturating_sub(visible_rows())
-}
-
-fn list_rect(t: &Terminal, i: usize) -> Option<Rect> {
-    let first = first_row(t);
+fn list_rect(first: usize, i: usize) -> Option<Rect> {
     (i >= first && i < first + visible_rows()).then(|| {
         (
             LIST.0 + 4.0,
@@ -85,8 +80,13 @@ impl Menu {
                         .map(|(i, &tab)| (tab_rect(i), Hit::Tab(tab))),
                 );
                 let n = t.cat.list(t.tab).len();
-                out.extend((0..n).filter_map(|i| Some((list_rect(t, i)?, Hit::Row(i)))));
+                out.extend(
+                    (0..n)
+                        .filter_map(|i| Some((list_rect(v.first[t.tab.index()], i)?, Hit::Row(i)))),
+                );
                 out.push((TIME_RECT, Hit::Time));
+                out.push((TRANQ_RECT, Hit::Tranq));
+                out.push((OBSERVER_RECT, Hit::Observer));
                 out.push((DEPLOY_RECT, Hit::Deploy));
             }
             _ => {}
@@ -312,7 +312,9 @@ impl Menu {
         let list = t.cat.list(t.tab);
         let focus = t.rows[t.tab.index()];
         for (i, it) in list.iter().enumerate() {
-            let Some(r) = list_rect(t, i) else { continue };
+            let Some(r) = list_rect(v.first[t.tab.index()], i) else {
+                continue;
+            };
             let picked = t.picked(t.tab, i);
             let allowed = t.allowed(t.tab, i);
             let afford = t.affordable(t.tab, i);
@@ -489,6 +491,25 @@ impl Menu {
             if k < 1.0 { AMBER } else { MD },
             &earn,
         );
+        for (r, label, on) in [
+            (TRANQ_RECT, "TRANQ", t.tranq),
+            (OBSERVER_RECT, "OBSERVER", t.observer),
+        ] {
+            let key = &label[..1];
+            let text = format!(
+                "{label}: {}  [{}]",
+                if on { "ON" } else { "OFF" },
+                if key == "T" { "Q" } else { "O" }
+            );
+            let c = if inside(self.cursor, r) {
+                HI
+            } else if on {
+                AMBER
+            } else {
+                MD
+            };
+            self.text(out, r.0 + 4.0, r.1 + 3.0, SMALL, c, &text);
+        }
         if let Some(n) = t.notice {
             self.text(out, 28.0, 546.0, SMALL, AMBER, &format!("! {}", n.text()));
         }

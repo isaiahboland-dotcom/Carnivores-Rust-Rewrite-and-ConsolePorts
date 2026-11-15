@@ -172,6 +172,8 @@ impl HuntView {
             gauges_hidden: false,
             map_cursor: None,
             screen: (1280, 720),
+            exit_focus: 0,
+            exit_cursor: None,
             map_viewport: map_viewport::MapViewport::default(),
             teleport_pick: None,
             call_imgs,

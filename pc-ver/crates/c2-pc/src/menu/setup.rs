@@ -230,6 +230,7 @@ impl Menu {
         debug_assert!(self.within_picks(), "hunt started over --max-picks");
         if self.choice.survival.is_none() {
             self.save_equipment();
+            self.remember_hunt();
         }
         let mut c = self.choice.clone();
         // Mobile survival: Mount Ravan, daylight, shotgun, no equipment.
