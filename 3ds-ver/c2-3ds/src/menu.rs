@@ -182,6 +182,47 @@ const BLUE: Rgba = [120, 180, 255, 255];
 /// Space between hexagons.
 const GAP: f32 = 3.0;
 
+/// A grid's sizes by item count: (up to this many items, columns, hexagon
+/// radius), the first that holds them.
+type Bands = [(usize, usize, f32)];
+
+/// The smallest hexagon a grid draws (48 px across). A picture shows
+/// 85 x 74 texels of its 128-wide texture, so a smaller cell only made
+/// it hard to tell apart (60 animals at 30 px in large modpacks); a long
+/// list takes more pages instead.
+const MIN_CELL_R: f32 = 24.0;
+
+const AREA_BANDS: &Bands = &[(6, 3, 34.0), (usize::MAX, 5, 24.0)];
+const ANIMAL_BANDS: &Bands = &[(15, 5, 32.0), (usize::MAX, 7, 24.0)];
+const GEAR_BANDS: &Bands = &[(12, 6, 30.0), (usize::MAX, 7, 24.0)];
+
+/// The band of `bands` for `n` items: (columns, radius).
+fn band(bands: &Bands, n: usize) -> (usize, f32) {
+    let (_, cols, r) = bands
+        .iter()
+        .copied()
+        .find(|b| n <= b.0)
+        .unwrap_or((0, 1, MIN_CELL_R));
+    (cols, r)
+}
+
+/// Every band's hexagons are at least [`MIN_CELL_R`] and its rows fit
+/// across the bottom screen (as [`grid`] lays them out).
+const fn bands_ok(bands: &Bands) -> bool {
+    let mut i = 0;
+    while i < bands.len() {
+        let (_, cols, r) = bands[i];
+        let rr = r + GAP / 2.0;
+        let width = (cols - 1) as f32 * 1.5 * rr + 2.0 * rr;
+        if r < MIN_CELL_R || width > BOTTOM_W as f32 {
+            return false;
+        }
+        i += 1;
+    }
+    bands[bands.len() - 1].0 == usize::MAX
+}
+const _: () = assert!(bands_ok(AREA_BANDS) && bands_ok(ANIMAL_BANDS) && bands_ok(GEAR_BANDS));
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Step {
     Title,
@@ -1008,32 +1049,25 @@ impl Menu {
             _ => None,
         };
         let picked = if step == Step::Area { self.area } else { 0 };
-        let lay =
-            |n: usize, cols: usize, r: f32, bottom: f32| paged(n, cols, r, bottom, page, picked);
+        let lay = |n: usize, bands: &Bands, bottom: f32| {
+            let (cols, r) = band(bands, n);
+            paged(n, cols, r, bottom, page, picked)
+        };
         match step {
-            Step::Area => match self.areas.len() {
-                n @ 0..=6 => lay(n, 3, 34.0, 162.0),
-                n => lay(n, 5, 24.0, 162.0),
-            },
-            Step::Animals => match self
-                .dinos
-                .iter()
-                .enumerate()
-                .filter(|(i, d)| {
-                    !self.hidden_dinos.has(*i)
-                        && (self.settings.all_huntable || !matches!(d.0, Pick::Roamer(_)))
-                })
-                .count()
-            {
-                n @ 0..=15 => lay(n, 5, 32.0, 210.0),
-                n @ 16..=24 => lay(n, 7, 24.0, 210.0),
-                n @ 25..=40 => lay(n, 8, 19.0, 210.0),
-                n => lay(n, 10, 15.0, 198.0),
-            },
-            Step::Gear => match self.weapons.len() + self.equip.len() + 1 {
-                n @ 0..=12 => lay(n, 6, 30.0, 162.0),
-                n => lay(n, 8, 20.0, 162.0),
-            },
+            Step::Area => lay(self.areas.len(), AREA_BANDS, 162.0),
+            Step::Animals => {
+                let n = self
+                    .dinos
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, d)| {
+                        !self.hidden_dinos.has(*i)
+                            && (self.settings.all_huntable || !matches!(d.0, Pick::Roamer(_)))
+                    })
+                    .count();
+                lay(n, ANIMAL_BANDS, 210.0)
+            }
+            Step::Gear => lay(self.weapons.len() + self.equip.len() + 1, GEAR_BANDS, 162.0),
             _ => paged(0, 1, 1.0, 1.0, None, 0),
         }
     }

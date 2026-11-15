@@ -259,8 +259,10 @@ impl Ui {
         c.flush(gpu);
 
         // Weapon pictures, names and shots left; with more than four
-        // weapons, smaller pictures and no names.
-        let pic_h = (slot - 21.0).min(37.0);
+        // weapons, smaller pictures and no names (the name's line goes to
+        // the picture: six weapons, 27 px high instead of 19).
+        let named = slot >= WPN_SLOT;
+        let pic_h = (slot - if named { 21.0 } else { 13.0 }).min(37.0);
         let pic_w = pic_h * 64.0 / 37.0;
         for (k, (i, t)) in self.weapons.iter().enumerate() {
             let y = k as f32 * slot;
@@ -274,14 +276,17 @@ impl Ui {
                 );
             }
             let y = y + pic_h - 37.0;
-            let name: String = w
-                .info
-                .get(*i)
-                .map_or("?", |x| x.name.as_str())
-                .chars()
-                .take(9)
-                .collect();
-            c.text(gpu, 4.0, y + 41.0, 1.0, WHITE, &name);
+            if named {
+                let name: String = w
+                    .info
+                    .get(*i)
+                    .map_or("?", |x| x.name.as_str())
+                    .chars()
+                    .take(9)
+                    .collect();
+                c.text(gpu, 4.0, y + 41.0, 1.0, WHITE, &name);
+            }
+            let y = if named { y } else { y - 8.0 };
             let col = if *i == w.current && drawn {
                 WHITE
             } else {

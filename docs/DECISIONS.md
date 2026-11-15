@@ -1,5 +1,27 @@
 # Decisions and deviations
 
+## 2026-11-15 — 3DS pictures: larger cells and more pages, not larger textures
+
+Dinosaur and weapon pictures looked too small in large modpacks. Measured:
+the cooked textures are not the limit. A menu picture is 128 wide
+(RGBA5551, 32 KiB) and a hexagon shows 85 x 74 texels of it; the biggest
+cell drawn is 68 px across. In-hunt weapon pictures are 64 x 37 texels,
+drawn at most 64 x 37 px. What shrank was the layout: past 40 animals the
+grid drew 60 to a page at 30 px across, past 12 gear items 40 px, and six
+carried weapons left 19 px pictures under a name line.
+
+- Grid cells never go below radius 24 (48 px across); longer lists take more
+  pages (`MIN_CELL_R`, the band tables in `3ds-ver/c2-3ds/src/menu.rs`,
+  checked at compile time). Animals: 15 to a page at 64 px, then 28 at 48 px
+  (was up to 60). Gear: 12 at 60 px, then 21 at 48 px (was 24 at 40 px).
+- With more than four weapons carried, the hunt HUD drops the weapon name
+  (as its comment intended) and gives the line to the picture: 35, 27 and
+  17 px high for five, six and eight weapons (was 27, 19 and 9).
+- `c2-cook` sizes are unchanged. Only the shown page's pictures are loaded,
+  so fewer cells per page lowers menu memory (animals: 1.9 MiB peak to
+  0.9 MiB). Larger cooked pictures would add memory without showing more
+  detail at these sizes.
+
 ## 2026-11-13 — Hardcore hunt ruleset
 
 An opt-in recipe section, `[settings.hunt]`, written as `hunt` lines in
