@@ -341,6 +341,7 @@ fn dinos_sim(map_path: &Path, seconds: u32) -> Result<()> {
             render_r: 74,
             run_k: 1.0,
             flee: None,
+            eco: None,
             events: &mut events,
         };
         herd.step(&mut ctx);
@@ -536,6 +537,7 @@ fn mee_sim(game: &Path, area_n: u32, seconds: u32, picked: &str) -> Result<()> {
             render_r: 74,
             run_k: 1.0,
             flee: None,
+            eco: None,
             events: &mut events,
         };
         let t0 = std::time::Instant::now();

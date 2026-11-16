@@ -209,6 +209,7 @@ fn simulate(w: &World, herd: &mut Herd, mut rng: MsRand, seconds: u32) {
             render_r: 42,
             run_k: 1.0,
             flee: None,
+            eco: None,
             events: &mut events,
         };
         herd.step(&mut ctx);

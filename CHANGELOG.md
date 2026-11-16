@@ -1,6 +1,48 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 — 2026-11-16
+
+Spawn ecosystem and awareness rules, bounded fleeing, the DHC OS terminal and
+launcher look, modern graphics options, memory-planned 3DS hunts and Play
+Vanilla. Notes: `docs/releases/v0.6.0.md`. Hardware and by-eye checks are
+listed in `testing-needed.md` and remain pending.
+
+### Modern graphics (PC, VR shaders; all off by default except where noted)
+
+- Options > Video > Modern graphics: water waves, depth-tinted water, sky glow
+  around the sun and moon, water reflections (the world drawn a second time at
+  half size), sun through fog, underwater effects (blue underwater fog and
+  tint) and desaturated night. Screen drops after surfacing are held back.
+- Fog zones from the map's own fog list fill the ground floor, so a game's
+  hollows and swamps carry their own fog colours (`c2_core::fog`). Original
+  underwater fog thickens with depth and distance as in the original.
+- Night: with night vision off, "Pitch black night" (on by default) darkens
+  the world; off, the night keeps its own colours. This was part of dynamic
+  time before; dynamic time itself looks as before.
+- `c2-pc hunt --modern` turns every Modern graphics option on for one run;
+  `--dive MS` places the hunter under deep water or wets the screen for
+  captures.
+- Fix the APK fog colour byte order (`0x00BBGGRR`).
+
+### Trophy room, terminal, launcher and 3DS
+
+- The trophy room's saved layout (`TROPHY.SPOT`) names the map it was made
+  for and is ignored, with a log line, when a mod replaced that map.
+- PC DHC OS terminal: pad navigation (D-pad or left stick with key repeat,
+  A/B/Start, shoulders), a records page and layout geometry shared by pages.
+- Launcher: follows the DHC OS look by default; Settings > Look > Legacy
+  restores the earlier look. The missing-file marker is red under DHC.
+- 3DS: the DHC OS terminal is on by default (`dhc_terminal = 0` keeps the
+  original menus); settings and hunt-options screens are rebuilt in the
+  terminal look, with rows re-spaced so the secret-animals line and "Bounded
+  fleeing" stay readable.
+- Hardcore hunt: Esc at the pickup zone calls the ship.
+- Far-animal stagger covers dialect animals and is enabled on the 3DS.
+- VR: failed constructors release what they made, frame fences are reset
+  just before submit and the exit waits for the device, so an error no longer
+  hangs the exit.
+
+### Rules, 3DS memory plan, ecosystem and other changes
 
 - 3DS: a hunt's memory is planned instead of checked pass or fail. The
   picked animals come first (one of each at least), then secret animals,
