@@ -340,7 +340,15 @@ impl HuntView {
             self.run = !self.run;
         }
         if input.pressed(KeyCode::Escape) || pad.pressed(Pad::Exit) {
-            self.hunt.press_escape();
+            // At the pickup zone Esc calls the ship; elsewhere it is the
+            // exit prompt (which forfeits a hardcore hunt).
+            let mut ev = Vec::new();
+            match self.hunt.escape_calls_ship(&mut ev) {
+                Some(Err(e)) => self.message = Some((e, 2.5)),
+                Some(Ok(())) => {}
+                None => self.hunt.press_escape(),
+            }
+            self.events.extend(ev);
         }
         let term_prompt = self.term_exit_prompt();
         if term_prompt {
@@ -523,6 +531,7 @@ impl HuntView {
     /// The camera between the last two ticks, the listener and the ship's
     /// engine with it.
     fn follow_camera(&mut self, gpu: &Gpu, dt: f32, input: &Input) {
+        self.wet.tick(self.hunt.player.underwater, dt);
         let (pos, alpha, beta) = self.hunt.camera();
         let t = self.acc_ms / TICK_MS as f32;
         self.view.cam.pos = Vec3::from(self.prev_cam).lerp(Vec3::from(pos), t);

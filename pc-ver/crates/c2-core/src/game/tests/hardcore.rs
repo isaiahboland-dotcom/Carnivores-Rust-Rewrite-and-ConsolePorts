@@ -201,6 +201,22 @@ fn the_ship_does_not_come_while_it_collects_a_trophy() {
 }
 
 #[test]
+fn escape_in_the_zone_calls_the_ship_and_outside_it_forfeits() {
+    let (_, mut h) = hunt_with(&extraction());
+    let mut ev = Vec::new();
+    assert!(h.escape_calls_ship(&mut ev).is_none(), "outside the zone");
+    enter_zone(&mut h);
+    assert_eq!(h.escape_calls_ship(&mut ev), Some(Ok(())));
+    assert!(matches!(pickup(&h), Pickup::Arriving(_)));
+    assert!(
+        matches!(h.escape_calls_ship(&mut ev), Some(Err(_))),
+        "a second press gives the reason, not the forfeit prompt"
+    );
+    let (_, mut plain) = hunt_with(&only(|r| r.knife = true));
+    assert!(plain.escape_calls_ship(&mut ev).is_none(), "no extraction");
+}
+
+#[test]
 fn leaving_by_the_prompt_forfeits_only_with_extraction() {
     for (rules, want) in [
         (extraction(), Outcome::Died),

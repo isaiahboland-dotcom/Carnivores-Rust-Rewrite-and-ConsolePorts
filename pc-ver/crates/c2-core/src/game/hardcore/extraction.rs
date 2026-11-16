@@ -83,6 +83,28 @@ impl Hunt {
         Ok(())
     }
 
+    /// Escape at the pickup zone calls the ship instead of opening the exit
+    /// prompt. `None` when Escape keeps its usual meaning (outside the zone,
+    /// no extraction rules, a prompt or pause already up, dead). Inside the
+    /// zone, a ship that cannot come gives its reason rather than the
+    /// forfeit prompt.
+    pub fn escape_calls_ship(&mut self, out: &mut Vec<GameEvent>) -> Option<Result<(), String>> {
+        let h = self.hardcore.as_deref()?;
+        if h.rules.extraction.is_none()
+            || h.zone.is_none()
+            || self.paused
+            || self.exit_prompt
+            || self.exit_time != 0
+            || self.death.is_some()
+            || self.outcome.is_some()
+            || self.health <= 0
+            || !self.in_pickup_zone()
+        {
+            return None;
+        }
+        Some(self.call_ship(out))
+    }
+
     /// Whether extraction is flying the ship (the trophy pickups wait).
     pub fn extraction_flies_ship(&self) -> bool {
         self.ship.state == SHIP_STATE

@@ -72,7 +72,7 @@ distance, as the original keeps them from the landing.
 
 ### Extraction
 
-1. The player calls the ship (PC: **G**) from anywhere.
+1. The player calls the ship from anywhere with **G**, or with **Esc** while standing in the pickup zone (outside the zone Esc opens the exit prompt, which forfeits).
 2. It flies to the pickup zone, taking `arrive_s` (5 s).
 3. It hovers for `hover_s` (30 s). If the player is inside the zone at any
    moment while it hovers, the player escapes: the hunt ends as a normal exit,

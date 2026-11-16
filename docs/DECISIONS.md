@@ -6157,3 +6157,16 @@ behaviour, on by default, and changes the picture of every map that has
 fog zones, so it is its own change with its own baselines; the scatter
 switch follows it. The sun's direction it needs is in `Globals` now.
 
+
+## 2026-11-15 — Esc calls the ship at the pickup zone
+
+In a hardcore hunt with extraction, Esc while standing inside the pickup zone
+calls the ship (`Hunt::escape_calls_ship`, shared by every frontend) instead of
+opening the exit prompt. Outside the zone Esc still opens the prompt, which
+forfeits the hunt. **G** remains a second way to call the ship from anywhere.
+Inside the zone with the ship already called, hovering, cooling down or busy,
+Esc shows the reason rather than the forfeit prompt, so a stray press there
+cannot forfeit. The original has no call key; this is part of the hardcore
+ruleset only.
+
+Test: `game::tests::hardcore::escape_in_the_zone_calls_the_ship_and_outside_it_forfeits`.
