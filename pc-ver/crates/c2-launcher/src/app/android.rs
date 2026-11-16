@@ -21,7 +21,7 @@ impl Launcher {
                     .android_out
                     .as_ref()
                     .map_or("not set".to_string(), |p| p.display().to_string());
-                ui.label(RichText::new(shown).color(SAND));
+                ui.label(RichText::new(shown).color(theme::sand()));
                 if ui.button("Browse...").clicked() {
                     if let Some(p) = rfd::FileDialog::new().pick_folder() {
                         self.cfg.android_out = Some(p);
@@ -38,10 +38,10 @@ impl Launcher {
                     self.save();
                 }
                 let package = crate::android::app_package(&self.cfg.android_name);
-                ui.label(RichText::new(format!("-> {package}")).color(DIM));
+                ui.label(RichText::new(format!("-> {package}")).color(theme::dim()));
             });
             if let Some(other) = self.android_clash() {
-                ui.label(RichText::new(other).color(RED));
+                ui.label(RichText::new(other).color(theme::red()));
             }
             help(
                 ui,
@@ -58,7 +58,7 @@ impl Launcher {
         if let Some(p) = &problem {
             let mut change = false;
             panel(ui, |ui| {
-                ui.label(RichText::new(p).color(RED));
+                ui.label(RichText::new(p).color(theme::red()));
                 change = ui.button("Change the base game…").clicked();
             });
             if change {
@@ -119,7 +119,7 @@ impl Launcher {
             ui.set_width(420.0);
             ui.label(
                 RichText::new("Install the last built Android package?")
-                    .color(SAND)
+                    .color(theme::sand())
                     .strong(),
             );
             help(
@@ -129,7 +129,10 @@ impl Launcher {
                  Android package first. Saves and other folders on the device are kept.",
             );
             ui.horizontal(|ui| {
-                if ui.button(RichText::new("Install").color(GOLD)).clicked() {
+                if ui
+                    .button(RichText::new("Install").color(theme::gold()))
+                    .clicked()
+                {
                     answer = Some(true);
                 }
                 if ui.button("Cancel").clicked() {
@@ -223,7 +226,7 @@ impl Launcher {
                 }
                 self.start_job("Building Android package", steps);
             }
-            Err(e) => self.ui.note = Some((e, RED)),
+            Err(e) => self.ui.note = Some((e, theme::red())),
         }
     }
 
@@ -238,7 +241,7 @@ impl Launcher {
             ui.set_width(440.0);
             ui.label(
                 RichText::new("The engine APK is older than the engine source")
-                    .color(SAND)
+                    .color(theme::sand())
                     .strong(),
             );
             help(
@@ -249,7 +252,7 @@ impl Launcher {
             );
             ui.horizontal(|ui| {
                 if ui
-                    .button(RichText::new("Rebuild engine, then build").color(GOLD))
+                    .button(RichText::new("Rebuild engine, then build").color(theme::gold()))
                     .clicked()
                 {
                     answer = Some(Some(true));
@@ -277,7 +280,7 @@ impl Launcher {
         }
         match self.android_install_steps() {
             Ok(steps) => self.start_job("Installing for Android", steps),
-            Err(e) => self.ui.note = Some((e, RED)),
+            Err(e) => self.ui.note = Some((e, theme::red())),
         }
     }
 

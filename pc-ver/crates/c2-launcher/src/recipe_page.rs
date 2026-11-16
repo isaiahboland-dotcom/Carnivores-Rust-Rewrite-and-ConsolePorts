@@ -12,7 +12,7 @@ use eframe::egui::{self, RichText};
 
 use crate::app::{help, panel};
 use crate::config::RecipeUse;
-use crate::theme::*;
+use crate::theme;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Status {
@@ -25,10 +25,10 @@ pub enum Status {
 impl Status {
     fn show(&self, ui: &mut egui::Ui) {
         match self {
-            Status::Unset => ui.label(RichText::new("no folder").color(DIM)),
+            Status::Unset => ui.label(RichText::new("no folder").color(theme::dim())),
             Status::Checking => ui.spinner(),
-            Status::Ok(s) => ui.label(RichText::new(s).color(TEXT)),
-            Status::Bad(s) => ui.label(RichText::new(s).color(RED)),
+            Status::Ok(s) => ui.label(RichText::new(s).color(theme::text())),
+            Status::Bad(s) => ui.label(RichText::new(s).color(theme::red())),
         };
     }
 }
@@ -433,7 +433,7 @@ impl Page {
             ui.horizontal(|ui| {
                 ui.label(
                     RichText::new(format!("Missing: {}", missing.len()))
-                        .color(RED)
+                        .color(theme::red())
                         .strong(),
                 );
                 let links: Vec<&str> = missing
@@ -452,12 +452,14 @@ impl Page {
             );
             for r in missing {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(&r.entry.id).color(SAND));
+                    ui.label(RichText::new(&r.entry.id).color(theme::sand()));
                     if !r.entry.credit.is_empty() {
-                        ui.label(RichText::new(format!("by {}", r.entry.credit)).color(DIM));
+                        ui.label(
+                            RichText::new(format!("by {}", r.entry.credit)).color(theme::dim()),
+                        );
                     }
                     if r.entry.url.is_empty() {
-                        ui.label(RichText::new("no link in the recipe").color(DIM));
+                        ui.label(RichText::new("no link in the recipe").color(theme::dim()));
                     } else {
                         ui.hyperlink_to(&r.entry.url, &r.entry.url);
                     }
@@ -480,7 +482,7 @@ impl Page {
         ui.label(
             RichText::new(format!("Recipe: {} {}", r.name, r.version))
                 .size(18.0)
-                .color(SAND)
+                .color(theme::sand())
                 .strong(),
         );
         help(
@@ -496,11 +498,11 @@ impl Page {
         let mut pick_game = false;
         panel(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Game").color(SAND).strong());
+                ui.label(RichText::new("Game").color(theme::sand()).strong());
                 ui.label(&self.recipe.recipe.base);
                 if let Some(b) = &self.base {
                     if !b.base.credit.is_empty() {
-                        ui.label(RichText::new(&b.base.credit).color(DIM));
+                        ui.label(RichText::new(&b.base.credit).color(theme::dim()));
                     }
                     if !b.base.url.is_empty() {
                         ui.hyperlink_to("download page", &b.base.url);
@@ -512,7 +514,7 @@ impl Page {
                     Some(g) => g.display().to_string(),
                     None => "none yet".into(),
                 };
-                ui.label(RichText::new(shown).color(SAND));
+                ui.label(RichText::new(shown).color(theme::sand()));
                 self.base_status.show(ui);
             });
             if self.base_error.is_some() {
@@ -522,7 +524,7 @@ impl Page {
                          can't be checked. Restore the list under recipes/bases/, or remove \
                          `base` from the recipe to allow any game.",
                     )
-                    .color(RED),
+                    .color(theme::red()),
                 );
             }
             if self.base_differs() && !self.is_apk_base() {
@@ -532,7 +534,7 @@ impl Page {
                          the recipe's hashes). Choose the right folder, or use it anyway if it is \
                          another version of the same game.",
                     )
-                    .color(RED),
+                    .color(theme::red()),
                 );
                 ui.checkbox(&mut self.accept_base, "Use this game anyway");
             }
@@ -571,7 +573,7 @@ impl Page {
                 ui.spinner();
                 ui.label("looking...");
             } else if let Some(n) = &self.note {
-                ui.label(RichText::new(n).color(DIM));
+                ui.label(RichText::new(n).color(theme::dim()));
             }
         });
         ui.add_space(4.0);
@@ -591,7 +593,7 @@ impl Page {
                             .spacing([10.0, 4.0])
                             .show(ui, |ui| {
                                 for (i, row) in self.rows.iter().enumerate() {
-                                    ui.label(RichText::new(row.kind).color(DIM));
+                                    ui.label(RichText::new(row.kind).color(theme::dim()));
                                     let credit = if row.entry.credit.is_empty() {
                                         "credit not given".to_string()
                                     } else {
@@ -599,7 +601,7 @@ impl Page {
                                     };
                                     ui.label(&row.entry.id).on_hover_text(credit);
                                     if row.entry.url.is_empty() {
-                                        ui.label(RichText::new("no link").color(DIM));
+                                        ui.label(RichText::new("no link").color(theme::dim()));
                                     } else {
                                         ui.hyperlink_to("download", &row.entry.url)
                                             .on_hover_text(&row.entry.url);
@@ -610,7 +612,7 @@ impl Page {
                                             |n| n.to_string_lossy().into_owned(),
                                         )
                                     });
-                                    let l = ui.label(RichText::new(folder).color(SAND));
+                                    let l = ui.label(RichText::new(folder).color(theme::sand()));
                                     if let Some(f) = &row.folder {
                                         l.on_hover_text(f.display().to_string());
                                     }
@@ -644,8 +646,12 @@ impl Page {
             if ui
                 .add_enabled(
                     ready,
-                    egui::Button::new(RichText::new("Use this instance").color(GOLD).strong())
-                        .fill(GREEN),
+                    egui::Button::new(
+                        RichText::new("Use this instance")
+                            .color(theme::gold())
+                            .strong(),
+                    )
+                    .fill(theme::green()),
                 )
                 .on_disabled_hover_text("Every entry needs its folder, matching (ok).")
                 .clicked()
@@ -654,7 +660,10 @@ impl Page {
             }
             if play
                 && ui
-                    .add_enabled(ready && !busy, egui::Button::new("Play").fill(GREEN))
+                    .add_enabled(
+                        ready && !busy,
+                        egui::Button::new("Play").fill(theme::green()),
+                    )
                     .clicked()
             {
                 ask = Ask::Play;
@@ -668,7 +677,7 @@ impl Page {
                 .filter(|r| !matches!(r.status, Status::Ok(_)))
                 .count();
             if left > 0 {
-                ui.label(RichText::new(format!("{left} to go")).color(DIM));
+                ui.label(RichText::new(format!("{left} to go")).color(theme::dim()));
             }
         });
         self.dispatch(handle);

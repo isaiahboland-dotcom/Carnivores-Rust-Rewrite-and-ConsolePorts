@@ -30,7 +30,7 @@ use std::path::{Path, PathBuf};
 use c2_mods::recipe::{self, Recipe, RecipeMod};
 use eframe::egui::{self, Color32, RichText};
 
-use crate::theme::*;
+use crate::theme;
 
 /// Which list an entry is in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -283,9 +283,9 @@ impl Editor {
         self.note = Some(match add_entry(&mut self.recipe, kind, entry) {
             Ok(()) => {
                 self.draft.folders.insert(id.clone(), dir);
-                (format!("Added '{id}'."), TEXT)
+                (format!("Added '{id}'."), theme::text())
             }
-            Err(e) => (format!("Not added: {e}"), RED),
+            Err(e) => (format!("Not added: {e}"), theme::red()),
         });
     }
 
@@ -295,7 +295,7 @@ impl Editor {
             self.base_match = BaseMatch::Done(g.clone(), None);
         }
         if self.adding {
-            self.note = Some((format!("Not added: {error}"), RED));
+            self.note = Some((format!("Not added: {error}"), theme::red()));
         }
         self.adding = false;
     }
@@ -335,7 +335,7 @@ impl Editor {
             }) {
                 Ok(()) => self.base_match = BaseMatch::Checking(game),
                 Err(e) => {
-                    self.note = Some((e, RED));
+                    self.note = Some((e, theme::red()));
                     self.base_match = BaseMatch::Done(game, None);
                 }
             }
@@ -360,7 +360,7 @@ impl Editor {
         }) {
             Ok(()) => {
                 self.adding = true;
-                self.note = Some(("Pinning its files...".into(), TEXT));
+                self.note = Some(("Pinning its files...".into(), theme::text()));
             }
             Err(e) => self.failed(&e),
         }
@@ -370,7 +370,7 @@ impl Editor {
     pub fn remove(&mut self, id: &str) {
         remove_entry(&mut self.recipe, id);
         self.draft.folders.remove(id);
-        self.note = Some((format!("Removed '{id}'."), TEXT));
+        self.note = Some((format!("Removed '{id}'."), theme::text()));
     }
 
     /// Back to the instance as last saved.
@@ -381,7 +381,7 @@ impl Editor {
         self.base_match = BaseMatch::Unchecked;
         self.take_base = false;
         self.queue.clear();
-        self.note = Some(("Changes discarded.".into(), TEXT));
+        self.note = Some(("Changes discarded.".into(), theme::text()));
     }
 
     /// Writes the recipe over its file (the comments at its top kept).
@@ -396,7 +396,7 @@ impl Editor {
         self.recipe.save(&self.path).map_err(|e| e.to_string())?;
         self.saved = self.recipe.clone();
         self.saved_draft = self.draft.clone();
-        self.note = Some(("Saved.".into(), TEXT));
+        self.note = Some(("Saved.".into(), theme::text()));
         Ok(())
     }
 
@@ -428,7 +428,7 @@ impl Editor {
         let game = self.draft.game_dirs();
         let (r, extras, folders) = (&mut self.recipe, &mut self.extras, &self.draft.folders);
         if game.is_empty() {
-            ui.label(RichText::new("Choose the base game first (Base game page).").color(RED));
+            ui.label(RichText::new("Choose the base game first (Base game page).").color(theme::red()));
         } else {
             panel(ui, |ui| extras.base_parts_ui(ui, r, &game, folders));
         }

@@ -8,7 +8,7 @@ use eframe::egui::{self, Color32, Stroke};
 
 use super::world::{finish_outline, State, Tool};
 use super::world_edit::{self as edit, Carry, Grip, Hit, Target, View};
-use crate::theme::*;
+use crate::theme;
 
 /// How close, in points, the pointer must be to grab or pick something.
 const REACH: f32 = 8.0;
@@ -48,7 +48,7 @@ pub(super) fn map_ui(ui: &mut egui::Ui, s: &mut State, w: &mut World) {
                 egui::Align2::CENTER_CENTER,
                 text,
                 egui::FontId::proportional(13.0),
-                DIM,
+                theme::dim(),
             );
         }
     }
@@ -192,13 +192,18 @@ fn draw_entries(painter: &egui::Painter, s: &State, w: &World, view: View) {
         }
         let picked = s.selected == Some(Target::Zone(i));
         let color = match (z.shape().is_ok(), picked) {
-            (false, _) => RED,
+            (false, _) => theme::red(),
             (true, true) => Color32::WHITE,
-            (true, false) => GOLD,
+            (true, false) => theme::gold(),
         };
         let stroke = Stroke::new(if picked { 2.5 } else { 1.5 }, color);
         if let (Some(c), Some(r)) = (z.center, z.radius) {
-            painter.circle(pos(c), view.points(r), GOLD.gamma_multiply(0.12), stroke);
+            painter.circle(
+                pos(c),
+                view.points(r),
+                theme::gold().gamma_multiply(0.12),
+                stroke,
+            );
             label(pos(c), &z.id, color);
         } else if let Some(first) = z.points.first() {
             let points: Vec<egui::Pos2> = z.points.iter().map(|p| pos(*p)).collect();
@@ -250,14 +255,14 @@ fn draw_entries(painter: &egui::Painter, s: &State, w: &World, view: View) {
     }
     // What is being drawn.
     let pointer = painter.ctx().pointer_latest_pos();
-    let draft = Stroke::new(1.5, SAND);
+    let draft = Stroke::new(1.5, theme::sand());
     if let (Some(c), Some(p)) = (s.circle_from, pointer) {
         painter.circle_stroke(pos(c), p.distance(pos(c)), draft);
     }
     if !s.outline.is_empty() {
         let mut points: Vec<egui::Pos2> = s.outline.iter().map(|p| pos(*p)).collect();
         for p in &points {
-            painter.circle_filled(*p, 3.0, SAND);
+            painter.circle_filled(*p, 3.0, theme::sand());
         }
         points.extend(pointer);
         painter.add(egui::Shape::line(points, draft));

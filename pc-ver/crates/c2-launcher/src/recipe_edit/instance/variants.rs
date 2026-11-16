@@ -12,7 +12,7 @@ use c2_mods::variants::{distributions, Catalog, Dino, TOTAL};
 use eframe::egui::{self, RichText};
 
 use crate::app::{help, panel};
-use crate::theme::*;
+use crate::theme;
 
 /// The window's open state: the member whose map settings are shown, as
 /// (group ID, member ID).
@@ -75,7 +75,7 @@ fn dino_pick(
         .selected_text(current)
         .show_ui(ui, |ui| {
             if options.is_empty() {
-                ui.label(RichText::new("No dinosaurs left to choose").color(DIM));
+                ui.label(RichText::new("No dinosaurs left to choose").color(theme::dim()));
             }
             for d in options {
                 if ui.selectable_label(false, label_dino(d)).clicked() {
@@ -91,9 +91,9 @@ pub(super) fn section_ui(ui: &mut egui::Ui, r: &mut Recipe, dinos: Dinos, state:
     let n = r.variants.len();
     egui::CollapsingHeader::new(
         RichText::new(format!("Variant manager ({n} cards)")).color(if n > 0 {
-            GOLD
+            theme::gold()
         } else {
-            SAND
+            theme::sand()
         }),
     )
     .default_open(false)
@@ -111,11 +111,16 @@ fn body(ui: &mut egui::Ui, r: &mut Recipe, dinos: Dinos, state: &mut Editor) {
     ui.add_space(6.0);
     let Some(catalog) = dinos.catalog else {
         if let Some(e) = dinos.error {
-            ui.label(RichText::new(format!("Can't read the dinosaurs and maps: {e}")).color(RED));
+            ui.label(
+                RichText::new(format!("Can't read the dinosaurs and maps: {e}"))
+                    .color(theme::red()),
+            );
         } else if dinos.reading {
-            ui.label(RichText::new("Reading the dinosaurs and maps…").color(DIM));
+            ui.label(RichText::new("Reading the dinosaurs and maps…").color(theme::dim()));
         } else {
-            ui.label(RichText::new("Choose the base game first (Base game page).").color(DIM));
+            ui.label(
+                RichText::new("Choose the base game first (Base game page).").color(theme::dim()),
+            );
         }
         return;
     };
@@ -177,16 +182,17 @@ fn card(ui: &mut egui::Ui, r: &mut Recipe, gi: usize, catalog: &Catalog, acts: &
     ui.push_id(&card_id, |ui| {
         panel(ui, |ui| {
             let header = RichText::new(format!("{parent}   ·   {total:.1}%")).color(if on_track {
-                TEXT
+                theme::text()
             } else {
-                RED
+                theme::red()
             });
             egui::CollapsingHeader::new(header)
                 .default_open(true)
                 .show(ui, |ui| {
                     let Some(oi) = owner else {
                         ui.label(
-                            RichText::new("This card has no menu dinosaur: remove it.").color(RED),
+                            RichText::new("This card has no menu dinosaur: remove it.")
+                                .color(theme::red()),
                         );
                         if ui.small_button("Remove card").clicked() {
                             acts.push(Act::RemoveCard(gi));
@@ -250,9 +256,12 @@ fn card(ui: &mut egui::Ui, r: &mut Recipe, gi: usize, catalog: &Catalog, acts: &
                             acts.push(Act::AddVariant(gi));
                         }
                         let (text, color) = if on_track {
-                            (format!("Total {total:.1}%"), DIM)
+                            (format!("Total {total:.1}%"), theme::dim())
                         } else {
-                            (format!("Total {total:.1}%: must be {TOTAL:.0}%"), RED)
+                            (
+                                format!("Total {total:.1}%: must be {TOTAL:.0}%"),
+                                theme::red(),
+                            )
                         };
                         ui.label(RichText::new(text).color(color));
                     });
@@ -265,7 +274,7 @@ fn card(ui: &mut egui::Ui, r: &mut Recipe, gi: usize, catalog: &Catalog, acts: &
                                     label_map(catalog, map),
                                     d.total
                                 ))
-                                .color(RED),
+                                .color(theme::red()),
                             );
                         }
                     }

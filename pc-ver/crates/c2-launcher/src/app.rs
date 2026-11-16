@@ -9,7 +9,7 @@ use eframe::egui::{self, Color32, RichText};
 
 use crate::config::{describe_game, install_name, AddOn, Config, MenuStyle, RecipeUse, Target};
 use crate::jobs::{is_archive, Job, Step};
-use crate::theme::*;
+use crate::theme;
 use crate::{find_tool, Mode};
 
 mod android;
@@ -92,27 +92,51 @@ struct View {
     engine_confirm: Option<PathBuf>,
 }
 
-fn style(ctx: &egui::Context) {
+/// The egui style for the chosen look: colours, square or rounded frames,
+/// and monospace text under the DHC look. Called at start-up and when the
+/// look changes (the colour functions are read every frame).
+pub(crate) fn style(ctx: &egui::Context) {
     let mut v = egui::Visuals::dark();
-    v.panel_fill = BG;
-    v.window_fill = PANEL;
-    v.extreme_bg_color = Color32::from_rgb(10, 14, 10);
-    v.faint_bg_color = PANEL;
-    v.override_text_color = Some(TEXT);
-    v.hyperlink_color = GOLD;
-    v.selection.bg_fill = GREEN;
-    v.selection.stroke.color = GOLD;
-    v.widgets.noninteractive.bg_fill = PANEL;
-    v.widgets.noninteractive.weak_bg_fill = PANEL;
-    v.widgets.noninteractive.bg_stroke.color = PANEL_HI;
-    v.widgets.inactive.bg_fill = BUTTON;
-    v.widgets.inactive.weak_bg_fill = BUTTON;
-    v.widgets.hovered.bg_fill = PANEL_HI;
-    v.widgets.hovered.weak_bg_fill = PANEL_HI;
-    v.widgets.hovered.fg_stroke.color = HOVER;
-    v.widgets.active.bg_fill = GREEN;
-    v.widgets.active.weak_bg_fill = GREEN;
+    let corner = egui::CornerRadius::same(theme::corner());
+    v.window_corner_radius = corner;
+    v.menu_corner_radius = corner;
+    v.panel_fill = theme::bg();
+    v.window_fill = theme::panel();
+    v.extreme_bg_color = theme::well();
+    v.faint_bg_color = theme::panel();
+    v.override_text_color = Some(theme::text());
+    v.hyperlink_color = theme::gold();
+    v.selection.bg_fill = theme::green();
+    v.selection.stroke.color = theme::gold();
+    v.widgets.noninteractive.bg_fill = theme::panel();
+    v.widgets.noninteractive.weak_bg_fill = theme::panel();
+    v.widgets.noninteractive.bg_stroke.color = theme::panel_hi();
+    v.widgets.inactive.bg_fill = theme::button();
+    v.widgets.inactive.weak_bg_fill = theme::button();
+    v.widgets.hovered.bg_fill = theme::panel_hi();
+    v.widgets.hovered.weak_bg_fill = theme::panel_hi();
+    v.widgets.hovered.fg_stroke.color = theme::hover();
+    v.widgets.active.bg_fill = theme::green();
+    v.widgets.active.weak_bg_fill = theme::green();
+    for w in [
+        &mut v.widgets.noninteractive,
+        &mut v.widgets.inactive,
+        &mut v.widgets.hovered,
+        &mut v.widgets.active,
+        &mut v.widgets.open,
+    ] {
+        w.corner_radius = corner;
+    }
     ctx.set_visuals(v);
+    let family = match theme::look() {
+        theme::Look::Dhc => egui::FontFamily::Monospace,
+        theme::Look::Legacy => egui::FontFamily::Proportional,
+    };
+    ctx.all_styles_mut(|s| {
+        for font in s.text_styles.values_mut() {
+            font.family = family.clone();
+        }
+    });
     screen::scroll_style(ctx);
 }
 
@@ -120,7 +144,7 @@ pub(crate) use screen::steam_game_mode;
 pub(crate) use vanilla::play_vanilla_hint;
 
 fn heading(ui: &mut egui::Ui, text: &str) {
-    ui.label(RichText::new(text).size(20.0).color(SAND).strong());
+    ui.label(RichText::new(text).size(20.0).color(theme::sand()).strong());
 }
 
 /// A row picking the user's own picture (a PNG of `size`): the file, a
@@ -136,14 +160,14 @@ fn art_picker(
         ui.label(format!("{label} ({}x{} PNG):", size.0, size.1));
         match slot.as_ref() {
             Some(p) => {
-                ui.label(RichText::new(p.display().to_string()).color(SAND));
+                ui.label(RichText::new(p.display().to_string()).color(theme::sand()));
                 match crate::cia::png_size(p) {
                     Some(s) if s == size => {}
                     Some((w, h)) => {
-                        ui.label(RichText::new(format!("is {w}x{h}")).color(RED));
+                        ui.label(RichText::new(format!("is {w}x{h}")).color(theme::red()));
                     }
                     None => {
-                        ui.label(RichText::new("not a PNG").color(RED));
+                        ui.label(RichText::new("not a PNG").color(theme::red()));
                     }
                 }
             }
@@ -167,16 +191,16 @@ fn art_picker(
 }
 
 pub(crate) fn help(ui: &mut egui::Ui, text: &str) {
-    ui.label(RichText::new(text).color(DIM));
+    ui.label(RichText::new(text).color(theme::dim()));
 }
 
 /// A framed box like the game menus' panels.
 pub(crate) fn panel<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     egui::Frame::new()
-        .fill(PANEL)
-        .stroke(egui::Stroke::new(1.0, PANEL_HI))
+        .fill(theme::panel())
+        .stroke(egui::Stroke::new(1.0, theme::panel_hi()))
         .inner_margin(10.0)
-        .corner_radius(4.0)
+        .corner_radius(theme::corner())
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             add(ui)
@@ -187,9 +211,9 @@ pub(crate) fn panel<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) 
 fn big_button(ui: &mut egui::Ui, text: &str, enabled: bool) -> bool {
     ui.add_enabled(
         enabled,
-        egui::Button::new(RichText::new(text).size(18.0).color(GOLD).strong())
+        egui::Button::new(RichText::new(text).size(18.0).color(theme::gold()).strong())
             .min_size(egui::vec2(180.0, 40.0))
-            .fill(GREEN),
+            .fill(theme::green()),
     )
     .clicked()
 }
@@ -202,7 +226,7 @@ fn build_button(ui: &mut egui::Ui, blockers: &[String], busy: bool) -> bool {
         help(ui, "Wait for the current operation to finish.");
     }
     for b in blockers {
-        ui.label(RichText::new(format!("Not ready: {b}")).color(RED));
+        ui.label(RichText::new(format!("Not ready: {b}")).color(theme::red()));
     }
     go
 }
@@ -223,15 +247,16 @@ fn game_blocker(game: Option<&Path>, instance: bool) -> Option<String> {
 
 impl Launcher {
     pub fn new(cc: &eframe::CreationContext<'_>, mode: Mode) -> Self {
-        style(&cc.egui_ctx);
         let cfg = Config::load();
+        theme::set_look(cfg.look);
+        style(&cc.egui_ctx);
         let pending = crate::publish::pending(&crate::config::data_dir());
         let mut balance = crate::balance::Editor::load();
         balance.mobile = cfg_mobile(&cfg);
         let ui = View {
             mode,
             tab: Tab::Instances,
-            note: (!pending.is_empty()).then(|| (format!("Unfinished install transactions: {}. Inspect data (new output) and previous (backup); close other launchers before recovery.", pending.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", ")), RED)),
+            note: (!pending.is_empty()).then(|| (format!("Unfinished install transactions: {}. Inspect data (new output) and previous (backup); close other launchers before recovery.", pending.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", ")), theme::red())),
             balance,
             recipe_page: None,
             recipe_edit: None,
@@ -305,7 +330,7 @@ impl Launcher {
                     if let Some(page) = &mut self.ui.recipe_page {
                         page.failed(&e);
                     }
-                    self.ui.note = Some((e, RED));
+                    self.ui.note = Some((e, theme::red()));
                 }
             }
         }
@@ -313,7 +338,7 @@ impl Launcher {
 
     fn start_job(&mut self, title: impl Into<String>, steps: Vec<Step>) {
         if let Err(e) = self.job.start(title, steps) {
-            self.ui.note = Some((e, RED));
+            self.ui.note = Some((e, theme::red()));
         }
     }
 
@@ -329,7 +354,7 @@ impl Launcher {
     fn save(&mut self) {
         self.cfg.remember_builds();
         if let Err(e) = self.cfg.store() {
-            self.ui.note = Some((format!("Settings not saved: {e}"), RED));
+            self.ui.note = Some((format!("Settings not saved: {e}"), theme::red()));
         }
     }
 
@@ -339,7 +364,10 @@ impl Launcher {
 
     fn can_start_operation(&mut self) -> bool {
         if self.busy() {
-            self.ui.note = Some(("Wait for the current operation to finish.".into(), RED));
+            self.ui.note = Some((
+                "Wait for the current operation to finish.".into(),
+                theme::red(),
+            ));
             false
         } else {
             true
@@ -348,7 +376,7 @@ impl Launcher {
 
     fn instance_build_heading(&mut self, ui: &mut egui::Ui) {
         if let Some(r) = self.active_recipe() {
-            ui.label(RichText::new(format!("Instance: {}", r.id())).color(GOLD));
+            ui.label(RichText::new(format!("Instance: {}", r.id())).color(theme::gold()));
             help(ui, "Rebuilds from the saved recipe using the current tools and app. Output choices are remembered for this instance.");
         }
     }
@@ -388,7 +416,7 @@ impl Launcher {
             "To add a game or add-ons, open an instance with Edit (or make a new one) and drop \
              them there."
                 .into(),
-            TEXT,
+            theme::text(),
         ));
     }
 
@@ -400,7 +428,10 @@ impl Launcher {
             return;
         };
         if busy || e.working() {
-            self.ui.note = Some(("Wait for the current operation to finish.".into(), RED));
+            self.ui.note = Some((
+                "Wait for the current operation to finish.".into(),
+                theme::red(),
+            ));
             return;
         }
         let first = files[0].clone();
@@ -421,7 +452,7 @@ impl Launcher {
         if !other.is_empty() {
             self.ui.note = Some((
                 "Only folders can be added here: unpack archives (.zip, .rar, .7z) first.".into(),
-                RED,
+                theme::red(),
             ));
         }
         if !dirs.is_empty() {
@@ -433,12 +464,12 @@ impl Launcher {
 
 fn log_panel(ui: &mut egui::Ui, job: &Job) {
     let (status, col) = match job.result() {
-        None => ("working...", GOLD),
-        Some(true) => ("done", TEXT),
-        Some(false) => ("failed", RED),
+        None => ("working...", theme::gold()),
+        Some(true) => ("done", theme::text()),
+        Some(false) => ("failed", theme::red()),
     };
     ui.horizontal(|ui| {
-        ui.label(RichText::new(&job.title).color(SAND).strong());
+        ui.label(RichText::new(&job.title).color(theme::sand()).strong());
         ui.label(RichText::new(status).color(col));
         if job.result().is_none() {
             ui.spinner();
@@ -506,10 +537,10 @@ impl eframe::App for Launcher {
             ctx.request_repaint_after(std::time::Duration::from_millis(200));
         }
         egui::Panel::top("tabs")
-            .frame(egui::Frame::new().fill(PANEL).inner_margin(8.0))
+            .frame(egui::Frame::new().fill(theme::panel()).inner_margin(8.0))
             .show(ui, |ui| self.top_bar(ui));
         egui::Panel::bottom("log")
-            .frame(egui::Frame::new().fill(PANEL).inner_margin(8.0))
+            .frame(egui::Frame::new().fill(theme::panel()).inner_margin(8.0))
             .show(ui, |ui| {
                 if let Some((n, c)) = &self.ui.note {
                     ui.label(RichText::new(n).color(*c));
@@ -524,11 +555,11 @@ impl eframe::App for Launcher {
             });
         if self.ui.tab.editing() {
             egui::Panel::bottom("edit-bar")
-                .frame(egui::Frame::new().fill(PANEL_HI).inner_margin(8.0))
+                .frame(egui::Frame::new().fill(theme::panel_hi()).inner_margin(8.0))
                 .show(ui, |ui| self.edit_bar(ui));
         } else if self.ui.tab.building() {
             egui::Panel::bottom("build-bar")
-                .frame(egui::Frame::new().fill(PANEL_HI).inner_margin(8.0))
+                .frame(egui::Frame::new().fill(theme::panel_hi()).inner_margin(8.0))
                 .show(ui, |ui| {
                     if ui
                         .add(
@@ -584,7 +615,7 @@ impl Launcher {
             ui.label(
                 RichText::new("CARNIVORES 2")
                     .size(22.0)
-                    .color(GOLD)
+                    .color(theme::gold())
                     .strong(),
             );
             ui.add_space(16.0);
@@ -595,7 +626,7 @@ impl Launcher {
                         crate::instances::display_name(&e.recipe)
                     ))
                     .size(16.0)
-                    .color(SAND),
+                    .color(theme::sand()),
                 );
                 ui.add_space(12.0);
                 let mut t = vec![(Tab::BaseGame, "Base game"), (Tab::AddOns, "Add-ons")];
@@ -619,17 +650,21 @@ impl Launcher {
                 ui.label(
                     RichText::new(format!("Build {platform}"))
                         .size(16.0)
-                        .color(SAND),
+                        .color(theme::sand()),
                 );
                 if !name.is_empty() && self.ui.tab != Tab::Build {
-                    ui.label(RichText::new(name).color(DIM));
+                    ui.label(RichText::new(name).color(theme::dim()));
                 }
                 Vec::new()
             } else {
                 vec![(Tab::Instances, "Instances"), (Tab::Settings, "Settings")]
             };
             for (t, name) in tabs {
-                let col = if self.ui.tab == t { GOLD } else { TEXT };
+                let col = if self.ui.tab == t {
+                    theme::gold()
+                } else {
+                    theme::text()
+                };
                 if ui
                     .selectable_label(self.ui.tab == t, RichText::new(name).size(16.0).color(col))
                     .clicked()

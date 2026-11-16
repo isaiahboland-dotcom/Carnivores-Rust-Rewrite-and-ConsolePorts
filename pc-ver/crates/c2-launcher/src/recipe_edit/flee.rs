@@ -14,7 +14,7 @@ use eframe::egui::{self, RichText};
 
 use super::instance::Extras;
 use crate::app::{help, panel};
-use crate::theme::*;
+use crate::theme;
 
 /// What the original does for the animal running AI `ai`, in one line.
 pub(super) fn vanilla_text(ai: i32) -> String {
@@ -42,7 +42,13 @@ pub(super) fn vanilla_text(ai: i32) -> String {
 }
 
 /// One limit as an optional value: "inherit" until set.
-fn limit_ui(ui: &mut egui::Ui, v: &mut Option<u32>, range: (u32, u32), inherited: u32, unit: &str) {
+pub(super) fn limit_ui(
+    ui: &mut egui::Ui,
+    v: &mut Option<u32>,
+    range: (u32, u32),
+    inherited: u32,
+    unit: &str,
+) {
     let Some(x) = v else {
         if ui
             .button(RichText::new(format!("{inherited}{unit}")).weak())
@@ -114,7 +120,7 @@ impl Extras {
         let before = f.clone();
         ui.label(
             RichText::new("Fleeing: custom limits (experimental)")
-                .color(SAND)
+                .color(theme::sand())
                 .strong(),
         );
         ui.label(
@@ -122,7 +128,7 @@ impl Extras {
                 "Experimental on Nintendo 3DS and Wii U; PC is the tested platform. Players \
                  switch Bounded fleeing on in the game's options; these limits apply only then.",
             )
-            .color(GOLD),
+            .color(theme::gold()),
         );
         help(
             ui,
@@ -147,7 +153,9 @@ impl Extras {
                     ("Dialect hunting AIs", 99),
                     ("Carnivores", 13),
                 ] {
-                    ui.label(RichText::new(format!("{name}: {}", vanilla_text(ai))).color(TEXT));
+                    ui.label(
+                        RichText::new(format!("{name}: {}", vanilla_text(ai))).color(theme::text()),
+                    );
                 }
             });
         ui.checkbox(&mut f.enabled, "Custom flee limits")
@@ -183,7 +191,7 @@ impl Extras {
                     "Chase extension",
                     "Noise lockout",
                 ] {
-                    ui.label(RichText::new(h).color(SAND));
+                    ui.label(RichText::new(h).color(theme::sand()));
                 }
                 ui.end_row();
                 ui.label("All animals");
@@ -210,7 +218,7 @@ impl Extras {
             return;
         }
         ui.add_space(4.0);
-        ui.label(RichText::new("Per animal").color(TEXT));
+        ui.label(RichText::new("Per animal").color(theme::text()));
         help(
             ui,
             "Unset values inherit the one above, then the built-in default.",
@@ -228,7 +236,7 @@ impl Extras {
                         "Noise lockout",
                         "Original",
                     ] {
-                        ui.label(RichText::new(h).color(SAND));
+                        ui.label(RichText::new(h).color(theme::sand()));
                     }
                     ui.end_row();
                     for a in &values.animals {

@@ -15,7 +15,7 @@ use eframe::egui::{self, RichText};
 
 use crate::app::{help, panel};
 use crate::jobs::balance::Instance;
-use crate::theme::*;
+use crate::theme;
 
 mod variants;
 
@@ -290,8 +290,12 @@ impl Extras {
             .map(|d| d.display().to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        ui.label(RichText::new("The base game's parts").color(SAND).strong())
-            .on_hover_text(tip);
+        ui.label(
+            RichText::new("The base game's parts")
+                .color(theme::sand())
+                .strong(),
+        )
+        .on_hover_text(tip);
         help(
             ui,
             "Untick its areas, animals or weapons to leave them out of this instance, and let \
@@ -315,7 +319,7 @@ impl Extras {
                      bring their own.",
                     gone.join(" and ")
                 ))
-                .color(GOLD),
+                .color(theme::gold()),
             );
         }
         crate::app::standalones::pick_parts(
@@ -352,7 +356,7 @@ impl Extras {
                 .or_insert_with(|| c2_mods::standalone::parts(dir));
             match p {
                 Some(p) => {
-                    ui.label(RichText::new(&m.id).color(TEXT));
+                    ui.label(RichText::new(&m.id).color(theme::text()));
                     ui.indent(("recipe-parts", &m.id), |ui| {
                         changed |= crate::app::standalones::pick_parts(
                             ui,
@@ -384,9 +388,9 @@ impl Extras {
         ui.horizontal_wrapped(|ui| {
             ui.label(
                 RichText::new(format!("Points and scores ({n} changed)")).color(if n > 0 {
-                    GOLD
+                    theme::gold()
                 } else {
-                    SAND
+                    theme::sand()
                 }),
             );
             if ui
@@ -444,7 +448,9 @@ impl Extras {
     ) -> Option<Balance> {
         let (inst, missing) = instance(r, game, folders);
         let Some(inst) = inst else {
-            ui.label(RichText::new("Choose the base game first (Base game page).").color(RED));
+            ui.label(
+                RichText::new("Choose the base game first (Base game page).").color(theme::red()),
+            );
             return None;
         };
         if !missing.is_empty() {
@@ -458,7 +464,7 @@ impl Extras {
         }
         self.refresh(&inst, handle);
         if let Some(e) = &self.error {
-            ui.label(RichText::new(format!("Can't read the instance: {e}")).color(RED));
+            ui.label(RichText::new(format!("Can't read the instance: {e}")).color(theme::red()));
             if ui.small_button("Try again").clicked() {
                 self.refresh_list();
             }

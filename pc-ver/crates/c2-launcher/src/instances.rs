@@ -14,7 +14,7 @@ use eframe::egui::{self, RichText};
 
 use crate::app::help;
 use crate::config::Config;
-use crate::theme::*;
+use crate::theme;
 
 mod grid;
 

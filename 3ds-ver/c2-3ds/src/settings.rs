@@ -59,8 +59,8 @@ pub struct Settings {
     /// Advanced observer mode: observing, unlimited instant teleports,
     /// flying and stopping time.
     pub free_observer: bool,
-    /// The DinoHunt Corp terminal as the hunt setup's look (off by
-    /// default; not in the original).
+    /// The DinoHunt Corp terminal as the menus' look (on by default; a
+    /// saved `dhc_terminal = 0` keeps the original menus).
     pub dhc_terminal: bool,
     /// Secret animals: unpicked ones a modded game's own tables bring on
     /// a map, at most (0..=255, 0: none; the PC's "Total number of secret
@@ -164,7 +164,7 @@ impl Default for Settings {
             multi_ammo: false,
             half_tranq: true,
             free_observer: false,
-            dhc_terminal: false,
+            dhc_terminal: true,
             secret_dinos: 10,
         }
     }

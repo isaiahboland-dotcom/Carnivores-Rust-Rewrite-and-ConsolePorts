@@ -66,7 +66,7 @@ impl Launcher {
         let r = match Recipe::load_checked(path) {
             Ok(r) => r,
             Err(e) => {
-                ui.label(RichText::new(format!("Can't read it: {e}")).color(RED));
+                ui.label(RichText::new(format!("Can't read it: {e}")).color(theme::red()));
                 return ui.button("Close").clicked();
             }
         };
@@ -74,7 +74,7 @@ impl Launcher {
         let name = crate::instances::display_name(&recipe);
         ui.label(
             RichText::new(format!("'{name}' has advanced rules"))
-                .color(SAND)
+                .color(theme::sand())
                 .strong(),
         );
         help(
@@ -87,7 +87,7 @@ impl Launcher {
             .num_columns(3)
             .show(ui, |ui| {
                 for a in advanced_summary(&recipe) {
-                    ui.label(RichText::new(a.label()).color(TEXT))
+                    ui.label(RichText::new(a.label()).color(theme::text()))
                         .on_hover_text(a.key());
                     if ui.button("Remove").clicked() {
                         edit = Some((a, SectionEdit::Remove));
@@ -107,11 +107,11 @@ impl Launcher {
                 }
             });
         for w in &warnings {
-            ui.label(RichText::new(w).color(GOLD));
+            ui.label(RichText::new(w).color(theme::gold()));
         }
         if let Some((a, e)) = edit {
             if let Err(err) = self.edit_section(path, a, e) {
-                self.ui.note = Some((format!("Not changed: {err}"), RED));
+                self.ui.note = Some((format!("Not changed: {err}"), theme::red()));
             }
         }
         let close = ui.button("Done").clicked();

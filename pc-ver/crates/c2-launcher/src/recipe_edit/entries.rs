@@ -25,7 +25,7 @@ impl Editor {
                 RichText::new(
                     "Choose the base game first (Base game page): add-ons are read against it.",
                 )
-                .color(RED),
+                .color(theme::red()),
             );
             ui.add_space(4.0);
         }
@@ -39,10 +39,10 @@ impl Editor {
         );
         if !collisions.is_empty() {
             ui.label(
-                RichText::new("Same-name dinosaurs (explicit variants retain both; otherwise the later add-on wins):").color(RED),
+                RichText::new("Same-name dinosaurs (explicit variants retain both; otherwise the later add-on wins):").color(theme::red()),
             );
             for (source, name) in collisions {
-                ui.label(RichText::new(format!("{name} — {source}")).color(RED));
+                ui.label(RichText::new(format!("{name} — {source}")).color(theme::red()));
             }
         }
     }
@@ -60,7 +60,7 @@ impl Editor {
         let extras = &mut self.extras;
         panel(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new(kind.label()).color(SAND).strong());
+                ui.label(RichText::new(kind.label()).color(theme::sand()).strong());
                 if ui
                     .add_enabled(can_add, egui::Button::new("Add folders..."))
                     .on_hover_text("Each folder picked is pinned (its files hashed) and added.")
@@ -92,7 +92,7 @@ impl Editor {
                 }
             };
             if list.is_empty() {
-                ui.label(RichText::new("none").color(DIM));
+                ui.label(RichText::new("none").color(theme::dim()));
                 return;
             }
             let n = list.len();
@@ -105,7 +105,7 @@ impl Editor {
                         .spacing([8.0, 4.0])
                         .show(ui, |ui| {
                             for h in ["id", "by", "download page", "folder", ""] {
-                                ui.label(RichText::new(h).color(DIM));
+                                ui.label(RichText::new(h).color(theme::dim()));
                             }
                             ui.end_row();
                             for (i, m) in list.iter_mut().enumerate() {
@@ -171,14 +171,18 @@ impl Editor {
 fn folder_cell(ui: &mut egui::Ui, folder: Option<&PathBuf>) {
     match folder {
         None => {
-            ui.label(RichText::new("no folder").color(RED));
+            ui.label(RichText::new("no folder").color(theme::red()));
         }
         Some(f) => {
             let name = f.file_name().map_or_else(
                 || f.display().to_string(),
                 |n| n.to_string_lossy().into_owned(),
             );
-            let col = if f.is_dir() { SAND } else { RED };
+            let col = if f.is_dir() {
+                theme::sand()
+            } else {
+                theme::red()
+            };
             ui.label(RichText::new(name).color(col))
                 .on_hover_text(f.display().to_string());
         }

@@ -15,7 +15,7 @@ use eframe::egui::{self, RichText};
 
 use super::instance::Extras;
 use crate::app::help;
-use crate::theme::*;
+use crate::theme;
 
 /// Each lockable setting's name in the launcher, its hint, and the value
 /// it starts at when locked.
@@ -77,7 +77,7 @@ fn offered(r: &Rules, t: &str) -> bool {
 
 /// The times of day offered: at least one stays.
 pub(super) fn times_ui(ui: &mut egui::Ui, r: &mut Rules) {
-    ui.label(RichText::new("Times of day").color(SAND).strong());
+    ui.label(RichText::new("Times of day").color(theme::sand()).strong());
     help(
         ui,
         "The times of day the hunt menu offers. At least one stays. Survival keeps its own.",
@@ -106,7 +106,11 @@ pub(super) fn times_ui(ui: &mut egui::Ui, r: &mut Rules) {
 
 /// The settings fixed by the instance.
 pub(super) fn locks_ui(ui: &mut egui::Ui, r: &mut Rules) {
-    ui.label(RichText::new("Locked settings").color(SAND).strong());
+    ui.label(
+        RichText::new("Locked settings")
+            .color(theme::sand())
+            .strong(),
+    );
     help(
         ui,
         "A locked setting is fixed at the value here and removed from the in-game settings, \
@@ -131,7 +135,7 @@ pub(super) fn locks_ui(ui: &mut egui::Ui, r: &mut Rules) {
                                 ui.radio_value(b, false, "Off");
                             });
                         } else {
-                            ui.label(RichText::new("player's choice").color(DIM));
+                            ui.label(RichText::new("player's choice").color(theme::dim()));
                         }
                     }
                     LockValue::Number(v) => {
@@ -147,7 +151,7 @@ pub(super) fn locks_ui(ui: &mut egui::Ui, r: &mut Rules) {
                             };
                             ui.add(egui::DragValue::new(n).range(0..=max));
                         } else {
-                            ui.label(RichText::new("player's choice").color(DIM));
+                            ui.label(RichText::new("player's choice").color(theme::dim()));
                         }
                     }
                 }
@@ -177,7 +181,7 @@ impl Extras {
         folders: &BTreeMap<String, PathBuf>,
         handle: &mut crate::jobs::Handle,
     ) {
-        ui.label(RichText::new("Spawn rules").color(SAND).strong());
+        ui.label(RichText::new("Spawn rules").color(theme::sand()).strong());
         help(
             ui,
             "Secret animals are ones the player never picked that still roam the map. Add some \
@@ -202,7 +206,7 @@ impl Extras {
 
 /// Per area: at most so many picked animals.
 fn area_caps_ui(ui: &mut egui::Ui, r: &mut Rules, areas: &[String]) {
-    ui.label(RichText::new("Picked animals per area").color(TEXT));
+    ui.label(RichText::new("Picked animals per area").color(theme::text()));
     let kept: Vec<String> = r.areas.iter().map(|a| a.area.clone()).collect();
     egui::Grid::new("rules-area-caps")
         .striped(true)
@@ -216,9 +220,9 @@ fn area_caps_ui(ui: &mut egui::Ui, r: &mut Rules, areas: &[String]) {
                     .position(|a| a.area.eq_ignore_ascii_case(&name));
                 let mut capped = i.and_then(|i| r.areas[i].max_huntable).is_some();
                 let label = if here {
-                    RichText::new(&name).color(TEXT)
+                    RichText::new(&name).color(theme::text())
                 } else {
-                    RichText::new(format!("{name} (not in this game)")).color(DIM)
+                    RichText::new(format!("{name} (not in this game)")).color(theme::dim())
                 };
                 let changed = ui
                     .checkbox(&mut capped, label)
@@ -238,7 +242,7 @@ fn area_caps_ui(ui: &mut egui::Ui, r: &mut Rules, areas: &[String]) {
                         ui.label("");
                     }
                     _ => {
-                        ui.label(RichText::new("as the game places them").color(DIM));
+                        ui.label(RichText::new("as the game places them").color(theme::dim()));
                     }
                 }
                 if changed && !capped {
@@ -251,7 +255,7 @@ fn area_caps_ui(ui: &mut egui::Ui, r: &mut Rules, areas: &[String]) {
 
 /// Extra unpicked animals: which, how many, on which areas.
 fn secrets_ui(ui: &mut egui::Ui, r: &mut Rules, areas: &[String], animals: &[String]) {
-    ui.label(RichText::new("Secret animals").color(TEXT));
+    ui.label(RichText::new("Secret animals").color(theme::text()));
     help(
         ui,
         "Placed at random, at least 40 cells from the hunter, whatever the player picked, on \
@@ -327,7 +331,7 @@ fn secrets_ui(ui: &mut egui::Ui, r: &mut Rules, areas: &[String], animals: &[Str
 
 /// Animals kept off the hunt menu.
 fn hidden_ui(ui: &mut egui::Ui, r: &mut Rules, animals: &[String]) {
-    ui.label(RichText::new("Not in the hunt menu").color(TEXT));
+    ui.label(RichText::new("Not in the hunt menu").color(theme::text()));
     help(
         ui,
         "Ticked animals stay in the game but can't be picked; they only appear as secret \
@@ -337,9 +341,9 @@ fn hidden_ui(ui: &mut egui::Ui, r: &mut Rules, animals: &[String]) {
         for (n, here) in with_missing(animals, &r.hidden) {
             let mut on = r.hidden.iter().any(|h| h.eq_ignore_ascii_case(&n));
             let text = if here {
-                RichText::new(&n).color(TEXT)
+                RichText::new(&n).color(theme::text())
             } else {
-                RichText::new(format!("{n} (not in this game)")).color(DIM)
+                RichText::new(format!("{n} (not in this game)")).color(theme::dim())
             };
             if ui.checkbox(&mut on, text).changed() {
                 if on {

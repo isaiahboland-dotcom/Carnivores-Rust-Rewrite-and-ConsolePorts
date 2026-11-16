@@ -8,7 +8,10 @@ impl Launcher {
         }
         let bases = self.import_bases();
         if bases.is_empty() {
-            self.ui.note = Some(("Choose the base game first (Base game page).".into(), RED));
+            self.ui.note = Some((
+                "Choose the base game first (Base game page).".into(),
+                theme::red(),
+            ));
             return;
         }
         let stem = apk
@@ -24,7 +27,7 @@ impl Launcher {
                 crate::jobs::imports::mobile(job, apk, bases, out)
             })
         {
-            self.ui.note = Some((e, RED));
+            self.ui.note = Some((e, theme::red()));
         }
     }
 
@@ -34,7 +37,10 @@ impl Launcher {
         }
         let bases = self.import_bases();
         if bases.is_empty() {
-            self.ui.note = Some(("Choose the base game first (Base game page).".into(), RED));
+            self.ui.note = Some((
+                "Choose the base game first (Base game page).".into(),
+                theme::red(),
+            ));
             return;
         }
         self.cfg.ice_age = Some(ia.clone());
@@ -46,7 +52,7 @@ impl Launcher {
                 crate::jobs::imports::ice_age(job, ia, bases, out)
             })
         {
-            self.ui.note = Some((e, RED));
+            self.ui.note = Some((e, theme::red()));
         }
     }
 
@@ -67,7 +73,7 @@ impl Launcher {
                 crate::jobs::apk_base::build(job, apk, out, for_recipe)
             })
         {
-            self.ui.note = Some((e, RED));
+            self.ui.note = Some((e, theme::red()));
         }
     }
 
@@ -85,7 +91,7 @@ impl Launcher {
             e.set_game(out);
             self.ui.note = Some((
                 "The game built from your APK is the base game.".into(),
-                TEXT,
+                theme::text(),
             ));
         } else if for_recipe {
             let dirs = self.game_folders().0;
@@ -115,17 +121,17 @@ impl Launcher {
         let n = dirs.len();
         if let Some(e) = &mut self.ui.recipe_edit {
             e.queue_pins(crate::recipe_edit::Kind::AddOn, dirs);
-            self.ui.note = Some((format!("{n} imported add-ons being added."), TEXT));
+            self.ui.note = Some((format!("{n} imported add-ons being added."), theme::text()));
             return;
         }
         self.add_addons(dirs);
-        self.ui.note = Some((format!("{n} imported add-ons added."), TEXT));
+        self.ui.note = Some((format!("{n} imported add-ons added."), theme::text()));
     }
 
     pub(super) fn set_base(&mut self, p: PathBuf) {
         match describe_game(&p) {
             Some(kind) => {
-                self.ui.note = Some((format!("{kind} found."), TEXT));
+                self.ui.note = Some((format!("{kind} found."), theme::text()));
                 self.cfg.base = Some(p);
                 self.save();
             }
@@ -135,7 +141,7 @@ impl Launcher {
                         "{}: no HUNTDAT folder: that isn't a game folder.",
                         p.display()
                     ),
-                    RED,
+                    theme::red(),
                 ));
             }
         }
@@ -167,7 +173,7 @@ impl Launcher {
                         "{}: not a folder or an archive (.zip, .rar, .7z)",
                         p.display()
                     ),
-                    RED,
+                    theme::red(),
                 ));
                 continue;
             };
@@ -183,7 +189,7 @@ impl Launcher {
             if let Err(e) = self.job.start_task("Unpacking add-ons", move |job| {
                 crate::jobs::addons::unpack(job, unpack)
             }) {
-                self.ui.note = Some((e, RED));
+                self.ui.note = Some((e, theme::red()));
             }
         }
         self.save();

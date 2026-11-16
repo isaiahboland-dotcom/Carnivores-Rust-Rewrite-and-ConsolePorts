@@ -32,11 +32,15 @@ pub(super) fn show(
                 let using = items
                     .get(i)
                     .is_some_and(|it| Some(it.path.as_path()) == in_use);
-                let stroke = if using { GOLD } else { PANEL_HI };
+                let stroke = if using {
+                    theme::gold()
+                } else {
+                    theme::panel_hi()
+                };
                 ui.painter().rect(
                     rect,
                     6.0,
-                    PANEL,
+                    theme::panel(),
                     egui::Stroke::new(1.5, stroke),
                     egui::StrokeKind::Inside,
                 );
@@ -82,7 +86,7 @@ fn instance_box(
         egui::Label::new(
             RichText::new(display_name(r))
                 .size(17.0)
-                .color(if using { GOLD } else { SAND })
+                .color(if using { theme::gold() } else { theme::sand() })
                 .strong(),
         )
         .truncate(),
@@ -97,19 +101,19 @@ fn instance_box(
     if !r.standalones.is_empty() {
         line += &format!(" · {} standalone", r.standalones.len());
     }
-    ui.add(egui::Label::new(RichText::new(line).color(TEXT)).truncate());
+    ui.add(egui::Label::new(RichText::new(line).color(theme::text())).truncate());
     ui.horizontal(|ui| {
         if it.missing > 0 {
-            ui.label(RichText::new(format!("⚠ {} missing", it.missing)).color(GOLD))
+            ui.label(RichText::new(format!("⚠ {} missing", it.missing)).color(theme::warn()))
                 .on_hover_text(
                     "Its base game or downloads have no folder here (or it moved): Fix missing \
                      in Options looks for them.",
                 );
         }
         if it.played == 0 {
-            ui.label(RichText::new("Unplayed").color(DIM));
+            ui.label(RichText::new("Unplayed").color(theme::dim()));
         } else {
-            ui.label(RichText::new(played_text(it.played)).color(DIM))
+            ui.label(RichText::new(played_text(it.played)).color(theme::dim()))
                 .on_hover_text("Played from this launcher");
         }
     });
@@ -119,7 +123,8 @@ fn instance_box(
             && ui
                 .add_enabled(
                     !busy,
-                    egui::Button::new(RichText::new("Play").color(GOLD).strong()).fill(GREEN),
+                    egui::Button::new(RichText::new("Play").color(theme::gold()).strong())
+                        .fill(theme::green()),
                 )
                 .clicked()
         {
@@ -187,7 +192,10 @@ fn options_menu(ui: &mut egui::Ui, it: &Item, mode: crate::Mode, ask: &mut Ask) 
         *ask = Ask::PlayVr(p());
     }
     ui.separator();
-    if ui.button(RichText::new("Delete").color(RED)).clicked() {
+    if ui
+        .button(RichText::new("Delete").color(theme::red()))
+        .clicked()
+    {
         *ask = Ask::Delete(p());
     }
 }
@@ -196,7 +204,7 @@ fn new_box(ui: &mut egui::Ui, busy: bool, ask: &mut Ask) {
     ui.label(
         RichText::new("New instance")
             .size(17.0)
-            .color(SAND)
+            .color(theme::sand())
             .strong(),
     );
     help(ui, "Start from a base game, then add add-ons.");
@@ -204,7 +212,7 @@ fn new_box(ui: &mut egui::Ui, busy: bool, ask: &mut Ask) {
     if ui
         .add_enabled(
             !busy,
-            egui::Button::new(RichText::new("+ New").color(GOLD)).fill(GREEN),
+            egui::Button::new(RichText::new("+ New").color(theme::gold())).fill(theme::green()),
         )
         .clicked()
     {

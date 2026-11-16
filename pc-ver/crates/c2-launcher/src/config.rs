@@ -242,6 +242,9 @@ pub struct Config {
     /// The instance editor's Advanced tab shown (Settings; off by
     /// default).
     pub show_advanced: bool,
+    /// The launcher's colours and shapes (Settings > Look): the DHC OS
+    /// terminal's look, or Legacy, the launcher's earlier olive panels.
+    pub look: crate::theme::Look,
     pub windows_out: Option<PathBuf>,
     /// Where Android packages are written (one folder per instance).
     pub android_out: Option<PathBuf>,
@@ -814,10 +817,20 @@ mod tests {
             show_3ds: Some(true),
             show_wiiu: Some(false),
             show_advanced: true,
+            look: crate::theme::Look::Legacy,
             ..Default::default()
         };
         let t = toml::to_string_pretty(&c).unwrap_or_default();
         let back: Config = toml::from_str(&t).unwrap_or_default();
         assert_eq!(back, c);
+    }
+
+    #[test]
+    fn look_defaults_to_dhc_and_keeps_legacy() {
+        use crate::theme::Look;
+        let old: Config = toml::from_str("show_advanced = true").expect("config before the look");
+        assert_eq!(old.look, Look::Dhc);
+        let legacy: Config = toml::from_str("look = \"legacy\"").expect("legacy look");
+        assert_eq!(legacy.look, Look::Legacy);
     }
 }

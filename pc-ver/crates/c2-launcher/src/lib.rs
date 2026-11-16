@@ -33,24 +33,154 @@ pub enum Mode {
     WiiU,
 }
 
-/// The game menus' colours (`c2-pc` `menu.rs`, `c2-3ds` `menu.rs`): dark
-/// olive panels, pale green text, gold for what is picked, sand for titles.
-/// No original artwork is used.
+/// The launcher's colours, in two looks. The default is the DHC OS
+/// terminal's phosphor (`c2-pc` `menu/terminal/palette.rs`): near-black
+/// green, monospace text, square panels. Legacy is the game menus' look
+/// (`c2-pc` `menu.rs`, `c2-3ds` `menu.rs`): dark olive panels, pale green
+/// text, gold for what is picked, sand for titles, rounded panels. No
+/// original artwork is used.
+///
+/// Each colour is a function, because the look is chosen in the settings
+/// and switches while the launcher runs ([`set_look`]).
 pub mod theme {
     use eframe::egui::Color32;
+    use serde::{Deserialize, Serialize};
+    use std::sync::atomic::{AtomicBool, Ordering};
 
-    pub const BG: Color32 = Color32::from_rgb(16, 22, 16);
-    pub const PANEL: Color32 = Color32::from_rgb(32, 44, 30);
-    pub const PANEL_HI: Color32 = Color32::from_rgb(48, 66, 44);
-    pub const BUTTON: Color32 = Color32::from_rgb(60, 82, 52);
-    pub const GREEN: Color32 = Color32::from_rgb(60, 110, 60);
-    pub const TEXT: Color32 = Color32::from_rgb(158, 209, 128);
-    pub const HOVER: Color32 = Color32::from_rgb(230, 255, 191);
-    pub const GOLD: Color32 = Color32::from_rgb(240, 200, 70);
-    pub const SAND: Color32 = Color32::from_rgb(230, 199, 153);
-    pub const DIM: Color32 = Color32::from_rgb(92, 107, 77);
-    pub const RED: Color32 = Color32::from_rgb(240, 80, 60);
-    pub const BLUE: Color32 = Color32::from_rgb(140, 199, 242);
+    /// Which colours and shapes the launcher draws with.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+    #[serde(rename_all = "lowercase")]
+    pub enum Look {
+        /// The DHC OS terminal's phosphor and square frames.
+        #[default]
+        Dhc,
+        /// The game menus' olive panels, as before the DHC look.
+        Legacy,
+    }
+
+    static LEGACY: AtomicBool = AtomicBool::new(false);
+
+    /// Chooses the look the colour functions return from now on. The
+    /// caller restyles the egui context (`app::style`) to match.
+    pub fn set_look(look: Look) {
+        LEGACY.store(look == Look::Legacy, Ordering::Relaxed);
+    }
+
+    /// The current look.
+    pub fn look() -> Look {
+        if LEGACY.load(Ordering::Relaxed) {
+            Look::Legacy
+        } else {
+            Look::Dhc
+        }
+    }
+
+    fn pick<T>(legacy: T, dhc: T) -> T {
+        if look() == Look::Legacy {
+            legacy
+        } else {
+            dhc
+        }
+    }
+
+    /// Corner radius of frames and buttons (square under the DHC look).
+    pub fn corner() -> u8 {
+        pick(4, 0)
+    }
+
+    /// The fill behind text fields and inside scroll bars.
+    pub fn well() -> Color32 {
+        pick(Color32::from_rgb(10, 14, 10), Color32::from_rgb(0, 3, 1))
+    }
+
+    pub fn bg() -> Color32 {
+        pick(Color32::from_rgb(16, 22, 16), Color32::from_rgb(1, 6, 3))
+    }
+
+    /// Panel fill.
+    pub fn panel() -> Color32 {
+        pick(Color32::from_rgb(32, 44, 30), Color32::from_rgb(5, 24, 13))
+    }
+
+    /// Frame lines and the panels' strokes.
+    pub fn panel_hi() -> Color32 {
+        pick(Color32::from_rgb(48, 66, 44), Color32::from_rgb(18, 64, 31))
+    }
+
+    pub fn button() -> Color32 {
+        pick(Color32::from_rgb(60, 82, 52), Color32::from_rgb(9, 40, 21))
+    }
+
+    /// Selection and the big action buttons.
+    pub fn green() -> Color32 {
+        pick(
+            Color32::from_rgb(60, 110, 60),
+            Color32::from_rgb(20, 74, 41),
+        )
+    }
+
+    /// Body text.
+    pub fn text() -> Color32 {
+        pick(
+            Color32::from_rgb(158, 209, 128),
+            Color32::from_rgb(84, 217, 138),
+        )
+    }
+
+    /// Text under the pointer and focus.
+    pub fn hover() -> Color32 {
+        pick(
+            Color32::from_rgb(230, 255, 191),
+            Color32::from_rgb(148, 255, 191),
+        )
+    }
+
+    /// Accents: section labels, buttons, links and what is picked.
+    pub fn gold() -> Color32 {
+        pick(
+            Color32::from_rgb(240, 200, 70),
+            Color32::from_rgb(148, 255, 191),
+        )
+    }
+
+    /// Warnings, such as an instance's missing files: yellow in Legacy,
+    /// the terminal's red under DHC OS.
+    pub fn warn() -> Color32 {
+        pick(
+            Color32::from_rgb(240, 200, 70),
+            Color32::from_rgb(255, 94, 94),
+        )
+    }
+
+    /// Titles.
+    pub fn sand() -> Color32 {
+        pick(
+            Color32::from_rgb(230, 199, 153),
+            Color32::from_rgb(148, 255, 191),
+        )
+    }
+
+    /// Help text and what is not available.
+    pub fn dim() -> Color32 {
+        pick(
+            Color32::from_rgb(92, 107, 77),
+            Color32::from_rgb(43, 148, 87),
+        )
+    }
+
+    pub fn red() -> Color32 {
+        pick(
+            Color32::from_rgb(240, 80, 60),
+            Color32::from_rgb(255, 94, 94),
+        )
+    }
+
+    pub fn blue() -> Color32 {
+        pick(
+            Color32::from_rgb(140, 199, 242),
+            Color32::from_rgb(148, 255, 191),
+        )
+    }
 }
 
 /// A tool the launcher runs (`c2-pc`, `c2-cook`, `c2-3ds.3dsx`, and for

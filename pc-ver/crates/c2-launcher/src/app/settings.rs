@@ -5,14 +5,35 @@ impl Launcher {
     pub(super) fn settings_tab(&mut self, ui: &mut egui::Ui) {
         heading(ui, "Settings");
         if panel(ui, |ui| {
-            ui.label(RichText::new("Window").color(GOLD));
+            ui.label(RichText::new("Look").color(theme::gold()));
+            help(
+                ui,
+                "The launcher's colours, fonts and frames. Legacy is the launcher's earlier look. \
+                 The game's own menus have their own settings.",
+            );
+            let mut changed = false;
+            for (look, name) in [
+                (theme::Look::Dhc, "DHC OS (default)"),
+                (theme::Look::Legacy, "Legacy"),
+            ] {
+                changed |= ui.radio_value(&mut self.cfg.look, look, name).changed();
+            }
+            changed
+        }) {
+            theme::set_look(self.cfg.look);
+            style(ui.ctx());
+            self.save();
+        }
+        ui.add_space(8.0);
+        if panel(ui, |ui| {
+            ui.label(RichText::new("Window").color(theme::gold()));
             self.ui_scale_ui(ui)
         }) {
             self.save();
         }
         ui.add_space(8.0);
         panel(ui, |ui| {
-            ui.label(RichText::new("Tools folder").color(GOLD));
+            ui.label(RichText::new("Tools folder").color(theme::gold()));
             help(
                 ui,
                 "Where c2-pc, c2-vr, c2-cook and c2-3ds.3dsx (and for .cia builds c2-3ds.elf, makerom \
@@ -26,7 +47,7 @@ impl Launcher {
                     .map_or("beside the launcher".to_string(), |p| {
                         p.display().to_string()
                     });
-                ui.label(RichText::new(shown).color(SAND));
+                ui.label(RichText::new(shown).color(theme::sand()));
                 if ui.button("Browse...").clicked() {
                     if let Some(p) = rfd::FileDialog::new().pick_folder() {
                         self.cfg.tools = Some(p);
@@ -56,8 +77,8 @@ impl Launcher {
                 }
                 let found = find_tool(tool, self.cfg.tools.as_deref());
                 let (text, col) = match &found {
-                    Some(p) => (format!("{tool}: {}", p.display()), TEXT),
-                    None => (format!("{tool}: not found"), RED),
+                    Some(p) => (format!("{tool}: {}", p.display()), theme::text()),
+                    None => (format!("{tool}: not found"), theme::red()),
                 };
                 ui.label(RichText::new(text).color(col));
             }
@@ -66,7 +87,7 @@ impl Launcher {
         self.search_dirs_ui(ui);
         ui.add_space(8.0);
         if panel(ui, |ui| {
-            ui.label(RichText::new("Advanced").color(GOLD));
+            ui.label(RichText::new("Advanced").color(theme::gold()));
             let changed = ui
                 .checkbox(
                     &mut self.cfg.show_advanced,
@@ -89,7 +110,7 @@ impl Launcher {
     pub(super) fn search_dirs_ui(&mut self, ui: &mut egui::Ui) {
         let mut changed = false;
         panel(ui, |ui| {
-            ui.label(RichText::new("Mod and add-on folders").color(GOLD));
+            ui.label(RichText::new("Mod and add-on folders").color(theme::gold()));
             help(
                 ui,
                 "Where Play, the builds and Fix missing look for an instance's base game and \
@@ -101,7 +122,7 @@ impl Launcher {
             let mut remove = None;
             for (i, d) in self.cfg.search_dirs().iter().enumerate() {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(d.display().to_string()).color(SAND));
+                    ui.label(RichText::new(d.display().to_string()).color(theme::sand()));
                     if !self.cfg.mod_dirs.is_empty() && ui.small_button("Remove").clicked() {
                         remove = Some(i);
                     }

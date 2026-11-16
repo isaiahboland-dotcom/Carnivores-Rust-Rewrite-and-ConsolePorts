@@ -33,7 +33,7 @@ impl Launcher {
         let mut e = match Editor::open(path, draft) {
             Ok(e) => e,
             Err(err) => {
-                self.ui.note = Some((format!("Not a recipe: {err}"), RED));
+                self.ui.note = Some((format!("Not a recipe: {err}"), theme::red()));
                 return;
             }
         };
@@ -63,7 +63,7 @@ impl Launcher {
         }
         self.ui.balance.edits = edits;
         if let Err(e) = self.ui.balance.store() {
-            self.ui.note = Some((format!("Balance not saved: {e}"), RED));
+            self.ui.note = Some((format!("Balance not saved: {e}"), theme::red()));
         }
     }
 
@@ -107,7 +107,7 @@ impl Launcher {
                     .inner;
                 ui.add_space(6.0);
                 if panel(ui, |ui| {
-                    ui.label(RichText::new("Menu").color(GOLD));
+                    ui.label(RichText::new("Menu").color(theme::gold()));
                     self.menu_style_ui(ui, false)
                 }) {
                     self.save();
@@ -156,7 +156,7 @@ impl Launcher {
     fn importers_ui(&mut self, ui: &mut egui::Ui) {
         let busy = self.busy();
         panel(ui, |ui| {
-            ui.label(RichText::new("Import").color(GOLD));
+            ui.label(RichText::new("Import").color(theme::gold()));
             ui.horizontal_wrapped(|ui| {
                 if ui
                     .add_enabled(
@@ -209,7 +209,8 @@ impl Launcher {
             if ui
                 .add_enabled(
                     changed && !working,
-                    egui::Button::new(RichText::new("Save").color(GOLD).strong()).fill(GREEN),
+                    egui::Button::new(RichText::new("Save").color(theme::gold()).strong())
+                        .fill(theme::green()),
                 )
                 .clicked()
             {
@@ -218,8 +219,8 @@ impl Launcher {
             if ui
                 .add_enabled(
                     !working,
-                    egui::Button::new(RichText::new("Save and exit").color(GOLD).strong())
-                        .fill(GREEN),
+                    egui::Button::new(RichText::new("Save and exit").color(theme::gold()).strong())
+                        .fill(theme::green()),
                 )
                 .clicked()
             {
@@ -264,7 +265,7 @@ impl Launcher {
             return false;
         };
         if let Err(err) = e.save() {
-            self.ui.note = Some((format!("Not saved: {err}"), RED));
+            self.ui.note = Some((format!("Not saved: {err}"), theme::red()));
             return false;
         }
         let u = e.to_use(true);

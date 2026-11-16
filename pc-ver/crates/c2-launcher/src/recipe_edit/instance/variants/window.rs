@@ -7,7 +7,7 @@ use eframe::egui::{self, RichText};
 
 use super::{label_map, label_member, model};
 use crate::app::help;
-use crate::theme::*;
+use crate::theme;
 
 /// Shows the window for the open member, if any. Closing it, or a member
 /// that no longer exists, clears `open`.
@@ -57,7 +57,10 @@ fn content(ui: &mut egui::Ui, r: &mut Recipe, gi: usize, mi: usize, catalog: &Ca
         ui.label(format!("Default: {:.1}%", weight_on(m, None)));
         if m.maps.is_some() {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Limited to the maps set in the recipe file.").color(GOLD));
+                ui.label(
+                    RichText::new("Limited to the maps set in the recipe file.")
+                        .color(theme::gold()),
+                );
                 if ui.small_button("Lift limit").clicked() {
                     model::clear_limit(m);
                 }
@@ -118,7 +121,7 @@ fn content(ui: &mut egui::Ui, r: &mut Recipe, gi: usize, mi: usize, catalog: &Ca
                 }
             }
             None => {
-                ui.label(RichText::new("Every map already has a setting.").color(DIM));
+                ui.label(RichText::new("Every map already has a setting.").color(theme::dim()));
             }
         }
     }
@@ -129,7 +132,9 @@ fn content(ui: &mut egui::Ui, r: &mut Recipe, gi: usize, mi: usize, catalog: &Ca
     let totals = distributions(g);
     let m = &g.members[mi];
     if m.map_weights.is_empty() {
-        ui.label(RichText::new("No map settings: the default applies on every map.").color(DIM));
+        ui.label(
+            RichText::new("No map settings: the default applies on every map.").color(theme::dim()),
+        );
     }
     for w in &m.map_weights {
         let total = totals
@@ -137,14 +142,17 @@ fn content(ui: &mut egui::Ui, r: &mut Recipe, gi: usize, mi: usize, catalog: &Ca
             .find(|d| d.map.as_ref() == Some(&w.map))
             .map_or(0.0, |d| d.total);
         let (text, color) = if (total - TOTAL).abs() < 1e-6 {
-            (format!("{}: {total:.1}%", label_map(catalog, &w.map)), DIM)
+            (
+                format!("{}: {total:.1}%", label_map(catalog, &w.map)),
+                theme::dim(),
+            )
         } else {
             (
                 format!(
                     "{}: {total:.1}% (must be {TOTAL:.0}%)",
                     label_map(catalog, &w.map)
                 ),
-                RED,
+                theme::red(),
             )
         };
         ui.label(RichText::new(text).color(color));

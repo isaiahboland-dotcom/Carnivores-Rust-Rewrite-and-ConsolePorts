@@ -21,7 +21,7 @@ impl Launcher {
                 p.dispatch(&mut self.job);
                 self.ui.recipe_page = Some(p);
             }
-            Err(e) => self.ui.note = Some((format!("Not a recipe: {e}"), RED)),
+            Err(e) => self.ui.note = Some((format!("Not a recipe: {e}"), theme::red())),
         }
     }
 
@@ -55,7 +55,7 @@ impl Launcher {
         self.cfg.remember(&u);
         self.ui.note = Some((
             format!("Recipe '{}' in use: play and the builds go by it.", u.id()),
-            TEXT,
+            theme::text(),
         ));
         self.cfg.recipe = Some(u);
         self.save();
@@ -89,16 +89,22 @@ impl Launcher {
         if let Err(e) = self.job.start_task("Saving instance", move |_| {
             crate::jobs::saving::from_setup(cfg, out, id)
         }) {
-            self.ui.note = Some((e, RED));
+            self.ui.note = Some((e, theme::red()));
             return;
         }
-        self.ui.note = Some(("Saving the instance (hashing its files)...".into(), TEXT));
+        self.ui.note = Some((
+            "Saving the instance (hashing its files)...".into(),
+            theme::text(),
+        ));
     }
 
     pub(super) fn write_instance(&mut self, r: c2_mods::recipe::Recipe, u: RecipeUse) {
         match r.save(&u.path) {
             Ok(()) => {
-                self.ui.note = Some((format!("Instance saved: {}", u.path.display()), TEXT));
+                self.ui.note = Some((
+                    format!("Instance saved: {}", u.path.display()),
+                    theme::text(),
+                ));
                 self.cfg.remember_builds();
                 self.cfg.remember(&u);
                 self.cfg.restore_builds(&u.path, &r.recipe.id);
@@ -106,7 +112,7 @@ impl Launcher {
                 self.save();
                 self.ui.instances.refresh(&self.cfg);
             }
-            Err(e) => self.ui.note = Some((format!("Not saved: {e}"), RED)),
+            Err(e) => self.ui.note = Some((format!("Not saved: {e}"), theme::red())),
         }
     }
 
@@ -129,7 +135,10 @@ impl Launcher {
         let id = crate::instances::id_from(name);
         let to = from.with_file_name(format!("{id}.toml"));
         if to.exists() {
-            self.ui.note = Some((format!("Not cloned: {} exists already", to.display()), RED));
+            self.ui.note = Some((
+                format!("Not cloned: {} exists already", to.display()),
+                theme::red(),
+            ));
             return;
         }
         let made = c2_mods::recipe::Recipe::load(from)
@@ -143,10 +152,10 @@ impl Launcher {
         match made {
             Ok(()) => {
                 self.recipe_saved(from, &to);
-                self.ui.note = Some((format!("Cloned to {}", to.display()), TEXT));
+                self.ui.note = Some((format!("Cloned to {}", to.display()), theme::text()));
                 self.edit_recipe(&to);
             }
-            Err(e) => self.ui.note = Some((format!("Not cloned: {e}"), RED)),
+            Err(e) => self.ui.note = Some((format!("Not cloned: {e}"), theme::red())),
         }
     }
 

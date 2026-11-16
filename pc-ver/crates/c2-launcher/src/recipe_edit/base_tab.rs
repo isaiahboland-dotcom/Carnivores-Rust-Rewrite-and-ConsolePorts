@@ -19,7 +19,7 @@ impl Editor {
         let mut ask = BaseAsk::Nothing;
         let r = &mut self.recipe;
         panel(ui, |ui| {
-            ui.label(RichText::new("Instance").color(GOLD));
+            ui.label(RichText::new("Instance").color(theme::gold()));
             egui::Grid::new("recipe-edit-info")
                 .spacing([10.0, 4.0])
                 .show(ui, |ui| {
@@ -38,7 +38,7 @@ impl Editor {
         });
         ui.add_space(6.0);
         panel(ui, |ui| {
-            ui.label(RichText::new("Base game").color(GOLD));
+            ui.label(RichText::new("Base game").color(theme::gold()));
             help(
                 ui,
                 "The game this instance is built on: your Carnivores 2 folder (the one with \
@@ -79,14 +79,14 @@ impl Editor {
     /// expects (its hashes).
     fn game_status_ui(&mut self, ui: &mut egui::Ui) {
         let Some(game) = self.draft.game.clone() else {
-            ui.label(RichText::new("No game folder chosen yet.").color(RED));
+            ui.label(RichText::new("No game folder chosen yet.").color(theme::red()));
             return;
         };
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new(game.display().to_string()).color(SAND));
+            ui.label(RichText::new(game.display().to_string()).color(theme::sand()));
             match crate::config::describe_game(&game) {
-                Some(kind) => ui.label(RichText::new(kind).color(TEXT)),
-                None => ui.label(RichText::new("no HUNTDAT folder there").color(RED)),
+                Some(kind) => ui.label(RichText::new(kind).color(theme::text())),
+                None => ui.label(RichText::new("no HUNTDAT folder there").color(theme::red())),
             };
         });
         let expected = self.recipe.recipe.base.clone();
@@ -100,7 +100,10 @@ impl Editor {
             }
             BaseMatch::Done(_, found) => match (found, expected.is_empty()) {
                 (Some(id), _) if *id == expected => {
-                    ui.label(RichText::new(format!("Matches the base game '{id}'.")).color(TEXT));
+                    ui.label(
+                        RichText::new(format!("Matches the base game '{id}'."))
+                            .color(theme::text()),
+                    );
                 }
                 (Some(id), true) => {
                     ui.label(format!("This folder is the base game '{id}'."));
@@ -116,7 +119,7 @@ impl Editor {
                             "This folder is '{id}', but the instance expects '{expected}'. \
                              Choose the right folder, or make '{id}' the base."
                         ))
-                        .color(RED),
+                        .color(theme::red()),
                     );
                     take = ui
                         .button(format!("Make '{id}' the base"))
@@ -130,7 +133,7 @@ impl Editor {
                             "This folder doesn't match the base game '{expected}' (another \
                              version, or another game). Play will ask before using it."
                         ))
-                        .color(RED),
+                        .color(theme::red()),
                     );
                 }
             },
@@ -161,7 +164,9 @@ impl Editor {
     fn loose_overlays_ui(&mut self, ui: &mut egui::Ui) {
         let mut remove = None;
         panel(ui, |ui| {
-            ui.label(RichText::new("Unpinned overlays (from the old Game tab)").color(SAND));
+            ui.label(
+                RichText::new("Unpinned overlays (from the old Game tab)").color(theme::sand()),
+            );
             help(
                 ui,
                 "Copied over the base game for this computer only; add them as pinned overlays \

@@ -1,5 +1,25 @@
 # Decisions and deviations
 
+## 2026-11-16 — Launcher in the DHC OS look (Legacy kept); DHC OS on by default on 3DS; Wii U unchanged
+
+- **Launcher look.** The launcher draws in the DHC OS terminal's palette, monospace text and
+  square frames by default. Settings > Look > Legacy restores the earlier olive, rounded look.
+  The choice is `look` in `launcher.toml`; a file without it gets DHC OS. The colours are read
+  every frame from `theme::*()`, so the switch applies at once. The palette values are copied
+  from `c2-pc/src/menu/terminal/palette.rs`, not shared: the launcher does not depend on `c2-pc`.
+- **Warnings keep their colour under each look.** The "missing" marker (instance cards and the
+  mission list) is `theme::warn()`: yellow in Legacy, the terminal's red under DHC OS, where red
+  is also the terminal's colour for what is not available. Accents (labels, buttons, picks) map
+  to the phosphor's bright green, so they no longer share yellow with warnings.
+- **No scanlines or CRT effects in the launcher.** The terminal's CRT option stays in the game.
+- **3DS: DHC OS is on by default** (`dhc_terminal` in the 3DS settings). A saved
+  `dhc_terminal = 0` keeps the original menus; a settings file without the key gets the terminal.
+- **Wii U: not changed.** The Wii U app (`wiiu-ver/perf-probe`, C) has no DHC OS terminal, so
+  there is no switch to default. The port is DHC-OS phase 5 in TODO.md and waits on CEMU-01 and
+  the Wii U memory budgets.
+- **PC is unchanged**: the terminal stays off by default there, and the instance editor's Menu
+  switch still writes the game's `dhc_terminal` key.
+
 ## 2026-11-15 — Hardcore hunt is its own DHC OS entry; Survival joins the menu; the knife is experimental
 
 - **Off unless enabled.** `[settings.hunt] enabled` is off by default and set only from the

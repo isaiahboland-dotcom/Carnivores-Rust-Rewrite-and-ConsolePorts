@@ -13,7 +13,7 @@ impl Launcher {
         ) else {
             self.ui.note = Some((
                 "c2-cook or c2-3ds.3dsx not found: set the tools folder in Settings.".into(),
-                RED,
+                theme::red(),
             ));
             return;
         };
@@ -24,7 +24,10 @@ impl Launcher {
             None => None,
         };
         let (Some(base), Some(out)) = (base, self.cfg.three_ds.out.clone()) else {
-            self.ui.note = Some(("Set the game folder and the SD card first.".into(), RED));
+            self.ui.note = Some((
+                "Set the game folder and the SD card first.".into(),
+                theme::red(),
+            ));
             return;
         };
         let t = &self.cfg.three_ds;
@@ -75,14 +78,14 @@ impl Launcher {
                 ) {
                     Ok(input) => input,
                     Err(e) => {
-                        self.ui.note = Some((e, RED));
+                        self.ui.note = Some((e, theme::red()));
                         return;
                     }
                 };
                 match input.prepare(find_tool("c2-pc", tools.as_deref())) {
                     Ok(prepare) => steps.extend(prepare),
                     Err(e) => {
-                        self.ui.note = Some((e, RED));
+                        self.ui.note = Some((e, theme::red()));
                         return;
                     }
                 }
@@ -146,7 +149,7 @@ impl Launcher {
                 self.ui.note = Some((
                     "For a .cia: c2-3ds.elf, makerom and bannertool are needed (see the 3DS tab)."
                         .into(),
-                    RED,
+                    theme::red(),
                 ));
                 return;
             };
@@ -278,7 +281,7 @@ impl Launcher {
                     "c2-cook or {} not found: set the tools folder in Settings.",
                     crate::wiiu::APP
                 ),
-                RED,
+                theme::red(),
             ));
             return;
         };
@@ -291,7 +294,7 @@ impl Launcher {
                 None => {
                     self.ui.note = Some((
                         "WUHB output needs wuhbtool from devkitPro wut-tools (install it or set the tools folder in Settings).".into(),
-                        RED,
+                        theme::red(),
                     ));
                     return;
                 }
@@ -310,14 +313,14 @@ impl Launcher {
             ) {
                 Ok(input) => input,
                 Err(e) => {
-                    self.ui.note = Some((e, RED));
+                    self.ui.note = Some((e, theme::red()));
                     return;
                 }
             };
             match input.prepare(find_tool("c2-pc", tools.as_deref())) {
                 Ok(prepare) => steps.extend(prepare),
                 Err(e) => {
-                    self.ui.note = Some((e, RED));
+                    self.ui.note = Some((e, theme::red()));
                     return;
                 }
             }
@@ -405,7 +408,7 @@ impl Launcher {
         })();
         match result {
             Ok(steps) => self.start_job("Building Windows package", steps),
-            Err(e) => self.ui.note = Some((e, RED)),
+            Err(e) => self.ui.note = Some((e, theme::red())),
         }
     }
 }

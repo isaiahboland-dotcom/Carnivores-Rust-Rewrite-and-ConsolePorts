@@ -20,7 +20,7 @@ use super::world_edit::{self as edit, Carry, Grip, Target, SIDE};
 use super::world_map::map_ui;
 use crate::app::help;
 use crate::jobs::balance::Instance;
-use crate::theme::*;
+use crate::theme;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum Tool {
@@ -157,7 +157,7 @@ impl Extras {
         let before = w.clone();
         ui.label(
             RichText::new("World zones: map editor (experimental)")
-                .color(SAND)
+                .color(theme::sand())
                 .strong(),
         );
         help(
@@ -227,7 +227,7 @@ impl Extras {
         s.show_arrived(ui.ctx());
         map_ui(ui, s, w);
         if let Some(n) = &s.note {
-            ui.label(RichText::new(n).color(GOLD));
+            ui.label(RichText::new(n).color(theme::gold()));
         }
         ui.add_space(4.0);
         list_ui(ui, s, w);
@@ -245,7 +245,7 @@ impl Extras {
                     "{elsewhere} more in the recipe are on areas this game does not have; they \
                      are kept, and left out of the build."
                 ))
-                .color(GOLD),
+                .color(theme::gold()),
             );
         }
     }
@@ -401,7 +401,7 @@ fn selected_ui(ui: &mut egui::Ui, s: &mut State, w: &mut World) {
         ui.label("Id");
         ui.add(egui::TextEdit::singleline(id).desired_width(160.0));
         if !c2_formats::world::valid_id(id.trim()) {
-            ui.label(RichText::new("letters, digits, - and _ only").color(RED));
+            ui.label(RichText::new("letters, digits, - and _ only").color(theme::red()));
         }
     };
     match t {
@@ -475,7 +475,7 @@ fn zone_numbers_ui(ui: &mut egui::Ui, z: &mut Zone) {
             }
         });
     if let Err(e) = z.shape() {
-        ui.label(RichText::new(format!("Unusable: {e}")).color(RED));
+        ui.label(RichText::new(format!("Unusable: {e}")).color(theme::red()));
     }
 }
 

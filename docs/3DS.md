@@ -95,7 +95,7 @@ which pick to drop when the hunt does not fit.
    **Adv observer** (Settings) gives observer hunts unlimited instant
    teleports (tap the map), flying and stopping time.
 
-**DHC OS terminal** (Settings > **DHC**, off by default): the same three
+**DHC OS terminal** (Settings > **DHC**, on by default; off there for the original menus): the same three
 steps as pages of a DinoHunt Corp terminal. The bottom screen lists the
 step's items (mark, name, price, or RESTRICTED when the recipe's island
 rules leave it out); the top screen shows the focused item's picture, name,

@@ -15,7 +15,7 @@ use eframe::egui::{self, RichText};
 
 use super::instance::Extras;
 use crate::app::{help, panel};
-use crate::theme::*;
+use crate::theme;
 
 /// How the food chain is ranked.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -81,7 +81,7 @@ impl Extras {
         let before = p.clone();
         ui.label(
             RichText::new("Advanced Dinosaur Behavior and AI")
-                .color(SAND)
+                .color(theme::sand())
                 .strong(),
         );
         help(
@@ -90,7 +90,7 @@ impl Extras {
         );
         ui.checkbox(
             &mut p.enabled,
-            RichText::new("Carnivores hunt herbivores (experimental)").color(TEXT),
+            RichText::new("Carnivores hunt herbivores (experimental)").color(theme::text()),
         )
         .on_hover_text(
             "Not in the original game. Carnivores chase and kill the animals below them on the \
@@ -103,7 +103,7 @@ impl Extras {
                  and fights can pile up and get chaotic. On 3DS, Wii U, Android and VR it may also \
                  cause lag or game-breaking bugs; PC is where it is tested.",
             )
-            .color(GOLD),
+            .color(theme::gold()),
         );
         if p.enabled {
             ui.add_space(4.0);
@@ -127,7 +127,7 @@ impl Extras {
         folders: &BTreeMap<String, PathBuf>,
         handle: &mut crate::jobs::Handle,
     ) {
-        ui.label(RichText::new("Carnivores go for").color(TEXT));
+        ui.label(RichText::new("Carnivores go for").color(theme::text()));
         ui.horizontal_wrapped(|ui| {
             let prey = p.priority.eq_ignore_ascii_case("prey");
             if ui
@@ -175,7 +175,7 @@ fn food_chain_ui(ui: &mut egui::Ui, p: &mut Predation, list: &[(String, i32)]) {
     } else {
         Chain::Price
     };
-    ui.label(RichText::new("Food chain").color(TEXT));
+    ui.label(RichText::new("Food chain").color(theme::text()));
     ui.horizontal_wrapped(|ui| {
         ui.radio_value(&mut mode, Chain::Price, "By price")
             .on_hover_text("A carnivore hunts herbivores priced the same or lower.");
@@ -246,7 +246,7 @@ fn chain_list_ui(ui: &mut egui::Ui, chain: &mut Vec<String>) {
                 }
                 let id = ui.scope_id().with(("predation-chain", i));
                 ui.dnd_drag_source(id, i, |ui| {
-                    ui.label(RichText::new(format!("{}. {name}", i + 1)).color(TEXT));
+                    ui.label(RichText::new(format!("{}. {name}", i + 1)).color(theme::text()));
                 });
             });
             let r = row.response;
@@ -254,7 +254,7 @@ fn chain_list_ui(ui: &mut egui::Ui, chain: &mut Vec<String>) {
                 moved = Some((*from, i));
             } else if r.dnd_hover_payload::<usize>().is_some() {
                 ui.painter()
-                    .hline(r.rect.x_range(), r.rect.top(), (2.0, GOLD));
+                    .hline(r.rect.x_range(), r.rect.top(), (2.0, theme::gold()));
             }
         }
     });
@@ -265,7 +265,7 @@ fn chain_list_ui(ui: &mut egui::Ui, chain: &mut Vec<String>) {
 
 /// Each animal's diet, scavenger and defensive tags.
 fn tags_ui(ui: &mut egui::Ui, p: &mut Predation, list: &[(String, i32)]) {
-    ui.label(RichText::new("Animals").color(TEXT));
+    ui.label(RichText::new("Animals").color(theme::text()));
     help(
         ui,
         "Diet Auto goes by the animal's AI: the raptor, Allosaurus, Spinosaurus, Ceratosaurus \
@@ -279,7 +279,7 @@ fn tags_ui(ui: &mut egui::Ui, p: &mut Predation, list: &[(String, i32)]) {
         .num_columns(5)
         .show(ui, |ui| {
             for h in ["Animal", "Price", "Diet", "Scavenger", "Defensive"] {
-                ui.label(RichText::new(h).color(SAND));
+                ui.label(RichText::new(h).color(theme::sand()));
             }
             ui.end_row();
             for (name, price) in list {

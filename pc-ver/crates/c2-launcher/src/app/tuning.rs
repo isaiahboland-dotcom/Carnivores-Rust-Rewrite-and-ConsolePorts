@@ -66,7 +66,7 @@ impl Launcher {
         let have = self.ui.balance.mobile.is_some() && !phone;
         let mut changed = false;
         let t = &mut self.cfg.tuning;
-        ui.label(RichText::new("PC or phone rules").color(GOLD));
+        ui.label(RichText::new("PC or phone rules").color(theme::gold()));
         for (name, s) in [
             ("Shotguns", &mut t.shotgun),
             ("Scores and prices", &mut t.scoring),

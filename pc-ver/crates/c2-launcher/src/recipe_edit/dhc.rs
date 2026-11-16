@@ -16,7 +16,7 @@ use super::instance::Extras;
 use super::pick::names_menu;
 use super::rules::with_missing;
 use crate::app::help;
-use crate::theme::*;
+use crate::theme;
 
 fn discovery_label(d: Discovery) -> &'static str {
     match d {
@@ -116,9 +116,11 @@ fn animals_ui(ui: &mut egui::Ui, d: &mut Dhc, animals: &[String]) {
                     });
                 let mut now = was.clone();
                 if here {
-                    ui.label(RichText::new(&name).color(TEXT));
+                    ui.label(RichText::new(&name).color(theme::text()));
                 } else {
-                    ui.label(RichText::new(format!("{name} (not in this game)")).color(DIM));
+                    ui.label(
+                        RichText::new(format!("{name} (not in this game)")).color(theme::dim()),
+                    );
                 }
                 egui::ComboBox::from_id_salt(("dhc-animal-discovery", &name))
                     .selected_text(mode_label(&now.0, "As the default"))
@@ -173,9 +175,11 @@ fn islands_ui(
                     });
                 let mut now = was.clone();
                 if here {
-                    ui.label(RichText::new(&area).color(TEXT));
+                    ui.label(RichText::new(&area).color(theme::text()));
                 } else {
-                    ui.label(RichText::new(format!("{area} (not in this game)")).color(DIM));
+                    ui.label(
+                        RichText::new(format!("{area} (not in this game)")).color(theme::dim()),
+                    );
                 }
                 names_menu(
                     ui,
@@ -234,7 +238,7 @@ impl Extras {
         let before = d.clone();
         ui.label(
             RichText::new("DHC OS terminal rules (experimental)")
-                .color(SAND)
+                .color(theme::sand())
                 .strong(),
         );
         help(

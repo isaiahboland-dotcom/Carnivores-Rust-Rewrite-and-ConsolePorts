@@ -105,9 +105,10 @@ impl Launcher {
                 } else {
                     label.to_string()
                 };
-                let b = egui::Button::new(RichText::new(text).size(22.0).color(GOLD).strong())
-                    .fill(GREEN)
-                    .min_size(egui::vec2(200.0, 120.0));
+                let b =
+                    egui::Button::new(RichText::new(text).size(22.0).color(theme::gold()).strong())
+                        .fill(theme::green())
+                        .min_size(egui::vec2(200.0, 120.0));
                 let mut resp = ui.add_enabled(!self.busy(), b);
                 if let Some(p) = android_problem.as_ref().filter(|_| warn) {
                     resp = resp.on_hover_text(p);
@@ -185,12 +186,12 @@ impl Launcher {
         self.ui.fixing = None;
         self.ui.recipe_page = None;
         self.ui.note = Some(match (missing.is_empty(), base_ok) {
-            (true, true) => ("Fix missing: everything was found.".into(), TEXT),
+            (true, true) => ("Fix missing: everything was found.".into(), theme::text()),
             (true, false) => (
                 "Fix missing: the downloads were found, but the base game isn't the one the \
                  instance expects: Edit it."
                     .into(),
-                RED,
+                theme::red(),
             ),
             (false, _) => (
                 format!(
@@ -198,7 +199,7 @@ impl Launcher {
                      give their folders with Edit.",
                     missing.join(", ")
                 ),
-                RED,
+                theme::red(),
             ),
         });
     }
@@ -226,7 +227,7 @@ impl Launcher {
             match &mut d {
                 Dialog::Review(_) => done = true,
                 Dialog::New(name) | Dialog::Clone(_, name) => {
-                    ui.label(RichText::new("Instance name").color(SAND).strong());
+                    ui.label(RichText::new("Instance name").color(theme::sand()).strong());
                     let r = ui.text_edit_singleline(name);
                     r.request_focus();
                     let id = crate::instances::id_from(name);
@@ -237,7 +238,8 @@ impl Launcher {
                     let taken = to.exists();
                     if taken {
                         ui.label(
-                            RichText::new(format!("{} exists already.", to.display())).color(RED),
+                            RichText::new(format!("{} exists already.", to.display()))
+                                .color(theme::red()),
                         );
                     } else {
                         help(ui, &format!("Saved as {}", to.display()));
@@ -247,7 +249,8 @@ impl Launcher {
                         let ok = ui
                             .add_enabled(
                                 !taken,
-                                egui::Button::new(RichText::new("OK").color(GOLD)).fill(GREEN),
+                                egui::Button::new(RichText::new("OK").color(theme::gold()))
+                                    .fill(theme::green()),
                             )
                             .clicked();
                         if (ok || enter) && !taken {
@@ -265,7 +268,7 @@ impl Launcher {
                         .unwrap_or_else(|_| p.display().to_string());
                     ui.label(
                         RichText::new(format!("Delete '{name}'?"))
-                            .color(SAND)
+                            .color(theme::sand())
                             .strong(),
                     );
                     help(
@@ -277,7 +280,10 @@ impl Launcher {
                         ),
                     );
                     ui.horizontal(|ui| {
-                        if ui.button(RichText::new("Delete").color(RED)).clicked() {
+                        if ui
+                            .button(RichText::new("Delete").color(theme::red()))
+                            .clicked()
+                        {
                             done = true;
                         }
                         if ui.button("Cancel").clicked() {
@@ -315,7 +321,7 @@ impl Launcher {
                 self.ui.instances.refresh(&self.cfg);
                 self.edit_recipe(&to);
             }
-            Err(e) => self.ui.note = Some((format!("Not created: {e}"), RED)),
+            Err(e) => self.ui.note = Some((format!("Not created: {e}"), theme::red())),
         }
     }
 
@@ -353,10 +359,10 @@ impl Launcher {
                         "Imported as {}: Fix missing (Options) finds its downloads.",
                         to.display()
                     ),
-                    TEXT,
+                    theme::text(),
                 )
             }
-            Err(e) => (format!("Not imported: {e}"), RED),
+            Err(e) => (format!("Not imported: {e}"), theme::red()),
         });
     }
 
@@ -374,15 +380,15 @@ impl Launcher {
             return;
         }
         self.ui.note = Some(match crate::instances::copy_recipe(from, &to) {
-            Ok(()) => (format!("Exported to {}", to.display()), TEXT),
-            Err(e) => (format!("Not exported: {e}"), RED),
+            Ok(()) => (format!("Exported to {}", to.display()), theme::text()),
+            Err(e) => (format!("Not exported: {e}"), theme::red()),
         });
     }
 
     /// The recipe file deleted, and what the launcher kept for it.
     fn delete_instance(&mut self, path: &Path) {
         if let Err(e) = std::fs::remove_file(path) {
-            self.ui.note = Some((format!("Not deleted: {e}"), RED));
+            self.ui.note = Some((format!("Not deleted: {e}"), theme::red()));
             return;
         }
         self.cfg.remembered.retain(|u| u.path != path);
@@ -394,7 +400,7 @@ impl Launcher {
         }
         self.save();
         self.ui.instances.refresh(&self.cfg);
-        self.ui.note = Some((format!("Deleted {}", path.display()), TEXT));
+        self.ui.note = Some((format!("Deleted {}", path.display()), theme::text()));
     }
 }
 

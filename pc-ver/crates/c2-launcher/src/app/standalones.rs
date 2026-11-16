@@ -23,18 +23,22 @@ pub(crate) fn pick_parts(
         p.weapons.len()
     );
     let mut changed = false;
-    egui::CollapsingHeader::new(RichText::new(title).color(if s.is_empty() { DIM } else { GOLD }))
-        .id_salt(salt)
-        .show(ui, |ui| {
-            let areas: Vec<String> = (1..=p.areas).map(|n| format!("Area {n}")).collect();
-            changed |= pick_list(ui, "Areas", &areas, &mut s.areas);
-            changed |= pick_list(ui, "Animals", &p.huntables, &mut s.huntables);
-            changed |= pick_list(ui, "Weapons", &p.weapons, &mut s.weapons);
-            if !s.is_empty() && ui.small_button("Take everything").clicked() {
-                *s = Default::default();
-                changed = true;
-            }
-        });
+    egui::CollapsingHeader::new(RichText::new(title).color(if s.is_empty() {
+        theme::dim()
+    } else {
+        theme::gold()
+    }))
+    .id_salt(salt)
+    .show(ui, |ui| {
+        let areas: Vec<String> = (1..=p.areas).map(|n| format!("Area {n}")).collect();
+        changed |= pick_list(ui, "Areas", &areas, &mut s.areas);
+        changed |= pick_list(ui, "Animals", &p.huntables, &mut s.huntables);
+        changed |= pick_list(ui, "Weapons", &p.weapons, &mut s.weapons);
+        if !s.is_empty() && ui.small_button("Take everything").clicked() {
+            *s = Default::default();
+            changed = true;
+        }
+    });
     changed
 }
 
@@ -45,7 +49,7 @@ fn pick_list(ui: &mut egui::Ui, title: &str, names: &[String], left_out: &mut Ve
         return false;
     }
     let mut changed = false;
-    ui.label(RichText::new(title).color(SAND));
+    ui.label(RichText::new(title).color(theme::sand()));
     ui.horizontal_wrapped(|ui| {
         for (k, name) in names.iter().enumerate() {
             let n = k as u32 + 1;

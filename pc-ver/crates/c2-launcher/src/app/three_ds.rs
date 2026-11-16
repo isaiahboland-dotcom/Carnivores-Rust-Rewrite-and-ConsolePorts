@@ -29,7 +29,9 @@ impl Launcher {
                 changed |= ui
                     .add(egui::TextEdit::singleline(&mut t.name).desired_width(200.0))
                     .changed();
-                ui.label(RichText::new(format!("-> 3ds/{}/", install_name(&t.name))).color(DIM));
+                ui.label(
+                    RichText::new(format!("-> 3ds/{}/", install_name(&t.name))).color(theme::dim()),
+                );
             });
             ui.horizontal(|ui| {
                 ui.label("SD card (or a folder):");
@@ -37,7 +39,7 @@ impl Launcher {
                     .out
                     .as_ref()
                     .map_or("not set".to_string(), |p| p.display().to_string());
-                ui.label(RichText::new(shown).color(SAND));
+                ui.label(RichText::new(shown).color(theme::sand()));
                 if ui.button("Browse...").clicked() {
                     if let Some(p) = rfd::FileDialog::new().pick_folder() {
                         t.out = Some(p);
@@ -134,12 +136,14 @@ impl Launcher {
             for (tool, url) in [("makerom", MAKEROM_URL), ("bannertool", BANNERTOOL_URL)] {
                 ui.horizontal(|ui| match find_tool(tool, tools.as_deref()) {
                     Some(p) => {
-                        ui.label(RichText::new(format!("{tool}: {}", p.display())).color(TEXT));
+                        ui.label(
+                            RichText::new(format!("{tool}: {}", p.display())).color(theme::text()),
+                        );
                     }
                     None => {
                         ui.label(
                             RichText::new(format!("{tool}: not found. Download it from"))
-                                .color(RED),
+                                .color(theme::red()),
                         );
                         ui.hyperlink_to(url, url);
                     }
@@ -147,7 +151,8 @@ impl Launcher {
             }
             if find_tool("c2-3ds.elf", tools.as_deref()).is_none() {
                 ui.label(
-                    RichText::new("c2-3ds.elf: not found (it comes with c2-3ds.3dsx)").color(RED),
+                    RichText::new("c2-3ds.elf: not found (it comes with c2-3ds.3dsx)")
+                        .color(theme::red()),
                 );
             }
             help(
@@ -157,7 +162,7 @@ impl Launcher {
                  executable (chmod +x).",
             );
             ui.add_space(6.0);
-            ui.label(RichText::new("Home menu art (your own)").color(GOLD));
+            ui.label(RichText::new("Home menu art (your own)").color(theme::gold()));
             for (label, size, slot, filter) in [
                 ("Icon", Some(ICON), &mut t.icon, &["png"][..]),
                 ("Banner", Some(BANNER), &mut t.banner, &["png"][..]),
@@ -176,15 +181,18 @@ impl Launcher {
                     ui.label(format!("{label} ({want}):"));
                     match slot.as_ref() {
                         Some(p) => {
-                            ui.label(RichText::new(p.display().to_string()).color(SAND));
+                            ui.label(RichText::new(p.display().to_string()).color(theme::sand()));
                             if let Some(want) = size {
                                 match png_size(p) {
                                     Some(s) if s == want => {}
                                     Some((w, h)) => {
-                                        ui.label(RichText::new(format!("is {w}x{h}")).color(RED));
+                                        ui.label(
+                                            RichText::new(format!("is {w}x{h}"))
+                                                .color(theme::red()),
+                                        );
                                     }
                                     None => {
-                                        ui.label(RichText::new("not a PNG").color(RED));
+                                        ui.label(RichText::new("not a PNG").color(theme::red()));
                                     }
                                 }
                             }

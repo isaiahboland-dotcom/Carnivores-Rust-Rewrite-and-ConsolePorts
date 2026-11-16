@@ -12,7 +12,7 @@ use eframe::egui::{self, RichText};
 
 use super::instance::Extras;
 use crate::app::{help, panel};
-use crate::theme::*;
+use crate::theme;
 
 /// The reactions, as the page names them.
 const REACTIONS: [(&str, &str); 4] = [
@@ -86,7 +86,7 @@ impl Extras {
         let before = h.clone();
         ui.label(
             RichText::new("Hardcore hunt (experimental)")
-                .color(SAND)
+                .color(theme::sand())
                 .strong(),
         );
         ui.label(
@@ -95,7 +95,7 @@ impl Extras {
                  Off by default. With the DHC OS terminal on, it is a separate \"Hardcore hunt\" \
                  entry beside the regular hunt setup. Play Vanilla leaves the ruleset out.",
             )
-            .color(GOLD),
+            .color(theme::gold()),
         );
         help(
             ui,
@@ -134,7 +134,7 @@ impl Extras {
             return;
         }
         ui.add_space(4.0);
-        ui.label(RichText::new("Reaction per animal").color(TEXT));
+        ui.label(RichText::new("Reaction per animal").color(theme::text()));
         help(
             ui,
             "By size: carnivores circle and lunge, those too big to lunge (the T-Rex) circle \
@@ -177,7 +177,7 @@ fn knife_ui(ui: &mut egui::Ui, h: &mut Hunt) {
     ui.add_space(4.0);
     ui.label(
         RichText::new("Knife (experimental, will be completed later)")
-            .color(GOLD)
+            .color(theme::gold())
             .strong(),
     );
     ui.label(
@@ -185,7 +185,7 @@ fn knife_ui(ui: &mut egui::Ui, h: &mut Hunt) {
             "Unfinished: no model, no sounds and rough handling. Never on by default; \
              tick this to try it.",
         )
-        .color(GOLD),
+        .color(theme::gold()),
     );
     if ui
         .checkbox(&mut h.experimental_knife, "Enable the experimental knife")
@@ -206,7 +206,7 @@ fn knife_ui(ui: &mut egui::Ui, h: &mut Hunt) {
 
 /// The rules that need no list of animals.
 fn rules_ui(ui: &mut egui::Ui, h: &mut Hunt) {
-    ui.label(RichText::new("Equipment").color(TEXT));
+    ui.label(RichText::new("Equipment").color(theme::text()));
     ui.checkbox(&mut h.no_night_vision, "No night vision");
     ui.checkbox(&mut h.no_radar, "No radar");
     ui.checkbox(&mut h.no_cover_scent, "No cover scent")
@@ -228,7 +228,7 @@ fn rules_ui(ui: &mut egui::Ui, h: &mut Hunt) {
         },
     );
     ui.add_space(4.0);
-    ui.label(RichText::new("Getting out").color(TEXT));
+    ui.label(RichText::new("Getting out").color(theme::text()));
     rule(
         ui,
         &mut h.extraction,
@@ -267,7 +267,7 @@ fn rules_ui(ui: &mut egui::Ui, h: &mut Hunt) {
         },
     );
     ui.add_space(4.0);
-    ui.label(RichText::new("Supplies").color(TEXT));
+    ui.label(RichText::new("Supplies").color(theme::text()));
     rule(
         ui,
         &mut h.ammo_drops,
@@ -287,7 +287,7 @@ fn rules_ui(ui: &mut egui::Ui, h: &mut Hunt) {
     );
     knife_ui(ui, h);
     ui.add_space(4.0);
-    ui.label(RichText::new("Predators").color(TEXT));
+    ui.label(RichText::new("Predators").color(theme::text()));
     rule(
         ui,
         &mut h.hesitation_s,

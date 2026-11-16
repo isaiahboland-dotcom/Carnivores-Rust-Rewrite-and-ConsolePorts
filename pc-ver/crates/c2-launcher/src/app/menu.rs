@@ -121,7 +121,7 @@ impl Launcher {
             } else if self.plays_phone_game() {
                 ui.label(
                     RichText::new("Android (a game built from an APK has the phone's menus only)")
-                        .color(SAND),
+                        .color(theme::sand()),
                 );
             } else {
                 changed |= self.pc_menu_choices(ui);
@@ -151,7 +151,7 @@ impl Launcher {
             .changed()
         {
             if let Err(e) = set_flag(DHC_TERMINAL, on) {
-                self.ui.note = Some((format!("Saving the game's settings: {e}"), RED));
+                self.ui.note = Some((format!("Saving the game's settings: {e}"), theme::red()));
             }
         }
         help(
@@ -221,7 +221,7 @@ impl Launcher {
                 .ice_age
                 .as_deref()
                 .is_some_and(|p| describe_game(p).is_some());
-            ui.label(RichText::new(shown).color(if ok { SAND } else { RED }));
+            ui.label(RichText::new(shown).color(if ok { theme::sand() } else { theme::red() }));
             if ui.button("Browse...").clicked() {
                 if let Some(p) = rfd::FileDialog::new().pick_folder() {
                     self.cfg.ice_age = Some(p);

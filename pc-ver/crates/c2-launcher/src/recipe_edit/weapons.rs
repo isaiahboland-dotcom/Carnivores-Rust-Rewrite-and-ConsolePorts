@@ -13,7 +13,7 @@ use eframe::egui::{self, RichText};
 use super::instance::Extras;
 use super::rules::with_missing;
 use crate::app::help;
-use crate::theme::*;
+use crate::theme;
 
 const CHOICES: [(Option<bool>, &str); 3] = [
     (None, "As the game has it"),
@@ -78,7 +78,11 @@ impl Extras {
         folders: &BTreeMap<String, PathBuf>,
         handle: &mut crate::jobs::Handle,
     ) {
-        ui.label(RichText::new("Weapon restrictions").color(SAND).strong());
+        ui.label(
+            RichText::new("Weapon restrictions")
+                .color(theme::sand())
+                .strong(),
+        );
         help(
             ui,
             "Per weapon: whether it may be loaded with tranquilizer darts, and whether its \
@@ -96,17 +100,19 @@ impl Extras {
             .num_columns(3)
             .spacing([16.0, 4.0])
             .show(ui, |ui| {
-                ui.label(RichText::new("Weapon").color(DIM));
-                ui.label(RichText::new("Tranquilizer darts").color(DIM));
-                ui.label(RichText::new("Trophies").color(DIM));
+                ui.label(RichText::new("Weapon").color(theme::dim()));
+                ui.label(RichText::new("Tranquilizer darts").color(theme::dim()));
+                ui.label(RichText::new("Trophies").color(theme::dim()));
                 ui.end_row();
                 for (name, here) in with_missing(&weapons, &kept) {
                     let was = rule_of(rules, &name);
                     let mut now = was;
                     if here {
-                        ui.label(RichText::new(&name).color(TEXT));
+                        ui.label(RichText::new(&name).color(theme::text()));
                     } else {
-                        ui.label(RichText::new(format!("{name} (not in this game)")).color(RED));
+                        ui.label(
+                            RichText::new(format!("{name} (not in this game)")).color(theme::red()),
+                        );
                     }
                     choice(ui, ("weapon-tranq", &name), &mut now.0);
                     choice(ui, ("weapon-trophy", &name), &mut now.1);

@@ -26,7 +26,7 @@ use super::pick::names_menu;
 use super::rules::with_missing;
 use super::world_edit::same_area;
 use crate::app::help;
-use crate::theme::*;
+use crate::theme;
 
 /// What the terminal's state means for a recipe with missions.
 pub(super) fn terminal_warning(missions: usize, terminal_on: bool) -> Option<&'static str> {
@@ -139,7 +139,7 @@ fn time_ui(ui: &mut egui::Ui, m: &mut Mission) {
 
 fn kills_ui(ui: &mut egui::Ui, k: usize, m: &mut Mission, animals: &[String]) {
     const ANY: &str = "Any of its animals";
-    ui.label(RichText::new("Kills required before leaving").color(TEXT));
+    ui.label(RichText::new("Kills required before leaving").color(theme::text()));
     // A requirement names one of the mission's own animals.
     let offered: Vec<String> = if m.animals.is_empty() {
         animals.to_vec()
@@ -208,7 +208,7 @@ fn mission_ui(ui: &mut egui::Ui, k: usize, m: &mut Mission, o: &Offer) {
             ui.horizontal(|ui| {
                 ui.add(egui::TextEdit::singleline(&mut m.id).desired_width(160.0));
                 if !valid_id(m.id.trim()) {
-                    ui.label(RichText::new("letters, digits, - and _ only").color(RED));
+                    ui.label(RichText::new("letters, digits, - and _ only").color(theme::red()));
                 }
             });
             ui.end_row();
@@ -294,10 +294,13 @@ fn mission_ui(ui: &mut egui::Ui, k: usize, m: &mut Mission, o: &Offer) {
                     Some(s) => {
                         let (lo, hi) = fmt::LIMIT_RANGE;
                         ui.add(egui::DragValue::new(s).range(lo..=hi).suffix(" s"));
-                        ui.label(RichText::new(format!("{}:{:02}", *s / 60, *s % 60)).color(DIM));
+                        ui.label(
+                            RichText::new(format!("{}:{:02}", *s / 60, *s % 60))
+                                .color(theme::dim()),
+                        );
                     }
                     None => {
-                        ui.label(RichText::new("none").color(DIM));
+                        ui.label(RichText::new("none").color(theme::dim()));
                     }
                 }
             });
@@ -336,7 +339,7 @@ impl Extras {
         let before = w.clone();
         ui.label(
             RichText::new("Missions (experimental)")
-                .color(SAND)
+                .color(theme::sand())
                 .strong(),
         );
         ui.label(
@@ -345,7 +348,7 @@ impl Extras {
                  the game, and the game does not offer them yet. They will be listed by the DHC \
                  OS terminal only. Play Vanilla leaves them out.",
             )
-            .color(GOLD),
+            .color(theme::gold()),
         );
         help(
             ui,
@@ -356,7 +359,7 @@ impl Extras {
         );
         let terminal_on = crate::game_cfg::flag(crate::game_cfg::DHC_TERMINAL);
         if let Some(text) = terminal_warning(w.missions.len(), terminal_on) {
-            ui.label(RichText::new(text).color(RED));
+            ui.label(RichText::new(text).color(theme::red()));
         }
         if !w.missions.is_empty() && !w.enabled {
             ui.horizontal_wrapped(|ui| {
@@ -364,7 +367,7 @@ impl Extras {
                     RichText::new(
                         "World zones are not built into the game, so these are not either.",
                     )
-                    .color(RED),
+                    .color(theme::red()),
                 );
                 if ui.small_button("Build them").clicked() {
                     w.enabled = true;
@@ -401,16 +404,16 @@ impl Extras {
             };
             let title = format!("{label}  ({})", m.area);
             let title = if found.is_empty() {
-                RichText::new(title).color(TEXT)
+                RichText::new(title).color(theme::text())
             } else {
-                RichText::new(format!("{title}  ⚠ {}", found.len())).color(GOLD)
+                RichText::new(format!("{title}  ⚠ {}", found.len())).color(theme::warn())
             };
             egui::CollapsingHeader::new(title)
                 .id_salt(("mission", k))
                 .show(ui, |ui| {
                     mission_ui(ui, k, m, &offer);
                     for f in &found {
-                        ui.label(RichText::new(f).color(GOLD));
+                        ui.label(RichText::new(f).color(theme::gold()));
                     }
                     ui.horizontal(|ui| {
                         if ui.small_button("Duplicate").clicked() {

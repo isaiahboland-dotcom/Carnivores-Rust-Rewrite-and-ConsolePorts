@@ -14,14 +14,14 @@ impl Launcher {
         if self.active_recipe().and_then(|r| r.game.as_ref()).is_none() {
             self.ui.note = Some((
                 "The instance has no base game: Edit it and choose one.".into(),
-                RED,
+                theme::red(),
             ));
             return;
         }
         let Some(pc) = find_tool("c2-pc", self.cfg.tools.as_deref()) else {
             self.ui.note = Some((
                 "c2-pc not found: set the tools folder in Settings.".into(),
-                RED,
+                theme::red(),
             ));
             return;
         };
@@ -39,7 +39,7 @@ impl Launcher {
                 instance, secs, result,
             ))))
         }) {
-            self.ui.note = Some((e, RED));
+            self.ui.note = Some((e, theme::red()));
         }
     }
 
@@ -53,7 +53,7 @@ impl Launcher {
             self.ui.instances.refresh(&self.cfg);
         }
         if let Some(e) = error {
-            self.ui.note = Some((e, RED));
+            self.ui.note = Some((e, theme::red()));
         }
     }
 
@@ -68,7 +68,7 @@ impl Launcher {
         let Some(vr) = find_tool("c2-vr", self.cfg.tools.as_deref()) else {
             self.ui.note = Some((
                 "c2-vr not found: set the tools folder in Settings.".into(),
-                RED,
+                theme::red(),
             ));
             return;
         };

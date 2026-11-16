@@ -10,7 +10,7 @@ use c2_mods::balance::{Balance, Item};
 use eframe::egui::{self, RichText};
 
 use crate::app::{help, panel};
-use crate::theme::*;
+use crate::theme;
 
 pub fn path() -> PathBuf {
     crate::config::data_dir().join("balance.toml")
@@ -243,7 +243,7 @@ impl Editor {
         let mut changed = false;
         panel(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("PC or mobile").color(GOLD));
+                ui.label(RichText::new("PC or mobile").color(theme::gold()));
                 help(
                     ui,
                     "where the mobile game's values differ; PC unless you pick mobile",
@@ -270,12 +270,16 @@ impl Editor {
                 .show(ui, |ui| {
                     for (list, name, d) in &diffs {
                         let mobile = self.is_mobile(*list, name, d);
-                        ui.label(RichText::new(name).color(if mobile { GOLD } else { TEXT }));
+                        ui.label(RichText::new(name).color(if mobile {
+                            theme::gold()
+                        } else {
+                            theme::text()
+                        }));
                         let text: Vec<String> = d
                             .iter()
                             .map(|&(k, a, b)| format!("{} {} / {}", FIELDS[k].0, fmt(a), fmt(b)))
                             .collect();
-                        ui.label(RichText::new(text.join(", ")).color(DIM))
+                        ui.label(RichText::new(text.join(", ")).color(theme::dim()))
                             .on_hover_text("PC / mobile");
                         ui.horizontal(|ui| {
                             if ui.selectable_label(!mobile, "PC").clicked() && mobile {
@@ -320,7 +324,11 @@ impl Editor {
                 .map(|l| l.len())
                 .sum::<usize>()
                 + usize::from(self.edits.start.is_some());
-            ui.label(RichText::new(format!("{n} changed")).color(if n > 0 { GOLD } else { DIM }));
+            ui.label(RichText::new(format!("{n} changed")).color(if n > 0 {
+                theme::gold()
+            } else {
+                theme::dim()
+            }));
             if n > 0 && ui.button("Reset all").clicked() {
                 self.edits = Balance::default();
                 changed = true;
@@ -338,7 +346,7 @@ impl Editor {
         let game_start = values.start.unwrap_or(100);
         panel(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("New hunter's points").color(GOLD));
+                ui.label(RichText::new("New hunter's points").color(theme::gold()));
                 let mut v = self.edits.start.unwrap_or(game_start);
                 if ui
                     .add(egui::DragValue::new(&mut v).range(0..=1_000_000))
@@ -348,7 +356,7 @@ impl Editor {
                     changed = true;
                 }
                 if self.edits.start.is_some() {
-                    ui.label(RichText::new(format!("game: {game_start}")).color(DIM));
+                    ui.label(RichText::new(format!("game: {game_start}")).color(theme::dim()));
                     if ui.small_button("Reset").clicked() {
                         self.edits.start = None;
                         changed = true;
@@ -372,7 +380,7 @@ impl Editor {
     /// A weapon's ammo (`shots` in `_RES.TXT`): whether it changed.
     fn ammo_ui(&mut self, ui: &mut egui::Ui, it: &Item, edit: Option<&Item>) -> bool {
         let Some(game) = it.shots.map(|v| v.round() as i32) else {
-            ui.label(RichText::new("-").color(DIM))
+            ui.label(RichText::new("-").color(theme::dim()))
                 .on_hover_text("The game doesn't set this weapon's ammo.");
             return false;
         };
@@ -414,21 +422,21 @@ impl Editor {
         }
         let mut changed = false;
         panel(ui, |ui| {
-            ui.label(RichText::new(title).color(GOLD));
+            ui.label(RichText::new(title).color(theme::gold()));
             egui::Grid::new(title)
                 .striped(true)
                 .num_columns(4)
                 .spacing([16.0, 4.0])
                 .show(ui, |ui| {
-                    ui.label(RichText::new("Name").color(DIM));
-                    ui.label(RichText::new("Price").color(DIM));
+                    ui.label(RichText::new("Name").color(theme::dim()));
+                    ui.label(RichText::new("Price").color(theme::dim()));
                     ui.label(
                         RichText::new(match list {
                             List::Animals => "Score",
                             List::Weapons => "Ammo",
                             List::Areas => "",
                         })
-                        .color(DIM),
+                        .color(theme::dim()),
                     );
                     ui.label("");
                     ui.end_row();
@@ -436,9 +444,9 @@ impl Editor {
                         let edit = self.edit_of(list, &it.name).cloned();
                         let is_edited = edit.is_some();
                         ui.label(RichText::new(&it.name).color(if is_edited {
-                            GOLD
+                            theme::gold()
                         } else {
-                            TEXT
+                            theme::text()
                         }));
                         match it.price {
                             Some(game) => {
@@ -452,7 +460,7 @@ impl Editor {
                                 }
                             }
                             None => {
-                                ui.label(RichText::new("-").color(DIM)).on_hover_text(
+                                ui.label(RichText::new("-").color(theme::dim())).on_hover_text(
                                     "Roams (no menu entry): on the 3DS it costs as the menu animal \
                                      with its AI",
                                 );

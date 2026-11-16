@@ -27,7 +27,7 @@ impl Launcher {
                     .out
                     .as_ref()
                     .map_or("not set".to_string(), |p| p.display().to_string());
-                ui.label(RichText::new(shown).color(SAND));
+                ui.label(RichText::new(shown).color(theme::sand()));
                 if ui.button("Browse...").clicked() {
                     if let Some(p) = rfd::FileDialog::new().pick_folder() {
                         self.cfg.wiiu.out = Some(p);
@@ -38,7 +38,7 @@ impl Launcher {
         });
         ui.add_space(8.0);
         panel(ui, |ui| {
-            ui.label(RichText::new("What goes on").color(GOLD));
+            ui.label(RichText::new("What goes on").color(theme::gold()));
             let on = self.cfg.enabled_addons().len();
             let overlays = self.cfg.overlays.len();
             let standalones = self.cfg.enabled_standalones().len();
@@ -75,7 +75,7 @@ impl Launcher {
                         .add(egui::TextEdit::singleline(name).hint_text(&title))
                         .changed();
                     let folder = crate::wiiu::folder_name(&key, Some(name));
-                    ui.label(RichText::new(format!("wiiu/apps/{folder}/")).color(DIM));
+                    ui.label(RichText::new(format!("wiiu/apps/{folder}/")).color(theme::dim()));
                     if old_folder != folder {
                         if let Some(art) = self.cfg.wiiu.art.remove(&old_folder) {
                             self.cfg.wiiu.art.insert(folder, art);
@@ -88,11 +88,12 @@ impl Launcher {
         changed |= panel(ui, |ui| self.wiiu_art_ui(ui));
         ui.add_space(8.0);
         panel(ui, |ui| {
-            ui.label(RichText::new("The app").color(GOLD));
+            ui.label(RichText::new("The app").color(theme::gold()));
             match find_tool(crate::wiiu::APP, self.cfg.tools.as_deref()) {
                 Some(p) => {
                     ui.label(
-                        RichText::new(format!("{}: {}", crate::wiiu::APP, p.display())).color(TEXT),
+                        RichText::new(format!("{}: {}", crate::wiiu::APP, p.display()))
+                            .color(theme::text()),
                     );
                 }
                 None => {
@@ -102,7 +103,7 @@ impl Launcher {
                              in Settings)",
                             crate::wiiu::APP
                         ))
-                        .color(RED),
+                        .color(theme::red()),
                     );
                 }
             }
@@ -127,11 +128,12 @@ impl Launcher {
                 match find_tool(crate::wiiu::WUHB_TOOL, self.cfg.tools.as_deref()) {
                     Some(p) => {
                         ui.label(
-                            RichText::new(format!("WUHB packager: {}", p.display())).color(TEXT),
+                            RichText::new(format!("WUHB packager: {}", p.display()))
+                                .color(theme::text()),
                         );
                     }
                     None => {
-                        ui.label(RichText::new("wuhbtool not found (install devkitPro wut-tools or set the tools folder in Settings)").color(RED));
+                        ui.label(RichText::new("wuhbtool not found (install devkitPro wut-tools or set the tools folder in Settings)").color(theme::red()));
                     }
                 }
                 help(
@@ -176,7 +178,7 @@ impl Launcher {
     pub(super) fn wiiu_art_ui(&mut self, ui: &mut egui::Ui) -> bool {
         use crate::cia::{WIIU_DRC, WIIU_ICON, WIIU_TV};
         let mut changed = false;
-        ui.label(RichText::new("Wii U Menu art (your own)").color(GOLD));
+        ui.label(RichText::new("Wii U Menu art (your own)").color(theme::gold()));
         help(
             ui,
             "Per install: the icon, and the start screens on the TV and the GamePad while it              loads. Not picked: cut from the game's own menu picture.",
