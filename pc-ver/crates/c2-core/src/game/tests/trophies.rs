@@ -80,18 +80,111 @@ fn dialect_trophies_take_a_spot_made_for_them() {
     h.herd.trophy_spots = vec![spot(0), spot(1)];
     h.add_ship_task(&area, 0, &mut Vec::new());
     assert_eq!((h.room.bodies[0].ctype, h.room.bodies[1].ctype), (0, 1));
-    // None made for it: any free spot.
+    // None made for it: a plain stand past the spots, leaving the spot to
+    // its own animal (a combined game: one add-on's spots aren't the room).
     let (area, mut h, _) = setup(false);
     h.herd.trophy_spots = vec![spot(0)];
+    h.add_ship_task(&area, 0, &mut Vec::new());
+    assert_eq!((h.room.bodies[0].ctype, h.room.bodies[1].ctype), (0, 1));
+    // Plain stands all taken: any free spot.
+    let (area, mut h, _) = setup(false);
+    h.herd.trophy_spots = vec![spot(0)];
+    for b in &mut h.room.bodies[1..] {
+        b.ctype = 5;
+    }
     h.add_ship_task(&area, 0, &mut Vec::new());
     assert_eq!(h.room.bodies[0].ctype, 1);
     // All taken: no trophy.
     let (area, mut h, _) = setup(false);
     h.herd.trophy_spots = vec![spot(0)];
-    h.room.bodies[0].ctype = 5;
+    for b in &mut h.room.bodies {
+        b.ctype = 5;
+    }
     let mut ev = Vec::new();
     h.add_ship_task(&area, 0, &mut ev);
     assert!(!ev.iter().any(|e| matches!(e, GameEvent::Trophy { .. })));
+}
+
+/// A combined game where one add-on brings two `tropinfo` spots (the
+/// nightmare-run report: two trophies, then none whatever was killed).
+#[test]
+fn one_add_ons_spots_do_not_cap_the_room() {
+    use c2_formats::mee::TrophySpot;
+    let (area, mut h, _) = setup(false);
+    h.herd.trophy_spots = vec![
+        TrophySpot {
+            chars: vec![99],
+            pos: 17,
+            ..Default::default()
+        };
+        2
+    ];
+    let mut slots = Vec::new();
+    for _ in 0..5 {
+        let mut ev = Vec::new();
+        h.add_ship_task(&area, 0, &mut ev);
+        slots.extend(ev.iter().filter_map(|e| match e {
+            GameEvent::Trophy { slot, .. } => Some(*slot),
+            _ => None,
+        }));
+    }
+    assert_eq!(
+        slots,
+        [2, 3, 4, 5, 6],
+        "every kill a trophy, spots left free"
+    );
+
+    // In the room: each on its own landing cell, the spots' cell left out.
+    let mut room_area = Area::flat(10);
+    room_area.set_trophy_mode();
+    let car = target_car(true);
+    let mut herd = Herd {
+        species: vec![
+            Species::new(info(0), &car),
+            Species::new(info(ai::STEGO), &car),
+        ],
+        trophy_spots: h.herd.trophy_spots.clone(),
+        ..Default::default()
+    };
+    let mut room = blank_save();
+    for b in &mut room.bodies {
+        b.ctype = 1;
+        b.scale = 1.0;
+    }
+    herd.place_trophies(&room_area, &room, &mut MsRand::new(1));
+    // Slots 0 and 1 on the two spots (old saves put others there); 2..23
+    // on 22 of the 23 landing cells the spots don't use.
+    assert_eq!(herd.chars.len(), 24);
+    let mut cells: Vec<(i32, i32)> = herd
+        .chars
+        .iter()
+        .filter(|c| c.state >= 2)
+        .map(|c| ((c.pos[0] / 256.0) as i32, (c.pos[2] / 256.0) as i32))
+        .collect();
+    let (sx, sz) = room_area.landings[17];
+    assert!(!cells.contains(&(i32::from(sx), i32::from(sz))));
+    cells.sort_unstable();
+    cells.dedup();
+    assert_eq!(cells.len(), 22, "no two trophies on one stand");
+    // Plain stands face the room's middle (look = (cos a, sin a)).
+    let (mx, mz) = (76.5 * 256.0, 76.5 * 256.0);
+    for c in herd.chars.iter().filter(|c| c.state >= 2) {
+        let (dx, dz) = (mx - c.pos[0], mz - c.pos[2]);
+        assert!(
+            c.alpha.cos() * dx + c.alpha.sin() * dz > 0.0,
+            "slot {}",
+            c.state
+        );
+    }
+    // The plaque is found 2.5 cells ahead of the nose, so every look vector
+    // follows the facing the spot set (it once kept `reset`'s).
+    for c in &herd.chars {
+        assert!(
+            (c.lookx - c.alpha.cos()).abs() < 1e-5 && (c.lookz - c.alpha.sin()).abs() < 1e-5,
+            "slot {} looks the wrong way",
+            c.state
+        );
+    }
 }
 
 #[test]

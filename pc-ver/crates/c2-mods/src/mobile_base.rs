@@ -272,8 +272,9 @@ impl Kit {
 /// to east, east north to south, south east to west, west south to north);
 /// the hunter starts at the south end of the west walk (facing north, as he
 /// starts: down the west row to the north one). The
-/// engine reads it as `TROPHY.SPOT` (`Area::set_trophy_spots`).
-fn trophy_spots(rst: &str) -> Option<String> {
+/// engine reads it as `TROPHY.SPOT` (`Area::set_trophy_spots`), only on
+/// the map whose `height_mark` is `map`.
+fn trophy_spots(rst: &str, map: u64) -> Option<String> {
     let bound = |k: &str| {
         rst.lines().find_map(|l| {
             let (key, v) = l.split_once('=')?;
@@ -293,6 +294,7 @@ fn trophy_spots(rst: &str) -> Option<String> {
     let mut out = String::from(
         "# c2rs: the phone game's trophy room (its walls), our stands\n# floor-centres-v2\n",
     );
+    out += &format!("map {map:016x}\n");
     out += &format!("start {} {}\n", w + 12, s - 10);
     let sides = [
         along(x0, x1).map(|x| (x, n + 2)).collect::<Vec<_>>(),
@@ -1114,10 +1116,16 @@ pub fn build(apk: &Path, out: &Path) -> Result<Built, ModError> {
             .push(area(&zip, &format!("area{n}"), &dir, &format!("AREA{n}"))?);
     }
     if zip.get("assets/areas/trophy.man").is_some() {
-        built.areas.push(area(&zip, "trophy", &dir, "TROPHY")?);
+        let map_path = area(&zip, "trophy", &dir, "TROPHY")?;
+        // The layout names this map, so a mod's room replacing it
+        // doesn't take it (`Area::set_trophy_spots`); the height grid
+        // leads the file.
+        let data = std::fs::read(&map_path).map_err(io(&map_path))?;
+        let mark = c2_formats::map::height_mark(&data[..c2_formats::map::CELLS.min(data.len())]);
+        built.areas.push(map_path);
         // Its walls aren't the PC room's: our layout of its stands.
         let rst = zip.get("assets/areas/trophy.rst").unwrap_or_default();
-        match trophy_spots(&String::from_utf8_lossy(&rst)) {
+        match trophy_spots(&String::from_utf8_lossy(&rst), mark) {
             Some(t) => {
                 let p = dir.join("TROPHY.SPOT");
                 write(&p, t.as_bytes())?;
@@ -1180,7 +1188,8 @@ mod tests {
     fn trophy_room_stands_inside_its_walls() {
         let rst =
             "[general]\nbound_west = 131\nbound_east = 178\nbound_north = 131\nbound_south = 178\n";
-        let t = trophy_spots(rst).unwrap_or_default();
+        let t = trophy_spots(rst, 0xabc).unwrap_or_default();
+        assert!(t.contains("map 0000000000000abc\n"), "names its map");
         let cells = |k: &str| -> Vec<(i32, i32)> {
             t.lines()
                 .filter_map(|l| {
@@ -1198,7 +1207,7 @@ mod tests {
         assert!(stands
             .iter()
             .all(|&(x, z)| (131..=178).contains(&x) && (131..=178).contains(&z)));
-        assert!(trophy_spots("bound_west = 1").is_none());
+        assert!(trophy_spots("bound_west = 1", 0).is_none());
     }
 
     #[test]

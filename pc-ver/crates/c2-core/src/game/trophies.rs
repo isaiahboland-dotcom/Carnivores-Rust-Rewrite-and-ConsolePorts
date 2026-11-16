@@ -88,13 +88,17 @@ impl Hunt {
                     .unwrap_or(23),
             )
         } else {
-            // A spot made for it, else any free one (add-ons written
-            // without `tropinfo` would never have a trophy).
+            // A spot made for it; else a plain stand past the spots (the
+            // room's other landing cells, `Herd::place_trophies`), so a
+            // combined game's animals without `tropinfo` aren't held to one
+            // add-on's few spots; else any free spot.
             let free = |t: &usize| self.room.bodies[*t].ctype == 0;
-            let n = spots.len().min(self.room.bodies.len());
+            let all = self.room.bodies.len();
+            let n = spots.len().min(all);
             (0..n)
                 .filter(free)
                 .find(|&t| spots[t].chars.contains(&identity))
+                .or_else(|| (n..all).find(free))
                 .or_else(|| (0..n).find(free))
         };
         // A variant scores by its parent's rules, whichever member was shot.
@@ -255,10 +259,11 @@ impl Hunt {
         let Some(slot) = self.trophy_body.filter(|_| self.opts.trophy) else {
             return false;
         };
+        // Dialect rooms: the spots, then the plain stands past them.
         let n = if self.herd.trophy_spots.is_empty() {
             self.room.bodies.len().min(area.landings.len())
         } else {
-            self.herd.trophy_spots.len().min(self.room.bodies.len())
+            self.room.bodies.len()
         };
         if n < 2 || !matches!(dir, -1 | 1) || slot >= n {
             return false;

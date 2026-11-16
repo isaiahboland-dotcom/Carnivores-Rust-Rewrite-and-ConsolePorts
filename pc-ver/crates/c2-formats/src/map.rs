@@ -70,6 +70,25 @@ pub struct Map {
     pub ambient: Vec<u8>,
 }
 
+/// A fingerprint of a map's terrain, as it is in the file: FNV-1a over a
+/// sample of its height grid (every 61st cell) and its length. A trophy
+/// room's own layout (`TROPHY.SPOT`) names the map it was made for, so a
+/// mod that replaces the map leaves the old layout unused.
+pub fn height_mark(height: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut eat = |b: u8| {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    };
+    for b in (height.len() as u64).to_le_bytes() {
+        eat(b);
+    }
+    for &b in height.iter().step_by(61) {
+        eat(b);
+    }
+    h
+}
+
 pub fn parse(data: &[u8]) -> Result<Map, FormatError> {
     parse_lean(data, None)
 }

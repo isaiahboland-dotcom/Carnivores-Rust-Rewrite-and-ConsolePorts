@@ -79,8 +79,11 @@ pub struct Area {
     /// room the original's fixed ring ([`Area::set_trophy_mode`]).
     pub landings: Vec<(u16, u16)>,
     /// The map's own landing cells (`OMap == 254`), kept in the trophy room:
-    /// the Modder's Edition places trophies on them (`tropPos`).
+    /// the Modder's Edition places trophies on them (`tropPos`). Empty when
+    /// the map marks none.
     pub marked_landings: Vec<(u16, u16)>,
+    /// [`c2_formats::map::height_mark`] of the map as loaded.
+    pub map_mark: u64,
     /// `OMap` entries naming a model the RSC doesn't have (the original halts).
     pub bad_object_cells: usize,
     /// Where the hunter starts in a trophy room laid out by its `.SPOT`
@@ -130,9 +133,17 @@ impl Area {
     }
 
     pub fn new(mut map: Map, rsc: Rsc, time: TimeOfDay) -> Self {
+        // Before `create_tmap`, which raises some cells.
+        let map_mark = c2_formats::map::height_mark(&map.height);
+        crate::fog::fill_floor(&mut map, &rsc.fogs);
         let mut landings = Vec::new();
         let mut bad = 0;
         create_tmap(&mut map, &rsc, &mut landings, &mut bad);
+        // Only the map's own marks; the original's fallback spot is not one.
+        let marked_landings = landings.clone();
+        if landings.is_empty() {
+            landings.push((256, 256));
+        }
         let shapes = rsc
             .objects
             .iter()
@@ -144,10 +155,11 @@ impl Area {
             map,
             rsc,
             time,
-            marked_landings: landings.clone(),
+            marked_landings,
             landings,
             bad_object_cells: bad,
             trophy_start: None,
+            map_mark,
             snow: None,
             random_map: random_map(),
         }
@@ -174,7 +186,25 @@ impl Area {
     /// side: north west to east, east north to south, south east to west,
     /// west south to north; each side faces inwards as the ring's do).
     /// Lines it can't read are skipped; no stands keeps the ring.
-    pub fn set_trophy_spots(&mut self, text: &str) {
+    ///
+    /// The layout belongs to one map: `map <hex>` names its
+    /// [`c2_formats::map::height_mark`]. On another map (a mod replaced the
+    /// room) it is ignored and `false` returned. An older file without the
+    /// line is ignored on a map with landing cells of its own, which the
+    /// phone game's room has none of.
+    pub fn set_trophy_spots(&mut self, text: &str) -> bool {
+        let made_for = text.lines().find_map(|l| {
+            let mut w = l.split_whitespace();
+            (w.next()? == "map").then_some(())?;
+            u64::from_str_radix(w.next()?, 16).ok()
+        });
+        let fits = match made_for {
+            Some(m) => m == self.map_mark,
+            None => self.marked_landings.is_empty(),
+        };
+        if !fits {
+            return false;
+        }
         let mut stands = Vec::new();
         for line in text.lines() {
             let mut w = line.split_whitespace();
@@ -226,6 +256,7 @@ impl Area {
         if !stands.is_empty() {
             self.landings = stands;
         }
+        true
     }
 
     /// The trophy room's fixed landing ring (`CreateTMap`, `TrophyMode`).
@@ -507,9 +538,6 @@ fn create_tmap(map: &mut Map, rsc: &Rsc, landings: &mut Vec<(u16, u16)>, bad: &m
             }
         }
     }
-    if landings.is_empty() {
-        landings.push((256, 256));
-    }
 }
 
 /// The original's densest scenery: no 48 x 48 cell window of its areas
@@ -604,6 +632,38 @@ mod tests {
         b.set_trophy_mode();
         b.set_trophy_spots("start 1 2");
         assert_eq!(b.landings.len(), 24);
+    }
+
+    /// The nightmare-run copy report: an add-on replaced the phone game's
+    /// trophy map, and its old layout put the hunter outside the new room.
+    #[test]
+    fn a_layout_is_used_only_on_the_map_it_was_made_for() {
+        let layout = |mark: Option<u64>| {
+            let head = mark.map_or(String::new(), |m| format!("map {m:016x}\n"));
+            format!("{head}start 143 168\nstand 139 133\n")
+        };
+        let mut a = Area::flat(10);
+        assert!(a.marked_landings.is_empty(), "the fallback spot is no mark");
+        assert_eq!(a.landings, vec![(256, 256)]);
+        a.set_trophy_mode();
+        let own = a.map_mark;
+        assert!(a.set_trophy_spots(&layout(Some(own))));
+        assert_eq!(a.trophy_start, Some((143, 168)));
+        // Another map's layout: ignored, the room keeps its stands.
+        let mut b = Area::flat(11);
+        b.set_trophy_mode();
+        assert!(!b.set_trophy_spots(&layout(Some(own))));
+        assert_eq!((b.trophy_start, b.landings.len()), (None, 24));
+        // An older file without the line: kept on a map without landing
+        // cells (the phone game's room), ignored on one with them.
+        let mut c = Area::flat(10);
+        assert!(c.set_trophy_spots(&layout(None)));
+        let mut m = flat_map(10);
+        m.objects[idx(70, 80)] = LANDING;
+        let mut d = Area::new(m, empty_rsc(), TimeOfDay::Day);
+        assert_eq!(d.marked_landings, vec![(70, 80)]);
+        assert!(!d.set_trophy_spots(&layout(None)));
+        assert_eq!(d.trophy_start, None);
     }
 
     #[test]
