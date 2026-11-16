@@ -46,11 +46,14 @@ pub struct Roster {
     pub cars: Vec<Option<(Car, PreparedModel)>>,
     /// `_PREDATION.TXT` (an instance setting), when the game has one.
     pub predation: Option<Vec<u8>>,
+    /// Bounded fleeing's limits (`_FLEE.TXT` or the built-in ones), when
+    /// the player asked for it (`c2-vr play --bounded-flee`).
+    pub flee: Option<Box<c2_core::dino::flee::FleeTable>>,
 }
 
 impl Roster {
     /// From the first of `huntdat` (overlays first) with a `_RES.TXT`.
-    pub fn load(huntdat: &[PathBuf]) -> Result<Self> {
+    pub fn load(huntdat: &[PathBuf], bounded_flee: bool) -> Result<Self> {
         let (dir, res) = huntdat
             .iter()
             .find_map(|d| Some((d, find_file(d, "_RES.TXT")?)))
@@ -103,10 +106,18 @@ impl Roster {
             .iter()
             .find_map(|d| find_file(d, "_PREDATION.TXT"))
             .and_then(|p| std::fs::read(p).ok());
+        let flee = bounded_flee.then(|| {
+            let bytes = huntdat
+                .iter()
+                .find_map(|d| find_file(d, "_FLEE.TXT"))
+                .and_then(|p| std::fs::read(p).ok());
+            c2_core::dino::flee::FleeTable::load(bytes.as_deref(), &species)
+        });
         Ok(Self {
             species,
             cars,
             predation,
+            flee,
         })
     }
 
@@ -157,6 +168,7 @@ impl HuntWorld {
             .predation
             .as_deref()
             .and_then(|b| c2_core::dino::predation::load(b, &herd.species));
+        herd.flee = roster.flee.clone();
         let room = c2_core::profile::new_player("", 0, 0);
         herd.place(
             area,

@@ -134,6 +134,7 @@ pub enum Id {
     DynamicTime,
     MultiAmmo,
     FreeObserver,
+    BoundedFlee,
     Restart,
     MainMenu,
 }
@@ -203,7 +204,7 @@ fn lock_of(id: Id) -> Option<c2_formats::rules::Lock> {
     })
 }
 
-const SETTINGS_ROWS: [Id; 12] = [Id::RunSpeed, Id::Ambient, Id::AllHuntable, Id::Blood, Id::DeathCam, Id::Units, Id::MapMobile, Id::Teleport, Id::Hints, Id::DynamicTime, Id::MultiAmmo, Id::FreeObserver];
+const SETTINGS_ROWS: [Id; 13] = [Id::RunSpeed, Id::Ambient, Id::AllHuntable, Id::Blood, Id::DeathCam, Id::Units, Id::MapMobile, Id::Teleport, Id::Hints, Id::DynamicTime, Id::MultiAmmo, Id::FreeObserver, Id::BoundedFlee];
 
 const SQRT3: f32 = 1.732_050_8;
 
@@ -496,9 +497,9 @@ impl Menu {
     pub fn settings_text(&self) -> String {
         let c = &self.choice;
         format!(
-            "area={}\ntime={}\nanimals={}\nweapons={}\nradar={}\ncamo={}\nscent={}\ndouble_ammo={}\ntranq={}\nobserver={}\nrun_pct={}\nblood={}\ndeath_anim={}\nambient={}\nunits_us={}\nsurvival={}\nmap_mobile={}\nteleport={}\nhints={}\nall_huntable={}\ndynamic_time={}\nnight_vision={}\nflashlight={}\nmulti_ammo={}\nhalf_tranq={}\nadvanced_observer={}\n",
+            "area={}\ntime={}\nanimals={}\nweapons={}\nradar={}\ncamo={}\nscent={}\ndouble_ammo={}\ntranq={}\nobserver={}\nrun_pct={}\nblood={}\ndeath_anim={}\nambient={}\nunits_us={}\nsurvival={}\nmap_mobile={}\nteleport={}\nhints={}\nall_huntable={}\ndynamic_time={}\nnight_vision={}\nflashlight={}\nmulti_ammo={}\nhalf_tranq={}\nadvanced_observer={}\nbounded_flee={}\n",
             c.area, c.time, c.animals, c.weapons, c.radar, c.camo, c.scent, c.double_ammo, c.tranq,
-            c.observer, c.run_pct, c.blood, c.death_anim, c.ambient, c.units_us, c.survival, c.map_mobile, c.teleport, c.hints, c.all_huntable, c.dynamic_time, c.night_vision, c.flashlight, c.multi_ammo, c.half_tranq, c.free_observer
+            c.observer, c.run_pct, c.blood, c.death_anim, c.ambient, c.units_us, c.survival, c.map_mobile, c.teleport, c.hints, c.all_huntable, c.dynamic_time, c.night_vision, c.flashlight, c.multi_ammo, c.half_tranq, c.free_observer, c.bounded_flee
         )
     }
 
@@ -541,6 +542,7 @@ impl Menu {
                 "multi_ammo" => &mut c.multi_ammo,
                 "half_tranq" => &mut c.half_tranq,
                 "advanced_observer" => &mut c.free_observer,
+                "bounded_flee" => &mut c.bounded_flee,
                 _ => continue,
             };
             *field = v;
@@ -548,7 +550,7 @@ impl Menu {
         c.time = c.time.min(2);
         c.survival = c.survival.min(1);
         c.run_pct = (c.run_pct / 10 * 10).clamp(50, 100);
-        for f in [&mut c.radar, &mut c.camo, &mut c.scent, &mut c.double_ammo, &mut c.tranq, &mut c.observer, &mut c.blood, &mut c.death_anim, &mut c.ambient, &mut c.units_us, &mut c.map_mobile, &mut c.teleport, &mut c.hints, &mut c.all_huntable, &mut c.dynamic_time, &mut c.night_vision, &mut c.flashlight, &mut c.multi_ammo, &mut c.half_tranq, &mut c.free_observer] {
+        for f in [&mut c.radar, &mut c.camo, &mut c.scent, &mut c.double_ammo, &mut c.tranq, &mut c.observer, &mut c.blood, &mut c.death_anim, &mut c.ambient, &mut c.units_us, &mut c.map_mobile, &mut c.teleport, &mut c.hints, &mut c.all_huntable, &mut c.dynamic_time, &mut c.night_vision, &mut c.flashlight, &mut c.multi_ammo, &mut c.half_tranq, &mut c.free_observer, &mut c.bounded_flee] {
             *f = (*f != 0) as u32;
         }
         if self.install.is_some() {
@@ -605,7 +607,8 @@ impl Menu {
                 // Settings the instance fixes aren't shown.
                 let rows = SETTINGS_ROWS.into_iter().filter(|&id| !lock_of(id).is_some_and(|l| self.inst().is_some_and(|r| r.is_locked(l))));
                 for (i, id) in rows.enumerate() {
-                    v.push((id, rect(200.0, 96.0 + i as f32 * 40.0, 880.0, 36.0)));
+                    // Thirteen rows above the help line at 586.
+                    v.push((id, rect(200.0, 92.0 + i as f32 * 37.0, 880.0, 34.0)));
                 }
             }
             Page::Death => {
@@ -955,6 +958,7 @@ impl Menu {
             Id::Teleport => c.teleport ^= 1,
             Id::MultiAmmo => c.multi_ammo ^= 1,
             Id::FreeObserver => c.free_observer ^= 1,
+            Id::BoundedFlee => c.bounded_flee ^= 1,
             Id::Hints => c.hints ^= 1,
             Id::AllHuntable => {
                 c.all_huntable ^= 1;
@@ -1258,6 +1262,7 @@ impl Menu {
                 Id::Hints => ("Button hints", String::from(flag(ch.hints)), "The hunt's controls along the bottom of the TV."),
                 Id::MultiAmmo => ("Multi ammo", String::from(flag(ch.multi_ammo)), "With the tranquilizer: half lethal rounds and half darts (D-pad Left swaps them), or darts only."),
                 Id::FreeObserver => ("Advanced observer mode", String::from(flag(ch.free_observer)), "Observer mode with unlimited instant teleports, flying (D-pad Left) and stopping time (Y)."),
+                Id::BoundedFlee => ("Bounded fleeing (experimental)", String::from(flag(ch.bounded_flee)), "Scared animals stay on the map and stop after about 24 cells or 20 seconds. Off: the original."),
                 Id::AllHuntable => ("All dinos huntable", String::from(flag(ch.all_huntable)), "Add-ons that only roam their own maps are in the animal list too."),
                 Id::Back => {
                     self.button(c, r, "Back", focused, true);

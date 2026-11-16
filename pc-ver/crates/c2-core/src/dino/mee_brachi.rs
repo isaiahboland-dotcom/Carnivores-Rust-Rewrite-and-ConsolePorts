@@ -23,7 +23,7 @@ use super::huntable::{calm_phase, kill_now, wander, World};
 use super::mee::{mee_ai, MeeInfo};
 use super::{
     check_place_collision_avoid, check_place_collision_brahi, check_place_collision_land_brahi,
-    corrected_alpha, delta_func, find_vector_alpha, sgn, wrap_angle, Character, Ctx, Species,
+    corrected_alpha, delta_func, find_vector_alpha, flee, sgn, wrap_angle, Character, Ctx, Species,
     CS_ON_WATER, PI,
 };
 use crate::area::Area;
@@ -172,6 +172,20 @@ pub fn animate_old(
     advance(c, ctx, curspeed, drspd);
 }
 
+/// Where a bounded flight ([`flee`]) may take this brachiosaur: the land
+/// kind keeps to the ground its path check allows, the others to water
+/// they can stand in.
+fn medium(m: &MeeInfo) -> flee::Medium {
+    if m.ai == mee_ai::LANDBRACH {
+        flee::Medium::Shore {
+            dry: !m.can_swim,
+            level: m.water_level as f32,
+        }
+    } else {
+        flee::Medium::Wading
+    }
+}
+
 /// The dangerous brachiosaur's `CheckPossiblePath`: its own wading check
 /// every `collisiondist`, and (a missing `else` in the original) the
 /// common land check 64 further on as well.
@@ -289,6 +303,7 @@ pub fn animate(
                     c.retarget(sp, ctx.area, ctx.rng, 2048.0, w.group);
                     continue;
                 } else if !flee {
+                    c.flight.active = false;
                     c.tgx = ctx.target.view.x;
                     c.tgz = ctx.target.view.z;
                     c.tgtime = 0;
@@ -297,8 +312,21 @@ pub fn animate(
                     }
                 } else {
                     let l = pdist.max(1e-6);
-                    c.tgx = c.pos[0] - playerdx / l * 2048.0;
-                    c.tgz = c.pos[2] - playerdz / l * 2048.0;
+                    if let Some(lim) = ctx.flee {
+                        let away = (-playerdx / l, -playerdz / l);
+                        let aware = ctx.target.aware;
+                        let habitat = flee::Habitat {
+                            group: w.group,
+                            medium: medium(m),
+                        };
+                        match flee::step(c, ctx, lim, habitat, away, pdist, aware) {
+                            Some((tx, tz)) => (c.tgx, c.tgz) = (tx, tz),
+                            None => c.afraid_time = 0,
+                        }
+                    } else {
+                        c.tgx = c.pos[0] - playerdx / l * 2048.0;
+                        c.tgz = c.pos[2] - playerdz / l * 2048.0;
+                    }
                     c.tgtime = 0;
                     c.afraid_time -= dt;
                     let calm = match w.pack.as_deref_mut() {

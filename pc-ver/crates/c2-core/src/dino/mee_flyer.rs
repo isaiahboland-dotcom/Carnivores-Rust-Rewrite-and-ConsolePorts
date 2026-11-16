@@ -22,8 +22,8 @@ use alloc::{
 use super::huntable::{wander, World};
 use super::mee::{mee_ai, MeeInfo};
 use super::{
-    corrected_alpha, delta_func, find_vector_alpha, sgn, wrap_angle, Character, Ctx, DinoEvent,
-    Species, PI,
+    corrected_alpha, delta_func, find_vector_alpha, flee, sgn, wrap_angle, Character, Ctx,
+    DinoEvent, Species, PI,
 };
 
 /// `goto TBEGIN` limit, as in [`super::huntable`].
@@ -71,23 +71,41 @@ pub fn animate(
                 // Away from the hunter; scared a while when he is near;
                 // calm again beyond 4096 (unless the pack is alarmed).
                 let l = pdist.max(1e-6);
-                c.tgx = c.pos[0] - playerdx / l * 2048.0;
-                c.tgz = c.pos[2] - playerdz / l * 2048.0;
+                // Bounded fleeing: within the map, and over once the
+                // flight's limits are reached.
+                let mut over = false;
+                if let Some(lim) = ctx.flee {
+                    let away = (-playerdx / l, -playerdz / l);
+                    let habitat = flee::Habitat {
+                        group: w.group,
+                        medium: flee::Medium::Air,
+                    };
+                    match flee::step(c, ctx, lim, habitat, away, pdist, ctx.target.aware) {
+                        Some((tx, tz)) => (c.tgx, c.tgz) = (tx, tz),
+                        None => {
+                            over = true;
+                            c.afraid_time = 0;
+                        }
+                    }
+                } else {
+                    c.tgx = c.pos[0] - playerdx / l * 2048.0;
+                    c.tgz = c.pos[2] - playerdz / l * 2048.0;
+                }
                 c.tgtime = 0;
                 if c.afraid_time == 0 {
-                    if pdist < 2048.0 {
+                    if pdist < 2048.0 && !over {
                         c.afraid_time = (15 + ctx.rng.r_rand(5)) * 1024;
                         if let Some(p) = w.pack.as_deref_mut() {
                             p.alert = true;
                         }
                     }
                     let calm = match w.pack.as_deref_mut() {
-                        Some(p) if pdist > 4096.0 => !p.alert_prev,
+                        Some(p) if pdist > 4096.0 || over => !p.alert_prev,
                         Some(p) => {
                             p.alert = true;
                             false
                         }
-                        None => pdist > 4096.0,
+                        None => pdist > 4096.0 || over,
                     };
                     if calm {
                         c.retarget(sp, ctx.area, ctx.rng, a.target_distance, w.group);

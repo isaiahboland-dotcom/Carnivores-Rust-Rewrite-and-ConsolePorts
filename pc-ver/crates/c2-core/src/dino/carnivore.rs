@@ -16,8 +16,8 @@ use alloc::{
 };
 
 use super::{
-    ai, angle_difference, corrected_alpha, delta_func, find_vector_alpha, hunt, sgn, wrap_angle,
-    Character, Ctx, Species, CS_ON_WATER, PI,
+    ai, angle_difference, corrected_alpha, delta_func, find_vector_alpha, flee, hunt, sgn,
+    wrap_angle, Character, Ctx, Species, CS_ON_WATER, PI,
 };
 
 /// Marks a phase the species doesn't have.
@@ -252,8 +252,22 @@ pub fn animate(
                 {
                     // Too far: wander off and lose interest.
                     let l = pdist.max(1e-6);
-                    c.tgx = c.pos[0] - playerdx / l * 2048.0;
-                    c.tgz = c.pos[2] - playerdz / l * 2048.0;
+                    if let Some(lim) = ctx.flee {
+                        // Bounded fleeing: the retreat keeps to the map.
+                        let away = (-playerdx / l, -playerdz / l);
+                        let aware = ctx.target.aware;
+                        let wet = flee::Habitat {
+                            group: None,
+                            medium: flee::Medium::Wet,
+                        };
+                        match flee::step(c, ctx, lim, wet, away, pdist, aware) {
+                            Some((tx, tz)) => (c.tgx, c.tgz) = (tx, tz),
+                            None => c.afraid_time = 0,
+                        }
+                    } else {
+                        c.tgx = c.pos[0] - playerdx / l * 2048.0;
+                        c.tgz = c.pos[2] - playerdz / l * 2048.0;
+                    }
                     c.tgtime = 0;
                     c.afraid_time -= dt;
                     if c.afraid_time <= 0 {
@@ -261,6 +275,8 @@ pub fn animate(
                         c.state = 0;
                     }
                 } else {
+                    // Back on the hunt: a later retreat is a new flight.
+                    c.flight.active = false;
                     c.tgx = ctx.target.view.x;
                     c.tgz = ctx.target.view.z;
                     c.tgtime = 0;

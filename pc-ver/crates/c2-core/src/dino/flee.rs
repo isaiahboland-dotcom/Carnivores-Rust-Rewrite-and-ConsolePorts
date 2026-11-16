@@ -27,6 +27,11 @@ use alloc::{boxed::Box, vec, vec::Vec};
 use c2_formats::flee as fmt;
 use c2_formats::mee::SpawnGroup;
 
+use super::collide::{
+    check_place_collision_aquatic, check_place_collision_brahi_p, check_place_collision_fish_p,
+    check_place_collision_land_brahi,
+};
+use super::eco::Eco;
 use super::{check_place_collision_p, in_region, Character, Ctx, Species};
 use crate::area::Area;
 use crate::collide::WALK_CELLS;
@@ -163,8 +168,89 @@ impl Character {
     }
 }
 
+/// The ecosystem zones a flight keeps to or out of: the rules, the
+/// animal's home zone and where it stands.
+#[derive(Clone, Copy)]
+pub struct Fence<'a> {
+    pub eco: &'a Eco,
+    pub home: Option<u8>,
+    pub from: (f32, f32),
+}
+
+/// What an animal moves through, which decides where a flight may aim.
+/// Each is the placement check its AI already uses for new targets.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum Medium {
+    /// Dry, unblocked ground (herbivores, the small animals).
+    #[default]
+    Land,
+    /// Ground or water, as long as it is not blocked (the carnivores and
+    /// swimming ambient animals wade).
+    Wet,
+    /// Open water between `lo` and `hi` deep (the dialect's fish).
+    Water { lo: f32, hi: f32 },
+    /// Water no deeper than the wading brachiosaur stands in.
+    Wading,
+    /// The land brachiosaur: no water at all (`dry`), or none deeper than
+    /// `level`.
+    Shore { dry: bool, level: f32 },
+    /// Nothing on the ground matters (flyers).
+    Air,
+}
+
+impl Medium {
+    fn blocked(self, area: &Area, x: f32, z: f32) -> bool {
+        let mut p = [x, 0.0, z];
+        match self {
+            Medium::Land => check_place_collision_p(area, &mut p),
+            Medium::Wet => check_place_collision_aquatic(area, &mut p),
+            Medium::Water { lo, hi } => check_place_collision_fish_p(area, &p, lo, hi),
+            Medium::Wading => check_place_collision_brahi_p(area, &mut p),
+            Medium::Shore { dry, level } => {
+                // The check compares the ground with the walker's height
+                // (a step too high); a far point has only its own.
+                p[1] = area.land_height(x, z);
+                check_place_collision_land_brahi(area, &mut p, dry, true, &[], level)
+            }
+            Medium::Air => false,
+        }
+    }
+}
+
+/// Where a kind of animal lives: its spawn group (the dialect's avoided
+/// regions) and what it moves through.
+#[derive(Clone, Copy, Default)]
+pub struct Habitat<'a> {
+    pub group: Option<&'a SpawnGroup>,
+    pub medium: Medium,
+}
+
+impl<'a> Habitat<'a> {
+    pub fn land(group: Option<&'a SpawnGroup>) -> Self {
+        Self {
+            group,
+            medium: Medium::Land,
+        }
+    }
+}
+
+/// Where an animal may flee: its habitat and the ecosystem's zones.
+#[derive(Clone, Copy, Default)]
+pub struct Keep<'a> {
+    pub group: Option<&'a SpawnGroup>,
+    pub medium: Medium,
+    pub fence: Option<Fence<'a>>,
+}
+
 /// Can an animal stand at (x, z)? `margin`: also keep clear of the edge.
-fn walkable(area: &Area, group: Option<&SpawnGroup>, x: f32, z: f32, margin: bool) -> bool {
+fn walkable(area: &Area, keep: Keep<'_>, x: f32, z: f32, margin: bool) -> bool {
+    let group = keep.group;
+    if keep
+        .fence
+        .is_some_and(|f| !f.eco.may_aim(f.home, f.from, x, z))
+    {
+        return false;
+    }
     let (cx, cz) = ((x / CELL) as i32, (z / CELL) as i32);
     let m = if margin { MARGIN_CELLS } else { 0 };
     let ok = |c: i32| (*WALK_CELLS.start() + m..=*WALK_CELLS.end() - m).contains(&c);
@@ -174,8 +260,7 @@ fn walkable(area: &Area, group: Option<&SpawnGroup>, x: f32, z: f32, margin: boo
     if group.is_some_and(|g| g.avoid.iter().any(|r| in_region(r, x, z))) {
         return false;
     }
-    let mut p = [x, 0.0, z];
-    !check_place_collision_p(area, &mut p)
+    !keep.medium.blocked(area, x, z)
 }
 
 /// Is the straight way from (x, z) along (`dx`, `dz`) for `len` units clear?
@@ -183,7 +268,7 @@ fn walkable(area: &Area, group: Option<&SpawnGroup>, x: f32, z: f32, margin: boo
 /// the margin has to be able to leave it.
 fn path_clear(
     area: &Area,
-    group: Option<&SpawnGroup>,
+    group: Keep<'_>,
     (x, z): (f32, f32),
     (dx, dz): (f32, f32),
     len: f32,
@@ -212,6 +297,25 @@ pub fn pick_target(
     c: &Character,
     area: &Area,
     group: Option<&SpawnGroup>,
+    away: (f32, f32),
+    hunter: (f32, f32),
+    reach: f32,
+    first: f32,
+    skip: Option<f32>,
+) -> (f32, f32) {
+    let keep = Keep {
+        group,
+        ..Keep::default()
+    };
+    pick_target_kept(c, area, keep, away, hunter, reach, first, skip)
+}
+
+/// [`pick_target`] that also keeps to the ecosystem's zones (`keep`).
+#[allow(clippy::too_many_arguments)]
+pub fn pick_target_kept(
+    c: &Character,
+    area: &Area,
+    group: Keep<'_>,
     away: (f32, f32),
     hunter: (f32, f32),
     reach: f32,
@@ -260,19 +364,30 @@ pub fn pick_target(
 
 /// One step of a flight from the hunter. Returns the target to aim at, or
 /// `None` when the flight is over (the caller calms the animal).
-/// `away` is the unit vector from the hunter to the animal, `pdist` the
-/// hunter's distance, `aware` whether the animal knows about him.
+/// `habitat` is where the animal may go, `away` the unit vector from the
+/// hunter to the animal, `pdist` the hunter's distance, `aware` whether the
+/// animal knows about him.
 pub fn step(
     c: &mut Character,
     ctx: &mut Ctx<'_>,
     limits: FleeLimits,
-    group: Option<&SpawnGroup>,
+    habitat: Habitat<'_>,
     away: (f32, f32),
     pdist: f32,
     aware: bool,
 ) -> Option<(f32, f32)> {
     let dt = ctx.dt;
     let hunter = (ctx.target.view.x, ctx.target.view.z);
+    let eco = ctx.eco.clone();
+    let keep = |c: &Character| Keep {
+        group: habitat.group,
+        medium: habitat.medium,
+        fence: eco.as_deref().map(|eco| Fence {
+            eco,
+            home: c.home_zone,
+            from: (c.pos[0], c.pos[2]),
+        }),
+    };
     if !c.flight.active {
         c.flight = Flight {
             active: true,
@@ -283,10 +398,10 @@ pub fn step(
             ..Flight::default()
         };
         let first = if ctx.rng.r_rand(2) == 0 { 1.0 } else { -1.0 };
-        let t = pick_target(
+        let t = pick_target_kept(
             c,
             ctx.area,
-            group,
+            keep(c),
             away,
             hunter,
             LEG.min(limits.max_distance as f32),
@@ -330,7 +445,16 @@ pub fn step(
         let left = (limits.max_distance as f32 - travelled).max(CELL * 2.0);
         let first = if ctx.rng.r_rand(2) == 0 { 1.0 } else { -1.0 };
         let skip = stalled.then(|| c.alpha);
-        (c.tgx, c.tgz) = pick_target(c, ctx.area, group, away, hunter, LEG.min(left), first, skip);
+        (c.tgx, c.tgz) = pick_target_kept(
+            c,
+            ctx.area,
+            keep(c),
+            away,
+            hunter,
+            LEG.min(left),
+            first,
+            skip,
+        );
     }
     Some((c.tgx, c.tgz))
 }

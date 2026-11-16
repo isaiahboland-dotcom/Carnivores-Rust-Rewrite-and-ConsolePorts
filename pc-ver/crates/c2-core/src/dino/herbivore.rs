@@ -195,7 +195,7 @@ pub fn animate(
                 if let Some(lim) = ctx.flee {
                     let away = (-playerdx / l, -playerdz / l);
                     let aware = ctx.target.aware;
-                    match flee::step(c, ctx, lim, None, away, pdist, aware) {
+                    match flee::step(c, ctx, lim, flee::Habitat::default(), away, pdist, aware) {
                         Some((tx, tz)) => (c.tgx, c.tgz) = (tx, tz),
                         None => {
                             c.afraid_time = 0;

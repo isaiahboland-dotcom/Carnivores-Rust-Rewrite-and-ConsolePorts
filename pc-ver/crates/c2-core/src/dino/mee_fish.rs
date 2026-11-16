@@ -24,7 +24,7 @@ use super::huntable::World;
 use super::mee::{ai_info, mee_ai, MeeInfo};
 use super::{
     angle_difference, check_place_collision_fish, corrected_alpha, delta_func, find_vector_alpha,
-    hunt, in_region, sgn, wrap_angle, Character, Ctx, Species, CS_ON_WATER, PI,
+    flee, hunt, in_region, sgn, wrap_angle, Character, Ctx, Species, CS_ON_WATER, PI,
 };
 use crate::area::Area;
 use crate::rng::MsRand;
@@ -279,8 +279,24 @@ pub fn animate(
                 }
             } else {
                 let l = pdist.max(1e-6);
-                c.tgx = c.pos[0] - playerdx / l * 2048.0;
-                c.tgz = c.pos[2] - playerdz / l * 2048.0;
+                if let Some(lim) = ctx.flee {
+                    // Bounded fleeing: within the map and its depth band.
+                    let away = (-playerdx / l, -playerdz / l);
+                    let habitat = flee::Habitat {
+                        group: w.group,
+                        medium: flee::Medium::Water {
+                            lo: m.min_depth as f32,
+                            hi: m.max_depth as f32,
+                        },
+                    };
+                    match flee::step(c, ctx, lim, habitat, away, pdist, ctx.target.aware) {
+                        Some((tx, tz)) => (c.tgx, c.tgz) = (tx, tz),
+                        None => c.afraid_time = 0,
+                    }
+                } else {
+                    c.tgx = c.pos[0] - playerdx / l * 2048.0;
+                    c.tgz = c.pos[2] - playerdz / l * 2048.0;
+                }
                 let (u, g) = (up(c.pos[0], c.pos[2]), land(c.pos[0], c.pos[2]));
                 c.tdepth = g + (u - g) / 2.0;
             }

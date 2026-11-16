@@ -15,6 +15,13 @@
 //!   fastest `measure_ticks` (a T-Rex first turns, looks and sniffs). The
 //!   watch ends early when a charging animal comes within
 //!   [`NEAR_HUNTER`], before it can kill him.
+//! - **Bounded flight** (only with [`BehaviourPlan::flee`]): bounded
+//!   fleeing ([`crate::dino::flee`]) is turned on with its default limits
+//!   and the animal alarmed as before. Its first flight is watched: it
+//!   must end clear of the map's edge, before the watch runs out, and get no
+//!   farther than the plan allows. (An animal that still notices the
+//!   hunter then starts another flight; that one is not judged.)
+//!   Ours only: the original has no such setting.
 //! - **Death**: `Health = 0`, the original's way into `Animate*Dead`. The
 //!   death clip must play, then hold its last frame, and the body must
 //!   stay where it fell (a slide of a few hundred units at most).
@@ -57,6 +64,17 @@ pub struct BehaviourPlan {
     pub min_moving_ticks: u32,
     pub hold_ticks: u32,
     pub max_drift: f32,
+    /// The bounded-flight stages, when the scenario has them.
+    pub flee: Option<FleePlan>,
+}
+
+/// The bounded-flight stages (`[behaviours.flee]`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FleePlan {
+    /// Ticks a frightened animal is watched; its flight must end sooner.
+    pub ticks: u32,
+    /// The farthest it may get from where it was frightened, units.
+    pub max_distance: f32,
 }
 
 /// One sample of whatever a behaviour stage watches.
@@ -174,6 +192,8 @@ pub enum Subject {
     Runner(usize),
     /// Scenario animal `n`, slain.
     Dying(usize),
+    /// Scenario animal `n`, frightened with bounded fleeing on.
+    Fleeing(usize),
 }
 
 /// How a behaviour stage went, for comparing engines.
@@ -199,6 +219,7 @@ impl Subject {
             Subject::Hunter { run: true } => "run",
             Subject::Runner(_) => "animal_run",
             Subject::Dying(_) => "death",
+            Subject::Fleeing(_) => "bounded_flight",
         }
     }
 
@@ -231,6 +252,39 @@ impl Subject {
                     t.clips()
                 );
                 vec![("runs", v >= p.min_run_speed, detail)]
+            }
+            Subject::Fleeing(_) => {
+                let Some(f) = p.flee else {
+                    return vec![("flee_planned", false, "no [behaviours.flee]".into())];
+                };
+                // Two cells inside the walkable square: a flight that ran
+                // into the map's edge ends pressed against it.
+                let inside = crate::collide::WALK_MIN + 2.0 * crate::CELL
+                    ..=crate::collide::WALK_MAX - 2.0 * crate::CELL;
+                let end = t.samples.last().map_or([0.0; 2], |s| s.at);
+                let (watched, most) = (t.samples.len().saturating_sub(1), steps(f.ticks));
+                let drift = t.drift();
+                vec![
+                    (
+                        "clear_of_edge",
+                        inside.contains(&end[0]) && inside.contains(&end[1]),
+                        format!(
+                            "ended at cell ({:.0}, {:.0})",
+                            end[0] / crate::CELL,
+                            end[1] / crate::CELL
+                        ),
+                    ),
+                    (
+                        "flight_ends",
+                        watched < most,
+                        format!("over after {watched} steps, fewer than {most} needed"),
+                    ),
+                    (
+                        "flight_bounded",
+                        drift <= f.max_distance,
+                        format!("got {drift:.0} units away, at most {:.0}", f.max_distance),
+                    ),
+                ]
             }
             Subject::Dying(_) => {
                 let (moving, held) = (t.moving(), t.held());
@@ -283,6 +337,17 @@ impl Subject {
         matches!(self, Subject::Runner(_)) && dist(s.at, hunter) < NEAR_HUNTER
     }
 
+    /// A bounded flight that is over.
+    pub fn over(self, hunt: &Hunt, hold: &[usize]) -> bool {
+        let Subject::Fleeing(n) = self else {
+            return false;
+        };
+        // Not its state: an animal that still notices the hunter is
+        // alarmed again in the tick its flight ends, and starts another.
+        let c = hold.get(n).and_then(|&i| hunt.herd.chars.get(i));
+        c.is_none_or(|c| !c.flight.active && c.flight.time > 0)
+    }
+
     /// This tick's sample of the subject, from our engine.
     pub fn sample(self, hunt: &Hunt, hold: &[usize]) -> Option<Sample> {
         match self {
@@ -292,7 +357,7 @@ impl Subject {
                 ftime: 0,
                 scale: 1.0,
             }),
-            Subject::Runner(n) | Subject::Dying(n) => {
+            Subject::Runner(n) | Subject::Dying(n) | Subject::Fleeing(n) => {
                 let c = hunt.herd.chars.get(*hold.get(n)?)?;
                 Some(Sample {
                     at: [c.pos[0], c.pos[2]],
@@ -318,8 +383,9 @@ pub(super) fn slug(s: &str) -> String {
     String::from(out.trim_end_matches('_'))
 }
 
-/// The stage names, in order, as both engines run them.
-pub fn stage_names(cast_names: &[String]) -> Vec<(String, Subject)> {
+/// The stage names, in order, as both engines run them. `flee`: with the
+/// bounded-flight stages (ours only).
+pub fn stage_names(cast_names: &[String], flee: bool) -> Vec<(String, Subject)> {
     let mut out = vec![
         ("hunter_walk".into(), Subject::Hunter { run: false }),
         ("hunter_run".into(), Subject::Hunter { run: true }),
@@ -328,6 +394,12 @@ pub fn stage_names(cast_names: &[String]) -> Vec<(String, Subject)> {
         out.push((
             format!("run_{:02}_{}", n + 1, slug(name)),
             Subject::Runner(n),
+        ));
+    }
+    for (n, name) in cast_names.iter().enumerate().filter(|_| flee) {
+        out.push((
+            format!("flee_{:02}_{}", n + 1, slug(name)),
+            Subject::Fleeing(n),
         ));
     }
     for (n, name) in cast_names.iter().enumerate() {
@@ -343,11 +415,16 @@ pub fn stage_names(cast_names: &[String]) -> Vec<(String, Subject)> {
 pub(super) fn steps(s: &Scenario, p: &BehaviourPlan, cast: &[Cast]) -> Vec<Step> {
     let names: Vec<String> = cast.iter().map(|c| c.name.clone()).collect();
     let mut steps = super::Director::opening(s);
-    for (stage, subject) in stage_names(&names) {
+    for (stage, subject) in stage_names(&names, p.flee.is_some()) {
         steps.push(Step::Begin(stage.clone(), None));
         let (before, ticks, after) = match subject {
             Subject::Hunter { .. } => (Arrange::FreeHunter, p.move_ticks, Arrange::PinHunter),
             Subject::Runner(n) => (Arrange::Alarm(n), p.run_ticks, Arrange::Calm(n)),
+            Subject::Fleeing(n) => (
+                Arrange::Scare(n),
+                p.flee.map_or(0, |f| f.ticks),
+                Arrange::Calm(n),
+            ),
             // The dead stay dead; `Calm` of a dead animal does nothing.
             Subject::Dying(n) => (Arrange::Slay(n), p.die_ticks, Arrange::Calm(n)),
         };
@@ -381,13 +458,20 @@ impl Hold {
                 p.y = area.land_qh(p.x, p.z, f32::MAX);
                 (p.vspeed, p.sspeed, p.yspeed) = (0.0, 0.0, 0.0);
             }
-            Arrange::Alarm(n) => {
+            Arrange::Alarm(n) | Arrange::Scare(n) => {
+                if a == Arrange::Scare(n) && hunt.herd.flee.is_none() {
+                    // The built-in limits for every species.
+                    hunt.herd.flee = Some(Default::default());
+                }
                 let Some(&(i, _, _)) = self.animals.get(n) else {
                     return;
                 };
                 if let Some(c) = hunt.herd.chars.get_mut(i) {
                     // A shot or a heard hunter: `State = 2` starts the
                     // run on the next frame, `AfraidTime` keeps it going.
+                    if a == Arrange::Scare(n) {
+                        c.flight = Default::default();
+                    }
                     c.state = 2;
                     c.afraid_time = 20_000;
                     c.aware_hunter = true;

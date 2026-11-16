@@ -18,6 +18,7 @@ fn plan() -> BehaviourPlan {
         min_moving_ticks: 10,
         hold_ticks: 100,
         max_drift: 256.0,
+        flee: None,
     }
 }
 
@@ -121,7 +122,12 @@ fn track_measures() {
 
 #[test]
 fn stage_names_are_shared() {
-    let names = stage_names(&["T-Rex".into(), "Stegosaurus".into()]);
+    let cast = ["T-Rex".into(), "Stegosaurus".into()];
+    let with_flee = stage_names(&cast, true);
+    assert_eq!(with_flee.len(), 8);
+    assert_eq!(with_flee[4].0, "flee_01_t_rex");
+    assert_eq!(with_flee[4].1, Subject::Fleeing(0));
+    let names = stage_names(&cast, false);
     let n: Vec<&str> = names.iter().map(|x| x.0.as_str()).collect();
     assert_eq!(
         n,
@@ -134,4 +140,44 @@ fn stage_names_are_shared() {
             "die_02_stegosaurus"
         ]
     );
+}
+
+/// Two herbivores with the bounded-flight stages: each flight ends well
+/// inside the limit, and a limit it cannot keep fails the stage.
+fn flee_scenario(max_distance: f32) -> Scenario {
+    let mut s = behaviour_scenario();
+    s.species = [12, 14].map(SpeciesRef::Ai).to_vec();
+    s.offsets.truncate(2);
+    s.script = Script::Behaviours(BehaviourPlan {
+        flee: Some(FleePlan {
+            ticks: 2500,
+            max_distance,
+        }),
+        ..plan()
+    });
+    s
+}
+
+#[test]
+fn a_bounded_flight_ends_within_its_limit() {
+    // The default limit is 24 cells; two more for the last step.
+    let r = run_with(&flee_scenario(26.0 * 256.0), three_guns(), None);
+    assert!(!r.director.failed(), "{:#?}", r.director.stages);
+    for stage in ["flee_01_stego", "flee_02_chasmo", "die_02_chasmo"] {
+        assert_eq!(status(&r, stage), &Status::Passed, "{stage}");
+    }
+    let flights: Vec<_> = r
+        .director
+        .behaviour_reports
+        .iter()
+        .filter(|b| b.kind == "bounded_flight")
+        .collect();
+    assert_eq!(flights.len(), 2);
+    assert!(flights.iter().all(|f| f.drift > 2048.0), "{flights:?}");
+}
+
+#[test]
+fn a_flight_past_the_limit_fails_its_stage() {
+    let r = run_with(&flee_scenario(1024.0), three_guns(), None);
+    assert!(matches!(status(&r, "flee_01_stego"), Status::Failed(_)));
 }

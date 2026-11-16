@@ -57,6 +57,14 @@ struct Behaviours {
     min_moving_ticks: u32,
     hold_ticks: u32,
     max_drift: f32,
+    /// `[behaviours.flee]`: the bounded-flight stages (ours only).
+    flee: Option<Flee>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Flee {
+    ticks: u32,
+    max_distance: f32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -220,6 +228,10 @@ impl ScenarioFile {
                 min_moving_ticks: b.min_moving_ticks,
                 hold_ticks: b.hold_ticks,
                 max_drift: b.max_drift,
+                flee: b.flee.as_ref().map(|f| c2_core::scenario::FleePlan {
+                    ticks: f.ticks,
+                    max_distance: f.max_distance,
+                }),
             }),
             (ScriptName::Kills, Some(k), _) => Script::Kills(KillPlan {
                 start_distance: k.start_distance,

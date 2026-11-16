@@ -207,6 +207,7 @@ fn run_bounded(herd: &mut Herd, area: &Area, hunter: HunterView, ms: i32) {
             render_r: 74,
             run_k: 1.0,
             flee: None,
+            eco: None,
             events: &mut events,
         };
         herd.step(&mut ctx);
@@ -326,10 +327,21 @@ fn flight_length(
             render_r: 74,
             run_k: 1.0,
             flee: None,
+            eco: None,
             events: &mut events,
         };
         ctx.target.view = hunter_view(c.pos[0] - gap(t), c.pos[2]);
-        if flee::step(&mut c, &mut ctx, limits, None, (1.0, 0.0), gap(t), aware).is_none() {
+        if flee::step(
+            &mut c,
+            &mut ctx,
+            limits,
+            flee::Habitat::default(),
+            (1.0, 0.0),
+            gap(t),
+            aware,
+        )
+        .is_none()
+        {
             return Some(t);
         }
     }
@@ -379,4 +391,96 @@ fn the_launchers_vanilla_table_matches_the_ai_code() {
             assert_eq!(v.refresh_ms, Some(flee::PROXIMITY_FEAR_MS), "AI {ai_id}");
         }
     }
+}
+
+/// A stock carnivore that has lost the hunter (he is beyond its give-up
+/// distance) walks off: bounded, the retreat aims inside the map.
+#[test]
+fn a_retreating_carnivore_keeps_to_the_map() {
+    let area = Area::flat(10);
+    for ai_id in [ai::ALLO, ai::VELO] {
+        let aims = |bounded: bool| {
+            let h = hunter_view(cell(42 + 80), cell(500));
+            let mut herd = herd_with(&area, ai_id, 12, [cell(42), 0.0, cell(500)]);
+            if bounded {
+                herd.flee = table(FleeLimits::default());
+            }
+            let mut west = f32::MAX;
+            for _ in 0..10 {
+                herd.chars[0].state = 1;
+                herd.chars[0].afraid_time = 20_000;
+                run_bounded(&mut herd, &area, h, 500);
+                if herd.chars[0].state != 0 {
+                    west = west.min(herd.chars[0].tgx);
+                }
+            }
+            west
+        };
+        assert!(aims(false) < cell(40), "ai {ai_id}: the original aims out");
+        assert!(aims(true) >= 40.0 * 256.0, "ai {ai_id}: {}", aims(true));
+    }
+}
+
+/// Each medium takes its own ground: a fish stays in water of its depth,
+/// a wader in water, a flyer ignores what is below.
+#[test]
+fn a_flight_keeps_to_what_the_animal_moves_through() {
+    use crate::area::cell_flags;
+    use c2_formats::map::MAP_SIZE;
+    use flee::{pick_target_kept, Keep, Medium};
+    // A lake over cells 480..=520 both ways, 320 units deep.
+    let mut area = Area::flat(10);
+    area.rsc.waters = vec![c2_formats::rsc::Water {
+        texture_index: 0,
+        level: 20,
+        transp: 1.0,
+        fog_rgb: 0,
+    }];
+    for cz in 480..=520 {
+        for cx in 480..=520 {
+            area.map.flags[cz * MAP_SIZE + cx] |= cell_flags::WATER;
+            area.map.water[cz * MAP_SIZE + cx] = 0;
+        }
+    }
+    let wet = |p: (f32, f32)| area.land_up_h(p.0, p.1) > area.land_height(p.0, p.1);
+    // By the lake's east shore, the hunter to the west: "away" leaves it.
+    let c = at(cell(516), cell(500));
+    let hunter = (cell(510), cell(500));
+    let aim = |medium| {
+        let keep = Keep {
+            medium,
+            ..Keep::default()
+        };
+        pick_target_kept(&c, &area, keep, (1.0, 0.0), hunter, 2048.0, 1.0, None)
+    };
+    let depth = area.land_up_h(c.pos[0], c.pos[2]) - area.land_height(c.pos[0], c.pos[2]);
+    let band = Medium::Water {
+        lo: 100.0,
+        hi: depth + 100.0,
+    };
+    assert!(wet(aim(band)), "fish: {:?}", aim(band));
+    assert!(wet(aim(Medium::Wading)), "wader: {:?}", aim(Medium::Wading));
+    assert!(!wet(aim(Medium::Air)), "flyer: straight on");
+    assert_eq!(aim(Medium::Air), (c.pos[0] + 2048.0, c.pos[2]));
+    // A dry-land animal in the same spot would be refused the lake.
+    let dry = Medium::Shore {
+        dry: true,
+        level: 0.0,
+    };
+    let shore = at(cell(524), cell(500));
+    let keep = Keep {
+        medium: dry,
+        ..Keep::default()
+    };
+    let t = pick_target_kept(
+        &shore,
+        &area,
+        keep,
+        (-1.0, 0.0),
+        (cell(530), cell(500)),
+        2048.0,
+        1.0,
+        None,
+    );
+    assert!(!wet(t), "land brachiosaur: {t:?}");
 }

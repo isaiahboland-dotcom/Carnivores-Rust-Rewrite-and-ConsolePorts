@@ -41,7 +41,9 @@ pub(crate) fn model_clip(hunt: &crate::game::Hunt, c: &crate::dino::Character) -
         .unwrap_or(c.phase)
 }
 
-pub use behaviour::{stage_names, BehaviourPlan, BehaviourReport, Sample, Subject, Track};
+pub use behaviour::{
+    stage_names, BehaviourPlan, BehaviourReport, FleePlan, Sample, Subject, Track,
+};
 pub use director::{Director, Frontend, Headless, Screen, TickPlan};
 pub use inject::Inject;
 pub use kills::{hunter_clip, Arrange, KillPlan, KillReport, KillWatch, Pose};
@@ -122,7 +124,8 @@ impl Scenario {
             }
             Script::Behaviours(b) => {
                 let n = self.species.len() as u32;
-                let stages = 2 * (b.move_ticks + 4) + n * (b.run_ticks + b.die_ticks + 8);
+                let flee = b.flee.map_or(0, |f| f.ticks + 8);
+                let stages = 2 * (b.move_ticks + 4) + n * (b.run_ticks + b.die_ticks + 8 + flee);
                 self.warmup_ticks + 4 * per + stages
             }
         }

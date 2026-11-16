@@ -105,7 +105,8 @@ fn behave_script(
     let mut shots = vec![("warmup".to_string(), t)];
     let _ = writeln!(text, "{t} shot warmup");
     let mut windows = Vec::new();
-    for (stage, subject) in stage_names(names) {
+    // The original has no bounded fleeing: those stages are ours only.
+    for (stage, subject) in stage_names(names, false) {
         t += 10;
         let _ = writeln!(text, "{t} mark {stage}");
         let start = t;
@@ -130,6 +131,7 @@ fn behave_script(
                 let _ = writeln!(text, "{t} slay {} {x} {z}", ais[n]);
                 (Some(ais[n]), b.die_ticks / TICKS_PER_FRAME)
             }
+            Subject::Fleeing(_) => continue,
         };
         t += len;
         let _ = writeln!(text, "{t} shot {stage}\n{t} untrack");
@@ -452,6 +454,7 @@ mod tests {
             min_moving_ticks: 20,
             hold_ticks: 50,
             max_drift: 256.0,
+            flee: None,
         }
     }
 

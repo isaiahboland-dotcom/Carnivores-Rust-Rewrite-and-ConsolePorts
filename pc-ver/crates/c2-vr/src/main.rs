@@ -3,8 +3,10 @@
 //! - `c2-vr check`: the OpenXR runtime.
 //! - `c2-vr scene [--seconds N]`: the test scene (no game data).
 //! - `c2-vr area PATH/AREA1.MAP [--seconds N]`: that area's terrain.
-//! - `c2-vr play GAME [--overlay DIR].. [--mod DIR].. [--standalone DIR]..`
-//!   (what the launcher's "Play in VR" passes, the same as `c2-pc play`):
+//! - `c2-vr play GAME [--overlay DIR].. [--mod DIR].. [--standalone DIR]..
+//!   [--bounded-flee]`
+//!   (what the launcher's "Play in VR" passes, the same as `c2-pc play`;
+//!   `--bounded-flee` is ours: scared animals stay on the map):
 //!   checks the runtime and the game, then the main menu in the first
 //!   area's camp (`game`). Other `c2-pc play` options are accepted and
 //!   ignored.
@@ -65,7 +67,7 @@ fn play_folders(args: &[String]) -> (Option<PathBuf>, Vec<PathBuf>, Vec<PathBuf>
             "--standalone" => &mut standalones,
             // An option of `c2-pc play` with a value (`--balance FILE` ...).
             s if s.starts_with("--") => {
-                if !matches!(s, "--mobile-menu") {
+                if !matches!(s, "--mobile-menu" | "--bounded-flee") {
                     it.next();
                 }
                 continue;
@@ -110,7 +112,11 @@ fn play(args: &[String]) -> Result<()> {
              walk around, or the trophy room (add-ons are not loaded yet)."
         );
     }
-    let game = c2_vr::game::Game::new(&base, &overlays)?;
+    let mut game = c2_vr::game::Game::new(&base, &overlays)?;
+    game.bounded_flee = args.iter().any(|a| a == "--bounded-flee");
+    if game.bounded_flee {
+        println!("Bounded fleeing: on");
+    }
     run(c2_vr::game::menu(game)?, seconds(args)?)
 }
 
@@ -193,7 +199,7 @@ fn main() -> Result<()> {
         }
         _ => bail!(
             "usage: c2-vr check | c2-vr scene [--seconds N] | c2-vr area MAP [--seconds N] | \
-             c2-vr play GAME [--overlay DIR].. [--mod DIR].."
+             c2-vr play GAME [--overlay DIR].. [--mod DIR].. [--bounded-flee]"
         ),
     }
 }
@@ -213,6 +219,7 @@ mod tests {
             "--balance",
             "/b.toml",
             "--mobile-menu",
+            "--bounded-flee",
             "--standalone",
             "/s",
             "--survival-modes",

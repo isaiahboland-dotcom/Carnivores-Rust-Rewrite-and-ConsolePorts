@@ -65,6 +65,8 @@ pub enum Arrange {
     /// pinned; then calmed and pinned again where it was placed.
     Alarm(usize),
     Calm(usize),
+    /// Behaviours: bounded fleeing is turned on, then as `Alarm`.
+    Scare(usize),
     /// Behaviours: animal `n`'s health goes to 0 and it stays dead.
     Slay(usize),
 }

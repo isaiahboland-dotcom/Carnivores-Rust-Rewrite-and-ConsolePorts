@@ -42,6 +42,8 @@ pub struct Game {
     /// `HUNTDAT` folders, the base's last (overlays, latest first, before
     /// it): a file is taken from the first that has it.
     pub huntdat: Vec<PathBuf>,
+    /// Bounded fleeing (`--bounded-flee`; off: the original's).
+    pub bounded_flee: bool,
 }
 
 impl Game {
@@ -56,7 +58,10 @@ impl Game {
         if huntdat.is_empty() {
             return Err(anyhow!("{}: no HUNTDAT folder", base.display()));
         }
-        Ok(Self { huntdat })
+        Ok(Self {
+            huntdat,
+            bounded_flee: false,
+        })
     }
 
     fn area(&self, name: &str) -> Result<PathBuf> {
@@ -103,7 +108,7 @@ pub fn menu(game: Game) -> Result<MakeScene> {
 fn hunt(game: Game, launch: Launch) -> Result<MakeScene> {
     let area = terrain::load_at(&launch.map, launch.time)?;
     let sun = crate::sky::load_sun(&launch.map, area.time);
-    let roster = Roster::load(&game.huntdat)?;
+    let roster = Roster::load(&game.huntdat, game.bounded_flee)?;
     let seed = clock_seed();
     let (lx, ly) = area
         .landings

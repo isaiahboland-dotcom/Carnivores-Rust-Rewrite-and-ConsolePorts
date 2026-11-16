@@ -87,6 +87,9 @@ pub struct HuntChoice {
     /// Advanced observer mode (a setting): observing, unlimited instant
     /// teleports, flying (D-pad Left) and stopping time (Y).
     pub free_observer: u32,
+    /// Bounded fleeing (a setting, experimental here): scared animals stay
+    /// on the map and stop running after a set distance or time.
+    pub bounded_flee: u32,
 }
 pub const MODE_HUNT: u32 = 0;
 pub const MODE_SURVIVAL: u32 = 1;
@@ -125,6 +128,7 @@ impl Default for HuntChoice {
             multi_ammo: 0,
             half_tranq: 1,
             free_observer: 0,
+            bounded_flee: 0,
         }
     }
 }
@@ -388,6 +392,11 @@ pub fn load(install: Option<&Install>, choice: &HuntChoice, room: &Save, seed: u
     // `_PREDATION.TXT`, when its recipe turns it on.
     if !trophy && choice.mode != MODE_SURVIVAL {
         hunt.herd.predation = load::predation(&install.vfs, &hunt.herd.species);
+    }
+    // Bounded fleeing, when the player turned it on: the instance's limits
+    // (`_FLEE.TXT`) or the built-in ones.
+    if choice.bounded_flee != 0 {
+        hunt.herd.flee = Some(load::flee(&install.vfs, &hunt.herd.species));
     }
     // The instance's spawn rules: picked animals capped, secret ones added.
     if hunting && !install.inst.is_empty() {

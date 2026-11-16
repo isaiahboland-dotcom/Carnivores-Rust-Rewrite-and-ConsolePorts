@@ -1,0 +1,63 @@
+# Bounded fleeing by a map edge (docs/REGRESSION.md, "Bounded flight").
+#
+# The behaviour script with its bounded-flight stages: the hunter stands
+# near the east edge of the map looking at it, the animals between him and
+# the edge. Each is alarmed with bounded fleeing off (`run_NN`: it must
+# run), then with it on (`flee_NN`: its first flight must end clear of the
+# edge, in time and within the distance limit), then slain.
+# Our engine only: the original has no bounded fleeing.
+#
+# Bump `version` whenever anything below changes what a run does.
+
+[scenario]
+id = "flee_bounds"
+version = 1
+script = "behaviours"
+seed = 20261116
+warmup_ticks = 200
+settle_ticks = 30
+timeout_ticks = 600
+
+[view]
+# JPHL Special Edition's area 1: open, dry ground from here to the edge
+# (the walkable square ends at cell 980).
+cell = [948, 812]
+yaw_deg = 90.0
+pitch_deg = 0.0
+
+[anchor]
+# 18 cells ahead, 14 short of the edge, 3 cells apart: a straight flight of
+# the default 24 cells would run into the edge.
+distance = 4608.0
+bearing_deg = 0.0
+fire_clearance_deg = 0.0
+offsets = [[-1152.0, 0.0], [-384.0, 0.0], [384.0, 0.0], [1152.0, 0.0]]
+
+[behaviours]
+move_ticks = 300
+measure_ticks = 150
+walk_speed = 300.0
+run_speed = 700.0
+speed_tolerance = 0.05
+run_ticks = 600
+min_run_speed = 400.0
+die_ticks = 400
+min_moving_ticks = 20
+hold_ticks = 50
+max_drift = 256.0
+
+[behaviours.flee]
+# The default limits are 24 cells or 20 s; two cells more for the step
+# that reaches the limit, and 25 s to see the flight end.
+ticks = 2500
+max_distance = 6656.0
+
+[[game]]
+id = "jphl-pack"
+name = "JPHL Special Edition with add-ons (Modder's Edition rules)"
+status = "supported"
+# Any pack built on JPHL Special Edition's area 1. Local runs only:
+# add-on and standalone packs are never published.
+area = "AREA1"
+# Parasaurolophus, Stegosaurus, Ankylosaurus, Gallimimus (ambient).
+species = ["model:para.car", "model:stego.car", "model:anky.car", "model:galli.car"]

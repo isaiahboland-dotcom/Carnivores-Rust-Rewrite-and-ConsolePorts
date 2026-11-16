@@ -520,7 +520,8 @@ impl Director {
         let mut near = false;
         if let Some(&Step::Behave(subject, _)) = self.steps.get(self.at) {
             let s = subject.sample(hunt, &self.indices());
-            near = s.is_some_and(|s| subject.near(&s, [hunt.player.x, hunt.player.z]));
+            near = s.is_some_and(|s| subject.near(&s, [hunt.player.x, hunt.player.z]))
+                || subject.over(hunt, &self.indices());
             if let Some(t) = &mut self.track {
                 t.samples.extend(s);
             }
@@ -659,6 +660,7 @@ fn action_name(a: Arrange) -> String {
         Arrange::PinHunter => "pin_hunter".into(),
         Arrange::Alarm(n) => format!("alarm_animal {n}"),
         Arrange::Calm(n) => format!("calm_animal {n}"),
+        Arrange::Scare(n) => format!("scare_animal {n}"),
         Arrange::Slay(n) => format!("slay_animal {n}"),
     }
 }

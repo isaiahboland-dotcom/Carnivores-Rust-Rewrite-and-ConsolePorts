@@ -20,8 +20,8 @@ use alloc::{
 use super::huntable::{calm_phase, end_phase, water_flag, World};
 use super::mee::MeeInfo;
 use super::{
-    ai, corrected_alpha, delta_func, find_vector_alpha, sgn, wrap_angle, Character, Ctx, Species,
-    CS_ON_WATER, PI,
+    ai, corrected_alpha, delta_func, find_vector_alpha, flee, sgn, wrap_angle, Character, Ctx,
+    Species, CS_ON_WATER, PI,
 };
 
 /// `goto TBEGIN` limit, as in [`super::huntable`].
@@ -82,8 +82,32 @@ pub fn animate(
                 p.alert = true;
             }
             let l = pdist.max(1e-6);
-            c.tgx = c.pos[0] - playerdx / l * 2048.0;
-            c.tgz = c.pos[2] - playerdz / l * 2048.0;
+            if let Some(lim) = ctx.flee {
+                let away = (-playerdx / l, -playerdz / l);
+                let habitat = flee::Habitat {
+                    group: w.group,
+                    medium: if m.can_swim {
+                        flee::Medium::Wet
+                    } else {
+                        flee::Medium::Land
+                    },
+                };
+                match flee::step(c, ctx, lim, habitat, away, pdist, ctx.target.aware) {
+                    Some((tx, tz)) => (c.tgx, c.tgz) = (tx, tz),
+                    // Over: calm, unless the hunter is close enough to
+                    // startle it again below.
+                    None if again => {
+                        c.afraid_time = 0;
+                        c.state = 0;
+                        c.set_new_target_place_in(ctx.area, ctx.rng, 2048.0, w.group);
+                        continue;
+                    }
+                    None => {}
+                }
+            } else {
+                c.tgx = c.pos[0] - playerdx / l * 2048.0;
+                c.tgz = c.pos[2] - playerdz / l * 2048.0;
+            }
             c.tgtime = 0;
         }
 
