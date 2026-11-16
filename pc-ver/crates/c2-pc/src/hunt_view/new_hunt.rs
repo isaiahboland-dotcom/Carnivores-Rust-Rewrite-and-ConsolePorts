@@ -162,6 +162,10 @@ fn place_herd(
     if let Some(t) = mee {
         herd.trophy_spots = t.trophies.clone();
     }
+    // The spawn ecosystem (`_WORLD.TXT`), before anything is placed.
+    if !setup.trophy() && setup.survival.is_none() {
+        herd.eco = ecosystem(setup, &herd.species);
+    }
     if setup.trophy() {
         herd.place_trophies(area, room, rng);
     } else if let Some(t) = mee {
@@ -177,6 +181,24 @@ fn place_herd(
     }
     tracing::info!("placed {} characters", herd.chars.len());
     herd
+}
+
+/// The instance's spawn ecosystem for the hunt's map (`None`: it has none).
+fn ecosystem(
+    setup: &HuntSetup,
+    species: &[c2_core::dino::Species],
+) -> Option<Box<c2_core::dino::eco::Eco>> {
+    let huntdat = setup.map.parent().and_then(|p| p.parent())?;
+    let bytes = find_file(
+        huntdat,
+        c2_formats::world::PATH.trim_start_matches("HUNTDAT/"),
+    )
+    .and_then(|p| std::fs::read(p).ok())?;
+    let stem = setup.map.file_stem()?.to_string_lossy();
+    let eco =
+        c2_core::dino::eco::Eco::load(&c2_formats::world::World::parse(&bytes), &stem, species)?;
+    tracing::info!(area = %stem, "spawn ecosystem on");
+    Some(eco)
 }
 
 /// Logs how many of each selected target were placed (a warning for none).

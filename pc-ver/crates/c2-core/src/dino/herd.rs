@@ -9,10 +9,13 @@ use alloc::{boxed::Box, string::String, vec, vec::Vec};
 
 use c2_formats::mee::SpawnGroup;
 
+use crate::rng::MsRand;
+
 use super::{
-    ai, brachi, carnivore, dead, flee, flyer, herbivore, huntable, mee, mee_ambient, mee_brachi,
-    mee_fish, mee_flyer, mee_icth, mee_trex, predation, small, trex, CarnivoreParams, Character,
-    Ctx, DinoEvent, HerbivoreParams, HunterView, SmallParams, Species, Target, TargetKind,
+    ai, brachi, carnivore, dead, eco, flee, flyer, herbivore, huntable, mee, mee_ambient,
+    mee_brachi, mee_fish, mee_flyer, mee_icth, mee_trex, predation, small, trex, CarnivoreParams,
+    Character, Ctx, DinoEvent, HerbivoreParams, HunterView, SmallParams, Species, Target,
+    TargetKind,
 };
 
 /// A pack of a dialect hunt (`Packs[]`): members follow the leader and
@@ -51,6 +54,9 @@ pub struct Herd {
     pub predation: Option<Box<predation::run::Predators>>,
     /// Bounded fleeing, when the player turns it on (`None`: the original's).
     pub flee: Option<Box<flee::FleeTable>>,
+    /// The spawn ecosystem, when the game has rules for this map (`None`:
+    /// the original's placement and roaming).
+    pub eco: Option<Box<eco::Eco>>,
     /// Predator hesitation, when the hardcore hunt ruleset turns it on
     /// (`None`: the original's attack).
     pub hesitation: Option<Box<super::hesitate::Hesitation>>,
@@ -65,6 +71,26 @@ impl Herd {
     /// Bounded fleeing's limits for species `ctype` (`None`: it is off).
     pub fn flee_limits(&self, ctype: usize) -> Option<flee::FleeLimits> {
         self.flee.as_deref().map(|t| t.limits(ctype))
+    }
+
+    /// Whether the ecosystem lets an animal of `ctype` be put at `p` (it
+    /// does when the setting is off).
+    pub(crate) fn eco_spot(&self, ctype: usize, p: &[f32; 3], rng: &mut MsRand) -> bool {
+        self.eco
+            .as_deref()
+            .is_none_or(|e| e.spot_ok(ctype, p[0], p[2], &self.chars, None, rng))
+    }
+
+    /// Whether the ecosystem's caps leave room for one more of `ctype`.
+    pub(crate) fn eco_room(&self, ctype: usize) -> bool {
+        self.eco
+            .as_deref()
+            .is_none_or(|e| e.room_for(ctype, &self.chars))
+    }
+
+    /// The ecosystem zone an animal put at `p` keeps to.
+    pub(crate) fn eco_home(&self, p: &[f32; 3]) -> Option<u8> {
+        self.eco.as_deref().and_then(|e| e.home(p[0], p[2]))
     }
 
     /// Character `index` was removed: renumber what refers past it.
@@ -226,7 +252,11 @@ impl Herd {
                 }
                 p => p,
             };
+            let before = self.eco.as_deref().map(|e| e.before(c));
             animate(c, i, sp, ctx, pack, leader, group, carrier);
+            if let (Some(e), Some(b)) = (self.eco.as_deref(), before) {
+                e.after_step(i, b, &mut self.chars, ctx.rng);
+            }
             if let Some(p) = self.predation.as_deref() {
                 p.finish(i, &mut self.chars, &self.species, ctx.struck);
             }

@@ -214,6 +214,35 @@ engine still gets the user's folder. Consequences:
 - Every recorded Ice Age baseline, and the clip numbers in baselines of
   other dialect games, are superseded and need recording again.
 
+## 2026-11-14 — Genesis software reference is the modernized MEE renderer
+
+Comparisons against the shipped Genesis software renderer follow the
+modernized MEE source (`SoftTerrain.cpp`, `SoftWater.cpp`), not the vanilla
+`RenderSoft.cpp`: the executable has no `ctViewR1`, no 2-cell far ring and no
+far terrain fade. Where the two sources disagree for Genesis, the modernized
+one wins. A coverage model of its rules agrees with native captures to
+0.04–0.23% of pixels.
+
+Reviewed 2026-11-14:
+
+- `software-radius` and `software-projection` remain opt-in diagnostic
+  switches for native-parity testing. They reproduce software-renderer
+  behaviour and are not enabled by default in the production renderer.
+- Shoreline levelling is a candidate for normal rendering, subject to
+  cross-game regression testing.
+- The software ground/water triangle skip rules are not ported without a
+  demonstrated requirement: with the shore levelled they change nothing in a
+  depth-tested renderer.
+- Per-vertex water levels are deferred until a map provides a test case.
+- The modernized OpenGL renderer is kept as the visual reference for a
+  "Modern MEE style" option.
+
+Status: validated for the tested Genesis coverage cases; production adoption
+pending regression testing. Outstanding validation: GPU regression coverage,
+dawn/night captures, vanilla smoke tests, OpenGL initialization, wave
+rendering, underwater alpha and object visibility. See
+[software coverage rules](GENESIS-VIBRANCE.md).
+
 ## 2026-11-11 — Genesis color comparison requires matched scene rendering
 
 Preserve authored colors while investigating the reported Genesis vibrance
@@ -6158,6 +6187,150 @@ fog zones, so it is its own change with its own baselines; the scatter
 switch follows it. The sun's direction it needs is in `Globals` now.
 
 
+## 2026-11-15 — The surface from under the water (PC, original rule)
+
+`Hunt2.cpp`'s hardware path gives the water its own alpha while `UNDERWATER`:
+`160 - dist * 160 / 220 / ctViewR`, at least 10, of 255. `water_alpha`
+(`shaders/terrain.wgsl`) now does the same, with the drawn radius as
+`ctViewR`. Until now the RSC coefficient was the alpha from below: Genesis
+AREA2's sea (0.001) had no surface seen from under it, and vanilla water
+(coefficients of 1 and over) was a lid. From below the surface is now a veil,
+63% nearby, thinning to nothing at 86% of the view distance.
+
+This is original behaviour and is not behind an option. It closes the
+"underwater formula" left open on 2026-11-12. Still not reproduced: the
+opaque rings from `ctViewR1 + 2`. The formula is from source; no native
+hardware capture has validated it. `c2-vr` shares `vs_water` and takes the
+rule with it; the 3DS water is unchanged.
+
+Test: `render::water_tests::the_surface_from_below_is_a_veil_at_any_coefficient`
+(GPU).
+
+## 2026-11-15 — Modern graphics: water reflections (`modern_reflections`)
+
+Not in the original, nor in the modernized Modder's Edition: ours. Off by
+default, under Options > Video > Modern graphics, on PC and Android. It
+draws the world a second time, so it is meant for faster machines and
+phones.
+
+**The mirror.** Before the frame's pass, the area is drawn mirrored in the
+water's plane into a target half the frame's size
+(`render/reflection.rs`, `AreaView::draw_reflection`): the sky, the ground,
+the objects and, in a hunt, the animals and the ship. Not the hunter's own
+things (effects, rounds, gauges, the weapon in hand). The view matrix is the
+camera's times the reflection in `y = level`; the projection's near plane is
+swung onto the water (Lengyel's oblique near plane, 8 units under the
+surface), so nothing under the water is mirrored and no shader needs a clip
+test. A point of the water has the same place in both pictures, so the
+water's shader reads the mirror at its own pixel.
+
+- `Scene::prepare` is new: a scene draws the passes its frame reads back
+  there. The mirror pass is its own encoder and submission, because both
+  passes write the same buffers (globals, the terrain's window, instances,
+  poses) and a write only takes effect at a submission.
+- One water level is mirrored per frame: the water over the camera's cell,
+  else the level that fills most of the view (`TerrainRenderer::main_water`:
+  each 16-cell block of water weighted by the cube of its distance). Water
+  at another level reflects the fog's colour only.
+- No mirror is drawn with the camera under water, lower than 4 units over
+  it, or with no water within the view distance.
+- The mirror keeps the frame's view distance and object ranges. Its cost is
+  about that of the frame's ground and objects again, at a quarter of the
+  pixels.
+
+**The surface** (`shaders/terrain.wgsl: fs_water`). The mirror is laid over
+the water's own colour by Fresnel's rule (Schlick: 2% looking straight
+down, everything at a grazing view), read through a small ripple that calms
+with distance. With the option on, the water's own colour covers at most 70%
+of what is under it (`SEE_THROUGH`), where the original's alpha closes
+completely within a few cells: the bed, fish and swimming animals stay in
+sight near the camera, and the mirror takes over further out. With the
+option off, `fs_water` returns what `fs` did; the baselines are unchanged.
+
+`Globals` takes `reflect` (level, on, one over the frame's size; now 288
+bytes). The water's pipeline has a third bind group, the mirror's; `c2-vr`
+compiles its own fragment entry and does not use it.
+
+Viewer: `c2-pc area MAP --reflections`. Tests:
+`render::reflection::tests` (the mirror's matrices),
+`render::terrain::tests::the_mirrored_water_is_the_one_about_the_camera`,
+`render::water_tests::reflections_mirror_what_stands_over_the_water` (GPU:
+a cliff shows in the water under it, the bed is not mirrored, off is the
+old picture).
+
+## 2026-11-15 — Modern graphics: underwater effects (`modern_underwater`)
+
+Ours as well, off by default, on PC and Android; cheap, so separate from the
+reflections.
+
+- **Blue water.** The underwater fog and wash take the water texture's mean
+  colour, which is grey or murky green on many maps: at a short view
+  distance the view ends in a grey wall. With the option on, that colour is
+  moved 80% of the way to a sea blue of the same brightness
+  (`water_tint::blued`). The depth tint, if on, darkens the result. The
+  option also works with Pretty underwater view off.
+- **Drops (disabled; future release).** The drops are a proof of concept to
+  refine later: `render::DROPLETS_ENABLED` is `false`, so nothing is drawn.
+  The description below records the current prototype. After at least 0.4 s under water, surfacing leaves 16 drops
+  near the left, right and top edges of the screen for 3.5 s: they slide
+  down, leave a trail and dry, over a film that drains in the first 0.7 s
+  (`render/droplets.rs`, `shaders/droplets.wgsl`). They are shaded lenses
+  drawn over the world and under the HUD; nothing is refracted, which
+  would need the frame in a texture. Shorter dips leave none, because a
+  swimmer crosses the game's underwater line repeatedly.
+
+`c2-pc hunt` takes `--dive MS` (0: under the nearest deep water; otherwise
+the screen as MS after surfacing) and `--modern` (every Modern graphics
+option on for the run), for screenshots.
+
+Tests: `water_tint::tests::blued_water_is_blue_whatever_it_was`,
+`render::droplets::tests`.
+
+## 2026-11-15 — Trophy rooms in combined games (BROKEN-TROPHY)
+
+Reported on all platforms with a combined game (standalones plus add-ons):
+no trophies in the room whatever was killed; on Android a bare area outside
+the room; on the 3DS an empty low-memory room. One cause each:
+
+- **One add-on's spots were the whole room.** An add-on in the Modder's
+  Edition dialect brings `tropinfo` spots for its own animals; any dialect
+  in `_RES.TXT` turns the game's trophy room over to spots
+  (`Herd::trophy_spots`), and a kill took a spot made for its animal, else
+  any free spot. With two spots (one add-on's Giganotosaurus) the room held
+  two trophies, and no later kill was recorded. Now an animal without a
+  spot of its own takes a plain stand past the spots (save slots
+  `spots..24`), and a plain stand is one of the room's landing cells
+  (the map's marks, else the original's ring) that no spot uses, facing the
+  room's middle. Spots made for an animal stay free for it. A room has as
+  many plain stands as it has free landing cells: a trophy past them stays
+  in the save, unshown. In a dialect game whose animals all have spots,
+  nothing changes. Two trophies never share a spot (an older save's
+  trophy in another animal's spot keeps it only while that animal's
+  trophy doesn't need it).
+- **A layout outlived its map.** The APK conversion writes the phone
+  room's stands and start as `TROPHY.SPOT`; an add-on replacing
+  `TROPHY.MAP` left it in place, so the hunter started 60 cells from the
+  new room. The file now names its map (`map <hex>`,
+  `c2_formats::map::height_mark` of the height grid as written) and
+  `Area::set_trophy_spots` ignores it on any other map. An older file
+  without the line is ignored on a map with landing cells of its own (the
+  phone room has none). The check is in the engine rather than the merge,
+  so every path (packs, Android, the 3DS cooker) gets it.
+- **No marks read as one mark.** `create_tmap`'s fallback landing
+  (256, 256) was also stored as the map's own marks, so a dialect room on
+  an unmarked map lost every trophy past its first spot. `marked_landings`
+  is now empty for an unmarked map, and spots use the ring there, as the
+  comment already said.
+
+Existing saves keep their trophies. Kills that were not recorded can't be
+recovered. Android needs a rebuilt APK (the engine ships in it); the stale
+`TROPHY.SPOT` is ignored once the APK is rebuilt, with no pack change.
+
+Tests: `game::tests::trophies::one_add_ons_spots_do_not_cap_the_room`,
+`game::tests::trophies::dialect_trophies_take_a_spot_made_for_them`,
+`area::tests::a_layout_is_used_only_on_the_map_it_was_made_for`,
+`mobile_base::tests::trophy_room_stands_inside_its_walls`.
+
 ## 2026-11-15 — Esc calls the ship at the pickup zone
 
 In a hardcore hunt with extraction, Esc while standing inside the pickup zone
@@ -6185,3 +6358,20 @@ far-animal update rate for frame time; far animals are out of view, and any
 alert, wound, lure or approach inside view range returns them to full rate.
 
 Test: `distant_ai_bounds_pending_time_and_resumes_immediately` (Wii U, stride 4).
+
+## 2026-11-15 — DHC OS terminal: full-width layout and gamepad navigation
+
+The terminal no longer sits in the original menu's 800x600 box. `terminal/geom.rs`
+computes the content's left edge and width from the window's width in canvas
+units; panels anchor to the left and right edges and the two-panel screens
+(hunt setup, hunter records, options) split the width. Heights keep their
+design values, and a window narrower than 4:3 keeps the original layout
+(`Geom` tests cover 4:3, wide and narrow).
+
+While the terminal look is on, the menus' pad pointer is replaced by key
+synthesis (`PadCursor::navigate`): D-pad or left stick = arrows (repeating),
+A = Enter, B = Escape, Start = F5 (deploy), R/L = Tab / Shift+Tab (tabs in
+the hunt setup and options), Y/X/Select = time / observer / tranquilizer.
+The key hints name the pad's buttons while it was the last input.
+
+Pending: on-device check on Android and a physical pad (regression tests only).
