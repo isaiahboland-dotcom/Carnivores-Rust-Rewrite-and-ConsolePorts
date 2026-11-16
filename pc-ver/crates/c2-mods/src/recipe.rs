@@ -116,6 +116,9 @@ pub struct Settings {
     /// Custom limits for bounded fleeing (Advanced tab, `crate::flee`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub flee: Option<crate::flee::Flee>,
+    /// Advanced behavior: awareness (Advanced tab, `crate::behavior`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub behavior: Option<crate::behavior::Behavior>,
     /// The hardcore hunt ruleset (Advanced tab, `crate::hunt`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hunt: Option<crate::hunt::Hunt>,

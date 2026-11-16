@@ -38,7 +38,8 @@
 //! ```
 //!
 //! `[[settings.world.missions]]` (fixed challenges that use these points)
-//! is in [`crate::mission`].
+//! is in [`crate::mission`]; `[settings.world.ecosystem]` (which animals
+//! appear in which zone) is in [`crate::ecosystem`].
 
 use serde::{Deserialize, Serialize};
 
@@ -66,6 +67,9 @@ pub struct World {
     /// Fixed challenges ([`crate::mission`]).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub missions: Vec<crate::mission::Mission>,
+    /// Spawn rules by zone ([`crate::ecosystem`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ecosystem: Option<crate::ecosystem::Ecosystem>,
 }
 
 /// A zone as the recipe holds it. One plain table (not an enum by shape) so
@@ -151,7 +155,8 @@ impl World {
             && (!self.zones.is_empty()
                 || !self.spawns.is_empty()
                 || !self.extractions.is_empty()
-                || !self.missions.is_empty())
+                || !self.missions.is_empty()
+                || self.ecosystem.as_ref().is_some_and(|e| e.is_active()))
     }
 
     /// The file's form; `maps` gives each area name's map (areas are given
@@ -171,6 +176,8 @@ impl World {
                 .min_extraction_gap
                 .filter(|g| g.is_finite())
                 .map(|g| (g as f32).clamp(fmt::GAP_RANGE.0, fmt::GAP_RANGE.1)),
+            caps: Default::default(),
+            safety: Default::default(),
             areas: Vec::new(),
         };
         for z in &self.zones {
@@ -183,6 +190,7 @@ impl World {
                     id: id.into(),
                     shape,
                     tags: clean_tags(&z.tags),
+                    rule: Default::default(),
                 });
             }
         }
@@ -207,6 +215,7 @@ impl World {
             }
         }
         crate::mission::to_format(self, &mut w, map);
+        crate::ecosystem::to_format(self, &mut w);
         w
     }
 

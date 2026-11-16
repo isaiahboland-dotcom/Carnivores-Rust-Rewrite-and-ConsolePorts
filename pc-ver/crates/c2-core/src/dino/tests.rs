@@ -209,7 +209,7 @@ fn an_extra_slot_ai_runs_as_the_stock_ai_its_clips_fit() {
     assert_eq!(Species::new(named_as, &allo).stock_ai, Some(ai::VELO));
 }
 
-fn run(herd: &mut Herd, area: &Area, hunter: HunterView, ms: i32) -> Vec<DinoEvent> {
+pub(super) fn run(herd: &mut Herd, area: &Area, hunter: HunterView, ms: i32) -> Vec<DinoEvent> {
     let mut rng = MsRand::new(3);
     let mut events = Vec::new();
     for t in 0..ms / 10 {
@@ -227,6 +227,7 @@ fn run(herd: &mut Herd, area: &Area, hunter: HunterView, ms: i32) -> Vec<DinoEve
             render_r: 74,
             run_k: 1.0,
             flee: None,
+            eco: None,
             events: &mut events,
         };
         herd.step(&mut ctx);

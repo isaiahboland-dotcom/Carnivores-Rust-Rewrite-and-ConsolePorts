@@ -87,6 +87,7 @@ pub fn validate(r: &Recipe, names: Option<&Names>, platform: Platform) -> Vec<Wa
     if let Some(w) = &r.settings.world {
         crate::world::check(w, names.map(|n| n.areas.as_slice()), &mut warn);
         crate::mission::check(w, names, &mut warn);
+        crate::ecosystem::check(w, names.map(|n| n.animals.as_slice()), &mut warn);
     }
     platform_support(r, platform, &mut warn);
     out
@@ -111,6 +112,34 @@ fn ranges(r: &Recipe, warn: &mut impl FnMut(String, String)) {
                     l.retrigger_lockout,
                     flee_fmt::LOCKOUT_RANGE,
                 ),
+            ] {
+                if let Some(v) = v.filter(|v| !(lo..=hi).contains(v)) {
+                    warn(
+                        format!("{at}.{key}"),
+                        format!("{v} is outside {lo}..={hi}; {} is used", v.clamp(lo, hi)),
+                    );
+                }
+            }
+        }
+    }
+    if let Some(a) = s.behavior.as_ref().and_then(|b| b.awareness.as_ref()) {
+        use c2_formats::behavior as b;
+        let at = "settings.behavior.awareness";
+        let all = std::iter::once((at.to_string(), a.values())).chain(
+            a.animals
+                .iter()
+                .enumerate()
+                .map(|(i, x)| (format!("{at}.animals[{i}]"), x.values())),
+        );
+        for (at, v) in all {
+            for (key, v, (lo, hi)) in [
+                ("suspicion", v.suspicion, b::SUSPICION_RANGE),
+                (
+                    "investigate_after",
+                    v.investigate_after,
+                    b::INVESTIGATE_RANGE,
+                ),
+                ("search", v.search, b::SEARCH_RANGE),
             ] {
                 if let Some(v) = v.filter(|v| !(lo..=hi).contains(v)) {
                     warn(
@@ -277,6 +306,16 @@ fn unknown_names(r: &Recipe, n: &Names, warn: &mut impl FnMut(String, String)) {
             check(
                 format!("settings.flee.animals[{i}].name"),
                 &a.name,
+                &n.animals,
+                "animal",
+            );
+        }
+    }
+    if let Some(a) = s.behavior.as_ref().and_then(|b| b.awareness.as_ref()) {
+        for (i, x) in a.animals.iter().enumerate() {
+            check(
+                format!("settings.behavior.awareness.animals[{i}].name"),
+                &x.name,
                 &n.animals,
                 "animal",
             );
@@ -454,6 +493,33 @@ fn platform_support(r: &Recipe, p: Platform, warn: &mut impl FnMut(String, Strin
             ),
         );
     }
+    // Awareness is read by the PC game (and its Android build).
+    if r.settings.behavior.as_ref().is_some_and(|b| b.is_active())
+        && matches!(p, Platform::ThreeDs | Platform::WiiU | Platform::Vr)
+    {
+        warn(
+            "settings.behavior.awareness".into(),
+            format!(
+                "{} does not apply awareness yet; animals notice and chase there as in the original",
+                p.name()
+            ),
+        );
+    }
+    // The spawn ecosystem is read by the PC game (and its Android build).
+    if r.settings
+        .world
+        .as_ref()
+        .is_some_and(|w| w.enabled && w.ecosystem.as_ref().is_some_and(|e| e.is_active()))
+        && matches!(p, Platform::ThreeDs | Platform::WiiU | Platform::Vr)
+    {
+        warn(
+            "settings.world.ecosystem".into(),
+            format!(
+                "{} does not apply the spawn ecosystem yet; animals appear there as in the original",
+                p.name()
+            ),
+        );
+    }
     // The hardcore hunt ruleset runs in the PC game only so far.
     if r.settings.hunt.as_ref().is_some_and(|h| h.is_active())
         && matches!(p, Platform::ThreeDs | Platform::WiiU | Platform::Vr)
@@ -585,6 +651,39 @@ mod tests {
         assert!(k.contains(&"settings.world.missions[0].entries".to_string()));
         let k = keys(&r, Platform::Pc);
         assert!(!k.contains(&"settings.world.missions".to_string()), "{k:?}");
+    }
+
+    #[test]
+    fn awareness_is_checked_and_warned_about_where_it_is_not_applied() {
+        let r = parse(
+            "[settings.behavior.awareness]\nenabled = true\nsearch = 999\n\
+             [[settings.behavior.awareness.animals]]\nname = \"Nobody\"\nsuspicion = 5\n",
+        );
+        let at = "settings.behavior.awareness".to_string();
+        for p in [Platform::ThreeDs, Platform::WiiU, Platform::Vr] {
+            assert!(keys(&r, p).contains(&at), "{p:?}");
+        }
+        let k = keys(&r, Platform::Pc);
+        assert!(!k.contains(&at), "{k:?}");
+        assert!(k.contains(&format!("{at}.search")), "{k:?}");
+        assert!(k.contains(&format!("{at}.animals[0].suspicion")), "{k:?}");
+    }
+
+    #[test]
+    fn the_ecosystem_is_checked_and_warned_about_where_it_is_not_applied() {
+        let r = parse(
+            "[settings.world]\nenabled = true\n\
+             [settings.world.ecosystem]\nenabled = true\nmax_animals = 999\n",
+        );
+        let at = "settings.world.ecosystem".to_string();
+        for p in [Platform::ThreeDs, Platform::WiiU, Platform::Vr] {
+            assert!(keys(&r, p).contains(&at), "{p:?}");
+        }
+        for p in [Platform::Pc, Platform::Android] {
+            let k = keys(&r, p);
+            assert!(!k.contains(&at), "{p:?}: {k:?}");
+            assert!(k.contains(&format!("{at}.max_animals")), "{k:?}");
+        }
     }
 
     #[test]

@@ -53,6 +53,10 @@ impl HuntView {
             .collect();
         self.prev_cam = self.hunt.camera().0;
         self.hunt.opts.dynamic_night = self.view.area.cycle.map(|c| c.is_night());
+        // Dynamic time: the spawn ecosystem follows the time of day.
+        if let Some(c) = self.view.area.cycle {
+            self.hunt.herd.set_eco_time(c.period());
+        }
         self.hunt.opts.night_vision_active = self.view.night_vision == Some(true);
         let before = self.hunt.real_time;
         self.hunt.tick(
@@ -78,7 +82,7 @@ impl HuntView {
         self.map_viewport = map_viewport::MapViewport::default();
         self.view.flashlight = self.setup.flashlight && Self::endless_night(&self.setup);
         if self.view.night_vision.is_some() {
-            self.view.night_vision = Some(false);
+            self.view.night_vision = Some(Self::free_vision(&self.setup));
         }
         if self.view.area.cycle.is_some() {
             self.view.area.cycle = Self::day_cycle(&self.setup);

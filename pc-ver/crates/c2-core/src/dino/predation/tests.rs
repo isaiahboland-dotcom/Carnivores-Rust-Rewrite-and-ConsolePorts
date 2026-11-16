@@ -216,6 +216,7 @@ fn run(h: &mut Herd, area: &Area, ms: i32, until: impl Fn(&Herd) -> bool) -> Vec
             render_r: 74,
             run_k: 1.0,
             flee: None,
+            eco: None,
             events: &mut events,
         };
         h.step(&mut ctx);

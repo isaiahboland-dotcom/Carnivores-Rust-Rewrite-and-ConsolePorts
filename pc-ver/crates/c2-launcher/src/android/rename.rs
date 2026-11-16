@@ -320,14 +320,7 @@ mod tests {
         let env = |k: &str, d: &str| std::env::var(k).unwrap_or_else(|_| d.to_string());
         let label = env("C2RS_LABEL", "C2 Test");
         let package = env("C2RS_PACKAGE", "io.github.c2rs.c2_test");
-        let signed = renamed_apk(
-            &sdk,
-            &apk,
-            &label,
-            &package,
-            icon.as_deref(),
-            &out,
-        )?;
+        let signed = renamed_apk(&sdk, &apk, &label, &package, icon.as_deref(), &out)?;
         assert!(signed.is_file());
         Ok(())
     }

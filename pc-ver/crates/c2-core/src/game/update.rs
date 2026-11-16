@@ -133,10 +133,12 @@ impl Hunt {
             render_r: self.opts.render_r.max(self.opts.view_r),
             run_k: self.opts.dino_run_k,
             flee: None,
+            eco: None,
             events: &mut dev,
         };
         if !self.opts.trophy {
             self.herd.step_scheduled(&mut ctx, self.opts.distant_every);
+            self.retry_replacements(area, dt);
         }
         self.step_aquatics(area, dt);
         self.prof.mark(2);
@@ -231,8 +233,9 @@ impl Hunt {
             self.wind.speed += self.rng.si_rand(400) as f32 / 6400.0;
         }
         self.wind.speed = self.wind.speed.clamp(4.0, 18.0);
-        if self.takt.is_multiple_of(self.opts.afraid_every.max(1)) {
-            self.check_afraid(area);
+        let every = self.opts.afraid_every.max(1);
+        if self.takt.is_multiple_of(every) {
+            self.check_afraid(area, dt * every as i32);
         }
         self.prof.mark(5);
         if self.opts.trophy {

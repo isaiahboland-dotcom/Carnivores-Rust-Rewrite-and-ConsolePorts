@@ -147,7 +147,15 @@ pub fn animate(
                 if let Some(lim) = ctx.flee {
                     let away = (-playerdx / l, -playerdz / l);
                     let aware = ctx.target.aware;
-                    match flee::step(c, ctx, lim, w.group, away, pdist, aware) {
+                    match flee::step(
+                        c,
+                        ctx,
+                        lim,
+                        flee::Habitat::land(w.group),
+                        away,
+                        pdist,
+                        aware,
+                    ) {
                         Some((tx, tz)) => (c.tgx, c.tgz) = (tx, tz),
                         None => c.afraid_time = 0,
                     }
@@ -833,12 +841,15 @@ mod tests {
                 render_r: 74,
                 run_k: 1.0,
                 flee: None,
+                eco: None,
                 events: &mut events,
             };
             herd.step(&mut ctx);
         }
         events
     }
+
+    mod bounded;
 
     fn dist(c: &Character, h: &HunterView) -> f32 {
         ((c.pos[0] - h.x).powi(2) + (c.pos[2] - h.z).powi(2)).sqrt()
@@ -1223,6 +1234,24 @@ mod tests {
         let c = &herd.chars[i];
         assert_eq!(c.state, 0);
         assert!(dist(c, &h) > 4096.0, "{}", dist(c, &h));
+    }
+
+    /// A flyer spawned through `Herd::spawn` starts `minalt` above the
+    /// ground, not on it.
+    #[test]
+    fn a_spawned_flyer_starts_at_its_minimum_altitude() {
+        let area = Area::flat(10);
+        let mut m = info(ai::PTERA);
+        (m.min_depth, m.max_depth) = (300, 1200);
+        let mut herd = Herd {
+            species: vec![species(m)],
+            ..Default::default()
+        };
+        let (x, z) = (512.0 * 256.0, 512.0 * 256.0);
+        let mut rng = MsRand::new(1);
+        assert!(herd.spawn(0, [x, area.land_height(x, z), z], &mut rng, 128));
+        let c = &herd.chars[0];
+        assert!(c.pos[1] >= area.land_height(x, z) + 300.0, "{:?}", c.pos);
     }
 
     #[test]

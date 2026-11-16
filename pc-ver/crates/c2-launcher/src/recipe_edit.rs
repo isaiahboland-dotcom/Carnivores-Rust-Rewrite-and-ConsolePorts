@@ -10,7 +10,9 @@
 
 mod base_tab;
 mod dhc;
+mod ecosystem;
 pub use base_tab::BaseAsk;
+mod behavior;
 mod entries;
 mod flee;
 mod hunt;
@@ -419,16 +421,18 @@ impl Editor {
 
     /// The Advanced page: the base game's parts, the instance rules
     /// (`rules`), weapon restrictions (`weapons`), "Advanced Dinosaur
-    /// Behavior and AI" (`predation`), the custom flee limits (`flee`), the
+    /// Behavior and AI" (`predation`, `behavior`), the custom flee limits (`flee`), the
     /// hardcore hunt ruleset (`hunt`), the map editor for world zones
-    /// (`world`), the DHC OS terminal's rules (`dhc`) and the mission editor
-    /// (`missions`), a panel each.
+    /// (`world`), the spawn ecosystem (`ecosystem`), the DHC OS terminal's
+    /// rules (`dhc`) and the mission editor (`missions`), a panel each.
     pub fn advanced_ui(&mut self, ui: &mut egui::Ui, handle: &mut crate::jobs::Handle) {
         use crate::app::panel;
         let game = self.draft.game_dirs();
         let (r, extras, folders) = (&mut self.recipe, &mut self.extras, &self.draft.folders);
         if game.is_empty() {
-            ui.label(RichText::new("Choose the base game first (Base game page).").color(theme::red()));
+            ui.label(
+                RichText::new("Choose the base game first (Base game page).").color(theme::red()),
+            );
         } else {
             panel(ui, |ui| extras.base_parts_ui(ui, r, &game, folders));
         }
@@ -452,11 +456,15 @@ impl Editor {
         ui.add_space(6.0);
         panel(ui, |ui| extras.predation_ui(ui, r, &game, folders, handle));
         ui.add_space(6.0);
+        panel(ui, |ui| extras.behavior_ui(ui, r, &game, folders, handle));
+        ui.add_space(6.0);
         panel(ui, |ui| extras.flee_ui(ui, r, &game, folders, handle));
         ui.add_space(6.0);
         panel(ui, |ui| extras.hunt_ui(ui, r, &game, folders, handle));
         ui.add_space(6.0);
         panel(ui, |ui| extras.world_ui(ui, r, &game, folders, handle));
+        ui.add_space(6.0);
+        panel(ui, |ui| extras.ecosystem_ui(ui, r, &game, folders, handle));
         ui.add_space(6.0);
         panel(ui, |ui| extras.dhc_ui(ui, r, &game, folders, handle));
         ui.add_space(6.0);

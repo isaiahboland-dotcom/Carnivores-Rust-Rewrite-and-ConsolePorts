@@ -26,7 +26,8 @@ fn fixture(name: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
                  [settings.rules]\ntimes = [\"day\", \"night\"]\nhidden = [\"Velociraptor\"]\n";
     let advanced = format!(
         "{plain}\n[settings.rules.locks]\nteleport = true\nsecret_dinos = 3\n\n\
-         [settings.predation]\nenabled = true\n\n[settings.flee]\nenabled = true\n"
+         [settings.predation]\nenabled = true\n\n[settings.flee]\nenabled = true\n\n\
+         [settings.behavior.awareness]\nenabled = true\n"
     );
     let recipe = dir.join("sa.toml");
     std::fs::write(&recipe, advanced).expect("recipe");
@@ -73,7 +74,11 @@ fn the_classic_pack_leaves_out_the_enhanced_rules_only() {
     let _ = std::fs::remove_dir_all(&dir);
 
     let file = |t: &BTreeMap<String, Vec<u8>>, p: &str| t.get(p).cloned();
-    for p in [c2_formats::predation::PATH, c2_formats::flee::PATH] {
+    for p in [
+        c2_formats::predation::PATH,
+        c2_formats::flee::PATH,
+        c2_formats::behavior::PATH,
+    ] {
         assert!(e.contains_key(p), "the enhanced pack has {p}");
         assert!(!c.contains_key(p), "the classic pack has {p}");
     }

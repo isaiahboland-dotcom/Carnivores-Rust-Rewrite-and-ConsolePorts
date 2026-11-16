@@ -13,6 +13,7 @@ use alloc::{
     vec::Vec,
 };
 
+use super::eco::{self, Spawn};
 use super::{
     ai, check_place_collision_aquatic, check_place_collision_p, in_region, Character, Herd, Pack,
 };
@@ -45,8 +46,22 @@ pub(crate) enum Habitat {
     Swims(i32, i32),
 }
 
+/// Spots the ecosystem ([`super::eco`]) may refuse for one animal before
+/// it is left out: its own bound, so a kind the rules allow nowhere does
+/// not use up the tries of the animals after it.
+const ECO_TRIES: u32 = 512;
+
 /// Characters a Modder's Edition hunt may hold (`kCharacterCapacity`).
 const MEE_MAX_CHARS: usize = 256;
+
+/// Where a dialect game's trophy stands.
+#[derive(Debug, Clone, Copy)]
+enum TrophyPlace {
+    /// A `tropinfo` spot (its index).
+    Spot(usize),
+    /// A landing cell no spot uses (its index in the room's landings).
+    Stand(usize),
+}
 
 impl Herd {
     fn by_ai(&self, ai_id: i32) -> Option<usize> {
@@ -90,6 +105,9 @@ impl Herd {
         if cap.is_some_and(|max| self.chars.iter().filter(|c| c.ctype == ctype).count() >= max) {
             return false;
         }
+        if !self.eco_room(ctype) {
+            return false;
+        }
         let mut c = Character {
             ctype,
             pos,
@@ -100,7 +118,13 @@ impl Herd {
         };
         if let Some(sp) = self.species.get(ctype) {
             c.reset(sp, rng, opt_agres);
+            // A flyer starts at its `minalt` above the ground, as when it
+            // is replaced in front of the hunter (`Character::place`).
+            if let Some(m) = sp.mee.as_ref().filter(|m| super::mee::is_flyer(m.ai)) {
+                c.pos[1] += m.min_depth as f32;
+            }
         }
+        c.home_zone = self.eco_home(&pos);
         self.chars.push(c);
         true
     }
@@ -233,6 +257,7 @@ impl Herd {
         let mut tr = 0;
         'lohs: for c in 0..mc {
             let ctype = 1 + (c % 5) as usize;
+            let mut refused = 0;
             let pos = loop {
                 let mut p = [
                     px + rng.si_rand(10040) as f32,
@@ -244,10 +269,20 @@ impl Herd {
                 if tr > 10240 {
                     break 'lohs;
                 }
+                // Refused by the ecosystem: on this animal's own count.
+                if !self.eco_spot(ctype, &p, rng) {
+                    tr -= 1;
+                    refused += 1;
+                    if refused > ECO_TRIES {
+                        break None;
+                    }
+                    continue;
+                }
                 if !check_place_collision_p(area, &mut p) {
-                    break p;
+                    break Some(p);
                 }
             };
+            let Some(pos) = pos else { continue };
             if self.spawn(ctype, pos, rng, o.opt_agres) {
                 if let Some(last) = self.chars.last_mut() {
                     if matches!(last.ai, ai::DIMET | ai::PTERA) {
@@ -270,7 +305,7 @@ impl Herd {
                     if tr > 10240 {
                         break 'brach;
                     }
-                    if (220.0..=380.0).contains(&wy) {
+                    if (220.0..=380.0).contains(&wy) && self.eco_spot(brach, &[x, y, z], rng) {
                         break [x, y, z];
                     }
                 };
@@ -291,6 +326,7 @@ impl Herd {
             } else {
                 self.by_ai(targets[c as usize % targets.len()])
             };
+            let mut refused = 0;
             let pos = loop {
                 let mut p = [
                     512.0 * 256.0 + (rng.si_rand(50 * 256) * 10) as f32,
@@ -302,13 +338,22 @@ impl Herd {
                 if tr > 10240 {
                     break 'main;
                 }
-                if (p[0] - px).abs() + (p[2] - pz).abs() < 256.0 * 40.0 {
+                if !self.hunter_clear(Spawn::Initial, ctype, &p, hunter) {
+                    continue;
+                }
+                if !ctype.is_none_or(|ct| self.eco_spot(ct, &p, rng)) {
+                    tr -= 1;
+                    refused += 1;
+                    if refused > ECO_TRIES {
+                        break None;
+                    }
                     continue;
                 }
                 if !check_place_collision_p(area, &mut p) {
-                    break p;
+                    break Some(p);
                 }
             };
+            let Some(pos) = pos else { continue };
             if let Some(ct) = ctype.filter(|&t| t < self.species.len()) {
                 self.spawn(ct, pos, rng, o.opt_agres);
             }
@@ -520,7 +565,9 @@ impl Herd {
 
     /// The dialect's `Characters_AddSecondaryOne`: a killed animal of a
     /// `moveForward` spawn group is replaced by a new one of its kind,
-    /// 40-80 cells from the hunter, inside the group's regions.
+    /// 40-80 cells from the hunter, inside the group's regions. With an
+    /// ecosystem, a replacement that finds no spot is tried again later
+    /// ([`Self::retry_deferred`]).
     pub fn add_secondary_in(
         &mut self,
         area: &Area,
@@ -532,15 +579,36 @@ impl Herd {
         let Some(src) = self.chars.get(index) else {
             return;
         };
-        let (ctype, sg) = (src.ctype, src.spawn_group);
-        let Some(g) = sg
-            .and_then(|g| self.groups.get(g))
-            .filter(|g| g.move_forward)
-        else {
-            return;
+        let d = eco::Deferred {
+            ctype: src.ctype,
+            group: src.spawn_group,
         };
+        if self.replace_in(area, d, hunter, rng, opt_agres) == Some(false) {
+            if let Some(e) = &mut self.eco {
+                e.defer(d);
+            }
+        }
+    }
+
+    /// One try at the replacement `d` in its spawn group. `None`: its
+    /// group replaces nothing; `Some(false)`: no room or no spot this time.
+    pub(crate) fn replace_in(
+        &mut self,
+        area: &Area,
+        d: eco::Deferred,
+        hunter: (f32, f32),
+        rng: &mut MsRand,
+        opt_agres: i32,
+    ) -> Option<bool> {
+        let (ctype, sg) = (d.ctype, d.group);
+        let g = sg
+            .and_then(|g| self.groups.get(g))
+            .filter(|g| g.move_forward)?;
         if self.chars.len() > 250 {
-            return;
+            return None;
+        }
+        if !self.eco_room(ctype) {
+            return Some(false);
         }
         let (px, pz) = hunter;
         for _ in 0..128 {
@@ -553,13 +621,12 @@ impl Herd {
             if !g.regions.iter().any(|r| in_region(r, p[0], p[2]))
                 || g.avoid.iter().any(|r| in_region(r, p[0], p[2]))
                 || self.spot_blocked(area, ctype, &mut p)
-                || (p[0] - px).abs() + (p[2] - pz).abs() < 256.0 * 40.0
+                || !self.hunter_clear(Spawn::Respawn, Some(ctype), &p, hunter)
+                || !self.eco_spot(ctype, &p, rng)
             {
                 continue;
             }
-            let Some(ctype) = self.select_variant(ctype, rng) else {
-                return;
-            };
+            let ctype = self.select_variant(ctype, rng)?;
             self.swim_height(area, ctype, &mut p);
             let mut c = Character {
                 ctype,
@@ -567,14 +634,16 @@ impl Herd {
                 tgx: p[0],
                 tgz: p[2],
                 spawn_group: sg,
+                home_zone: self.eco_home(&p),
                 ..Default::default()
             };
             if let Some(sp) = self.species.get(ctype) {
                 c.reset(sp, rng, opt_agres);
             }
             self.chars.push(c);
-            return;
+            return Some(true);
         }
+        Some(false)
     }
 
     /// Where a species of the dialect's water families may be put
@@ -666,8 +735,7 @@ impl Herd {
             if *tr > 10240 {
                 return None;
             }
-            let far = (p[0] - px).abs() + (p[2] - pz).abs() >= 256.0 * 40.0;
-            if !far {
+            if !self.hunter_clear(Spawn::Initial, Some(ct), &p, hunter) {
                 continue;
             }
             if wader && !(220.0..=380.0).contains(&wy) {
@@ -688,7 +756,7 @@ impl Herd {
             } else {
                 check_place_collision_p(area, &mut p)
             };
-            if !blocked {
+            if !blocked && self.eco_spot(ct, &p, rng) {
                 return Some(p);
             }
         }
@@ -766,6 +834,14 @@ impl Herd {
                 .get(t)
                 .is_some_and(|s| s.chars.contains(&identity))
         };
+        // The map's own landing cells, as the Modder's Edition reads them
+        // (it dropped the original's ring, `Resources.cpp`); a room with
+        // none keeps the ring.
+        let landings = if area.marked_landings.is_empty() {
+            &area.landings
+        } else {
+            &area.marked_landings
+        };
         let mut used: Vec<bool> = (0..self.trophy_spots.len())
             .map(|t| {
                 room.bodies
@@ -773,38 +849,54 @@ impl Herd {
                     .is_some_and(|b| b.ctype > 0 && fits(t, b.ctype as usize))
             })
             .collect();
+        // Plain stands: the landing cells no spot uses, in order. A combined
+        // game's other animals (no `tropinfo` of their own) stand there, so
+        // one add-on's few spots don't make the whole room.
+        let mut stands = (0..landings.len())
+            .filter(|&l| !self.trophy_spots.iter().any(|s| s.pos == l))
+            .collect::<Vec<_>>()
+            .into_iter();
         let mut at = vec![None; room.bodies.len()];
         for (slot, b) in room.bodies.iter().enumerate() {
             if b.ctype <= 0 {
                 continue;
             }
             let ctype = b.ctype as usize;
-            at[slot] = if fits(slot, ctype) {
+            let spot = if fits(slot, ctype) {
                 Some(slot)
             } else if (0..used.len()).any(|t| fits(t, ctype)) {
-                let free = (0..used.len()).find(|&t| !used[t] && fits(t, ctype));
-                if let Some(t) = free {
-                    used[t] = true;
-                }
-                free
+                (0..used.len()).find(|&t| !used[t] && fits(t, ctype))
             } else {
-                // No spot made for it (an add-on without `tropinfo`): its
-                // own slot's spot (where a kill put it).
-                (slot < used.len()).then_some(slot)
+                // No spot made for it: its own slot's spot (where an older
+                // kill put it) while no other trophy has it.
+                (slot < used.len() && !used[slot]).then_some(slot)
             };
+            if let Some(t) = spot {
+                used[t] = true;
+            }
+            at[slot] = spot
+                .map(TrophyPlace::Spot)
+                .or_else(|| stands.next().map(TrophyPlace::Stand));
         }
+        // The room's middle, which plain stands face.
+        let n = landings.len().max(1) as f32;
+        let (cx, cz) = landings.iter().fold((0.0, 0.0), |(x, z), &(lx, lz)| {
+            (x + f32::from(lx) / n, z + f32::from(lz) / n)
+        });
         for (slot, b) in room.bodies.iter().enumerate() {
             let ctype = b.ctype as usize;
-            let Some(spot) = at[slot].and_then(|t| self.trophy_spots.get(t)).cloned() else {
-                continue;
-            };
-            // The map's own landing cells, as the Modder's Edition reads
-            // them (it dropped the original's ring, `Resources.cpp`); a room
-            // with none keeps the ring.
-            let landings = if area.marked_landings.is_empty() {
-                &area.landings
-            } else {
-                &area.marked_landings
+            let spot = match at[slot] {
+                Some(TrophyPlace::Spot(t)) => self.trophy_spots[t].clone(),
+                Some(TrophyPlace::Stand(l)) => {
+                    let (lx, lz) = landings[l];
+                    let alpha = libm::atan2f(cz - f32::from(lz), cx - f32::from(lx));
+                    c2_formats::mee::TrophySpot {
+                        pos: l,
+                        alpha: alpha.to_degrees(),
+                        ..Default::default()
+                    }
+                }
+                None => continue,
             };
             let Some(&(lx, lz)) = landings.get(spot.pos) else {
                 continue;
@@ -835,6 +927,9 @@ impl Herd {
             c.reset(sp, rng, 128);
             c.pos = [x, y, z];
             c.alpha = deg(spot.alpha);
+            // The plaque shows 2.5 cells ahead of the nose (`process_trophy`),
+            // so the look follows the facing set here, not the one `reset` saw.
+            (c.lookx, c.lookz) = (c.alpha.cos(), c.alpha.sin());
             c.beta = deg(spot.beta);
             c.gamma = deg(spot.gamma);
             c.state = slot as i32;

@@ -299,3 +299,22 @@ pub fn anim(anims: &[usize], phase: usize) -> usize {
         anims.get(phase).copied().unwrap_or(0)
     }
 }
+
+/// The entry of `names` called `name`, case ignored (`Raptor #2`: the
+/// second one so named).
+pub fn index_named<'a>(names: impl Iterator<Item = &'a str> + Clone, name: &str) -> Option<usize> {
+    let name = name.trim();
+    let (base, nth) = match name.rsplit_once(" #").map(|(a, k)| (a, k.parse::<usize>())) {
+        Some((a, Ok(k))) if k >= 1 => (a.trim(), k),
+        _ => (name, 1),
+    };
+    let named = |s: &str, n: &str| s.trim().eq_ignore_ascii_case(n);
+    names
+        .clone()
+        .enumerate()
+        .filter(|(_, s)| named(s, base))
+        .nth(nth - 1)
+        .map(|(i, _)| i)
+        // A name that itself ends in " #2".
+        .or_else(|| names.clone().position(|s| named(s, name)))
+}

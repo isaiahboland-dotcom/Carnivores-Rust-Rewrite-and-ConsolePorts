@@ -164,7 +164,7 @@ fn place_herd(
     }
     // The spawn ecosystem (`_WORLD.TXT`), before anything is placed.
     if !setup.trophy() && setup.survival.is_none() {
-        herd.eco = ecosystem(setup, &herd.species);
+        herd.eco = ecosystem(setup, &herd.species, area.time);
     }
     if setup.trophy() {
         herd.place_trophies(area, room, rng);
@@ -187,7 +187,8 @@ fn place_herd(
 fn ecosystem(
     setup: &HuntSetup,
     species: &[c2_core::dino::Species],
-) -> Option<Box<c2_core::dino::eco::Eco>> {
+    time: c2_core::area::TimeOfDay,
+) -> Option<c2_core::dino::eco::State> {
     let huntdat = setup.map.parent().and_then(|p| p.parent())?;
     let bytes = find_file(
         huntdat,
@@ -195,8 +196,8 @@ fn ecosystem(
     )
     .and_then(|p| std::fs::read(p).ok())?;
     let stem = setup.map.file_stem()?.to_string_lossy();
-    let eco =
-        c2_core::dino::eco::Eco::load(&c2_formats::world::World::parse(&bytes), &stem, species)?;
+    let world = c2_formats::world::World::parse(&bytes);
+    let eco = c2_core::dino::eco::State::load(&world, &stem, species, time)?;
     tracing::info!(area = %stem, "spawn ecosystem on");
     Some(eco)
 }
@@ -297,6 +298,16 @@ fn apply_instance(hunt: &mut Hunt, area: &c2_core::area::Area, setup: &HuntSetup
     .and_then(|b| c2_core::dino::predation::load(&b, &hunt.herd.species));
     if hunt.herd.predation.is_some() {
         tracing::info!("predation on");
+    }
+    // Awareness (`_BEHAVIOR.TXT`, when the instance turns it on).
+    hunt.herd.awareness = find_file(
+        huntdat,
+        c2_formats::behavior::PATH.trim_start_matches("HUNTDAT/"),
+    )
+    .and_then(|p| std::fs::read(p).ok())
+    .and_then(|b| c2_core::dino::aware::Rules::load(&b, &hunt.herd.species));
+    if hunt.herd.awareness.is_some() {
+        tracing::info!("awareness on");
     }
     // Bounded fleeing, when the player turned it on: the instance's limits
     // (`_FLEE.TXT`), else the built-in ones.

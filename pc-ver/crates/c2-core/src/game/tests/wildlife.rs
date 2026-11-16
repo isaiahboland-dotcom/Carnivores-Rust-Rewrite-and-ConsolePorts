@@ -111,7 +111,7 @@ fn crouching_does_not_cancel_an_alarm() {
         let c = &mut hunt.herd.chars[0];
         c.pos = [hunt.player.x, c.pos[1], hunt.player.z - 2000.0];
         (c.lookx, c.lookz) = (0.0, 1.0);
-        hunt.check_afraid(&area);
+        hunt.check_afraid(&area, 10);
         let (fear, state) = (hunt.herd.chars[0].afraid_time, hunt.herd.chars[0].state);
         assert!(fear > 0 && state != 0, "noticed standing: {fear} {state}");
         assert!(hunt.herd.chars[0].aware_hunter);
@@ -120,7 +120,7 @@ fn crouching_does_not_cancel_an_alarm() {
         hunt.player.head_y = 110.0;
         hunt.player.z += 30_000.0;
         for _ in 0..50 {
-            hunt.check_afraid(&area);
+            hunt.check_afraid(&area, 10);
         }
         let c = &hunt.herd.chars[0];
         assert_eq!(
@@ -200,7 +200,7 @@ fn notice_range_by(notice_k: f32, stealth: bool, crouched: bool, smell: f32) -> 
         let c = &mut hunt.herd.chars[0];
         c.pos = [hunt.player.x, c.pos[1], hunt.player.z - d];
         (c.lookx, c.lookz) = (0.0, 1.0);
-        hunt.check_afraid(&area);
+        hunt.check_afraid(&area, 10);
         if hunt.herd.chars[0].afraid_time != 0 {
             last = d;
         }

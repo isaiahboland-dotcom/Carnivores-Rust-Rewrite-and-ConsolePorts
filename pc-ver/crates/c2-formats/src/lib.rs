@@ -16,11 +16,13 @@ extern crate alloc;
 mod error;
 mod reader;
 
+pub mod behavior;
 pub mod bits;
 pub mod bmfont;
 pub mod car;
 pub mod cooked;
 pub mod dhc;
+pub mod ecosystem;
 pub mod flee;
 pub mod hardcore;
 pub mod map;

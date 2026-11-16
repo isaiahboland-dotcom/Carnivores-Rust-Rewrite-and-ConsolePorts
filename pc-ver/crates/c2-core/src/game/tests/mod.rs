@@ -2,8 +2,10 @@
 
 mod ammo_kinds;
 mod aquatic;
+mod awareness;
 mod combat;
 mod death;
+mod ecosystem;
 mod hardcore;
 mod session;
 mod spawn_rules;

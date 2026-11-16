@@ -19,11 +19,15 @@ use alloc::{
 };
 
 mod angles;
+pub mod aware;
 mod brachi;
 mod carnivore;
 mod character;
 mod collide;
 mod dead;
+pub mod eco;
+#[cfg(test)]
+mod eco_tests;
 pub mod flee;
 #[cfg(test)]
 mod flee_tests;
@@ -70,7 +74,7 @@ pub use herd::{Herd, Pack};
 pub(crate) use place::Habitat;
 pub use place::PlaceOptions;
 pub use small::SmallParams;
-pub use species::{anim, stock_ai, DinoInfo, Species, Tuning};
+pub use species::{anim, index_named, stock_ai, DinoInfo, Species, Tuning};
 
 /// `PMORPHTIME`: ms over which a previous animation blends out.
 pub const PMORPH_TIME: i32 = 256;
@@ -114,6 +118,8 @@ pub struct Character {
     pub afraid_time: i32,
     /// Bounded fleeing's state ([`flee`]); idle when the setting is off.
     pub flight: flee::Flight,
+    /// What it knows of the hunter ([`aware`]); idle when the setting is off.
+    pub aware: aware::Aware,
     pub tgtime: i32,
     pub pp_morph_time: i32,
     pub prev_phase: usize,
@@ -161,6 +167,9 @@ pub struct Character {
     pub pack_density: f32,
     /// Index into `Herd::groups` (`SpawnGroupType`).
     pub spawn_group: Option<usize>,
+    /// The ecosystem zone it keeps to ([`eco`]; ours): set where it is
+    /// placed, `None` with the setting off.
+    pub home_zone: Option<u8>,
     /// Chosen kill type and death type of the species.
     /// The survival wave it came in (0: not a wave animal).
     pub wave: u32,
@@ -343,6 +352,9 @@ pub struct Ctx<'a> {
     /// Bounded fleeing's limits for the character being stepped (`None`:
     /// the original's fleeing). [`Herd::step`] sets it per character.
     pub flee: Option<flee::FleeLimits>,
+    /// The spawn ecosystem's rules, for the zones a flight keeps to or out
+    /// of (`None`: no rules). [`Herd::step`] sets it.
+    pub eco: Option<alloc::sync::Arc<eco::Eco>>,
     pub events: &'a mut Vec<DinoEvent>,
 }
 

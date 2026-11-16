@@ -8,6 +8,8 @@ use alloc::vec::Vec;
 
 use super::Hunt;
 use crate::area::Area;
+use crate::dino::eco::Spawn;
+pub use crate::dino::index_named;
 use crate::dino::{ai, Character, Species};
 use c2_formats::rules::Rules;
 
@@ -17,25 +19,6 @@ const TRIES: u32 = 2048;
 /// The species called `name` (`Raptor #2`: the second one so named).
 pub fn species_named(species: &[Species], name: &str) -> Option<usize> {
     index_named(species.iter().map(|s| s.info.name.as_str()), name)
-}
-
-/// The entry of `names` called `name`, case ignored (`Raptor #2`: the
-/// second one so named).
-pub fn index_named<'a>(names: impl Iterator<Item = &'a str> + Clone, name: &str) -> Option<usize> {
-    let name = name.trim();
-    let (base, nth) = match name.rsplit_once(" #").map(|(a, k)| (a, k.parse::<usize>())) {
-        Some((a, Ok(k))) if k >= 1 => (a.trim(), k),
-        _ => (name, 1),
-    };
-    let named = |s: &str, n: &str| s.trim().eq_ignore_ascii_case(n);
-    names
-        .clone()
-        .enumerate()
-        .filter(|(_, s)| named(s, base))
-        .nth(nth - 1)
-        .map(|(i, _)| i)
-        // A name that itself ends in " #2".
-        .or_else(|| names.clone().position(|s| named(s, name)))
 }
 
 impl Hunt {
@@ -94,8 +77,11 @@ impl Hunt {
             ];
             p[1] = area.land_height(p[0], p[2]);
             // A fish or wader only where its kind can be (`Herd::spot_blocked`).
-            if (p[0] - px).abs() + (p[2] - pz).abs() < 256.0 * 40.0
+            if !self
+                .herd
+                .hunter_clear(Spawn::Extra, Some(ctype), &p, (px, pz))
                 || self.herd.spot_blocked(area, ctype, &mut p)
+                || !self.herd.eco_spot(ctype, &p, &mut self.rng)
             {
                 continue;
             }

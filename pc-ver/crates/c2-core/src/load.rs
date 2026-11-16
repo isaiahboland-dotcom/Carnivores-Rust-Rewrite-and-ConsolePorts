@@ -68,11 +68,34 @@ pub fn predation(
     crate::dino::predation::load(&vfs.read(c2_formats::predation::PATH).ok()?, species)
 }
 
+/// Awareness (`_BEHAVIOR.TXT`'s, not in the original) for `species`.
+/// `None` when the file is missing or awareness is off in it.
+pub fn awareness(
+    vfs: &Vfs,
+    species: &[Species],
+) -> Option<alloc::boxed::Box<crate::dino::aware::Rules>> {
+    crate::dino::aware::Rules::load(&vfs.read(c2_formats::behavior::PATH).ok()?, species)
+}
+
 /// Bounded fleeing's limits (`_FLEE.TXT`, else the built-in ones) for
 /// `species`. The caller decides whether the player turned the setting on.
 pub fn flee(vfs: &Vfs, species: &[Species]) -> alloc::boxed::Box<crate::dino::flee::FleeTable> {
     let bytes = vfs.read(c2_formats::flee::PATH).ok();
     crate::dino::flee::FleeTable::load(bytes.as_deref(), species)
+}
+
+/// The spawn ecosystem (`_WORLD.TXT`'s, not in the original) for the map
+/// named `stem` (`area3`, a `.c2map`'s) at time of day `time`. `None` when the file is missing or
+/// has no rules for that map. Set it on the herd before placing the
+/// animals; survival and the trophy room leave it off.
+pub fn ecosystem(
+    vfs: &Vfs,
+    stem: &str,
+    species: &[Species],
+    time: TimeOfDay,
+) -> Option<crate::dino::eco::State> {
+    let world = c2_formats::world::World::parse(&vfs.read(c2_formats::world::PATH).ok()?);
+    crate::dino::eco::State::load(&world, stem, species, time)
 }
 
 /// The instance's rules (`_RULES.TXT`, not in the original): times of
@@ -190,7 +213,10 @@ pub fn area_with(vfs: &Vfs, name: &str, time: TimeOfDay, lean: bool) -> Result<A
         a.set_trophy_mode();
         // A room of its own layout (the phone game's).
         if let Ok(d) = vfs.read(&format!("HUNTDAT/AREAS/{name}.SPOT")) {
-            a.set_trophy_spots(&String::from_utf8_lossy(&d));
+            if !a.set_trophy_spots(&String::from_utf8_lossy(&d)) {
+                #[cfg(feature = "std")]
+                tracing::info!("{name}.SPOT: made for another map (a mod replaced it), not used");
+            }
         }
     }
     Ok(a)

@@ -17,6 +17,7 @@ use crate::portable_math::FloatMath;
 
 use super::run::Goal;
 use crate::area::Area;
+use crate::dino::eco::Spawn;
 use crate::dino::place::Habitat;
 use crate::dino::{check_place_collision_p, Character, Ctx, Herd, HunterView};
 use crate::rng::MsRand;
@@ -37,6 +38,7 @@ impl Herd {
                 || !t.killed_by_animal
                 || t.respawn > 0
                 || seen(c.pos, ctx.hunter, sight)
+                || !self.eco_room(c.ctype)
             {
                 continue;
             }
@@ -57,6 +59,7 @@ impl Herd {
                 spawn_group: old.spawn_group,
                 pack: old.pack,
                 pack_density: old.pack_density,
+                home_zone: self.eco_home(&pos),
                 ..Default::default()
             };
             if let Some(sp) = self.species.get(c.ctype) {
@@ -92,10 +95,17 @@ impl Herd {
         for _ in 0..TRIES {
             let p = match group {
                 Some(g) => self.mee_spot(area, from, rng, &mut tr, g, c.ctype, None)?,
-                None => match stock_spot(area, from, rng) {
+                None => match stock_spot(area, rng) {
                     // Dry ground: an animal of the water waits for a
                     // group with a region to come back in.
                     Some(_) if self.habitat(c.ctype) != Habitat::Land => return None,
+                    // (`mee_spot` asks the ecosystem itself.)
+                    Some(p)
+                        if !self.hunter_clear(Spawn::Respawn, Some(c.ctype), &p, from)
+                            || !self.eco_spot(c.ctype, &p, rng) =>
+                    {
+                        continue
+                    }
                     Some(p) => p,
                     None => continue,
                 },
@@ -109,16 +119,16 @@ impl Herd {
 }
 
 /// One try at `PlaceCharacters`' spot for the main population: anywhere
-/// within 500 cells of the map centre, at least 40 cells from the hunter.
-fn stock_spot(area: &Area, (px, pz): (f32, f32), rng: &mut MsRand) -> Option<[f32; 3]> {
+/// within 500 cells of the map centre (the caller checks the distance from
+/// the hunter).
+fn stock_spot(area: &Area, rng: &mut MsRand) -> Option<[f32; 3]> {
     let mut p = [
         512.0 * 256.0 + (rng.si_rand(50 * 256) * 10) as f32,
         0.0,
         512.0 * 256.0 + (rng.si_rand(50 * 256) * 10) as f32,
     ];
     p[1] = area.land_height(p[0], p[2]);
-    let far = (p[0] - px).abs() + (p[2] - pz).abs() >= 256.0 * 40.0;
-    (far && !check_place_collision_p(area, &mut p)).then_some(p)
+    (!check_place_collision_p(area, &mut p)).then_some(p)
 }
 
 /// Whether the hunter can see `pos`: within his render distance.

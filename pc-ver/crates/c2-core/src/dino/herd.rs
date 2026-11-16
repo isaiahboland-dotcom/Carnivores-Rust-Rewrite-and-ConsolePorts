@@ -56,7 +56,9 @@ pub struct Herd {
     pub flee: Option<Box<flee::FleeTable>>,
     /// The spawn ecosystem, when the game has rules for this map (`None`:
     /// the original's placement and roaming).
-    pub eco: Option<Box<eco::Eco>>,
+    pub eco: Option<eco::State>,
+    /// Awareness, when the game turns it on (`None`: the original's alarm).
+    pub awareness: Option<Box<super::aware::Rules>>,
     /// Predator hesitation, when the hardcore hunt ruleset turns it on
     /// (`None`: the original's attack).
     pub hesitation: Option<Box<super::hesitate::Hesitation>>,
@@ -77,20 +79,45 @@ impl Herd {
     /// does when the setting is off).
     pub(crate) fn eco_spot(&self, ctype: usize, p: &[f32; 3], rng: &mut MsRand) -> bool {
         self.eco
-            .as_deref()
+            .as_ref()
             .is_none_or(|e| e.spot_ok(ctype, p[0], p[2], &self.chars, None, rng))
     }
 
     /// Whether the ecosystem's caps leave room for one more of `ctype`.
     pub(crate) fn eco_room(&self, ctype: usize) -> bool {
         self.eco
-            .as_deref()
+            .as_ref()
             .is_none_or(|e| e.room_for(ctype, &self.chars))
+    }
+
+    /// Whether a new animal of `ctype` at `p` is far enough from the hunter
+    /// at `hunter`: the original's 40 cells (x plus z), or the ecosystem's
+    /// distances.
+    pub(crate) fn hunter_clear(
+        &self,
+        kind: eco::Spawn,
+        ctype: Option<usize>,
+        p: &[f32; 3],
+        hunter: (f32, f32),
+    ) -> bool {
+        match (&self.eco, ctype) {
+            (Some(e), Some(ct)) => e.far_enough(kind, ct, p, hunter),
+            (Some(e), None) => e.far_enough(kind, usize::MAX, p, hunter),
+            (None, _) => eco::original_distance(p[0] - hunter.0, p[2] - hunter.1),
+        }
+    }
+
+    /// The time of day changed (dynamic time): the ecosystem's rules for
+    /// it are in force from now on.
+    pub fn set_eco_time(&mut self, time: crate::area::TimeOfDay) {
+        if let Some(e) = &mut self.eco {
+            e.set_time(time);
+        }
     }
 
     /// The ecosystem zone an animal put at `p` keeps to.
     pub(crate) fn eco_home(&self, p: &[f32; 3]) -> Option<u8> {
-        self.eco.as_deref().and_then(|e| e.home(p[0], p[2]))
+        self.eco.as_ref().and_then(|e| e.home(p[0], p[2]))
     }
 
     /// Character `index` was removed: renumber what refers past it.
@@ -118,6 +145,10 @@ impl Herd {
         if let Some(h) = self.hesitation.as_deref_mut() {
             h.begin(&self.chars, base_dt);
         }
+        if let Some(e) = &mut self.eco {
+            e.set_view(hunter, ctx.render_r);
+        }
+        ctx.eco = self.eco.as_ref().map(|e| e.rules.clone());
         for p in &mut self.packs {
             p.alert_prev = core::mem::take(&mut p.alert);
             p.attack_prev = core::mem::take(&mut p.attack);
@@ -232,6 +263,13 @@ impl Herd {
             }
             ctx.flee = self.flee.as_deref().map(|t| t.limits(c.ctype));
             ctx.target = target_of(c, hunter, steer);
+            // Awareness: a predator that has lost the hunter heads for
+            // where it last sensed him, or round it.
+            if self.awareness.is_some() && steer.is_none() && c.lure.is_none() {
+                if let Some(t) = super::aware::target(c, i, hunter) {
+                    ctx.target = t;
+                }
+            }
             // Hesitation: a waypoint round the hunter while it circles.
             if let Some(h) = self.hesitation.as_deref_mut() {
                 let free = steer.is_none() && c.lure.is_none();
@@ -252,9 +290,9 @@ impl Herd {
                 }
                 p => p,
             };
-            let before = self.eco.as_deref().map(|e| e.before(c));
+            let before = self.eco.as_ref().map(|e| e.before(c));
             animate(c, i, sp, ctx, pack, leader, group, carrier);
-            if let (Some(e), Some(b)) = (self.eco.as_deref(), before) {
+            if let (Some(e), Some(b)) = (self.eco.as_ref(), before) {
                 e.after_step(i, b, &mut self.chars, ctx.rng);
             }
             if let Some(p) = self.predation.as_deref() {
@@ -264,6 +302,7 @@ impl Herd {
         ctx.target = Target::default();
         ctx.struck = None;
         ctx.flee = None;
+        ctx.eco = None;
         ctx.dt = base_dt;
         ctx.run_k = base_run_k;
     }

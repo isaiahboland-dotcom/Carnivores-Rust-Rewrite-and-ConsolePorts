@@ -436,6 +436,11 @@ pub fn build_recipe(
             pack.notes.push("flee limits applied".into());
         }
     }
+    if let Some(b) = &r.settings.behavior {
+        if b.push(&mut pack.vfs) {
+            pack.notes.push("behavior settings applied".into());
+        }
+    }
     if let Some(d) = &r.settings.dhc {
         if d.push(&mut pack.vfs)? {
             pack.notes.push("DHC terminal rules applied".into());

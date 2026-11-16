@@ -9,6 +9,8 @@
 //! units / 256), x then z. Ids and tags are single words of letters, digits,
 //! `-` and `_`. A `tags` line belongs to the zone before it. A `mission`
 //! line starts a mission ([`crate::mission`]), whose own lines follow it.
+//! `eco` lines after a zone, and `max_animals` and `species_max`, are the
+//! spawn ecosystem ([`crate::ecosystem`]).
 //!
 //! ```text
 //! min_extraction_gap 0.25      ; fraction of the map's side
@@ -23,6 +25,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::{format, string::String, vec::Vec};
 
+use crate::ecosystem::{time_index, Caps, Safety, ZoneRule};
 use crate::mission::Mission;
 use crate::zone::{Point, Shape};
 
@@ -48,6 +51,8 @@ pub struct Zone {
     pub id: String,
     pub shape: Shape,
     pub tags: Vec<String>,
+    /// The zone's spawn rule ([`crate::ecosystem`]); the default: none.
+    pub rule: ZoneRule,
 }
 
 impl Zone {
@@ -88,6 +93,10 @@ pub struct World {
     /// Least distance between a player start and an extraction point, as a
     /// fraction of the map's side; none: no rule.
     pub min_extraction_gap: Option<f32>,
+    /// The spawn ecosystem's caps on the whole map.
+    pub caps: Caps,
+    /// The spawn ecosystem's distances from the hunter.
+    pub safety: Safety,
     pub areas: Vec<Area>,
 }
 
@@ -125,7 +134,10 @@ fn marker(rest: &str) -> Option<Marker> {
 
 impl World {
     pub fn is_empty(&self) -> bool {
-        self.min_extraction_gap.is_none() && self.areas.iter().all(Area::is_empty)
+        self.min_extraction_gap.is_none()
+            && self.caps.is_empty()
+            && self.safety.is_empty()
+            && self.areas.iter().all(Area::is_empty)
     }
 
     /// The entries of the area whose map is `map` (case ignored).
@@ -162,6 +174,14 @@ impl World {
             let z = a.zones.iter().find(|z| z.id.eq_ignore_ascii_case(id))?;
             Some((a.map.as_str(), z))
         })
+    }
+
+    /// [`Self::zone`], to change it.
+    pub fn zone_mut(&mut self, id: &str) -> Option<&mut Zone> {
+        self.areas
+            .iter_mut()
+            .flat_map(|a| a.zones.iter_mut())
+            .find(|z| z.id.eq_ignore_ascii_case(id.trim()))
     }
 
     /// The mission called `id` (case ignored) and the map it is on.
@@ -201,12 +221,41 @@ impl World {
                     continue;
                 }
             }
-            if key == "tags" {
+            // `at <time> <line>`: that line's value for one time of day.
+            if key == "at" {
+                let mut words = rest.splitn(3, char::is_whitespace);
+                let (time, key2) = (words.next().and_then(time_index), words.next());
+                let rest2 = words.next().unwrap_or("").trim();
+                let (Some(time), Some(key2)) = (time, key2) else {
+                    continue;
+                };
+                if key2.eq_ignore_ascii_case("eco") {
+                    let zone = current
+                        .as_deref()
+                        .filter(|_| zone_open)
+                        .and_then(|m| w.area_mut(m).zones.last_mut());
+                    if let Some(z) = zone {
+                        z.rule.at[time].line(rest2);
+                    }
+                } else {
+                    w.caps.line_at(time, &key2.to_ascii_lowercase(), rest2);
+                }
+                continue;
+            }
+            if key == "safety" {
+                w.safety.line(rest);
+                continue;
+            }
+            if key == "tags" || key == "eco" {
                 let zone = current
                     .as_deref()
                     .filter(|_| zone_open)
                     .and_then(|m| w.area_mut(m).zones.last_mut());
-                if let Some(z) = zone {
+                if key == "eco" {
+                    if let Some(z) = zone {
+                        z.rule.line(rest);
+                    }
+                } else if let Some(z) = zone {
                     for t in rest.split_whitespace().filter(|t| valid_id(t)) {
                         if !z.has_tag(t) {
                             z.tags.push(t.to_ascii_lowercase());
@@ -216,6 +265,9 @@ impl World {
                 continue;
             }
             zone_open = false;
+            if w.caps.line(&key, rest) {
+                continue;
+            }
             if matches!(
                 key.as_str(),
                 "area" | "zone" | "spawn" | "extraction" | "mission"
@@ -252,6 +304,7 @@ impl World {
                             id: (*id).into(),
                             shape,
                             tags: Vec::new(),
+                            rule: ZoneRule::default(),
                         });
                         zone_open = true;
                     }
@@ -289,6 +342,8 @@ impl World {
         if let Some(g) = self.min_extraction_gap {
             s.push_str(&format!("min_extraction_gap {g}\n"));
         }
+        self.caps.write(&mut s);
+        self.safety.write(&mut s);
         for a in self.areas.iter().filter(|a| !a.is_empty()) {
             s.push_str(&format!("area {}\n", a.map));
             for z in &a.zones {
@@ -308,6 +363,7 @@ impl World {
                 if !z.tags.is_empty() {
                     s.push_str(&format!("tags {}\n", z.tags.join(" ")));
                 }
+                z.rule.write(&mut s);
             }
             for (key, list) in [("spawn", &a.spawns), ("extraction", &a.extractions)] {
                 for m in list {
@@ -330,6 +386,24 @@ mod tests {
     fn sample() -> World {
         World {
             min_extraction_gap: Some(0.25),
+            caps: Caps {
+                max_animals: Some(40),
+                species: vec![("Tyrannosaurus Rex".into(), 1)],
+                at: [
+                    Default::default(),
+                    Default::default(),
+                    crate::ecosystem::Limits {
+                        max_animals: Some(20),
+                        species: vec![("Velociraptor".into(), 8)],
+                    },
+                ],
+            },
+            safety: Safety {
+                respawn: Some(60),
+                unseen: true,
+                species: vec![("Tyrannosaurus Rex".into(), 80)],
+                ..Safety::default()
+            },
             areas: vec![
                 Area {
                     map: "area1".into(),
@@ -341,6 +415,27 @@ mod tests {
                                 radius: 40.0,
                             },
                             tags: vec!["no_spawn".into(), "wet".into()],
+                            rule: ZoneRule {
+                                no_spawn: true,
+                                cap: Some(6),
+                                contain: crate::ecosystem::Contain::Soft,
+                                allow: vec!["Stegosaurus".into()],
+                                weights: vec![("Stegosaurus".into(), 2.5)],
+                                avoid: true,
+                                at: [
+                                    crate::ecosystem::ZoneOverride {
+                                        no_spawn: Some(false),
+                                        cap: Some(2),
+                                        allow: Some(Vec::new()),
+                                        weights: vec![("Stegosaurus".into(), 0.5)],
+                                    },
+                                    Default::default(),
+                                    crate::ecosystem::ZoneOverride {
+                                        allow: Some(vec!["Tyrannosaurus Rex".into()]),
+                                        ..Default::default()
+                                    },
+                                ],
+                            },
                         },
                         Zone {
                             id: "ridge".into(),
@@ -350,6 +445,7 @@ mod tests {
                                 [150.1, 220.0],
                             ]),
                             tags: Vec::new(),
+                            rule: ZoneRule::default(),
                         },
                     ],
                     spawns: vec![Marker {
@@ -415,6 +511,7 @@ mod tests {
               spawn s 3 4\n\
               spawn far 1\n\
               tags late\n\
+              eco cap 3 ; no zone before it\n\
               extraction s 5 6\n\
               area area3\n\
               zone A circle 1 1 5\n",
@@ -425,6 +522,7 @@ mod tests {
         assert_eq!(a.zones.len(), 1);
         assert_eq!(a.zones[0].id, "a");
         assert!(a.zones[0].tags.is_empty(), "tags only follow their zone");
+        assert!(a.zones[0].rule.is_empty(), "so do eco lines");
         assert_eq!(a.spawns.len(), 1);
         assert_eq!(a.spawns[0].at, [1.0, 2.0]);
         // A start and an extraction point may share a name.
