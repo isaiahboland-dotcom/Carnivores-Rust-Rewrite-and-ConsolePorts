@@ -3,7 +3,10 @@
 The launcher's advanced instance setting **Advanced Dinosaur Behavior and
 AI** (recipe editor, Advanced tab) collects every animal behavior that goes
 beyond the original game. Its first part, predation, is implemented
-([MODDING.md](MODDING.md#predation-carnivores-hunt-herbivores)). Everything
+([MODDING.md](MODDING.md#predation-carnivores-hunt-herbivores)), and so is
+awareness, a slice of phase 3 that came first
+([MODDING.md](MODDING.md#awareness-suspicion-investigating-searching);
+see "Awareness" under Phases). Everything
 else here is a plan: nothing below is implemented unless it says so. Status
 is tracked in [ROADMAP.md](ROADMAP.md); decisions go in
 [DECISIONS.md](DECISIONS.md).
@@ -295,6 +298,19 @@ Missing values keep the original reaction.
 
 Each phase lands on PC first, with its regression tests, before console
 support.
+
+### Awareness (implemented ahead of phase 1)
+
+`[settings.behavior.awareness]` and `_BEHAVIOR.TXT` exist with this one
+part (`c2_formats::behavior`, `c2_mods::behavior`, `c2_core::dino::aware`):
+suspicion, cautious investigation, a predator's last-known position and its
+lost-target search, and stealth crouch that counts only before pursuit. It
+covers phase 3's lost-target search and the first half of its sound
+investigation (a shot re-points an alarmed animal; a calm one is still
+alarmed by it as in the original). Phase 1 extends the same file and
+section with archetypes and senses; the per-animal `animals` tables there
+should fold these three values in rather than keep two lists. Stalking,
+ambush, hesitation and retreat remain.
 
 ## Regression tests
 

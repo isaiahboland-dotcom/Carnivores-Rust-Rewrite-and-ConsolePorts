@@ -267,10 +267,10 @@ by git, for your own.
 
 An advanced instance setting (launcher: the recipe editor's Advanced tab)
 for animal behavior beyond the original game. Every part is opt-in; with
-none turned on the animals behave exactly as in the original. Predation,
-below, is the part implemented today. The planned parts (archetypes,
-senses, needs and migration, herds, species relationships, player trust)
-are specified in [BEHAVIOR.md](BEHAVIOR.md).
+none turned on the animals behave exactly as in the original. Predation
+and awareness, below, are the parts implemented today. The planned parts
+(archetypes, senses, needs and migration, herds, species relationships,
+player trust) are specified in [BEHAVIOR.md](BEHAVIOR.md).
 
 #### Predation (carnivores hunt herbivores)
 
@@ -314,6 +314,51 @@ defensive = true             # charges carnivores below it for 5-10 s
 - Names are `_RES.TXT` names, case ignored. The built game gets
   `HUNTDAT/_PREDATION.TXT`, which every platform reads; survival and the
   trophy room ignore it.
+
+#### Awareness (suspicion, investigating, searching)
+
+In the original an animal is either calm or alarmed, and an alarmed one
+knows exactly where the hunter is for as long as the alarm lasts. Awareness
+(experimental; PC and Android) puts states in between. It is off unless the
+recipe turns it on, and Play Vanilla leaves it out.
+
+```toml
+[settings.behavior.awareness]
+enabled = true
+suspicion = 160          # half-notices up to this percent of its alarm threshold (100-300; default 160)
+investigate_after = 2    # seconds of suspicion before it comes to look (0-30; default 2)
+search = 20              # seconds a predator searches; the longest a look lasts (0-300; default 20)
+
+[[settings.behavior.awareness.animals]]
+name = "Velociraptor"
+search = 40              # unset keys inherit the global value, then the default
+```
+
+- **Suspicious:** a calm animal whose sight or smell comes close to its
+  alarm threshold, without reaching it, half-notices the hunter. Standing
+  up, moving closer or the wind turning can still alarm it outright.
+  `suspicion = 100` turns this off for an animal.
+- **Investigating:** after `investigate_after` seconds of that, it walks to
+  where it noticed him. A herbivore stops 12 cells short; a carnivore goes
+  all the way. It is still calm: a look ends when it gets there or after
+  `search` seconds.
+- **Pursuing:** alarmed, as the original. A carnivore chases the hunter
+  while it can see or smell him. When it cannot (he is behind cover, or too
+  far), it runs to where it last sensed him.
+- **Searching:** there, or after 8 seconds without sensing him, it works
+  round that place in widening steps, 3 to 10 cells out. Sensing him again
+  resumes the chase; after `search` seconds it gives up and calms.
+- **Crouching** (stealth crouch) makes the hunter harder to notice only
+  until he is noticed. An alarmed carnivore's senses are tested as if he
+  stood, so crouching never ends a chase or a search; breaking its line of
+  sight does.
+- A shot heard by an alarmed animal moves its idea of where the hunter is
+  to where the shot came from.
+- The big land animals take part: the stock herbivores and carnivores, and
+  a Modder's Edition game's hunting AIs and T-Rex. Ambient animals, fish,
+  flyers and brachiosaurs, and a survival wave's animals, behave as before.
+- Names are `_RES.TXT` names, case ignored. The built game gets
+  `HUNTDAT/_BEHAVIOR.TXT`. The 3DS, Wii U and VR do not read it yet.
 
 ### Instance rules (times of day, locked settings, spawn rules)
 
@@ -508,10 +553,9 @@ max_distance = 40        # unset keys inherit the global value, then the default
 
 `[settings.world]` holds shapes and points drawn on the areas' maps: zones
 (circles and polygons), player starts and extraction points. It is an advanced
-setting, opt-in and not part of the original game. **Nothing in a hunt uses
-these entries yet**: this is the shared data that the planned spawn rules,
-flee limits and missions will refer to by `id`, so a recipe can already carry
-them and a build already ships them.
+setting, opt-in and not part of the original game. Zones are used by the
+[spawn ecosystem](#spawn-ecosystem); player starts and extraction points are
+data for the planned missions, which no hunt uses yet.
 ```toml
 [settings.world]
 enabled = true
@@ -548,7 +592,8 @@ at = [300.0, 400.0]
 - A polygon has 3 to 64 points in order, either winding; the last joins the
   first. Its edges may not cross or touch, and it must enclose some area.
 - Zone ids are unique in the recipe; so are start ids, and extraction ids.
-  Tags are free words for now; later settings give some a meaning.
+  Tags are free words; `no_spawn` makes a no-spawn zone while the
+  [spawn ecosystem](#spawn-ecosystem) is on, the others have no meaning yet.
 - The recipe is where the entries are written and shared. The build derives
   `HUNTDAT/_WORLD.TXT` from it (one section per map), because packs on the
   consoles and Android never see the recipe; do not edit that file by hand.
@@ -559,6 +604,99 @@ at = [300.0, 400.0]
   an extraction point, are warned about and kept.
 - Off, absent or empty: no `_WORLD.TXT`, and the build is unchanged. Play
   Vanilla leaves the section out.
+
+#### Spawn ecosystem
+
+`[settings.world.ecosystem]` decides which animals appear in which zone, and
+how many. It is opt-in, experimental, and applies on PC and Android (the
+validator warns for the other targets). Survival and the trophy room ignore it.
+```toml
+[settings.world.ecosystem]
+enabled = true
+max_animals = 40             # living animals on a map (0-255; unset: no limit)
+
+[[settings.world.ecosystem.species]]
+name = "Velociraptor"        # as the balance editor names it
+max = 4                      # living at once, on any map
+
+[[settings.world.ecosystem.zones]]
+zone = "ridge"               # the id of a [[settings.world.zones]] entry
+max = 6                      # living animals inside at once
+contain = "hard"             # "hard", "soft", or unset
+allow = ["Stegosaurus"]      # only these appear here (empty: any animal)
+weights = [{ name = "Stegosaurus", weight = 3.0 }]
+
+[[settings.world.ecosystem.zones]]
+zone = "marsh"
+no_spawn = true              # nothing appears here
+avoid = true                 # wandering and fleeing animals keep out
+
+# By time of day (dawn, day, night): only the keys given differ.
+[settings.world.ecosystem.night]
+max_animals = 20
+species = [{ name = "Velociraptor", max = 8 }]
+[[settings.world.ecosystem.night.zones]]
+zone = "ridge"
+max = 2
+no_spawn = false
+allow = []                   # given and empty: any animal
+weights = [{ name = "Stegosaurus", weight = 0.5 }]
+
+# How far from the hunter new animals appear (cells; unset: 40).
+[settings.world.ecosystem.safety]
+initial_distance = 40        # at the start of a hunt
+respawn_distance = 60        # replacements for killed animals
+extra_distance = 40          # the instance rules' extra animals
+out_of_view = true           # replacements only where he is not looking
+species = [{ name = "Tyrannosaurus Rex", distance = 80 }]
+```
+- The rules steer where the game's own placement puts an animal: at the start
+  of a hunt, when a killed animal is replaced, when an ambient animal is moved
+  ahead of the hunter, and for the instance rules' extra animals. A refused
+  spot is one more spot the placement skips. Nothing already on the map is
+  ever removed or moved, and no-spawn zones do not keep animals from walking in.
+- A spot inside several zones must be accepted by each of them.
+- Caps count living animals; a body does not hold a place. A cap that is
+  already reached leaves the animal out (a replacement waits and comes when
+  there is room). A species cap covers the species' skin variants together.
+- `weights`: how readily an animal appears in the zone, against 1 anywhere
+  else on the map (0-10; 0: never). `weight = 3` in one zone makes a spot
+  there three times as likely to be taken as a spot outside it. With an
+  `allow` list, animals not listed never appear in the zone.
+- `contain = "hard"`: animals placed in the zone never cross its edge, even
+  when fleeing or chasing (they slide along it). `"soft"`: they wander inside
+  and may leave while fleeing or chasing; calm again, they drift back.
+  Containment follows the zone an animal was placed in.
+- `avoid = true`: animals do not head into the zone, wandering or fleeing
+  (with Bounded fleeing on). One already inside may leave. It is not a wall:
+  a chase, or a walk to a target on the far side, may still cross it.
+  Flights with Bounded fleeing on also stay inside a `hard` zone by choosing
+  another way, instead of pressing against its edge.
+- **By time of day.** `dawn`, `day` and `night` tables hold what differs at
+  that time: `max_animals`, per-species `max`, and per zone `no_spawn`, `max`,
+  `allow` and `weights`. A key that is not given is inherited from the main
+  rule; a weight or species cap replaces the one for that animal only.
+  Containment and `avoid` do not change with the time. The rules of the
+  current time apply to each animal as it is placed; with dynamic time that
+  follows the clock, and a cap that drops at nightfall never removes an
+  animal, it only stops new ones.
+- **Spawn safety.** Distances are cells from the hunter, measured as the
+  original does (x plus z); unset, each is the original's 40. A species'
+  own distance is used when larger. Replacements are looked for within 78
+  cells of the hunter, so a `respawn_distance` above about 70 finds few
+  spots. `out_of_view` refuses replacement spots within 60 degrees of where
+  the hunter faces and inside his view distance.
+- Rules that can't be met never hang a hunt: each placement gives up after a
+  bounded number of tries and the animal is left out. A replacement that
+  finds no room or no spot is tried again every 5 seconds (up to 16 wait).
+- A rule for a zone that is not drawn, a second rule for a zone, unknown
+  animals and out-of-range numbers are reported as warnings.
+- Off or absent, the build has no `eco` lines and hunts are unchanged. Play
+  Vanilla leaves the section out with the rest of `[settings.world]`.
+- In the launcher: recipe editor, Advanced page, **Spawn ecosystem**: one
+  entry per zone drawn in the map editor, **Spawn safety**, and **At dawn /
+  By day / At night** for the map cap and each zone's spawning and cap.
+  Per-animal caps, allow lists and weights by time are written in the file.
 
 **The map editor.** The launcher's recipe editor draws these for you:
 Advanced page, **World zones: map editor**. Choose an area and it shows the

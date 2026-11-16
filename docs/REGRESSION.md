@@ -952,6 +952,11 @@ Automated, no game data (`cargo test -p c2-core --lib flee`,
   closing in extends it by exactly the chase extension, then it ends.
 - **Sweep**: each fleeing AI family, re-frightened every second for a minute
   at an edge and a corner, stays inside the walkable square while fleeing.
+- **Other AIs**: a retreating stock carnivore, and the dialect's ambient
+  animal, wary flyer, land brachiosaur and shy fish
+  (`dino/huntable/tests/bounded.rs`), aim off the map with the setting off
+  and never past the margin with it on; a fish's and a wader's flight stays
+  in water, a flyer's ignores the ground.
 - **Vanilla table**: the launcher's "what the original does" numbers match
   the AI constants.
 - **Parse/round trip**: `_FLEE.TXT`, the recipe's `[settings.flee]`, the
@@ -960,12 +965,67 @@ Automated, no game data (`cargo test -p c2-core --lib flee`,
   baseline and the parity suites are unaffected; the unchanged `c2-core`
   suite passes.
 
+### Bounded flight scenario: `flee_bounds`
+
+File: `scenarios/flee_bounds.toml` (version 1, `script = "behaviours"` with
+`[behaviours.flee]`). Needs game data: a pack built on JPHL Special
+Edition (`--game-id jphl-pack`). Local runs only; packs are never published.
+
+1. The hunter stands at cell (948, 812) of area 1 looking east; four
+   animals wait 18 cells ahead, 14 short of the walkable square's edge.
+2. The behaviour script's stages, with `flee_NN_<name>` between the runs
+   and the deaths: bounded fleeing is turned on with the default limits
+   (24 cells, 20 s), the animal is alarmed as in its run stage, and its
+   first flight is watched until it ends, 25 s at most.
+3. `clear_of_edge`: the flight ends at least two cells inside the walkable
+   square. `flight_ends`: it ends before the watch runs out.
+   `flight_bounded`: the animal gets at most 26 cells from where it stood.
+
+A flight is over when the animal's flight record closes, not when it calms:
+an animal that still notices the hunter is alarmed again at once and starts
+another flight, which is not judged. The original engine skips these stages.
+
+```sh
+./target/release/c2-regress run --scenario crates/c2-regress/scenarios/flee_bounds.toml \
+    --game-id jphl-pack --game <PACK DIR> --repeat 2 --no-render
+```
+
+Result (2026-11-16, headless, a JPHL pack with add-ons and Carnivores 2 as
+a standalone): every stage passes and two repeats are identical.
+Parasaurolophus, Stegosaurus, Ankylosaurus and Gallimimus end their
+flights 11, 9, 3 and 11 cells from where they stood, clear of the edge.
+
 ## Hardcore hunt
 
 Synthetic unit tests only so far (no scenario): see "Regression tests" in
 [HARDCORE-HUNT.md](HARDCORE-HUNT.md). A hunt without the ruleset must keep its
 state hashes: the ruleset draws from the hunt's random stream only when it is
 on.
+
+## Awareness
+
+Synthetic unit tests, no game data: `cargo test -p c2-formats behavior`
+(`_BEHAVIOR.TXT` round trip, inheritance, clamping), `-p c2-mods behavior`
+and `-p c2-mods awareness` (the recipe section, validation, Play Vanilla),
+`-p c2-core --lib awareness` (`game/tests/awareness.rs`):
+
+- With the setting off no awareness state is kept and an alarm is the
+  original's. The unchanged `c2-core` suite passes, and
+  `vanilla_map2_four_dinos` on Carnivores 2 keeps the published baseline's
+  simulation state (`--same-state`).
+- A half-noticed hunter makes a herbivore suspicious, then investigating
+  after its delay, aimed 12 cells short of him; suspicion lapses when he is
+  no longer noticed; a look ends by its timer.
+- A raptor that loses the hunter aims at where it last sensed him, then
+  searches on rings 3 to 10 cells round it, and calms when its search time
+  is up and not before; sensing him again resumes the chase; a heard shot
+  moves the place.
+- Crouching keeps a calm animal from being alarmed at a distance where
+  standing alarms it, and changes nothing once it pursues or searches.
+- In a ticking hunt the lost raptor's target is that place, and two runs
+  end in the same position.
+
+No scenario yet: the headless runner does not load `_BEHAVIOR.TXT`.
 
 ## World zones
 
@@ -1008,8 +1068,32 @@ corner dragged out of an edge and corners removed by right-click.
 `cargo test -p c2-core --lib the_map_image` checks that the overview made
 from the files alone (`c2_formats::overview`) is the hunt's map picture.
 
-Nothing in a hunt reads `_WORLD.TXT` yet, so every baseline is unaffected.
-The parts that will use it must keep hashes unchanged when the file is absent.
+Spawn ecosystem: `cargo test -p c2-formats ecosystem` (a zone rule's and the
+caps' lines round trip, bad values skipped, numbers clamped),
+`cargo test -p c2-mods ecosystem` (the recipe section to the side file, the
+`no_spawn` tag, off writing nothing, caps alone making the section active,
+each warning by key), `cargo test -p c2-core --lib eco` (placement: no-spawn
+zones, allow lists, zone/species/map caps, bodies not counted, weights
+converging over 60 seeds, an impossible rule leaving animals out without
+hanging; hard and soft containment against an uncontained control; a forward
+replacement into a refused spot undone; caps across respawns, replacements
+and the instance rules' extra animals) and
+`cargo test -p c2-launcher recipe_edit::ecosystem` (the panel's rule storage).
+Time of day, spawn safety and flee zones are in the same runs: overrides
+merging key by key and caps inheriting by time (`c2-formats`), the recipe's
+`dawn`/`day`/`night` and `safety` tables reaching the file (`c2-mods`); in
+`c2-core`, night rules at placement and after a mid-hunt change with nobody
+removed, the three distances and a species' own, replacements out of the
+hunter's view, a flight routed round an avoided zone and kept in a hard one,
+a wander target pulled out of an avoided zone, and a replacement without
+room waiting and coming later. The launcher run lays out the filled panel
+headless and checks drawing changes nothing.
+Two tests lock the off path: rules that refuse nothing give the same placement
+and the same replacements as no rules, with no draw from the random stream.
+
+Hunts read `_WORLD.TXT` only for the ecosystem, and only when it has rules for
+the hunt's map, so every baseline (none has the file) is unaffected. Further
+parts that use the file must keep hashes unchanged when it is absent.
 
 `cargo test -p c2-core --lib crouching_does_not_cancel_an_alarm` locks the
 current behaviour ahead of the planned awareness states: with stealth crouch

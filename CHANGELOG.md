@@ -17,8 +17,35 @@
   (`MUZZ4.CAR`, as on the PC and Android) while firing.
 - Recipes can carry `[settings.world]`: zones (circles and polygons), player
   starts and extraction points on the areas' maps, in map cells. Builds write
-  them to `HUNTDAT/_WORLD.TXT`; hunts do not use them yet. Play Vanilla leaves
+  them to `HUNTDAT/_WORLD.TXT`; the spawn ecosystem uses the zones. Play Vanilla leaves
   the section out.
+- Spawn ecosystem (experimental, PC and Android): `[settings.world.ecosystem]`
+  sets, per zone drawn in the map editor, which animals appear there, how
+  readily, how many at once, and whether they stay inside (hard or soft
+  containment); no-spawn zones; caps per species and per map. The rules steer
+  the game's own placement and never remove an animal. Edited in the launcher
+  (recipe editor > Advanced > Spawn ecosystem); off by default; Play Vanilla
+  leaves it out. See MODDING.md.
+- Spawn ecosystem: rules by time of day (`dawn`, `day`, `night` override the
+  main rule key by key, following dynamic time); spawn safety (distance from
+  the hunter at the start, for replacements and for extra animals, a larger
+  distance per species, replacements out of view); `avoid` zones that
+  wandering and fleeing animals keep out of; replacements that find no room
+  or no spot are retried instead of dropped.
+- Awareness (experimental, PC and Android): `[settings.behavior.awareness]`
+  gives animals states between calm and alarmed. One that almost notices the
+  hunter grows suspicious and comes to look; a carnivore that loses him runs
+  to where it last sensed him, searches round it and gives up after a set
+  time. Stealth crouch helps only until the hunter is noticed. Edited in the
+  launcher (recipe editor > Advanced > Awareness); off by default; Play
+  Vanilla leaves it out. See MODDING.md.
+- Bounded fleeing also covers the stock carnivores' retreat and, in Modder's
+  Edition games, shy fish, wary flyers, brachiosaurs and ambient animals:
+  each keeps to the map and to the ground or water it lives in.
+- Wii U: a "Bounded fleeing (experimental)" row in Settings.
+- VR: `c2-vr play GAME --bounded-flee`.
+- `c2-regress`: the behaviour script can judge a bounded flight
+  (`[behaviours.flee]`; `scenarios/flee_bounds.toml`).
 - Launcher: a map editor on the recipe editor's Advanced page draws those
   zones and points on an area's overview picture. A polygon can be moved
   whole, given a corner by dragging from an edge, and lose one by a

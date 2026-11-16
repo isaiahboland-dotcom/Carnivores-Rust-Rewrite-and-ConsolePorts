@@ -149,6 +149,12 @@ Nintendo ports keep their own mappings.
   flashlight (only one at a time). Dynamic-time night kills earn +20% while night vision is off; the
   flashlight keeps that bonus. **K** switches the flashlight beam between wide and a narrow one that
   reaches farther (remembered for the next hunt). Details: [DYNAMIC_TIME.md](DYNAMIC_TIME.md).
+- **Night vision in fixed-time Night hunts** is free and starts on, as in the original; **N** (or the
+  right stick click) switches it off. Scoring is unchanged.
+- **Pitch black night** (Options > Game, on by default): with night vision off at night, the world
+  darkens to about an eighth of its light. Off, the night keeps its light maps' colours.
+- **Original underwater fog** (Options > Video, off by default): under water, the fog thickens with
+  depth and distance as in the original, instead of a fixed wall of fog at about a third of the view.
 - **Multi ammo** (Options > Game, off by default): picking the tranquilizer asks **Half tranq** (each
   weapon's rounds split between lethal rounds and darts; **T** swaps them, and the other kind loads
   when one runs out; the HUD shows "lethal:" and "tranq:" rows) or **Full tranq** (darts only, as the
@@ -156,8 +162,9 @@ Nintendo ports keep their own mappings.
 - **Advanced observer mode** (Options > Game): in observer hunts, teleport by the map with no wait or
   cooldown, **F** flies (jump rises, crouch sinks), **T** stops time for camera shots.
 - **Bounded fleeing** (Options > Video, off by default; experimental on 3DS, where it is in the
-  hunt options): scared herbivores and wary animals keep to the map and run clear of cliffs and
-  water instead of off the edge, a flight ends after a limited distance or time, and repeated
+  hunt options, and on Wii U, in Settings; in VR, `c2-vr play GAME --bounded-flee`): scared
+  animals keep to the map and run clear of cliffs and water (fish keep to water of their depth)
+  instead of off the edge, a flight ends after a limited distance or time, and repeated
   noises cannot keep an animal afraid. Limits come from the instance's recipe (see
   [MODDING.md](MODDING.md#flee-limits-bounded-fleeing)) or built-in defaults.
 - **Modern graphics** (Options > Video, each off by default): looks taken from the modernized
@@ -170,6 +177,17 @@ Nintendo ports keep their own mappings.
     even tint and works with that option on or off.
   - **Sun and moon glow** (`modern_sky_glow`): a soft halo around the sun and the moon, a warm
     band along the horizon by day, and a slightly darker sky overhead.
+  - **Water reflections** (`modern_reflections`): the water mirrors the shore, trees, sky and
+    animals, and stays clear enough near you to show the bed and what swims in it. The world is
+    drawn twice, so expect a lower frame rate; meant for faster PCs and phones.
+  - **Sun through fog** (`modern_fog_glow`): looking towards the sun, the fog that lies in the
+    maps' hollows and swamps glows warm.
+  - **Desaturated night** (`desaturated_night`): with night vision off at night, the ground,
+    trees and animals lose most of their colour and half their light; the sky and moon stay
+    bright. Works with Pitch black night on or off.
+  - **Underwater effects** (`modern_underwater`): the underwater view is blue whatever the
+    water's own colour. (Drops running down the screen after surfacing are planned for a later
+    release.)
 - **Predation** is part of the advanced instance setting Advanced Dinosaur Behavior and AI
   (launcher: the recipe editor's Advanced tab), off unless a recipe turns it on. See [MODDING.md](MODDING.md#predation-carnivores-hunt-herbivores).
 - **DHC OS terminal** (Options > Game, or the launcher's instance editor > Base game > Menu; off by

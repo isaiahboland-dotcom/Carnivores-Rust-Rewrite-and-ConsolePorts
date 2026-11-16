@@ -183,10 +183,109 @@ Production PC rendering now applies this above-water term
 shallow-probe output matches the candidate switch except at the horizon,
 where production keeps water distance fog.
 
-Not yet implemented in the candidate: the `ctViewR1 + 2` opaque cutoff (Rust
-has no `ctViewR1`; the vanilla value is 28, clamped to `ctViewR - 10`, and the
-Genesis value is unverified) and the underwater alpha branch. The formula is
-from source; no native hardware-renderer capture has validated it.
+Production PC rendering also applies the underwater alpha branch
+(`DECISIONS.md`, 2026-11-15).
+
+Not yet implemented in the candidate: the opaque far cutoff and the
+underwater alpha branch. The vanilla cutoff is `ctViewR1 + 2` (28, clamped to
+`ctViewR - 10`). The modernized MEE source that Genesis is built from has no
+`ctViewR1` and tests `r < ctViewR + 2`, so no ring inside the view is forced
+opaque there (see "Software coverage rules"). The formula is from source; no
+native hardware-renderer capture has validated it.
+
+## Software coverage rules (2026-11-14)
+
+**The reference source for Genesis is the modernized MEE renderer, not the
+vanilla `RenderSoft.cpp`.** The shipped `v_soft.ren` carries MEE 1.11 source
+paths, a `SoftRenderer` class and a `ViewR = %d BMP at %d` status string with
+no near-radius field; its view-distance routine takes two arguments and
+clamps two values. The matching source is `Hunt/Renderer/SoftTerrain.cpp`,
+`SoftWater.cpp`, `Game/Effects.cpp` and `Loaders/MapLoader.cpp` of the
+modernized MEE tree. Identity of that source revision with the shipped
+binary is not proven; it is supported by those strings and by the model
+agreement below.
+
+That renderer differs from vanilla where this task was looking:
+
+- `RenderGround` walks every cell of every ring with `ProcessMap`. There is
+  no `ctViewR1`, no 2-cell far ring (`ProcessMap2`/`ProcessMapW2` are never
+  called) and therefore no far `GlassL` terrain fade.
+- `ProcessMap` and `ProcessMapW` skip a cell whose diagonal midpoint is
+  farther than `ctViewR * 256` from the camera: the drawn area is a disc,
+  not the window's square.
+- Projected vertices are whole pixels: `VideoC + (int)(v / z * Camera)`,
+  truncated toward the screen centre. Rows `[y1, y3)` are filled.
+- Ground triangles of an all-water cell are skipped when any vertex is below
+  the water level; water triangles are skipped when any terrain vertex is
+  above it. Software `CreateTMap` levels cardinal bank vertices to the water
+  level, so both tests pass on the bank.
+- Each water vertex takes the level of its own `WMap` record.
+- Water vertices within `ctViewR - 4` rings get a three-component wave
+  displacement in X, Y and Z.
+
+A CPU model of these rules (coverage only: sky, ground or water per pixel; no
+objects, texturing or waves) was scored against the native captures, with
+object pixels excluded. Figures are the share of classified pixels whose
+class differs from native, for the six distinct camera cases.
+
+| Rule set | Mismatch |
+| --- | --- |
+| All rules above | 0.04–0.23% |
+| Without software shore levelling | 0.04–2.10% |
+| Square window instead of the disc | 0.04–0.94% |
+| Rounded instead of truncated vertices | 0.04–0.65% |
+| Vanilla near/far split, `ctViewR1` = 28 | 0.06–0.35% |
+| Without either triangle skip rule | 0.04–0.23% (at most 16 pixels from the full rules) |
+| Full rules, nearest surface wins instead of ring order | within 3 pixels of the full rules |
+
+Conclusions:
+
+- Shore levelling, the disc and truncated projection are each confirmed.
+- The vanilla near/far split is not supported: it is no better on the sea
+  views and worse where terrain forms the skyline.
+- **The triangle skip rules are not observable in a depth-tested renderer**
+  once the shore is levelled. They exist because the software renderer has
+  no depth buffer. Porting them would add shader work for no measured change.
+- Per-vertex water levels cannot be tested on Genesis: no area has a water
+  quad whose corners reference records with different levels (AREA1–3, 5, 6
+  checked after `CreateTMap`). The rule matters only for maps that do.
+
+Two candidate switches implement the confirmed rules, `software-radius` and
+`software-projection`. With the earlier scoped set (software sky, shore,
+water and terrain), on Vulkan:
+
+| Case | Baseline | Scoped | Scoped + both |
+| --- | --- | --- | --- |
+| Pitch −0.3 | 2.64% | 0.44% | 0.04% |
+| Pitch 0 | 2.44% | 0.13% | 0.06% |
+| Pitch 0.3 | 2.84% | 0.23% | 0.03% |
+| Yaw π/2 | 1.10% | 0.43% | 0.18% |
+| Yaw π | 3.92% | 1.31% | 0.71% |
+
+**The one-scanline horizon residual is explained by these two rules
+together.** On flat full-light terrain the first ground row matches native
+in 762, 793 and 797 of 800 columns at view distances 32, 74 and 128 (238,
+434 and 654 before); the remaining columns differ by one row. Either rule
+alone does not reach this. No colour or view-distance adjustment is involved.
+
+Observed and not addressed here:
+
+- The yaw π view's remaining mismatch is objects. Native software draws
+  distant palms unfogged and omits some objects that Rust draws (software
+  `CreateTMap` removes `ofNOSOFT` objects and half of `ofNOSOFT2`).
+- Native water shows isolated sky-coloured pixels, consistent with the
+  unmodelled wave displacement.
+- These captures use Vulkan. The earlier nine-variant report used
+  GL/llvmpipe, which no longer creates a device on the test machine; the two
+  are not mixed in any comparison above. Vulkan and GL baselines differ by a
+  mean of 0.1–0.3 per channel.
+
+The same modernized tree contains the OpenGL renderer (`Hunt/Renderer/GL*.cpp`),
+the reference for any future "modern MEE style" rendering option.
+
+Private evidence: `pc-ver/(testing)/sky-water-candidate-20261111/model/`
+(model and scoring scripts) and `probe-20261114/` (captures, report,
+`measurements.json`).
 
 ## Remaining implementation and acceptance
 

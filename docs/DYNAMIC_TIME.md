@@ -22,7 +22,9 @@ simulation is paused, and resets to the selected time when restarting.
 Trophy rooms remain fixed. Turning the option off preserves fixed-time hunts.
 
 On PC, the sky, fog, light maps, object lighting and sun/moon transition together.
-Dynamic nights darken naturally; night vision is optional equipment. The original data supplies only three
+Dynamic nights darken with **Pitch black night** (Options > Game, on by default) and turn grey
+with **Desaturated night** (Options > Video > Modern graphics); both apply whenever night vision
+is off, in fixed-time Night hunts too. Night vision is optional equipment. The original data supplies only three
 lighting states, so dusk reuses dawn rather than introducing new assets.
 The starting choice still determines spawn tables; animals are not respawned as
 time passes. Dynamic hunts award **+20%** for kills between dusk and dawn
@@ -47,7 +49,9 @@ falloff, reaching up to 80 metres. It does not add a shadow-map pass. On PC,
 **K** switches it to a narrow beam (less width, twice the reach) and back; the
 choice is remembered for the next hunt.
 
-Fixed-time hunts keep automatic night vision and their existing scoring.
+Fixed-time Night hunts keep the original's night vision for free: it starts on, and **N** (the
+right stick click, or the **nv** button) switches it off to see the night as it is. Their scoring
+does not change (+10% for the Night selection, with night vision on or off).
 Turning dynamic time off hides the extra equipment and clears its PC selection.
 
 ## Wii U: experimental

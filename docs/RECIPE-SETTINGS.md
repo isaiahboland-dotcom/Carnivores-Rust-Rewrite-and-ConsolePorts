@@ -39,9 +39,11 @@ Treatments:
 | `[settings.rules] hidden` | animals kept off the hunt menu | Kept |
 | `[settings.predation]` | Advanced Dinosaur Behavior and AI: carnivores hunt herbivores | **Off** (no `_PREDATION.TXT`) |
 | `[settings.flee]` | custom bounded-flee limits | **Off** (no `_FLEE.TXT`) |
+| `[settings.behavior]` | Advanced Dinosaur Behavior and AI: awareness ([MODDING.md](MODDING.md#awareness-suspicion-investigating-searching)) | **Off** (no `_BEHAVIOR.TXT`) |
 | `[settings.hunt]` | hardcore hunt ruleset, a separate DHC OS entry ([HARDCORE-HUNT.md](HARDCORE-HUNT.md)); its knife is experimental and needs `experimental_knife = true` as well | **Off** (no `hunt` lines in `_RULES.TXT`) |
 | `[settings.dhc]` | DHC OS terminal rules: discovery, licence costs, island allow-lists ([MODDING.md](MODDING.md#dhc-os-terminal-rules)) | **Off** (no `_DHC.TXT`; the terminal never shows) |
 | `[settings.world]` | zones, player starts and extraction points on the maps ([MODDING.md](MODDING.md#world-zones-player-starts-and-extraction-points)) | **Off** (no `_WORLD.TXT`) |
+| `[settings.world.ecosystem]` | which animals appear in which zone, caps and containment ([MODDING.md](MODDING.md#spawn-ecosystem)) | **Off** (no `eco` lines in `_WORLD.TXT`) |
 | `[[settings.world.missions]]` | fixed challenges that use those points ([MODDING.md](MODDING.md#missions)) | **Off** (with `[settings.world]`) |
 | `[[settings.rules.areas]]` | per-area huntable caps | **Off** |
 | `[[settings.rules.secrets]]` | secret animals spawned per area | **Off** |
@@ -72,10 +74,16 @@ below says **Off**.
 | `button_hints` | 0 | button hints | Kept |
 | `high_end_view` | 0 | far ground levels, object fades | Kept |
 | `pretty_underwater` | 1 | underwater fog and tint | Kept |
+| `original_underwater_fog` | 0 | the original's depth-based underwater fog | Kept |
+| `pitch_black_night` | 1 | darker night without night vision | Kept |
 | `classic_filter` | 0 | point-sampled textures | Kept |
 | `modern_waves` | 0 | animated waves on open water | Kept |
 | `modern_water_tint` | 0 | underwater tint by depth, in the water's hue | Kept |
 | `modern_sky_glow` | 0 | sun and moon halos, horizon band | Kept |
+| `modern_reflections` | 0 | mirrored, see-through water | Kept |
+| `modern_fog_glow` | 0 | warm glow in fog zones towards the sun | Kept |
+| `desaturated_night` | 0 | grey, dimmer night without night vision | Kept |
+| `modern_underwater` | 0 | blue underwater view, drops after surfacing | Kept |
 | `render_scale` | 255 | Android resolution slider | Kept |
 | `pause_pickers` | 1 | pickers pause gameplay | Kept |
 | `map_holsters` | 1 | map puts the gun away | Kept |
@@ -155,12 +163,14 @@ target lacks (`c2_mods::validate`).
 |---|---|---|---|---|---|
 | Play Vanilla | Yes: launcher (Options), `play --classic`, `recipe build --classic` | No | No (planned) | No (planned) | No |
 | Predation (`_PREDATION.TXT`) | Yes | Yes (the PC game) | Yes | Experimental | Yes |
-| Custom flee limits (`_FLEE.TXT`) | Yes, with Bounded fleeing on | Yes (the PC game) | Experimental | No option yet | No |
+| Custom flee limits (`_FLEE.TXT`) | Yes, with Bounded fleeing on | Yes (the PC game) | Experimental | Experimental (Settings) | With `--bounded-flee` |
+| Awareness (`_BEHAVIOR.TXT`) | Yes (experimental) | Yes (the PC game) | No: the original's alarm | No: the original's alarm | No: the original's alarm |
 | Times, hidden animals, locks, spawn rules (`_RULES.TXT`) | Yes | Yes (the PC game) | Yes | Yes | No |
 | Hardcore hunt (`hunt` lines in `_RULES.TXT`) | Yes | Yes (the PC game; no touch buttons) | No: regular hunts | No: regular hunts | No: regular hunts |
 | Variants | Yes | Yes (the PC game) | No: the cooker refuses them | No: refused at install | Not checked |
 | DHC OS terminal (`_DHC.TXT`) | Yes, with its option on | Untested (the PC game; no touch layout yet) | Yes, with Settings > DHC on (hunt setup pages; untested on hardware) | No: original menu | No |
-| World zones (`_WORLD.TXT`) | Data only: built and shipped, not used by hunts yet | Data only | Data only (copied into the pack) | Not shipped | Not used |
+| World zones (`_WORLD.TXT`) | Used by the spawn ecosystem; starts and extraction points are data only | As PC | Data only (copied into the pack) | Not shipped | Not used |
+| Spawn ecosystem (`eco` lines in `_WORLD.TXT`) | Yes (not in survival or the trophy room) | Yes (the PC game) | Not yet: validator warns | Not yet: validator warns | Not yet: validator warns |
 | Missions (`mission` entries in `_WORLD.TXT`) | Data only: not listed or played yet (planned in the DHC OS terminal) | Data only | Data only | Hidden: no terminal | Hidden: no terminal |
 
 Console Play Vanilla is planned as a separate task: a second, classic pack

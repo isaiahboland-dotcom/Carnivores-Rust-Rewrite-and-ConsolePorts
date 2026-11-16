@@ -6413,3 +6413,272 @@ leave a fence that teardown waits on forever.
 Session loss (`LOSS_PENDING`, `InstanceLossPending`) ends the run instead of
 recreating the session; reconnecting is out of scope for the draft. Details:
 `docs/SECURITY-HARDENING.md` (2026-11-15 VR audit).
+
+## 2026-11-16 — Local fog volumes (PC); modern graphics: sun through fog (`modern_fog_glow`)
+
+**Fog zones (original behaviour, always on).** The PC renderer drew only the
+distance fog; the map's fog zones (`FogsMap`) and the `.RSC` fog list were
+parsed and unused. All five vanilla areas have zones (AREA5's zone 2 is the
+poisonous volcanic gas), so vanilla screenshots change.
+
+- `c2_core::fog`: `fill_floor` is `Resources.cpp: LoadMap`'s rule (with the
+  first zone's top above 1, zone-less entries with any of their 3x3 heights
+  below it join zone 1), run in `Area::new` before `create_tmap` as the
+  original runs it before `CreateTMap`. `Zones::level` is `Hunt2.cpp:
+  CalcFogLevel` above water and `Zones::camera_zone` is `CameraFogI` /
+  `CAMERAINFOG`; both are the reference for the shader.
+- `shaders/fog_zones.wgsl` evaluates the same formula per vertex: the map in
+  a storage buffer and the list in a uniform, both on the globals' bind group
+  (bindings 1 and 2), so every pipeline built on `Globals` can use it. The
+  ground is fogged per map vertex, except the ground of water cells
+  (`PreCashGroundModel`); objects, sprites and animals per vertex, capped at
+  250 of 255 as `vFogT`. The original takes one point per model plus a height
+  gradient (`CalcFogLevel_Gradient`); per vertex gives the same result for a
+  model inside one zone and a smoother edge for one that spans two. The water
+  surface, its rings and the weapon have no zone fog. Zone fog is applied
+  before the distance fade, as the Direct3D vertex fog precedes the alpha
+  fade.
+- Colours are `0x00BBGGRR` (the Direct3D build swaps the file's value into a
+  `D3DCOLOR`); the `Fog::rgb` doc comment said `0x00RRGGBB` and is corrected.
+  Each vertex takes its own zone's colour, where the original's single
+  `CurFogColor` is whichever zone it evaluated last. At night the colour keeps
+  only its green (`fogRGB &= 0x00FF00` with `OptDayNight` 2), blended by the
+  night-vision weight so dynamic time follows it.
+- The original enables the zones only when a zone cell is near the view
+  (`FogFound`); here they are on whenever the map has a zone the list defines.
+  Under water they are off: the original routes the underwater fog through
+  the same function as zone 127, which the port draws as its own distance fog
+  (2026-11-12). Poisonous zones (`Mortal`: damage while the camera is in
+  them) are not implemented; that is gameplay, not rendering.
+- VR compiles `terrain.wgsl` and `model.wgsl` with its own descriptor sets,
+  so it gets no-op `zone_fog`/`zone_fogged`/`zone_glow` from its own shader
+  files; the headset draws no zone fog yet. The 3DS draws none either.
+
+**Sun through fog (`modern_fog_glow`, off by default).** The modernized
+Modder's Edition's forward scatter (`terrain.frag`, `GLTerrain.cpp`):
+`(1, 0.85, 0.5) * pow(max(dot(view, sun), 0), 8) * 0.25 * fog amount`, added
+on the ground after the zone colour. Theirs scales by the sun's visibility on
+screen (`SunLight / 140`); here by daylight (one minus the night weight).
+Options > Video > Modern graphics > Sun through fog; `c2-pc area --fog-glow`.
+
+**Compared and not ported.**
+- MEE's night (60% grey and half brightness on the world, sky untouched) is
+  their look without night vision. It does not match ours: fixed-time nights
+  keep the original's automatic night vision, and dynamic-time nights without
+  it darken the world to 12% (2026-11-03), without desaturation. Left as is;
+  a desaturation-only option remains possible.
+- Wading ripples (`GLWater.cpp: RenderWCircles`) are MEE's port of the
+  original's water rings, which `c2_core::effects` already spawns (wading,
+  swimming, shots, falls).
+- MEE's underwater fog (density by depth, vertical gradient) refines the
+  original's own underwater fog, which is `CalcFogLevel` with zone 127 (top
+  at the water level, `Transp` 460, `FLimit` 200). The fog-zone path can now
+  draw that; switching the underwater fog to it is a separate change.
+
+Tests: `c2_core::fog::tests` (fill rule, levels, camera zone, colour order);
+GPU, ignored by default: `render::fog_tests::*` (ground fogged by the
+reference amount, a zone missing from the list draws nothing, the glow only
+towards the sun and only in fog).
+
+## 2026-11-16 — Spawn ecosystems (ADV-WORLD phase 2)
+
+`[settings.world.ecosystem]` is built into `_WORLD.TXT` as `eco` lines after
+each zone plus `max_animals` / `species_max` (`c2_formats::ecosystem`); no new
+file and no `_RES.TXT` key. `c2_core::dino::eco` resolves it per hunt for the
+map and the loaded species; `Herd::eco` is `None` without rules, and then no
+code path or random draw differs from before.
+
+- **Steering, not trimming.** The rules are one more test in the existing
+  spot searches (`Herd::place`, `mee_spot`, `add_secondary_in`,
+  `add_secondary_one`, `place_extra`, predation's respawn), and a cap check
+  in `Herd::spawn`. Nothing is removed after placement.
+- **Overlapping zones** must each accept the spot (order does not matter).
+- **Weights** are relative densities by rejection: a spot is kept with
+  probability `weight / largest weight any zone gives that species` (at least
+  1, so ground outside every zone counts as 1). This needs no change to how
+  the original picks species or positions. Range 0-10.
+- **Caps count living animals.** A body would otherwise block the
+  replacement of the animal it was. Variants count under their owner.
+- **Bounded tries.** Ecosystem refusals in `Herd::place` are counted per
+  animal (512) and do not use the original's shared 10240-try budget, so a
+  species allowed nowhere is left out without ending the placement of the
+  animals after it. The other paths keep their own existing bounds; a failed
+  replacement is simply not made (retry scheduling is phase 4).
+- **Containment** is applied around each AI step in `Herd::step_scheduled`
+  rather than inside the AIs: a calm animal's new wander target outside its
+  home zone is pulled to the zone's edge (soft: 3 times in 4; from outside
+  the zone, to a point inside it); hard zones also undo the part of a step
+  that crosses the edge, sliding along it. The AIs recompute chase and flee
+  targets every step, so only the position clamp can hold those. The home
+  zone is the first containing zone at the spot where the animal was placed.
+- **`ReplaceCharacterForward`** counts as a spawn: a jump of more than 8
+  cells in one step is checked like a new spot and undone when refused (or
+  when it would leave a hard zone).
+- **The `no_spawn` tag** on a zone makes a no-spawn zone while the ecosystem
+  is on; other tags still have no meaning.
+- **Scope.** PC and Android. The 3DS, Wii U and VR place their herds in their
+  own setup code and do not load the rules yet; the validator warns. Flee
+  targets do not avoid zones yet (phase 5), and time-of-day overrides and the
+  configurable hunter distance are phases 3 and 4.
+
+## 2026-11-16 — Original underwater fog, night looks, APK fog list
+
+**APK-built bases dropped the first fog zone.** `mobile_area::fog_list`
+skipped the `.rst`'s `fog_id 0` as "no fog", but it is the PC's zone 1
+(AREA1: grey, altitude 0); the map's zone numbers are the PC's. Every zone
+took the next one's fog, and a first zone with an altitude then filled all
+low ground (`c2_core::fog::fill_floor`): the APK-built AREA1 lakeside sat in
+thick fog, with the unfogged ground of the shore's water cells showing as a
+dark band, and the APK-built AREA5's low ground took the poisonous zone.
+Fixed; bases built from an APK before this must be rebuilt
+(`c2-pc mobile-base`). Test: `fog_id_zero_is_the_first_zone`.
+
+**Original underwater fog (`original_underwater_fog`, off by default).**
+Under water the original fogs through `CalcFogLevel` with every point in zone
+127 (`Game.cpp: InitGame`: Transp 460, FLimit 200; `Hunt2.cpp`: colour and
+top from the camera's water each frame), so the fog grows with both ends'
+depth and the distance; the distance fade keeps its normal range. With the
+option on, `FogFrame::underwater` writes that fog into slot 0 of the zone
+list (no map zone uses it) and `fog_zones.wgsl` puts every point and the
+camera in it; the ground of water cells is fogged too (`PreCashGroundModel`
+fogs it when `UNDERWATER`), the water surface is not. The colour is the
+port's underwater colour (the water texture's mean, as `WaterList.fogRGB`,
+with the tint options applied); the option alone also turns it and the
+screen wash on. Off, the port's fog (0 to 35% of the view) is unchanged.
+Reference: `c2_core::fog::underwater_level`.
+
+**Night looks, apart from dynamic time.** Dynamic time used to darken the
+night (ambient 1 - 0.88 x the night weight, world and clear colour) whenever
+night vision was off. That is now **Pitch black night** (`pitch_black_night`,
+on by default so dynamic hunts look as before), and **Desaturated night**
+(`desaturated_night`, off; the modernized Modder's Edition's night without
+night vision: 60% towards grey and half bright on the world, sky untouched,
+`terrain.frag`/`model.frag`) joins it under Modern graphics, applied in
+`common.wgsl: fogged` before the distance fade so the far ground still meets
+the sky (theirs after). Both act on `AreaView::bare_night`: the night's weight
+with night vision off, 0 in the area viewer.
+
+**Night vision in fixed-time Night hunts** is free, starts on and can be
+switched off (N, the pad's right stick click, the nv button), so the looks
+can be seen there; dynamic time keeps night vision and the flashlight as
+bought gear. Fixed-time scoring does not read it (+10% for the Night
+selection). A hardcore ruleset's `no_night_vision` still removes only the
+bought goggles, as before (fixed nights had automatic night vision anyway).
+
+Tests: `render::fog_tests::original_underwater_fog_takes_the_waters_colour_by_depth`,
+`desaturated_night_greys_and_halves_the_world` (GPU, ignored by default),
+`c2_core::fog::tests::underwater_fog_thickens_with_depth_and_distance`,
+`settings::tests::pitch_black_night_is_on_by_default_and_round_trips`.
+
+## 2026-11-16 — Ecosystem: time of day, spawn safety, flee zones (ADV-WORLD phases 3-5)
+
+- **Time-of-day overrides (phase 3).** The main rule is the base for every
+  time; `dawn`, `day` and `night` override per key (`at <time> ...` lines in
+  `_WORLD.TXT`), merged as `Option`s so a missing key is never read as 0. The
+  proposal's `base = "day"` key was dropped: with the main section as the
+  base there is nothing for it to select. An override cannot unset a cap; a
+  high number serves. Containment and `avoid` are not overridable, because
+  an animal's home zone is fixed where it was placed. `c2_core::dino::eco`
+  resolves one table per time at load; `State::time` picks it, set from the
+  area's time and, with dynamic time, each tick from `DayCycle::period` (the
+  time whose light weighs most). Only placement reads it, so lowering a cap
+  never despawns.
+- **Spawn safety (phase 4).** The five hardcoded "40 cells from the hunter"
+  tests are now `Herd::hunter_clear(kind, species, spot, hunter)`: without an
+  ecosystem the original expression, with one the rules' distance for the
+  kind (initial, respawn, extra) or the species' own if larger. The metric
+  stays the original's x plus z. "Not in view" is a 60 degree cone within
+  the render distance from the hunter's last known pose, for replacements
+  only; the proposal's frustum and line-of-sight test was not needed to keep
+  animals from appearing in front of the player and would have cost a trace
+  per candidate spot. Hardcore's move of dangerous animals to 30 cells is a
+  ruleset of its own and is unchanged. Failed replacements (no room or no
+  spot) wait in `State::deferred` (16 at most) and are retried every 5 s
+  from `Hunt::tick`; without an ecosystem they are dropped as before.
+- **Flee and zones (phase 5).** `flee::pick_target_kept` takes the
+  ecosystem's zones beside the spawn group's avoided regions: a flight's
+  path may not enter an `avoid` zone the animal is not already in, nor leave
+  its hard home zone. `Ctx::eco` carries the rules (an `Arc`, set by the
+  herd each step). `avoid` is a new zone flag, since no existing rule meant
+  "do not go there"; it also pulls calm wander targets out. It is not a
+  wall: chases and straight walks past it may cross. FLEE-BOUNDS' own
+  remainder (Wii U and VR toggles, bounded flight for the stock carnivores'
+  retreat and the dialect's fish, flyer, brachiosaur and ambient AIs, the
+  `behaviour` scenario subject, which needs game data) is not part of this
+  change and stays listed under FLEE-BOUNDS.
+
+## 2026-11-16 — Bounded fleeing: the remaining AIs, Wii U, VR, a scenario stage
+
+- **Every AI that runs straight away from the hunter is covered.** The stock
+  carnivores' retreat (the hunter beyond their give-up distance), and the
+  dialect's shy fish, wary flyers, brachiosaurs and ambient animals now go
+  through `flee::step` when the option is on. Each passes a
+  `flee::Habitat`: its spawn group and a `Medium`, which is the placement
+  check that AI already uses for new targets (`Land`, `Wet` for animals
+  that wade, `Water` with the fish's depth band, `Wading` and `Shore` for
+  the two brachiosaurs, `Air`). A flight therefore never aims a fish at
+  land or a land animal at deep water. The stock brachiosaur and the
+  Ichthyornis never run away from the hunter in the original (they pick a
+  random target), so they are unchanged. With the option off none of these
+  draws from the RNG or changes a target.
+- **What ends such a flight.** A carnivore's retreat already runs on its
+  own timer; a flight that reaches its limits ends it early. A flyer or an
+  ambient animal calms when its flight is over, unless the hunter is close
+  enough to startle it again. A fish stays alarmed while the hunter is in
+  its reach, as before; only its heading is bounded.
+- **Wii U:** a Settings row, "Bounded fleeing (experimental)", saved as
+  `bounded_flee`; the hunt loads `_FLEE.TXT` or the defaults. The page's
+  rows are 37 apart instead of 40 to fit thirteen.
+- **VR:** `c2-vr play GAME --bounded-flee`. VR has no settings screen, and
+  the launcher's Play in VR passes `c2-pc play`'s arguments, so the option
+  is a command-line flag until VR has one.
+- **Scenario stage.** The behaviour script gains optional bounded-flight
+  stages (`[behaviours.flee]`, `flee_NN_<name>`): bounded fleeing is turned
+  on with the default limits, the animal alarmed, and its first flight
+  judged (`clear_of_edge`, `flight_ends`, `flight_bounded`). Ours only: the
+  original run skips them. `scenarios/flee_bounds.toml` runs it by the east
+  edge of JPHL Special Edition's area 1.
+- **Finding, not changed:** the limits bound one flight. An animal that
+  still sees or smells the hunter when its flight ends is alarmed again by
+  `check_afraid` in the same tick and starts another, so on open ground
+  with the hunter in view it keeps moving off in 24-cell legs. Each leg is
+  edge-aware, which fixes the reported pile-up; whether sight and smell
+  should also wait out a lockout is open.
+
+## 2026-11-16 — Awareness: states between calm and alarmed (ADV-WORLD phase 6)
+
+- **Where it lives.** The proposal's awareness and crouch-stealth feature is
+  BEHAVIOR.md's lost-target search and cautious investigation, so it is the
+  first part of `[settings.behavior]` and `HUNTDAT/_BEHAVIOR.TXT` rather
+  than a section of its own. BEHAVIOR's phase 1 (archetypes, senses) has
+  not started; it extends this file and section.
+- **States on `Character::aware`:** unaware, suspicious, investigating,
+  pursuing, searching (`c2_core::dino::aware`). The AIs are not changed.
+  `Hunt::check_afraid` computes the original's detection value as before
+  (now in `Hunt::notice`, the same arithmetic) and hands it to
+  `Rules::sense`; `Herd::step` gives a predator that has lost the hunter a
+  `Waypoint` target, which every AI already chases without striking.
+  Investigation sets a calm animal's wander target and nothing else.
+- **Suspicion** is a band above the alarm threshold: a detection value from
+  1 up to `suspicion` percent of it. The original has no such band.
+- **Crouch.** The original already ignores the crouch for a stock animal
+  that is alarmed, because it stops checking it at all; that is locked by
+  `crouching_does_not_cancel_an_alarm`. With awareness an alarmed predator
+  is checked again each tick with the hunter taken as standing and the
+  stealth-crouch factor left out, so crouching cannot make it lose him.
+  Losing him takes cover or distance.
+- **Timers:** 8 s without sensing the hunter, or arriving, turns pursuit of
+  the last-known place into a search; the search time is per species
+  (default 20 s). The search's points are a fixed pattern (the golden angle,
+  rings 3 to 10 cells), a new one every 3 s, offset by the animal's index.
+  Nothing draws from the random stream, so runs repeat and a hunt without
+  the setting keeps its state hashes.
+- **Who takes part:** the stock herbivores and carnivores and the dialect's
+  hunting AIs and T-Rex. Only carnivores pursue and search; a herbivore's
+  alarm is the original's. A survival wave's animals are excluded: they
+  must always find the hunter.
+- **Not done:** vegetation concealment beyond the original's (objects on
+  the line of sight already raise the value); suspicion from sounds; the
+  3DS, Wii U and VR; a scenario (the headless runner does not load the
+  file). An alarmed dialect animal still has its fear renewed by the
+  original check, with the crouch counted, as before.
