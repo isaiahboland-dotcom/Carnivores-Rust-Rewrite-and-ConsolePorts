@@ -9,7 +9,7 @@ use std::io::Cursor;
 use anyhow::{Context, Result};
 use ash::vk;
 
-use crate::gpu::Gpu;
+use crate::gpu::{Cleanup, Gpu};
 use crate::scene::{self, Frame, Scene};
 
 /// `Push` in `test_scene.frag`.
@@ -53,13 +53,16 @@ pub struct TestScene {
 
 impl TestScene {
     pub fn new(gpu: &Gpu, format: vk::Format) -> Result<Self> {
-        let render_pass = scene::render_pass(gpu, format, None)?;
-        let vert = gpu.shader(&spv(include_bytes!("../shaders/fullscreen.vert.spv"))?)?;
-        let frag = gpu.shader(&spv(include_bytes!("../shaders/test_scene.frag.spv"))?)?;
-        // SAFETY: plain object creation; the modules go once the pipeline
-        // is made.
+        // SAFETY: plain object creation; `made` destroys what was made if a
+        // later step fails, `temp` the shader modules once the pipeline is.
         unsafe {
-            let layout = gpu.device.create_pipeline_layout(
+            let (mut made, mut temp) = (Cleanup::new(gpu), Cleanup::new(gpu));
+            let render_pass = made.add(scene::render_pass(gpu, format, None)?);
+            let vert =
+                temp.add(gpu.shader(&spv(include_bytes!("../shaders/fullscreen.vert.spv"))?)?);
+            let frag =
+                temp.add(gpu.shader(&spv(include_bytes!("../shaders/test_scene.frag.spv"))?)?);
+            let layout = made.add(gpu.device.create_pipeline_layout(
                 &vk::PipelineLayoutCreateInfo::default().push_constant_ranges(&[
                     vk::PushConstantRange {
                         stage_flags: vk::ShaderStageFlags::FRAGMENT,
@@ -68,8 +71,8 @@ impl TestScene {
                     },
                 ]),
                 None,
-            )?;
-            let pipeline = scene::pipeline(
+            )?);
+            let pipeline = made.add(scene::pipeline(
                 gpu,
                 &scene::PipelineDesc {
                     vert: (vert, c"main"),
@@ -81,13 +84,12 @@ impl TestScene {
                     bindings: &[],
                     attributes: &[],
                 },
-            );
-            gpu.device.destroy_shader_module(vert, None);
-            gpu.device.destroy_shader_module(frag, None);
+            )?);
+            made.keep();
             Ok(Self {
                 render_pass,
                 layout,
-                pipeline: pipeline?,
+                pipeline,
             })
         }
     }

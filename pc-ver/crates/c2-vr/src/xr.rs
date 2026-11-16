@@ -22,7 +22,7 @@ use ash::vk::{self, Handle};
 use glam::{Quat, Vec2, Vec3};
 use openxr as xr;
 
-use crate::gpu::Gpu;
+use crate::gpu::{Cleanup, Gpu};
 use crate::scene::{Eye, Frame, Input, MakeScene, Next, Ray, Scene};
 
 const VIEW_TYPE: xr::ViewConfigurationType = xr::ViewConfigurationType::PRIMARY_STEREO;
@@ -274,38 +274,50 @@ pub fn run(make: MakeScene, limit: Option<Duration>) -> Result<Report> {
             .map_err(|e| anyhow!("Vulkan instance: {}", vk::Result::from_raw(e)))?;
         let vk_instance =
             ash::Instance::load(vk_entry.static_fn(), vk::Instance::from_raw(raw as _));
-        let physical = vk::PhysicalDevice::from_raw(
-            instance
-                .vulkan_graphics_device(system, vk_instance.handle().as_raw() as _)
-                .map_err(xr_err("finding the headset's GPU"))? as _,
-        );
-        println!(
-            "GPU: {}",
-            vk_instance
-                .get_physical_device_properties(physical)
-                .device_name_as_c_str()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default()
-        );
-        let family = vk_instance
-            .get_physical_device_queue_family_properties(physical)
-            .iter()
-            .position(|f| f.queue_flags.contains(vk::QueueFlags::GRAPHICS))
-            .ok_or_else(|| anyhow!("the GPU has no graphics queue"))? as u32;
-        let raw = instance
-            .create_vulkan_device(
-                system,
-                get_proc,
-                physical.as_raw() as _,
-                &vk::DeviceCreateInfo::default().queue_create_infos(&[
-                    vk::DeviceQueueCreateInfo::default()
-                        .queue_family_index(family)
-                        .queue_priorities(&[1.0]),
-                ]) as *const _ as *const _,
-            )
-            .map_err(xr_err("creating the Vulkan device"))?
-            .map_err(|e| anyhow!("Vulkan device: {}", vk::Result::from_raw(e)))?;
-        let device = ash::Device::load(vk_instance.fp_v1_0(), vk::Device::from_raw(raw as _));
+        let made = (|| -> Result<_> {
+            let physical = vk::PhysicalDevice::from_raw(
+                instance
+                    .vulkan_graphics_device(system, vk_instance.handle().as_raw() as _)
+                    .map_err(xr_err("finding the headset's GPU"))? as _,
+            );
+            println!(
+                "GPU: {}",
+                vk_instance
+                    .get_physical_device_properties(physical)
+                    .device_name_as_c_str()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            );
+            let family = vk_instance
+                .get_physical_device_queue_family_properties(physical)
+                .iter()
+                .position(|f| f.queue_flags.contains(vk::QueueFlags::GRAPHICS))
+                .ok_or_else(|| anyhow!("the GPU has no graphics queue"))?
+                as u32;
+            let raw = instance
+                .create_vulkan_device(
+                    system,
+                    get_proc,
+                    physical.as_raw() as _,
+                    &vk::DeviceCreateInfo::default().queue_create_infos(&[
+                        vk::DeviceQueueCreateInfo::default()
+                            .queue_family_index(family)
+                            .queue_priorities(&[1.0]),
+                    ]) as *const _ as *const _,
+                )
+                .map_err(xr_err("creating the Vulkan device"))?
+                .map_err(|e| anyhow!("Vulkan device: {}", vk::Result::from_raw(e)))?;
+            let device = ash::Device::load(vk_instance.fp_v1_0(), vk::Device::from_raw(raw as _));
+            Ok((physical, family, device))
+        })();
+        let (physical, family, device) = match made {
+            Ok(m) => m,
+            Err(e) => {
+                // No device was made: the instance is all there is to free.
+                vk_instance.destroy_instance(None);
+                return Err(e);
+            }
+        };
         let gpu = Gpu::new(vk_instance, device, physical, family);
 
         let result = session(&instance, system, blend, &gpu, make, limit);
@@ -501,8 +513,11 @@ impl Targets {
         extent: vk::Extent2D,
         extra: &[Vec<vk::ImageView>; 2],
     ) -> Result<()> {
-        let mut fbs = [vk::Framebuffer::null(); 2];
-        for (layer, fb) in fbs.iter_mut().enumerate() {
+        // Listed before they are made, so `destroy` frees a half-made pair
+        // (destroying a null framebuffer does nothing).
+        self.framebuffers.push([vk::Framebuffer::null(); 2]);
+        let image_index = self.framebuffers.len() - 1;
+        for (layer, extra) in extra.iter().enumerate() {
             // SAFETY: views and framebuffers of the runtime's image, kept
             // until `destroy`.
             unsafe {
@@ -522,8 +537,8 @@ impl Targets {
                 )?;
                 self.views.push(view);
                 let mut attachments = vec![view];
-                attachments.extend(&extra[layer]);
-                *fb = gpu.device.create_framebuffer(
+                attachments.extend(extra);
+                self.framebuffers[image_index][layer] = gpu.device.create_framebuffer(
                     &vk::FramebufferCreateInfo::default()
                         .render_pass(scene.render_pass())
                         .width(extent.width)
@@ -534,7 +549,6 @@ impl Targets {
                 )?;
             }
         }
-        self.framebuffers.push(fbs);
         Ok(())
     }
 
@@ -602,14 +616,18 @@ fn ray(p: &xr::Posef) -> Ray {
 fn frame_loop(l: FrameLoop<'_>) -> Result<Measured> {
     let gpu = l.gpu;
     let dev = &gpu.device;
-    // SAFETY: a pool, buffers and fences on our device, freed at the end.
-    let (pool, cmds, fences) = unsafe {
-        let pool = dev.create_command_pool(
-            &vk::CommandPoolCreateInfo::default()
-                .queue_family_index(gpu.family)
-                .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER),
-            None,
-        )?;
+    // SAFETY: a pool (its buffers go with it) and fences on our device,
+    // which `made` frees when this returns, after the device is idle.
+    let mut made = unsafe { Cleanup::new(gpu) };
+    let (cmds, fences) = unsafe {
+        let pool = made.add(
+            dev.create_command_pool(
+                &vk::CommandPoolCreateInfo::default()
+                    .queue_family_index(gpu.family)
+                    .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER),
+                None,
+            )?,
+        );
         let cmds = dev.allocate_command_buffers(
             &vk::CommandBufferAllocateInfo::default()
                 .command_pool(pool)
@@ -617,12 +635,12 @@ fn frame_loop(l: FrameLoop<'_>) -> Result<Measured> {
         )?;
         let mut fences = Vec::new();
         for _ in 0..DEPTH {
-            fences.push(dev.create_fence(
+            fences.push(made.add(dev.create_fence(
                 &vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED),
                 None,
-            )?);
+            )?));
         }
-        (pool, cmds, fences)
+        (cmds, fences)
     };
 
     let start = Instant::now();
@@ -706,7 +724,10 @@ fn frame_loop(l: FrameLoop<'_>) -> Result<Measured> {
             let recenter = pad.pressed(c2_pad::Action::Recenter);
             if !exiting && ((back && !l.scene.handles_back()) || timed_out) {
                 exiting = true;
-                let _ = l.session.request_exit();
+                // A refused request would leave nothing to end the loop.
+                if l.session.request_exit().is_err() {
+                    break 'frames;
+                }
             }
             let stick = |act: &xr::Action<xr::Vector2f>| {
                 act.state(l.session, xr::Path::NULL)
@@ -803,10 +824,11 @@ fn frame_loop(l: FrameLoop<'_>) -> Result<Measured> {
                 .ok_or_else(|| anyhow!("swapchain image {index} unknown"))?;
             let cmd = cmds[slot];
             // SAFETY: this slot's fence guards its command buffer and the
-            // scene's per-slot buffers.
+            // scene's per-slot buffers. It is reset only just before the
+            // submit that signals it again, so every fence stays waitable
+            // whatever fails in between.
             unsafe {
                 dev.wait_for_fences(&[fences[slot]], true, u64::MAX)?;
-                dev.reset_fences(&[fences[slot]])?;
                 dev.begin_command_buffer(
                     cmd,
                     &vk::CommandBufferBeginInfo::default()
@@ -833,6 +855,7 @@ fn frame_loop(l: FrameLoop<'_>) -> Result<Measured> {
             // SAFETY: the command buffer was recorded above.
             unsafe {
                 dev.end_command_buffer(cmd)?;
+                dev.reset_fences(&[fences[slot]])?;
                 dev.queue_submit(
                     gpu.queue,
                     &[vk::SubmitInfo::default().command_buffers(&[cmd])],
@@ -879,7 +902,9 @@ fn frame_loop(l: FrameLoop<'_>) -> Result<Measured> {
                 Next::Quit => {
                     if !exiting {
                         exiting = true;
-                        let _ = l.session.request_exit();
+                        if l.session.request_exit().is_err() {
+                            break 'frames;
+                        }
                     }
                 }
                 Next::Load(make) => {
@@ -900,14 +925,12 @@ fn frame_loop(l: FrameLoop<'_>) -> Result<Measured> {
         Ok(())
     })();
     let seconds = start.elapsed().as_secs_f32();
-    // SAFETY: wait for our frames, then free what this loop made.
+    // SAFETY: wait for the device rather than the fences (a failed submit
+    // leaves its fence unsignalled); then `made` frees the pool and fences.
     unsafe {
-        let _ = dev.wait_for_fences(&fences, true, u64::MAX);
-        for f in fences {
-            dev.destroy_fence(f, None);
-        }
-        dev.destroy_command_pool(pool, None);
+        let _ = dev.device_wait_idle();
     }
+    drop(made);
     r?;
     Ok((
         frames,

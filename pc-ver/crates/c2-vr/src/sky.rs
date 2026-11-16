@@ -14,7 +14,7 @@ use c2_core::area::{Area, TimeOfDay};
 use c2_core::model::PreparedModel;
 use glam::{Mat4, Vec3};
 
-use crate::gpu::{Buffer, Gpu, Image};
+use crate::gpu::{Buffer, Cleanup, Gpu, Image};
 use crate::scene;
 use crate::xr::DEPTH;
 
@@ -60,8 +60,11 @@ impl Sky {
             None => texels.resize(2 * 256 * 256 * 4, 0),
         }
         texels.resize(2 * 256 * 256 * 4, 0);
-        let (textures, textures_view) = gpu.texture_array(256, &texels, 2)?;
-        let sampler = gpu.linear_sampler(true)?;
+        // SAFETY: what is made below is ours and unused until returned;
+        // `made` destroys it if a later step fails, `temp` the shader modules.
+        let (mut made, mut temp) = unsafe { (Cleanup::new(gpu), Cleanup::new(gpu)) };
+        let (textures, textures_view) = made.texture(gpu.texture_array(256, &texels, 2)?);
+        let sampler = made.add(gpu.linear_sampler(true)?);
         let sun_tris: Vec<([f32; 3], [f32; 2])> = sun
             .map(|m| {
                 m.faces
@@ -84,8 +87,8 @@ impl Sky {
         let mut sun_bufs = Vec::new();
         for _ in 0..DEPTH {
             sun_bufs.push([
-                gpu.buffer(size, vk::BufferUsageFlags::VERTEX_BUFFER)?,
-                gpu.buffer(size, vk::BufferUsageFlags::VERTEX_BUFFER)?,
+                made.buffer(gpu.buffer(size, vk::BufferUsageFlags::VERTEX_BUFFER)?),
+                made.buffer(gpu.buffer(size, vk::BufferUsageFlags::VERTEX_BUFFER)?),
             ]);
         }
 
@@ -102,30 +105,34 @@ impl Sky {
         // every handle written is live.
         unsafe {
             let dev = &gpu.device;
-            let set_layout = dev.create_descriptor_set_layout(
-                &vk::DescriptorSetLayoutCreateInfo::default()
-                    .bindings(&[binding(0, D::SAMPLED_IMAGE), binding(1, D::SAMPLER)]),
-                None,
-            )?;
-            let layout = dev.create_pipeline_layout(
+            let set_layout = made.add(
+                dev.create_descriptor_set_layout(
+                    &vk::DescriptorSetLayoutCreateInfo::default()
+                        .bindings(&[binding(0, D::SAMPLED_IMAGE), binding(1, D::SAMPLER)]),
+                    None,
+                )?,
+            );
+            let layout = made.add(dev.create_pipeline_layout(
                 &vk::PipelineLayoutCreateInfo::default().set_layouts(&[globals_layout, set_layout]),
                 None,
-            )?;
-            let pool = dev.create_descriptor_pool(
-                &vk::DescriptorPoolCreateInfo::default()
-                    .max_sets(1)
-                    .pool_sizes(&[
-                        vk::DescriptorPoolSize {
-                            ty: D::SAMPLED_IMAGE,
-                            descriptor_count: 1,
-                        },
-                        vk::DescriptorPoolSize {
-                            ty: D::SAMPLER,
-                            descriptor_count: 1,
-                        },
-                    ]),
-                None,
-            )?;
+            )?);
+            let pool = made.add(
+                dev.create_descriptor_pool(
+                    &vk::DescriptorPoolCreateInfo::default()
+                        .max_sets(1)
+                        .pool_sizes(&[
+                            vk::DescriptorPoolSize {
+                                ty: D::SAMPLED_IMAGE,
+                                descriptor_count: 1,
+                            },
+                            vk::DescriptorPoolSize {
+                                ty: D::SAMPLER,
+                                descriptor_count: 1,
+                            },
+                        ]),
+                    None,
+                )?,
+            );
             let set = *dev
                 .allocate_descriptor_sets(
                     &vk::DescriptorSetAllocateInfo::default()
@@ -162,10 +169,10 @@ impl Sky {
             let src = format!("{COMMON}\n{SKY}\n{SKY_VR}");
             let stage =
                 |e, s| -> Result<vk::ShaderModule> { gpu.shader(&scene::wgsl(&src, e, s)?) };
-            let vs_sky = stage("vs_sky", naga::ShaderStage::Vertex)?;
-            let fs_sky = stage("fs_sky_vr", naga::ShaderStage::Fragment)?;
-            let vs_sun = stage("vs_sun", naga::ShaderStage::Vertex)?;
-            let fs_sun = stage("fs_sun_vr", naga::ShaderStage::Fragment)?;
+            let vs_sky = temp.add(stage("vs_sky", naga::ShaderStage::Vertex)?);
+            let fs_sky = temp.add(stage("fs_sky_vr", naga::ShaderStage::Fragment)?);
+            let vs_sun = temp.add(stage("vs_sun", naga::ShaderStage::Vertex)?);
+            let fs_sun = temp.add(stage("fs_sun_vr", naga::ShaderStage::Fragment)?);
             let sun_binding = [vk::VertexInputBindingDescription {
                 binding: 0,
                 stride: SUN_VERTEX_BYTES,
@@ -185,7 +192,7 @@ impl Sky {
                     offset: 12,
                 },
             ];
-            let sky = scene::pipeline(
+            let sky = made.add(scene::pipeline(
                 gpu,
                 &scene::PipelineDesc {
                     vert: (vs_sky, c"vs_sky"),
@@ -197,8 +204,8 @@ impl Sky {
                     bindings: &[],
                     attributes: &[],
                 },
-            );
-            let sun_pipe = scene::pipeline(
+            )?);
+            let sun_pipe = made.add(scene::pipeline(
                 gpu,
                 &scene::PipelineDesc {
                     vert: (vs_sun, c"vs_sun"),
@@ -210,15 +217,13 @@ impl Sky {
                     bindings: &sun_binding,
                     attributes: &sun_attrs,
                 },
-            );
-            for m in [vs_sky, fs_sky, vs_sun, fs_sun] {
-                dev.destroy_shader_module(m, None);
-            }
+            )?);
+            made.keep();
             Ok(Self {
                 set_layout,
                 layout,
-                sky: sky?,
-                sun: sun_pipe?,
+                sky,
+                sun: sun_pipe,
                 pool,
                 set,
                 textures,

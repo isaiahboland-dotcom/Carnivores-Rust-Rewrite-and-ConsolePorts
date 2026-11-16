@@ -123,7 +123,7 @@ a validated reproducible toolchain environment; no container digest was invented
 Still requiring separate validation: GUI import/rebuild smoke tests with the
 owner's assets, Windows execution, and real OpenXR startup, scene replacement,
 session loss and shutdown with Vulkan diagnostics. The wider VR constructor
-failure/resource-lifetime audit remains open. Rendering measurements, cosmetic
+failure/resource-lifetime audit is recorded below (2026-11-15). Rendering measurements, cosmetic
 module extraction and release publication are outside this security patch.
 
 ## 2026-11-03 audit follow-up
@@ -174,3 +174,63 @@ no-default-feature format/VFS tests **70 + 4 passed**, portable-load core check
 passed, host cooker **3 passed**, and all **six** Wii U C tests passed. Workflow
 YAML and full-SHA pins were checked locally. Windows execution, hosted workflow
 runs and console hardware were not revalidated in this pass.
+
+## 2026-11-15 VR constructor-failure and session-lifetime audit
+
+Scope: `c2-vr` from OpenXR instance creation to device destruction: every
+Vulkan object made by `xr`, `gpu` and the scenes (test scene, terrain,
+objects, sky, animals, menu panel), on success, on a constructor error, on a
+scene swap (`Next::Load`) and on a frame-loop error.
+
+Corrected:
+
+- **Hang on exit after a frame error.** The frame loop reset a slot's fence
+  before recording; an error from the scene's `record`, `wait_image`, or the
+  submit left that fence unsignalled, and the exit path's
+  `wait_for_fences(u64::MAX)` never returned. The fence is now reset
+  immediately before the submit that signals it, and the exit path waits
+  with `device_wait_idle`, which a failed submit cannot block.
+- **Objects leaked by failing constructors.** Each constructor returned on
+  its first error without destroying what it had already made, so a later
+  `vkDestroyDevice` ran with live child objects (a Vulkan valid-usage
+  violation). A `Cleanup` guard in `gpu.rs` now records each object as it is
+  made and destroys them newest-first unless the constructor reaches
+  `keep()`; temporaries (shader modules, staging buffers) use a guard that is
+  never kept. This covers `Gpu::buffer`/`image`/`texture`, the shared model
+  set and pipelines, every scene constructor, the frame loop's command pool
+  and fences, and the depth targets. Composite scenes destroy completed parts
+  when a later part fails (terrain objects when the sky fails, the terrain
+  when the menu panel or the animals fail).
+- **Vulkan instance leaked** when no GPU, no graphics queue or no device
+  could be obtained after the runtime made the instance.
+- **Half-made framebuffer pair leaked** when the second eye's view or
+  framebuffer failed; the pair is now listed before it is filled.
+- **Exit request refused.** A failed `xrRequestExitSession` was ignored, so
+  a `--seconds` run could loop with nothing left to end it; the loop now
+  ends directly.
+
+Reviewed and unchanged:
+
+- Teardown order: OpenXR swapchain, spaces, actions and session drop before
+  the device is idled and the scene's and targets' objects are destroyed;
+  the device and then the Vulkan instance go last, before the OpenXR
+  instance.
+- Scene swap: all frame fences are waited before the old scene and its
+  framebuffers are destroyed. If the new scene fails to build, the error
+  ends the session (the old scene is already gone); data-loading errors are
+  caught earlier, before the swap, and keep the current scene.
+- `LOSS_PENDING` and `InstanceLossPending` end the run rather than
+  recreating the session. Reconnecting after session loss is not supported
+  in the draft.
+- An error between `xrBeginFrame` and `xrEndFrame` ends the session without
+  ending the frame; destroying the session is valid in any state.
+- `Animals::fit` replaces a slot's buffer only after that slot's fence was
+  waited.
+
+Validation: `c2-vr` Clippy with warnings denied and its 16 tests pass. An
+ignored test (`gpu::tests::constructors_and_cleanup_on_a_device`) builds the
+test scene and menu panel and drops a guard without `keep` on a plain Vulkan
+device; it passed locally on a desktop GPU without validation layers. Still
+pending: a headset run (startup, scene swaps, quit, runtime-initiated exit)
+with `VK_LAYER_KHRONOS_validation` enabled, which reports leaked objects on
+device destruction, and Windows.

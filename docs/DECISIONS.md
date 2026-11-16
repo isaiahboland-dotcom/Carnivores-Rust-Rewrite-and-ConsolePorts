@@ -6375,3 +6375,21 @@ the hunt setup and options), Y/X/Select = time / observer / tranquilizer.
 The key hints name the pad's buttons while it was the last input.
 
 Pending: on-device check on Android and a physical pad (regression tests only).
+
+## 2026-11-15 — VR: constructor cleanup guard; session loss ends the run
+
+`c2-vr` keeps its explicit `destroy(&Gpu)` methods (no `Drop` on GPU objects:
+destruction needs the device and an idle GPU, which only the frame loop knows).
+Constructors instead record each Vulkan object in a `gpu::Cleanup` guard as it
+is made; the guard destroys them newest-first if the constructor returns early
+and is disarmed with `keep()` on success. A guard that is never kept holds
+temporaries (shader modules, staging buffers). `Cleanup::new` is `unsafe`: the
+caller promises the objects belong to the device and are unused when it drops.
+
+Frame fences are reset only immediately before the submit that signals them,
+and frame-loop teardown waits with `device_wait_idle`, so no error path can
+leave a fence that teardown waits on forever.
+
+Session loss (`LOSS_PENDING`, `InstanceLossPending`) ends the run instead of
+recreating the session; reconnecting is out of scope for the draft. Details:
+`docs/SECURITY-HARDENING.md` (2026-11-15 VR audit).

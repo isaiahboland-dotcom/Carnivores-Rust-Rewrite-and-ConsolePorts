@@ -21,7 +21,7 @@ use c2_core::CELL;
 use c2_formats::rsc::object_flags;
 use glam::Vec3;
 
-use crate::gpu::{Buffer, Gpu, Image};
+use crate::gpu::{Buffer, Cleanup, Gpu, Image};
 use crate::scene;
 use crate::xr::DEPTH;
 
@@ -124,40 +124,44 @@ pub(crate) fn model_set(
     };
     use vk::DescriptorType as D;
     // SAFETY: plain object creation and descriptor writes on our device;
-    // every handle written is live.
+    // every handle written is live; `made` destroys what was made if a
+    // later step fails.
     unsafe {
         let dev = &gpu.device;
-        let set_layout = dev.create_descriptor_set_layout(
+        let mut made = Cleanup::new(gpu);
+        let set_layout = made.add(dev.create_descriptor_set_layout(
             &vk::DescriptorSetLayoutCreateInfo::default().bindings(&[
                 binding(0, D::SAMPLED_IMAGE),
                 binding(1, D::SAMPLER),
                 binding(2, D::STORAGE_BUFFER),
             ]),
             None,
-        )?;
-        let layout = dev.create_pipeline_layout(
+        )?);
+        let layout = made.add(dev.create_pipeline_layout(
             &vk::PipelineLayoutCreateInfo::default().set_layouts(&[globals_layout, set_layout]),
             None,
-        )?;
-        let pool = dev.create_descriptor_pool(
-            &vk::DescriptorPoolCreateInfo::default()
-                .max_sets(1)
-                .pool_sizes(&[
-                    vk::DescriptorPoolSize {
-                        ty: D::SAMPLED_IMAGE,
-                        descriptor_count: 1,
-                    },
-                    vk::DescriptorPoolSize {
-                        ty: D::SAMPLER,
-                        descriptor_count: 1,
-                    },
-                    vk::DescriptorPoolSize {
-                        ty: D::STORAGE_BUFFER,
-                        descriptor_count: 1,
-                    },
-                ]),
-            None,
-        )?;
+        )?);
+        let pool = made.add(
+            dev.create_descriptor_pool(
+                &vk::DescriptorPoolCreateInfo::default()
+                    .max_sets(1)
+                    .pool_sizes(&[
+                        vk::DescriptorPoolSize {
+                            ty: D::SAMPLED_IMAGE,
+                            descriptor_count: 1,
+                        },
+                        vk::DescriptorPoolSize {
+                            ty: D::SAMPLER,
+                            descriptor_count: 1,
+                        },
+                        vk::DescriptorPoolSize {
+                            ty: D::STORAGE_BUFFER,
+                            descriptor_count: 1,
+                        },
+                    ]),
+                None,
+            )?,
+        );
         let set = *dev
             .allocate_descriptor_sets(
                 &vk::DescriptorSetAllocateInfo::default()
@@ -194,6 +198,7 @@ pub(crate) fn model_set(
             ],
             &[],
         );
+        made.keep();
         Ok((set_layout, layout, pool, set))
     }
 }
@@ -206,17 +211,15 @@ pub(crate) fn model_pipelines(
     render_pass: vk::RenderPass,
 ) -> Result<(vk::Pipeline, vk::Pipeline)> {
     let src = format!("{COMMON}\n{MODEL}\n{MODEL_VR}");
-    let vs = gpu.shader(&scene::wgsl(&src, "vs", naga::ShaderStage::Vertex)?)?;
-    let fs_opaque = gpu.shader(&scene::wgsl(
-        &src,
-        "fs_opaque_vr",
-        naga::ShaderStage::Fragment,
-    )?)?;
-    let fs_blend = gpu.shader(&scene::wgsl(
-        &src,
-        "fs_blend_vr",
-        naga::ShaderStage::Fragment,
-    )?)?;
+    // SAFETY: the modules and pipelines are ours and unused until returned;
+    // `temp` destroys the modules, `made` the pipelines if one fails.
+    let (mut made, mut temp) = unsafe { (Cleanup::new(gpu), Cleanup::new(gpu)) };
+    let stage = |entry, stage| -> Result<vk::ShaderModule> {
+        gpu.shader(&scene::wgsl(&src, entry, stage)?)
+    };
+    let vs = temp.add(stage("vs", naga::ShaderStage::Vertex)?);
+    let fs_opaque = temp.add(stage("fs_opaque_vr", naga::ShaderStage::Fragment)?);
+    let fs_blend = temp.add(stage("fs_blend_vr", naga::ShaderStage::Fragment)?);
     let bindings = [
         vk::VertexInputBindingDescription {
             binding: 0,
@@ -255,35 +258,16 @@ pub(crate) fn model_pipelines(
         bindings: &bindings,
         attributes: &attributes,
     };
-    let opaque = scene::pipeline(
+    let opaque = made.add(scene::pipeline(
         gpu,
         &desc((fs_opaque, c"fs_opaque_vr"), true, scene::Blend::Opaque),
-    );
-    let blend = scene::pipeline(
+    )?);
+    let blend = made.add(scene::pipeline(
         gpu,
         &desc((fs_blend, c"fs_blend_vr"), false, scene::Blend::Alpha),
-    );
-    // SAFETY: the modules are ours and no longer needed.
-    unsafe {
-        for m in [vs, fs_opaque, fs_blend] {
-            gpu.device.destroy_shader_module(m, None);
-        }
-    }
-    match (opaque, blend) {
-        (Ok(o), Ok(b)) => Ok((o, b)),
-        (o, b) => {
-            // SAFETY: whichever was made isn't used.
-            unsafe {
-                for p in [o.as_ref().ok(), b.as_ref().ok()].into_iter().flatten() {
-                    gpu.device.destroy_pipeline(*p, None);
-                }
-            }
-            Err(o
-                .err()
-                .or(b.err())
-                .unwrap_or_else(|| anyhow!("no pipeline")))
-        }
-    }
+    )?);
+    made.keep();
+    Ok((opaque, blend))
 }
 
 /// `push_model`'s layout for posed vertices: `order` and `uvs` per drawn
@@ -356,13 +340,16 @@ impl Objects {
             texels = blank;
         }
         let layers = (texels.len() / (MODEL_TEXTURE_SIZE * MODEL_TEXTURE_SIZE * 4)) as u32;
+        // SAFETY: what is made below is ours and unused until returned;
+        // `made` destroys it if a later step fails.
+        let mut made = unsafe { Cleanup::new(gpu) };
         let (textures, textures_view) =
-            gpu.texture_array(MODEL_TEXTURE_SIZE as u32, &texels, layers)?;
-        let vertices = gpu.buffer_with(&verts, vk::BufferUsageFlags::VERTEX_BUFFER)?;
+            made.texture(gpu.texture_array(MODEL_TEXTURE_SIZE as u32, &texels, layers)?);
+        let vertices = made.buffer(gpu.buffer_with(&verts, vk::BufferUsageFlags::VERTEX_BUFFER)?);
         let mut ground = area.light_map().to_vec();
         ground.resize(ground.len().div_ceil(4).max(1) * 4, 0);
-        let ground = gpu.buffer_with(&ground, vk::BufferUsageFlags::STORAGE_BUFFER)?;
-        let sampler = gpu.linear_sampler(false)?;
+        let ground = made.buffer(gpu.buffer_with(&ground, vk::BufferUsageFlags::STORAGE_BUFFER)?);
+        let sampler = made.add(gpu.linear_sampler(false)?);
 
         let mut chunks = vec![Vec::new(); CHUNKS * CHUNKS];
         let mut count = 0;
@@ -384,15 +371,17 @@ impl Objects {
         let capacity = count.max(1);
         let mut instances = Vec::new();
         for _ in 0..DEPTH {
-            instances.push(gpu.buffer(
+            instances.push(made.buffer(gpu.buffer(
                 (capacity as u64) * u64::from(INSTANCE_BYTES),
                 vk::BufferUsageFlags::VERTEX_BUFFER,
-            )?);
+            )?));
         }
 
         let (set_layout, layout, pool, set) =
             model_set(gpu, globals_layout, textures_view, sampler, &ground)?;
+        let (set_layout, layout, pool) = (made.add(set_layout), made.add(layout), made.add(pool));
         let (opaque, blend) = model_pipelines(gpu, layout, render_pass)?;
+        made.keep();
         let n = ranges.len();
         Ok(Self {
             set_layout,

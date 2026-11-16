@@ -11,7 +11,7 @@ use anyhow::{anyhow, Result};
 use ash::vk;
 use glam::{Mat4, Vec3};
 
-use crate::gpu::{Gpu, Image};
+use crate::gpu::{Cleanup, Gpu, Image};
 use crate::scene::{self, Ray};
 
 const SHADER: &str = include_str!("../shaders/panel.wgsl");
@@ -114,17 +114,22 @@ fn compile(entry: &str, stage: naga::ShaderStage) -> Result<Vec<u32>> {
 impl Panel {
     /// `render_pass`: the scene's, which the panel is drawn in.
     pub fn new(gpu: &Gpu, render_pass: vk::RenderPass) -> Result<Self> {
-        let pic = gpu.texture(
+        // SAFETY: what is made below is ours and unused until returned;
+        // `made` destroys it if a later step fails, `temp` the shader modules.
+        let (mut made, mut temp) = unsafe { (Cleanup::new(gpu), Cleanup::new(gpu)) };
+        let pic = made.texture(gpu.texture(
             (PW as u32, PH as u32),
             vk::Format::R8G8B8A8_SRGB,
             &Canvas::default().px,
             1,
-        )?;
+        )?);
         let mut staging = Vec::new();
         for _ in 0..crate::xr::DEPTH {
-            staging.push(gpu.buffer((PW * PH * 4) as u64, vk::BufferUsageFlags::TRANSFER_SRC)?);
+            staging.push(
+                made.buffer(gpu.buffer((PW * PH * 4) as u64, vk::BufferUsageFlags::TRANSFER_SRC)?),
+            );
         }
-        let sampler = gpu.linear_sampler(false)?;
+        let sampler = made.add(gpu.linear_sampler(false)?);
         let stages = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
         let binding = |b: u32, kind: vk::DescriptorType| {
             vk::DescriptorSetLayoutBinding::default()
@@ -138,36 +143,42 @@ impl Panel {
         // every handle written is live.
         unsafe {
             let dev = &gpu.device;
-            let set_layout = dev.create_descriptor_set_layout(
-                &vk::DescriptorSetLayoutCreateInfo::default()
-                    .bindings(&[binding(0, D::SAMPLED_IMAGE), binding(1, D::SAMPLER)]),
-                None,
-            )?;
-            let layout = dev.create_pipeline_layout(
-                &vk::PipelineLayoutCreateInfo::default()
-                    .set_layouts(&[set_layout])
-                    .push_constant_ranges(&[vk::PushConstantRange {
-                        stage_flags: stages,
-                        offset: 0,
-                        size: PUSH,
-                    }]),
-                None,
-            )?;
-            let pool = dev.create_descriptor_pool(
-                &vk::DescriptorPoolCreateInfo::default()
-                    .max_sets(1)
-                    .pool_sizes(&[
-                        vk::DescriptorPoolSize {
-                            ty: D::SAMPLED_IMAGE,
-                            descriptor_count: 1,
-                        },
-                        vk::DescriptorPoolSize {
-                            ty: D::SAMPLER,
-                            descriptor_count: 1,
-                        },
-                    ]),
-                None,
-            )?;
+            let set_layout = made.add(
+                dev.create_descriptor_set_layout(
+                    &vk::DescriptorSetLayoutCreateInfo::default()
+                        .bindings(&[binding(0, D::SAMPLED_IMAGE), binding(1, D::SAMPLER)]),
+                    None,
+                )?,
+            );
+            let layout = made.add(
+                dev.create_pipeline_layout(
+                    &vk::PipelineLayoutCreateInfo::default()
+                        .set_layouts(&[set_layout])
+                        .push_constant_ranges(&[vk::PushConstantRange {
+                            stage_flags: stages,
+                            offset: 0,
+                            size: PUSH,
+                        }]),
+                    None,
+                )?,
+            );
+            let pool = made.add(
+                dev.create_descriptor_pool(
+                    &vk::DescriptorPoolCreateInfo::default()
+                        .max_sets(1)
+                        .pool_sizes(&[
+                            vk::DescriptorPoolSize {
+                                ty: D::SAMPLED_IMAGE,
+                                descriptor_count: 1,
+                            },
+                            vk::DescriptorPoolSize {
+                                ty: D::SAMPLER,
+                                descriptor_count: 1,
+                            },
+                        ]),
+                    None,
+                )?,
+            );
             let set = *dev
                 .allocate_descriptor_sets(
                     &vk::DescriptorSetAllocateInfo::default()
@@ -198,9 +209,9 @@ impl Panel {
                 ],
                 &[],
             );
-            let vs = gpu.shader(&compile("vs_panel", naga::ShaderStage::Vertex)?)?;
-            let fs = gpu.shader(&compile("fs_panel", naga::ShaderStage::Fragment)?)?;
-            let pipeline = scene::pipeline(
+            let vs = temp.add(gpu.shader(&compile("vs_panel", naga::ShaderStage::Vertex)?)?);
+            let fs = temp.add(gpu.shader(&compile("fs_panel", naga::ShaderStage::Fragment)?)?);
+            let pipeline = made.add(scene::pipeline(
                 gpu,
                 &scene::PipelineDesc {
                     vert: (vs, c"vs_panel"),
@@ -213,9 +224,8 @@ impl Panel {
                     bindings: &[],
                     attributes: &[],
                 },
-            );
-            dev.destroy_shader_module(vs, None);
-            dev.destroy_shader_module(fs, None);
+            )?);
+            made.keep();
             Ok(Self {
                 pic,
                 staging,
@@ -224,7 +234,7 @@ impl Panel {
                 pool,
                 set,
                 layout,
-                pipeline: pipeline?,
+                pipeline,
             })
         }
     }

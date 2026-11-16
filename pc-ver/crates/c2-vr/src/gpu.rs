@@ -55,6 +55,127 @@ pub struct Image {
     memory: vk::DeviceMemory,
 }
 
+/// A Vulkan object a [`Cleanup`] may have to destroy: a buffer or image
+/// with its memory (freeing mapped memory unmaps it), or a plain handle.
+#[derive(Clone, Copy)]
+enum Made {
+    Bound(Raw, vk::DeviceMemory),
+    Handle(Raw),
+}
+
+/// A plain Vulkan handle [`Cleanup::add`] takes.
+pub(crate) trait Handle: Copy {
+    fn raw(self) -> Raw;
+}
+
+macro_rules! handles {
+    ($($ty:ident => $destroy:ident),* $(,)?) => {
+        #[derive(Clone, Copy)]
+        pub(crate) enum Raw {
+            $($ty(vk::$ty)),*
+        }
+        $(impl Handle for vk::$ty {
+            fn raw(self) -> Raw {
+                Raw::$ty(self)
+            }
+        })*
+        impl Raw {
+            /// # Safety
+            /// As [`Cleanup::new`].
+            unsafe fn destroy(self, dev: &ash::Device) {
+                // SAFETY: the caller's.
+                unsafe {
+                    match self {
+                        $(Raw::$ty(h) => dev.$destroy(h, None)),*
+                    }
+                }
+            }
+        }
+    };
+}
+
+handles! {
+    Buffer => destroy_buffer,
+    Image => destroy_image,
+    DeviceMemory => free_memory,
+    ImageView => destroy_image_view,
+    Sampler => destroy_sampler,
+    ShaderModule => destroy_shader_module,
+    RenderPass => destroy_render_pass,
+    Framebuffer => destroy_framebuffer,
+    Pipeline => destroy_pipeline,
+    PipelineLayout => destroy_pipeline_layout,
+    DescriptorSetLayout => destroy_descriptor_set_layout,
+    DescriptorPool => destroy_descriptor_pool,
+    CommandPool => destroy_command_pool,
+    Fence => destroy_fence,
+}
+
+/// What a constructor has made so far, destroyed (newest first) when the
+/// guard drops: on an early `?` return, or always for temporaries (shader
+/// modules, staging). [`keep`](Cleanup::keep) hands everything to the caller.
+pub(crate) struct Cleanup<'g> {
+    gpu: &'g Gpu,
+    made: Vec<Made>,
+}
+
+impl<'g> Cleanup<'g> {
+    /// # Safety
+    /// Everything added must belong to `gpu`'s device and be destroyed by
+    /// nothing else unless [`keep`](Cleanup::keep) is called; when the guard
+    /// drops, no GPU work may still use it.
+    pub(crate) unsafe fn new(gpu: &'g Gpu) -> Self {
+        Self {
+            gpu,
+            made: Vec::new(),
+        }
+    }
+
+    pub(crate) fn add<H: Handle>(&mut self, h: H) -> H {
+        self.made.push(Made::Handle(h.raw()));
+        h
+    }
+
+    pub(crate) fn buffer(&mut self, b: Buffer) -> Buffer {
+        self.made.push(Made::Bound(b.buffer.raw(), b.memory));
+        b
+    }
+
+    pub(crate) fn image(&mut self, i: Image) -> Image {
+        self.made.push(Made::Bound(i.image.raw(), i.memory));
+        i
+    }
+
+    /// A texture's image and view (`Gpu::texture`).
+    pub(crate) fn texture(&mut self, (i, v): (Image, vk::ImageView)) -> (Image, vk::ImageView) {
+        let i = self.image(i);
+        (i, self.add(v))
+    }
+
+    /// Everything added is the caller's to destroy now.
+    pub(crate) fn keep(mut self) {
+        self.made.clear();
+    }
+}
+
+impl Drop for Cleanup<'_> {
+    fn drop(&mut self) {
+        let dev = &self.gpu.device;
+        // SAFETY: `Cleanup::new`'s contract: ours, unused, destroyed once.
+        unsafe {
+            for m in self.made.drain(..).rev() {
+                match m {
+                    Made::Bound(h, memory) => {
+                        h.destroy(dev);
+                        dev.free_memory(memory, None);
+                    }
+                    Made::Handle(h) => h.destroy(dev),
+                }
+            }
+        }
+    }
+}
+
 impl Gpu {
     /// # Safety
     /// The handles must be live and belong together.
@@ -91,31 +212,38 @@ impl Gpu {
 
     pub fn buffer(&self, size: u64, usage: vk::BufferUsageFlags) -> Result<Buffer> {
         let size = size.max(16);
-        // SAFETY: plain object creation on our device.
+        // SAFETY: plain object creation on our device; `made` frees the
+        // pieces, unused, if a later step fails.
         unsafe {
-            let buffer = self.device.create_buffer(
-                &vk::BufferCreateInfo::default()
-                    .size(size)
-                    .usage(usage)
-                    .sharing_mode(vk::SharingMode::EXCLUSIVE),
-                None,
-            )?;
+            let mut made = Cleanup::new(self);
+            let buffer = made.add(
+                self.device.create_buffer(
+                    &vk::BufferCreateInfo::default()
+                        .size(size)
+                        .usage(usage)
+                        .sharing_mode(vk::SharingMode::EXCLUSIVE),
+                    None,
+                )?,
+            );
             let req = self.device.get_buffer_memory_requirements(buffer);
             let kind = self.memory_type(
                 req.memory_type_bits,
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
             )?;
-            let memory = self.device.allocate_memory(
-                &vk::MemoryAllocateInfo::default()
-                    .allocation_size(req.size)
-                    .memory_type_index(kind),
-                None,
-            )?;
+            let memory = made.add(
+                self.device.allocate_memory(
+                    &vk::MemoryAllocateInfo::default()
+                        .allocation_size(req.size)
+                        .memory_type_index(kind),
+                    None,
+                )?,
+            );
             self.device.bind_buffer_memory(buffer, memory, 0)?;
             let ptr = self
                 .device
                 .map_memory(memory, 0, vk::WHOLE_SIZE, vk::MemoryMapFlags::empty())?
                 .cast::<u8>();
+            made.keep();
             Ok(Buffer {
                 buffer,
                 memory,
@@ -132,19 +260,24 @@ impl Gpu {
     }
 
     pub fn image(&self, info: &vk::ImageCreateInfo) -> Result<Image> {
-        // SAFETY: plain object creation on our device.
+        // SAFETY: plain object creation on our device; `made` frees the
+        // pieces, unused, if a later step fails.
         unsafe {
-            let image = self.device.create_image(info, None)?;
+            let mut made = Cleanup::new(self);
+            let image = made.add(self.device.create_image(info, None)?);
             let req = self.device.get_image_memory_requirements(image);
             let kind =
                 self.memory_type(req.memory_type_bits, vk::MemoryPropertyFlags::DEVICE_LOCAL)?;
-            let memory = self.device.allocate_memory(
-                &vk::MemoryAllocateInfo::default()
-                    .allocation_size(req.size)
-                    .memory_type_index(kind),
-                None,
-            )?;
+            let memory = made.add(
+                self.device.allocate_memory(
+                    &vk::MemoryAllocateInfo::default()
+                        .allocation_size(req.size)
+                        .memory_type_index(kind),
+                    None,
+                )?,
+            );
             self.device.bind_image_memory(image, memory, 0)?;
+            made.keep();
             Ok(Image { image, memory })
         }
     }
@@ -213,17 +346,22 @@ impl Gpu {
             height: size.1,
             depth: 1,
         };
-        let image = self.image(
-            &vk::ImageCreateInfo::default()
-                .image_type(vk::ImageType::TYPE_2D)
-                .format(format)
-                .extent(extent)
-                .mip_levels(1)
-                .array_layers(layers)
-                .samples(vk::SampleCountFlags::TYPE_1)
-                .tiling(vk::ImageTiling::OPTIMAL)
-                .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED),
-        )?;
+        // SAFETY: the image is ours until returned; the staging buffer is
+        // `scratch`'s, freed after the upload has been waited for (or failed).
+        let (mut made, mut scratch) = unsafe { (Cleanup::new(self), Cleanup::new(self)) };
+        let image = made.image(
+            self.image(
+                &vk::ImageCreateInfo::default()
+                    .image_type(vk::ImageType::TYPE_2D)
+                    .format(format)
+                    .extent(extent)
+                    .mip_levels(1)
+                    .array_layers(layers)
+                    .samples(vk::SampleCountFlags::TYPE_1)
+                    .tiling(vk::ImageTiling::OPTIMAL)
+                    .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED),
+            )?,
+        );
         let range = vk::ImageSubresourceRange {
             aspect_mask: vk::ImageAspectFlags::COLOR,
             base_mip_level: 0,
@@ -231,8 +369,8 @@ impl Gpu {
             base_array_layer: 0,
             layer_count: layers,
         };
-        let staging = self.buffer_with(texels, vk::BufferUsageFlags::TRANSFER_SRC)?;
-        let uploaded = self.submit_once(|cmd| {
+        let staging = scratch.buffer(self.buffer_with(texels, vk::BufferUsageFlags::TRANSFER_SRC)?);
+        self.submit_once(|cmd| {
             let barrier = |from, to, src, dst| {
                 vk::ImageMemoryBarrier::default()
                     .old_layout(from)
@@ -292,19 +430,7 @@ impl Gpu {
                     )],
                 );
             }
-        });
-        // SAFETY: the private upload has completed (or failed); these resources
-        // are owned here and staging is never used again.
-        unsafe {
-            self.destroy_buffer(&staging);
-        }
-        if let Err(e) = uploaded {
-            // SAFETY: the failed upload's image has no view or external owner.
-            unsafe {
-                self.destroy_image(&image);
-            }
-            return Err(e);
-        }
+        })?;
         // SAFETY: a view of the image just made.
         let view = unsafe {
             self.device.create_image_view(
@@ -316,6 +442,8 @@ impl Gpu {
                 None,
             )?
         };
+        made.keep();
+        drop(scratch);
         Ok((image, view))
     }
 
@@ -394,5 +522,78 @@ mod tests {
         assert_eq!(storage, [0, 0, 0, 0, 0, 0, b'a', b'b']);
         buffer.write(0, b"12345678");
         assert_eq!(&storage, b"12345678");
+    }
+
+    /// A plain Vulkan device (no OpenXR), freed after `f` whatever it returns.
+    fn with_device(f: impl FnOnce(&Gpu) -> Result<()>) -> Result<()> {
+        // SAFETY: an instance and device made and destroyed here, the device
+        // idle and its objects freed by `f` before it goes.
+        unsafe {
+            let entry = ash::Entry::load()?;
+            let app = vk::ApplicationInfo::default().api_version(vk::make_api_version(0, 1, 1, 0));
+            let instance = entry.create_instance(
+                &vk::InstanceCreateInfo::default().application_info(&app),
+                None,
+            )?;
+            let made = (|| -> Result<_> {
+                let physical = *instance
+                    .enumerate_physical_devices()?
+                    .first()
+                    .ok_or_else(|| anyhow!("no GPU"))?;
+                let family = instance
+                    .get_physical_device_queue_family_properties(physical)
+                    .iter()
+                    .position(|f| f.queue_flags.contains(vk::QueueFlags::GRAPHICS))
+                    .ok_or_else(|| anyhow!("no graphics queue"))?
+                    as u32;
+                let device = instance.create_device(
+                    physical,
+                    &vk::DeviceCreateInfo::default().queue_create_infos(&[
+                        vk::DeviceQueueCreateInfo::default()
+                            .queue_family_index(family)
+                            .queue_priorities(&[1.0]),
+                    ]),
+                    None,
+                )?;
+                Ok((physical, family, device))
+            })();
+            let (physical, family, device) = match made {
+                Ok(m) => m,
+                Err(e) => {
+                    instance.destroy_instance(None);
+                    return Err(e);
+                }
+            };
+            let gpu = Gpu::new(instance, device, physical, family);
+            let r = f(&gpu);
+            let _ = gpu.device.device_wait_idle();
+            gpu.device.destroy_device(None);
+            gpu.instance.destroy_instance(None);
+            r
+        }
+    }
+
+    /// Run with `--ignored` on a machine with a Vulkan GPU (with
+    /// `VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation`, where installed, a
+    /// leaked object is reported when the device goes).
+    #[test]
+    #[ignore = "needs a Vulkan GPU"]
+    fn constructors_and_cleanup_on_a_device() -> Result<()> {
+        use crate::scene::Scene;
+        let format = vk::Format::R8G8B8A8_SRGB;
+        with_device(|gpu| {
+            crate::test_scene::TestScene::new(gpu, format)?.destroy(gpu);
+            let render_pass = crate::scene::render_pass(gpu, format, None)?;
+            crate::panel::Panel::new(gpu, render_pass)?.destroy(gpu);
+            // A guard dropped without `keep` frees everything it was given.
+            {
+                // SAFETY: ours and unused.
+                let mut made = unsafe { Cleanup::new(gpu) };
+                made.add(render_pass);
+                made.buffer(gpu.buffer(64, vk::BufferUsageFlags::VERTEX_BUFFER)?);
+                made.texture(gpu.texture_array(4, &[0; 64], 1)?);
+            }
+            Ok(())
+        })
     }
 }

@@ -82,7 +82,13 @@ pub fn menu(game: Game) -> Result<MakeScene> {
     Ok(Box::new(move |gpu, format| {
         let mut terrain = TerrainScene::new(gpu, format, area, sun)?;
         terrain.walking = false;
-        let panel = Panel::new(gpu, terrain.render_pass())?;
+        let panel = match Panel::new(gpu, terrain.render_pass()) {
+            Ok(p) => p,
+            Err(e) => {
+                terrain.destroy(gpu);
+                return Err(e);
+            }
+        };
         let mut scene = GameScene::new(terrain, game, CAMP);
         scene.menu = Some(Menu {
             panel,
@@ -112,7 +118,10 @@ fn hunt(game: Game, launch: Launch) -> Result<MakeScene> {
     );
     Ok(Box::new(move |gpu, format| {
         let mut terrain = TerrainScene::new(gpu, format, area, sun)?;
-        terrain.add_animals(gpu, &roster.models())?;
+        if let Err(e) = terrain.add_animals(gpu, &roster.models()) {
+            terrain.destroy(gpu);
+            return Err(e);
+        }
         let start = (f32::from(lx) + 0.5, f32::from(ly) + 0.5, 0.0);
         let mut scene = GameScene::new(terrain, game, start);
         scene.roster = Some(roster);

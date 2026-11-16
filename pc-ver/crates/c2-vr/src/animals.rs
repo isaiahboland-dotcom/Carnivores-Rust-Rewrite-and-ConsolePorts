@@ -10,7 +10,7 @@ use anyhow::Result;
 use ash::vk;
 use c2_core::model::{PreparedModel, MODEL_TEXTURE_SIZE};
 
-use crate::gpu::{Buffer, Gpu, Image};
+use crate::gpu::{Buffer, Cleanup, Gpu, Image};
 use crate::objects::{face_order, model_pipelines, model_set, INSTANCE_BYTES, VERTEX_BYTES};
 use crate::xr::DEPTH;
 
@@ -92,25 +92,31 @@ impl Animals {
             texels.resize(size, 0);
         }
         let layers = (texels.len() / size) as u32;
+        // SAFETY: what is made below is ours and unused until returned;
+        // `made` destroys it if a later step fails.
+        let mut made = unsafe { Cleanup::new(gpu) };
         let (textures, textures_view) =
-            gpu.texture_array(MODEL_TEXTURE_SIZE as u32, &texels, layers)?;
-        let sampler = gpu.linear_sampler(false)?;
-        let ground = gpu.buffer_with(&[0; 4], vk::BufferUsageFlags::STORAGE_BUFFER)?;
+            made.texture(gpu.texture_array(MODEL_TEXTURE_SIZE as u32, &texels, layers)?);
+        let sampler = made.add(gpu.linear_sampler(false)?);
+        let ground = made.buffer(gpu.buffer_with(&[0; 4], vk::BufferUsageFlags::STORAGE_BUFFER)?);
         let (set_layout, layout, pool, set) =
             model_set(gpu, globals_layout, textures_view, sampler, &ground)?;
+        let (set_layout, layout, pool) = (made.add(set_layout), made.add(layout), made.add(pool));
         let (opaque, blend) = model_pipelines(gpu, layout, render_pass)?;
+        let (opaque, blend) = (made.add(opaque), made.add(blend));
         let mut vertices = Vec::new();
         let mut instances = Vec::new();
         for _ in 0..DEPTH {
-            vertices.push(gpu.buffer(
+            vertices.push(made.buffer(gpu.buffer(
                 u64::from(VERTEX_BYTES) * 4096,
                 vk::BufferUsageFlags::VERTEX_BUFFER,
-            )?);
-            instances.push(gpu.buffer(
+            )?));
+            instances.push(made.buffer(gpu.buffer(
                 u64::from(INSTANCE_BYTES) * 64,
                 vk::BufferUsageFlags::VERTEX_BUFFER,
-            )?);
+            )?));
         }
+        made.keep();
         Ok(Self {
             faces,
             set_layout,

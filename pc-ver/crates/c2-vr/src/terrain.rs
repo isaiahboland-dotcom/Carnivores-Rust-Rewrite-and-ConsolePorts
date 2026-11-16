@@ -22,7 +22,7 @@ use c2_core::{CELL, H_SCALE};
 use glam::{Mat4, Quat, Vec3};
 
 use crate::animals::{Animals, Posed};
-use crate::gpu::{Buffer, Gpu, Image};
+use crate::gpu::{Buffer, Cleanup, Gpu, Image};
 use crate::objects::Objects;
 use crate::scene::{self, Eye, Frame, Scene};
 use crate::sky::Sky;
@@ -274,11 +274,14 @@ impl TerrainScene {
         }
         let mut sky_map = area.rsc.sky_map.clone();
         sky_map.resize(128 * 128, 0);
+        // SAFETY: what is made below is ours and unused until returned;
+        // `made` destroys it if a later step fails, `temp` the shader modules.
+        let (mut made, mut temp) = unsafe { (Cleanup::new(gpu), Cleanup::new(gpu)) };
         let storage_usage = vk::BufferUsageFlags::STORAGE_BUFFER;
         let storage = vec![
-            gpu.buffer_with(&cells, storage_usage)?,
-            gpu.buffer_with(&floats(&waters), storage_usage)?,
-            gpu.buffer_with(&sky_map, storage_usage)?,
+            made.buffer(gpu.buffer_with(&cells, storage_usage)?),
+            made.buffer(gpu.buffer_with(&floats(&waters), storage_usage)?),
+            made.buffer(gpu.buffer_with(&sky_map, storage_usage)?),
         ];
 
         // The area's 128x128 textures as one array (c2-pc: Rgba8Unorm).
@@ -290,9 +293,9 @@ impl TerrainScene {
             .collect();
         let layers = (texels.len() / (128 * 128 * 4)).max(1) as u32;
         texels.resize(layers as usize * 128 * 128 * 4, 255);
-        let (textures, textures_view) = gpu.texture_array(128, &texels, layers)?;
+        let (textures, textures_view) = made.texture(gpu.texture_array(128, &texels, layers)?);
 
-        let render_pass = scene::render_pass(gpu, format, Some(DEPTH_FORMAT))?;
+        let render_pass = made.add(scene::render_pass(gpu, format, Some(DEPTH_FORMAT))?);
         let all = vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT;
         let binding = |b: u32, kind: vk::DescriptorType| {
             vk::DescriptorSetLayoutBinding::default()
@@ -306,12 +309,14 @@ impl TerrainScene {
         // every handle written is live.
         unsafe {
             let dev = &gpu.device;
-            let set0 = dev.create_descriptor_set_layout(
-                &vk::DescriptorSetLayoutCreateInfo::default()
-                    .bindings(&[binding(0, D::UNIFORM_BUFFER)]),
-                None,
-            )?;
-            let set1 = dev.create_descriptor_set_layout(
+            let set0 = made.add(
+                dev.create_descriptor_set_layout(
+                    &vk::DescriptorSetLayoutCreateInfo::default()
+                        .bindings(&[binding(0, D::UNIFORM_BUFFER)]),
+                    None,
+                )?,
+            );
+            let set1 = made.add(dev.create_descriptor_set_layout(
                 &vk::DescriptorSetLayoutCreateInfo::default().bindings(&[
                     binding(0, D::STORAGE_BUFFER),
                     binding(1, D::STORAGE_BUFFER),
@@ -321,36 +326,38 @@ impl TerrainScene {
                     binding(5, D::STORAGE_BUFFER),
                 ]),
                 None,
-            )?;
-            let layout = dev.create_pipeline_layout(
+            )?);
+            let layout = made.add(dev.create_pipeline_layout(
                 &vk::PipelineLayoutCreateInfo::default().set_layouts(&[set0, set1]),
                 None,
-            )?;
+            )?);
             let n = DEPTH as u32;
-            let pool = dev.create_descriptor_pool(
-                &vk::DescriptorPoolCreateInfo::default()
-                    .max_sets(n * 3)
-                    .pool_sizes(&[
-                        vk::DescriptorPoolSize {
-                            ty: D::UNIFORM_BUFFER,
-                            descriptor_count: n * 3,
-                        },
-                        vk::DescriptorPoolSize {
-                            ty: D::STORAGE_BUFFER,
-                            descriptor_count: n * 3,
-                        },
-                        vk::DescriptorPoolSize {
-                            ty: D::SAMPLED_IMAGE,
-                            descriptor_count: n,
-                        },
-                        vk::DescriptorPoolSize {
-                            ty: D::SAMPLER,
-                            descriptor_count: n,
-                        },
-                    ]),
-                None,
-            )?;
-            let sampler = gpu.linear_sampler(false)?;
+            let pool = made.add(
+                dev.create_descriptor_pool(
+                    &vk::DescriptorPoolCreateInfo::default()
+                        .max_sets(n * 3)
+                        .pool_sizes(&[
+                            vk::DescriptorPoolSize {
+                                ty: D::UNIFORM_BUFFER,
+                                descriptor_count: n * 3,
+                            },
+                            vk::DescriptorPoolSize {
+                                ty: D::STORAGE_BUFFER,
+                                descriptor_count: n * 3,
+                            },
+                            vk::DescriptorPoolSize {
+                                ty: D::SAMPLED_IMAGE,
+                                descriptor_count: n,
+                            },
+                            vk::DescriptorPoolSize {
+                                ty: D::SAMPLER,
+                                descriptor_count: n,
+                            },
+                        ]),
+                    None,
+                )?,
+            );
+            let sampler = made.add(gpu.linear_sampler(false)?);
 
             let globals_size = std::mem::size_of::<Globals>() as u64;
             let uniform = vk::BufferUsageFlags::UNIFORM_BUFFER;
@@ -360,10 +367,10 @@ impl TerrainScene {
             let mut terrain_sets = Vec::new();
             for _ in 0..DEPTH {
                 let g = [
-                    gpu.buffer(globals_size, uniform)?,
-                    gpu.buffer(globals_size, uniform)?,
+                    made.buffer(gpu.buffer(globals_size, uniform)?),
+                    made.buffer(gpu.buffer(globals_size, uniform)?),
                 ];
-                let p = gpu.buffer(PARAMS_SIZE, uniform)?;
+                let p = made.buffer(gpu.buffer(PARAMS_SIZE, uniform)?);
                 let s0 = dev.allocate_descriptor_sets(
                     &vk::DescriptorSetAllocateInfo::default()
                         .descriptor_pool(pool)
@@ -427,9 +434,10 @@ impl TerrainScene {
                 terrain_sets.push(s1);
             }
 
-            let vs_ground = gpu.shader(&compile("vs_ground", naga::ShaderStage::Vertex)?)?;
-            let vs_water = gpu.shader(&compile("vs_water", naga::ShaderStage::Vertex)?)?;
-            let fs = gpu.shader(&compile("fs_vr", naga::ShaderStage::Fragment)?)?;
+            let vs_ground =
+                temp.add(gpu.shader(&compile("vs_ground", naga::ShaderStage::Vertex)?)?);
+            let vs_water = temp.add(gpu.shader(&compile("vs_water", naga::ShaderStage::Vertex)?)?);
+            let fs = temp.add(gpu.shader(&compile("fs_vr", naga::ShaderStage::Fragment)?)?);
             let desc = |vert, depth_write, blend| scene::PipelineDesc {
                 vert,
                 frag: (fs, c"fs_vr"),
@@ -440,23 +448,28 @@ impl TerrainScene {
                 bindings: &[],
                 attributes: &[],
             };
-            let ground = scene::pipeline(
+            let ground = made.add(scene::pipeline(
                 gpu,
                 &desc((vs_ground, c"vs_ground"), true, scene::Blend::Opaque),
-            );
-            let water = scene::pipeline(
+            )?);
+            let water = made.add(scene::pipeline(
                 gpu,
                 &desc((vs_water, c"vs_water"), false, scene::Blend::Alpha),
-            );
-            for m in [vs_ground, vs_water, fs] {
-                dev.destroy_shader_module(m, None);
-            }
+            )?);
+            drop(temp);
 
             let (lx, ly) = area.landings.first().copied().unwrap_or((512, 512));
             let (x, z) = (f32::from(lx) * CELL + 128.0, f32::from(ly) * CELL + 128.0);
             let fog_rgb = area.sky_rgb().map(|c| (c as f32 / 255.0).clamp(0.0, 1.0));
-            let objects = Objects::new(gpu, &area, render_pass, set0)?;
-            let sky = Sky::new(gpu, &area, sun.as_ref(), render_pass, set0)?;
+            let mut objects = Objects::new(gpu, &area, render_pass, set0)?;
+            let sky = match Sky::new(gpu, &area, sun.as_ref(), render_pass, set0) {
+                Ok(s) => s,
+                Err(e) => {
+                    objects.destroy(gpu);
+                    return Err(e);
+                }
+            };
+            made.keep();
             Ok(Self {
                 objects,
                 sky,
@@ -465,8 +478,8 @@ impl TerrainScene {
                 render_pass,
                 set_layouts: [set0, set1],
                 layout,
-                ground: ground?,
-                water: water?,
+                ground,
+                water,
                 pool,
                 globals_sets,
                 terrain_sets,
@@ -607,21 +620,25 @@ impl Scene for TerrainScene {
             bail!("eye targets made twice");
         }
         for _ in 0..2 {
-            let image = gpu.image(
-                &vk::ImageCreateInfo::default()
-                    .image_type(vk::ImageType::TYPE_2D)
-                    .format(DEPTH_FORMAT)
-                    .extent(vk::Extent3D {
-                        width: extent.width,
-                        height: extent.height,
-                        depth: 1,
-                    })
-                    .mip_levels(1)
-                    .array_layers(1)
-                    .samples(vk::SampleCountFlags::TYPE_1)
-                    .tiling(vk::ImageTiling::OPTIMAL)
-                    .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT),
-            )?;
+            // SAFETY: the image is ours and unused until it is pushed below.
+            let mut made = unsafe { Cleanup::new(gpu) };
+            let image = made.image(
+                gpu.image(
+                    &vk::ImageCreateInfo::default()
+                        .image_type(vk::ImageType::TYPE_2D)
+                        .format(DEPTH_FORMAT)
+                        .extent(vk::Extent3D {
+                            width: extent.width,
+                            height: extent.height,
+                            depth: 1,
+                        })
+                        .mip_levels(1)
+                        .array_layers(1)
+                        .samples(vk::SampleCountFlags::TYPE_1)
+                        .tiling(vk::ImageTiling::OPTIMAL)
+                        .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT),
+                )?,
+            );
             // SAFETY: a view of the image just made.
             let view = unsafe {
                 gpu.device.create_image_view(
@@ -639,6 +656,7 @@ impl Scene for TerrainScene {
                     None,
                 )?
             };
+            made.keep();
             self.depth.push((image, view));
         }
         Ok([vec![self.depth[0].1], vec![self.depth[1].1]])
