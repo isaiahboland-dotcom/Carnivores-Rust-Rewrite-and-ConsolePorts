@@ -34,7 +34,7 @@ pub(super) struct Memory {
 pub(super) type MemKey = (usize, usize, Bits, Bits, bool, bool, i32, i32);
 
 /// Hunt options: the secret animals' count (cycles).
-pub(super) const O_SECRET: [f32; 4] = [40.0, 168.0, 240.0, 24.0];
+pub(super) const O_SECRET: [f32; 4] = [40.0, 152.0, 240.0, 22.0];
 /// The counts the row cycles through (the PC's slider goes to 255).
 const SECRET_STEPS: [i32; 8] = [0, 1, 3, 5, 10, 20, 50, 255];
 
@@ -125,12 +125,12 @@ impl Menu {
         let m = self.memory();
         let mut parts = Vec::new();
         if m.secrets > 0 {
-            parts.push(format!("secrets {}", m.secrets));
+            parts.push(format!("{} secret", m.secrets));
         }
         if m.aquatic > 0 {
-            parts.push(format!("aquatic {}", m.aquatic));
+            parts.push(format!("{} aquatic", m.aquatic));
         }
-        (m.planned && m.fits && !parts.is_empty()).then(|| format!("Also: {}", parts.join(", ")))
+        (m.planned && m.fits && !parts.is_empty()).then(|| format!("Also {}", parts.join(", ")))
     }
 
     /// "Too much for this console", with the animal to drop when the plan

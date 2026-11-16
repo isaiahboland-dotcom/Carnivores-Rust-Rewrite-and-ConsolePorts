@@ -27,7 +27,9 @@ use crate::gpu::{Gpu, Texture, BOTTOM_W, TOP_W};
 use crate::hunt::{PackInfo, Setup};
 use crate::rules::{Roam, Role, Rules};
 
+mod dhc_screens;
 mod plan;
+mod settings_ui;
 mod terminal;
 mod terminal_draw;
 mod tranq;
@@ -67,36 +69,7 @@ const HUNTER: [f32; 4] = [60.0, 78.0, 200.0, 30.0];
 const TROPHIES: [f32; 4] = [60.0, 114.0, 200.0, 30.0];
 const SETTINGS: [f32; 4] = [60.0, 150.0, 200.0, 30.0];
 const QUIT: [f32; 4] = [60.0, 186.0, 200.0, 30.0];
-/// Settings: remove every unlocked trophy (a second tap does it).
-const CLEAR_TROPHIES: [f32; 4] = [16.0, 78.0, 140.0, 24.0];
-/// Settings: "All dinos huntable" (a modded game's roaming add-ons listed).
-const ALL_HUNTABLE: [f32; 4] = [164.0, 78.0, 140.0, 24.0];
-/// Whether the settings button `r` is hidden: the pack's instance rules
-/// fix its setting (`crate::instance_rules`).
-fn rect_locked(r: [f32; 4]) -> bool {
-    use c2_formats::rules::Lock;
-    [
-        (MAP_STYLE, Lock::MobileRadar),
-        (TELEPORT, Lock::Teleport),
-        (ALL_HUNTABLE, Lock::AllHuntable),
-        (MULTI_AMMO, Lock::MultiAmmo),
-        (FREE_OBSERVER, Lock::AdvancedObserver),
-    ]
-    .into_iter()
-    .find(|(rect, _)| *rect == r)
-    .is_some_and(|(_, l)| crate::instance_rules::locked(l))
-}
 
-/// The original's game options (`Options > Game`), 0..=255, kept in the
-/// save: bars for aggressiveness, density and sensitivity.
-const GAME_OPTS: [(&str, f32); 3] = [
-    ("Aggressive", 6.0),
-    ("Density", 30.0),
-    ("Sensitivity", 54.0),
-];
-const OPT_BAR_X: f32 = 120.0;
-const OPT_BAR_W: f32 = 180.0;
-const OPT_BAR_H: f32 = 18.0;
 /// The hunters list: row `i`.
 fn hunter_row(i: usize) -> [f32; 4] {
     [40.0, 8.0 + i as f32 * 30.0, 240.0, 26.0]
@@ -104,37 +77,20 @@ fn hunter_row(i: usize) -> [f32; 4] {
 
 /// Settings screen: run speed bar with - / +, then the toggles.
 // The hunt options screen.
-/// Settings: the crouch button (cycles).
-const CROUCH_KEY: [f32; 4] = [16.0, 104.0, 140.0, 24.0];
-/// Settings: the stealth gyro aim strength (cycles).
-const GYRO: [f32; 4] = [164.0, 104.0, 140.0, 24.0];
 const O_SPEED_BAR: [f32; 4] = [64.0, 24.0, 192.0, 20.0];
 const O_SPEED_DOWN: [f32; 4] = [20.0, 20.0, 36.0, 28.0];
 const O_SPEED_UP: [f32; 4] = [264.0, 20.0, 36.0, 28.0];
-const O_AMBIENT: [f32; 4] = [40.0, 56.0, 240.0, 24.0];
-const O_RANDOM: [f32; 4] = [40.0, 84.0, 240.0, 24.0];
-const O_FRIENDLY: [f32; 4] = [40.0, 112.0, 240.0, 24.0];
-const O_STEALTH: [f32; 4] = [40.0, 140.0, 118.0, 24.0];
-const BLOOD: [f32; 4] = [16.0, 130.0, 140.0, 24.0];
-const DEATH_ANIM: [f32; 4] = [164.0, 130.0, 140.0, 24.0];
-/// Settings: the mobile game's map look; teleporting by the map.
-const MAP_STYLE: [f32; 4] = [16.0, 156.0, 140.0, 24.0];
-const TELEPORT: [f32; 4] = [164.0, 156.0, 140.0, 24.0];
-/// Settings: multi ammo (lethal and tranquilizer rounds), and advanced
-/// observer mode.
-const MULTI_AMMO: [f32; 4] = [16.0, 182.0, 140.0, 24.0];
-const FREE_OBSERVER: [f32; 4] = [164.0, 182.0, 140.0, 24.0];
-/// Settings: the controls shown in a hunt (beside Back).
-const HINTS: [f32; 4] = [164.0, 210.0, 74.0, 26.0];
-/// Settings: the DHC OS terminal look for the hunt setup (beside Hints).
-const DHC: [f32; 4] = [242.0, 210.0, 74.0, 26.0];
-/// Settings: unlimited points for testing (beside Back).
-const TEST_PTS: [f32; 4] = [84.0, 210.0, 76.0, 26.0];
+const O_AMBIENT: [f32; 4] = [40.0, 52.0, 240.0, 22.0];
+const O_RANDOM: [f32; 4] = [40.0, 77.0, 240.0, 22.0];
+const O_FRIENDLY: [f32; 4] = [40.0, 102.0, 240.0, 22.0];
+const O_STEALTH: [f32; 4] = [40.0, 127.0, 118.0, 22.0];
 /// Hunt options: every tree and plant as its sprite (performance), beside
 /// the stealth crouch; the row below is the secret animals' (`plan.rs`).
-const O_SPRITES: [f32; 4] = [162.0, 140.0, 118.0, 24.0];
+const O_SPRITES: [f32; 4] = [162.0, 127.0, 118.0, 22.0];
 /// Hunt options: bounded fleeing (experimental).
-const O_FLEE: [f32; 4] = [40.0, 192.0, 240.0, 18.0];
+/// The secret animals' row (`plan.rs`) is at y 152; the page's message
+/// line sits between this row (ends 197) and the bar (212).
+const O_FLEE: [f32; 4] = [40.0, 177.0, 240.0, 20.0];
 
 const BAR_Y: f32 = 212.0;
 const BACK: [f32; 4] = [4.0, BAR_Y, 76.0, 24.0];
@@ -175,6 +131,42 @@ const TERMINAL_LOOK: Look = Look {
     label: crate::dhc_look::MD,
     value: crate::dhc_look::HI,
     title: crate::dhc_look::HI,
+};
+
+/// The colours of the hunt options page's top screen and its bar.
+#[derive(Clone, Copy)]
+struct Pal {
+    text: Rgba,
+    gold: Rgba,
+    panel: Rgba,
+    white: Rgba,
+    dim: Rgba,
+    blue: Rgba,
+    red: Rgba,
+    /// A toggle that is on, the HUNT button when it is ready.
+    on: Rgba,
+}
+
+const CLASSIC_PAL: Pal = Pal {
+    text: TEXT,
+    gold: GOLD,
+    panel: PANEL,
+    white: WHITE,
+    dim: DIM,
+    blue: BLUE,
+    red: RED,
+    on: [60, 110, 60, 255],
+};
+
+const TERMINAL_PAL: Pal = Pal {
+    text: crate::dhc_look::MD,
+    gold: crate::dhc_look::AMBER,
+    panel: crate::dhc_look::PANEL,
+    white: crate::dhc_look::HI,
+    dim: crate::dhc_look::LO,
+    blue: [120, 180, 255, 255],
+    red: crate::dhc_look::RED,
+    on: crate::dhc_look::LO,
 };
 
 /// Roaming add-ons (no call), as the grid rim and the hunt map show them.
@@ -405,6 +397,8 @@ pub struct Menu {
     pub want_name: bool,
     /// Settings: "Remove unlocked trophies" tapped once.
     clear_armed: bool,
+    /// Settings: the tab shown (`settings_ui`).
+    settings_tab: usize,
     /// Multi ammo's Half / Full tranq question is up on the gear page.
     tranq_ask: bool,
     /// "All dinos huntable" changed: the menu loop builds the menu again
@@ -672,6 +666,7 @@ impl Menu {
             focus: None,
             message: None,
             term: terminal::Term::placeholder(),
+            settings_tab: 0,
         };
         if m.remaining() < 0 {
             m.picked_equip = Bits::NONE;
@@ -1108,6 +1103,11 @@ impl Menu {
 
     /// Another page of this step's grid (`d` -1 or +1), if it has pages.
     pub fn flip_page(&mut self, d: i32) {
+        if self.step == Step::Settings {
+            self.settings_tab = (self.settings_tab as i32 + d).rem_euclid(3) as usize;
+            self.clear_armed = false;
+            return;
+        }
         let g = self.grid_of(self.step);
         if g.pages < 2 {
             return;
@@ -1145,7 +1145,9 @@ impl Menu {
             self.back();
             return None;
         }
-        if inside(NEXT, x, y) {
+        // Settings draws no Next button: its DHC toggle sits in that
+        // corner and a tap there must reach it (A still leaves).
+        if inside(NEXT, x, y) && self.step != Step::Settings {
             return self.next();
         }
         if self.grid_of(self.step).pages > 1 {
@@ -1202,73 +1204,7 @@ impl Menu {
                     }
                 }
             }
-            Step::Settings if inside(CLEAR_TROPHIES, x, y) => {
-                if self.clear_armed {
-                    let n = c2_core::profile::clear_unlocked(&mut self.save);
-                    self.message = Some(match crate::save::store(&self.save) {
-                        Ok(()) => format!("{n} trophies removed"),
-                        Err(e) => format!("save failed: {e}"),
-                    });
-                }
-                self.clear_armed = !self.clear_armed;
-            }
-            Step::Settings if Self::game_opt_hit(x, y).is_some() => {
-                self.clear_armed = false;
-                if let Some(i) = Self::game_opt_hit(x, y) {
-                    let v = ((x - OPT_BAR_X) / OPT_BAR_W * 255.0)
-                        .round()
-                        .clamp(0.0, 255.0) as i32;
-                    *self.game_opt(i) = v;
-                }
-            }
-            Step::Settings => {
-                self.clear_armed = false;
-                let s = &mut self.settings;
-                if inside(CROUCH_KEY, x, y) {
-                    s.crouch_key = s.crouch_key.next();
-                } else if inside(GYRO, x, y) {
-                    s.gyro_pct = crate::settings::next_gyro(s.gyro_pct);
-                    self.focus = Some("Stealth crouch: turning the 3DS aims".into());
-                } else if inside(BLOOD, x, y) {
-                    s.blood = !s.blood;
-                } else if inside(DEATH_ANIM, x, y) {
-                    s.death_anim = !s.death_anim;
-                } else if inside(MAP_STYLE, x, y) && !rect_locked(MAP_STYLE) {
-                    s.map_mobile = !s.map_mobile;
-                } else if inside(TELEPORT, x, y) && !rect_locked(TELEPORT) {
-                    s.teleport = !s.teleport;
-                    self.focus = Some("Tap the map in a hunt; 5 s, then a minute".into());
-                } else if inside(HINTS, x, y) {
-                    s.hints = !s.hints;
-                } else if inside(DHC, x, y) {
-                    s.dhc_terminal = !s.dhc_terminal;
-                    self.focus = Some(if s.dhc_terminal {
-                        "DHC OS terminal: L/R pages, A picks".into()
-                    } else {
-                        "The hexagon menu".into()
-                    });
-                } else if inside(MULTI_AMMO, x, y) && !rect_locked(MULTI_AMMO) {
-                    s.multi_ammo = !s.multi_ammo;
-                    self.focus = Some("Tranq asks: half lethal/half darts, or all".into());
-                } else if inside(FREE_OBSERVER, x, y) && !rect_locked(FREE_OBSERVER) {
-                    s.free_observer = !s.free_observer;
-                    self.focus = Some("Observe: teleport, fly, stop time".into());
-                } else if inside(TEST_PTS, x, y) {
-                    s.test_points = !s.test_points;
-                    self.focus = Some(if s.test_points {
-                        "Test: unlimited points (save keeps its own)".into()
-                    } else {
-                        "Points: the hunter's score".into()
-                    });
-                } else if inside(ALL_HUNTABLE, x, y) && !rect_locked(ALL_HUNTABLE) {
-                    s.all_huntable = !s.all_huntable;
-                    self.focus = Some(if s.all_huntable {
-                        "Add-ons that roam are in the list".into()
-                    } else {
-                        "Add-ons that roam: on their maps".into()
-                    });
-                }
-            }
+            Step::Settings => self.settings_tap(x, y),
             Step::Area => {
                 if let Some(i) = hit(&self.area_cells()) {
                     self.area = i;
@@ -1409,22 +1345,6 @@ impl Menu {
         }
     }
 
-    /// Which game option's bar (x, y) is on.
-    fn game_opt_hit(x: f32, y: f32) -> Option<usize> {
-        GAME_OPTS
-            .iter()
-            .position(|&(_, top)| inside([OPT_BAR_X, top, OPT_BAR_W, OPT_BAR_H], x, y))
-    }
-
-    fn game_opt(&mut self, i: usize) -> &mut i32 {
-        let o = &mut self.save.options;
-        match i {
-            0 => &mut o.agres,
-            1 => &mut o.dens,
-            _ => &mut o.sens,
-        }
-    }
-
     /// B / the Back button.
     pub fn back(&mut self) {
         if matches!(self.step, Step::Settings | Step::Options) {
@@ -1547,6 +1467,10 @@ impl Menu {
             self.c = c;
             return;
         }
+        if self.dhc_page() {
+            self.draw_dhc_page(gpu);
+            return;
+        }
         if self.settings.dhc_terminal && self.step == Step::Settings {
             // The settings in the terminal's colours, on both screens.
             let mut c = std::mem::replace(&mut self.c, Canvas::new(None));
@@ -1633,7 +1557,10 @@ impl Menu {
     }
 
     fn draw_bottom(&mut self, gpu: &mut Gpu) {
-        gpu.begin_2d(Some([BG[0], BG[1], BG[2]]));
+        let themed = self.settings.dhc_terminal && self.step == Step::Options;
+        let pal = if themed { TERMINAL_PAL } else { CLASSIC_PAL };
+        let bg = if themed { crate::dhc_look::BG } else { BG };
+        gpu.begin_2d(Some([bg[0], bg[1], bg[2]]));
         let left = self.remaining();
         let step = self.step;
         let mut c = std::mem::replace(&mut self.c, Canvas::new(None));
@@ -1828,7 +1755,7 @@ impl Menu {
         // What was tapped, or a message; then the bar.
         let line = self.message.clone().or_else(|| self.focus.clone());
         if let Some(l) = line {
-            let col = if self.message.is_some() { RED } else { TEXT };
+            let col = if self.message.is_some() { pal.red } else { pal.text };
             let l: String = l.chars().take(38).collect();
             // On the gear screen the Tranq / Observe buttons sit there: the
             // line goes above them, on a dark strip.
@@ -1845,10 +1772,10 @@ impl Menu {
             _ => "Next",
         };
         if step != Step::Area {
-            c.rect(BACK, PANEL);
+            c.rect(BACK, pal.panel);
         }
         let ready = step != Step::Options || self.can_hunt().is_ok();
-        c.rect(NEXT, if ready { [60, 110, 60, 255] } else { PANEL });
+        c.rect(NEXT, if ready { pal.on } else { pal.panel });
         c.flush(gpu);
         if step != Step::Area {
             c.text_c(
@@ -1856,18 +1783,18 @@ impl Menu {
                 BACK[0] + BACK[2] / 2.0,
                 BAR_Y + 8.0,
                 1.0,
-                WHITE,
+                pal.white,
                 "Back",
             );
         }
-        c.text_c(gpu, NEXT[0] + NEXT[2] / 2.0, BAR_Y + 8.0, 1.0, WHITE, next);
+        c.text_c(gpu, NEXT[0] + NEXT[2] / 2.0, BAR_Y + 8.0, 1.0, pal.white, next);
         let g = self.grid_of(step);
         let pts = if g.pages > 1 {
-            c.rect(PAGE_PREV, PANEL);
-            c.rect(PAGE_NEXT, PANEL);
+            c.rect(PAGE_PREV, pal.panel);
+            c.rect(PAGE_NEXT, pal.panel);
             c.flush(gpu);
             for (r, t) in [(PAGE_PREV, "<"), (PAGE_NEXT, ">")] {
-                c.text_c(gpu, r[0] + r[2] / 2.0, BAR_Y + 8.0, 1.0, WHITE, t);
+                c.text_c(gpu, r[0] + r[2] / 2.0, BAR_Y + 8.0, 1.0, pal.white, t);
             }
             format!("{}/{} {left} pts", g.page + 1, g.pages)
         } else {
@@ -1878,7 +1805,7 @@ impl Menu {
             160.0,
             BAR_Y + 8.0,
             1.0,
-            if left < 0 { RED } else { GOLD },
+            if left < 0 { pal.red } else { pal.gold },
             &pts,
         );
         self.c = c;
@@ -1914,118 +1841,26 @@ impl Menu {
         }
     }
 
-    /// The settings screen (bottom).
-    fn draw_settings(&self, c: &mut Canvas, gpu: &mut Gpu, look: &Look) {
-        let s = self.settings;
-        c.rect(BACK, look.panel);
-        c.rect(
-            CLEAR_TROPHIES,
-            if self.clear_armed {
-                [140, 60, 30, 255]
-            } else {
-                look.panel
-            },
-        );
-        c.flush(gpu);
-        let unlocked = self
-            .save
-            .bodies
-            .iter()
-            .filter(|b| b.ctype != 0 && !b.locked())
-            .count();
-        let t = if self.clear_armed {
-            format!("Again: remove {unlocked}")
-        } else {
-            "Clear trophies".into()
-        };
-        let r = CLEAR_TROPHIES;
-        c.text_c(gpu, r[0] + r[2] / 2.0, r[1] + 9.0, 1.0, look.value, &t);
-        let toggles = [
-            (BLOOD, s.blood, "Blood"),
-            (DEATH_ANIM, s.death_anim, "Death anim"),
-            (MAP_STYLE, s.map_mobile, "Mobile map"),
-            (TELEPORT, s.teleport, "Teleport"),
-            (HINTS, s.hints, "Hints"),
-            (DHC, s.dhc_terminal, "DHC"),
-            (ALL_HUNTABLE, s.all_huntable, "All dinos"),
-            (TEST_PTS, s.test_points, "Test"),
-            (MULTI_AMMO, s.multi_ammo, "Multi ammo"),
-            (FREE_OBSERVER, s.free_observer, "Adv observer"),
-        ];
-        let toggles: Vec<_> = toggles
-            .into_iter()
-            .filter(|t| !rect_locked(t.0))
-            .collect();
-        for &(r, on, _) in &toggles {
-            c.rect(r, if on { look.on } else { look.panel });
-        }
-        c.rect(CROUCH_KEY, look.panel);
-        c.rect(GYRO, look.panel);
-        c.flush(gpu);
-        c.text_c(
-            gpu,
-            CROUCH_KEY[0] + CROUCH_KEY[2] / 2.0,
-            CROUCH_KEY[1] + 10.0,
-            1.0,
-            look.value,
-            &format!("Crouch: {}", s.crouch_key.name()),
-        );
-        c.text_c(
-            gpu,
-            GYRO[0] + GYRO[2] / 2.0,
-            GYRO[1] + 10.0,
-            1.0,
-            look.value,
-            &format!("Gyro aim: {}%", s.gyro_pct),
-        );
-        let o = self.save.options;
-        let values = [o.agres, o.dens, o.sens];
-        for (&(_, top), v) in GAME_OPTS.iter().zip(values) {
-            c.rect([OPT_BAR_X, top, OPT_BAR_W, OPT_BAR_H], look.panel);
-            let f = v.clamp(0, 255) as f32 / 255.0;
-            c.rect(
-                [OPT_BAR_X, top, OPT_BAR_W * f.max(0.02), OPT_BAR_H],
-                look.on,
-            );
-        }
-        c.flush(gpu);
-        for ((name, top), v) in GAME_OPTS.iter().zip(values) {
-            c.text(gpu, 16.0, top + 5.0, 1.0, look.label, name);
-            let pct = format!("{}%", v.clamp(0, 255) * 100 / 255);
-            c.text_c(
-                gpu,
-                OPT_BAR_X + OPT_BAR_W / 2.0,
-                top + 5.0,
-                1.0,
-                look.value,
-                &pct,
-            );
-        }
-        for &(r, on, name) in &toggles {
-            let t = format!("{name}: {}", if on { "ON" } else { "OFF" });
-            c.text_c(
-                gpu,
-                r[0] + r[2] / 2.0,
-                r[1] + r[3] / 2.0 - 4.0,
-                1.0,
-                look.value,
-                &t,
-            );
-        }
-        c.text_c(
-            gpu,
-            BACK[0] + BACK[2] / 2.0,
-            BAR_Y + 8.0,
-            1.0,
-            look.value,
-            "Back",
-        );
-    }
-
-    /// The hunt options (bottom; the bar is drawn after).
+    /// The hunt options (bottom; the bar is drawn after), in the DHC OS
+    /// terminal's colours when it is on.
     fn draw_options(&self, c: &mut Canvas, gpu: &mut Gpu) {
         let s = self.settings;
-        c.rect(O_SPEED_BAR, PANEL);
+        let themed = s.dhc_terminal;
+        let pal = if themed { TERMINAL_PAL } else { CLASSIC_PAL };
+        let on_fill = if themed {
+            crate::dhc_look::LO
+        } else {
+            [60, 110, 60, 255]
+        };
+        let edge = crate::dhc_look::LINE;
+        let boxed = |c: &mut Canvas, r: [f32; 4], fill: Rgba| {
+            if themed {
+                crate::dhc_look::frame(c, r, fill, edge);
+            } else {
+                c.rect(r, fill);
+            }
+        };
+        boxed(c, O_SPEED_BAR, pal.panel);
         let f = (s.run_pct - 50) as f32 / 50.0;
         c.rect(
             [
@@ -2034,10 +1869,10 @@ impl Menu {
                 O_SPEED_BAR[2] * f.max(0.02),
                 O_SPEED_BAR[3],
             ],
-            [60, 110, 60, 255],
+            on_fill,
         );
         for r in [O_SPEED_DOWN, O_SPEED_UP] {
-            c.rect(r, PANEL);
+            boxed(c, r, pal.panel);
         }
         let mut toggles = vec![(O_AMBIENT, s.ambient, "Ambient animals")];
         if self.random_ambients_offered() {
@@ -2048,41 +1883,30 @@ impl Menu {
         toggles.push((O_SPRITES, s.tree_sprites, "Sprites"));
         toggles.push((O_FLEE, s.bounded_flee, "Bounded fleeing (experimental)"));
         for (r, on, _) in &toggles {
-            c.rect(*r, if *on { [60, 110, 60, 255] } else { PANEL });
+            boxed(c, *r, if *on { on_fill } else { pal.panel });
         }
         let secrets = self.secrets_offered();
         if secrets {
-            c.rect(O_SECRET, PANEL);
+            boxed(c, O_SECRET, pal.panel);
         }
         c.flush(gpu);
+        // Text centred in its rectangle (the rows differ in height).
+        let mid = |r: [f32; 4]| r[1] + (r[3] - 8.0) / 2.0;
         if secrets {
             let (r, t) = (O_SECRET, self.secrets_label());
-            c.text_c(gpu, r[0] + r[2] / 2.0, r[1] + 8.0, 1.0, WHITE, &t);
+            c.text_c(gpu, r[0] + r[2] / 2.0, mid(r), 1.0, pal.white, &t);
         }
         c.text_c(
             gpu,
             160.0,
             6.0,
             1.0,
-            TEXT,
+            pal.text,
             &format!("Animal run speed {}%", s.run_pct),
         );
-        c.text_c(
-            gpu,
-            O_SPEED_DOWN[0] + 18.0,
-            O_SPEED_DOWN[1] + 6.0,
-            2.0,
-            WHITE,
-            "-",
-        );
-        c.text_c(
-            gpu,
-            O_SPEED_UP[0] + 18.0,
-            O_SPEED_UP[1] + 6.0,
-            2.0,
-            WHITE,
-            "+",
-        );
+        for (r, t) in [(O_SPEED_DOWN, "-"), (O_SPEED_UP, "+")] {
+            c.text_c(gpu, r[0] + 18.0, r[1] + 6.0, 2.0, pal.white, t);
+        }
         for (r, on, name) in toggles {
             // Ambient animals on: as many as the memory plan leaves.
             let state = match (on, r == O_AMBIENT) {
@@ -2091,32 +1915,7 @@ impl Menu {
                 (false, _) => "OFF",
             };
             let t = format!("{name}: {state}");
-            c.text_c(gpu, r[0] + r[2] / 2.0, r[1] + 8.0, 1.0, WHITE, &t);
-        }
-    }
-
-    /// What the settings do (top).
-    fn draw_settings_top(&self, c: &mut Canvas, gpu: &mut Gpu, look: &Look) {
-        let lines = [
-            ("Settings", look.title),
-            ("Aggressive / Density / Sensitivity: as the", look.label),
-            ("  original's game options (tap the bars)", look.value),
-            ("Hunt options (before each hunt)", look.label),
-            ("  Run speed, ambient animals, 3DS friendly", look.value),
-            ("  (seen from closer; off: 76 cells, as the", look.value),
-            ("  phone), stealth crouch, bounded fleeing", look.value),
-            ("  (crouch toggles, gyro aim, half as seen).", look.value),
-            ("", look.value),
-            ("Crouch: ZL (New 3DS); Hold L (tap L jumps);", look.label),
-            ("  D-Pad Up (walk, run, crouch in turn)", look.value),
-            ("", look.value),
-            ("Blood / Death animation", look.label),
-            ("  Off: no blood sprays or trails; when", look.value),
-            ("  you die, a black screen and the prompt.", look.value),
-            ("DHC: the DinoHunt Corp terminal look", look.label),
-        ];
-        for (i, (l, col)) in lines.iter().enumerate() {
-            c.text(gpu, 12.0, 14.0 + 14.0 * i as f32, 1.0, *col, l);
+            c.text_c(gpu, r[0] + r[2] / 2.0, mid(r), 1.0, pal.white, &t);
         }
     }
 
@@ -2170,6 +1969,13 @@ impl Menu {
     fn draw_top(&mut self, gpu: &mut Gpu) {
         gpu.begin_2d(None);
         let mut c = std::mem::replace(&mut self.c, Canvas::new(None));
+        let themed = self.settings.dhc_terminal && self.step == Step::Options;
+        let pal = if themed { TERMINAL_PAL } else { CLASSIC_PAL };
+        if themed {
+            c.rect([0.0, 0.0, TOP_W as f32, 240.0], crate::dhc_look::BG);
+            c.rect([0.0, 15.0, TOP_W as f32, 1.0], crate::dhc_look::LINE);
+            c.flush(gpu);
+        }
         if matches!(self.step, Step::Title | Step::Hunters) {
             self.draw_title_top(&mut c, gpu);
             self.c = c;
@@ -2187,7 +1993,7 @@ impl Menu {
         let rank = ranks
             .get(self.save.rank.clamp(0, 2) as usize)
             .unwrap_or(&"");
-        c.text(gpu, 8.0, 6.0, 1.0, TEXT, &format!("{name} ({rank})"));
+        c.text(gpu, 8.0, 6.0, 1.0, pal.text, &format!("{name} ({rank})"));
         let pts = if self.settings.test_points {
             "Points: test (unlimited)".to_string()
         } else {
@@ -2198,17 +2004,17 @@ impl Menu {
             TOP_W as f32 - 8.0 - pts.len() as f32 * 8.0,
             6.0,
             1.0,
-            GOLD,
+            pal.gold,
             &pts,
         );
 
         // The area and the time of day (a survival has its own).
         let survival = self.survival.is_some() && !self.trophy();
         if survival {
-            c.rect([8.0, 22.0, 192.0, 112.0], PANEL);
+            c.rect([8.0, 22.0, 192.0, 112.0], pal.panel);
             c.flush(gpu);
             let t = "Survival: Mount Ravan, daylight, shotgun";
-            c.text(gpu, 8.0, 140.0, 1.0, WHITE, t);
+            c.text(gpu, 8.0, 140.0, 1.0, pal.white, t);
         } else if let Some((_, a)) = self.areas.get(self.area) {
             if let Some(t) = &a.pic {
                 c.image(
@@ -2216,23 +2022,23 @@ impl Menu {
                     t,
                     [8.0, 22.0, 192.0, 112.0],
                     [0.0, 0.0, 1.0, 0.58],
-                    WHITE,
+                    pal.white,
                 );
             } else {
-                c.rect([8.0, 22.0, 192.0, 112.0], PANEL);
+                c.rect([8.0, 22.0, 192.0, 112.0], pal.panel);
             }
             let n: String = a.name.chars().take(24).collect();
-            c.text(gpu, 8.0, 140.0, 1.0, WHITE, &n);
+            c.text(gpu, 8.0, 140.0, 1.0, pal.white, &n);
         }
         if !self.trophy() && !survival {
             Self::time_icon(&mut c, (24.0, 168.0, 16.0), self.time);
             c.flush(gpu);
-            c.text(gpu, 46.0, 164.0, 1.0, WHITE, TIMES[self.time].1);
+            c.text(gpu, 46.0, 164.0, 1.0, pal.white, TIMES[self.time].1);
             // A roaming add-on picked (blue in the list): it has no call.
             if !self.observer && self.roamer_picked() {
-                c.text(gpu, 8.0, 192.0, 1.0, GOLD, "No calls supplied,");
-                c.text(gpu, 8.0, 202.0, 1.0, GOLD, "proceed with caution");
-                c.text(gpu, 8.0, 212.0, 1.0, BLUE, "(+10% score)");
+                c.text(gpu, 8.0, 192.0, 1.0, pal.gold, "No calls supplied,");
+                c.text(gpu, 8.0, 202.0, 1.0, pal.gold, "proceed with caution");
+                c.text(gpu, 8.0, 212.0, 1.0, pal.blue, "(+10% score)");
             }
         }
 
@@ -2241,18 +2047,23 @@ impl Menu {
         // Items: name, price, colour.
         let mut list =
             |c: &mut Canvas, gpu: &mut Gpu, head: &str, items: Vec<(String, i32, Rgba)>| {
-                c.text(gpu, 212.0, y, 1.0, TEXT, head);
+                c.text(gpu, 212.0, y, 1.0, pal.text, head);
                 y += 10.0;
                 if items.is_empty() {
-                    c.text(gpu, 220.0, y, 1.0, DIM, "-");
+                    c.text(gpu, 220.0, y, 1.0, pal.dim, "-");
                     y += 10.0;
                 }
                 for (n, p, col) in items {
+                    // The plan's line is at the foot: what doesn't fit
+                    // is left out rather than drawn over it.
+                    if y > 206.0 {
+                        break;
+                    }
                     let n: String = n.chars().take(16).collect();
                     c.text(gpu, 220.0, y, 1.0, col, &n);
                     if p > 0 {
                         let ps = p.to_string();
-                        c.text(gpu, 392.0 - ps.len() as f32 * 8.0, y, 1.0, GOLD, &ps);
+                        c.text(gpu, 392.0 - ps.len() as f32 * 8.0, y, 1.0, pal.gold, &ps);
                     }
                     y += 9.0;
                 }
@@ -2267,7 +2078,7 @@ impl Menu {
                 .iter()
                 .enumerate()
                 .filter(|(i, _)| self.picked_dinos.has(*i))
-                .map(|(_, d)| (d.1.name.clone(), 0, WHITE))
+                .map(|(_, d)| (d.1.name.clone(), 0, pal.white))
                 .collect();
             list(&mut c, gpu, "Observer: just watch", dinos);
         } else {
@@ -2276,7 +2087,7 @@ impl Menu {
                     .iter()
                     .enumerate()
                     .filter(|(i, _)| mask.has(*i))
-                    .map(|(_, it)| (it.name.clone(), it.price, WHITE))
+                    .map(|(_, it)| (it.name.clone(), it.price, pal.white))
                     .collect()
             };
             // Roaming add-ons in blue, as in the grid and on the map.
@@ -2286,13 +2097,13 @@ impl Menu {
                 .enumerate()
                 .filter(|(i, _)| self.picked_dinos.has(*i))
                 .map(|(_, d)| match d.0 {
-                    Pick::Roamer(_) => (d.1.name.clone(), d.1.price, BLUE),
-                    Pick::Slot(_) => (d.1.name.clone(), d.1.price, WHITE),
+                    Pick::Roamer(_) => (d.1.name.clone(), d.1.price, pal.blue),
+                    Pick::Slot(_) => (d.1.name.clone(), d.1.price, pal.white),
                 })
                 .collect();
             let head = self.survival.map_or("Animals", |k| k.name());
             let dinos = if survival {
-                vec![("Random, dangerous".to_string(), 0, WHITE)]
+                vec![("Random, dangerous".to_string(), 0, pal.white)]
             } else {
                 dinos
             };
@@ -2305,11 +2116,11 @@ impl Menu {
             );
             let mut gear = pick(&self.equip, self.picked_equip);
             if self.save.options.tranq != 0 {
-                gear.push(("Tranquilizer".into(), 0, WHITE));
+                gear.push(("Tranquilizer".into(), 0, pal.white));
             }
             if let Some((price, n, f)) = self.extra() {
                 let pen = if f < 1.0 { " -5%" } else { "" };
-                gear.push((format!("Ammo x{n}{pen}"), price, WHITE));
+                gear.push((format!("Ammo x{n}{pen}"), price, pal.white));
             }
             // A survival brings no gear (unlimited ammunition).
             if !survival {
@@ -2322,18 +2133,18 @@ impl Menu {
         let over = !self.memory().fits;
         let ready = self.step == Step::Options || self.trophy();
         if let (true, Ok(()), Some(t)) = (ready, self.can_hunt(), self.plan_extras()) {
-            c.text(gpu, 8.0, 178.0, 1.0, DIM, &t);
+            c.text(gpu, 8.0, 178.0, 1.0, pal.dim, &t);
         }
         let (msg, col) = match (self.step, self.can_hunt()) {
-            (_, Ok(())) if ready => (self.plan_line(), TEXT),
-            (Step::Options, Err(_)) if over => (self.too_much_line(), RED),
-            (Step::Options, Err(e)) => (e.to_string(), DIM),
+            (_, Ok(())) if ready => (self.plan_line(), pal.text),
+            (Step::Options, Err(_)) if over => (self.too_much_line(), pal.red),
+            (Step::Options, Err(e)) => (e.to_string(), pal.dim),
             // Taken by the arm above.
-            (Step::Options, Ok(())) => (String::new(), DIM),
-            (Step::Area, _) => ("Pick a place and the time of day".into(), DIM),
-            (Step::Animals, _) => ("Pick the animals to hunt".into(), DIM),
-            (Step::Gear, _) => ("Pick weapons and gear".into(), DIM),
-            (Step::Title | Step::Settings | Step::Hunters, _) => (String::new(), DIM),
+            (Step::Options, Ok(())) => (String::new(), pal.dim),
+            (Step::Area, _) => ("Pick a place and the time of day".into(), pal.dim),
+            (Step::Animals, _) => ("Pick the animals to hunt".into(), pal.dim),
+            (Step::Gear, _) => ("Pick weapons and gear".into(), pal.dim),
+            (Step::Title | Step::Settings | Step::Hunters, _) => (String::new(), pal.dim),
         };
         c.text(gpu, 8.0, 226.0, 1.0, col, &msg);
         self.c = c;
