@@ -77,6 +77,26 @@ impl HuntView {
             let cell = area.landings[seed as usize % area.landings.len().max(1)];
             Player::new(area, cell)
         };
+        if trophy {
+            // Which start the room used (a layout beside the map, the add-on's
+            // `_RES.TXT`, or the original's cell) and where that put the hunter.
+            let from = if mee.and_then(|t| t.trophy_start).is_some() {
+                "_RES.TXT"
+            } else if area.trophy_start.is_some() {
+                "TROPHY.SPOT"
+            } else {
+                "default"
+            };
+            tracing::info!(
+                "trophy room: start from {from}, hunter at ({:.0}, {:.0}, {:.0}), {} map marks, {} stand cells, {} bad object cells",
+                player.x,
+                player.y,
+                player.z,
+                area.marked_landings.len(),
+                area.landings.len(),
+                area.bad_object_cells
+            );
+        }
         let herd = place_herd(area, species, &room, &player, &mut rng, setup, mee);
         if !trophy {
             log_targets(&herd, setup);
