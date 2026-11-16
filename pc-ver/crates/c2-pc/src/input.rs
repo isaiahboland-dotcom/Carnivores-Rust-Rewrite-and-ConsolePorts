@@ -36,6 +36,10 @@ pub struct Input {
     /// The last input was a touch: the phone's on-screen buttons show. A key,
     /// a pad or the mouse wheel hides them again.
     pub touch_mode: bool,
+    /// The scene takes the pad as keys (D-pad arrows, A Enter, B Escape,
+    /// shoulders Tab) and wants no pointer arrow. Set by the scene's
+    /// `before_update` each frame; the pad reader consumes it.
+    pub pad_nav: bool,
     /// Android: the finger standing in for the mouse, and where it last was.
     #[cfg(target_os = "android")]
     touch: Option<(u64, (f32, f32))>,

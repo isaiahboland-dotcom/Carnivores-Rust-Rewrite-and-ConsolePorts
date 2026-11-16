@@ -342,12 +342,12 @@ impl HuntView {
     }
 
     /// The open picker: the phone's hexagons of the carried weapons' (or
-    /// the calls') pictures, or the PC's list.
+    /// the calls') pictures (Android, or by touch), or the PC's list.
     pub(super) fn draw_picker(&self, screen: (u32, u32), scale: f32, out: &mut Vec<Sprite>) {
         let Some(row) = self.picker else {
             return;
         };
-        let Some(k) = &self.kit else {
+        let Some(k) = self.kit.as_ref().filter(|_| self.touch.hexes) else {
             out.extend(self.picker_sprites(row, screen, scale));
             return;
         };

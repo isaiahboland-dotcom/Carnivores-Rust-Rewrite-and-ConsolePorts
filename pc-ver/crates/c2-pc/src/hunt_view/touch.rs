@@ -25,6 +25,9 @@ use super::*;
 pub(super) struct Touch {
     /// Showing (an APK game, the last input a touch, nothing over the hunt).
     pub(super) on: bool,
+    /// The pickers show the phone's hexagons (on Android, or the last
+    /// input a touch); otherwise a PC game on an APK base keeps the list.
+    pub(super) hexes: bool,
     stick: Option<u64>,
     /// The knob's offset from the stick's centre, in pixels.
     knob: (f32, f32),
@@ -47,6 +50,7 @@ impl Touch {
     fn release(&mut self) {
         *self = Self {
             on: self.on,
+            hexes: self.hexes,
             picking: self.picking,
             called: self.called,
             ..Self::default()
@@ -167,6 +171,7 @@ impl HuntView {
     /// The touches as pad actions, before the hunt reads its input.
     pub(super) fn touch_input(&mut self, input: &mut Input) {
         let live = self.kit.is_some() && input.touch_mode;
+        self.touch.hexes = self.kit.is_some() && (live || cfg!(target_os = "android"));
         if !live {
             self.touch.on = false;
             self.touch.release();

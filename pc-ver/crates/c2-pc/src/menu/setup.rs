@@ -352,6 +352,7 @@ impl Menu {
             flashlight,
         });
         self.shown_loading = false;
+        self.term_loading = None;
         self.screen = Screen::Loading;
     }
 

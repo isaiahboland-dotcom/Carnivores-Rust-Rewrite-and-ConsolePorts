@@ -180,6 +180,8 @@ pub struct Menu {
     opt_tab: usize,
     /// The terminal-look options' tab: game, video, controls.
     term_opt_tab: usize,
+    /// The last input was the gamepad: the terminal's key hints name its buttons.
+    pad_used: bool,
     game_scroll: option_scroll::Scroll,
     /// The board's Video panel, likewise.
     video_scroll: option_scroll::Scroll,
@@ -187,6 +189,9 @@ pub struct Menu {
     /// Hunt to start after the loading picture has been shown.
     launch: Option<HuntSetup>,
     shown_loading: bool,
+    /// The terminal's own loading log, shown in place of the loading
+    /// picture while a hunt or survival run it started loads.
+    term_loading: Option<Vec<String>>,
     quit: bool,
     /// Last drawn window size, for mapping the cursor to the canvas.
     screen_size: (u32, u32),

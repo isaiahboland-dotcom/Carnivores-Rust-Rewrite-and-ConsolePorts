@@ -4,15 +4,10 @@
 
 use c2_core::dhc::terminal::{Action, Screen as TScreen};
 
-use super::draw::{AMBER, BACK_RECT, FAINT, HI, INV, LINE, LO, MD, PANEL, PX, RED, SMALL};
+use super::draw::{AMBER, FAINT, HI, INV, LINE, LO, MD, PANEL, PX, RED, SMALL};
 use super::*;
 
-const RECORDS: Rect = (16.0, 76.0, 372.0, 420.0);
 const REC_ROW: f32 = 28.0;
-const ID_PANEL: Rect = (400.0, 76.0, 384.0, 420.0);
-const FIELD: Rect = (412.0, 118.0, 360.0, 30.0);
-const LOGIN: Rect = (412.0, 440.0, 176.0, 44.0);
-const DELETE: Rect = (596.0, 440.0, 176.0, 44.0);
 /// The waiver's and the delete prompt's answers.
 pub(super) const YES: Rect = (220.0, 440.0, 170.0, 44.0);
 pub(super) const NO: Rect = (410.0, 440.0, 170.0, 44.0);
@@ -31,11 +26,11 @@ const WAIVER: [&str; 10] = [
     "Accept these terms to open a hunter record.",
 ];
 
-fn record_rect(i: usize) -> Rect {
+fn record_rect(records: Rect, i: usize) -> Rect {
     (
-        RECORDS.0 + 6.0,
-        RECORDS.1 + 34.0 + i as f32 * REC_ROW,
-        RECORDS.2 - 12.0,
+        records.0 + 6.0,
+        records.1 + 34.0 + i as f32 * REC_ROW,
+        records.2 - 12.0,
         REC_ROW - 4.0,
     )
 }
@@ -98,7 +93,7 @@ impl Menu {
         }
         let cursor = self.cursor;
         let at = |r: Rect| input.clicked && inside(cursor, r);
-        let back = input.pressed(KeyCode::Escape) || at(BACK_RECT);
+        let back = input.pressed(KeyCode::Escape) || at(self.geom().back());
         match self.screen {
             Screen::Waiver => {
                 if input.pressed(KeyCode::KeyY) || input.pressed(KeyCode::Enter) || at(YES) {
@@ -124,7 +119,7 @@ impl Menu {
                 } else if n > 0 && up {
                     self.pick_hunter(Some(self.picked.map_or(0, |i| i.saturating_sub(1))));
                 }
-                if let Some(i) = (0..n).find(|&i| at(record_rect(i))) {
+                if let Some(i) = (0..n).find(|&i| at(record_rect(self.geom().records(), i))) {
                     if self.picked == Some(i) {
                         // A second click on the same hunter logs in.
                         self.submit_name();
@@ -132,10 +127,14 @@ impl Menu {
                     }
                     self.pick_hunter(Some(i));
                 }
-                if input.pressed(KeyCode::Enter) || input.pressed(KeyCode::NumpadEnter) || at(LOGIN)
+                if input.pressed(KeyCode::Enter)
+                    || input.pressed(KeyCode::NumpadEnter)
+                    || at(self.geom().login())
                 {
                     self.submit_name();
-                } else if self.picked.is_some() && (input.pressed(KeyCode::Delete) || at(DELETE)) {
+                } else if self.picked.is_some()
+                    && (input.pressed(KeyCode::Delete) || at(self.geom().delete()))
+                {
                     self.screen = Screen::Delete;
                 } else if back && self.player.is_some() {
                     self.go_home();
@@ -215,18 +214,20 @@ impl Menu {
     }
 
     fn draw_term_records(&self, out: &mut Vec<Sprite>) {
-        self.text(out, 16.0, 50.0, PX, HI, "HUNTER AUTHENTICATION");
-        self.term_box(out, RECORDS, PANEL, LINE);
+        let g = self.geom();
+        let (records, id_panel, field) = (g.records(), g.id_panel(), g.id_field());
+        self.text(out, g.l, 50.0, PX, HI, "HUNTER AUTHENTICATION");
+        self.term_box(out, records, PANEL, LINE);
         self.text(
             out,
-            RECORDS.0 + 10.0,
-            RECORDS.1 + 10.0,
+            records.0 + 10.0,
+            records.1 + 10.0,
             SMALL,
             LO,
             "HUNTER RECORDS",
         );
         for (i, p) in self.players.iter().enumerate() {
-            let r = record_rect(i);
+            let r = record_rect(records, i);
             let picked = self.picked == Some(i);
             let hover = inside(self.cursor, r);
             let c = if picked {
@@ -245,19 +246,19 @@ impl Menu {
         }
         if self.players.is_empty() {
             let t = "NO RECORDS ON FILE";
-            self.text(out, RECORDS.0 + 10.0, RECORDS.1 + 40.0, SMALL, FAINT, t);
+            self.text(out, records.0 + 10.0, records.1 + 40.0, SMALL, FAINT, t);
         }
         // The ID field and what it will do.
-        self.term_box(out, ID_PANEL, PANEL, LINE);
+        self.term_box(out, id_panel, PANEL, LINE);
         self.text(
             out,
-            ID_PANEL.0 + 12.0,
-            ID_PANEL.1 + 14.0,
+            id_panel.0 + 12.0,
+            id_panel.1 + 14.0,
             SMALL,
             LO,
             "HUNTER ID",
         );
-        self.term_box(out, FIELD, [0.0, 0.0, 0.0, 0.5], HI);
+        self.term_box(out, field, [0.0, 0.0, 0.0, 0.5], HI);
         let caret = if (self.frame_time() * 2.0) as i32 % 2 == 0 {
             "_"
         } else {
@@ -266,18 +267,18 @@ impl Menu {
         let shown = format!("{}{caret}", self.name.to_uppercase());
         self.term_text(
             out,
-            FIELD.0 + 8.0,
-            FIELD.1 + 8.0,
+            field.0 + 8.0,
+            field.1 + 8.0,
             PX,
             HI,
             &shown,
-            FIELD.2 - 16.0,
+            field.2 - 16.0,
         );
         let name = self.name.trim();
         let known = self.players.iter().position(|p| p.player_name() == name);
-        let mut y = FIELD.1 + FIELD.3 + 20.0;
+        let mut y = field.1 + field.3 + 20.0;
         let mut line = |t: &str, c: [f32; 4]| {
-            self.text(out, ID_PANEL.0 + 12.0, y, PX, c, t);
+            self.text(out, id_panel.0 + 12.0, y, PX, c, t);
             y += 22.0;
         };
         match known.and_then(|i| self.players.get(i)) {
@@ -312,8 +313,8 @@ impl Menu {
         } else {
             "[ENTER] REGISTER"
         };
-        self.term_button(out, LOGIN, label, !name.is_empty(), false);
-        self.term_button(out, DELETE, "[DEL] DELETE", self.picked.is_some(), true);
+        self.term_button(out, g.login(), label, !name.is_empty(), false);
+        self.term_button(out, g.delete(), "[DEL] DELETE", self.picked.is_some(), true);
     }
 
     /// A centred notice with two answers (waiver, delete).

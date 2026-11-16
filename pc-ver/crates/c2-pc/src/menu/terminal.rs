@@ -16,6 +16,7 @@ use c2_core::dhc::{Catalog, Dhc, Item, Limits, Loadout, Rules, Tab};
 use super::*;
 
 mod draw;
+mod geom;
 mod login;
 mod options;
 pub(super) use options::term_layout;
@@ -298,7 +299,6 @@ impl Menu {
                 (KeyCode::ArrowDown, Action::Down),
                 (KeyCode::ArrowLeft, Action::Left),
                 (KeyCode::ArrowRight, Action::Right),
-                (KeyCode::Tab, Action::Right),
                 (KeyCode::Enter, Action::Confirm),
                 (KeyCode::NumpadEnter, Action::Confirm),
                 (KeyCode::Space, Action::Confirm),
@@ -312,6 +312,10 @@ impl Menu {
                 if key(k) {
                     acts.push(a);
                 }
+            }
+            if key(KeyCode::Tab) {
+                let back = input.held(KeyCode::ShiftLeft) || input.held(KeyCode::ShiftRight);
+                acts.push(if back { Action::Left } else { Action::Right });
             }
             if t.screen == TScreen::Setup {
                 for (i, &k) in TAB_KEYS.iter().enumerate() {
@@ -397,6 +401,17 @@ impl Menu {
             Outcome::Survival(i) => {
                 if let Some(&kind) = self.survival_modes().get(i) {
                     self.start_survival(kind);
+                    if self.screen == Screen::Loading {
+                        self.term_loading = Some(vec![
+                            "> FLIGHT PLAN FILED: SURVIVAL ZONE".into(),
+                            format!(
+                                "> PROTOCOL: {}",
+                                self.survival_labels().get(i).cloned().unwrap_or_default()
+                            ),
+                            "> NO EXTRACTION SCHEDULED".into(),
+                            "> DROPSHIP DEPARTING...".into(),
+                        ]);
+                    }
                 }
             }
             Outcome::Options => self.screen = Screen::Options,
@@ -431,6 +446,7 @@ impl Menu {
     /// Starts the hunt `l` describes, through the original menu's start.
     fn deploy(&mut self, l: &Loadout) {
         let Some(v) = &self.term else { return };
+        let v_log = v.term.deploy_log();
         let col = |tab: usize, i: usize| v.map[tab].get(i).copied();
         let mut c = Choice {
             area: col(0, l.area).unwrap_or(0),
@@ -452,6 +468,9 @@ impl Menu {
         self.choice = c;
         if self.can_hunt() {
             self.launch_hunt();
+            if self.screen == Screen::Loading {
+                self.term_loading = Some(v_log);
+            }
         } else {
             tracing::warn!("terminal loadout refused by the hunt setup's checks");
         }

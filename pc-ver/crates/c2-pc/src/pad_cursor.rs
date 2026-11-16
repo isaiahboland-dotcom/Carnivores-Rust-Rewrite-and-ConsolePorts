@@ -17,6 +17,9 @@ use crate::input::Input;
 const SPEED: f32 = 1.1;
 /// Rows a second the right stick scrolls, pushed all the way.
 const SCROLL: f32 = 8.0;
+/// A held direction repeats after this long, then at this interval.
+const REPEAT_DELAY: f32 = 0.4;
+const REPEAT_EVERY: f32 = 0.1;
 /// The arrow image's size and on-screen scale.
 const W: usize = 12;
 const H: usize = 18;
@@ -30,6 +33,9 @@ pub struct PadCursor {
     /// The pad is holding the "mouse button" / a key down.
     holding: bool,
     keys: Vec<KeyCode>,
+    /// The D-pad / stick direction held for key repeat, and for how long.
+    dir: [i8; 2],
+    held_for: f32,
 }
 
 /// An arrow pointer, gold (the launcher's) with a dark edge; our own
@@ -74,6 +80,8 @@ impl PadCursor {
             shown: false,
             holding: false,
             keys: Vec::new(),
+            dir: [0; 2],
+            held_for: 0.0,
         }
     }
 
@@ -102,6 +110,12 @@ impl PadCursor {
             self.pos = input.cursor;
             self.shown = false;
             self.holding = false;
+            return;
+        }
+        if std::mem::take(&mut input.pad_nav) {
+            self.shown = false;
+            self.holding = false;
+            self.navigate(input, dt);
             return;
         }
         let pad = input.pad;
@@ -144,6 +158,70 @@ impl PadCursor {
                 input.key(k, true);
                 self.keys.push(k);
             }
+        }
+    }
+
+    /// The pad as a handheld's menu keys: the D-pad (or the left stick)
+    /// as the arrows, repeating while held; A Enter, B Escape, Start F5
+    /// (deploy), the shoulders Tab / Shift+Tab, Y T, X O, Select Q (the
+    /// terminal's time, observer and tranquilizer).
+    fn navigate(&mut self, input: &mut Input, dt: f32) {
+        use c2_pad::Action as Pad;
+        let pad = input.pad;
+        let axis = |d: i8, s: f32| {
+            if d != 0 {
+                d
+            } else {
+                (s.abs() > 0.6) as i8 * s.signum() as i8
+            }
+        };
+        let dir = [
+            axis(pad.dpad[0], pad.walk[0]),
+            axis(pad.dpad[1], pad.walk[1]),
+        ];
+        let mut step = dir != [0; 2] && dir != self.dir;
+        if dir == self.dir && dir != [0; 2] {
+            self.held_for += dt;
+            if self.held_for > REPEAT_DELAY {
+                self.held_for -= REPEAT_EVERY;
+                step = true;
+            }
+        } else {
+            self.held_for = 0.0;
+        }
+        self.dir = dir;
+        if step {
+            let k = match dir {
+                [_, 1] => KeyCode::ArrowUp,
+                [_, -1] => KeyCode::ArrowDown,
+                [-1, _] => KeyCode::ArrowLeft,
+                _ => KeyCode::ArrowRight,
+            };
+            self.tap(input, &[k]);
+        }
+        for (a, keys) in [
+            (Pad::Jump, &[KeyCode::Enter][..]),
+            (Pad::FireMode, &[KeyCode::Escape]),
+            (Pad::Pause, &[KeyCode::F5]),
+            (Pad::Map, &[KeyCode::Tab]),
+            (Pad::Binoculars, &[KeyCode::ShiftLeft, KeyCode::Tab]),
+            (Pad::Call, &[KeyCode::KeyT]),
+            (Pad::NextWeapon, &[KeyCode::KeyO]),
+            (Pad::Exit, &[KeyCode::KeyQ]),
+        ] {
+            if pad.pressed(a) {
+                self.tap(input, keys);
+            }
+        }
+        // The right stick scrolls long lists, as the wheel.
+        input.scroll += pad.look[1] * SCROLL * dt;
+    }
+
+    /// `keys` down this frame (up again after it).
+    fn tap(&mut self, input: &mut Input, keys: &[KeyCode]) {
+        for &k in keys {
+            input.key(k, true);
+            self.keys.push(k);
         }
     }
 

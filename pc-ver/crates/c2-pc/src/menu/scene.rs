@@ -11,7 +11,17 @@ impl Scene for Menu {
         matches!(self.screen, Screen::Register)
     }
 
+    fn before_update(&mut self, input: &mut Input) {
+        // The terminal is driven by the D-pad, not by a pointer arrow.
+        input.pad_nav = self.terminal_style();
+    }
+
     fn update(&mut self, _gpu: &Gpu, dt: f32, input: &Input) {
+        if input.pad.active() {
+            self.pad_used = true;
+        } else if input.last_pressed.is_some() || input.clicked {
+            self.pad_used = false;
+        }
         let (s, ox, oy) = self.canvas();
         self.cursor = input.cursor.map(|(x, y)| ((x - ox) / s, (y - oy) / s));
         let p = self.cursor;
@@ -107,7 +117,11 @@ impl Scene for Menu {
             Screen::Options if self.terminal_style() => self.draw_options(&mut out, 0),
             Screen::Options => self.draw_options(&mut out, self.options.region(p)),
             Screen::Loading => {
-                self.draw_loading(&mut out);
+                if self.term_loading.is_some() {
+                    self.draw_term_loading(&mut out);
+                } else {
+                    self.draw_loading(&mut out);
+                }
                 self.shown_loading = true;
             }
             Screen::Terminal => self.draw_terminal(&mut out),
