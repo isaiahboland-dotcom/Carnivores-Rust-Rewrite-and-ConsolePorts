@@ -93,6 +93,7 @@ impl Launcher {
             }
         });
         self.adb_confirm(ui.ctx());
+        self.engine_confirm(ui.ctx());
         help(
             ui,
             &format!(
@@ -188,9 +189,84 @@ impl Launcher {
         if !self.can_start_operation() {
             return;
         }
+        if let Some(root) = self.stale_engine() {
+            self.ui.engine_confirm = Some(root);
+            return;
+        }
+        self.start_android_build(None);
+    }
+
+    /// The source tree to rebuild the engine APK from, when the one the
+    /// package would carry is older than the engine source.
+    fn stale_engine(&self) -> Option<PathBuf> {
+        if !cfg!(unix) {
+            return None;
+        }
+        let apk = find_tool(crate::android::APK, self.cfg.tools.as_deref())?;
+        let root = crate::android::engine_source_root(&apk)?;
+        crate::android::engine_is_stale(&root, &apk).then_some(root)
+    }
+
+    /// Builds the package; with `rebuild` (a source tree) the engine APK is
+    /// rebuilt first by `android-ver/build-apk.sh`.
+    fn start_android_build(&mut self, rebuild: Option<PathBuf>) {
         match self.android_steps() {
-            Ok(steps) => self.start_job("Building Android package", steps),
+            Ok(mut steps) => {
+                if let Some(root) = &rebuild {
+                    steps.insert(
+                        0,
+                        Step::Run {
+                            program: "bash".into(),
+                            args: vec![root.join("android-ver/build-apk.sh").display().to_string()],
+                        },
+                    );
+                }
+                self.start_job("Building Android package", steps);
+            }
             Err(e) => self.ui.note = Some((e, RED)),
+        }
+    }
+
+    /// The question before building with an engine APK older than its
+    /// source: rebuild it first, build with it as it is, or stop.
+    fn engine_confirm(&mut self, ctx: &egui::Context) {
+        let Some(root) = self.ui.engine_confirm.clone() else {
+            return;
+        };
+        let mut answer = None;
+        egui::Modal::new(egui::Id::unique("android-engine-modal")).show(ctx, |ui| {
+            ui.set_width(440.0);
+            ui.label(
+                RichText::new("The engine APK is older than the engine source")
+                    .color(SAND)
+                    .strong(),
+            );
+            help(
+                ui,
+                "Engine code changed after c2rs.apk was built, so the app would not have those \
+                 changes (an old engine with a new game folder behaves like a bug in the new \
+                 code). Rebuilding takes a few minutes and needs the Android SDK and NDK.",
+            );
+            ui.horizontal(|ui| {
+                if ui
+                    .button(RichText::new("Rebuild engine, then build").color(GOLD))
+                    .clicked()
+                {
+                    answer = Some(Some(true));
+                }
+                if ui.button("Build with the old engine").clicked() {
+                    answer = Some(Some(false));
+                }
+                if ui.button("Cancel").clicked() {
+                    answer = Some(None);
+                }
+            });
+        });
+        if let Some(choice) = answer {
+            self.ui.engine_confirm = None;
+            if let Some(rebuild) = choice {
+                self.start_android_build(rebuild.then_some(root));
+            }
         }
     }
 

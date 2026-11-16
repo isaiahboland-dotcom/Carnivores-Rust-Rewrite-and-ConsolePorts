@@ -212,10 +212,107 @@ pub fn sdk_dir() -> Option<PathBuf> {
         })
 }
 
+/// The source tree an engine APK was built from, when it sits where
+/// `android-ver/build-apk.sh` puts it (`android-ver/target/c2rs.apk`).
+pub fn engine_source_root(apk: &Path) -> Option<PathBuf> {
+    let root = apk.parent()?.parent()?.parent()?;
+    (apk.parent()?.ends_with("android-ver/target")
+        && root.join("android-ver/build-apk.sh").is_file())
+    .then(|| root.to_path_buf())
+}
+
+/// Whether engine source changed after `apk` was built: a package made
+/// from it would carry fixes the app doesn't have (an old engine shipped
+/// with a newer game folder looks like a bug in the new code).
+pub fn engine_is_stale(root: &Path, apk: &Path) -> bool {
+    let Ok(built) = fs::metadata(apk).and_then(|m| m.modified()) else {
+        return false;
+    };
+    let dirs = [
+        root.join("pc-ver/crates"),
+        root.join("android-ver/c2-android"),
+    ];
+    let files = [
+        root.join("pc-ver/Cargo.toml"),
+        root.join("pc-ver/Cargo.lock"),
+        root.join("android-ver/Cargo.toml"),
+        root.join("android-ver/Cargo.lock"),
+    ];
+    let newer = |p: &Path| {
+        fs::metadata(p)
+            .and_then(|m| m.modified())
+            .is_ok_and(|t| t > built)
+    };
+    files.iter().any(|f| newer(f)) || dirs.iter().any(|d| source_newer(d, &newer))
+}
+
+/// Whether any engine source file (`.rs`, `.toml`, `.wgsl`) under `dir`
+/// is `newer`; build output, hidden folders and the launcher itself (the
+/// APK doesn't contain it) are skipped.
+fn source_newer(dir: &Path, newer: &dyn Fn(&Path) -> bool) -> bool {
+    let Ok(rd) = fs::read_dir(dir) else {
+        return false;
+    };
+    rd.flatten().any(|e| {
+        let p = e.path();
+        let name = e.file_name();
+        let name = name.to_string_lossy();
+        if p.is_dir() {
+            name != "target"
+                && name != "c2-launcher"
+                && !name.starts_with('.')
+                && source_newer(&p, newer)
+        } else {
+            matches!(
+                p.extension().and_then(|x| x.to_str()),
+                Some("rs" | "toml" | "wgsl")
+            ) && newer(&p)
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
     use super::*;
+
+    #[test]
+    fn an_engine_older_than_its_source_is_stale() {
+        use std::time::{Duration, SystemTime};
+        let t = crate::publish::tests::Temp::new();
+        let root = &t.0;
+        let apk = root.join("android-ver/target/c2rs.apk");
+        fs::create_dir_all(apk.parent().unwrap()).unwrap();
+        fs::write(root.join("android-ver/build-apk.sh"), "#!/bin/sh\n").unwrap();
+        fs::write(&apk, "apk").unwrap();
+        let src = root.join("pc-ver/crates/c2-core/src/area.rs");
+        fs::create_dir_all(src.parent().unwrap()).unwrap();
+        fs::write(&src, "// engine").unwrap();
+        let at = |p: &Path, t: SystemTime| {
+            fs::File::options()
+                .write(true)
+                .open(p)
+                .unwrap()
+                .set_modified(t)
+                .unwrap();
+        };
+        let now = SystemTime::now();
+        at(&src, now - Duration::from_secs(100));
+        at(&apk, now - Duration::from_secs(50));
+        assert_eq!(engine_source_root(&apk).as_deref(), Some(root.as_path()));
+        assert!(!engine_is_stale(root, &apk), "built after the last edit");
+        at(&src, now);
+        assert!(engine_is_stale(root, &apk), "edited after the build");
+        // Build output and non-source files don't count.
+        at(&src, now - Duration::from_secs(100));
+        let out = root.join("pc-ver/crates/c2-core/target/x.rs");
+        fs::create_dir_all(out.parent().unwrap()).unwrap();
+        fs::write(&out, "").unwrap();
+        fs::write(root.join("pc-ver/crates/notes.md"), "").unwrap();
+        assert!(!engine_is_stale(root, &apk));
+        // An APK elsewhere (a tools folder) isn't tied to a tree.
+        assert!(engine_source_root(&root.join("c2rs.apk")).is_none());
+    }
 
     #[test]
     fn a_package_holds_the_apk_the_game_and_its_marker() {

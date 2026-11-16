@@ -303,8 +303,8 @@ mod tests {
     }
 
     /// Against the real SDK: `C2RS_APK=path/c2rs.apk C2RS_OUT=dir
-    /// [C2RS_ICON=icon.png] cargo test -p c2-launcher -- --ignored
-    /// renames_a_real_apk`.
+    /// [C2RS_ICON=icon.png] [C2RS_LABEL=name C2RS_PACKAGE=io.github.c2rs.name]
+    /// cargo test -p c2-launcher -- --ignored renames_a_real_apk`.
     #[test]
     #[ignore = "needs the Android SDK and a built c2rs.apk"]
     fn renames_a_real_apk() -> Result<(), String> {
@@ -317,11 +317,14 @@ mod tests {
         let sdk = find_sdk()?;
         let icon = std::env::var_os("C2RS_ICON").map(|p| fs::read(p).map_err(|e| e.to_string()));
         let icon = icon.transpose()?;
+        let env = |k: &str, d: &str| std::env::var(k).unwrap_or_else(|_| d.to_string());
+        let label = env("C2RS_LABEL", "C2 Test");
+        let package = env("C2RS_PACKAGE", "io.github.c2rs.c2_test");
         let signed = renamed_apk(
             &sdk,
             &apk,
-            "C2 Test",
-            "io.github.c2rs.c2_test",
+            &label,
+            &package,
             icon.as_deref(),
             &out,
         )?;

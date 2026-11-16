@@ -16,6 +16,7 @@ fn launcher() -> Launcher {
             fixing: None,
             dialog: None,
             adb_confirm: false,
+            engine_confirm: None,
         },
         job: Default::default(),
     }

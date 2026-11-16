@@ -87,6 +87,9 @@ struct View {
     dialog: Option<home::Dialog>,
     /// The Install over adb confirmation is showing.
     adb_confirm: bool,
+    /// The engine APK is older than its source: the source tree to rebuild it
+    /// from, while the Build Android package question is showing.
+    engine_confirm: Option<PathBuf>,
 }
 
 fn style(ctx: &egui::Context) {
@@ -237,6 +240,7 @@ impl Launcher {
             fixing: None,
             dialog: None,
             adb_confirm: false,
+            engine_confirm: None,
         };
         Self {
             cfg,
