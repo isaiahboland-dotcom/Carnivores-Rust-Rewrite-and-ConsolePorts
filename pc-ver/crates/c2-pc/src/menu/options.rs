@@ -17,7 +17,7 @@ pub(super) enum Opt {
     Header(&'static str),
 }
 
-pub(super) const GAME_OPTS: [Opt; 21] = [
+pub(super) const GAME_OPTS: [Opt; 22] = [
     Opt::Slider("Aggressiveness", |s| &mut s.options.agres),
     Opt::Slider("Density", |s| &mut s.options.dens),
     Opt::Slider("Sensitivity", |s| &mut s.options.sens),
@@ -29,6 +29,7 @@ pub(super) const GAME_OPTS: [Opt; 21] = [
         &mut p.secret_dinos
     }),
     Opt::PcToggle("Dynamic time", |p| &mut p.dynamic_time),
+    Opt::PcToggle("Pitch black night", |p| &mut p.pitch_black_night),
     Opt::PcToggle("Map puts the gun away", |p| &mut p.map_holsters),
     Opt::PcToggle("Multi ammo", |p| &mut p.multi_ammo),
     Opt::PcToggle("Advanced observer mode", |p| &mut p.advanced_observer),
@@ -63,7 +64,7 @@ pub(super) const MODERN_GRAPHICS: &str = "Modern graphics";
 pub const RESOLUTION: &str = "Resolution";
 
 #[cfg(not(target_os = "android"))]
-pub(super) const VIDEO_OPTS: [Opt; 16] = [
+pub(super) const VIDEO_OPTS: [Opt; 21] = [
     Opt::Slider("View range", |s| &mut s.options.view_r),
     Opt::PcSlider("Render distance", |p| &mut p.render),
     Opt::Slider("Brightness", |s| &mut s.options.brightness),
@@ -74,16 +75,23 @@ pub(super) const VIDEO_OPTS: [Opt; 16] = [
     Opt::PcToggle("Teleport (map)", |p| &mut p.teleport),
     Opt::PcToggle(HIGH_END_VIEW, |p| &mut p.high_end_view),
     Opt::PcToggle("Pretty underwater view", |p| &mut p.pretty_underwater),
+    Opt::PcToggle("Original underwater fog", |p| {
+        &mut p.original_underwater_fog
+    }),
     Opt::PcToggle("Classic texture filter", |p| &mut p.classic_filter),
     Opt::PcToggle("Bounded fleeing", |p| &mut p.bounded_flee),
     Opt::Header(MODERN_GRAPHICS),
     Opt::PcToggle("Animated waves", |p| &mut p.modern_waves),
     Opt::PcToggle("Water depth tint", |p| &mut p.modern_water_tint),
     Opt::PcToggle("Sun and moon glow", |p| &mut p.modern_sky_glow),
+    Opt::PcToggle("Water reflections", |p| &mut p.modern_reflections),
+    Opt::PcToggle("Sun through fog", |p| &mut p.modern_fog_glow),
+    Opt::PcToggle("Desaturated night", |p| &mut p.desaturated_night),
+    Opt::PcToggle("Underwater effects", |p| &mut p.modern_underwater),
 ];
 
 #[cfg(target_os = "android")]
-pub(super) const VIDEO_OPTS: [Opt; 17] = [
+pub(super) const VIDEO_OPTS: [Opt; 22] = [
     Opt::Slider("View range", |s| &mut s.options.view_r),
     Opt::PcSlider("Render distance", |p| &mut p.render),
     Opt::Slider("Brightness", |s| &mut s.options.brightness),
@@ -94,6 +102,9 @@ pub(super) const VIDEO_OPTS: [Opt; 17] = [
     Opt::PcToggle("Teleport (map)", |p| &mut p.teleport),
     Opt::PcToggle(HIGH_END_VIEW, |p| &mut p.high_end_view),
     Opt::PcToggle("Pretty underwater view", |p| &mut p.pretty_underwater),
+    Opt::PcToggle("Original underwater fog", |p| {
+        &mut p.original_underwater_fog
+    }),
     Opt::PcToggle("Classic texture filter", |p| &mut p.classic_filter),
     Opt::PcToggle("Bounded fleeing", |p| &mut p.bounded_flee),
     Opt::PcSlider(RESOLUTION, |p| &mut p.render_scale),
@@ -101,6 +112,10 @@ pub(super) const VIDEO_OPTS: [Opt; 17] = [
     Opt::PcToggle("Animated waves", |p| &mut p.modern_waves),
     Opt::PcToggle("Water depth tint", |p| &mut p.modern_water_tint),
     Opt::PcToggle("Sun and moon glow", |p| &mut p.modern_sky_glow),
+    Opt::PcToggle("Water reflections", |p| &mut p.modern_reflections),
+    Opt::PcToggle("Sun through fog", |p| &mut p.modern_fog_glow),
+    Opt::PcToggle("Desaturated night", |p| &mut p.desaturated_night),
+    Opt::PcToggle("Underwater effects", |p| &mut p.modern_underwater),
 ];
 
 pub(super) const MOUSE_OPTS: [Opt; 3] = [
@@ -139,7 +154,7 @@ impl Menu {
     /// The option rows of each panel with their rectangles.
     pub(super) fn option_rows(&self) -> Vec<(Opt, Rect)> {
         if self.terminal_style() {
-            return terminal::term_layout(self.term_opt_tab).0;
+            return terminal::term_layout(self.geom(), self.term_opt_tab).0;
         }
         let mut out = Vec::new();
         let (game, video) = (
@@ -168,7 +183,7 @@ impl Menu {
     /// the CONTROLS tab's in the terminal's look, else the keys panel.
     pub(super) fn key_rows(&self) -> Vec<(usize, Rect)> {
         if self.terminal_style() {
-            return terminal::term_layout(self.term_opt_tab).1;
+            return terminal::term_layout(self.geom(), self.term_opt_tab).1;
         }
         (0..ACTIONS.len())
             .map(|i| {

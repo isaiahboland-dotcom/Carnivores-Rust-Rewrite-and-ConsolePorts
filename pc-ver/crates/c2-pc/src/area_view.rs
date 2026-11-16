@@ -130,6 +130,19 @@ pub struct AreaView {
     pub modern_waves: bool,
     /// Sun and moon glow (`settings::PcSettings::modern_sky_glow`).
     pub modern_sky_glow: bool,
+    /// Water reflections (`settings::PcSettings::modern_reflections`).
+    pub modern_reflections: bool,
+    /// Sun through fog (`settings::PcSettings::modern_fog_glow`).
+    pub modern_fog_glow: bool,
+    /// The original's underwater fog
+    /// (`settings::PcSettings::original_underwater_fog`).
+    pub original_underwater_fog: bool,
+    /// Night looks with night vision off (`settings::PcSettings`).
+    pub pitch_black_night: bool,
+    pub desaturated_night: bool,
+    /// The mirror drawn for this frame (`draw_reflection`): the water level
+    /// mirrored and the frame's size. Taken by the frame's own draw.
+    mirror: Option<(f32, (u32, u32))>,
     pub cam: FlyCam,
     /// Free-fly controls; off when another scene drives the camera.
     pub fly: bool,
@@ -138,6 +151,8 @@ pub struct AreaView {
     pub radius: u32,
     /// Fog begins at this fraction of `radius` (0.6, as the original).
     pub fog_start: f32,
+    /// The map has fog zones (`c2_core::fog`), drawn above water.
+    fog_zones: bool,
     /// `(OptBrightness + 128) / 256`: textures, sky and fog colour.
     pub brightness: f32,
     /// Underwater fog colour (the water texture's mean, 0..1 RGB): the
@@ -205,7 +220,8 @@ impl AreaView {
                 area.bad_object_cells
             );
         }
-        let globals = Globals::new(gpu);
+        let globals = Globals::with_fog_zones(gpu, &area.map.fogs, &area.rsc.fogs);
+        let fog_zones = c2_core::fog::Zones::new(&area.map, &area.rsc.fogs).any();
         let terrain = TerrainRenderer::new(gpu, &globals, &area);
         let prepared: Vec<PreparedModel> = area
             .rsc
@@ -347,11 +363,18 @@ impl AreaView {
             high_end: false,
             modern_waves: false,
             modern_sky_glow: false,
+            modern_reflections: false,
+            modern_fog_glow: false,
+            original_underwater_fog: false,
+            pitch_black_night: false,
+            desaturated_night: false,
+            mirror: None,
             cam,
             fly: true,
             zoom: 1.0,
             radius: 74,
             fog_start: 0.6,
+            fog_zones,
             underwater_fog: None,
             water_depth: 0.0,
             brightness: 1.0,
@@ -481,12 +504,17 @@ impl Scene for AreaView {
             return rgb
                 .map(|c| (c * self.brightness * self.ambient()).clamp(0.0, 255.0) as f64 / 255.0);
         }
+        let ambient = self.ambient();
         self.area.sky_rgb().map(|c| {
-            (f64::from(c) * f64::from(self.brightness))
+            (f64::from(c) * f64::from(self.brightness * ambient))
                 .clamp(0.0, 255.0)
                 .floor()
                 / 255.0
         })
+    }
+
+    fn prepare(&mut self, gpu: &Gpu, screen: (u32, u32)) {
+        self.draw_reflection(gpu, screen, &mut |_, _, _, _| {});
     }
 
     fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, screen: (u32, u32)) {
@@ -495,217 +523,4 @@ impl Scene for AreaView {
     }
 }
 
-/// Android draws the ground past 128 cells (`render::terrain::LOD_FINE_CELLS`)
-/// in coarser levels even without high-end view: full detail out there
-/// costs a phone's GPU far more than it shows (docs/DECISIONS.md). Nearer,
-/// including the original's whole view range, it is drawn as before.
-const GROUND_LEVELS_ALWAYS: bool = cfg!(target_os = "android");
-
-/// Cells over which high-end view fades an object from model to sprite.
-pub const FADE_CELLS: f32 = 4.0;
-
-/// Extra drawing hooked in after objects and before water.
-pub type ExtraDraw<'a> = dyn FnMut(&Gpu, &mut wgpu::RenderPass<'_>, &Globals, &Frustum) + 'a;
-
-impl AreaView {
-    fn render_time(&self) -> std::time::Duration {
-        self.capture.map_or_else(
-            || self.start.elapsed(),
-            |(ms, _)| std::time::Duration::from_millis(u64::from(ms)),
-        )
-    }
-
-    fn ambient(&self) -> f32 {
-        if self.area.cycle.is_some() && self.night_vision != Some(true) {
-            1.0 - 0.88 * self.area.time_weights()[2]
-        } else {
-            1.0
-        }
-    }
-
-    pub fn draw_with(
-        &mut self,
-        gpu: &Gpu,
-        pass: &mut wgpu::RenderPass<'_>,
-        aspect: f32,
-        extra: &mut ExtraDraw<'_>,
-    ) {
-        let far = self.radius as f32 * CELL;
-        let view = self.cam.view();
-        let time = self.area.time;
-        let t = self.render_time();
-        let proj = projection(aspect, far * 1.5, self.zoom);
-        let frustum = Frustum::new(proj * view);
-        let sun = self.area.cycle.map_or(time.sun_pos(), |c| {
-            let w = c.weights();
-            let dawn = TimeOfDay::Dusk.sun_pos();
-            let day = TimeOfDay::Day.sun_pos();
-            core::array::from_fn(|k| dawn[k] * (1.0 - w[1]) + day[k] * w[1])
-        });
-        self.globals.write(
-            gpu,
-            &FrameParams {
-                view,
-                proj,
-                eye: self.cam.pos,
-                fog_rgb: self.clear_color().map(|c| c as f32),
-                fog: if self.underwater_fog.is_some() {
-                    (0.0, far * UNDERWATER_FOG_END)
-                } else {
-                    (far * self.fog_start, far)
-                },
-                daylight: self.area.time_weights(),
-                stars: self.area.cycle.is_some(),
-                night_vision: self
-                    .night_vision
-                    .map_or(self.area.time_weights()[2], f32::from),
-                ambient: self.ambient(),
-                flashlight: self.flashlight,
-                narrow_flashlight: self.narrow_flashlight,
-                time_s: t.as_secs_f32(),
-                brightness: self.brightness,
-                absorb: self.underwater_fog.map_or([1.0; 3], |c| {
-                    crate::water_tint::transmitted(c, self.water_depth)
-                }),
-                sky: crate::render::SkyLight {
-                    sun,
-                    moon: TimeOfDay::Night.sun_pos(),
-                    glow: self.modern_sky_glow,
-                },
-            },
-        );
-        self.sky.draw(
-            gpu,
-            pass,
-            &self.globals,
-            view,
-            sun,
-            self.area.time_weights()[2],
-        );
-
-        if self.capture.is_some_and(|(_, sky_only)| sky_only) {
-            return;
-        }
-        let center = self.cam_cell();
-        self.terrain.set_window(
-            gpu,
-            center,
-            self.radius,
-            self.high_end || GROUND_LEVELS_ALWAYS,
-            self.area.rsc.textures.len() as u32,
-            t.as_millis() as u32,
-            self.modern_waves,
-            &frustum,
-        );
-        self.terrain.draw_ground(pass, &self.globals);
-
-        // Collect object instances within the view radius, grouped by model.
-        let mut per_model = std::mem::take(&mut self.per_model);
-        let mut per_sprite = std::mem::take(&mut self.per_sprite);
-        per_model.resize_with(self.models.len(), Vec::new);
-        per_sprite.resize_with(self.sprites.len(), Vec::new);
-        per_model
-            .iter_mut()
-            .chain(&mut per_sprite)
-            .for_each(Vec::clear);
-        // Dynamic time: every object's light follows the time weights.
-        let cycling = self.area.cycle.is_some();
-        let weights = self.area.time_weights();
-        // Sprites stand upright, turned to the camera.
-        let facing = self.cam.yaw / std::f32::consts::FRAC_PI_2;
-        let sprite_from = self.sprite_cells.map_or(f32::INFINITY, |c| c * CELL);
-        let sprite_d2 = sprite_from * sprite_from;
-        // The original switches outright (its crossfade in `_RenderObject`
-        // is commented out); high-end view fades.
-        let fade_end2 = if self.high_end {
-            (sprite_from + FADE_CELLS * CELL).powi(2)
-        } else {
-            0.0
-        };
-        let n_models = self.models.len() as u32;
-        let r = self.radius as i32;
-        let r2 = (r * r) as f32 * CELL * CELL;
-        let (c0x, c0y) = (
-            ((center.0 - r).max(0) as usize) / CHUNK,
-            ((center.1 - r).max(0) as usize) / CHUNK,
-        );
-        let (c1x, c1y) = (
-            (((center.0 + r).max(0) as usize) / CHUNK).min(CHUNKS - 1),
-            (((center.1 + r).max(0) as usize) / CHUNK).min(CHUNKS - 1),
-        );
-        // Nearest chunks first: what they cover fails the depth test
-        // before the far ones are shaded (sprites discard, so the GPU can't
-        // reject them early otherwise).
-        let mut seen: Vec<(f32, usize)> = Vec::new();
-        for cy in c0y..=c1y {
-            for cx in c0x..=c1x {
-                if self.chunk_seen(&frustum, cx, cy) {
-                    let mid = (Vec3::new(cx as f32, 0.0, cy as f32) + 0.5) * (CHUNK as f32 * CELL);
-                    let d = (mid - self.cam.pos) * Vec3::new(1.0, 0.0, 1.0);
-                    seen.push((d.length_squared(), cy * CHUNKS + cx));
-                }
-            }
-        }
-        seen.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
-        for &(_, chunk) in &seen {
-            for (p, light, sprite_light, terms) in &self.chunks[chunk] {
-                let d = Vec3::from(p.pos) - self.cam.pos;
-                if d.x * d.x + d.z * d.z > r2 {
-                    continue;
-                }
-                let m = usize::from(p.model);
-                let d2 = d.length_squared();
-                let has_sprite = self.sprites.get(m).is_some_and(Option::is_some);
-                // In the fade band: model and sprite share the pixels.
-                let fade = if has_sprite && d2 > sprite_d2 && d2 < fade_end2 {
-                    ((d2.sqrt() - sprite_from) / (FADE_CELLS * CELL)).clamp(1e-3, 1.0)
-                } else {
-                    0.0
-                };
-                if has_sprite && d2 > sprite_d2 {
-                    per_sprite[m].push(Instance {
-                        offset: p.pos,
-                        turns: facing,
-                        light: if cycling {
-                            c2_core::area::sprite_light(*terms, weights)
-                        } else {
-                            *sprite_light
-                        },
-                        layer: n_models + u32::from(p.model),
-                        dither: -fade,
-                    });
-                    if fade == 0.0 {
-                        continue;
-                    }
-                }
-                per_model[m].push(Instance {
-                    offset: p.pos,
-                    turns: f32::from(p.quarter_turns),
-                    light: match terms {
-                        Some(t) if cycling => t.at(weights),
-                        _ => *light,
-                    },
-                    layer: u32::from(p.model),
-                    dither: fade,
-                });
-            }
-        }
-        let batches: Vec<(&GpuModel, &[Instance])> = self
-            .models
-            .iter()
-            .zip(&per_model)
-            .map(|(m, i)| (m, i.as_slice()))
-            .chain(
-                self.sprites
-                    .iter()
-                    .zip(&per_sprite)
-                    .filter_map(|(m, i)| Some((m.as_ref()?, i.as_slice()))),
-            )
-            .collect();
-        self.renderer.draw(gpu, pass, &self.globals, &batches);
-        drop(batches);
-        (self.per_model, self.per_sprite) = (per_model, per_sprite);
-        extra(gpu, pass, &self.globals, &frustum);
-        self.terrain.draw_water(pass, &self.globals);
-    }
-}
+mod draw;

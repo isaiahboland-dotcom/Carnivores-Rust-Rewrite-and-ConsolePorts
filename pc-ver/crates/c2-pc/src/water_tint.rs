@@ -44,6 +44,17 @@ pub fn deepened(rgb: [f32; 3], depth: f32) -> [f32; 3] {
     core::array::from_fn(|k| (rgb[k] * t[k]).clamp(2.0 / 255.0, 1.0))
 }
 
+/// Underwater effects (PC option `modern_underwater`, ours): the water's
+/// colour `rgb` turned most of the way to a sea blue of its own brightness,
+/// so that murky or grey water still closes the view with a blue wall. Not
+/// darker than three tenths: black water gets a colour too.
+pub fn blued(rgb: [f32; 3]) -> [f32; 3] {
+    const BLUE: [f32; 3] = [0.08, 0.48, 1.0];
+    const SHARE: f32 = 0.8;
+    let v = rgb[0].max(rgb[1]).max(rgb[2]).clamp(0.3, 1.0);
+    core::array::from_fn(|k| rgb[k] * (1.0 - SHARE) + BLUE[k] * v * SHARE)
+}
+
 /// The wash's strength over the screen: 44% at the surface, 74% at depth 1
 /// (the original's half strength when the option is off).
 pub fn wash_alpha(depth: f32) -> f32 {
@@ -78,6 +89,17 @@ mod tests {
         assert!(deep[2] > deep[1] && deep[1] > deep[0], "{deep:?}");
         // Darker the deeper.
         assert!(deepened(blue, 0.5)[2] > deep[2]);
+    }
+
+    #[test]
+    fn blued_water_is_blue_whatever_it_was() {
+        for water in [[0.4, 0.4, 0.4], [0.5, 0.35, 0.2], [0.2, 0.4, 0.3], [0.0; 3]] {
+            let b = blued(water);
+            assert!(b[2] > b[1] && b[1] > b[0], "{water:?} -> {b:?}");
+            assert!(b[2] >= 0.17, "{water:?} -> {b:?}");
+        }
+        // As bright as it was: a pale sea stays pale.
+        assert!(blued([0.6, 0.8, 0.9])[2] > blued([0.2, 0.3, 0.3])[2]);
     }
 
     #[test]

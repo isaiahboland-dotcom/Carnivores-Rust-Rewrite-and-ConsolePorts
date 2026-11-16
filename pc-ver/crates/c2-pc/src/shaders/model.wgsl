@@ -49,6 +49,8 @@ struct VOut {
     @location(3) dist: f32,
     @location(4) world: vec3<f32>,
     @location(5) @interpolate(flat) dither: f32,
+    // Zone fog (fog_zones.wgsl: zone_fog).
+    @location(6) zone: vec4<f32>,
 };
 
 fn transform(v: VIn) -> VOut {
@@ -74,9 +76,16 @@ fn transform(v: VIn) -> VOut {
     return o;
 }
 
+// renderd3d.cpp: RenderModel: a model's fog stops at 250 of 255
+// (`vFogT` at least 5).
+const MODEL_FOG_MAX: f32 = 250.0 / 255.0;
+
 @vertex
 fn vs(v: VIn) -> VOut {
-    return transform(v);
+    var o = transform(v);
+    let f = zone_fog(o.world);
+    o.zone = f * (min(f.a, MODEL_FOG_MAX) / max(f.a, 1e-6));
+    return o;
 }
 
 // First-person weapon: squeeze depth toward the near plane so it always draws
@@ -117,7 +126,7 @@ fn fs_opaque(i: VOut) -> @location(0) vec4<f32> {
     if (dithered_out(i)) {
         discard;
     }
-    return vec4<f32>(fogged(surface_light(c.rgb, i.light, i.world), i.dist), 1.0);
+    return vec4<f32>(fogged(zone_fogged(surface_light(c.rgb, i.light, i.world), i.zone), i.dist), 1.0);
 }
 
 @fragment
@@ -126,7 +135,7 @@ fn fs_cutout(i: VOut) -> @location(0) vec4<f32> {
     if (c.a < 0.5 || dithered_out(i)) {
         discard;
     }
-    return vec4<f32>(fogged(surface_light(c.rgb, i.light, i.world), i.dist), 1.0);
+    return vec4<f32>(fogged(zone_fogged(surface_light(c.rgb, i.light, i.world), i.zone), i.dist), 1.0);
 }
 
 // sfTransparent faces: blended at the original's Direct3D alpha, 0x70 in
@@ -138,7 +147,7 @@ fn fs_blend(i: VOut) -> @location(0) vec4<f32> {
     if (dithered_out(i)) {
         discard;
     }
-    return vec4<f32>(fogged(surface_light(c.rgb, i.light, i.world), i.dist), c.a * (112.0 / 255.0));
+    return vec4<f32>(fogged(zone_fogged(surface_light(c.rgb, i.light, i.world), i.zone), i.dist), c.a * (112.0 / 255.0));
 }
 
 // Water rings (`RenderWCircles`): added on top (`D3DBLEND_ONE`); the fade is

@@ -27,8 +27,10 @@ fn time_blending_pipelines_validate() -> anyhow::Result<()> {
             narrow_flashlight: false,
             time_s: 0.0,
             brightness: 1.0,
+            night_grey: 0.0,
             absorb: [1.0; 3],
             sky: Default::default(),
+            mirror: None,
         },
     );
     if let Some(error) = pollster::block_on(errors.pop()) {
@@ -74,8 +76,10 @@ fn sky_pixels_blend_at_midpoint_and_return_to_day() -> anyhow::Result<()> {
                     narrow_flashlight: false,
                     time_s: 0.0,
                     brightness: 1.0,
+                    night_grey: 0.0,
                     absorb: [1.0; 3],
                     sky: Default::default(),
+                    mirror: None,
                 },
             );
             self.sky
@@ -179,8 +183,10 @@ fn flashlight_and_manual_night_vision_change_actual_pixels() -> anyhow::Result<(
                 narrow_flashlight,
                 time_s: 0.,
                 brightness: 1.,
+                night_grey: 0.0,
                 absorb: [1.0; 3],
                 sky: Default::default(),
+                mirror: None,
             },
         );
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
@@ -292,8 +298,10 @@ fn dynamic_stars_fade_and_stay_fixed_when_walking() -> anyhow::Result<()> {
                     narrow_flashlight: false,
                     time_s: 0.,
                     brightness: 1.,
+                    night_grey: 0.0,
                     absorb: [1.0; 3],
                     sky: Default::default(),
+                    mirror: None,
                 },
             );
             self.sky
@@ -403,8 +411,10 @@ fn sky_glow_lights_the_sky_around_the_sun_and_moon() -> anyhow::Result<()> {
                     narrow_flashlight: false,
                     time_s: 0.0,
                     brightness: 1.0,
+                    night_grey: 0.0,
                     absorb: [1.0; 3],
                     sky: self.light,
+                    mirror: None,
                 },
             );
             self.sky

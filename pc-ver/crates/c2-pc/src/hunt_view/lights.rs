@@ -1,5 +1,8 @@
 //! Night vision and the flashlight in dynamic-time hunts (both bought on the
-//! gear page). N and L switch them on PC; the pad's right stick click steps
+//! gear page), and the free night vision of a fixed-time Night hunt (the
+//! original's: on from the start, here switchable, so the night looks
+//! `pitch_black_night` and `desaturated_night` can be seen; no score change).
+//! N and L switch them on PC; the pad's right stick click steps
 //! through off, flashlight, night vision (only the ones bought). On the
 //! phone's hunt screen (an APK-built game) each has a round yellow button,
 //! "nv" or "light", that a tap or a click switches. One light at a time:
@@ -71,6 +74,24 @@ fn on_button((px, py): (f32, f32), (x, y, d): (f32, f32, f32)) -> bool {
 }
 
 impl HuntView {
+    /// A fixed-time Night hunt: night vision comes free and starts on.
+    pub(super) fn free_vision(setup: &HuntSetup) -> bool {
+        !setup.trophy() && setup.time == TimeOfDay::Night && Self::day_cycle(setup).is_none()
+    }
+
+    /// The lights this hunt has: (night vision, flashlight).
+    fn owned(&self) -> Lit {
+        (
+            self.setup.night_vision || Self::free_vision(&self.setup),
+            self.setup.flashlight,
+        )
+    }
+
+    /// The hunt has lights to switch at all.
+    fn has_lights(&self) -> bool {
+        self.view.area.cycle.is_some() || Self::free_vision(&self.setup)
+    }
+
     fn lit(&self) -> Lit {
         (self.view.night_vision == Some(true), self.view.flashlight)
     }
@@ -83,17 +104,18 @@ impl HuntView {
     /// The lights bought for this hunt, in button order.
     fn owned_lights(&self) -> Vec<Light> {
         let mut v = Vec::new();
-        if self.setup.night_vision {
+        let owned = self.owned();
+        if owned.0 {
             v.push(Light::Vision);
         }
-        if self.setup.flashlight {
+        if owned.1 {
             v.push(Light::Torch);
         }
         v
     }
 
     fn lights_live(&self) -> bool {
-        self.view.area.cycle.is_some()
+        self.has_lights()
             && !self.hunt.show_exit()
             && !self.hunt.paused
             && self.hunt.death.is_none()
@@ -117,7 +139,7 @@ impl HuntView {
         if !self.lights_live() {
             return false;
         }
-        let owned = (self.setup.night_vision, self.setup.flashlight);
+        let owned = self.owned();
         let mut lit = self.lit();
         if owned.0 && input.pressed(KeyCode::KeyN) {
             lit = toggle(lit, Light::Vision);
@@ -154,10 +176,10 @@ impl HuntView {
 
     /// The hint bar's entries for the lights bought (dynamic-time hunts).
     pub(super) fn light_hints(&self, pad: bool) -> Vec<(String, &'static str)> {
-        if self.view.area.cycle.is_none() {
+        if !self.has_lights() {
             return Vec::new();
         }
-        let owned = (self.setup.night_vision, self.setup.flashlight);
+        let owned = self.owned();
         match (pad, owned) {
             (_, (false, false)) => Vec::new(),
             (true, _) => vec![("R stick click".into(), "Lights")],
@@ -172,7 +194,7 @@ impl HuntView {
     /// The phone screen's round buttons, or the PC's "N: Night vision Off"
     /// line (the flashlight has none: its beam shows whether it is on).
     pub(super) fn draw_lights(&self, sprites: &mut Vec<Sprite>, scale: f32) {
-        if self.view.area.cycle.is_none() || self.hunt.death.is_some() {
+        if !self.has_lights() || self.hunt.death.is_some() {
             return;
         }
         let (nv, torch) = self.lit();
@@ -190,7 +212,7 @@ impl HuntView {
             }
             return;
         }
-        if self.setup.night_vision {
+        if self.owned().0 {
             let label = format!("N: Night vision {}", if nv { "On" } else { "Off" });
             sprites.extend(self.hud.label(
                 12.0 * scale,

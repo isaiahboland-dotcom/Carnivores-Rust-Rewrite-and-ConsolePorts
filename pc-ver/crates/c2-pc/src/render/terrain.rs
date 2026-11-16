@@ -1,5 +1,6 @@
 //! Terrain and water, built in the vertex shader from per-cell data.
 use super::frustum::Frustum;
+use super::reflection::Reflection;
 use super::*;
 
 // ---------------------------------------------------------------- terrain
@@ -90,18 +91,19 @@ const BLOCKS: usize = c2_formats::map::MAP_SIZE / BLOCK;
 /// (`shaders/terrain.wgsl: wave_offset`: 0.8 of the three amplitudes).
 const WAVE_CREST: f32 = 24.0;
 
-/// Per 16x16 map cells: the highest ground or water surface and whether
-/// any cell has water, to cull chunks without looking at every cell.
+/// Per 16x16 map cells: the highest ground or water surface and the level
+/// of its water (its first water cell's), to cull chunks and find the water
+/// about the camera without looking at every cell.
 struct Blocks {
     top: Vec<f32>,
-    water: Vec<bool>,
+    water: Vec<Option<f32>>,
 }
 
 impl Blocks {
     fn new(area: &c2_core::area::Area) -> Self {
         let m = &area.map;
         let mut top = vec![0.0f32; BLOCKS * BLOCKS];
-        let mut water = vec![false; BLOCKS * BLOCKS];
+        let mut water = vec![None; BLOCKS * BLOCKS];
         let size = c2_formats::map::MAP_SIZE;
         for i in 0..m.height.len().min(size * size) {
             let b = (i / size / BLOCK) * BLOCKS + (i % size) / BLOCK;
@@ -110,7 +112,7 @@ impl Blocks {
             // below the view can still show its surface.
             if let Some(level) = area.water_level(i % size, i / size) {
                 top[b] = top[b].max(level + WAVE_CREST);
-                water[b] = true;
+                water[b].get_or_insert(level);
             }
         }
         Self { top, water }
@@ -124,10 +126,38 @@ impl Blocks {
         for by in b(min.1)..=b(max.1) {
             for bx in b(min.0)..=b(max.0) {
                 top = top.max(self.top[by * BLOCKS + bx]);
-                water |= self.water[by * BLOCKS + bx];
+                water |= self.water[by * BLOCKS + bx].is_some();
             }
         }
         (top, water)
+    }
+
+    /// The water level that covers most of the view around map `cell`,
+    /// within `radius` cells: each block of water counts by how near it is,
+    /// so the lake at the camera's feet wins over a far sea, and a sea over
+    /// a far pond. `None`: no water there.
+    fn main_water(&self, cell: (i32, i32), radius: i32) -> Option<f32> {
+        let last = BLOCKS as i32 - 1;
+        let b = |v: i32| (v.div_euclid(BLOCK as i32)).clamp(0, last);
+        let mut levels: Vec<(f32, f32)> = Vec::new();
+        for by in b(cell.1 - radius)..=b(cell.1 + radius) {
+            for bx in b(cell.0 - radius)..=b(cell.0 + radius) {
+                let Some(level) = self.water[by as usize * BLOCKS + bx as usize] else {
+                    continue;
+                };
+                let mid = |v: i32| v * BLOCK as i32 + BLOCK as i32 / 2;
+                let (dx, dy) = ((mid(bx) - cell.0) as f32, (mid(by) - cell.1) as f32);
+                // Roughly the share of the screen a patch of water takes
+                // from eye height: it falls with the cube of the distance.
+                let weight = (dx * dx + dy * dy + (BLOCK * BLOCK) as f32).powf(-1.5);
+                match levels.iter_mut().find(|(l, _)| *l == level) {
+                    Some((_, w)) => *w += weight,
+                    None => levels.push((level, weight)),
+                }
+            }
+        }
+        let best = levels.into_iter().max_by(|a, b| a.1.total_cmp(&b.1));
+        best.map(|(level, _)| level)
     }
 }
 
@@ -148,6 +178,8 @@ pub struct TerrainRenderer {
     ground_chunks: u32,
     instances: wgpu::Buffer,
     capacity: usize,
+    /// The mirror the water's shader reads (PC option `modern_reflections`).
+    pub reflection: Reflection,
 }
 
 impl TerrainRenderer {
@@ -281,7 +313,19 @@ impl TerrainRenderer {
             blend,
         };
         let ground = pipeline(gpu, desc("ground", "vs_ground", "fs_ground", Blend::Opaque));
-        let water = pipeline(gpu, desc("water", "vs_water", "fs", Blend::Alpha));
+        let reflection = Reflection::new(gpu);
+        let water_pl = pipeline_layout(
+            gpu,
+            "water",
+            &[&globals.layout, &layout, reflection.layout()],
+        );
+        let water = pipeline(
+            gpu,
+            PipelineDesc {
+                layout: &water_pl,
+                ..desc("water", "vs_water", "fs_water", Blend::Alpha)
+            },
+        );
         let capacity = 1024;
         Self {
             ground,
@@ -293,6 +337,7 @@ impl TerrainRenderer {
             ground_chunks: 0,
             instances: Self::instance_buffer(gpu, capacity),
             capacity,
+            reflection,
         }
     }
 
@@ -385,7 +430,14 @@ impl TerrainRenderer {
 
     pub fn draw_water(&self, pass: &mut wgpu::RenderPass<'_>, globals: &Globals) {
         let all = self.chunks.len() as u32;
+        pass.set_bind_group(2, self.reflection.group(), &[]);
         self.draw(pass, globals, &self.water, self.ground_chunks..all);
+    }
+
+    /// The water level to mirror for a camera over map `cell` seeing
+    /// `radius` cells (`Blocks::main_water`).
+    pub fn main_water(&self, cell: (i32, i32), radius: u32) -> Option<f32> {
+        self.blocks.main_water(cell, radius as i32)
     }
 
     fn draw(
@@ -474,6 +526,42 @@ mod tests {
                 "radius {radius}: chunks reach {farthest}"
             );
         }
+    }
+
+    #[test]
+    fn the_mirrored_water_is_the_one_about_the_camera() {
+        use c2_core::area::{Area, NO_WATER};
+        use c2_formats::rsc::Water;
+        let mut area = Area::flat(10);
+        let water = |level| Water {
+            texture_index: 0,
+            level,
+            transp: 1.0,
+            fog_rgb: 0,
+        };
+        area.rsc.waters = vec![water(20), water(30)];
+        area.map.water.fill(NO_WATER);
+        let size = c2_formats::map::MAP_SIZE;
+        // A pond (level 20) of one block at cells 96..112, and a sea
+        // (level 30) over every cell from column 512 east.
+        for y in 0..size {
+            for x in 0..size {
+                if (96..112).contains(&x) && (96..112).contains(&y) {
+                    area.map.water[y * size + x] = 0;
+                } else if x >= 512 {
+                    area.map.water[y * size + x] = 1;
+                }
+            }
+        }
+        let blocks = Blocks::new(&area);
+        let (pond, sea) = (20.0 * c2_core::H_SCALE, 30.0 * c2_core::H_SCALE);
+        assert_eq!(blocks.main_water((100, 100), 74), Some(pond));
+        assert_eq!(blocks.main_water((600, 600), 74), Some(sea));
+        // By the pond with the whole map in view: still the pond.
+        assert_eq!(blocks.main_water((120, 100), 1024), Some(pond));
+        // From the far shore of the sea, the pond out of reach.
+        assert_eq!(blocks.main_water((480, 100), 74), Some(sea));
+        assert_eq!(blocks.main_water((300, 800), 40), None);
     }
 
     #[test]

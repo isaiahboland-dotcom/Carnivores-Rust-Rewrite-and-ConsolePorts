@@ -137,6 +137,34 @@ pub struct PcSettings {
     /// halo around the sun and the moon, a warm band along the day's
     /// horizon and a slightly darker zenith (`shaders/sky.wgsl: sky_glow`).
     pub modern_sky_glow: i32,
+    /// Water reflections (1 = on; off by default, not in the original):
+    /// the water mirrors the world over it and lets the bed and the animals
+    /// in it show through (`render/reflection.rs`). The world is drawn a
+    /// second time at half size: for faster machines and phones.
+    pub modern_reflections: i32,
+    /// Sun through fog (1 = on; off by default, not in the original): looking
+    /// towards the sun, the map's fog zones glow warm (the modernized
+    /// Modder's Edition's fog forward-scatter, `shaders/fog_zones.wgsl`).
+    pub modern_fog_glow: i32,
+    /// Desaturated night (1 = on; off by default, not in the original):
+    /// with night vision off at night, the world goes 60% grey and half as
+    /// bright, the sky untouched (the modernized Modder's Edition's night,
+    /// `shaders/common.wgsl: fogged`).
+    pub desaturated_night: i32,
+    /// Pitch black night (1 = on by default; not in the original, whose
+    /// nights are always seen through night vision): with night vision off
+    /// at night, the world darkens to 12%. Before 2026-11-16 this was part of
+    /// dynamic time.
+    pub pitch_black_night: i32,
+    /// Original underwater fog (1 = on; off by default): under water, the
+    /// fog thickens with depth and distance as the original's
+    /// (`Hunt2.cpp: CalcFogLevel`, zone 127), in place of a fixed fog wall
+    /// at 35% of the view.
+    pub original_underwater_fog: i32,
+    /// Underwater effects (1 = on; off by default, not in the original):
+    /// the underwater fog and tint turn blue (`water_tint::blued`). Screen
+    /// drops after surfacing are held back (`render::DROPLETS_ENABLED`).
+    pub modern_underwater: i32,
 }
 
 impl Default for PcSettings {
@@ -176,6 +204,12 @@ impl Default for PcSettings {
             modern_waves: 0,
             modern_water_tint: 0,
             modern_sky_glow: 0,
+            modern_reflections: 0,
+            modern_fog_glow: 0,
+            desaturated_night: 0,
+            pitch_black_night: 1,
+            original_underwater_fog: 0,
+            modern_underwater: 0,
         }
     }
 }
@@ -258,6 +292,12 @@ impl PcSettings {
                 "modern_waves" => s.modern_waves = i32::from(v != 0),
                 "modern_water_tint" => s.modern_water_tint = i32::from(v != 0),
                 "modern_sky_glow" => s.modern_sky_glow = i32::from(v != 0),
+                "modern_reflections" => s.modern_reflections = i32::from(v != 0),
+                "modern_fog_glow" => s.modern_fog_glow = i32::from(v != 0),
+                "desaturated_night" => s.desaturated_night = i32::from(v != 0),
+                "pitch_black_night" => s.pitch_black_night = i32::from(v != 0),
+                "original_underwater_fog" => s.original_underwater_fog = i32::from(v != 0),
+                "modern_underwater" => s.modern_underwater = i32::from(v != 0),
                 _ => {}
             }
         }
@@ -295,7 +335,7 @@ impl PcSettings {
         let s = self;
         format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nmodel_distance = {}\n\
-             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\nfire_reloads_empty = {}\npause_pickers = {}\nradar_water = {}\npretty_underwater = {}\nclassic_filter = {}\nbounded_flee = {}\ndhc_terminal = {}\ndhc_crt = {}\nmodern_waves = {}\nmodern_water_tint = {}\nmodern_sky_glow = {}\nremember_hunt = {}\n",
+             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\nfire_reloads_empty = {}\npause_pickers = {}\nradar_water = {}\npretty_underwater = {}\nclassic_filter = {}\nbounded_flee = {}\ndhc_terminal = {}\ndhc_crt = {}\nmodern_waves = {}\nmodern_water_tint = {}\nmodern_sky_glow = {}\nmodern_reflections = {}\nmodern_fog_glow = {}\ndesaturated_night = {}\npitch_black_night = {}\noriginal_underwater_fog = {}\nmodern_underwater = {}\nremember_hunt = {}\n",
             s.render,
             s.fog,
             s.blood,
@@ -329,6 +369,12 @@ impl PcSettings {
             s.modern_waves,
             s.modern_water_tint,
             s.modern_sky_glow,
+            s.modern_reflections,
+            s.modern_fog_glow,
+            s.desaturated_night,
+            s.pitch_black_night,
+            s.original_underwater_fog,
+            s.modern_underwater,
             s.remember_hunt
         )
     }
@@ -499,6 +545,16 @@ mod tests {
     }
 
     #[test]
+    fn pitch_black_night_is_on_by_default_and_round_trips() {
+        let d = PcSettings::default();
+        assert_eq!(d.pitch_black_night, 1);
+        let off = PcSettings::parse("pitch_black_night = 0\n");
+        assert_eq!(off.pitch_black_night, 0);
+        assert_eq!(PcSettings::parse(&off.to_text()), off);
+        assert_eq!(PcSettings::parse("").pitch_black_night, 1);
+    }
+
+    #[test]
     fn modern_graphics_are_opt_in_and_round_trip() {
         let d = PcSettings::parse("blood = 1\n");
         assert_eq!(d, PcSettings::default());
@@ -506,7 +562,20 @@ mod tests {
             (d.modern_waves, d.modern_water_tint, d.modern_sky_glow),
             (0, 0, 0)
         );
-        for key in ["modern_waves", "modern_water_tint", "modern_sky_glow"] {
+        assert_eq!(
+            (d.modern_reflections, d.modern_fog_glow, d.modern_underwater),
+            (0, 0, 0)
+        );
+        for key in [
+            "modern_waves",
+            "modern_water_tint",
+            "modern_sky_glow",
+            "modern_reflections",
+            "modern_fog_glow",
+            "desaturated_night",
+            "original_underwater_fog",
+            "modern_underwater",
+        ] {
             let on = PcSettings::parse(&format!("{key} = 1\n"));
             assert_ne!(on, d, "{key}");
             assert_eq!(PcSettings::parse(&on.to_text()), on, "{key}");

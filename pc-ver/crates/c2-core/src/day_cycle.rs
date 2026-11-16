@@ -50,6 +50,19 @@ impl DayCycle {
         self.elapsed >= QUARTER_MS && self.elapsed < 3 * QUARTER_MS
     }
 
+    /// The time of day the cycle is nearest to: the one whose light
+    /// weighs most.
+    pub fn period(self) -> TimeOfDay {
+        let w = self.weights();
+        if w[2] >= w[0] && w[2] >= w[1] {
+            TimeOfDay::Night
+        } else if w[1] >= w[0] {
+            TimeOfDay::Day
+        } else {
+            TimeOfDay::Dusk
+        }
+    }
+
     pub fn weights(self) -> [f32; 3] {
         let phase = (self.elapsed / QUARTER_MS) as usize;
         let t = (self.elapsed % QUARTER_MS) as f32 / QUARTER_MS as f32;

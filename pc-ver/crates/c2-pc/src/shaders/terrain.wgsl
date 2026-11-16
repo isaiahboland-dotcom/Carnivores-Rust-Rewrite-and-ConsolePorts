@@ -37,10 +37,15 @@ struct Params {
 @group(1) @binding(4) var samp: sampler;
 // The RSC's 128x128 cloud map, 4 bytes per u32.
 @group(1) @binding(5) var<storage, read> sky_map: array<u32>;
+// The world mirrored in the water (render/reflection.rs), read by fs_water
+// only.
+@group(2) @binding(0) var mirror_tex: texture_2d<f32>;
+@group(2) @binding(1) var mirror_samp: sampler;
 
 const MAP: i32 = 1024;
 const FM_REVERSE: u32 = 0x10u;
 const FM_WATER: u32 = 0x80u;
+const FM_WATER_A: u32 = 0x8000u;
 // TCMIN/TCMAX from Hunt.h: half-texel inset to avoid bleeding.
 const TC_MIN: f32 = 0.0073947906;
 const TC_MAX: f32 = 0.9926052;
@@ -53,6 +58,8 @@ struct VOut {
     @location(3) dist: f32,
     @location(4) alpha: f32,
     @location(5) world: vec3<f32>,
+    // Zone fog (fog_zones.wgsl: zone_fog), the ground only.
+    @location(6) zone: vec4<f32>,
 };
 
 fn degenerate() -> VOut {
@@ -219,6 +226,12 @@ fn vs_ground(@builtin(vertex_index) vid: u32, @location(0) chunk: vec4<i32>) -> 
     o.layer = min(here.y & 0xffffu, params.layers - 1u);
     o.dist = distance(p, g.cam_pos.xyz);
     o.alpha = 1.0;
+    // Hunt2.cpp: PreCashGroundModel: no zone fog on the ground of water
+    // cells, but for the camera under water (the original's underwater fog).
+    let vflags = cell_at(clamp(v.x, 0, MAP - 1), clamp(v.y, 0, MAP - 1)).y >> 16u;
+    if ((vflags & (FM_WATER | FM_WATER_A)) == 0u || zone_fog_under_water()) {
+        o.zone = zone_fog(p);
+    }
     return o;
 }
 
@@ -318,11 +331,12 @@ fn wave_offset(v: vec2<i32>, l: LodCell) -> vec3<f32> {
 // Hunt2.cpp (hardware path): the RSC transparency scales the water's depth
 // at this vertex; distance, shimmer and a grazing view add opacity, so
 // shallow water near the camera is clear and the far sea opaque.
-// Underwater views (a separate formula in the original) keep the
-// coefficient as alpha.
+// From under the water (`UNDERWATER`): `160 - dist * 160 / 220 / ctViewR`,
+// at least 10, of 255, so the surface overhead is a veil that thins out
+// towards the edge of the view.
 fn water_alpha(v: vec2<i32>, wt: vec4<f32>, dist: f32, wdelta: f32) -> f32 {
     if (g.cam_pos.y < wt.x) {
-        return clamp(wt.z, 0.0, 1.0);
+        return max(160.0 - dist * 160.0 / 220.0 / f32(max(params.reach, 1)), 10.0) / 255.0;
     }
     let ground = vertex_height(v);
     let to_ground = vec3<f32>(f32(v.x) * 256.0, ground, f32(v.y) * 256.0) - g.cam_pos.xyz;
@@ -343,11 +357,54 @@ fn fs_ground(i: VOut) -> @location(0) vec4<f32> {
     if (any(g.water.xyz < vec3<f32>(1.0))) {
         lit = max(lit * g.water.xyz, vec3<f32>(0.01));
     }
-    return vec4<f32>(fogged(lit, i.dist), i.alpha);
+    let zoned = zone_fogged(lit, i.zone) + zone_glow(i.world, i.zone.a);
+    return vec4<f32>(fogged(zoned, i.dist), i.alpha);
 }
 
 @fragment
 fn fs(i: VOut) -> @location(0) vec4<f32> {
     let c = textureSample(tex, samp, i.uv, i.layer);
-    return vec4<f32>(fogged(surface_light(c.rgb, i.light, i.world), i.dist), i.alpha);
+    return vec4<f32>(fogged(zone_fogged(surface_light(c.rgb, i.light, i.world), i.zone), i.dist), i.alpha);
+}
+
+// The most the water's own colour covers of what is under it with
+// reflections on: the bed and the animals in the water stay in sight where
+// the original's alpha has closed.
+const SEE_THROUGH: f32 = 0.7;
+
+// Where the mirror is read for the water at `world`, `frag` its pixel: the
+// pixel itself (a point of the mirror's plane has the same place in both
+// pictures), pushed about by a ripple that calms with distance.
+fn mirror_uv(frag: vec2<f32>, world: vec3<f32>, dist: f32) -> vec2<f32> {
+    let t = g.misc.y;
+    let w = world.xz * 0.004;
+    let ripple = vec2<f32>(
+        sin(w.x * 1.7 + w.y * 0.6 + t * 1.3) + 0.5 * sin(w.x * 3.1 - w.y * 2.3 - t * 1.9),
+        sin(w.y * 1.9 - w.x * 0.7 + t * 1.1) + 0.5 * sin(w.y * 2.7 + w.x * 2.9 + t * 2.3),
+    );
+    let calm = clamp(1536.0 / max(dist, 1.0), 0.25, 1.0);
+    return frag * g.reflect.zw + ripple * vec2<f32>(0.003, 0.008) * calm;
+}
+
+// The water's surface. With reflections on (PC option, not in the original)
+// and the camera over the water: a mirror by Fresnel's rule (Schlick, water's
+// 2% head on, everything at a grazing view) over the water's own colour,
+// which covers at most SEE_THROUGH of what is under it. The mirror holds one
+// water level; water at another level reflects the fog's colour.
+@fragment
+fn fs_water(i: VOut) -> @location(0) vec4<f32> {
+    let c = textureSample(tex, samp, i.uv, i.layer);
+    let own = fogged(surface_light(c.rgb, i.light, i.world), i.dist);
+    if (g.reflect.y < 0.5 || g.cam_pos.y <= i.world.y) {
+        return vec4<f32>(own, i.alpha);
+    }
+    let up = clamp((g.cam_pos.y - i.world.y) / max(i.dist, 1.0), 0.0, 1.0);
+    let fresnel = 0.02 + 0.98 * pow(1.0 - up, 5.0);
+    var seen = g.fog_color.rgb;
+    if (abs(i.world.y - g.reflect.x) < 1.0) {
+        seen = textureSampleLevel(mirror_tex, mirror_samp, mirror_uv(i.clip.xy, i.world, i.dist), 0.0).rgb;
+    }
+    let body = min(i.alpha, SEE_THROUGH) * (1.0 - fresnel);
+    let a = fresnel + body;
+    return vec4<f32>((seen * fresnel + own * body) / max(a, 0.0001), a);
 }

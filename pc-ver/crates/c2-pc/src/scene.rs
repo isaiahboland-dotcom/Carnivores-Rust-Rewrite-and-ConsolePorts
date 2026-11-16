@@ -8,6 +8,9 @@ pub trait Scene {
     fn title(&self) -> String;
     fn update(&mut self, gpu: &Gpu, dt: f32, input: &Input);
     fn clear_color(&self) -> [f64; 3];
+    /// Draws what the frame's pass reads back (the water's mirror), in
+    /// passes of its own, submitted before [`Scene::draw`] is called.
+    fn prepare(&mut self, _gpu: &Gpu, _screen: (u32, u32)) {}
     /// Records the frame. Called once per frame.
     fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, screen: (u32, u32));
     /// Capture and hide the cursor for mouse-look.
@@ -64,6 +67,7 @@ pub fn render_with(
     frame: &crate::gpu::Frame,
     overlay: &mut Overlay<'_>,
 ) {
+    scene.prepare(gpu, frame.size);
     let mut enc = gpu.device.create_command_encoder(&Default::default());
     {
         let [r, g, b] = scene.clear_color();

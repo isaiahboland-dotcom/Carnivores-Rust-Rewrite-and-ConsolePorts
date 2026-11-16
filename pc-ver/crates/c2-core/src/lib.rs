@@ -21,6 +21,7 @@ pub mod dhc;
 pub mod dino;
 #[cfg(any(feature = "std", feature = "portable-hunt"))]
 pub mod effects;
+pub mod fog;
 #[cfg(any(feature = "std", feature = "portable-hunt"))]
 pub mod game;
 #[cfg(any(feature = "std", feature = "portable-load"))]

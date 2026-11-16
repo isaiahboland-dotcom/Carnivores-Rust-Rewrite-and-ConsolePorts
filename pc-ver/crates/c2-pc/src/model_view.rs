@@ -289,8 +289,10 @@ impl Scene for ModelView {
                 narrow_flashlight: false,
                 time_s: 0.0,
                 brightness: self.review.as_ref().map_or(1.0, |r| r.brightness),
+                night_grey: 0.0,
                 absorb: [1.0; 3],
                 sky: Default::default(),
+                mirror: None,
             },
         );
         let inst = [Instance {

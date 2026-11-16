@@ -67,6 +67,8 @@ impl HuntView {
         if let Some(c) = Self::day_cycle(&setup) {
             view.area.cycle = Some(c);
             view.night_vision = Some(false);
+        } else if Self::free_vision(&setup) {
+            view.night_vision = Some(true);
             view.flashlight = setup.flashlight && Self::endless_night(&setup);
         }
         let seed = setup.seed.unwrap_or_else(|| {
@@ -210,6 +212,8 @@ impl HuntView {
             sounds,
             mee,
             ammo_low: (usize::MAX, 0.0),
+            wet: Default::default(),
+            droplets: crate::render::DropletRenderer::new(gpu),
         })
     }
 }
@@ -419,6 +423,11 @@ fn fit_view(view: &mut AreaView, hunt: &Hunt, setup: &HuntSetup) {
     view.high_end = setup.pc.high_end_view != 0;
     view.modern_waves = setup.pc.modern_waves != 0;
     view.modern_sky_glow = setup.pc.modern_sky_glow != 0;
+    view.modern_reflections = setup.pc.modern_reflections != 0;
+    view.modern_fog_glow = setup.pc.modern_fog_glow != 0;
+    view.desaturated_night = setup.pc.desaturated_night != 0;
+    view.pitch_black_night = setup.pc.pitch_black_night != 0;
+    view.original_underwater_fog = setup.pc.original_underwater_fog != 0;
     // Past the original range, fog only softens the far edge.
     if hunt.opts.render_r > hunt.opts.view_r {
         view.fog_start = 0.85;

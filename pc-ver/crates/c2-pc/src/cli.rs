@@ -31,9 +31,9 @@ const USAGE: &str = "usage:
   c2-pc texture-review --manifest FILE --out NEW_DIR [--baseline RUN_DIR] [--limit N] [--keep-models]
   c2-pc scene-review --manifest FILE --out NEW_DIR   (private native scene/sky diagnostic)
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
-  c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--models] [--foliage CELLS] [--high-end] [--waves] [--sky-glow] [--shot out.png]
+  c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--models] [--foliage CELLS] [--high-end] [--waves] [--sky-glow] [--reflections] [--fog-glow] [--shot out.png]
   c2-pc hunt  <AREA.MAP|TROPHY.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all]
-              [--weapon N] [--bino] [--pause] [--exit] [--dhc-terminal] [--message TEXT] [--kill] [--plaque] [--pick] [--call] [--fill] [--die AI,MS[,NAME]] [--observer] [--player N] [--survival classic|modded] [--seed N]\n              [--touch] [--shot out.png]   (--touch: an APK game's phone buttons, as after a touch)
+              [--weapon N] [--bino] [--pause] [--exit] [--dhc-terminal] [--message TEXT] [--kill] [--plaque] [--pick] [--call] [--fill] [--die AI,MS[,NAME]] [--dive MS] [--modern] [--original-underwater] [--observer] [--player N] [--survival classic|modded] [--seed N]\n              [--touch] [--shot out.png]   (--touch: an APK game's phone buttons, as after a touch)
 
 model: drag to orbit, wheel zoom, [ ] next/prev file, N/P next/prev animation, Space pause
 area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distance
@@ -65,6 +65,7 @@ const VALUE_FLAGS: &[&str] = &[
     "weapon",
     "target",
     "fire",
+    "dive",
     "screen",
     "player",
     "script",
@@ -423,6 +424,15 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
             let (pick, call) = (o.has("pick"), o.has("call"));
             let fill = o.has("fill");
             let map = o.has("map");
+            // --dive MS: under the nearest deep water (0), or the screen
+            // wet as MS after surfacing.
+            let dive = o
+                .value("dive")
+                .map(str::parse::<u32>)
+                .transpose()
+                .context("--dive MS")?;
+            // --modern: every Modern graphics option on for this run.
+            let modern = i32::from(o.has("modern"));
             let fire = o
                 .value("fire")
                 .map(str::parse::<u32>)
@@ -504,18 +514,31 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
                     Some("hardcore") => Some(SurvivalKind::Hardcore),
                     Some(v) => bail!("--survival classic|modded|hardcore, not {v:?}"),
                 },
+                // --hardcore: the instance's hardcore hunt ruleset, if it has one.
+                hardcore: o.has("hardcore"),
                 reg: o.num("player", 0i32)?,
                 from_menu: false,
                 // --dhc-terminal: the terminal's look for this run (shots).
-                pc: settings::PcSettings {
-                    dhc_terminal: i32::from(o.has("dhc-terminal")),
-                    ..settings::PcSettings::load()
+                pc: {
+                    let pc = settings::PcSettings::load();
+                    settings::PcSettings {
+                        dhc_terminal: i32::from(o.has("dhc-terminal")),
+                        modern_waves: pc.modern_waves | modern,
+                        modern_water_tint: pc.modern_water_tint | modern,
+                        modern_sky_glow: pc.modern_sky_glow | modern,
+                        modern_reflections: pc.modern_reflections | modern,
+                        modern_fog_glow: pc.modern_fog_glow | modern,
+                        desaturated_night: pc.desaturated_night | modern,
+                        // --original-underwater: the original's underwater fog.
+                        original_underwater_fog: pc.original_underwater_fog
+                            | i32::from(o.has("original-underwater")),
+                        modern_underwater: pc.modern_underwater | modern,
+                        ..pc
+                    }
                 },
             };
             Box::new(move |g| {
                 let mut h = hunt_view::HuntView::load(g, setup)?;
-                // --hardcore: the instance's hardcore hunt ruleset, if it has one.
-                hardcore: o.has("hardcore"),
                 if let Some(s) = sim {
                     let ai = s.get(1).copied().unwrap_or(12.0) as i32;
                     let dist = s.get(2).copied().unwrap_or(1500.0);
@@ -548,6 +571,9 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
                 }
                 if map {
                     h.open_map();
+                }
+                if let Some(ms) = dive {
+                    h.dive(ms);
                 }
                 if let Some((ai, ms, name)) = &die {
                     h.die_by(*ai, *ms, name.as_deref());
@@ -693,11 +719,14 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
             let models = o.has("models");
             // --foliage CELLS: objects as models out to CELLS; --high-end:
             // the far ground in levels and the model/sprite fade; --waves:
-            // animated waves; --sky-glow: sun and moon glow.
+            // animated waves; --sky-glow: sun and moon glow; --reflections:
+            // water reflections; --fog-glow: sun through fog.
             let foliage = o.value("foliage").map(str::parse::<f32>).transpose()?;
             let high_end = o.has("high-end");
             let waves = o.has("waves");
             let sky_glow = o.has("sky-glow");
+            let reflections = o.has("reflections");
+            let fog_glow = o.has("fog-glow");
             Box::new(move |g| {
                 let mut a = area_view::AreaView::load(g, &path, time)?;
                 if models {
@@ -708,6 +737,8 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
                 a.high_end = high_end;
                 a.modern_waves = waves;
                 a.modern_sky_glow = sky_glow;
+                a.modern_reflections = reflections;
+                a.modern_fog_glow = fog_glow;
                 if let Some(c) = cam {
                     a.cam.pos = glam::Vec3::new(c[0], c[1], c[2]);
                     a.cam.yaw = c[3];

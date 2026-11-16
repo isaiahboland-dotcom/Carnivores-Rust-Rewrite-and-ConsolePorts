@@ -8,14 +8,18 @@ use wgpu::util::DeviceExt;
 use crate::gpu::{Gpu, DEPTH_FORMAT};
 
 const COMMON: &str = include_str!("shaders/common.wgsl");
+const FOG_ZONES: &str = include_str!("shaders/fog_zones.wgsl");
 
 fn shader(gpu: &Gpu, label: &str, body: &str) -> wgpu::ShaderModule {
     gpu.device
         .create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some(label),
-            source: wgpu::ShaderSource::Wgsl(format!("{COMMON}\n{body}").into()),
+            source: wgpu::ShaderSource::Wgsl(format!("{COMMON}\n{FOG_ZONES}\n{body}").into()),
         })
 }
+
+/// Zones in `fog_zones.wgsl` (`FogsMap` entries are bytes).
+const FOG_ZONE_SLOTS: usize = 256;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -31,6 +35,7 @@ pub struct GlobalsData {
     pub water: [f32; 4],
     pub sun: [f32; 4],
     pub moon: [f32; 4],
+    pub reflect: [f32; 4],
 }
 
 /// Per-frame values shared by every shader.
@@ -50,10 +55,17 @@ pub struct FrameParams {
     pub time_s: f32,
     /// `(OptBrightness + 128) / 256`, applied to every texture.
     pub brightness: f32,
+    /// Desaturated night (PC option `desaturated_night`): how far the world
+    /// goes grey and dark, 0..1 (the night's weight with night vision off).
+    pub night_grey: f32,
     /// What the water the camera is under lets through of the ground's
     /// colour, per channel (`water_tint`); ones: nothing absorbed.
     pub absorb: [f32; 3],
     pub sky: SkyLight,
+    /// The water's mirror for this frame (PC option `modern_reflections`):
+    /// the level mirrored, and the size in pixels of the target the water
+    /// is drawn to. `None`: the water reflects nothing.
+    pub mirror: Option<(f32, (u32, u32))>,
 }
 
 /// Where the sun and moon are, for the sky's glow (PC option
@@ -70,33 +82,109 @@ pub struct SkyLight {
 
 pub struct Globals {
     buf: wgpu::Buffer,
+    /// `FogZones` in `fog_zones.wgsl`.
+    zones: wgpu::Buffer,
     pub layout: wgpu::BindGroupLayout,
     pub group: wgpu::BindGroup,
 }
 
 impl Globals {
+    /// With no fog zones.
     pub fn new(gpu: &Gpu) -> Self {
+        Self::with_fog_zones(gpu, &[], &[])
+    }
+
+    /// With an area's fog zones: `map` its `FogsMap`, `fogs` its `.RSC` fog
+    /// list (`c2_core::fog`). They show once [`Globals::write_fog_frame`]
+    /// turns them on.
+    pub fn with_fog_zones(gpu: &Gpu, map: &[u8], fogs: &[c2_formats::rsc::Fog]) -> Self {
         let buf = gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("globals"),
             size: std::mem::size_of::<GlobalsData>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let mut cells = map.to_vec();
+        cells.resize(cells.len().next_multiple_of(4).max(4), 0);
+        let cells = gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("fog zone map"),
+                contents: &cells,
+                usage: wgpu::BufferUsages::STORAGE,
+            });
+        let zones = gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("fog zones"),
+                contents: bytemuck::cast_slice(&fog_zone_data(fogs)),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+        let mut cells_entry = storage_entry(1);
+        cells_entry.visibility = wgpu::ShaderStages::VERTEX_FRAGMENT;
         let layout = gpu
             .device
             .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("globals"),
-                entries: &[uniform_entry(0, wgpu::ShaderStages::VERTEX_FRAGMENT)],
+                entries: &[
+                    uniform_entry(0, wgpu::ShaderStages::VERTEX_FRAGMENT),
+                    cells_entry,
+                    uniform_entry(2, wgpu::ShaderStages::VERTEX_FRAGMENT),
+                ],
             });
         let group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("globals"),
             layout: &layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: buf.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: cells.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: zones.as_entire_binding(),
+                },
+            ],
         });
-        Self { buf, layout, group }
+        Self {
+            buf,
+            zones,
+            layout,
+            group,
+        }
+    }
+
+    /// The frame's side of the fog zones (`fog_zones.wgsl`).
+    pub fn write_fog_frame(&self, gpu: &Gpu, f: &FogFrame) {
+        let frame = [
+            f32::from(f.camera.unwrap_or(0)),
+            f32::from(u8::from(f.on)),
+            f.glow,
+            f32::from(u8::from(f.underwater.is_some())),
+        ];
+        gpu.queue
+            .write_buffer(&self.zones, 0, bytemuck::cast_slice(&frame));
+        // The water's fog in slot 0, which no map zone uses (`FogsList[127]`
+        // in the original, rewritten each frame from the camera's water).
+        if let Some(([r, g, b], level)) = f.underwater {
+            let vec4 = std::mem::size_of::<[f32; 4]>() as u64;
+            let colour = [r, g, b, level];
+            let shape = [
+                c2_core::fog::UNDERWATER_TRANSP,
+                c2_core::fog::UNDERWATER_LIMIT,
+                1.0,
+                0.0,
+            ];
+            gpu.queue
+                .write_buffer(&self.zones, vec4, bytemuck::cast_slice(&colour));
+            let at = vec4 * (1 + FOG_ZONE_SLOTS as u64);
+            gpu.queue
+                .write_buffer(&self.zones, at, bytemuck::cast_slice(&shape));
+        }
     }
 
     pub fn write(&self, gpu: &Gpu, f: &FrameParams) {
@@ -105,7 +193,7 @@ impl Globals {
             proj: f.proj.to_cols_array_2d(),
             cam_pos: f.eye.extend(1.0).to_array(),
             fog_color: [f.fog_rgb[0], f.fog_rgb[1], f.fog_rgb[2], 1.0],
-            fog: [f.fog.0, f.fog.1, 0.0, 0.0],
+            fog: [f.fog.0, f.fog.1, f.night_grey, 0.0],
             daylight: [
                 f.daylight[0],
                 f.daylight[1],
@@ -134,9 +222,39 @@ impl Globals {
                 .normalize_or_zero()
                 .extend(0.0)
                 .to_array(),
+            reflect: f.mirror.map_or([0.0; 4], |(level, (w, h))| {
+                [level, 1.0, 1.0 / w.max(1) as f32, 1.0 / h.max(1) as f32]
+            }),
         };
         gpu.queue.write_buffer(&self.buf, 0, bytemuck::bytes_of(&d));
     }
+}
+
+/// The frame's side of the fog zones.
+#[derive(Clone, Copy, Default)]
+pub struct FogFrame {
+    /// The zone the camera is in (`c2_core::fog::Zones::camera_zone`).
+    pub camera: Option<u8>,
+    /// The map's zones show (above water).
+    pub on: bool,
+    /// The sun's glow through them (PC option `modern_fog_glow`); 0 off.
+    pub glow: f32,
+    /// Original underwater fog (PC option `original_underwater_fog`): the
+    /// camera is under water whose fog has this colour (0..1 RGB) and top
+    /// (world units). Every point is then in that fog (`Hunt2.cpp`: zone 127).
+    pub underwater: Option<([f32; 3], f32)>,
+}
+
+/// `FogZones` in `fog_zones.wgsl`, off: the frame's vec4, then per zone its
+/// colour and top, then its `Transp`, `FLimit` and presence.
+fn fog_zone_data(fogs: &[c2_formats::rsc::Fog]) -> Vec<[f32; 4]> {
+    let mut d = vec![[0.0; 4]; 1 + 2 * FOG_ZONE_SLOTS];
+    for (i, f) in fogs.iter().take(FOG_ZONE_SLOTS - 1).enumerate() {
+        let [r, g, b] = c2_core::fog::rgb(f.rgb);
+        d[2 + i] = [r, g, b, f.y_begin * c2_core::H_SCALE];
+        d[2 + FOG_ZONE_SLOTS + i] = [f.transp, f.f_limit, 1.0, 0.0];
+    }
+    d
 }
 
 fn uniform_entry(binding: u32, visibility: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEntry {
@@ -797,8 +915,15 @@ mod time_tests;
 #[path = "render_water_tests.rs"]
 mod water_tests;
 
+#[cfg(test)]
+#[path = "render_fog_tests.rs"]
+mod fog_tests;
+
 mod sky;
 pub use sky::SkyRenderer;
+mod droplets;
+pub use droplets::{DropletRenderer, Wet, DROPLETS_ENABLED};
+pub mod reflection;
 
 // ---------------------------------------------------------------- particles
 

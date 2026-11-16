@@ -81,6 +81,53 @@ impl HuntView {
         self.prev_cam = self.hunt.camera().0;
     }
 
+    /// `--dive MS` (screenshots of the underwater view and of the drops
+    /// after it). 0: the hunter is put under the nearest water at least
+    /// three cells of height deep, looking level. Otherwise the hunter
+    /// stays put, the screen wet as `ms` after surfacing.
+    pub fn dive(&mut self, ms: u32) {
+        if ms > 0 {
+            self.wet = crate::render::Wet::surfaced(ms as f32 / 1000.0);
+            return;
+        }
+        let area = self.view.area();
+        let p = &self.hunt.player;
+        let cell = |v: f32| (v / c2_core::CELL) as i32;
+        let (px, pz) = (cell(p.x), cell(p.z));
+        let size = c2_formats::map::MAP_SIZE as i32;
+        let deep = |x: i32, z: i32| {
+            let level = area.water_level(x as usize, z as usize)?;
+            let (wx, wz) = (
+                (x as f32 + 0.5) * c2_core::CELL,
+                (z as f32 + 0.5) * c2_core::CELL,
+            );
+            (level - area.land_height(wx, wz) >= 3.0 * c2_core::H_SCALE).then_some((wx, level, wz))
+        };
+        let spot = (0..size * size)
+            .map(|i| (i % size, i / size))
+            .filter(|&(x, z)| (x - px).abs().max((z - pz).abs()) < 256)
+            .min_by_key(|&(x, z)| {
+                let near = (x - px).pow(2) + (z - pz).pow(2);
+                if deep(x, z).is_some() {
+                    near
+                } else {
+                    i32::MAX
+                }
+            })
+            .and_then(|(x, z)| deep(x, z));
+        let Some((x, level, z)) = spot else {
+            tracing::warn!("--dive: no deep water within 256 cells");
+            return;
+        };
+        let p = &mut self.hunt.player;
+        let head = p.eye()[1] - p.y;
+        (p.x, p.z) = (x, z);
+        p.y = level - 1.5 * c2_core::H_SCALE - head;
+        p.beta = 0.0;
+        p.underwater = true;
+        self.prev_cam = self.hunt.camera().0;
+    }
+
     /// `--die AI,MS` (screenshots of the death camera): an animal of `ai_id`
     /// is put beside the hunter and set hunting; the hunt runs until it kills
     /// (at most 30 s), then `ms` more.

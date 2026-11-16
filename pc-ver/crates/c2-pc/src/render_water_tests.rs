@@ -2,7 +2,8 @@
 //! is a depth coefficient). Genesis AREA2's sea has RSC `transp = 0.001`;
 //! using it as the final alpha made the whole sea invisible. Also: water
 //! narrower than a coarse cell of the high-end view's levels (AUDIT-V2), and
-//! the animated waves option (2026-11-14).
+//! the animated waves option (2026-11-14), water reflections and the
+//! surface seen from under the water (2026-11-15).
 
 use super::*;
 use crate::scene::Scene;
@@ -68,8 +69,10 @@ fn write_globals(gpu: &Gpu, globals: &Globals, view: Mat4, eye: Vec3, absorb: [f
             narrow_flashlight: false,
             time_s: 0.0,
             brightness: 1.0,
+            night_grey: 0.0,
             absorb,
             sky: Default::default(),
+            mirror: None,
         },
     );
     Frustum::new(proj * view)
@@ -374,5 +377,239 @@ fn depth_tint_absorbs_the_ground_not_the_surface() -> anyhow::Result<()> {
     // the view, and chunks were culled by their ground alone.
     let near = mean(&surface, 50..SIZE);
     assert!(near[0] < 1.0 && near[2] > 120.0, "bare bed: {near:?}");
+    Ok(())
+}
+
+const GREEN: u16 = 0x03e0;
+/// Map row of the cliff's foot, 6.5 cells ahead of the camera.
+const CLIFF_Z: usize = 506;
+
+/// [`shallows`] under opaque water with a green cliff ahead (north).
+fn cove() -> Area {
+    let mut area = shallows();
+    area.rsc.textures.push(vec![GREEN; 128 * 128]);
+    area.rsc.waters[0].transp = 400.0;
+    let size = c2_formats::map::MAP_SIZE;
+    for i in 0..CLIFF_Z * size {
+        area.map.height[i] = 120;
+        area.map.texture1[i] = 2;
+        area.map.water[i] = c2_core::area::NO_WATER;
+        area.map.flags[i] = 0;
+    }
+    area
+}
+
+/// Looking level at the cliff over the water, from [`EYE_Y`]; with
+/// `mirror`, the cliff is drawn mirrored first, as `AreaView` does.
+struct Cove {
+    terrain: TerrainRenderer,
+    globals: Globals,
+    mirror: bool,
+    drawn: Option<(f32, (u32, u32))>,
+}
+
+impl Cove {
+    fn camera() -> (Mat4, Vec3) {
+        let eye = Vec3::new(512.5 * 256.0, EYE_Y, 512.5 * 256.0);
+        (
+            glam::camera::rh::view::look_at_mat4(eye, eye + Vec3::NEG_Z, Vec3::Y),
+            eye,
+        )
+    }
+
+    fn write(&self, gpu: &Gpu, view: Mat4, proj: Mat4, eye: Vec3) -> Frustum {
+        self.globals.write(
+            gpu,
+            &FrameParams {
+                view,
+                proj,
+                eye,
+                fog_rgb: [0.0; 3],
+                fog: (1.0e9, 2.0e9),
+                daylight: [0.0, 1.0, 0.0],
+                stars: false,
+                night_vision: 0.0,
+                ambient: 1.0,
+                flashlight: false,
+                narrow_flashlight: false,
+                time_s: 0.0,
+                brightness: 1.0,
+                night_grey: 0.0,
+                absorb: [1.0; 3],
+                sky: Default::default(),
+                mirror: self.drawn,
+            },
+        );
+        Frustum::new(proj * view)
+    }
+}
+
+impl Scene for Cove {
+    fn title(&self) -> String {
+        "synthetic cove".into()
+    }
+    fn update(&mut self, _: &Gpu, _: f32, _: &crate::input::Input) {}
+    fn clear_color(&self) -> [f64; 3] {
+        [0.0; 3]
+    }
+    fn prepare(&mut self, gpu: &Gpu, screen: (u32, u32)) {
+        self.drawn = None;
+        if !self.mirror {
+            return;
+        }
+        let level = LEVEL as f32 * 64.0;
+        let (view, eye) = Self::camera();
+        let view = reflection::mirrored(view, level);
+        let proj = reflection::oblique(
+            crate::camera::projection(1.0, 64.0 * 256.0, 1.0),
+            view,
+            level - reflection::CLIP_BIAS,
+        );
+        let frustum = self.write(gpu, view, proj, reflection::mirrored_eye(eye, level));
+        self.terrain
+            .set_window(gpu, (512, 512), 48, false, 3, 0, false, &frustum);
+        let (color, depth) = self.terrain.reflection.target(gpu, screen);
+        let mut enc = gpu.device.create_command_encoder(&Default::default());
+        {
+            let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("test reflection"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &color,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Discard,
+                    }),
+                    stencil_ops: None,
+                }),
+                ..Default::default()
+            });
+            self.terrain.draw_ground(&mut pass, &self.globals);
+        }
+        gpu.queue.submit([enc.finish()]);
+        self.drawn = Some((level, screen));
+    }
+    fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, _: (u32, u32)) {
+        let (view, eye) = Self::camera();
+        let proj = crate::camera::projection(1.0, 64.0 * 256.0, 1.0);
+        let frustum = self.write(gpu, view, proj, eye);
+        self.terrain
+            .set_window(gpu, (512, 512), 48, false, 3, 0, false, &frustum);
+        self.terrain.draw_ground(pass, &self.globals);
+        self.terrain.draw_water(pass, &self.globals);
+    }
+}
+
+// Water reflections (2026-11-15): the water under a cliff shows the cliff,
+// not the bed the mirror pass must clip; off, the picture is the old one.
+#[test]
+#[ignore = "requires an available wgpu adapter; run with --test-threads=1"]
+fn reflections_mirror_what_stands_over_the_water() -> anyhow::Result<()> {
+    let (gpu, target) = Gpu::offscreen((SIZE, SIZE))?;
+    let crate::gpu::Target::Offscreen { texture } = target else {
+        unreachable!()
+    };
+    let output = texture.create_view(&Default::default());
+    let frame = crate::gpu::Frame::new(&gpu, (SIZE, SIZE));
+    let globals = Globals::new(&gpu);
+    let terrain = TerrainRenderer::new(&gpu, &globals, &cove());
+    let mut scene = Cove {
+        terrain,
+        globals,
+        mirror: false,
+        drawn: None,
+    };
+    let mut render = |mirror| -> anyhow::Result<Vec<u8>> {
+        scene.mirror = mirror;
+        crate::scene::render(&gpu, &mut scene, &output, &frame);
+        gpu.read_rgba(&texture)
+    };
+    // The cliff fills the picture above the horizon; its foot is three
+    // rows under it, the water from there down.
+    let plain = render(false)?;
+    let cliff = mean(&plain, 8..24);
+    assert!(cliff[1] > 60.0 && cliff[2] < 1.0, "cliff {cliff:?}");
+    let water = mean(&plain, 37..42);
+    assert!(water[2] > 120.0 && water[1] < 1.0, "water {water:?}");
+    let mirrored = render(true)?;
+    assert_eq!(mean(&mirrored, 8..24), cliff, "the mirror changed the land");
+    // At this slant most of the light is the cliff's.
+    let seen = mean(&mirrored, 37..42);
+    assert!(
+        seen[1] > cliff[1] * 0.35 && seen[1] > seen[2],
+        "no cliff in the water: {seen:?}"
+    );
+    // The red bed: let through a little by the water, never mirrored.
+    assert!(
+        seen[0] < seen[1] * 0.5,
+        "the bed is in the mirror: {seen:?}"
+    );
+    // At the camera's feet the view is steep: the water's own colour.
+    let near = mean(&mirrored, 60..SIZE);
+    assert!(near[2] > near[1], "a mirror at the feet: {near:?}");
+    assert_eq!(plain, render(false)?, "switching off left a trace");
+    Ok(())
+}
+
+/// Looking up at the surface from just over the bed.
+struct Dive {
+    terrain: TerrainRenderer,
+    globals: Globals,
+}
+
+impl Scene for Dive {
+    fn title(&self) -> String {
+        "synthetic dive".into()
+    }
+    fn update(&mut self, _: &Gpu, _: f32, _: &crate::input::Input) {}
+    fn clear_color(&self) -> [f64; 3] {
+        [0.0; 3]
+    }
+    fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, _: (u32, u32)) {
+        let eye = Vec3::new(512.5 * 256.0, SEABED as f32 * 64.0 + 40.0, 512.5 * 256.0);
+        let view = glam::camera::rh::view::look_at_mat4(eye, eye + Vec3::Y, Vec3::NEG_Z);
+        let frustum = write_globals(gpu, &self.globals, view, eye, [1.0; 3]);
+        self.terrain
+            .set_window(gpu, (512, 512), 48, false, 2, 0, false, &frustum);
+        self.terrain.draw_ground(pass, &self.globals);
+        self.terrain.draw_water(pass, &self.globals);
+    }
+}
+
+// Hunt2.cpp's UNDERWATER alpha (2026-11-15): from below, the surface is a
+// veil of 160/255 nearby whatever the RSC coefficient; the coefficient used
+// to be the alpha (invisible at 0.001, a lid at 1 and over).
+#[test]
+#[ignore = "requires an available wgpu adapter; run with --test-threads=1"]
+fn the_surface_from_below_is_a_veil_at_any_coefficient() -> anyhow::Result<()> {
+    let (gpu, target) = Gpu::offscreen((SIZE, SIZE))?;
+    let crate::gpu::Target::Offscreen { texture } = target else {
+        unreachable!()
+    };
+    let output = texture.create_view(&Default::default());
+    let frame = crate::gpu::Frame::new(&gpu, (SIZE, SIZE));
+    let render = |transp| -> anyhow::Result<Vec<u8>> {
+        let globals = Globals::new(&gpu);
+        let mut area = shallows();
+        area.rsc.waters[0].transp = transp;
+        let terrain = TerrainRenderer::new(&gpu, &globals, &area);
+        let mut scene = Dive { terrain, globals };
+        crate::scene::render(&gpu, &mut scene, &output, &frame);
+        gpu.read_rgba(&texture)
+    };
+    let thin = render(0.001)?;
+    assert_eq!(thin, render(400.0)?, "the coefficient shows from below");
+    // Blue water lit 144..192 of 255 (the shimmer) at alpha 160/255, over
+    // the black beyond it.
+    let up = mean(&thin, 24..40);
+    assert!(up[2] > 80.0 && up[2] < 125.0, "surface {up:?}");
     Ok(())
 }

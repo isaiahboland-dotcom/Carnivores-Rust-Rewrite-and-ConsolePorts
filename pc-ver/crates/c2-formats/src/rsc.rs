@@ -76,7 +76,8 @@ pub struct Object {
 /// `TFogEntity`, 20 bytes.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Fog {
-    /// `0x00RRGGBB` as stored.
+    /// `0x00BBGGRR` as stored (red in the low byte; `Resources.cpp` swaps
+    /// it into a `D3DCOLOR` for the Direct3D build).
     pub rgb: i32,
     pub y_begin: f32,
     pub mortal: i32,

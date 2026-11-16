@@ -576,19 +576,7 @@ pub fn rsc_from(rst: &Rst, assets: &dyn Assets) -> Result<Rsc, FormatError> {
         .map(|o| object(o, assets, atlas.as_ref()))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let fogs = rst
-        .items("fog")
-        .iter()
-        // Zone 0 is "no fog" and not stored.
-        .skip(1)
-        .map(|f| Fog {
-            rgb: bgr(f.rgb("color").unwrap_or([127, 127, 127])),
-            y_begin: f.num("altitude").unwrap_or(0.0),
-            mortal: f.int("poisonous").unwrap_or(0),
-            transp: f.num("distance").unwrap_or(512.0),
-            f_limit: f.num("density").unwrap_or(200.0),
-        })
-        .collect();
+    let fogs = fog_list(rst);
     let waters = rst
         .items("water")
         .iter()
@@ -646,8 +634,42 @@ pub fn rsc_from(rst: &Rst, assets: &dyn Assets) -> Result<Rsc, FormatError> {
     })
 }
 
+/// The `.rst`'s `[fog]` items as the PC's fog list. `fog_id n` is the map's
+/// zone `n + 1`, the PC's `FogsList[n + 1]` (zone 0, "no fog", has no item):
+/// AREA1's `fog_id 0` is the PC's zone 1 (grey, altitude 0). Skipping it
+/// shifted every zone onto the next one's fog, and a first zone with an
+/// altitude then flooded the low ground (`c2_core::fog::fill_floor`).
+fn fog_list(rst: &Rst) -> Vec<Fog> {
+    rst.items("fog")
+        .iter()
+        .map(|f| Fog {
+            rgb: bgr(f.rgb("color").unwrap_or([127, 127, 127])),
+            y_begin: f.num("altitude").unwrap_or(0.0),
+            mortal: f.int("poisonous").unwrap_or(0),
+            transp: f.num("distance").unwrap_or(512.0),
+            f_limit: f.num("density").unwrap_or(200.0),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn fog_id_zero_is_the_first_zone() {
+        let t = "carnivores_area_resources\r\n[fog]\r\ncount = 2\r\nfog_id 0\r\n\tcolor = 127, 127, 127\r\n\
+\taltitude = 0\r\n\tdistance = 512\r\n\tdensity = 200\r\n\r\nfog_id 1\r\n\tcolor = 79, 77, 56\r\n\
+\taltitude = 80\r\n\tdistance = 200\r\n\tdensity = 200\r\n";
+        let r = parse_rst(t).unwrap_or_else(|e| panic!("{e}"));
+        let f = fog_list(&r);
+        assert_eq!(f.len(), 2);
+        assert_eq!((f[0].rgb, f[0].y_begin), (0x007F_7F7F, 0.0));
+        assert_eq!(
+            (f[1].rgb, f[1].y_begin, f[1].transp),
+            (0x0038_4D4F, 80.0, 200.0)
+        );
+    }
+
     use super::*;
 
     #[test]

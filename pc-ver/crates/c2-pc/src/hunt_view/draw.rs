@@ -15,9 +15,25 @@ impl HuntView {
         let aspect = screen.0.max(1) as f32 / screen.1.max(1) as f32;
         let p = &self.hunt.player;
         let pc = &self.setup.pc;
-        let fog = (p.underwater && (pc.pretty_underwater != 0 || pc.modern_water_tint != 0))
+        let effects = pc.modern_underwater != 0;
+        // The original's underwater fog takes the water's colour too, as
+        // `FogsList[127]` does, with or without the tints.
+        let tinted = pc.pretty_underwater != 0
+            || pc.modern_water_tint != 0
+            || effects
+            || pc.original_underwater_fog != 0;
+        let fog = (p.underwater && tinted)
             .then(|| self.view.area().water_mean_rgb(p.x, p.z))
             .flatten();
+        // Underwater effects: the water's colour turned blue, so the wall
+        // of fog at a short view distance is one too.
+        let fog = fog.map(|c| {
+            if effects {
+                crate::water_tint::blued(c)
+            } else {
+                c
+            }
+        });
         // The depth tint: the fog and the wash darken in the water's hue.
         let depth = if fog.is_some() && pc.modern_water_tint != 0 {
             self.water_depth()
@@ -29,6 +45,13 @@ impl HuntView {
         self.view.water_depth = depth.unwrap_or(0.0);
         if !self.blacked_out() {
             self.draw_world(gpu, pass, aspect);
+            if let Some(drops) = self
+                .wet
+                .drops()
+                .filter(|_| effects && crate::render::DROPLETS_ENABLED)
+            {
+                self.droplets.draw(gpu, pass, aspect, drops);
+            }
         }
 
         // HUD at an integer scale of the original's 640x480 layout.
@@ -67,6 +90,25 @@ impl HuntView {
         self.draw_touch(&mut sprites);
         self.draw_lights(&mut sprites, scale);
         self.hud.draw(gpu, pass, screen, &sprites);
+    }
+
+    /// Water reflections: the area and the animals mirrored in the water,
+    /// before the frame (`AreaView::draw_reflection`). Not the hunter's own
+    /// things: effects, rounds, gauges and the weapon in hand.
+    pub(super) fn draw_mirror(&mut self, gpu: &Gpu, screen: (u32, u32)) {
+        if self.blacked_out() || self.hunt.player.underwater {
+            return;
+        }
+        let (dinos, hunt) = (&mut self.dinos, &self.hunt);
+        let eye = self.view.cam.pos.to_array();
+        let max = self.view.radius as f32 * c2_core::CELL;
+        self.view
+            .draw_reflection(gpu, screen, &mut |gpu, pass, globals, frustum| {
+                // The mirrored eye is straight under the camera: the same
+                // reach on the ground plane.
+                let seen = crate::dinos::Seen { eye, max, frustum };
+                dinos.draw(gpu, pass, globals, &hunt.herd, &hunt.ship, seen);
+            });
     }
 
     /// The area with the animals, effects, rounds in flight, the gauges and

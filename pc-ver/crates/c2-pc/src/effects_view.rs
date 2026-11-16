@@ -175,8 +175,10 @@ mod tests {
                         narrow_flashlight: false,
                         time_s: 0.0,
                         brightness: 1.0,
+                        night_grey: 0.0,
                         absorb: [1.0; 3],
                         sky: Default::default(),
+                        mirror: None,
                     },
                 );
                 self.renderer.draw(gpu, pass, &self.globals, &self.fx);
