@@ -438,7 +438,7 @@ fn new_hunt(
         auto_chamber: true,
         dynamic_night: None,
         night_vision_active: false,
-        distant_ai: false,
+        distant_every: crate::settings::distant_every(),
         no_call_bonus: setup.roamers.iter().map(|r| r.slot + 10).collect(),
     };
     let mut hunt = Hunt::new(area, player, herd, weapons, rng, opts, room);

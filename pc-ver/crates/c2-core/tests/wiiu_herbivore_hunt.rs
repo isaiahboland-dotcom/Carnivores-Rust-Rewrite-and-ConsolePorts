@@ -323,7 +323,7 @@ fn distant_ai_bounds_pending_time_and_resumes_immediately() {
     };
     let l = load(&inst, &choice, 1);
     let (area, mut hunt) = (&l.area, restart(&l, &l.hunt, &choice, 1));
-    assert!(hunt.opts.distant_ai);
+    assert!(hunt.opts.distant_every > 1);
     let refs = refs(&l.cars);
     let mut events = Vec::new();
     let mut deferred = None;
@@ -343,7 +343,7 @@ fn distant_ai_bounds_pending_time_and_resumes_immediately() {
     hunt.herd.chars[i].afraid_time = 1000;
     hunt.tick(area, &refs, &HuntInput::default(), 16, &mut events);
     assert_eq!(hunt.herd.chars[i].pending_ai_ms, 0);
-    hunt.opts.distant_ai = false;
+    hunt.opts.distant_every = 1;
     hunt.tick(area, &refs, &HuntInput::default(), 16, &mut events);
     assert!(hunt.herd.chars.iter().all(|c| c.pending_ai_ms == 0));
 }

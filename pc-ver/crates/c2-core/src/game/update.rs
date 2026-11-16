@@ -136,7 +136,7 @@ impl Hunt {
             events: &mut dev,
         };
         if !self.opts.trophy {
-            self.herd.step_scheduled(&mut ctx, self.opts.distant_ai);
+            self.herd.step_scheduled(&mut ctx, self.opts.distant_every);
         }
         self.step_aquatics(area, dt);
         self.prof.mark(2);

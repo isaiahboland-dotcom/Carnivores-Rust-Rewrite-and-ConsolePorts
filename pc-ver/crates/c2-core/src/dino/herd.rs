@@ -79,12 +79,13 @@ impl Herd {
 
     /// `AnimateCharacters`.
     pub fn step(&mut self, ctx: &mut Ctx<'_>) {
-        self.step_scheduled(ctx, false);
+        self.step_scheduled(ctx, 1);
     }
 
-    /// Optional four-way staggering of calm, distant stock hunt targets.
-    /// Near/alerted/wounded/dead animals and dialect packs remain full-rate.
-    pub fn step_scheduled(&mut self, ctx: &mut Ctx<'_>, distant: bool) {
+    /// Optional `every`-way staggering of calm animals beyond view range,
+    /// dialect ones included. Near, alerted, wounded and dead animals, and
+    /// members of a pack that raised an alarm last tick, stay full-rate.
+    pub fn step_scheduled(&mut self, ctx: &mut Ctx<'_>, every: u32) {
         let hunter = ctx.hunter;
         let base_dt = ctx.dt;
         let base_run_k = ctx.run_k;
@@ -141,12 +142,16 @@ impl Herd {
             let dx = c.pos[0] - hunter.x;
             let dz = c.pos[2] - hunter.z;
             let range = ((ctx.view_r + 16) * 256) as f32;
-            let defer = distant
+            let pack_awake = c
+                .pack
+                .and_then(|p| self.packs.get(p))
+                .is_some_and(|p| p.alert_prev || p.attack_prev);
+            let defer = every > 1
+                && !pack_awake
                 && base_dt > 0
                 && base_dt <= 16
                 && hunter.alive
-                && sp.mee.is_none()
-                && c.ai >= 10
+                && (sp.mee.is_some() || c.ai >= 10)
                 && c.health > 0
                 && c.state == 0
                 && c.afraid_time == 0
@@ -154,7 +159,7 @@ impl Herd {
                 && c.lure.is_none()
                 && dx * dx + dz * dz > range * range;
             c.pending_ai_ms += base_dt;
-            if defer && !((ctx.real_time / 16) as usize + i).is_multiple_of(4) {
+            if defer && !((ctx.real_time / 16) as usize + i).is_multiple_of(every as usize) {
                 continue;
             }
             ctx.dt = core::mem::take(&mut c.pending_ai_ms);

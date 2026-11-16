@@ -499,7 +499,7 @@ fn new_hunt(
             blood: choice.blood != 0,
             death_anim: choice.death_anim != 0,
             teleport: choice.teleport != 0,
-            distant_ai: true,
+            distant_every: 4,
             no_call_bonus: roamers.iter().map(|r| r.slot + 10).collect(),
             // No buttons left for the dialect's reload and rack.
             auto_chamber: true,

@@ -51,8 +51,10 @@ pub struct HuntOptions {
     /// second, as the original did once a frame at 25 fps). Its look
     /// traces are the costliest part of a tick on an Old 3DS.
     pub afraid_every: u32,
-    /// Stagger calm stock targets beyond view range; platform opt-in.
-    pub distant_ai: bool,
+    /// Calm animals beyond view range (stock and dialect alike) step once
+    /// every this many ticks, with the skipped time carried over (1: every
+    /// tick; the Wii U: 4; the 3DS: 4 on a New 3DS, 8 on an Old one).
+    pub distant_every: u32,
     /// Bit `10 + slot` per call slot whose kills score +10% (not in the
     /// original; the 3DS's roaming add-ons, hunted with no call).
     pub no_call_bonus: Bits,
@@ -97,7 +99,7 @@ impl Default for HuntOptions {
             blood: true,
             death_anim: true,
             afraid_every: 1,
-            distant_ai: false,
+            distant_every: 1,
             no_call_bonus: Bits::NONE,
             notice_k: 1.0,
             stealth: false,

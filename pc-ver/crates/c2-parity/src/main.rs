@@ -675,7 +675,7 @@ fn tick_bench(game: &Path, area_n: u32) -> Result<()> {
         notice_k: 1.0,
         stealth: false,
         teleport: false,
-        distant_ai: false,
+        distant_every: 1,
         auto_chamber: false,
         dynamic_night: None,
         night_vision_active: false,

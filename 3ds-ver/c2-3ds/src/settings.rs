@@ -115,6 +115,16 @@ impl CrouchKey {
     }
 }
 
+/// Far-animal stagger: every 4th tick on a New 3DS, every 8th on an Old one.
+pub fn distant_every() -> u32 {
+    let mut new = false;
+    if unsafe { ctru_sys::APT_CheckNew3DS(&mut new) } >= 0 && new {
+        4
+    } else {
+        8
+    }
+}
+
 /// The gyro aim steps the setting cycles through.
 pub const GYRO_STEPS: [i32; 4] = [25, 40, 60, 100];
 

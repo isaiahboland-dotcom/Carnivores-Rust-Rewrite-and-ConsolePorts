@@ -6170,3 +6170,18 @@ cannot forfeit. The original has no call key; this is part of the hardcore
 ruleset only.
 
 Test: `game::tests::hardcore::escape_in_the_zone_calls_the_ship_and_outside_it_forfeits`.
+
+## 2026-11-15 — Far-animal stagger covers dialect animals; 3DS enables it
+
+`HuntOptions::distant_ai` (bool, four-way, stock animals only) became
+`distant_every` (ticks per step; 1 = off). Calm animals beyond view range now
+step once every `distant_every` ticks with the skipped time carried over,
+for stock and dialect (MEE) species alike, so TC and add-on animals save the
+same work as stock ones. A member of a pack whose alert or attack flag was
+raised last tick is never deferred, since those flags last a single tick.
+
+Defaults: PC 1 (off), Wii U 4, New 3DS 4, Old 3DS 8. The Old 3DS value trades
+far-animal update rate for frame time; far animals are out of view, and any
+alert, wound, lure or approach inside view range returns them to full rate.
+
+Test: `distant_ai_bounds_pending_time_and_resumes_immediately` (Wii U, stride 4).

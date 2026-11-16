@@ -234,7 +234,7 @@ fn hunt_options(o: &c2_formats::sav::Options, setup: &HuntSetup) -> HuntOptions 
         death_anim: setup.pc.death_anim != 0,
         afraid_every: 1,
         // The Wii U's staggered far AI is off on PC (every animal every tick).
-        distant_ai: false,
+        distant_every: 1,
         no_call_bonus: c2_formats::bits::Bits::NONE,
         notice_k: 1.0,
         stealth: false,
