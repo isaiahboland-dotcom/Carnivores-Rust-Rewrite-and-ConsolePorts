@@ -63,7 +63,7 @@ const TAB_KEYS: [KeyCode; 4] = [
     KeyCode::Digit4,
 ];
 
-const MAIN_KEYS: [KeyCode; 7] = [
+const MAIN_KEYS: [KeyCode; 9] = [
     KeyCode::Digit1,
     KeyCode::Digit2,
     KeyCode::Digit3,
@@ -71,6 +71,8 @@ const MAIN_KEYS: [KeyCode; 7] = [
     KeyCode::Digit5,
     KeyCode::Digit6,
     KeyCode::Digit7,
+    KeyCode::Digit8,
+    KeyCode::Digit9,
 ];
 
 impl Menu {
@@ -106,10 +108,12 @@ impl Menu {
     pub(super) fn enter_terminal(&mut self) {
         let boot = !BOOTED.swap(true, Ordering::Relaxed);
         let (score, tranq) = (self.me().map_or(0, |s| s.score), self.tranq());
+        let survival = self.survival_labels();
         match &mut self.term {
             Some(v) => {
                 v.term.score = score;
                 v.term.tranq = tranq;
+                v.term.survival = survival;
                 // Back from options or the quit prompt: the main menu.
                 if !matches!(v.term.screen, TScreen::Main | TScreen::Setup) {
                     v.term.act(Action::Back);
@@ -167,17 +171,30 @@ impl Menu {
         let times = (0..3)
             .filter(|&t| inst.time_allowed(t))
             .fold(0u8, |m, t| m | 1 << t);
+        // A regular hunt only has the menu's own limits; the hardcore
+        // hunt's entry adds the ruleset's (and exists only when the
+        // recipe turned the ruleset on).
         let rules = Rules {
             dhc: read_rules(&self.huntdat),
             limits: Limits {
                 times,
                 max_animals: cap,
-                max_weapons,
-                barred_equipment,
+                max_weapons: cap,
+                barred_equipment: Vec::new(),
             },
+        };
+        let hardcore = Limits {
+            times,
+            max_animals: cap,
+            max_weapons,
+            barred_equipment,
         };
         let score = self.me().map_or(0, |s| s.score);
         let mut term = Terminal::new(cat, rules, score, boot);
+        if !hc.is_empty() {
+            term.offer_hardcore(hardcore);
+        }
+        term.survival = self.survival_labels();
         term.tranq = self.tranq();
         // The accessories the save keeps, and the last area and time.
         let c = &self.choice;
@@ -199,6 +216,7 @@ impl Menu {
                 .collect(),
             time: c.time,
             observer: c.observer,
+            hardcore: false,
         };
         term.restore(&keep);
         TermView {
@@ -301,7 +319,7 @@ impl Menu {
                         acts.push(Action::Tab(Tab::ALL[i]));
                     }
                 }
-            } else if t.screen == TScreen::Main {
+            } else if matches!(t.screen, TScreen::Main | TScreen::Survival) {
                 for (i, &k) in MAIN_KEYS.iter().enumerate() {
                     if key(k) {
                         acts.push(Action::Pick(i));
@@ -376,6 +394,11 @@ impl Menu {
                     v.term.tranq = tranq;
                 }
             }
+            Outcome::Survival(i) => {
+                if let Some(&kind) = self.survival_modes().get(i) {
+                    self.start_survival(kind);
+                }
+            }
             Outcome::Options => self.screen = Screen::Options,
             Outcome::Hunters => {
                 self.name = self.me().map(|p| p.player_name()).unwrap_or_default();
@@ -390,6 +413,21 @@ impl Menu {
         }
     }
 
+    /// The survival modes' labels, as `survival_modes` lists them.
+    pub(super) fn survival_labels(&self) -> Vec<String> {
+        self.survival_modes()
+            .iter()
+            .map(|k| {
+                match k {
+                    SurvivalKind::Classic => "CLASSIC SURVIVAL",
+                    SurvivalKind::Modded => "MODDED SURVIVAL",
+                    SurvivalKind::Hardcore => "HARDCORE SURVIVAL",
+                }
+                .to_string()
+            })
+            .collect()
+    }
+
     /// Starts the hunt `l` describes, through the original menu's start.
     fn deploy(&mut self, l: &Loadout) {
         let Some(v) = &self.term else { return };
@@ -398,6 +436,7 @@ impl Menu {
             area: col(0, l.area).unwrap_or(0),
             time: l.time.min(2),
             observer: l.observer,
+            hardcore: l.hardcore,
             ..Default::default()
         };
         for i in l.animals.iter().filter_map(|&i| col(1, i)) {

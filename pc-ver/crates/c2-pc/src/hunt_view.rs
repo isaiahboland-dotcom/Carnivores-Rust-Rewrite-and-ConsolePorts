@@ -96,6 +96,9 @@ pub struct HuntSetup {
     pub observer: bool,
     /// A survival instead of a hunt (README M13).
     pub survival: Option<SurvivalKind>,
+    /// The instance's hardcore hunt ruleset (`hunt` lines of `_RULES.TXT`)
+    /// applies. Off: a regular hunt, whatever the rules file holds.
+    pub hardcore: bool,
     /// The player (`trophy0N.sav`).
     pub reg: i32,
     /// Return to the menu afterwards (otherwise close the window).
@@ -203,6 +206,9 @@ pub struct HuntView {
     /// The weapon whose rounds are drawn top left, and the lowest they
     /// reached on screen since (the survival box stays under them).
     ammo_low: (usize, f32),
+    /// Water on the screen after surfacing (PC option `modern_underwater`).
+    wet: crate::render::Wet,
+    droplets: crate::render::DropletRenderer,
 }
 
 impl HuntView {
@@ -262,6 +268,10 @@ impl Scene for HuntView {
             return [0.0; 3];
         }
         self.view.clear_color()
+    }
+
+    fn prepare(&mut self, gpu: &Gpu, screen: (u32, u32)) {
+        self.draw_mirror(gpu, screen);
     }
 
     fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, screen: (u32, u32)) {

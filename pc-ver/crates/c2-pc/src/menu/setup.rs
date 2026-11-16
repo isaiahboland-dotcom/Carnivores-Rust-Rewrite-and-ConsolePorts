@@ -182,7 +182,7 @@ impl Menu {
         };
         // The hardcore hunt ruleset: gear it leaves out, and its firearm cap.
         let hc = crate::instance_rules::get().hunt;
-        if self.choice.survival.is_none() {
+        if self.hardcore_applies() {
             let barred = [
                 (1, hc.no_radar),
                 (2, hc.no_cover_scent),
@@ -258,9 +258,20 @@ impl Menu {
         let map = self.areas[c.area].clone();
         let double = !c.observer && c.equip & 8 != 0;
         self.start(map, time, targets, weapons, double, c.observer);
+        let hardcore = self.hardcore_applies();
         if let Some(l) = &mut self.launch {
             l.survival = c.survival;
+            l.hardcore = hardcore;
         }
+    }
+
+    /// Whether the instance's hardcore hunt ruleset applies to the hunt
+    /// being set up. The terminal's "Hardcore hunt" entry asks for it and
+    /// its regular "Hunt setup" never has it. The original menu has no
+    /// second entry, so there an instance that turns the ruleset on
+    /// plays every hunt by it. Survival never does.
+    pub(super) fn hardcore_applies(&self) -> bool {
+        self.choice.survival.is_none() && (self.choice.hardcore || !self.terminal_style())
     }
 
     /// APK-independent modes, with Classic hidden for standalone rosters
@@ -333,6 +344,7 @@ impl Menu {
             double_ammo,
             observer,
             survival: None,
+            hardcore: false,
             reg,
             from_menu: true,
             pc: self.pc,
@@ -497,6 +509,7 @@ impl Menu {
         } else if let Some(col) = c.full {
             let what = if col == 1 { "animals" } else { "weapons" };
             let hc = crate::instance_rules::get().hunt.max_firearms;
+            let hc = hc.filter(|_| self.hardcore_applies());
             let cap = match hc.filter(|_| col == 2) {
                 Some(n) if cap == 0 || (n as usize) < cap => n as usize,
                 _ => cap,

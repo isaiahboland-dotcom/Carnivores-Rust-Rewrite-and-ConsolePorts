@@ -356,6 +356,14 @@ fn hunt_ranges(r: &Recipe, warn: &mut impl FnMut(String, String)) {
             );
         }
     }
+    if s.knife.is_some() && !s.experimental_knife {
+        warn(
+            "settings.hunt.knife".into(),
+            "the knife is experimental and unfinished; it stays off unless \
+             experimental_knife = true is set as well"
+                .into(),
+        );
+    }
     for (i, a) in s.predators.iter().enumerate() {
         if h::Reaction::from_key(a.reaction.trim()).is_none() {
             warn(
@@ -488,6 +496,17 @@ mod tests {
 
     fn parse(extra: &str) -> Recipe {
         Recipe::parse(&format!("[recipe]\nid = \"r\"\n{extra}")).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    #[test]
+    fn a_knife_without_its_experimental_switch_is_reported() {
+        let off = parse("[settings.hunt]\nenabled = true\nknife = { dodge = true }\n");
+        assert_eq!(keys(&off, Platform::Pc), ["settings.hunt.knife"]);
+        let on = parse(
+            "[settings.hunt]\nenabled = true\nexperimental_knife = true\n\
+             knife = { dodge = true }\n",
+        );
+        assert!(keys(&on, Platform::Pc).is_empty());
     }
 
     #[test]

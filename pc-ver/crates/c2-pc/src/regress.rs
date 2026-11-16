@@ -101,6 +101,7 @@ pub fn run(a: &Args) -> Result<()> {
         flashlight: false,
         observer: false,
         survival: None,
+        hardcore: false,
         reg: 0,
         from_menu: false,
         // Defaults, not this machine's saved settings.

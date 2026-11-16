@@ -1,5 +1,34 @@
 # Decisions and deviations
 
+## 2026-11-15 — Hardcore hunt is its own DHC OS entry; Survival joins the menu; the knife is experimental
+
+- **Off unless enabled.** `[settings.hunt] enabled` is off by default and set only from the
+  launcher's Advanced page ("Offer hardcore hunts"). Nothing in a recipe turns it on by itself.
+- **A separate slot.** The DHC OS main menu lists `HUNT SETUP`, then `HARDCORE HUNT` below it,
+  so one install plays both. The entry exists only when the recipe's ruleset has a rule on.
+  The regular setup never applies the ruleset (no barred gear, no firearm cap, no zones, no
+  hesitation). `Loadout::hardcore` and `HuntSetup::hardcore` carry the choice, and
+  `Hunt::start_hardcore` runs only when it is set. `--hardcore` does the same from the CLI.
+- **The original menu has no second slot**, so with the DHC OS terminal off (or Classic menu) an
+  enabled ruleset plays every hunt, as before. `Menu::hardcore_applies` is that one rule.
+- **Survival** is a main-menu entry in DHC OS (`MainItem::Survival`, then one row per mode the
+  platform offers: Classic where the roster has it, Modded, and Hardcore when its option is on).
+  The terminal only hands back the mode (`Outcome::Survival(i)`); the PC starts it as the original
+  menu's buttons do.
+- **Knife: experimental, deferred.** The knife has no model or sounds and handles roughly. It is
+  written to the rules file only when `experimental_knife = true` is set beside the `knife`
+  section, whatever else (hardcore rules, Advanced Dinosaur Behavior) is on; the launcher shows
+  it as its own marked checkbox, off by default. A `knife` section alone is ignored, and
+  `validate` reports it. Recipes written before this change lose the knife until it is switched
+  on. Completion is tracked under "Deferred" in [HARDCORE-HUNT.md](HARDCORE-HUNT.md).
+
+Tests: `dhc::tests::{the_extra_entries_are_absent_unless_offered,
+the_hardcore_hunt_has_its_own_limits_and_the_regular_one_none,
+entering_the_hardcore_hunt_drops_picks_it_bars_and_trims_the_arms,
+survival_lists_the_platforms_modes_and_hands_one_back}`,
+`c2-mods` `hunt::tests::the_knife_needs_its_own_experimental_switch`,
+`validate::tests::a_knife_without_its_experimental_switch_is_reported`.
+
 ## 2026-11-15 — Picked roamers are resolved once, in core
 
 `c2-cook --check` reported "not a hunt target" for every picked roaming

@@ -8,7 +8,7 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use super::{earnings_factor, Catalog, Loadout, Rules, Tab};
+use super::{earnings_factor, Catalog, Limits, Loadout, Rules, Tab};
 
 /// Seconds between boot log lines, and the pause after the last.
 pub const BOOT_LINE_S: f32 = 0.12;
@@ -23,12 +23,20 @@ pub enum Screen {
     Setup,
     Manual,
     Deploy,
+    /// The survival modes the platform offers.
+    Survival,
 }
 
-/// The main menu's entries, numbered from 1 in this order.
+/// The main menu's entries, numbered from 1 in the order of
+/// [`Terminal::main_items`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MainItem {
     Hunt,
+    /// The hardcore ruleset's own hunt setup, under the regular one; only
+    /// when the recipe turns the ruleset on.
+    HardcoreHunt,
+    /// Survival modes, when the platform offers any.
+    Survival,
     Manual,
     Trophy,
     Options,
@@ -38,19 +46,11 @@ pub enum MainItem {
 }
 
 impl MainItem {
-    pub const ALL: [MainItem; 7] = [
-        MainItem::Hunt,
-        MainItem::Manual,
-        MainItem::Trophy,
-        MainItem::Options,
-        MainItem::Hunters,
-        MainItem::Classic,
-        MainItem::Quit,
-    ];
-
     pub fn label(self) -> &'static str {
         match self {
             MainItem::Hunt => "HUNT SETUP",
+            MainItem::HardcoreHunt => "HARDCORE HUNT",
+            MainItem::Survival => "SURVIVAL",
             MainItem::Manual => "FIELD MANUAL",
             MainItem::Trophy => "TROPHY ROOM",
             MainItem::Options => "SYSTEM OPTIONS",
@@ -92,6 +92,8 @@ pub enum Action {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
     Deploy(Loadout),
+    /// Start survival mode `i` of [`Terminal::survival`].
+    Survival(usize),
     /// Flip the tranquilizer setting (then set [`Terminal::tranq`]).
     ToggleTranq,
     TrophyRoom,
@@ -152,6 +154,15 @@ pub struct Terminal {
     pub score: i32,
     /// The tranquilizer option (earnings ×1.25).
     pub tranq: bool,
+    /// The setup is the hardcore hunt's (its own limits, its own deploy).
+    pub hardcore: bool,
+    /// The survival modes the platform offers, by label (none: no entry).
+    pub survival: Vec<String>,
+    /// The limits of a regular hunt, and of a hardcore one (none: the
+    /// recipe leaves the hardcore hunt off and the menu has no entry).
+    regular_limits: Limits,
+    hardcore_limits: Option<Limits>,
+    survival_row: usize,
     /// Observer mode: the picks cost nothing and no arms are needed.
     pub observer: bool,
     pub screen: Screen,
@@ -181,9 +192,14 @@ impl Terminal {
         let boot_lines = boot_log(&cat, &rules);
         let mut t = Terminal {
             cat,
+            regular_limits: rules.limits.clone(),
             rules,
             score,
             tranq: false,
+            hardcore: false,
+            survival: Vec::new(),
+            hardcore_limits: None,
+            survival_row: 0,
             observer: false,
             screen: if boot { Screen::Boot } else { Screen::Main },
             tab: Tab::Area,
@@ -218,6 +234,56 @@ impl Terminal {
 
     pub fn take_outcome(&mut self) -> Option<Outcome> {
         self.outcome.take()
+    }
+
+    /// Offers the hardcore hunt below the regular one, with its own
+    /// `limits` (what the ruleset bars and caps).
+    pub fn offer_hardcore(&mut self, limits: Limits) {
+        self.hardcore_limits = Some(limits);
+    }
+
+    /// The main menu's entries, in order.
+    pub fn main_items(&self) -> Vec<MainItem> {
+        let mut v = vec![MainItem::Hunt];
+        if self.hardcore_limits.is_some() {
+            v.push(MainItem::HardcoreHunt);
+        }
+        if !self.survival.is_empty() {
+            v.push(MainItem::Survival);
+        }
+        v.extend([
+            MainItem::Manual,
+            MainItem::Trophy,
+            MainItem::Options,
+            MainItem::Hunters,
+            MainItem::Classic,
+            MainItem::Quit,
+        ]);
+        v
+    }
+
+    /// The focused survival mode.
+    pub fn survival_row(&self) -> usize {
+        self.survival_row
+    }
+
+    /// Opens the hunt setup as a regular or a hardcore hunt: the limits
+    /// switch, and picks the new ones bar or cap are dropped.
+    fn open_setup(&mut self, hardcore: bool) {
+        self.hardcore = hardcore && self.hardcore_limits.is_some();
+        self.rules.limits = match (&self.hardcore_limits, self.hardcore) {
+            (Some(l), true) => l.clone(),
+            _ => self.regular_limits.clone(),
+        };
+        self.prune();
+        if let Some(cap) = self.rules.limits.max_weapons {
+            let mut kept = 0;
+            for p in self.picks[Tab::Arms.index() - 1].iter_mut().filter(|p| **p) {
+                kept += 1;
+                *p = kept <= cap;
+            }
+        }
+        self.go(Screen::Setup);
     }
 
     fn go(&mut self, s: Screen) {
@@ -263,20 +329,40 @@ impl Terminal {
             }
             Screen::Main => self.act_main(a),
             Screen::Setup => self.act_setup(a),
+            Screen::Survival => self.act_survival(a),
+        }
+    }
+
+    fn act_survival(&mut self, a: Action) {
+        let n = self.survival.len();
+        match a {
+            Action::Up => self.survival_row = self.survival_row.saturating_sub(1),
+            Action::Down => self.survival_row = (self.survival_row + 1).min(n.saturating_sub(1)),
+            Action::Focus(i) if i < n => self.survival_row = i,
+            Action::Pick(i) if i < n => {
+                self.survival_row = i;
+                self.outcome = Some(Outcome::Survival(i));
+            }
+            Action::Confirm if n > 0 => {
+                self.outcome = Some(Outcome::Survival(self.survival_row.min(n - 1)));
+            }
+            Action::Back => self.go(Screen::Main),
+            _ => {}
         }
     }
 
     fn act_main(&mut self, a: Action) {
-        let n = MainItem::ALL.len();
+        let items = self.main_items();
+        let n = items.len();
         match a {
             Action::Up => self.main_row = self.main_row.saturating_sub(1),
             Action::Down => self.main_row = (self.main_row + 1).min(n - 1),
             Action::Focus(i) if i < n => self.main_row = i,
             Action::Pick(i) if i < n => {
                 self.main_row = i;
-                self.open(MainItem::ALL[i]);
+                self.open(items[i]);
             }
-            Action::Confirm => self.open(MainItem::ALL[self.main_row.min(n - 1)]),
+            Action::Confirm => self.open(items[self.main_row.min(n - 1)]),
             // As the original's Escape on its main menu: the quit prompt.
             Action::Back => self.outcome = Some(Outcome::Quit),
             _ => {}
@@ -285,7 +371,12 @@ impl Terminal {
 
     fn open(&mut self, item: MainItem) {
         match item {
-            MainItem::Hunt => self.go(Screen::Setup),
+            MainItem::Hunt => self.open_setup(false),
+            MainItem::HardcoreHunt => self.open_setup(true),
+            MainItem::Survival => {
+                self.survival_row = 0;
+                self.go(Screen::Survival);
+            }
             MainItem::Manual => self.go(Screen::Manual),
             MainItem::Trophy => self.outcome = Some(Outcome::TrophyRoom),
             MainItem::Options => self.outcome = Some(Outcome::Options),
@@ -510,6 +601,7 @@ impl Terminal {
             equipment: self.picked_list(Tab::Gear),
             time: self.time,
             observer: self.observer,
+            hardcore: self.hardcore,
         }
     }
 
@@ -543,13 +635,17 @@ impl Terminal {
         let l = self.loadout();
         let area = self.cat.areas.get(l.area).map_or("?", |a| a.name.as_str());
         let time = ["DAWN", "DAY", "NIGHT"][l.time.min(2)];
-        vec![
+        let mut log = vec![
             format!("> FLIGHT PLAN FILED: {area} / {time}"),
             format!("> PERMITS ISSUED: {}", l.animals.len()),
             format!("> ARMS CRATED: {}", l.weapons.len()),
             format!("> ACCOUNT DEBITED: {} PTS", self.spent()),
             "> DROPSHIP DEPARTING...".into(),
-        ]
+        ];
+        if self.hardcore {
+            log.insert(1, "> RULESET: HARDCORE".into());
+        }
+        log
     }
 }
 

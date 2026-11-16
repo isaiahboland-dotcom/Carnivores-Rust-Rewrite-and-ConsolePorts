@@ -307,8 +307,11 @@ fn apply_instance(hunt: &mut Hunt, area: &c2_core::area::Area, setup: &HuntSetup
         let extra = hunt.apply_spawn_rules(area, &rules, &stem);
         tracing::info!(area = %stem, extra, "instance spawn rules");
     }
-    // The hardcore hunt ruleset (`hunt` lines), after the animals are set.
-    hunt.start_hardcore(area, &rules.hunt);
+    // The hardcore hunt ruleset (`hunt` lines), after the animals are set;
+    // only a hunt started as a hardcore one plays it.
+    if setup.hardcore {
+        hunt.start_hardcore(area, &rules.hunt);
+    }
     if hunt.hardcore.is_some() {
         tracing::info!("hardcore hunt ruleset on");
     }

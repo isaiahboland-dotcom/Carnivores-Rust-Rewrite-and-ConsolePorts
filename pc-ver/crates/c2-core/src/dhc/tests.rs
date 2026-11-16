@@ -98,7 +98,7 @@ fn main_menu_moves_opens_and_hands_back_platform_screens() {
     t.act(Action::Focus(9));
     t.act(Action::Down);
     t.act(Action::Down);
-    assert_eq!(t.main_row, MainItem::ALL.len() - 1, "stays on the last");
+    assert_eq!(t.main_row, t.main_items().len() - 1, "stays on the last");
     t.act(Action::Pick(0));
     assert_eq!(t.screen, Screen::Setup);
 }
@@ -266,6 +266,7 @@ fn deploy_needs_targets_and_arms_then_runs_its_sequence() {
         equipment: vec![],
         time: 1,
         observer: false,
+        hardcore: false,
     };
     assert_eq!(t.take_outcome(), Some(Outcome::Deploy(want.clone())));
     assert_eq!(t.screen, Screen::Setup);
@@ -303,6 +304,7 @@ fn a_restored_loadout_keeps_only_what_is_allowed_and_affordable() {
         equipment: vec![0, 1],
         time: 0,
         observer: false,
+        hardcore: false,
     });
     let l = t.loadout();
     assert_eq!((l.area, l.animals, l.weapons), (1, vec![1], vec![]));
@@ -356,4 +358,107 @@ fn the_tranquilizer_is_the_platforms_to_flip() {
     let mut t = setup(100, Rules::default());
     t.act(Action::ToggleTranq);
     assert_eq!(t.take_outcome(), Some(Outcome::ToggleTranq));
+}
+
+/// A terminal with both extra entries: the hardcore hunt (no radar, one
+/// weapon) and two survival modes.
+fn full_menu() -> Terminal {
+    let mut t = Terminal::new(catalog(), Rules::default(), 1000, false);
+    t.offer_hardcore(Limits {
+        max_weapons: Some(1),
+        barred_equipment: vec![1],
+        ..Limits::default()
+    });
+    t.survival = vec!["MODDED".into(), "HARDCORE".into()];
+    t
+}
+
+#[test]
+fn the_extra_entries_are_absent_unless_offered() {
+    let t = Terminal::new(catalog(), Rules::default(), 0, false);
+    let items = t.main_items();
+    assert_eq!(items[0], MainItem::Hunt);
+    assert!(!items.contains(&MainItem::HardcoreHunt));
+    assert!(!items.contains(&MainItem::Survival));
+    let items = full_menu().main_items();
+    assert_eq!(
+        &items[..4],
+        [
+            MainItem::Hunt,
+            MainItem::HardcoreHunt,
+            MainItem::Survival,
+            MainItem::Manual
+        ],
+        "the hardcore hunt sits below the regular one"
+    );
+}
+
+#[test]
+fn the_hardcore_hunt_has_its_own_limits_and_the_regular_one_none() {
+    let mut t = full_menu();
+    t.act(Action::Pick(1));
+    assert!(t.hardcore && t.screen == Screen::Setup);
+    t.act(Action::Tab(Tab::Gear));
+    t.act(Action::Pick(1));
+    assert!(!t.picked(Tab::Gear, 1), "radar is barred");
+    assert_eq!(t.notice, Some(Notice::NotAuthorised));
+    t.act(Action::Tab(Tab::Arms));
+    t.act(Action::Pick(0));
+    t.act(Action::Pick(1));
+    assert!(
+        t.picked(Tab::Arms, 0) && !t.picked(Tab::Arms, 1),
+        "one weapon"
+    );
+    assert_eq!(t.notice, Some(Notice::LimitWeapons(1)));
+    t.act(Action::Tab(Tab::Targets));
+    t.act(Action::Pick(0));
+    t.act(Action::Deploy);
+    t.act(Action::Skip);
+    let Some(Outcome::Deploy(l)) = t.take_outcome() else {
+        panic!("no deploy")
+    };
+    assert!(l.hardcore);
+    // Back on the regular setup, nothing is barred and the flag is off.
+    t.act(Action::Back);
+    t.act(Action::Pick(0));
+    assert!(!t.hardcore);
+    t.act(Action::Tab(Tab::Gear));
+    t.act(Action::Pick(1));
+    assert!(t.picked(Tab::Gear, 1));
+    t.act(Action::Tab(Tab::Arms));
+    t.act(Action::Pick(1));
+    assert!(t.picked(Tab::Arms, 1), "two weapons on a regular hunt");
+    assert!(!t.loadout().hardcore);
+}
+
+#[test]
+fn entering_the_hardcore_hunt_drops_picks_it_bars_and_trims_the_arms() {
+    let mut t = full_menu();
+    t.act(Action::Pick(0));
+    for (tab, i) in [(Tab::Gear, 1), (Tab::Arms, 0), (Tab::Arms, 1)] {
+        t.act(Action::Tab(tab));
+        t.act(Action::Pick(i));
+    }
+    t.act(Action::Back);
+    t.act(Action::Pick(1));
+    assert!(!t.picked(Tab::Gear, 1));
+    assert_eq!(t.loadout().weapons, vec![0], "the first weapon stays");
+}
+
+#[test]
+fn survival_lists_the_platforms_modes_and_hands_one_back() {
+    let mut t = full_menu();
+    t.act(Action::Pick(2));
+    assert_eq!(t.screen, Screen::Survival);
+    t.act(Action::Down);
+    t.act(Action::Down);
+    assert_eq!(t.survival_row(), 1, "stays on the last");
+    t.act(Action::Confirm);
+    assert_eq!(t.take_outcome(), Some(Outcome::Survival(1)));
+    t.act(Action::Pick(0));
+    assert_eq!(t.take_outcome(), Some(Outcome::Survival(0)));
+    t.act(Action::Pick(5));
+    assert_eq!(t.take_outcome(), None, "out of range is ignored");
+    t.act(Action::Back);
+    assert_eq!(t.screen, Screen::Main);
 }

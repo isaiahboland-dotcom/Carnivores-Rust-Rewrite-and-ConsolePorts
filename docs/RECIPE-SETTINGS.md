@@ -39,7 +39,7 @@ Treatments:
 | `[settings.rules] hidden` | animals kept off the hunt menu | Kept |
 | `[settings.predation]` | Advanced Dinosaur Behavior and AI: carnivores hunt herbivores | **Off** (no `_PREDATION.TXT`) |
 | `[settings.flee]` | custom bounded-flee limits | **Off** (no `_FLEE.TXT`) |
-| `[settings.hunt]` | hardcore hunt ruleset ([HARDCORE-HUNT.md](HARDCORE-HUNT.md)) | **Off** (no `hunt` lines in `_RULES.TXT`) |
+| `[settings.hunt]` | hardcore hunt ruleset, a separate DHC OS entry ([HARDCORE-HUNT.md](HARDCORE-HUNT.md)); its knife is experimental and needs `experimental_knife = true` as well | **Off** (no `hunt` lines in `_RULES.TXT`) |
 | `[settings.dhc]` | DHC OS terminal rules: discovery, licence costs, island allow-lists ([MODDING.md](MODDING.md#dhc-os-terminal-rules)) | **Off** (no `_DHC.TXT`; the terminal never shows) |
 | `[settings.world]` | zones, player starts and extraction points on the maps ([MODDING.md](MODDING.md#world-zones-player-starts-and-extraction-points)) | **Off** (no `_WORLD.TXT`) |
 | `[[settings.world.missions]]` | fixed challenges that use those points ([MODDING.md](MODDING.md#missions)) | **Off** (with `[settings.world]`) |

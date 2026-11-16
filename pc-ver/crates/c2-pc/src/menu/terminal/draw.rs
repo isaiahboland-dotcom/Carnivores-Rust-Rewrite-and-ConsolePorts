@@ -70,7 +70,10 @@ impl Menu {
         let mut out = vec![(BACK_RECT, Hit::Back)];
         match t.screen {
             TScreen::Main => {
-                out.extend((0..MainItem::ALL.len()).map(|i| (main_rect(i), Hit::Row(i))));
+                out.extend((0..t.main_items().len()).map(|i| (main_rect(i), Hit::Row(i))));
+            }
+            TScreen::Survival => {
+                out.extend((0..t.survival.len()).map(|i| (main_rect(i), Hit::Row(i))));
             }
             TScreen::Setup => {
                 out.extend(
@@ -134,10 +137,12 @@ impl Menu {
             TScreen::Setup => self.draw_term_setup(out, v),
             TScreen::Manual => self.draw_term_manual(out),
             TScreen::Deploy => self.draw_term_deploy(out, t),
+            TScreen::Survival => self.draw_term_survival(out, t),
         }
         let hints = match t.screen {
             TScreen::Boot => "ANY KEY: SKIP",
-            TScreen::Main => "[ESC] LOG OFF   UP/DOWN  ENTER  1-7",
+            TScreen::Main => "[ESC] LOG OFF   UP/DOWN  ENTER  1-9",
+            TScreen::Survival => "[ESC] BACK   UP/DOWN  ENTER  1-3",
             TScreen::Setup => "[ESC] BACK  L/R 1-4 TABS  ENTER PICK  T TIME  F DEPLOY",
             TScreen::Manual => "[ESC] BACK",
             TScreen::Deploy => "ANY KEY: SKIP   [ESC] ABORT",
@@ -197,7 +202,8 @@ impl Menu {
 
     fn draw_term_main(&self, out: &mut Vec<Sprite>, t: &Terminal) {
         self.text(out, MAIN_X, 76.0, PX, LO, "MAIN MENU");
-        for (i, item) in MainItem::ALL.iter().enumerate() {
+        let items = t.main_items();
+        for (i, item) in items.iter().enumerate() {
             let r = main_rect(i);
             let label = format!("[{}] {}", i + 1, item.label());
             if i == t.main_row {
@@ -240,8 +246,12 @@ impl Menu {
                 l,
             );
         }
-        let about = match MainItem::ALL[t.main_row.min(MainItem::ALL.len() - 1)] {
+        let about = match items[t.main_row.min(items.len() - 1)] {
             MainItem::Hunt => "Plan a hunt: area, targets, arms and gear.",
+            MainItem::HardcoreHunt => {
+                "The same setup under the hardcore rules: a leaner loadout, a drop-off and a pickup zone."
+            }
+            MainItem::Survival => "Survive the waves of animals.",
             MainItem::Manual => "How permits, budgets and earnings work.",
             MainItem::Trophy => "Visit your trophy room.",
             MainItem::Options => "Game, video and control settings.",
@@ -254,6 +264,21 @@ impl Menu {
             .enumerate()
         {
             self.text(out, 420.0, 364.0 + i as f32 * 16.0, SMALL, LO, l);
+        }
+    }
+
+    /// The survival modes: one row each, as the main menu's.
+    fn draw_term_survival(&self, out: &mut Vec<Sprite>, t: &Terminal) {
+        self.text(out, MAIN_X, 76.0, PX, LO, "SURVIVAL");
+        for (i, label) in t.survival.iter().enumerate() {
+            let r = main_rect(i);
+            let text = format!("[{}] {label}", i + 1);
+            if i == t.survival_row() {
+                self.fill(out, r, MD);
+                self.text(out, MAIN_X, r.1 + 8.0, PX, INV, &text);
+            } else {
+                self.text(out, MAIN_X, r.1 + 8.0, PX, MD, &text);
+            }
         }
     }
 
@@ -306,6 +331,9 @@ impl Menu {
             );
             let x = r.0 + (r.2 - self.text_width(PX, &label)) / 2.0;
             self.text(out, x, r.1 + 6.0, PX, if on { INV } else { MD }, &label);
+        }
+        if t.hardcore {
+            self.text(out, 560.0, TAB_Y + 6.0, PX, AMBER, "HARDCORE HUNT");
         }
         // The list: [x] name ... price, or why it can't be picked.
         self.term_box(out, LIST, PANEL, LINE);

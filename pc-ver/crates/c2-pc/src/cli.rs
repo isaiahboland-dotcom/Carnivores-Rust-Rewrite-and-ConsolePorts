@@ -514,6 +514,8 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
             };
             Box::new(move |g| {
                 let mut h = hunt_view::HuntView::load(g, setup)?;
+                // --hardcore: the instance's hardcore hunt ruleset, if it has one.
+                hardcore: o.has("hardcore"),
                 if let Some(s) = sim {
                     let ai = s.get(1).copied().unwrap_or(12.0) as i32;
                     let dist = s.get(2).copied().unwrap_or(1500.0);

@@ -85,6 +85,10 @@ struct Choice {
     observer: bool,
     /// A survival instead of a hunt (README M13): free, the animals come.
     survival: Option<SurvivalKind>,
+    /// A hardcore hunt: started from the terminal's hardcore entry (the
+    /// original menu has none, so there the instance's ruleset applies to
+    /// every hunt, see `Menu::hardcore_applies`).
+    hardcore: bool,
     /// The list item whose picture and description show: (column, row).
     focus: Option<(usize, usize)>,
     /// The list (1 animals, 2 weapons) whose last pick was refused for

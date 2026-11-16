@@ -54,7 +54,7 @@ impl HuntView {
             survival_setup(&mut setup, kind)?;
         }
         // The hardcore hunt ruleset may leave night vision out.
-        if setup.survival.is_none() {
+        if setup.survival.is_none() && setup.hardcore {
             let huntdat = setup.map.parent().and_then(|p| p.parent());
             if huntdat.is_some_and(|d| crate::instance_rules::read(d).hunt.no_night_vision) {
                 setup.night_vision = false;

@@ -203,14 +203,16 @@ and the shotgun.
 
 ### Hardcore hunt
 
-An instance can turn on a hardcore ruleset for its hunts (the launcher's
-Advanced page; [rules](HARDCORE-HUNT.md)). In such a hunt:
+An instance can offer a hardcore ruleset (off by default; the launcher's Advanced
+page; [rules](HARDCORE-HUNT.md)). With the DHC OS terminal it is the `HARDCORE HUNT` entry under
+`HUNT SETUP`, so both are available; the regular hunt is unchanged. `SURVIVAL` on the same menu
+lists the survival modes. In a hardcore hunt:
 
 - The map opens first: click the drop-off spot, then the pickup zone.
 - `G` calls the ship to the pickup zone. Stand in the zone while it hovers to
   leave with your trophies. Leaving with `Esc` loses them.
-- With every weapon empty you hold a knife: fire stabs, and `F` dodges to the
-  side you are strafing (right otherwise).
+- The knife (with every weapon empty: fire stabs, `F` dodges) is experimental and unfinished.
+  It is off unless the launcher's "Enable the experimental knife" is ticked.
 
 ## PC VR (early)
 

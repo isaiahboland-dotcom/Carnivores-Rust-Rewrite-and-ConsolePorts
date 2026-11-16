@@ -163,4 +163,7 @@ pub struct Loadout {
     pub time: usize,
     /// Observer mode: watch the animals, unarmed and free.
     pub observer: bool,
+    /// A hardcore hunt: the recipe's ruleset applies (a regular hunt
+    /// ignores it).
+    pub hardcore: bool,
 }

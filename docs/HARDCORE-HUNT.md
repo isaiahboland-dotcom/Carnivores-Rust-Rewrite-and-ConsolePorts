@@ -1,10 +1,22 @@
 # Hardcore hunt
 
 An opt-in ruleset for hunts, set per instance in the recipe editor's Advanced
-page ("Hardcore hunt"). Regular hunts are untouched: with the section absent or
-off, nothing differs. Each rule is independent, so a recipe can take any
+page ("Hardcore hunt"). It is **off by default** and only the launcher turns it
+on. With the DHC OS terminal, a hardcore hunt is its own entry under the
+regular hunt setup, and the regular hunt never plays the ruleset. With the
+section absent or off, nothing differs. Each rule is independent, so a recipe can take any
 subset. Not part of the original game; Play Vanilla leaves the whole section
 out.
+
+### Where it starts
+
+- **DHC OS terminal:** main menu `HUNT SETUP` (regular), `HARDCORE HUNT` (this
+  ruleset; same setup tabs, with the ruleset's gear bans and weapon cap), and
+  `SURVIVAL` (the survival modes). The hardcore entry appears only when the
+  recipe turns a rule on.
+- **Original menu** (terminal off, or "Classic menu"): it has no second slot,
+  so an enabled ruleset applies to every hunt there.
+- `c2-pc --hardcore` starts a hunt with the ruleset from the command line.
 
 Hardcore *survival* (the endless-night survival kind) is a separate, existing
 mode and is not changed.
@@ -28,6 +40,7 @@ ammo_drops = 3                   # placed from the hunt's seed
 hesitation_s = 10
 back_angle = 90                  # degrees; past this the back is turned
 extraction = { arrive_s = 5, hover_s = 30, cooldown_s = 30, min_distance = 48 }
+experimental_knife = true        # unfinished: the knife needs this switch too
 knife = { dodge = true }
 second_predator = { window_s = 30, min_price = 300 }
 
@@ -81,7 +94,11 @@ at places drawn from the hunt's seed. Walking over one adds one full load of
 rounds to every carried weapon's reserve. PC shows them on the map and as a
 marker with its distance within 48 cells. They have no 3D model yet.
 
-### Knife
+### Knife (experimental; will be completed later)
+
+Off unless `experimental_knife = true` is set (the launcher's "Enable the
+experimental knife"), even with the ruleset on. A `knife` section alone is
+ignored. See "Deferred".
 
 - In hand when every carried firearm is empty (chambered, reserve and spare
   magazine all zero). Fire stabs: the nearest animal within reach in front of
@@ -143,12 +160,19 @@ With the original game's prices (10 to 500), only the T-Rex (500) is above
 - `c2-pc/src/hunt_view/hardcore.rs`: map picking, keys and HUD.
   `c2-launcher/src/recipe_edit/hunt.rs`: the editor panel.
 
+## Deferred
+
+The knife is unfinished and stays behind its own switch until it is completed:
+
+- a knife model and sounds;
+- knife kills that are replaced by a new animal, as firearm kills are;
+- a stamina cost for the dodge;
+- gamepad and touch bindings for the knife and the dodge.
+
 ## Not done
 
 - 3DS, Wii U and VR; gamepad and touch bindings for the ship and the dodge.
-- A model for the drops and the knife; sounds for both.
-- The dodge has no stamina cost, only its cooldown.
-- Knife kills are not replaced by a new animal (firearm kills are).
+- A model and sound for the drops.
 - Multi ammo: a drop adds rounds of the kind loaded.
 
 ## Regression tests
@@ -161,6 +185,9 @@ With the original game's prices (10 to 500), only the T-Rex (500) is above
 - `c2-core` `dino::hesitate::tests`: back arc, circling and timeout, each
   reaction, second predator above and at the price and outside the window,
   dodge, renumbering.
+- `c2-core` `dhc::tests`: the hardcore and survival entries appear only when
+  offered, the hardcore setup's own limits, a regular setup without them,
+  survival's modes.
 - `c2-core` `game::tests::hardcore`: zones before anything moves, the ship's
   timings, escape at any moment of the hover and not after it, no call during
   the cooldown, forfeit, equipment, drops from the seed, knife only at zero

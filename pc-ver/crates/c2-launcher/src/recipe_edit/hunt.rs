@@ -92,7 +92,8 @@ impl Extras {
         ui.label(
             RichText::new(
                 "PC only so far: on Nintendo 3DS, Wii U and VR these hunts are regular hunts. \
-                 Play Vanilla leaves the ruleset out.",
+                 Off by default. With the DHC OS terminal on, it is a separate \"Hardcore hunt\" \
+                 entry beside the regular hunt setup. Play Vanilla leaves the ruleset out.",
             )
             .color(GOLD),
         );
@@ -101,7 +102,7 @@ impl Extras {
             "An opt-in ruleset for this instance's hunts. Each rule works on its own. \
              Hardcore survival is a different mode and is not changed.",
         );
-        ui.checkbox(&mut h.enabled, "Hardcore hunt rules");
+        ui.checkbox(&mut h.enabled, "Offer hardcore hunts");
         if h.enabled {
             ui.add_space(4.0);
             rules_ui(ui, &mut h);
@@ -170,6 +171,39 @@ impl Extras {
     }
 }
 
+/// The knife: unfinished, so it has its own switch, off until ticked here
+/// whatever else the page has on.
+fn knife_ui(ui: &mut egui::Ui, h: &mut Hunt) {
+    ui.add_space(4.0);
+    ui.label(
+        RichText::new("Knife (experimental, will be completed later)")
+            .color(GOLD)
+            .strong(),
+    );
+    ui.label(
+        RichText::new(
+            "Unfinished: no model, no sounds and rough handling. Never on by default; \
+             tick this to try it.",
+        )
+        .color(GOLD),
+    );
+    if ui
+        .checkbox(&mut h.experimental_knife, "Enable the experimental knife")
+        .on_hover_text(
+            "The knife comes out when every weapon is empty; its kills give no points and \
+             no trophy.",
+        )
+        .changed()
+    {
+        h.knife = h.experimental_knife.then(Knife::default);
+    }
+    if let Some(k) = h.knife.as_mut().filter(|_| h.experimental_knife) {
+        ui.indent("hunt-knife", |ui| {
+            ui.checkbox(&mut k.dodge, "Dodge: a side-step with the knife out");
+        });
+    }
+}
+
 /// The rules that need no list of animals.
 fn rules_ui(ui: &mut egui::Ui, h: &mut Hunt) {
     ui.label(RichText::new("Equipment").color(TEXT));
@@ -233,7 +267,7 @@ fn rules_ui(ui: &mut egui::Ui, h: &mut Hunt) {
         },
     );
     ui.add_space(4.0);
-    ui.label(RichText::new("Supplies and the knife").color(TEXT));
+    ui.label(RichText::new("Supplies").color(TEXT));
     rule(
         ui,
         &mut h.ammo_drops,
@@ -251,15 +285,7 @@ fn rules_ui(ui: &mut egui::Ui, h: &mut Hunt) {
             );
         },
     );
-    rule(
-        ui,
-        &mut h.knife,
-        "Knife when every weapon is empty",
-        "Knife kills give no points and no trophy.",
-        |ui, k: &mut Knife| {
-            ui.checkbox(&mut k.dodge, "Dodge: a side-step with the knife out");
-        },
-    );
+    knife_ui(ui, h);
     ui.add_space(4.0);
     ui.label(RichText::new("Predators").color(TEXT));
     rule(

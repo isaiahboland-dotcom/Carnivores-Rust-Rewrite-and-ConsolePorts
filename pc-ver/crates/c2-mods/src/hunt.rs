@@ -15,6 +15,7 @@
 //! hesitation_s = 10                # a carnivore circles before it attacks
 //! back_angle = 90                  # degrees: past this, the back is turned
 //! extraction = { arrive_s = 5, hover_s = 30, cooldown_s = 30, min_distance = 48 }
+//! experimental_knife = true        # the knife is unfinished: off unless set here
 //! knife = { dodge = true }
 //! second_predator = { window_s = 30, min_price = 300 }
 //!
@@ -86,6 +87,10 @@ pub struct Hunt {
     pub back_angle: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extraction: Option<Extraction>,
+    /// The knife is unfinished (see `docs/HARDCORE-HUNT.md`, "Deferred"):
+    /// `knife` has no effect unless this is set too, whatever else is on.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub experimental_knife: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub knife: Option<Knife>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -98,6 +103,12 @@ impl Hunt {
     /// Whether the section changes the built game.
     pub fn is_active(&self) -> bool {
         self.enabled && !self.to_format().is_empty()
+    }
+
+    /// Whether the knife is written: its section and the explicit
+    /// experimental switch.
+    pub fn knife_on(&self) -> bool {
+        self.experimental_knife && self.knife.is_some()
     }
 
     /// The rules file's form (off: empty). Values are clamped; predators
@@ -122,8 +133,8 @@ impl Hunt {
                     .min(fmt::SECONDS_RANGE.1),
                 zone_gap: c(e.min_distance.unwrap_or(fmt::ZONE_GAP), fmt::ZONE_GAP_RANGE),
             }),
-            knife: self.knife.is_some(),
-            knife_dodge: self.knife.is_some_and(|k| k.dodge),
+            knife: self.knife_on(),
+            knife_dodge: self.knife_on() && self.knife.is_some_and(|k| k.dodge),
             hesitation_s: self.hesitation_s.map_or(0, |s| {
                 if s == 0 {
                     0
@@ -175,6 +186,7 @@ mod tests {
         ammo_drops = 3
         hesitation_s = 10
         extraction = { arrive_s = 5, hover_s = 30, cooldown_s = 30 }
+        experimental_knife = true
         knife = { dodge = true }
         second_predator = { window_s = 30, min_price = 300 }
         [[predators]]
@@ -207,6 +219,25 @@ mod tests {
         assert!(s.push_rules(&mut vfs).unwrap_or(false));
         let back = rules_fmt::Rules::parse(&vfs.read(rules_fmt::PATH).unwrap_or_default());
         assert_eq!(back.hunt, want);
+    }
+
+    #[test]
+    fn the_knife_needs_its_own_experimental_switch() {
+        let mut h = section();
+        assert!(h.to_format().knife && h.to_format().knife_dodge);
+        h.experimental_knife = false;
+        let f = h.to_format();
+        assert!(
+            !f.knife && !f.knife_dodge,
+            "a knife section alone is ignored"
+        );
+        assert!(h.is_active(), "the other rules still apply");
+        let only_knife = Hunt {
+            enabled: true,
+            knife: Some(Knife { dodge: true }),
+            ..Hunt::default()
+        };
+        assert!(!only_knife.is_active());
     }
 
     #[test]
