@@ -233,16 +233,18 @@ impl Menu {
             self.remember_hunt();
         }
         let mut c = self.choice.clone();
-        // Mobile survival: Mount Ravan, daylight, shotgun, no equipment.
+        // Mobile survival: Mount Ravan (a standalone game: its last area),
+        // daylight, shotgun, no equipment.
         if c.survival.is_some() {
-            c.area = self
+            let stems: Vec<String> = self
                 .areas
                 .iter()
-                .position(|p| {
+                .map(|p| {
                     p.file_stem()
-                        .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("AREA5"))
+                        .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
                 })
-                .unwrap_or(c.area);
+                .collect();
+            c.area = c2_core::game::survival_area(&stems, self.classic_survival).unwrap_or(c.area);
             c.time = 1;
             c.dinos = Bits::ALL;
             c.equip = 0;
@@ -275,9 +277,13 @@ impl Menu {
     }
 
     /// APK-independent modes, with Classic hidden for standalone rosters
-    /// and Hardcore only when its setting is on.
+    /// and Hardcore only when its setting is on. None unless survival is
+    /// offered (the launcher's switch), so the menus show no survival.
     pub(super) fn survival_modes(&self) -> Vec<SurvivalKind> {
         let mut v = Vec::new();
+        if !self.survival_offered {
+            return v;
+        }
         if self.classic_survival {
             v.push(SurvivalKind::Classic);
         }
@@ -299,11 +305,13 @@ impl Menu {
         self.choice.survival = Some(kind);
         self.choice.observer = false;
         self.choice.focus = None;
-        self.choice.weapons = self.columns[2]
+        // The hunt picks it again by model (`hunt_view::load`).
+        let named: Vec<(&str, &str)> = self.columns[2]
             .names
             .iter()
-            .position(|n| n.trim().eq_ignore_ascii_case("shotgun"))
-            .map_or(0, |i| 1u128 << i);
+            .map(|n| (n.as_str(), ""))
+            .collect();
+        self.choice.weapons = c2_core::game::survival_weapon(&named).map_or(0, |i| 1u128 << i);
         self.choice.equip = 0;
         self.launch_hunt();
     }

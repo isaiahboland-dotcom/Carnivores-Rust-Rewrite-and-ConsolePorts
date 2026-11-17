@@ -395,6 +395,7 @@ impl Launcher {
             let mut launch = self.balance_args();
             launch.extend(["--save-instance".into(), r.id()]);
             launch.extend(self.menu_args());
+            launch.extend(self.survival_args());
             crate::windows::validate_exe(&exe)?;
             Ok(vec![
                 Step::Run { program: pc, args },

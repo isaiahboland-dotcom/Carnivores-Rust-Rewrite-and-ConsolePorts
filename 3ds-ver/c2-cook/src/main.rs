@@ -48,7 +48,7 @@ const USAGE: &str = "usage:
   c2-cook --game <GAME_DIR> [--overlay DIR]... [--mod MOD]...
           [--recipe RECIPE.toml --mods DIR...] [--balance FILE] [--areas N,N]
           [--phone-game DIR --phone-pictures weapons,animals,scope]
-          [--target n3ds|o3ds] [--force] --out <PACK.c2pk>
+          [--offer-survival] [--target n3ds|o3ds] [--force] --out <PACK.c2pk>
 
   c2-cook --game <GAME_DIR> ... --target wiiu [--title NAME] --out <DIR>
                                 the game as the Wii U reads it: a folder of the
@@ -71,6 +71,8 @@ const USAGE: &str = "usage:
              --phone-pictures, its weapon pictures, animal pictures (and call
              icons from them) and scope mask replace the game's own, matched
              by model file
+  --offer-survival  the menus offer survival (off by default; always on for
+             a game built from your APK)
   --areas    only these areas (default: all, plus the trophy room)
   --target   n3ds (New 3DS, default) or o3ds (Old 3DS / 2DS: smaller textures, shorter view)
   --force    write the pack even if it is over the target's memory budget
@@ -283,6 +285,9 @@ struct Args {
     force: bool,
     /// `--no-sound`: a pack without any sound (for measuring what sound costs).
     no_sound: bool,
+    /// `--offer-survival`: the pack's menus offer survival (the launcher's
+    /// switch; always for a game built from the APK).
+    offer_survival: bool,
     out: Option<PathBuf>,
 }
 
@@ -320,6 +325,7 @@ fn parse_args() -> Result<Args> {
             "--out" => a.out = Some(val()?.into()),
             "--force" => a.force = true,
             "--no-sound" => a.no_sound = true,
+            "--offer-survival" => a.offer_survival = true,
             "-h" | "--help" => {
                 println!("{USAGE}");
                 std::process::exit(0);
@@ -350,7 +356,21 @@ fn merged(a: &Args, game: &Path) -> Result<Vfs> {
             .with_context(|| format!("taking pictures from {}", dir.display()))?;
         vfs.push("phone pictures", Box::new(layer));
     }
+    // Survival in the menus: the launcher's switch, or a game built from
+    // the APK (its menus always offer it).
+    if a.offer_survival || c2_mods::pack::find_path(game, "HUNTDAT/MOBILE").is_some() {
+        vfs.push("survival", Box::new(offer_survival(&vfs)));
+    }
     Ok(vfs)
+}
+
+/// The game's `_RULES.TXT` with the `survival` line (the rest kept).
+fn offer_survival(vfs: &Vfs) -> MemBackend {
+    let mut r = c2_core::load::rules(vfs);
+    r.survival = true;
+    let mut m = MemBackend::new();
+    m.insert(c2_formats::rules::PATH, r.to_text().into_bytes());
+    m
 }
 
 /// `--phone-pictures`: the phone game's pictures in place of the game's
@@ -1669,6 +1689,25 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn offering_survival_keeps_the_instance_rules() {
+        let mut m = MemBackend::new();
+        m.insert(c2_formats::rules::PATH, b"times day\nhide Rex\n".to_vec());
+        let mut vfs = Vfs::new();
+        vfs.push("game", Box::new(m));
+        assert!(!c2_core::load::rules(&vfs).survival, "off by default");
+        vfs.push("survival", Box::new(offer_survival(&vfs)));
+        let r = c2_core::load::rules(&vfs);
+        assert!(r.survival);
+        assert_eq!(r.times, 0b010);
+        assert_eq!(r.hidden, ["Rex"]);
+        // A game without a rules file gets one with the line alone.
+        let mut bare = Vfs::new();
+        bare.push("game", Box::new(MemBackend::new()));
+        bare.push("survival", Box::new(offer_survival(&bare)));
+        assert!(c2_core::load::rules(&bare).survival);
+    }
 
     #[test]
     fn downscale_keeps_cutouts() {

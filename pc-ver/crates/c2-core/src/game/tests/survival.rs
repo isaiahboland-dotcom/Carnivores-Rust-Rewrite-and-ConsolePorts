@@ -264,10 +264,19 @@ fn survival_waves_start_by_the_hunter_not_up_a_mountain() {
 #[test]
 fn blocked_budget_survival_box_never_falls_back_behind_the_hunter_or_skips_a_wave() {
     let (mut area, mut hunt, car) = setup(false);
-    // Entire spawn box is on a plateau with no route down to the hunter.
+    // Entire spawn box is on a plateau with no route down to the hunter's
+    // pocket, and the rest is sea: no other arena to fit
+    // (`Arena::fitted`), so the blocked one stays.
     for z in 0..1024 {
-        for x in 0..388 {
-            area.map.height[z * 1024 + x] = 250;
+        for x in 0..1024 {
+            let i = z * 1024 + x;
+            if (370..388).contains(&x) && (390..410).contains(&z) {
+                area.map.height[i] = 250;
+            } else if !((396..=404).contains(&x) && (396..=404).contains(&z)) {
+                area.map.flags[i] |= crate::area::cell_flags::WATER;
+                area.map.water[i] = 0;
+                area.map.height[i] = 0;
+            }
         }
     }
     hunt.herd.species.push(Species::new(info(ai::ALLO), &car));
@@ -386,4 +395,43 @@ fn priced(max_wave: usize, arena: Arena) -> SurvivalOptions {
         unlimited: true,
         ..Default::default()
     }
+}
+
+#[test]
+fn survival_is_held_on_mount_ravan_or_the_last_listed_area() {
+    use crate::game::survival_area;
+    let stock = ["AREA1", "AREA2", "AREA3", "AREA4", "area5", "AREA6"];
+    assert_eq!(survival_area(&stock, true), Some(4), "Mount Ravan");
+    // A standalone game (no stock animals): its own last map.
+    assert_eq!(survival_area(&stock, false), Some(5));
+    assert_eq!(
+        survival_area(&["AREA1", "AREA2"], true),
+        Some(1),
+        "no AREA5"
+    );
+    assert_eq!(survival_area::<&str>(&[], true), None);
+}
+
+#[test]
+fn survival_hunts_with_the_shotgun_or_the_third_weapon() {
+    use crate::game::survival_weapon;
+    let stock = [
+        ("Pistol", "pistol.car"),
+        ("Rifle", "rifle.car"),
+        ("Shotgun", "shotgun.car"),
+    ];
+    assert_eq!(survival_weapon(&stock), Some(2));
+    let renamed = [("Boomstick", "WEAPONS/SHOTGUN.CAR"), ("Rifle", "rifle.car")];
+    assert_eq!(survival_weapon(&renamed), Some(0), "by its model");
+    let named = [("Bow", "bow.car"), ("shotgun ", "pump.car")];
+    assert_eq!(survival_weapon(&named), Some(1), "by its name");
+    let other = [
+        ("Bow", "bow.car"),
+        ("Rifle", "rifle.car"),
+        ("Blaster", "blaster.car"),
+        ("Laser", "laser.car"),
+    ];
+    assert_eq!(survival_weapon(&other), Some(2), "the third");
+    assert_eq!(survival_weapon(&other[..2]), Some(1), "fewer: the last");
+    assert_eq!(survival_weapon(&[]), None);
 }

@@ -218,14 +218,11 @@ impl HuntView {
     }
 }
 
-/// A survival: Mount Ravan by day, every animal, no observer, double ammo
-/// or night vision; hardcore at night with the flashlight in hand.
+/// A survival: by day, every animal, no observer, double ammo or night
+/// vision; hardcore at night with the flashlight in hand. The map is the
+/// menu's pick (`c2_core::game::survival_area`); the arena is fitted to it
+/// when the hunt starts.
 fn survival_setup(setup: &mut HuntSetup, kind: SurvivalKind) -> Result<()> {
-    setup.map = setup
-        .map
-        .parent()
-        .and_then(|p| find_file(p, "AREA5.MAP"))
-        .ok_or_else(|| anyhow::anyhow!("Survival requires Mount Ravan (AREA5.MAP)"))?;
     // Hardcore: the night, the flashlight in hand.
     let night = kind.endless_night();
     setup.time = if night {
@@ -267,24 +264,21 @@ fn read_res(
     })
 }
 
-/// The shotgun's weapon slot (survival hunts with it alone): by its model,
-/// else by its name.
+/// The weapon slot survival hunts with alone: the shotgun, else (a
+/// standalone game without one) the third listed weapon
+/// (`c2_core::game::survival_weapon`).
 fn shotgun(res: &c2_formats::res_txt::ResData) -> Result<usize> {
-    res.weapons
+    let list: Vec<(&str, &str)> = res
+        .weapons
         .iter()
-        .position(|w| {
-            w.file
-                .as_deref()
-                .is_some_and(|f| f.eq_ignore_ascii_case("shotgun.car"))
+        .map(|w| {
+            (
+                w.name.as_deref().unwrap_or(""),
+                w.file.as_deref().unwrap_or(""),
+            )
         })
-        .or_else(|| {
-            res.weapons.iter().position(|w| {
-                w.name
-                    .as_deref()
-                    .is_some_and(|n| n.trim().eq_ignore_ascii_case("shotgun"))
-            })
-        })
-        .ok_or_else(|| anyhow::anyhow!("Survival requires the shotgun"))
+        .collect();
+    c2_core::game::survival_weapon(&list).ok_or_else(|| anyhow::anyhow!("Survival needs a weapon"))
 }
 
 /// A game built from an APK: the hunt screen as the phone game's, with

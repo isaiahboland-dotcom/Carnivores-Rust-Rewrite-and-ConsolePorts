@@ -133,6 +133,9 @@ pub struct Menu {
     huntdat: PathBuf,
     /// Stock animals are present, so Classic can be offered.
     classic_survival: bool,
+    /// Survival is offered at all ([`OFFER_SURVIVAL`], the instance's
+    /// rule, or a game built from the APK).
+    survival_offered: bool,
     /// Which survival? (more than one offered).
     survival_pick: bool,
     start_score: i32,
@@ -220,6 +223,11 @@ pub struct Menu {
 /// and slider are used (the original's, a mod's, Ice Age's); the pictures
 /// and texts stay the game's.
 pub static MENU_ART: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// Survival offered in the menus (`--offer-survival`: the launcher's
+/// switch). The instance's `survival` rule and a game built from the
+/// mobile APK offer it too; otherwise the menus never show it.
+pub static OFFER_SURVIVAL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 
 /// The experimental mobile layout of the hunt setup (`--mobile-menu`).
 pub static MOBILE_MENU: std::sync::OnceLock<bool> = std::sync::OnceLock::new();

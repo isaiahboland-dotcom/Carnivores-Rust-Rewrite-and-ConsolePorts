@@ -564,7 +564,10 @@ impl Menu {
         let mut v = Vec::new();
         match self.page {
             Page::Title => {
-                for (i, id) in [Id::Play, Id::Survival, Id::Trophies, Id::Record, Id::Settings, Id::Exit].into_iter().enumerate() {
+                // Survival only when the game offers it (the launcher's switch).
+                let offered = self.install.as_ref().is_some_and(|n| n.survival_offered());
+                let ids = [Id::Play, Id::Survival, Id::Trophies, Id::Record, Id::Settings, Id::Exit];
+                for (i, id) in ids.into_iter().filter(|&id| offered || id != Id::Survival).enumerate() {
                     v.push((id, rect(72.0, 258.0 + i as f32 * 64.0, 420.0, 54.0)));
                 }
             }
@@ -893,8 +896,8 @@ impl Menu {
             Id::Record => self.go(Page::Record),
             Id::SurvivalKind(i) => {
                 c.survival = i as u32;
-                let area = self.install.as_ref().and_then(|n| n.areas.iter().position(|a| a.file.eq_ignore_ascii_case("AREA5")));
-                let shotgun = self.install.as_ref().and_then(|n| n.weapons.iter().position(|w| w.trim().eq_ignore_ascii_case("shotgun")));
+                let area = self.install.as_ref().and_then(Install::survival_area);
+                let shotgun = self.install.as_ref().and_then(Install::survival_weapon);
                 match (area, shotgun) {
                     (Some(area), Some(shotgun)) => {
                         c.area = area as u32;
@@ -911,7 +914,7 @@ impl Menu {
                         c.teleport = 0;
                         self.try_hunt();
                     }
-                    _ => self.message = Some("Survival requires Mount Ravan and the shotgun"),
+                    _ => self.message = Some("Survival needs an area and a weapon"),
                 }
             },
             Id::Settings => self.go(Page::Settings),

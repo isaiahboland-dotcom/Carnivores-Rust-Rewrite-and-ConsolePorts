@@ -9,7 +9,7 @@ use c2_core::area::TimeOfDay;
 use c2_core::game::SurvivalKind;
 
 const USAGE: &str = "usage:
-  c2-pc play  <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR... [--accept-base] [--classic]] [--balance FILE]
+  c2-pc play  <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR... [--accept-base] [--classic]] [--balance FILE] [--offer-survival]
               [--screen main|stats|hunt|options|credits|register|quit|loading|terminal|terminal-hunt|terminal-login|terminal-waiver|terminal-delete|terminal-options|terminal-quit]
               [--script 'X,Y;'TEXT;enter;esc'] [--shot out.png]
   c2-pc balance <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]...   (prints prices and scores as a balance file)
@@ -41,7 +41,8 @@ play:  the menus; a hunt returns to them. --mod (repeatable) plays vanilla plus 
        combined into the data dir (see MERGE_REPORT.md there); --balance applies a balance file's
        prices and scores (see `c2-pc balance`); --menu-art GAME_DIR takes the menu frames from another
        game (the original's, a mod's, Ice Age's); --mobile-menu the experimental
-       mobile layout of the hunt setup; --max-picks N at most N animals and N weapons per hunt
+       mobile layout of the hunt setup; --max-picks N at most N animals and N weapons per hunt;
+       --offer-survival shows survival in the menus (always shown for a game built from an APK)
 mod:   detect prints (or --write saves) an inferred mod.toml; build writes a combined game folder
 hunt:  click to capture mouse; keys follow the player's bindings (default WASD move, mouse look,
        LMB fire, E show/hide weapon, 1-6 choose weapon, Shift toggles run, X crouch, Space jump/swim,
@@ -596,6 +597,10 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
             // --menu-art DIR: the menu style (another game's menu frames).
             if let Some(d) = o.value("menu-art") {
                 let _ = menu::MENU_ART.set(PathBuf::from(d));
+            }
+            // --offer-survival: survival in the menus (the launcher's switch).
+            if o.has("offer-survival") {
+                let _ = menu::OFFER_SURVIVAL.set(true);
             }
             // --mobile-menu: the experimental mobile layout of the hunt setup.
             if o.has("mobile-menu") {

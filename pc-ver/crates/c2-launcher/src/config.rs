@@ -242,6 +242,9 @@ pub struct Config {
     /// The instance editor's Advanced tab shown (Settings; off by
     /// default).
     pub show_advanced: bool,
+    /// Survival offered in the games' menus (Settings; off by default).
+    /// A game built from the APK always offers it.
+    pub survival: bool,
     /// The launcher's colours and shapes (Settings > Look): the DHC OS
     /// terminal's look, or Legacy, the launcher's earlier olive panels.
     pub look: crate::theme::Look,
@@ -659,6 +662,18 @@ pub fn install_name(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn survival_is_off_by_default() {
+        assert!(!Config::default().survival);
+        let old: Config = toml::from_str("show_advanced = true\n").unwrap_or_default();
+        assert!(
+            !old.survival,
+            "a config from before the switch keeps it off"
+        );
+        let on: Config = toml::from_str("survival = true\n").unwrap_or_default();
+        assert!(on.survival);
+    }
 
     #[test]
     fn a_standalone_that_is_on_is_not_also_an_add_on() {

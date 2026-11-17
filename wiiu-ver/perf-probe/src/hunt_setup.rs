@@ -256,8 +256,8 @@ pub fn load(install: Option<&Install>, choice: &HuntChoice, room: &Save, seed: u
         apply_locks(&mut fixed, &install.inst);
     }
     if choice.mode == MODE_SURVIVAL {
-        fixed.area = install.areas.iter().position(|a| a.file.eq_ignore_ascii_case("AREA5")).ok_or(-2)? as u32;
-        let shotgun = install.weapons.iter().position(|n| n.trim().eq_ignore_ascii_case("shotgun")).ok_or(-13)?;
+        fixed.area = install.survival_area().ok_or(-2)? as u32;
+        let shotgun = install.survival_weapon().ok_or(-13)?;
         fixed.weapons = 1 << shotgun;
         fixed.time = 1;
         fixed.observer = 0;

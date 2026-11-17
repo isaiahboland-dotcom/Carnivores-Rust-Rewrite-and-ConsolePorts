@@ -180,6 +180,7 @@ impl Rules {
                 .filter(|h| !h.is_empty())
                 .collect(),
             hunt: Default::default(),
+            survival: false,
         }
     }
 

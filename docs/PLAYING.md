@@ -204,6 +204,11 @@ Nintendo ports keep their own mappings.
 
 ### Survival
 
+Survival is **off by default**: turn on Settings > Game modes > **Survival mode** in the launcher,
+and the main menu and the DHC OS terminal offer it (PC, Windows packages, and 3DS and Wii U packs
+built after the change). From the command line: `c2-pc play ... --offer-survival`, or
+`c2-cook ... --offer-survival` for a console pack. A game built from your APK always offers it.
+
 Survival offers **Classic** (stock animals; hidden on standalone rosters) and **Modded** (eligible
 stock and installed mod animals). Neither requires an APK. Waves use hunt-menu prices and a separate
 budget that grows 10% per round. The starting budget defaults to twice the cheapest eligible
@@ -211,7 +216,10 @@ dangerous animal's price (minimum 10). PC Game options can override it; packs ca
 `survival_start` in the menu script's `prices` section on all platforms.
 
 Choosing Classic or Modded starts immediately on Mount Ravan in the mobile survival ravine, with a
-shotgun only. Waves come from the fixed approach; ordinary map wildlife is removed. Movement remains
+shotgun only. Waves come from the fixed approach; ordinary map wildlife is removed. A standalone
+game without the stock animals holds its survival on its last area instead, with the shotgun if it
+has one, else its third weapon; the hunter's spot and the waves' approach are then found on that
+map (dry, walkable ground near its centre). Movement remains
 enabled. Console memory and wave limits still apply.
 
 **Hardcore survival** (PC; off by default, not part of the original game): turn on Game options >

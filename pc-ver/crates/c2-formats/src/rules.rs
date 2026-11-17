@@ -17,7 +17,11 @@
 //! secret 1 * Velociraptor
 //! hide Tyrannosaurus         ; in the game, but not in the hunt menu
 //! hunt max_firearms 2        ; the hardcore hunt ruleset ([`crate::hardcore`])
+//! survival                   ; survival offered (the launcher's switch)
 //! ```
+//!
+//! Survival is offered only with the `survival` line (or a game built from
+//! the mobile APK, whose menus always offer it).
 
 #[cfg(not(feature = "std"))]
 use alloc::{format, string::String, vec::Vec};
@@ -104,6 +108,9 @@ pub struct Rules {
     pub hidden: Vec<String>,
     /// The hardcore hunt ruleset (`hunt` lines); default: every rule off.
     pub hunt: crate::hardcore::Hunt,
+    /// Survival is offered in the menus (the `survival` line, the
+    /// launcher's switch; off without it).
+    pub survival: bool,
 }
 
 /// Whether map `stem` is one of `areas` (empty: every area).
@@ -248,6 +255,7 @@ impl Rules {
                     }
                 }
                 "hunt" => r.hunt.parse_line(words),
+                "survival" => r.survival = true,
                 _ => {}
             }
         }
@@ -283,6 +291,9 @@ impl Rules {
             s += &format!("hide {h}\n");
         }
         self.hunt.lines(&mut s);
+        if self.survival {
+            s += "survival\n";
+        }
         s
     }
 }
@@ -309,6 +320,7 @@ mod tests {
                 },
             ],
             hidden: vec!["Raptor #2".into(), "Rex".into()],
+            survival: true,
             ..Rules::default()
         }
     }
@@ -353,6 +365,13 @@ mod tests {
             .to_vec();
         let hidden: Vec<usize> = (0..5).filter(|&i| r.hides(&names, i)).collect();
         assert_eq!(hidden, [1, 2]);
+    }
+
+    #[test]
+    fn survival_is_off_without_its_line() {
+        assert!(!Rules::parse(b"times day\n").survival);
+        assert!(Rules::parse(b"survival ; the launcher's switch\n").survival);
+        assert!(!Rules::parse(b"survival\n").is_empty());
     }
 
     #[test]

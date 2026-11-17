@@ -206,10 +206,29 @@ pub fn check(pack: &Path, bench: Option<&str>) -> Result<()> {
     let mut survival_failed = 0;
     let trophy_failed = bench.is_none() && !trophy_room(&vfs, &info)?;
     if bench.is_none() {
-        for kind in SurvivalKind::ALL {
-            if !survival(&vfs, &rules, kind) {
-                survival_failed += 1;
+        if c2_core::load::rules(&vfs).survival {
+            // The menus' pick: Mount Ravan with the stock animals, else the
+            // last area (`c2_core::game::survival_area`).
+            let stock = neutral
+                .res
+                .characters
+                .iter()
+                .filter(|d| {
+                    c2_core::game::classic_identity(
+                        d.name.as_deref().unwrap_or(""),
+                        d.file.as_deref().unwrap_or(""),
+                    )
+                })
+                .count()
+                >= 6;
+            let area = c2_core::game::survival_area(&areas, stock).map(|i| areas[i].as_str());
+            for kind in SurvivalKind::ALL {
+                if !area.is_some_and(|a| survival(&vfs, &rules, kind, a)) {
+                    survival_failed += 1;
+                }
             }
+        } else {
+            println!("survival: not offered (cook with --offer-survival)");
         }
     }
     if hunt_problems > 0 {
@@ -546,12 +565,12 @@ fn survival_hunt(
     Some(SurvivalHunt { area, hunt, cars })
 }
 
-/// A survival on Mount Ravan with every animal loaded, its waves bought
-/// with the menu's prices. `false`: it didn't run (Classic is skipped in a
-/// game without the stock animals, as the menus hide it).
-fn survival(vfs: &Vfs, rules: &Rules, kind: SurvivalKind) -> bool {
-    println!("{}:", kind.name().to_ascii_lowercase());
-    let Some(mut s) = survival_hunt(vfs, rules, "AREA5", TimeOfDay::Day) else {
+/// A survival on `area` (the menus' pick) with every animal loaded, its
+/// waves bought with the menu's prices. `false`: it didn't run (Classic is
+/// skipped in a game without the stock animals, as the menus hide it).
+fn survival(vfs: &Vfs, rules: &Rules, kind: SurvivalKind, area: &str) -> bool {
+    println!("{} on {area}:", kind.name().to_ascii_lowercase());
+    let Some(mut s) = survival_hunt(vfs, rules, area, TimeOfDay::Day) else {
         return false;
     };
     c2_core::game::price_species(&mut s.hunt.herd.species, &rules.menu);

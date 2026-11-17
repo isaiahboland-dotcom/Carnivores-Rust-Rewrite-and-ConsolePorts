@@ -1,5 +1,43 @@
 # Decisions and deviations
 
+## 2026-11-16 — Survival is a launcher switch (off by default); standalone survival on the last area
+
+- **Off unless offered.** Survival is not in the original PC game; the menus now offer it only
+  when the game says so. `_RULES.TXT` gains a `survival` line (`c2_formats::rules::Rules::survival`,
+  off without it). The PC menu also takes `c2-pc play --offer-survival` (`--survival` is already the
+  `c2-pc hunt` debug option), and `c2-cook --offer-survival` writes the line into a 3DS or Wii U
+  pack, keeping the instance's other rules. With survival not offered, the mode list is empty, so
+  the original menu's Survival button, the DHC OS terminal's `SURVIVAL` entry (PC and 3DS) and the
+  Wii U title entry are all hidden.
+- **The launcher's switch** is Settings > Game modes > Survival mode (`survival` in
+  `launcher.toml`, off by default, for every instance). On, the launcher adds `--offer-survival`
+  to Play, to Windows packages' saved arguments and to every `c2-cook` run (3DS and Wii U).
+  Console packs must be rebuilt after changing it.
+- **APK base: always on.** A game built from the mobile APK (`HUNTDAT/MOBILE`) offers survival
+  whatever the switch says: the PC menu checks for the folder (this covers the Android app, which
+  takes no arguments), `c2-cook` checks the game folder, and the launcher shows the switch locked
+  on.
+- **Which map and weapon.** `c2_core::game::survival_area`: Mount Ravan (`AREA5`) when the game
+  has the stock animals (the test the menus already use to offer Classic: six or more stock
+  identities), else the **last listed area**. `survival_weapon`: the shotgun (by model, then by
+  name), else the **third listed weapon**, else the last. The menus used to refuse survival
+  ("requires Mount Ravan / the shotgun"). A standalone's own `AREA5` (Genesis Redux, Fallen Kings,
+  JPHL) is not Mount Ravan, so the stock-animal test, not the file name, decides. Deviation: a
+  standalone that does keep the stock animals but replaces `AREA5` still plays on its `AREA5`, with
+  a found arena (below).
+- **The arena is fitted to the map** (`Arena::fitted`, in `Hunt::start_survival`, so every platform
+  and `c2-cook --check` get it). The ravine is kept when the hunter's cell is standable and at
+  least 8 cells of the spawn box are dry, free and reachable inside the survival's fence. Otherwise
+  `Arena::find` tries hunter cells from the map's centre outwards (up to 64, on a 24-cell grid),
+  and for each, spawn boxes of 17×17 cells at 48, 64 and 80 cells in 16 directions, keeping the box
+  with the most reachable ground that also passes the fit test. No arena found: the ravine, as
+  before. This was the cause of SURVIVAL-SPAWN: the ravine's coordinates are off the playable land
+  on those games' maps, so no wave animal could be placed. `select_variant` was not involved (the
+  roster already drops variant members).
+- Checked with `c2-cook --check` on packs cooked with `--offer-survival`: vanilla (Mount Ravan, ravine
+  kept), Genesis Redux 1.1 and 2.0 and Fallen Kings (AREA8), JPHL (AREA7): every mode's first wave
+  comes. Without the flag the check reports "survival: not offered" and passes.
+
 ## 2026-11-16 — Launcher in the DHC OS look (Legacy kept); DHC OS on by default on 3DS; Wii U unchanged
 
 - **Launcher look.** The launcher draws in the DHC OS terminal's palette, monospace text and

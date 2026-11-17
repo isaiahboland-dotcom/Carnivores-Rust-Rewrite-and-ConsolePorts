@@ -4,6 +4,7 @@
 //! per round, independently of hunter points. Movement stays enabled;
 //! ordinary wildlife is removed.
 
+mod arena;
 mod budget;
 mod navigation;
 mod options;
@@ -11,9 +12,11 @@ mod roster;
 mod runtime;
 mod spawning;
 
+pub use arena::Arena;
 pub use budget::wave_budget;
 pub use options::{
-    dangerous, dangerous_ai, is_trex, Arena, SurvivalKind, SurvivalOptions, WAVE_HEALTH,
+    dangerous, dangerous_ai, is_trex, survival_area, survival_weapon, SurvivalKind,
+    SurvivalOptions, WAVE_HEALTH,
 };
 pub use roster::{classic_identity, price_species, roster};
 pub use runtime::Survival;

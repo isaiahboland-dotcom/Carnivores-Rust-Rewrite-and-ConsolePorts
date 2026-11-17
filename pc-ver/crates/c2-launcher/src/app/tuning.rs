@@ -98,7 +98,7 @@ impl Launcher {
     /// `c2-cook`'s phone pictures where chosen (`--phone-game`,
     /// `--phone-pictures`; the 3DS and Wii U).
     pub(super) fn cook_extras(&self) -> Vec<String> {
-        let mut v = Vec::new();
+        let mut v = self.survival_args();
         let Some(phone) = self.phone_game() else {
             return v;
         };
@@ -223,6 +223,7 @@ impl Launcher {
         }
         args.extend(self.balance_args());
         args.extend(self.menu_args());
+        args.extend(self.survival_args());
         args
     }
 }

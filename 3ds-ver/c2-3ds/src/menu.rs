@@ -34,9 +34,9 @@ mod terminal;
 mod terminal_draw;
 mod tranq;
 
-use plan::{MemKey, Memory, O_SECRET};
 use crate::settings::Settings;
 use crate::ui::load;
+use plan::{MemKey, Memory, O_SECRET};
 pub use terminal::Keys;
 
 /// Accessories (`EQUIPn.TGA`), in `prices.acces` order. The original's
@@ -416,6 +416,9 @@ pub struct Menu {
     extra_dinos: Bits,
     /// Classic survival is offered (the stock animals are in the pack).
     classic_survival: bool,
+    /// Survival is offered at all: the pack's instance rules say so (the
+    /// launcher's switch, `c2-cook --offer-survival`).
+    survival_offered: bool,
     /// Choosing which survival (more than one offered).
     survival_pick: bool,
     /// The DHC OS terminal's state (`terminal`), used when its setting is
@@ -653,6 +656,7 @@ impl Menu {
             kinds,
             extra_dinos: Bits::NONE,
             classic_survival,
+            survival_offered: inst.survival,
             survival_pick: false,
             weapons,
             equip,
@@ -899,9 +903,13 @@ impl Menu {
         }
     }
 
-    /// APK-independent modes; Classic needs stock animal identities.
+    /// APK-independent modes; Classic needs stock animal identities. None
+    /// unless the pack offers survival, so the menus show none.
     fn survival_modes(&self) -> Vec<(SurvivalKind, &'static str)> {
         let mut v = Vec::new();
+        if !self.survival_offered {
+            return v;
+        }
         if self.classic_survival {
             v.push((SurvivalKind::Classic, "CLASSIC"));
         }
@@ -909,22 +917,18 @@ impl Menu {
         v
     }
 
-    /// Choosing a mode launches directly into the mobile survival arena.
+    /// Choosing a mode launches directly into the mobile survival arena:
+    /// Mount Ravan with the shotgun, or in a standalone game its last area
+    /// and third weapon (`c2_core::game::survival_area`, `survival_weapon`).
     fn start_survival(&mut self, kind: SurvivalKind) -> Option<Setup> {
-        let Some(area) = self
-            .areas
-            .iter()
-            .position(|a| a.0.eq_ignore_ascii_case("AREA5"))
-        else {
-            self.message = Some("Survival requires Mount Ravan (AREA5)".into());
+        let stems: Vec<&str> = self.areas.iter().map(|a| a.0.as_str()).collect();
+        let Some(area) = c2_core::game::survival_area(&stems, self.classic_survival) else {
+            self.message = Some("Survival needs an area".into());
             return None;
         };
-        let Some(shotgun) = self
-            .weapons
-            .iter()
-            .position(|w| w.name.trim().eq_ignore_ascii_case("shotgun"))
-        else {
-            self.message = Some("Survival requires the shotgun".into());
+        let named: Vec<(&str, &str)> = self.weapons.iter().map(|w| (w.name.as_str(), "")).collect();
+        let Some(shotgun) = c2_core::game::survival_weapon(&named) else {
+            self.message = Some("Survival needs a weapon".into());
             return None;
         };
         self.area = area;
@@ -1755,7 +1759,11 @@ impl Menu {
         // What was tapped, or a message; then the bar.
         let line = self.message.clone().or_else(|| self.focus.clone());
         if let Some(l) = line {
-            let col = if self.message.is_some() { pal.red } else { pal.text };
+            let col = if self.message.is_some() {
+                pal.red
+            } else {
+                pal.text
+            };
             let l: String = l.chars().take(38).collect();
             // On the gear screen the Tranq / Observe buttons sit there: the
             // line goes above them, on a dark strip.
@@ -1787,7 +1795,14 @@ impl Menu {
                 "Back",
             );
         }
-        c.text_c(gpu, NEXT[0] + NEXT[2] / 2.0, BAR_Y + 8.0, 1.0, pal.white, next);
+        c.text_c(
+            gpu,
+            NEXT[0] + NEXT[2] / 2.0,
+            BAR_Y + 8.0,
+            1.0,
+            pal.white,
+            next,
+        );
         let g = self.grid_of(step);
         let pts = if g.pages > 1 {
             c.rect(PAGE_PREV, pal.panel);

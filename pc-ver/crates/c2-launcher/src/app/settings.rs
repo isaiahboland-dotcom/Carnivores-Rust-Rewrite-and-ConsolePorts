@@ -86,6 +86,10 @@ impl Launcher {
         ui.add_space(8.0);
         self.search_dirs_ui(ui);
         ui.add_space(8.0);
+        if panel(ui, |ui| self.survival_ui(ui)) {
+            self.save();
+        }
+        ui.add_space(8.0);
         if panel(ui, |ui| {
             ui.label(RichText::new("Advanced").color(theme::gold()));
             let changed = ui
@@ -103,6 +107,43 @@ impl Launcher {
             changed
         }) {
             self.save();
+        }
+    }
+
+    /// The survival switch: whether the games' menus (the original menus
+    /// and the DHC OS terminal) offer survival. True when it changed.
+    fn survival_ui(&mut self, ui: &mut egui::Ui) -> bool {
+        ui.label(RichText::new("Game modes").color(theme::gold()));
+        let phone = self.has_phone_base();
+        let changed = if phone {
+            let mut on = true;
+            ui.add_enabled(false, egui::Checkbox::new(&mut on, "Survival mode"));
+            ui.label(
+                RichText::new("Always on for a game built from your APK.").color(theme::sand()),
+            );
+            false
+        } else {
+            ui.checkbox(&mut self.cfg.survival, "Survival mode")
+                .changed()
+        };
+        help(
+            ui,
+            "Off by default. On, the games' menus offer survival (the main menu and the DHC OS \
+             terminal) on PC, Windows packages, the 3DS and the Wii U. Rebuild console packs \
+             after changing it. A standalone game without Mount Ravan or the shotgun holds its \
+             survival on its last area with its third weapon. A game built from your APK always \
+             offers it.",
+        );
+        changed
+    }
+
+    /// `--offer-survival` when survival is offered (the switch, or a game
+    /// built from the APK): `c2-pc play`, Windows packages and `c2-cook`.
+    pub(super) fn survival_args(&self) -> Vec<String> {
+        if self.cfg.survival || self.has_phone_base() {
+            vec!["--offer-survival".into()]
+        } else {
+            Vec::new()
         }
     }
 

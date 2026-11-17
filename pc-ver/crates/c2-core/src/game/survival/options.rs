@@ -3,6 +3,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
+use super::arena::Arena;
 use crate::dino::ai;
 
 /// A wave animal's health at most: the original's shotgun is 6 pellets of 1.
@@ -23,41 +24,6 @@ pub struct SurvivalOptions {
     pub max_wave: usize,
     /// Where the hunter stands and the waves come from.
     pub arena: Arena,
-}
-
-/// The survival arena: the hunter's spot and the box the waves come from.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Arena {
-    /// Where they come: centre `x`, `z`, half sizes (map units).
-    pub spawn: [f32; 4],
-    pub hunter: [f32; 2],
-    /// Which way the hunter faces at his spot (rad).
-    pub hunter_alpha: f32,
-    /// Before the first wave, and between waves (ms).
-    pub first_ms: i32,
-    pub rest_ms: i32,
-}
-
-impl Arena {
-    /// Mount Ravan's mobile survival ravine, in the original PC map units.
-    /// Placement is independent of the wave roster and needs no APK at runtime.
-    pub fn ravine() -> Self {
-        let hunter = [89330.13, 65388.617];
-        let spawn = [84069.125, 45230.77, 3000.0, 2000.0];
-        Self {
-            hunter,
-            spawn,
-            hunter_alpha: libm::atan2f(spawn[0] - hunter[0], hunter[1] - spawn[1]),
-            first_ms: 500,
-            rest_ms: 2000,
-        }
-    }
-}
-
-impl Default for Arena {
-    fn default() -> Self {
-        Self::ravine()
-    }
 }
 
 /// Which survival.
@@ -90,6 +56,40 @@ impl SurvivalKind {
     pub fn endless_night(self) -> bool {
         self == Self::Hardcore
     }
+}
+
+/// The listed area (map stems, menu order, no trophy room) a survival is
+/// held on: Mount Ravan (`AREA5`) in a game with the stock animals (the
+/// original, or a pack built on it), else the last listed area, so any
+/// standalone game gets a survival.
+pub fn survival_area<S: AsRef<str>>(stems: &[S], stock: bool) -> Option<usize> {
+    stock
+        .then(|| {
+            stems
+                .iter()
+                .position(|s| s.as_ref().trim().eq_ignore_ascii_case("AREA5"))
+        })
+        .flatten()
+        .or_else(|| stems.len().checked_sub(1))
+}
+
+/// The weapon a survival hunts with, from the listed `(name, model file)`:
+/// the shotgun (by its model, else its name), else the third listed, else
+/// the last.
+pub fn survival_weapon(weapons: &[(&str, &str)]) -> Option<usize> {
+    fn model(f: &str) -> &str {
+        f.rsplit(['/', '\\']).next().unwrap_or(f).trim()
+    }
+    weapons
+        .iter()
+        .position(|(_, f)| model(f).eq_ignore_ascii_case("shotgun.car"))
+        .or_else(|| {
+            weapons
+                .iter()
+                .position(|(n, _)| n.trim().eq_ignore_ascii_case("shotgun"))
+        })
+        .or_else(|| (weapons.len() > 2).then_some(2))
+        .or_else(|| weapons.len().checked_sub(1))
 }
 
 /// Whether an animal is the T-Rex: the original's AI, or by name.

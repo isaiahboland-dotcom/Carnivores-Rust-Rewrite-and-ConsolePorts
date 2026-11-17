@@ -15,7 +15,10 @@ impl Menu {
         };
         let data = load_res(&huntdat).context("reading the game data (is this a game folder?)")?;
         // Before the settings load: the instance may fix some.
-        crate::instance_rules::load(&huntdat);
+        let rules = crate::instance_rules::load(&huntdat);
+        let survival_offered = OFFER_SURVIVAL.get().copied().unwrap_or(false)
+            || rules.survival
+            || find_file(&huntdat, "MOBILE").is_some();
         let classic_survival = data
             .characters
             .iter()
@@ -519,6 +522,7 @@ impl Menu {
             more: false,
             more_board,
             classic_survival,
+            survival_offered,
             survival_pick: false,
             name: String::new(),
             picked: None,

@@ -38,7 +38,10 @@ impl Hunt {
     /// Turns this hunt into a survival: all ordinary map wildlife goes;
     /// only survival waves may populate the map. The hunter goes to the
     /// arena's spot; the waves keep to the ground between it and their box.
-    pub fn start_survival(&mut self, area: &Area, opts: SurvivalOptions) {
+    /// The arena is fitted to the map first ([`super::Arena::fitted`]): a
+    /// standalone game's map gets one of its own.
+    pub fn start_survival(&mut self, area: &Area, mut opts: SurvivalOptions) {
+        opts.arena = opts.arena.fitted(area);
         // No tranquilizer darts in a survival (multi ammo).
         if self.weapons.multi_ammo() {
             self.weapons.unsplit();

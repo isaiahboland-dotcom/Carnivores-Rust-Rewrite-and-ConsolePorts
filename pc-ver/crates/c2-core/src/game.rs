@@ -40,8 +40,8 @@ pub use session::Outcome;
 pub use spawn_rules::{index_named, species_named};
 pub use state::{Hunt, Wind, MAX_HEALTH};
 pub use survival::{
-    classic_identity, dangerous, dangerous_ai, is_trex, price_species, roster, wave_budget, Arena,
-    Survival, SurvivalKind, SurvivalOptions, WAVE_HEALTH,
+    classic_identity, dangerous, dangerous_ai, is_trex, price_species, roster, survival_area,
+    survival_weapon, wave_budget, Arena, Survival, SurvivalKind, SurvivalOptions, WAVE_HEALTH,
 };
 pub use teleport::{Teleport, COOLDOWN_MS as TELEPORT_COOLDOWN_MS, DELAY_MS as TELEPORT_DELAY_MS};
 pub use view::LifeInfo;

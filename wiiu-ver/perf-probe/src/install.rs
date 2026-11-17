@@ -277,6 +277,7 @@ pub const MAX_ANIMALS: usize = 24;
 pub const MAX_WEAPONS: usize = 8;
 
 pub struct Install {
+    /// Classic survival is offered (the stock animals are in the game).
     pub classic_survival: bool,
     pub vfs: Vfs,
     pub rules: Rules,
@@ -407,5 +408,27 @@ impl Install {
             }
         }
         (targets, roamers)
+    }
+}
+
+impl Install {
+    /// Survival is offered: the instance's `survival` rule (the launcher's
+    /// switch, `c2-cook --offer-survival`). Without it the menus show none.
+    pub fn survival_offered(&self) -> bool {
+        self.inst.survival
+    }
+
+    /// The area a survival is held on: Mount Ravan with the stock animals,
+    /// else the last listed area (`c2_core::game::survival_area`).
+    pub fn survival_area(&self) -> Option<usize> {
+        let stems: Vec<&str> = self.areas.iter().map(|a| a.file.as_str()).collect();
+        c2_core::game::survival_area(&stems, self.classic_survival)
+    }
+
+    /// The weapon a survival hunts with: the shotgun, else the third listed
+    /// (`c2_core::game::survival_weapon`).
+    pub fn survival_weapon(&self) -> Option<usize> {
+        let named: Vec<(&str, &str)> = self.weapons.iter().map(|w| (w.as_str(), "")).collect();
+        c2_core::game::survival_weapon(&named)
     }
 }
