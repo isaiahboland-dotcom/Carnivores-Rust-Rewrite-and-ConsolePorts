@@ -1,5 +1,57 @@
 # Decisions and deviations
 
+## 2026-11-17 — Weapon hands: a shared mask, exact rig detection first, overrides by content
+
+Gun-only views (the DHC OS armoury file's model; guns held in VR) leave out
+the hunter's arms, which every weapon `.CAR` carries as a first-person
+model. The mask is shared (`c2_core::hands`) and never changes the model:
+the hunt's first-person weapon and its animations draw the file as read.
+
+- **Exact detection only.** The original hand rig is 23 bones with
+  consecutive numbers and vertex counts `29 6 16 1 5 6 11 1 3 3 7 1 1 1 6 1
+  2 3 7 2 6 11 3` (`hands::VANILLA_RIG`); a copy is recognised only when all
+  23 match exactly, at any first bone (the pistol has two, at 0 and 26).
+  A bone with one vertex more or less (gun parts rigged to a hand, a
+  remodelled hand) breaks the match and nothing is assumed. A face is
+  hidden when all its vertices are on hidden bones.
+- **Anything unrecognised is shown whole.** No colour or shape guessing.
+  A probe over 842 local weapon models (273 distinct) tried hiding
+  skin-coloured mesh pieces: it took a wooden stock with the hands of one
+  lever-action, and left another's camouflage sleeves. The heuristic stays
+  out of the code until a piece-picking editor can correct it (TODO).
+- **Overrides** (`HUNTDAT/_HANDS.TXT`, `c2_formats::hands`; MODDING.md)
+  are keyed by `sha256:` of the `.CAR`'s bytes, as recipes key files, so
+  mods' same-named models never share rules. Rules: `keep all`, `drop` /
+  `keep` `owner` (bones, ranges) and `piece` (connected mesh parts,
+  numbered by first face, `hands::pieces`). They are order-free: hidden
+  bones are the recognised ones (none after `keep all`) plus dropped less
+  kept; a dropped piece hides, a kept piece always shows. Only the game's
+  file is read; a per-user file comes with the editor. Two mods shipping
+  the file don't merge (the later wins, as for any file).
+- **DHC OS armoury file**: the weapon's model is the masked copy
+  (`menu/specimens.rs: arm_model`), which also frames the gun alone. The
+  digest, the mask's source and the hidden face count are logged.
+- **PC VR**: the roster prepares each weapon as a `guns::HeldGun` at load
+  (the masked model, the full `Car` for its animations, the grip at the
+  rest position of the recognised hand nearest the gun's middle, so the
+  pistol's supporting hand is not the grip) and prints which are
+  holdable. A gun whose arms aren't recognised or overridden is not
+  holdable (its arms would float beside the tracked hands). Nothing is
+  drawn yet: guns in the hands are the GAMEPLAN's next step.
+- Results on local data: 149 of 842 weapon files (116 one-hand, 33
+  two-hand) are recognised, the same set the probe found; no recognised
+  model loses all its faces; 0 of the recognised rigs have faces shared
+  with the gun. The four original guns with hands show clean in the
+  armoury file; the crossbow (no hands) is unchanged. `SNIPER.CAR` is the
+  scope overlay, not a gun, so the sniper rifle's file shows that (data
+  as shipped).
+
+Tests: `hands::tests` (one hand, the pistol's two, a mod gun reusing the
+hands at another bone, broken and partial signatures, one-bone models,
+the model unchanged, piece numbering and seams, overrides by content),
+`c2_formats::hands::tests`, `c2-vr` `guns::tests` (the pistol's grip
+hand, an unrecognised gun made holdable by an override).
+
 ## 2026-11-17 — DHC OS: field manual files for areas and weapons (PC, Android)
 
 The field manual's database now has three lists, the hunt setup's areas,

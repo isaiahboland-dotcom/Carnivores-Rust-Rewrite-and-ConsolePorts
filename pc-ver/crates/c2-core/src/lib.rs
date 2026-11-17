@@ -24,6 +24,7 @@ pub mod effects;
 pub mod fog;
 #[cfg(any(feature = "std", feature = "portable-hunt"))]
 pub mod game;
+pub mod hands;
 #[cfg(any(feature = "std", feature = "portable-load"))]
 pub mod load;
 // Portable simulation fixtures parse synthetic dialect definitions without

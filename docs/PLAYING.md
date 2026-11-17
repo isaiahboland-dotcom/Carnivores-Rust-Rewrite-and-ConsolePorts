@@ -227,7 +227,8 @@ Nintendo ports keep their own mappings.
   a click or Enter opens its file, and Esc goes back to the file before. On the hunt setup's
   AREA, TARGETS and ARMS tabs, **V** (the pad's X) opens the focused item's file. **DHC OS 3D
   specimens** (off by default) shows the model, turning, instead of the picture: the animal
-  (animated), the weapon (at rest) or the area's terrain (cut to the island, without its trees and
+  (animated), the weapon (at rest, without the hunter's arms where the
+  original hands are recognised; other guns show whole) or the area's terrain (cut to the island, without its trees and
   rocks): drag to turn it, the wheel to zoom, the pad's right stick turns it. Leave it off on
   slower machines. A
   recipe can restrict what each island issues ([MODDING.md](MODDING.md#dhc-os-terminal-rules)); the

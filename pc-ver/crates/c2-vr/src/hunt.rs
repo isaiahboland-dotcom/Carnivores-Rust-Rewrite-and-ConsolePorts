@@ -26,7 +26,7 @@ const CHAR_LIGHT: f32 = 210.0 / 255.0;
 
 /// `name` (a file name or a relative path, either slash) in `dir`, each
 /// part matched ignoring case (`c2-pc area_view.rs: find_file`).
-fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
+pub(crate) fn find_file(dir: &Path, name: &str) -> Option<PathBuf> {
     let mut cur = dir.to_path_buf();
     let mut any = false;
     for part in name
@@ -49,6 +49,9 @@ pub struct Roster {
     /// Bounded fleeing's limits (`_FLEE.TXT` or the built-in ones), when
     /// the player asked for it (`c2-vr play --bounded-flee`).
     pub flee: Option<Box<c2_core::dino::flee::FleeTable>>,
+    /// The game's weapons as held guns, arms left out (`guns.rs`); none
+    /// where a model doesn't load. Not drawn yet.
+    pub guns: Vec<Option<crate::guns::HeldGun>>,
 }
 
 impl Roster {
@@ -113,11 +116,14 @@ impl Roster {
                 .and_then(|p| std::fs::read(p).ok());
             c2_core::dino::flee::FleeTable::load(bytes.as_deref(), &species)
         });
+        let guns = crate::guns::load(huntdat, &res);
+        println!("{}", crate::guns::summary(&guns));
         Ok(Self {
             species,
             cars,
             predation,
             flee,
+            guns,
         })
     }
 

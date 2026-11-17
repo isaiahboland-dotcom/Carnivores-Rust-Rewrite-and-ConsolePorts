@@ -10,6 +10,7 @@ pub mod animals;
 pub mod canvas;
 pub mod game;
 pub mod gpu;
+pub mod guns;
 pub mod hunt;
 pub mod menus;
 pub mod objects;

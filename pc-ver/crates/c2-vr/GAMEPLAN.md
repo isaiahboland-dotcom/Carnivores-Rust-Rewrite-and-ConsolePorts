@@ -186,7 +186,11 @@ left out of VR hunts until per-gun VR configs exist (below).
   one hand, finger bones 1-23 plus a sleeve, and the pistol two); the
   crossbow has none, and `SNIPER.CAR` is the scope overlay, not a gun. The
   old hand's rest position gives each gun's grip point. Nothing is edited
-  or shipped: the pieces are skipped at load.
+  or shipped: the pieces are skipped at load. Done 2026-11-17 as shared
+  code: `c2_core::hands` recognises the rig exactly (else the gun is not
+  holdable), `HUNTDAT/_HANDS.TXT` overrides by the model's SHA-256, and the
+  roster prepares each `guns::HeldGun` (masked model, grip, animations).
+  Drawing it in the hand is next.
 - **Hands.** The gun sits in the right hand (the left with the lefty
   option in the menu). Holding the right grip equips it, letting go puts
   it away; the right trigger fires. The off hand's trigger opens and closes

@@ -24,6 +24,7 @@ pub mod cooked;
 pub mod dhc;
 pub mod ecosystem;
 pub mod flee;
+pub mod hands;
 pub mod hardcore;
 pub mod map;
 pub mod mee;

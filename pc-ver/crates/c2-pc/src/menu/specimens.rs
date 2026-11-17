@@ -31,6 +31,9 @@ pub(super) struct Specimens {
     /// item.
     pub(super) arms: Vec<Arm>,
     arm_models: Vec<Option<String>>,
+    /// Which parts of a weapon model are the hunter's hands, beyond those
+    /// recognised (`_HANDS.TXT`, `c2_core::hands`).
+    hands: c2_formats::hands::Hands,
     /// Per area (the area column's item), the animals that may turn up
     /// there unpicked: those the game places without a permit, and the
     /// instance's secret animals (`_RULES.TXT`).
@@ -221,15 +224,30 @@ impl Specimens {
             arm_texts,
             arms,
             arm_models,
+            hands: read_hands(huntdat),
             appear,
         }
     }
 
-    /// Weapon `k`'s model (none: no model, or a broken one).
+    /// Weapon `k`'s model as its file shows it: the gun without the
+    /// hunter's hands where they are recognised or an override names them,
+    /// else the whole model (none: no model, or a broken one).
     pub(super) fn arm_model(&self, huntdat: &Path, k: usize) -> Option<c2_formats::car::Car> {
         let file = self.arm_models.get(k)?.as_deref()?;
         let dir = find_file(huntdat, "WEAPONS")?;
-        read_car_file(&find_file(&dir, file)?)
+        let path = find_file(&dir, file)?;
+        let bytes = std::fs::read(&path).ok()?;
+        let mut car = parse_car(&path, &bytes)?;
+        let id = c2_mods::recipe::sha256(&bytes);
+        let mask = c2_core::hands::HandMask::new(&car.mesh, &id, &self.hands);
+        tracing::info!(
+            "{}: hands {:?}, {} faces hidden ({id})",
+            path.display(),
+            mask.source,
+            mask.hidden_faces()
+        );
+        car.mesh = mask.apply(&car.mesh);
+        Some(car)
     }
 
     /// Huntable `k`'s model, read from the game (none: no model, or a
@@ -265,13 +283,29 @@ impl Specimens {
 
 /// A `.CAR` file, or none (unreadable: logged).
 fn read_car_file(path: &Path) -> Option<c2_formats::car::Car> {
-    match c2_formats::car::parse(&std::fs::read(path).ok()?) {
+    parse_car(path, &std::fs::read(path).ok()?)
+}
+
+/// `bytes`, the `.CAR` at `path`, parsed (a broken one: logged).
+fn parse_car(path: &Path, bytes: &[u8]) -> Option<c2_formats::car::Car> {
+    match c2_formats::car::parse(bytes) {
         Ok(c) => Some(c),
         Err(e) => {
             tracing::warn!("{}: {e}", path.display());
             None
         }
     }
+}
+
+/// The game's weapon hand overrides (`_HANDS.TXT`; none: empty).
+fn read_hands(huntdat: &Path) -> c2_formats::hands::Hands {
+    find_file(
+        huntdat,
+        c2_formats::hands::PATH.trim_start_matches("HUNTDAT/"),
+    )
+    .and_then(|p| std::fs::read(p).ok())
+    .map(|b| c2_formats::hands::Hands::parse(&b))
+    .unwrap_or_default()
 }
 
 /// Area `map`'s relief for its survey's 3D view (none: its `.MAP` or

@@ -794,6 +794,38 @@ allow_tranq = false
 allow_trophy = true
 ```
 
+### Weapon hands (`_HANDS.TXT`)
+
+A weapon's `.CAR` is the hunter's first-person view: arms and gun in one
+model. Views that show the gun alone (the DHC OS armoury file's 3D model;
+guns held in VR, later) leave the arms out. The hunt's own first-person
+weapon always draws the whole model.
+
+The original game's hand rig is recognised by itself: 23 bones with
+consecutive numbers whose vertex counts are exactly the original's, as in
+the rifle, shotgun, double barrel and (twice) the pistol, and in any mod gun
+that reuses those hands. Anything else is shown whole, arms included,
+unless a `HUNTDAT/_HANDS.TXT` names its parts. A mod can ship this file
+beside its weapons. A model is named by its file's SHA-256, the way recipes
+name files, so two mods' `RIFLE.CAR`s never share rules:
+
+```text
+model sha256:<hex digest of the .CAR>  ; the lines below are this model's
+keep all                  ; ignore what was recognised
+drop owner 1-23 26        ; hide faces whose vertices are all on these bones
+drop piece 4 7            ; hide these mesh pieces
+keep owner 5              ; show these bones' faces after all
+keep piece 2              ; show these pieces, whatever else says
+```
+
+A piece is a connected part of the mesh: faces that share a vertex, or
+have vertices at exactly the same place, numbered from 0 by their first
+face. `c2-pc` logs each weapon's digest, what decided its mask and how many
+faces were hidden when its armoury file opens. There is no tool for picking
+pieces yet, so a mod gun's pieces are found by hand for now. Two mods that
+both ship `_HANDS.TXT` don't merge: the later one's file wins, as with any
+file.
+
 ### DHC OS terminal rules
 
 The **DHC OS terminal** is an optional in-universe front end (DinoHunt Corp)
