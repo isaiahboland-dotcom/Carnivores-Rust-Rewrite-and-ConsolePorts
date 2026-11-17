@@ -84,4 +84,6 @@ pub struct HuntKill {
     /// Metres.
     pub range: f32,
     pub weapon: usize,
+    /// The animal's size (`Character::scale`), for the record.
+    pub scale: f32,
 }

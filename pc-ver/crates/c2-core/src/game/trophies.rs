@@ -60,6 +60,7 @@ impl Hunt {
                 score: 0,
                 range,
                 weapon,
+                scale: c.scale,
             });
             return;
         }
@@ -159,6 +160,7 @@ impl Hunt {
             score: score as i32,
             range,
             weapon,
+            scale: c.scale,
         });
         if let (false, Some(t)) = (tranq || !allow_trophy, t) {
             let (y, mo, d, h, mi) = self.clock;

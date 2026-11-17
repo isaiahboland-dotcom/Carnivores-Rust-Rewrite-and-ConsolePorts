@@ -1,7 +1,7 @@
 //! Drawing the terminal on the menus' 800x600 canvas, and where its
 //! pointer targets are ([`Menu::terminal_hits`], from the same layout).
 
-use c2_core::dhc::terminal::{MainItem, Screen as TScreen, Terminal, MANUAL};
+use c2_core::dhc::terminal::{MainItem, Screen as TScreen, Terminal};
 use c2_core::dhc::Tab;
 
 pub(super) use super::palette::*;
@@ -64,6 +64,7 @@ impl Menu {
                 out.push((g.observer(), Hit::Observer));
                 out.push((g.deploy(), Hit::Deploy));
             }
+            TScreen::Specimens => out.extend(self.index_hits(v)),
             _ => {}
         }
         out
@@ -107,23 +108,38 @@ impl Menu {
             TScreen::Boot => self.draw_term_boot(out, t),
             TScreen::Main => self.draw_term_main(out, t),
             TScreen::Setup => self.draw_term_setup(out, v),
-            TScreen::Manual => self.draw_term_manual(out),
+            // The field manual is the specimen database here; the text
+            // manual is for platforms without one.
+            TScreen::Manual | TScreen::Specimens => self.draw_term_index(out, v),
+            TScreen::Specimen => self.draw_term_file(out, v),
             TScreen::Deploy => self.draw_term_deploy(out, t),
             TScreen::Survival => self.draw_term_survival(out, t),
         }
         let pad = self.pad_used;
+        let targets = t.tab == Tab::Targets;
         let hints = match (t.screen, pad) {
             (TScreen::Boot, _) => "ANY KEY: SKIP",
             (TScreen::Main, false) => "[ESC] LOG OFF   UP/DOWN  ENTER  1-9",
             (TScreen::Main, true) => "[B] LOG OFF   D-PAD MOVE   [A] SELECT",
             (TScreen::Survival, false) => "[ESC] BACK   UP/DOWN  ENTER  1-3",
             (TScreen::Survival, true) => "[B] BACK   D-PAD MOVE   [A] SELECT",
-            (TScreen::Setup, false) => "[ESC] BACK  L/R 1-4 TABS  ENTER PICK  T TIME  F DEPLOY",
-            (TScreen::Setup, true) => {
-                "[B] BACK  [L]/[R] TABS  D-PAD MOVE  [A] PICK  [Y] TIME  [START] DEPLOY"
+            (TScreen::Setup, false) if targets => {
+                "[ESC] BACK  L/R 1-4 TABS  ENTER PICK  V FILE  T TIME  F DEPLOY"
             }
-            (TScreen::Manual, false) => "[ESC] BACK",
-            (TScreen::Manual, true) => "[B] BACK",
+            (TScreen::Setup, false) => "[ESC] BACK  L/R 1-4 TABS  ENTER PICK  T TIME  F DEPLOY",
+            (TScreen::Setup, true) if targets => {
+                "[B] BACK  [L]/[R] TABS  [A] PICK  [X] FILE  [Y] OBSERVER  [START] DEPLOY"
+            }
+            (TScreen::Setup, true) => {
+                "[B] BACK  [L]/[R] TABS  [A] PICK  [X] TIME  [Y] OBSERVER  [START] DEPLOY"
+            }
+            (TScreen::Manual | TScreen::Specimens, false) => {
+                "[ESC] BACK   UP/DOWN or wheel  ENTER OPEN FILE"
+            }
+            (TScreen::Manual | TScreen::Specimens, true) => "[B] BACK   D-PAD MOVE   [A] OPEN FILE",
+            (TScreen::Specimen, _) if t.retrieving() => "ANY KEY: SKIP",
+            (TScreen::Specimen, false) => "[ESC] CLOSE FILE   UP/DOWN or wheel  SCROLL",
+            (TScreen::Specimen, true) => "[B] CLOSE FILE   D-PAD SCROLL   RIGHT STICK TURN",
             (TScreen::Deploy, false) => "ANY KEY: SKIP   [ESC] ABORT",
             (TScreen::Deploy, true) => "ANY KEY: SKIP   [B] ABORT",
         };
@@ -227,6 +243,7 @@ impl Menu {
                 "The same setup under the hardcore rules: a leaner loadout, a drop-off and a pickup zone."
             }
             MainItem::Survival => "Survive the waves of animals.",
+            MainItem::Manual if t.specimen_db => "The specimen database: every animal's file, with your records.",
             MainItem::Manual => "How permits, budgets and earnings work.",
             MainItem::Trophy => "Visit your trophy room.",
             MainItem::Options => "Game, video and control settings.",
@@ -255,25 +272,6 @@ impl Menu {
             } else {
                 self.text(out, g.main_x(), r.1 + 8.0, PX, MD, &text);
             }
-        }
-    }
-
-    fn draw_term_manual(&self, out: &mut Vec<Sprite>) {
-        let x = self.geom().l + 24.0;
-        for (i, l) in MANUAL.iter().enumerate() {
-            let c = if i == 0 { HI } else { MD };
-            self.text(out, x, 64.0 + i as f32 * 22.0, PX, c, l);
-        }
-        let keys = [
-            "CONTROLS",
-            "UP/DOWN or wheel   move       ENTER/SPACE or click   pick",
-            "LEFT/RIGHT/TAB     tabs       1-4                    tab",
-            "T                  time of day   F or F5             deploy",
-            "ESC                back       Options: DHC OS terminal, CRT effects",
-        ];
-        for (i, l) in keys.iter().enumerate() {
-            let c = if i == 0 { HI } else { LO };
-            self.text(out, x, 360.0 + i as f32 * 22.0, SMALL, c, l);
         }
     }
 
@@ -404,41 +402,8 @@ impl Menu {
         let col = &self.columns[ti];
         let (x, w) = (detail.0 + 10.0, detail.2 - 20.0);
         let mut y = detail.1 + 10.0;
-        let pic = col
-            .pics
-            .get(ci)
-            .copied()
-            .flatten()
-            .and_then(|id| self.hud.image(id).map(|im| (id, im.w as f32, im.h as f32)));
-        let pic_h = 190.0;
-        match pic {
-            Some((id, pw, ph)) if pw > 0.0 && ph > 0.0 => {
-                let k = (w / pw).min(pic_h / ph);
-                let (dw, dh) = (pw * k, ph * k);
-                self.image(out, Some(id), (x + (w - dw) / 2.0, y, dw, dh));
-                self.term_box(
-                    out,
-                    (x + (w - dw) / 2.0 - 1.0, y - 1.0, dw + 2.0, dh + 2.0),
-                    [0.0; 4],
-                    LINE,
-                );
-                y += dh + 10.0;
-            }
-            _ => {
-                // No picture on file: a placeholder frame.
-                self.term_box(out, (x, y, w, 120.0), [0.0, 0.0, 0.0, 0.3], FAINT);
-                let s = "NO IMAGE ON FILE";
-                self.text(
-                    out,
-                    x + (w - self.text_width(SMALL, s)) / 2.0,
-                    y + 54.0,
-                    SMALL,
-                    FAINT,
-                    s,
-                );
-                y += 130.0;
-            }
-        }
+        let pic = col.pics.get(ci).copied().flatten();
+        y += self.term_picture(out, pic, (x, y, w, 190.0)) + 10.0;
         let it = &t.cat.list(t.tab)[focus];
         let status = if !t.allowed(t.tab, focus) {
             ("RESTRICTED ON THIS ISLAND", AMBER)

@@ -321,6 +321,7 @@ pub extern "C" fn c2_hunt_finish(ptr: *mut core::ffi::c_void, ui: *mut core::ffi
             weapon: alloc::string::String::from(weapon),
             area: area.clone(),
             date: (y << 20) + (mo << 10) + d,
+            scale: k.scale,
         });
     }
     m.record.best_wave = m.record.best_wave.max(wave);

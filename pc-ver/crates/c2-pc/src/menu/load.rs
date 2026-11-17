@@ -264,6 +264,8 @@ impl Menu {
         });
         // Huntables by menu slot (slot n = `DINOn+1.TGA` unless `pic` says).
         let dinos: Vec<String> = menu.huntables.iter().map(|d| d.name.clone()).collect();
+        let dino_texts_m = dino_texts(&menu.huntables, txt.as_deref(), false);
+        let dino_texts_us = dino_texts(&menu.huntables, txt.as_deref(), true);
         cols.push(Column {
             scroll: 0,
             order: Vec::new(),
@@ -280,8 +282,8 @@ impl Menu {
                     None => view(format!("DINO{}.TGA", k + 1)),
                 })
                 .collect(),
-            texts: dino_texts(&menu.huntables, txt.as_deref(), false),
-            texts_us: dino_texts(&menu.huntables, txt.as_deref(), true),
+            texts: dino_texts_m.clone(),
+            texts_us: dino_texts_us.clone(),
             names: dinos,
         });
         let weapons: Vec<String> = menu.weapons.iter().map(|w| w.name.clone()).collect();
@@ -418,6 +420,19 @@ impl Menu {
                 }
             }
         }
+        // The field manual's files (the terminal's specimen database).
+        let specimens = specimens::Specimens::read(specimens::Sources {
+            huntdat: &huntdat,
+            data: &data,
+            menu: &menu,
+            dialect: dialect.as_ref(),
+            menu_animals,
+            scores: &scores,
+            homes: homes.as_deref(),
+            areas: &areas,
+            texts: dino_texts_m,
+            texts_us: dino_texts_us,
+        });
         // Rows by price (stable, so equal prices keep their order); the
         // equipment keeps its fixed order.
         for (ci, c) in cols.iter_mut().enumerate() {
@@ -496,6 +511,8 @@ impl Menu {
             clear_armed: false,
             tranq_ask: false,
             term: None,
+            specimens,
+            viewer: None,
             dhc: terminal::read_rules(&huntdat),
             beeper: None,
             crt: None,

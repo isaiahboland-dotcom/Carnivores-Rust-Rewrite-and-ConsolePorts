@@ -117,6 +117,58 @@ pub(super) fn spawn_homes(res: &ResTxt, slots: usize, maps: &[PathBuf]) -> Vec<V
     homes
 }
 
+/// Dialect games: per huntable (menu slot; the roaming add-ons by their
+/// slot in `roamers`, (character, slot)), the areas (index in `maps`)
+/// where it may turn up unpicked: a huntable whose spawn tables, read with
+/// nothing picked, spawn it there (a spawn group or pack that places one).
+pub(super) fn roam_homes(
+    res: &ResTxt,
+    slots: usize,
+    maps: &[PathBuf],
+    roamers: &[(usize, usize)],
+) -> Vec<Vec<usize>> {
+    let mut homes = vec![Vec::new(); slots];
+    let raw = res.section("characters").map_or(&[][..], |s| &s.blocks);
+    for (a, map) in maps.iter().enumerate() {
+        let stem = map
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let h = c2_formats::mee::Hunt {
+            area: c2_formats::mee::area_of(&stem),
+            time: 1,
+            picked: Bits::NONE,
+        };
+        let t = c2_formats::mee::Tables::read(res, &h);
+        let group = |g: usize| t.spawn_groups.get(g).is_some_and(|g| g.max > 0);
+        for (i, c) in t.characters.iter().enumerate() {
+            let huntable = c
+                .block
+                .get(&["ai"])
+                .map(c2_formats::res_txt::c_atoi)
+                .is_some_and(|ai| ai >= 10);
+            let placed = c.spawn.iter().any(|l| l.ratio > 0.0 && group(l.group))
+                || c.packs.iter().any(|l| {
+                    l.ratio > 0.0
+                        && t.pack_groups
+                            .get(l.group)
+                            .is_some_and(|p| p.max > 0 && p.spawn.iter().any(|s| group(s.group)))
+                });
+            if !huntable || !placed {
+                continue;
+            }
+            let slot = c2_formats::mee::menu_slot(raw.get(i), &c.block)
+                .or_else(|| roamers.iter().find(|r| r.0 == i).map(|r| r.1));
+            if let Some(v) = slot.and_then(|n| homes.get_mut(n)) {
+                if !v.contains(&a) {
+                    v.push(a);
+                }
+            }
+        }
+    }
+    homes
+}
+
 pub(super) fn read_text(dir: Option<&Path>, name: &str) -> Vec<String> {
     dir.and_then(|d| find_file(d, name))
         .and_then(|p| std::fs::read(p).ok())
@@ -176,6 +228,26 @@ mod roster_tests {
         .expect("synthetic roster");
         let homes = spawn_homes(&res, 3, &["AREA1.MAP".into(), "AREA2.MAP".into()]);
         assert_eq!(homes, [vec![], vec![], vec![0, 1]]);
+    }
+
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn unpicked_spawns_count_only_groups_that_place_animals() {
+        // Slot 0 roams area 2 only; slot 1 has an empty group; a roaming
+        // add-on (no slot) roams everywhere; the ambient never counts.
+        let res = ResTxt::parse(
+            "spawntable {\n spawngroup {\n spawnmin = 1\n spawnmax = 2\n }\n spawngroup {\n spawnmax = 0\n }\n}\n\
+             characters {\n\
+             {\n ai = 10\n menuSlot = 0\n overwrite area2 {\n spawninfo {\n spawngroup = 0\n spawnratio = 1\n }\n }\n}\n\
+             {\n ai = 11\n menuSlot = 1\n spawninfo {\n spawngroup = 1\n spawnratio = 1\n }\n}\n\
+             {\n ai = 12\n menuSlot = -1\n spawninfo {\n spawngroup = 0\n spawnratio = 1\n }\n}\n\
+             {\n ai = 1\n spawninfo {\n spawngroup = 0\n spawnratio = 1\n }\n}\n\
+             }\n.\n",
+        )
+        .expect("synthetic roster");
+        let maps: Vec<std::path::PathBuf> = vec!["AREA1.MAP".into(), "AREA2.MAP".into()];
+        let homes = super::roam_homes(&res, 3, &maps, &[(2, 2)]);
+        assert_eq!(homes, [vec![1], vec![], vec![0, 1]]);
     }
 
     #[test]

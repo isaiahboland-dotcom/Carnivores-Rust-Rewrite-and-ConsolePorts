@@ -104,22 +104,42 @@ pub struct Rules {
 
 /// The role a species' AI implies.
 fn auto_role(sp: &Species) -> Role {
-    match &sp.mee {
-        Some(m) if m.ai == ai::TREX => Role::Carnivore,
-        Some(m) if mee::is_huntable(m.ai) => {
-            if mee::ai_info(m.ai).carnivore {
+    ai_role(sp.mee.as_ref().map(|m| m.ai), sp.runs_as())
+}
+
+/// The role an AI implies: a dialect AI number (`mee_ai`), else the
+/// original AI the species runs as.
+fn ai_role(mee_ai: Option<i32>, runs_as: i32) -> Role {
+    match mee_ai {
+        Some(m) if m == ai::TREX => Role::Carnivore,
+        Some(m) if mee::is_huntable(m) => {
+            if mee::ai_info(m).carnivore {
                 Role::Carnivore
             } else {
                 Role::Herbivore
             }
         }
         Some(_) => Role::None,
-        None => match sp.runs_as() {
+        None => match runs_as {
             ai::TREX => Role::Carnivore,
             a if CarnivoreParams::for_ai(a).is_some() => Role::Carnivore,
             a if HerbivoreParams::for_ai(a).is_some() => Role::Herbivore,
             _ => Role::None,
         },
+    }
+}
+
+/// A huntable's diet as predation sees it: `_PREDATION.TXT`'s tag for
+/// the animal called `name`, else what its AI implies (none for an AI
+/// that is neither: ambients, flyers, fish). The menus show it; the hunt
+/// takes the same from [`Rules::new`].
+pub fn diet(p: Option<&Predation>, name: &str, mee_ai: Option<i32>, runs_as: i32) -> Option<Diet> {
+    let tagged = p.and_then(|p| p.animal(name)).and_then(|t| t.diet);
+    match (ai_role(mee_ai, runs_as), tagged) {
+        (Role::None, _) => None,
+        (_, Some(d)) => Some(d),
+        (Role::Carnivore, None) => Some(Diet::Carnivore),
+        (_, None) => Some(Diet::Herbivore),
     }
 }
 

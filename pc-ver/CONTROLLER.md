@@ -19,7 +19,10 @@ for a player's custom Steam Input profile.
 | D-pad Left / Right | Reload / rack, for weapons supporting these actions |
 | Start / Select | Pause / exit prompt |
 
-Menus use A to confirm and B to cancel. In the weapon picker, B swaps
+Menus use A to confirm and B to cancel. In the DHC OS terminal's hunt setup,
+X changes the time of day and Y switches observer mode; on the TARGETS tab, X
+opens the focused animal's field manual file instead. In a file, the D-pad
+scrolls and the right stick turns the 3D specimen. In the weapon picker, B swaps
 lethal/tranquilizer ammo when the hunt has split ammunition. In the call
 picker, right-stick click changes the purchased flashlight's beam between
 wide/short and narrow/far. These actions leave the picker open and consume

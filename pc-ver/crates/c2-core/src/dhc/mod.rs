@@ -13,6 +13,7 @@ use alloc::vec::Vec;
 pub use c2_formats::dhc::{Dhc, Discovery, Island};
 
 pub mod beep;
+pub mod specimen;
 pub mod terminal;
 
 #[cfg(test)]

@@ -723,6 +723,7 @@ impl Game {
                     .map_or_else(String::new, |w| w.name.clone()),
                 area: area.clone(),
                 date: (y << 20) + (mo << 10) + d,
+                scale: k.scale,
             });
         }
         r.best_wave = r.best_wave.max(wave);

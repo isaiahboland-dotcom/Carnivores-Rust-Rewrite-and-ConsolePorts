@@ -17,7 +17,7 @@ pub(super) enum Opt {
     Header(&'static str),
 }
 
-pub(super) const GAME_OPTS: [Opt; 23] = [
+pub(super) const GAME_OPTS: [Opt; 24] = [
     Opt::Slider("Aggressiveness", |s| &mut s.options.agres),
     Opt::Slider("Density", |s| &mut s.options.dens),
     Opt::Slider("Sensitivity", |s| &mut s.options.sens),
@@ -43,12 +43,16 @@ pub(super) const GAME_OPTS: [Opt; 23] = [
     Opt::PcToggle(DHC_TERMINAL, |p| &mut p.dhc_terminal),
     Opt::PcToggle("DHC OS CRT effects", |p| &mut p.dhc_crt),
     Opt::PcToggle("DHC OS sounds", |p| &mut p.dhc_beeps),
+    Opt::PcToggle(DHC_MODELS, |p| &mut p.dhc_models),
     Opt::PcToggle("Remember last hunt", |p| &mut p.remember_hunt),
     Opt::ClearTrophies,
 ];
 
 /// The terminal's switch (its rows are hidden in Play Vanilla).
 pub(super) const DHC_TERMINAL: &str = "DHC OS terminal";
+
+/// The field manual's 3D specimens (off: the pictures).
+pub(super) const DHC_MODELS: &str = "DHC OS 3D specimens";
 
 /// Experimental on Android: phones vary far more than PCs.
 pub(super) const HIGH_END_VIEW: &str = if cfg!(target_os = "android") {

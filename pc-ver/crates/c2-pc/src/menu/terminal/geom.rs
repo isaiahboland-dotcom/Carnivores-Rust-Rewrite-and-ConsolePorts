@@ -116,6 +116,31 @@ impl Geom {
         (self.right() - 172.0, 494.0, 160.0, 56.0)
     }
 
+    /// The specimen index's list (left) and the focused animal (right).
+    pub(in crate::menu) fn index_list(self) -> Rect {
+        (self.l, 76.0, self.left_w(), 484.0)
+    }
+
+    pub(in crate::menu) fn index_detail(self) -> Rect {
+        let (x, w) = self.right_panel();
+        (x, 76.0, w, 484.0)
+    }
+
+    /// A file's picture or 3D specimen and its description (left), and
+    /// its facts (right).
+    pub(in crate::menu) fn file_pic(self) -> Rect {
+        (self.l, 76.0, self.left_w(), 260.0)
+    }
+
+    pub(in crate::menu) fn file_text(self) -> Rect {
+        (self.l, 344.0, self.left_w(), 216.0)
+    }
+
+    pub(in crate::menu) fn file_facts(self) -> Rect {
+        let (x, w) = self.right_panel();
+        (x, 76.0, w, 484.0)
+    }
+
     /// Hunter records (left) and the ID panel (right).
     pub(in crate::menu) fn records(self) -> Rect {
         (self.l, 76.0, self.left_w(), 420.0)
@@ -188,6 +213,11 @@ mod tests {
         assert_eq!(g.file_panel(), (420.0, 112.0, 364.0, 240.0));
         assert_eq!(g.opt_cols()[1], (424.0, 88.0, 340.0, 464.0));
         assert_eq!(g.delete(), (596.0, 440.0, 176.0, 44.0));
+        // The field manual's panels sit side by side above the status bar.
+        let (pic, text, facts) = (g.file_pic(), g.file_text(), g.file_facts());
+        assert!(pic.1 + pic.3 < text.1 && text.1 + text.3 <= 568.0);
+        assert!(pic.0 + pic.2 < facts.0 && facts.1 + facts.3 <= 568.0);
+        assert_eq!(g.index_detail(), facts);
     }
 
     /// A wide window is filled edge to edge, mirrored about the centre.

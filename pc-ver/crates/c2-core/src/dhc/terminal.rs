@@ -1,6 +1,7 @@
 //! The terminal's screens and what each action does to them: the boot log,
 //! the numbered main menu, the hunt setup tabs with their budget, the field
-//! manual and the deploy sequence. Time only moves through [`Terminal::step`],
+//! manual (the specimen database where the platform offers it,
+//! `specimens.rs`) and the deploy sequence. Time only moves through [`Terminal::step`],
 //! so the same actions and steps always give the same state.
 
 use alloc::format;
@@ -9,6 +10,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use super::{earnings_factor, Catalog, Limits, Loadout, Rules, Tab};
+
+mod specimens;
 
 /// Seconds between boot log lines, and the pause after the last.
 pub const BOOT_LINE_S: f32 = 0.12;
@@ -21,10 +24,15 @@ pub enum Screen {
     Boot,
     Main,
     Setup,
+    /// The field manual's text (platforms without the specimen database).
     Manual,
     Deploy,
     /// The survival modes the platform offers.
     Survival,
+    /// The field manual as the specimen database: one row per animal.
+    Specimens,
+    /// One animal's file: its retrieval sequence, then the file.
+    Specimen,
 }
 
 /// The main menu's entries, numbered from 1 in the order of
@@ -84,8 +92,10 @@ pub enum Action {
     ToggleTranq,
     /// Observer mode: no weapons or fees, just watching the animals.
     ToggleObserver,
-    /// Skip the boot log or the deploy sequence.
+    /// Skip the boot log, the deploy sequence or a file's retrieval.
     Skip,
+    /// Setup, on the targets tab: open the focused animal's file.
+    Inspect,
 }
 
 /// What the platform must do next.
@@ -165,6 +175,16 @@ pub struct Terminal {
     survival_row: usize,
     /// Observer mode: the picks cost nothing and no arms are needed.
     pub observer: bool,
+    /// The platform offers the specimen database (PC and Android): the
+    /// field manual lists the animals and the setup can open their files.
+    pub specimen_db: bool,
+    /// Files show a 3D specimen (the platform's option), as their
+    /// retrieval log says.
+    pub specimen_models: bool,
+    specimen_row: usize,
+    /// The open file's animal (catalog index), and the screen it returns to.
+    file: usize,
+    file_from: Screen,
     pub screen: Screen,
     pub tab: Tab,
     pub main_row: usize,
@@ -203,6 +223,11 @@ impl Terminal {
             hardcore_limits: None,
             survival_row: 0,
             observer: false,
+            specimen_db: false,
+            specimen_models: false,
+            specimen_row: 0,
+            file: 0,
+            file_from: Screen::Specimens,
             screen: if boot { Screen::Boot } else { Screen::Main },
             tab: Tab::Area,
             main_row: 0,
@@ -349,6 +374,8 @@ impl Terminal {
             Screen::Main => self.act_main(a),
             Screen::Setup => self.act_setup(a),
             Screen::Survival => self.act_survival(a),
+            Screen::Specimens => self.act_specimens(a),
+            Screen::Specimen => self.act_specimen(a),
         }
     }
 
@@ -396,6 +423,7 @@ impl Terminal {
                 self.survival_row = 0;
                 self.go(Screen::Survival);
             }
+            MainItem::Manual if self.specimen_db => self.go(Screen::Specimens),
             MainItem::Manual => self.go(Screen::Manual),
             MainItem::Trophy => self.outcome = Some(Outcome::TrophyRoom),
             MainItem::Options => self.outcome = Some(Outcome::Options),
@@ -430,6 +458,10 @@ impl Terminal {
             Action::ToggleTranq => self.outcome = Some(Outcome::ToggleTranq),
             Action::ToggleObserver => self.toggle_observer(),
             Action::SetTime(t) if self.rules.allows_time(&self.cat, self.area, t) => self.time = t,
+            Action::Inspect if self.specimen_db && self.tab == Tab::Targets && *row < len => {
+                let i = *row;
+                self.open_file(i, Screen::Setup);
+            }
             Action::Deploy => match self.deploy_problem() {
                 None => self.go(Screen::Deploy),
                 Some(n) => self.refuse(n),

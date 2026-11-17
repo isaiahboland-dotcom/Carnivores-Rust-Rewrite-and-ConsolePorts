@@ -45,6 +45,7 @@ mod register;
 mod roster;
 mod scene;
 mod setup;
+mod specimens;
 mod terminal;
 mod tranq_ask;
 pub(crate) use parity::run as run_parity;
@@ -270,6 +271,10 @@ pub struct Menu {
     tranq_ask: bool,
     /// The terminal, once opened.
     term: Option<terminal::TermView>,
+    /// The field manual's specimen files' facts.
+    specimens: specimens::Specimens,
+    /// The open file's 3D specimen ("DHC OS 3D specimens"), while it shows.
+    viewer: Option<terminal::viewer::Viewer>,
     /// The recipe's `_DHC.TXT` (none in Play Vanilla): its island rules
     /// apply to the original menus as well as the terminal.
     dhc: Option<c2_core::dhc::Dhc>,
@@ -333,7 +338,8 @@ impl Menu {
             "quit" => Screen::Quit,
             // The terminal, on for this run only (not stored).
             "terminal" | "terminal-hunt" | "terminal-boot" | "terminal-login"
-            | "terminal-waiver" | "terminal-delete" | "terminal-options" | "terminal-quit" => {
+            | "terminal-waiver" | "terminal-delete" | "terminal-options" | "terminal-quit"
+            | "terminal-manual" | "terminal-manual-3d" => {
                 self.show_terminal(screen);
                 return Ok(());
             }

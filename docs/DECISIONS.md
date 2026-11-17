@@ -1,5 +1,74 @@
 # Decisions and deviations
 
+## 2026-11-17 — DHC OS phase 3: the field manual is the specimen database (PC, Android)
+
+The terminal's FIELD MANUAL on PC and Android is now the specimen database,
+replacing its page of text. Phase 7's 3D viewer is folded in for these two
+platforms as an option. The original menus are unchanged; the database is a
+terminal screen only.
+
+- **Screens.** The index lists the catalog's animals (the hunt setup's
+  TARGETS, in its order) beside the focused one's picture; Enter or a click
+  opens its file after a retrieval sequence (`dhc::specimen::RETRIEVE_S`,
+  1.4 s; any key or click skips it). A file goes back where it was opened:
+  the index, or the hunt setup with its picks kept. The model is
+  `c2_core::dhc::terminal` (`Screen::Specimens`, `Screen::Specimen`,
+  `Action::Inspect`); `Terminal::specimen_db` turns it on, so the 3DS keeps
+  its text manual and the Wii U (no terminal yet) is unaffected.
+- **From the hunt setup**: V, or the pad's X, on the TARGETS tab opens the
+  focused animal's file. On the other tabs the pad's X still changes the
+  time. The pad hint said `[Y] TIME`, but after the PC layout swap X is
+  Call, which the menus map to T; the hints now name X for the time and Y
+  for observer mode.
+- **3D specimens are opt-in** ("DHC OS 3D specimens", `dhc_models` in
+  `c2rs.cfg`, off by default) so a slower machine draws nothing more than the
+  menu. The model is read when a file opens and dropped when it closes, and
+  drawn in the menu's own pass through a viewport after the sprites, under
+  the CRT layers (`menu/terminal/viewer.rs`, unlit like the model viewer,
+  its first animation playing on a turntable). It uses a long lens (zoom
+  2.4) from further back: at the default field of view the near end of a
+  long animal looms and it looks off-centre. Off, the file shows the menu
+  picture, or the placeholder frame when there is none.
+- **What a file says** (`c2_core::dhc::specimen::Specimen::lines`):
+  - *Diet*: `_PREDATION.TXT`'s tag, else what the AI implies, through the
+    same classification predation uses (`dino::predation::diet`). The menu
+    reads the AI from `_RES.TXT`, so an add-on whose AI is remapped by
+    identity at load can be classified by its written AI.
+  - *Length and weight*: `length` and `mass` over the sizes the hunt gives
+    (`scale0` to `scale0 + scaleA`, over 1000; 800 and 600 when missing),
+    weight as the trophy plaque works it out (`mass * s * s`), in the
+    plaque's units.
+  - *Height*: not in the data. Estimated from the model: its height over its
+    longer horizontal side (first animation's first frame, vertices used by
+    a face only) times the length. Shown as "(EST.)".
+  - *Bounty*: the `basescore` the hunt adds (`hunt_scores`), with the
+    tranquilizer's ×1.25.
+  - *Native to*: the areas whose island rules issue the animal and, in a
+    Modder's Edition game, where its spawn tables place it when picked.
+    Listed only when that is not every area.
+  - *May appear on*: where it turns up without a permit. In the original,
+    `PlaceCharacters` (`Characters.cpp`, `dino::place`) makes the first
+    four of the main population random among the seven species from the
+    first with AI 10, on every map (`specimen::unpermitted`). In a Modder's
+    Edition game, its spawn tables read with nothing picked, counting only a
+    spawn group or pack that places an animal (`roam_homes`). Otherwise
+    "PERMIT HUNTS ONLY".
+  - *Hunter records*: from `trophy0N.rec`, which is separate from the
+    trophy room, so a removed trophy's kill still counts: kills, the
+    largest kill (by size) and the highest-scoring one, each with its
+    weapon, area and date.
+- **The record keeps each kill's size.** A kill line gains a ninth field,
+  the animal's `scale` (`HuntKill::scale`; PC, 3DS and Wii U write it).
+  Lines written before have eight fields and still parse; a species whose
+  kills have no size says "LARGEST: SIZE NOT RECORDED". Kills are not part
+  of the regression state hash, so scenario hashes are unchanged.
+
+Tests: `dhc::tests::specimens` (index, retrieval, opening from the setup,
+beeps, native areas, unpermitted species, file lines in both units, records
+old and new, height ratio), `record::tests::per_species_records_keep_size_and_read_old_lines`,
+`menu::roster::roster_tests::unpicked_spawns_count_only_groups_that_place_animals`,
+and the terminal geometry test.
+
 ## 2026-11-17 — DHC OS phases 1 and 2: island rules in the original menus, recommendation, beeps, CRT pass, menu parity
 
 Phase 1 (island restrictions) and the rest of phase 2 (PC) of the DHC OS

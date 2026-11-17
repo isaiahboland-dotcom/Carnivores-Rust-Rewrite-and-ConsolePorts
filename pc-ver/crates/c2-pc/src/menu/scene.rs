@@ -16,7 +16,7 @@ impl Scene for Menu {
         input.pad_nav = self.terminal_style();
     }
 
-    fn update(&mut self, _gpu: &Gpu, dt: f32, input: &Input) {
+    fn update(&mut self, gpu: &Gpu, dt: f32, input: &Input) {
         if input.pad.active() {
             self.pad_used = true;
         } else if input.last_pressed.is_some() || input.clicked {
@@ -79,7 +79,7 @@ impl Scene for Menu {
                 self.update_options(input, r);
             }
             Screen::Loading => {}
-            Screen::Terminal => self.update_terminal(dt, input),
+            Screen::Terminal => self.update_terminal(gpu, dt, input),
         }
     }
 
@@ -131,6 +131,12 @@ impl Scene for Menu {
             self.draw_tranq_ask(&mut out);
         }
         self.hud.draw(gpu, pass, screen, &out);
+        // The field manual's 3D specimen, in its panel under the CRT layers.
+        if let Some(r) = self.viewer_rect() {
+            if let Some(w) = &mut self.viewer {
+                w.draw(gpu, pass, r, screen);
+            }
+        }
         if self.crt_frame.get() && self.pc.dhc_crt != 0 {
             let scale = self.canvas().0;
             let layers = self.pc.dhc_crt_layers;

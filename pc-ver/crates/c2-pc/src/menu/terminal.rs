@@ -10,7 +10,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use c2_core::dhc::terminal::{Action, Outcome, Screen as TScreen, Terminal};
+use c2_core::dhc::terminal::{Action, MainItem, Outcome, Screen as TScreen, Terminal};
 use c2_core::dhc::{Catalog, Dhc, Item, Limits, Loadout, Rules, Tab};
 
 use super::*;
@@ -18,9 +18,11 @@ use super::*;
 pub(super) mod beeps;
 pub(super) mod crt;
 mod draw;
+mod files;
 mod geom;
 mod login;
 mod options;
+pub(super) mod viewer;
 pub(super) use options::term_layout;
 pub(crate) mod palette;
 
@@ -39,6 +41,10 @@ pub(super) struct TermView {
     /// Per tab: the list's first shown row (the wheel scrolls it without
     /// moving the focus).
     pub(super) first: [usize; 4],
+    /// The specimen index's first shown row, and the open file's first
+    /// shown line.
+    pub(super) index_first: usize,
+    pub(super) file_scroll: usize,
 }
 
 /// The game's `_DHC.TXT`, when the recipe has one (never in Play Vanilla).
@@ -120,6 +126,7 @@ impl Menu {
                 v.term.score = score;
                 v.term.tranq = tranq;
                 v.term.survival = survival;
+                v.term.specimen_models = self.pc.dhc_models != 0;
                 // Back from options or the quit prompt: the main menu.
                 if !matches!(v.term.screen, TScreen::Main | TScreen::Setup) {
                     v.term.act(Action::Back);
@@ -202,6 +209,9 @@ impl Menu {
         }
         term.survival = self.survival_labels();
         term.tranq = self.tranq();
+        // The field manual is the specimen database here (PC, Android).
+        term.specimen_db = true;
+        term.specimen_models = self.pc.dhc_models != 0;
         // The accessories the save keeps, and the last area and time.
         let c = &self.choice;
         let back = |tab: usize, i: usize| map[tab].iter().position(|&x| x == i);
@@ -230,13 +240,20 @@ impl Menu {
             map,
             last_cursor: None,
             first: [0; 4],
+            index_first: 0,
+            file_scroll: 0,
         }
     }
 
     /// Opens the terminal for a screenshot: `terminal` (main menu),
-    /// `terminal-boot`, `terminal-hunt` (the setup's targets, two picks).
+    /// `terminal-boot`, `terminal-hunt` (the setup's targets, two picks),
+    /// `terminal-manual` (the specimen index; `--script 'enter;enter'`
+    /// opens the first file), `terminal-manual-3d` (with 3D specimens).
     pub(super) fn show_terminal(&mut self, which: &str) {
         self.pc.dhc_terminal = 1;
+        if which == "terminal-manual-3d" {
+            self.pc.dhc_models = 1;
+        }
         self.term = Some(self.build_terminal(which == "terminal-boot"));
         BOOTED.store(true, Ordering::Relaxed);
         self.screen = Screen::Terminal;
@@ -258,6 +275,17 @@ impl Menu {
             }
             _ => {}
         }
+        if which.starts_with("terminal-manual") {
+            if let Some(v) = &mut self.term {
+                let t = &mut v.term;
+                t.step(1.0);
+                let manual = t.main_items().iter().position(|&m| m == MainItem::Manual);
+                t.act(Action::Pick(manual.unwrap_or(0)));
+            }
+            if let Some(reg) = self.me().map(|p| p.reg_number) {
+                self.record = save::load_record(reg);
+            }
+        }
         if which == "terminal-hunt" {
             if let Some(v) = &mut self.term {
                 let t = &mut v.term;
@@ -275,9 +303,10 @@ impl Menu {
         }
     }
 
-    pub(super) fn update_terminal(&mut self, dt: f32, input: &Input) {
+    pub(super) fn update_terminal(&mut self, gpu: &Gpu, dt: f32, input: &Input) {
         let tranq = self.tranq();
         let hits = self.terminal_hits();
+        let over_model = inside(self.cursor, self.geom().file_pic());
         let Some(v) = &mut self.term else {
             self.screen = Screen::Main;
             return;
@@ -290,7 +319,15 @@ impl Menu {
         t.step(dt);
         let mut acts = Vec::new();
         let key = |k| input.pressed(k);
-        if t.screen == TScreen::Boot || t.screen == TScreen::Deploy {
+        // The pad's X opens the focused target's file (else it is the time).
+        let pad_file = input.pad.pressed(c2_pad::Action::Call)
+            && t.specimen_db
+            && t.screen == TScreen::Setup
+            && t.tab == Tab::Targets;
+        let file_open = t.screen == TScreen::Specimen && !t.retrieving();
+        if matches!(t.screen, TScreen::Boot | TScreen::Deploy)
+            || t.screen == TScreen::Specimen && t.retrieving()
+        {
             if input.last_pressed.is_some() || input.clicked {
                 acts.push(if key(KeyCode::Escape) {
                     Action::Back
@@ -309,14 +346,20 @@ impl Menu {
                 (KeyCode::Space, Action::Confirm),
                 (KeyCode::Escape, Action::Back),
                 (KeyCode::KeyT, Action::CycleTime),
+                (KeyCode::KeyV, Action::Inspect),
                 (KeyCode::KeyQ, Action::ToggleTranq),
                 (KeyCode::KeyO, Action::ToggleObserver),
                 (KeyCode::KeyF, Action::Deploy),
                 (KeyCode::F5, Action::Deploy),
             ] {
-                if key(k) {
+                // The file scrolls with the arrows (`file_scroll`).
+                let scrolls = file_open && matches!(k, KeyCode::ArrowUp | KeyCode::ArrowDown);
+                if key(k) && !scrolls && !(pad_file && k == KeyCode::KeyT) {
                     acts.push(a);
                 }
+            }
+            if pad_file {
+                acts.push(Action::Inspect);
             }
             if key(KeyCode::Tab) {
                 let back = input.held(KeyCode::ShiftLeft) || input.held(KeyCode::ShiftRight);
@@ -335,9 +378,10 @@ impl Menu {
                     }
                 }
             }
-            // The wheel scrolls the setup's lists, leaving the focus; the
-            // main menu's rows all show, so there it moves the focus.
-            if t.screen != TScreen::Setup {
+            // The wheel scrolls the setup's lists and the specimen index,
+            // leaving the focus; the main menu's rows all show, so there it
+            // moves the focus.
+            if matches!(t.screen, TScreen::Main | TScreen::Survival) {
                 if input.scroll > 0.0 {
                     acts.push(Action::Up);
                 } else if input.scroll < 0.0 {
@@ -363,6 +407,7 @@ impl Menu {
             }
         }
         let (tab, before) = (t.tab.index(), t.rows[t.tab.index()]);
+        let (screen_before, file_before, index_before) = (t.screen, t.file(), t.specimen_row());
         // One beep a frame: the last action's that made one.
         let mut beep = None;
         for a in acts {
@@ -383,10 +428,94 @@ impl Menu {
             }
             *first = (*first).min(n.saturating_sub(vis));
         }
+        if t.screen == TScreen::Specimens {
+            let (vis, n, row) = (files::index_rows(), t.cat.animals.len(), t.specimen_row());
+            let first = &mut v.index_first;
+            if row != index_before || screen_before != TScreen::Specimens {
+                *first = (*first).clamp((row + 1).saturating_sub(vis), row);
+            }
+            if input.scroll > 0.0 {
+                *first = first.saturating_sub(1);
+            } else if input.scroll < 0.0 {
+                *first += 1;
+            }
+            *first = (*first).min(n.saturating_sub(vis));
+        }
+        // A file opened (from the index or the setup): its model is read.
+        let opened = t.screen == TScreen::Specimen
+            && (screen_before != TScreen::Specimen || file_before != t.file());
+        let file = (t.screen == TScreen::Specimen)
+            .then(|| v.map[1].get(t.file()).copied())
+            .flatten();
+        if opened {
+            v.file_scroll = 0;
+        }
+        if file_open {
+            // A wheel notch scrolls a line; the pad's right stick (a little
+            // scroll every frame) turns the model instead, the D-pad scrolls.
+            let wheel = if over_model || input.scroll.abs() < 0.5 {
+                0
+            } else {
+                -input.scroll.signum() as i32
+            };
+            let lines = (input.pressed(KeyCode::ArrowDown) as i32
+                - input.pressed(KeyCode::ArrowUp) as i32)
+                + wheel;
+            v.file_scroll = v.file_scroll.saturating_add_signed(lines as isize);
+        }
+        let retrieving = t.retrieving();
+        let fresh_index = t.screen == TScreen::Specimens && screen_before != TScreen::Specimens;
         if let Some(o) = t.take_outcome() {
             self.terminal_outcome(o);
         }
         self.beep(beep);
+        // The record behind the files' kills, read when the database opens.
+        if fresh_index || opened && screen_before == TScreen::Setup {
+            if let Some(reg) = self.me().map(|p| p.reg_number) {
+                self.record = save::load_record(reg);
+            }
+        }
+        // Scrolling stops at the file's ends.
+        if let Some(first) = self.term.as_ref().map(|v| self.file_first(v)) {
+            if let Some(v) = &mut self.term {
+                v.file_scroll = first;
+            }
+        }
+        self.update_file_view(gpu, dt, input, file, opened, retrieving, over_model);
+    }
+
+    /// The open file's model: read when it opens (its height measured,
+    /// and the 3D specimen made when that option is on), turned while the
+    /// file shows, dropped when it closes.
+    #[allow(clippy::too_many_arguments)]
+    fn update_file_view(
+        &mut self,
+        gpu: &Gpu,
+        dt: f32,
+        input: &Input,
+        file: Option<usize>,
+        opened: bool,
+        retrieving: bool,
+        over: bool,
+    ) {
+        let Some(k) = file else {
+            self.viewer = None;
+            return;
+        };
+        if opened {
+            self.viewer = None;
+            let models = self.pc.dhc_models != 0;
+            if models || self.specimens.unmeasured(k) {
+                let car = self.specimens.model(&self.huntdat, k);
+                self.specimens.measure(k, car.as_ref());
+                if models {
+                    self.viewer = car.map(|c| viewer::Viewer::new(gpu, c));
+                }
+            }
+        }
+        if let Some(w) = self.viewer.as_mut().filter(|_| !retrieving) {
+            w.update(gpu, dt, input, over);
+        }
     }
 
     fn terminal_outcome(&mut self, o: Outcome) {

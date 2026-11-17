@@ -66,7 +66,7 @@ impl Beep {
 #[derive(PartialEq)]
 struct Seen {
     screen: Screen,
-    focus: (super::Tab, [usize; 4], usize, usize),
+    focus: (super::Tab, [usize; 4], usize, usize, usize),
     loadout: super::Loadout,
     refusals: u32,
 }
@@ -74,7 +74,13 @@ struct Seen {
 fn seen(t: &Terminal) -> Seen {
     Seen {
         screen: t.screen,
-        focus: (t.tab, t.rows, t.main_row, t.survival_row()),
+        focus: (
+            t.tab,
+            t.rows,
+            t.main_row,
+            t.survival_row(),
+            t.specimen_row(),
+        ),
         loadout: t.loadout(),
         refusals: t.refusals(),
     }
@@ -96,6 +102,7 @@ impl Terminal {
             return Some(match after.screen {
                 Screen::Deploy => Beep::Deploy,
                 Screen::Main if before.screen != Screen::Boot => Beep::Back,
+                _ if before.screen == Screen::Specimen => Beep::Back,
                 Screen::Setup if before.screen == Screen::Deploy && !self.has_outcome() => {
                     Beep::Back
                 }

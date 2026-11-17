@@ -126,6 +126,10 @@ pub struct PcSettings {
     pub dhc_crt_layers: i32,
     /// The terminal's synthesized UI beeps (1 = on, the default).
     pub dhc_beeps: i32,
+    /// The field manual's files show the animal's 3D model, turning,
+    /// instead of its picture (1 = on; off by default, so slower machines
+    /// draw nothing more than the menu).
+    pub dhc_models: i32,
     /// The hunt setup starts from the last hunt's picks (1 = on; off by
     /// default, not in the original).
     pub remember_hunt: i32,
@@ -207,6 +211,7 @@ impl Default for PcSettings {
             dhc_crt: 0,
             dhc_crt_layers: crate::menu::CRT_ALL_LAYERS,
             dhc_beeps: 1,
+            dhc_models: 0,
             remember_hunt: 0,
             modern_waves: 0,
             modern_water_tint: 0,
@@ -296,6 +301,7 @@ impl PcSettings {
                 "dhc_terminal" => s.dhc_terminal = i32::from(v != 0),
                 "dhc_crt" => s.dhc_crt = i32::from(v != 0),
                 "dhc_beeps" => s.dhc_beeps = i32::from(v != 0),
+                "dhc_models" => s.dhc_models = i32::from(v != 0),
                 "dhc_crt_layers" => s.dhc_crt_layers = v.clamp(0, crate::menu::CRT_ALL_LAYERS),
                 "remember_hunt" => s.remember_hunt = i32::from(v != 0),
                 "modern_waves" => s.modern_waves = i32::from(v != 0),
@@ -344,7 +350,7 @@ impl PcSettings {
         let s = self;
         format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nmodel_distance = {}\n\
-             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\nfire_reloads_empty = {}\npause_pickers = {}\nradar_water = {}\npretty_underwater = {}\nclassic_filter = {}\nbounded_flee = {}\ndhc_terminal = {}\ndhc_crt = {}\ndhc_crt_layers = {}\ndhc_beeps = {}\nmodern_waves = {}\nmodern_water_tint = {}\nmodern_sky_glow = {}\nmodern_reflections = {}\nmodern_fog_glow = {}\ndesaturated_night = {}\npitch_black_night = {}\noriginal_underwater_fog = {}\nmodern_underwater = {}\nremember_hunt = {}\n",
+             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\nfire_reloads_empty = {}\npause_pickers = {}\nradar_water = {}\npretty_underwater = {}\nclassic_filter = {}\nbounded_flee = {}\ndhc_terminal = {}\ndhc_crt = {}\ndhc_crt_layers = {}\ndhc_beeps = {}\ndhc_models = {}\nmodern_waves = {}\nmodern_water_tint = {}\nmodern_sky_glow = {}\nmodern_reflections = {}\nmodern_fog_glow = {}\ndesaturated_night = {}\npitch_black_night = {}\noriginal_underwater_fog = {}\nmodern_underwater = {}\nremember_hunt = {}\n",
             s.render,
             s.fog,
             s.blood,
@@ -377,6 +383,7 @@ impl PcSettings {
             s.dhc_crt,
             s.dhc_crt_layers,
             s.dhc_beeps,
+            s.dhc_models,
             s.modern_waves,
             s.modern_water_tint,
             s.modern_sky_glow,
