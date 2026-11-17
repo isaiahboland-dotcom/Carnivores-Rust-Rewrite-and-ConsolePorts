@@ -56,11 +56,8 @@ impl Hunt {
         self.player = crate::player::Player::new(area, at);
         self.player.alpha = m.hunter_alpha;
         let mut s = Survival::new(opts);
-        s.fence = Some(Fence::new(
-            area,
-            (i32::from(at.0), i32::from(at.1)),
-            m.spawn,
-        ));
+        s.fence =
+            Some(Fence::new(area, (i32::from(at.0), i32::from(at.1)), m.spawn).with_objects(area));
         self.survival = Some(s);
     }
 

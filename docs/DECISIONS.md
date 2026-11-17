@@ -37,6 +37,15 @@
 - Checked with `c2-cook --check` on packs cooked with `--offer-survival`: vanilla (Mount Ravan, ravine
   kept), Genesis Redux 1.1 and 2.0 and Fallen Kings (AREA8), JPHL (AREA7): every mode's first wave
   comes. Without the flag the check reports "survival: not offered" and passes.
+- **Waves route round objects.** On Genesis Redux 1.1 AREA8 Stegosaurus waves jittered among
+  trees about 80 cells out (`c2-cook --check`: the nearest approach stayed at 83 cells). The flow
+  field that guides wave animals knew water and slope but not objects, so its waypoints led
+  through trees and rocks that the animals' own path probe refuses. `Fence::with_objects` (called
+  once in `start_survival`) marks the cells `check_place_collision_p` rejects, and `Flow` treats
+  them as walls. It is not applied in the arena search, which only needs reachability. After the
+  change the same waves close to 17-45 cells within the check's 40 s window; heavy herbivores
+  still wander more than the raptors in dense woods (their turning is slow), which is the species'
+  own movement.
 
 ## 2026-11-16 — Launcher in the DHC OS look (Legacy kept); DHC OS on by default on 3DS; Wii U unchanged
 

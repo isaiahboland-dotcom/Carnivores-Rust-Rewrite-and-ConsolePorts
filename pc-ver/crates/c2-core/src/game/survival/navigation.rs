@@ -25,6 +25,9 @@ pub(super) struct Fence {
     z0: i32,
     w: i32,
     ok: Vec<bool>,
+    /// Cells an object (tree, rock) stands on; empty until
+    /// [`Fence::with_objects`].
+    solid: Vec<bool>,
 }
 
 impl Fence {
@@ -72,7 +75,43 @@ impl Fence {
             z0,
             w,
             ok: top.iter().map(|&t| t <= limit).collect(),
+            solid: Vec::new(),
         }
+    }
+
+    /// This fence also marking the cells objects stand on, which a [`Flow`]
+    /// then routes round (a heavy animal stuck among trees on a straight
+    /// way). Done once per survival: it asks the collision of every cell
+    /// of the ground.
+    pub(super) fn with_objects(mut self, area: &Area) -> Self {
+        let h = self.ok.len() as i32 / self.w;
+        self.solid = vec![false; self.ok.len()];
+        for z in 0..h {
+            for x in 0..self.w {
+                let i = (z * self.w + x) as usize;
+                if !self.ok[i] {
+                    continue;
+                }
+                let (wx, wz) = (
+                    (self.x0 + x) as f32 * 256.0 + 128.0,
+                    (self.z0 + z) as f32 * 256.0 + 128.0,
+                );
+                let mut p = [wx, area.land_height(wx, wz), wz];
+                self.solid[i] = crate::dino::check_place_collision_p(area, &mut p);
+            }
+        }
+        self
+    }
+
+    fn blocked(&self, x: i32, z: i32) -> bool {
+        let (i, j) = (x - self.x0, z - self.z0);
+        (0..self.w).contains(&i)
+            && j >= 0
+            && self
+                .solid
+                .get((j * self.w + i) as usize)
+                .copied()
+                .unwrap_or(false)
     }
 
     /// Whether cell (`x`, `z`) is in.
@@ -158,7 +197,7 @@ impl Flow {
                 let wet = area.map.flags[crate::area::idx(x as usize, z as usize)]
                     & crate::area::cell_flags::WATER
                     != 0;
-                if !wet && fence.is_none_or(|f| f.allows(x, z)) {
+                if !wet && fence.is_none_or(|f| f.allows(x, z) && !f.blocked(x, z)) {
                     let (wx, wz) = (x as f32 * 256.0 + 128.0, z as f32 * 256.0 + 128.0);
                     let y = area.land_height(wx, wz);
                     // Match movement's local slope probes. An average across
@@ -319,7 +358,7 @@ impl Flow {
 
 #[cfg(test)]
 mod flow_tests {
-    use super::{Flow, FLOW_W};
+    use super::{Fence, Flow, FLOW_W};
     use crate::area::Area;
 
     /// A flat area with a wall (cells x 500..=504, z below 560) between
@@ -332,6 +371,27 @@ mod flow_tests {
             }
         }
         a
+    }
+
+    /// Cells no animal may stand on (an object's: the movement's collision
+    /// check refuses them) form a wall the way goes round.
+    #[test]
+    fn a_flow_with_objects_routes_round_them() {
+        let mut a = Area::flat(10);
+        for z in 485..=515 {
+            a.map.flags[crate::area::idx(500, z)] |= crate::area::cell_flags::NO_WAY;
+        }
+        let spawn = [530.0 * 256.0, 500.0 * 256.0, 2048.0, 2048.0];
+        let plain = Fence::new(&a, (480, 500), spawn);
+        let solid = plain.clone().with_objects(&a);
+        let hunter = (480, 500);
+        let before = Flow::new(&a, hunter, Some(&plain));
+        let after = Flow::new(&a, hunter, Some(&solid));
+        assert_eq!(before.lure(530, 500), None, "the wall is not seen");
+        assert!(
+            after.lure(530, 500).is_some(),
+            "the way goes round the wall"
+        );
     }
 
     #[test]
