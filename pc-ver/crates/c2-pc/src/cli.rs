@@ -33,7 +33,7 @@ const USAGE: &str = "usage:
   c2-pc model <file.car|file.3df|dir> [--anim N] [--time MS] [--yaw RAD] [--shot out.png]
   c2-pc area  <AREA.MAP> [--dusk|--night] [--cam X,Y,Z,YAW,PITCH] [--view CELLS] [--models] [--foliage CELLS] [--high-end] [--waves] [--sky-glow] [--reflections] [--fog-glow] [--shot out.png]
   c2-pc hunt  <AREA.MAP|TROPHY.MAP> [--dusk|--night] [--sim MS,AI,DIST,AFTER] [--target AI,..|all]
-              [--weapon N] [--bino] [--pause] [--exit] [--dhc-terminal] [--message TEXT] [--kill] [--plaque] [--pick] [--call] [--fill] [--die AI,MS[,NAME]] [--dive MS] [--modern] [--original-underwater] [--observer] [--player N] [--survival classic|modded] [--seed N]\n              [--touch] [--shot out.png]   (--touch: an APK game's phone buttons, as after a touch)
+              [--weapon N] [--bino] [--advanced-binoculars] [--pause] [--exit] [--dhc-terminal] [--message TEXT] [--kill] [--plaque] [--pick] [--call] [--fill] [--die AI,MS[,NAME]] [--dive MS] [--modern] [--original-underwater] [--observer] [--player N] [--survival classic|modded] [--seed N]\n              [--touch] [--shot out.png]   (--touch: an APK game's phone buttons, as after a touch)
 
 model: drag to orbit, wheel zoom, [ ] next/prev file, N/P next/prev animation, Space pause
 area:  WASD/QE move, drag to look, wheel = speed, Shift = fast, +/- view distance
@@ -506,6 +506,7 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
                 double_ammo: false,
                 night_vision: false,
                 flashlight: false,
+                advanced_binoculars: o.has("advanced-binoculars"),
                 observer: o.has("observer"),
                 // --survival classic|modded|hardcore.
                 survival: match o.value("survival") {

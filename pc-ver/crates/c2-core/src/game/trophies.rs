@@ -131,6 +131,10 @@ impl Hunt {
             (self.opts.radar, 0.70),
             (self.opts.scent, 0.80),
             (self.opts.camo, 0.85),
+            (
+                self.opts.advanced_binoculars,
+                super::ADVANCED_BINOCULARS_SCORE,
+            ),
         ] {
             if on {
                 score *= k;

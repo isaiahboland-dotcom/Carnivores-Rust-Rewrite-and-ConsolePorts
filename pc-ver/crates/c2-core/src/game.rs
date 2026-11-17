@@ -9,6 +9,7 @@ mod ammo_kinds;
 mod aquatic;
 mod arms;
 mod audio;
+mod binoculars;
 mod combat;
 mod death;
 mod events;
@@ -31,6 +32,7 @@ mod weapons;
 mod wildlife;
 
 pub use aquatic::{has_water, AquaticRoam, FAR_M as AQUATIC_FAR_M, NEAR_M as AQUATIC_NEAR_M};
+pub use binoculars::{Outline, ADVANCED_BINOCULARS_SCORE};
 pub use death::{death_cam_view, DeathCam};
 pub use events::{GameEvent, HuntKill};
 pub use hardcore::Hardcore;

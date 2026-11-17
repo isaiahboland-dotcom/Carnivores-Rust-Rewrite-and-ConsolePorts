@@ -149,6 +149,11 @@ Nintendo ports keep their own mappings.
   flashlight (only one at a time). Dynamic-time night kills earn +20% while night vision is off; the
   flashlight keeps that bonus. **K** switches the flashlight beam between wide and a narrow one that
   reaches farther (remembered for the next hunt). Details: [DYNAMIC_TIME.md](DYNAMIC_TIME.md).
+- **Advanced binoculars** (Equipment, 40 points, not in the original): while looking through the
+  binoculars, each living huntable animal has a green outline, red while it is after you (an
+  alerted or hunting carnivore, or a charging Chasmosaurus). Kills score 40% less. Desktop-only for
+  now (not on Android); the phone-style setup pages call it
+  "Binoculars+".
 - **Night vision in fixed-time Night hunts** is free and starts on, as in the original; **N** (or the
   right stick click) switches it off. Scoring is unchanged.
 - **Pitch black night** (Options > Game, on by default): with night vision off at night, the world

@@ -327,6 +327,11 @@ impl Menu {
                 15,
                 "Costs 15 points. L toggles the flashlight. Night kills keep the 20% bonus. B switches between the wide beam and a narrow one that reaches farther.",
             ),
+            (
+                "Advanced binoculars",
+                ADVANCED_BINOCULARS_PRICE,
+                "Costs 40 points. Through the binoculars, animals show a green outline, red once they are after you. Kills score 40% less.",
+            ),
         ] {
             let gear = &mut cols[3];
             gear.names.push(name.into());
@@ -559,9 +564,9 @@ impl Menu {
     pub(super) fn offer_animals(&mut self) {
         // The times of day the instance offers.
         self.choice.time = crate::instance_rules::get().allowed_time(self.choice.time);
-        self.columns[3].order = (0..if self.pc.dynamic_time != 0 { 6 } else { 4 }).collect();
+        self.columns[3].order = gear_order(self.pc.dynamic_time != 0);
         if self.pc.dynamic_time == 0 {
-            self.choice.equip &= 15;
+            self.choice.equip &= NO_LIGHTS;
         }
         let all = self.pc.all_huntable != 0;
         let first = self.menu_animals;

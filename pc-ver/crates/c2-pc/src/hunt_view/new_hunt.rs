@@ -266,6 +266,7 @@ fn hunt_options(o: &c2_formats::sav::Options, setup: &HuntSetup) -> HuntOptions 
         auto_chamber: false,
         dynamic_night: None,
         night_vision_active: false,
+        advanced_binoculars: setup.advanced_binoculars,
     };
     let mut opts = opts;
     opts.render_r = if trophy {

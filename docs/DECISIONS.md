@@ -6753,6 +6753,46 @@ the vanilla areas only AREA5's zone 2, the volcanic gas, is mortal.
   and is on the map). No regression scenario hunts on AREA5, so the
   existing baselines are not affected.
 
+## 2026-11-17 — Advanced binoculars (new gear, PC)
+
+Equipment that is not in the original: looking through the binoculars, each
+living huntable animal is outlined, green while it is not after the hunter
+and red once it is. Kills score ×0.60, applied like the original's accessory
+factors (`AddScore`) and in the DHC terminal's earnings.
+
+- **Hostile** (`Hunt::hostile`, `game/binoculars.rs`): the species attacks
+  the hunter (`survival::dangerous`: the original's carnivores and the
+  charging Chasmosaurus; a dialect carnivore or any huntable with
+  `aggress`), its `State` is non-zero with the `csONWATER` bit masked off,
+  and its predation goal is `None` (a predator chasing, fleeing or
+  scavenging among animals is not after the hunter). An observer is never
+  hunted. Herbivores that flee stay green.
+- **Who is outlined** (`Hunt::binocular_outline`): only with the gear and
+  the binoculars up, only living huntable animals (`is_huntable`); ambients,
+  flyers and fish are left plain.
+- **Rendering** (`render/outline.rs`, `model.wgsl: vs_outline`): before the
+  animals, each outlined model is drawn eight times in a flat colour,
+  shifted 0.5% of the frame height in eight directions, depth-tested against
+  the world but not written; the model then covers the middle. No normals,
+  stencil or extra render target are needed, the rim keeps its width at any
+  distance or zoom, and it is unlit and unfogged so it shows at night and
+  in haze. It does not show through terrain or objects. Blended faces leave
+  no rim; cutout faces alpha-test. Water reflections draw no outlines.
+- **Menu:** gear item 6 (`equip` bit 64), 40 points, listed with or without
+  dynamic time; not kept in the save (as the lights). Observers may carry it
+  (it acts on the view only). `c2-pc hunt --advanced-binoculars` turns it on without
+  the menu.
+- **Desktop-exclusive for now:** Android neither lists nor applies it
+  (`menu.rs: OFFERS_ADVANCED_BINOCULARS`, a `cfg!(target_os = "android")`
+  switch); no 3DS, Wii U or VR version is planned.
+- **Phone-style setup pages** (`--mobile-menu`, APK builds on desktop): a
+  "Binoculars+" button after the lights. The page's button order lives in
+  one place (`mobile.rs: Menu::gear_buttons`, used for the labels, clicks
+  and the info panel). The plain layout's column takes seven; the APK-art
+  grid keeps its four- and six-button places and goes to four rows of 34
+  for seven (`kit_gear_rects`); the card strip splits into two rows past
+  six (`card_controls`).
+
 ## Launcher: survival is per instance, colours of the DHC look
 
 - **Survival:** the switch is the instance's, not the launcher's. It is the

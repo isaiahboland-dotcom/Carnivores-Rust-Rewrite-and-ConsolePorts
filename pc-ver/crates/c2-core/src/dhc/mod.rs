@@ -138,12 +138,21 @@ impl Rules {
 
 /// The original's kill-score multipliers for the accessories picked
 /// (`Game.cpp`, `AddScore`: tranquilizer ×1.25, radar ×0.70, cover scent
-/// ×0.80, camouflage ×0.85), matched by the equipment's name.
+/// ×0.80, camouflage ×0.85), and the advanced binoculars' ×0.60 (not in
+/// the original), matched by the equipment's name.
 pub fn earnings_factor<'a>(equipment: impl IntoIterator<Item = &'a str>, tranq: bool) -> f32 {
     let mut k = if tranq { 1.25 } else { 1.0 };
     for name in equipment {
         let n = name.trim();
-        for (key, f) in [("radar", 0.70), ("cover scent", 0.80), ("camouflage", 0.85)] {
+        for (key, f) in [
+            ("radar", 0.70),
+            ("cover scent", 0.80),
+            ("camouflage", 0.85),
+            (
+                "advanced binoculars",
+                crate::game::ADVANCED_BINOCULARS_SCORE,
+            ),
+        ] {
             if n.eq_ignore_ascii_case(key) {
                 k *= f;
             }

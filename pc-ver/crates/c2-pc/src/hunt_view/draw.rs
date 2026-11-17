@@ -106,7 +106,12 @@ impl HuntView {
             .draw_reflection(gpu, screen, &mut |gpu, pass, globals, frustum| {
                 // The mirrored eye is straight under the camera: the same
                 // reach on the ground plane.
-                let seen = crate::dinos::Seen { eye, max, frustum };
+                let seen = crate::dinos::Seen {
+                    eye,
+                    max,
+                    frustum,
+                    outline: &|_| None,
+                };
                 dinos.draw(gpu, pass, globals, &hunt.herd, &hunt.ship, seen);
             });
     }
@@ -132,7 +137,13 @@ impl HuntView {
         let max = self.view.radius as f32 * c2_core::CELL;
         self.view
             .draw_with(gpu, pass, aspect, &mut |gpu, pass, globals, frustum| {
-                let seen = crate::dinos::Seen { eye, max, frustum };
+                let outline = |i| hunt.binocular_outline(i);
+                let seen = crate::dinos::Seen {
+                    eye,
+                    max,
+                    frustum,
+                    outline: &outline,
+                };
                 dinos.draw(gpu, pass, globals, &hunt.herd, &hunt.ship, seen);
                 effects.draw(gpu, pass, globals, &hunt.effects);
                 weapons.draw_rounds(gpu, pass, globals, hunt);

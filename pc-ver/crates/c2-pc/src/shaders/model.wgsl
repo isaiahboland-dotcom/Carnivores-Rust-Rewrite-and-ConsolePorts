@@ -98,6 +98,43 @@ fn vs_near(v: VIn) -> VOut {
     return o;
 }
 
+// Advanced binoculars (render/outline.rs): the model shifted in one of
+// eight directions (`dither`: 0..8), in a flat colour (`light`: 0 calm,
+// 1 hostile). The shift is a share of the frame's height, so the rim
+// keeps its width on screen at any distance or zoom.
+const OUTLINE_WIDTH: f32 = 0.005;
+
+@vertex
+fn vs_outline(v: VIn) -> VOut {
+    var o = transform(v);
+    let a = floor(v.dither + 0.5) * 0.7853982;
+    // proj[0][0] / proj[1][1]: height over width, for square steps.
+    let aspect = g.proj[0][0] / g.proj[1][1];
+    o.clip.x = o.clip.x + cos(a) * OUTLINE_WIDTH * aspect * o.clip.w;
+    o.clip.y = o.clip.y + sin(a) * OUTLINE_WIDTH * o.clip.w;
+    o.light = v.light;
+    o.dither = 0.0;
+    return o;
+}
+
+// Unlit and unfogged, so a rim shows at night and in the haze.
+fn outline_colour(hostile: f32) -> vec4<f32> {
+    return vec4<f32>(select(vec3<f32>(0.25, 1.0, 0.3), vec3<f32>(1.0, 0.15, 0.1), hostile > 0.5), 1.0);
+}
+
+@fragment
+fn fs_outline(i: VOut) -> @location(0) vec4<f32> {
+    return outline_colour(i.light);
+}
+
+@fragment
+fn fs_outline_cutout(i: VOut) -> @location(0) vec4<f32> {
+    if (textureSample(tex, samp, i.uv, i.layer).a < 0.5) {
+        discard;
+    }
+    return outline_colour(i.light);
+}
+
 // 4x4 ordered (Bayer) dither threshold in 0..1 for a pixel: the bits of
 // x ^ y and y interleaved, reversed.
 fn bayer(p: vec2<f32>) -> f32 {

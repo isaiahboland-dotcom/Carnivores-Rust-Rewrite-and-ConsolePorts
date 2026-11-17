@@ -165,7 +165,10 @@ impl Menu {
             2 => 128,
             _ => 32,
         };
-        if r >= max || (col == 3 && r >= 4 && self.pc.dynamic_time == 0) {
+        if r >= max
+            || (col == 3 && matches!(r, 4 | 5) && self.pc.dynamic_time == 0)
+            || (col == 3 && r == 6 && !OFFERS_ADVANCED_BINOCULARS)
+        {
             return;
         }
         let bit = 1u128.checked_shl(r as u32).unwrap_or(0);
@@ -358,6 +361,8 @@ impl Menu {
             pc: self.pc,
             night_vision,
             flashlight,
+            advanced_binoculars: OFFERS_ADVANCED_BINOCULARS
+                && self.choice.equip & ADVANCED_BINOCULARS != 0,
         });
         self.shown_loading = false;
         self.term_loading = None;

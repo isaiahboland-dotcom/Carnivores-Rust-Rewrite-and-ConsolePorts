@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use c2_core::dino::{pose, Character, DinoInfo, Herd, Species};
+use c2_core::game::Outline;
 use c2_core::model::PreparedModel;
 use c2_core::ship::Ship;
 use c2_formats::car::{self, Car};
@@ -121,7 +122,7 @@ impl DinoAssets {
             ship.as_ref()
                 .map_or(blank.as_slice(), |(_, p)| p.texture_rgba.as_slice()),
         );
-        let renderer = ModelRenderer::new(gpu, globals, &textures);
+        let renderer = ModelRenderer::new(gpu, globals, &textures).with_outlines(gpu, globals);
         let ship = ship.map(|(c, p)| {
             let m = GpuModel::new(gpu, &p, Vec::new());
             ((c, p), m)
@@ -186,6 +187,7 @@ impl DinoAssets {
         let near = |p: [f32; 3], reach: f32| seen.sees(p, reach);
         let mut insts: Vec<[Instance; 1]> = Vec::new();
         let mut models: Vec<&GpuModel> = Vec::new();
+        let mut outlined: Vec<(usize, Outline)> = Vec::new();
         for (i, c) in herd.chars.iter().enumerate() {
             let (Some(Some((_, m))), Some(Some((car, _)))) =
                 (self.models.get(i), self.cars.get(c.ctype))
@@ -199,6 +201,9 @@ impl DinoAssets {
             let anims = herd.species.get(c.ctype).map_or(&[][..], |s| s.anims());
             if let Some(v) = pose::pose_into(c, car, anims, &mut self.pose) {
                 m.set_pose(gpu, v);
+            }
+            if let Some(t) = (seen.outline)(i) {
+                outlined.push((insts.len(), t));
             }
             insts.push([instance(c)]);
             models.push(m);
@@ -231,17 +236,20 @@ impl DinoAssets {
             .zip(&insts)
             .map(|(m, i)| (m, i.as_slice()))
             .collect();
-        self.renderer.draw(gpu, pass, globals, &batches);
+        self.renderer
+            .draw_outlined(gpu, pass, globals, &batches, &outlined);
     }
 }
 
 /// What the camera takes in: characters within `max` of `eye` (on the
-/// ground plane) that `frustum` may see.
+/// ground plane) that `frustum` may see, and how character `i` is
+/// outlined (the advanced binoculars; `None` for plain).
 #[derive(Clone, Copy)]
 pub struct Seen<'a> {
     pub eye: [f32; 3],
     pub max: f32,
     pub frustum: &'a Frustum,
+    pub outline: &'a dyn Fn(usize) -> Option<Outline>,
 }
 
 impl Seen<'_> {

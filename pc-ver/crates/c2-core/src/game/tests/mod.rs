@@ -3,6 +3,7 @@
 mod ammo_kinds;
 mod aquatic;
 mod awareness;
+mod binoculars;
 mod combat;
 mod death;
 mod ecosystem;

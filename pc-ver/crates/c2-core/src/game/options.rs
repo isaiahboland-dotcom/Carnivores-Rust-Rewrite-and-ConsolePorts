@@ -75,6 +75,13 @@ pub struct HuntOptions {
     pub dynamic_night: Option<bool>,
     /// Active manual night vision cancels the dynamic-time night bonus.
     pub night_vision_active: bool,
+    /// Advanced binoculars (gear, not in the original): animals are
+    /// outlined through the binoculars ([`Hunt::binocular_outline`]); kills
+    /// score [`ADVANCED_BINOCULARS_SCORE`].
+    ///
+    /// [`Hunt::binocular_outline`]: crate::game::Hunt::binocular_outline
+    /// [`ADVANCED_BINOCULARS_SCORE`]: crate::game::ADVANCED_BINOCULARS_SCORE
+    pub advanced_binoculars: bool,
 }
 
 impl Default for HuntOptions {
@@ -106,6 +113,7 @@ impl Default for HuntOptions {
             auto_chamber: false,
             dynamic_night: None,
             night_vision_active: false,
+            advanced_binoculars: false,
             teleport: false,
         }
     }

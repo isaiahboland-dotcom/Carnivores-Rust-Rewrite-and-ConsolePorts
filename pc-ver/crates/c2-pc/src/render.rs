@@ -354,6 +354,8 @@ enum Blend {
     Additive,
     /// `dst + src`, depth-tested but not written (water rings).
     AdditiveDepth,
+    /// Replaces the colour, depth-tested but not written (outlines).
+    Overlay,
 }
 
 struct PipelineDesc<'a> {
@@ -388,6 +390,7 @@ fn pipeline(gpu: &Gpu, d: PipelineDesc<'_>) -> wgpu::RenderPipeline {
         ),
         Blend::Additive => (Some(additive), depth_state(false, Always)),
         Blend::AdditiveDepth => (Some(additive), depth_state(false, Less)),
+        Blend::Overlay => (None, depth_state(false, Less)),
     };
     gpu.device
         .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -577,6 +580,8 @@ pub struct ModelRenderer {
     opaque: wgpu::RenderPipeline,
     cutout: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
+    /// [`ModelRenderer::with_outlines`]; `None`: outlines are not drawn.
+    outline: Option<outline::OutlinePipelines>,
     tex_layout: wgpu::BindGroupLayout,
     textures: wgpu::BindGroup,
     instances: wgpu::Buffer,
@@ -831,6 +836,7 @@ impl ModelRenderer {
             opaque,
             cutout,
             blend,
+            outline: None,
             tex_layout,
             textures: group,
             instances,
@@ -856,7 +862,30 @@ impl ModelRenderer {
         globals: &Globals,
         batches: &[(&GpuModel, &[Instance])],
     ) {
-        let total: usize = batches.iter().map(|(_, i)| i.len()).sum();
+        self.draw_outlined(gpu, pass, globals, batches, &[]);
+    }
+
+    /// [`ModelRenderer::draw`], with an outline first around the first
+    /// instance of each batch `outlined` names (only once
+    /// [`ModelRenderer::with_outlines`] built the pipelines).
+    pub fn draw_outlined(
+        &mut self,
+        gpu: &Gpu,
+        pass: &mut wgpu::RenderPass<'_>,
+        globals: &Globals,
+        batches: &[(&GpuModel, &[Instance])],
+        outlined: &[(usize, c2_core::game::Outline)],
+    ) {
+        let outlined: Vec<(usize, c2_core::game::Outline, Instance)> = if self.outline.is_some() {
+            outlined
+                .iter()
+                .filter_map(|&(b, t)| Some((b, t, *batches.get(b)?.1.first()?)))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let plain: usize = batches.iter().map(|(_, i)| i.len()).sum();
+        let total = plain + outlined.len() * outline::DIRECTIONS;
         if total == 0 {
             return;
         }
@@ -878,10 +907,21 @@ impl ModelRenderer {
             dst.slice(at..at + bytes.len()).copy_from_slice(bytes);
             at += bytes.len();
         }
+        // The outlines' copies after every batch's instances.
+        for &(_, tint, base) in &outlined {
+            let copies = outline::copies(base, tint);
+            let bytes: &[u8] = bytemuck::cast_slice(&copies);
+            dst.slice(at..at + bytes.len()).copy_from_slice(bytes);
+            at += bytes.len();
+        }
         drop(dst);
         pass.set_bind_group(0, &globals.group, &[]);
         pass.set_bind_group(1, &self.textures, &[]);
         pass.set_vertex_buffer(1, self.instances.slice(..));
+        if let (Some(o), false) = (&self.outline, outlined.is_empty()) {
+            let which: Vec<usize> = outlined.iter().map(|&(b, ..)| b).collect();
+            o.draw(pass, batches, &which, plain as u32);
+        }
         for (pipe, phase) in [(&self.opaque, 0), (&self.cutout, 1), (&self.blend, 2)] {
             pass.set_pipeline(pipe);
             let mut first = 0u32;
@@ -904,6 +944,7 @@ impl ModelRenderer {
 
 mod frustum;
 pub use frustum::Frustum;
+mod outline;
 mod terrain;
 pub use terrain::TerrainRenderer;
 

@@ -93,6 +93,9 @@ pub struct HuntSetup {
     pub double_ammo: bool,
     pub night_vision: bool,
     pub flashlight: bool,
+    /// The advanced binoculars (gear page, `equip` bit 64): outlines
+    /// through the binoculars, kills score 40% less.
+    pub advanced_binoculars: bool,
     pub observer: bool,
     /// A survival instead of a hunt (README M13).
     pub survival: Option<SurvivalKind>,

@@ -104,6 +104,33 @@ const EQUIPMENT: [(&str, &str); 4] = [
     ("Double Ammo", "DOUBLE.NFO"),
 ];
 
+/// The gear page's advanced binoculars: `equip` bit, and price in points
+/// (not in the original; offered with or without dynamic time).
+const ADVANCED_BINOCULARS: u32 = 1 << 6;
+const ADVANCED_BINOCULARS_PRICE: i32 = 40;
+/// The advanced binoculars are desktop-only: Android neither lists nor
+/// applies them.
+const OFFERS_ADVANCED_BINOCULARS: bool = !cfg!(target_os = "android");
+
+/// The gear page's extras, after the accessories: night vision and the
+/// flashlight (dynamic time only), then the advanced binoculars (not on
+/// Android).
+fn gear_order(dynamic_time: bool) -> Vec<usize> {
+    let lights: &[usize] = if dynamic_time { &[4, 5] } else { &[] };
+    let binoculars: &[usize] = if OFFERS_ADVANCED_BINOCULARS {
+        &[6]
+    } else {
+        &[]
+    };
+    (0..4)
+        .chain(lights.iter().copied())
+        .chain(binoculars.iter().copied())
+        .collect()
+}
+
+/// The `equip` bits a hunt without dynamic time keeps (no lights).
+const NO_LIGHTS: u32 = !(16 | 32);
+
 /// One list in the hunt setup screen.
 struct Column {
     rect: Rect,
@@ -357,5 +384,27 @@ impl Menu {
 
     fn tranq(&self) -> bool {
         self.me().is_some_and(|s| s.options.tranq != 0)
+    }
+}
+
+#[cfg(test)]
+mod gear_tests {
+    use super::{gear_order, ADVANCED_BINOCULARS, NO_LIGHTS};
+
+    #[test]
+    #[cfg(not(target_os = "android"))]
+    fn advanced_binoculars_are_offered_with_or_without_dynamic_time() {
+        assert_eq!(gear_order(false), [0, 1, 2, 3, 6]);
+        assert_eq!(gear_order(true), [0, 1, 2, 3, 4, 5, 6]);
+        assert_eq!(ADVANCED_BINOCULARS, 1 << 6);
+        // Turning dynamic time off drops the lights, not the binoculars.
+        assert_eq!((0b111_1111 & NO_LIGHTS), 0b100_1111);
+    }
+
+    #[test]
+    #[cfg(target_os = "android")]
+    fn android_does_not_offer_advanced_binoculars() {
+        assert_eq!(gear_order(false), [0, 1, 2, 3]);
+        assert_eq!(gear_order(true), [0, 1, 2, 3, 4, 5]);
     }
 }
