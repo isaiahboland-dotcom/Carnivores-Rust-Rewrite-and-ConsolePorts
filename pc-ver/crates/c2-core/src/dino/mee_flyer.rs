@@ -29,6 +29,18 @@ use super::{
 /// `goto TBEGIN` limit, as in [`super::huntable`].
 const MAX_RETHINK: usize = 16;
 
+/// Height above the ground at which a flyer is placed: halfway through its
+/// `minalt`..`maxalt` band, and never under the floor `animate` holds it to
+/// (a mod that leaves `minalt` out would otherwise spawn it on the ground).
+pub fn start_altitude(m: &MeeInfo) -> f32 {
+    let (lo, hi) = (m.min_depth as f32, m.max_depth as f32);
+    let mid = if hi > lo { (lo + hi) / 2.0 } else { lo };
+    mid.max(GROUND_CLEARANCE)
+}
+
+/// `AnimateDimor` lifts a flyer under `ground + 236` to `ground + 256`.
+const GROUND_CLEARANCE: f32 = 256.0;
+
 pub fn animate(
     c: &mut Character,
     index: usize,
@@ -256,7 +268,7 @@ pub fn animate(
         delta_func(&mut c.pos[1], g, dt as f32 / 16.0);
     }
     if c.pos[1] < g + 236.0 {
-        c.pos[1] = g + 256.0;
+        c.pos[1] = g + GROUND_CLEARANCE;
     }
     curspeed *= c.scale;
     delta_func(&mut c.vspeed, curspeed, dt as f32 / 2024.0);
@@ -350,5 +362,28 @@ pub fn animate_dead(c: &mut Character, index: usize, sp: &Species, m: &MeeInfo, 
         c.gamma = 0.0;
         c.beta = 0.0;
         c.alpha = 0.0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn band(min_depth: i32, max_depth: i32) -> MeeInfo {
+        let mut m = MeeInfo::new(crate::dino::ai::PTERA);
+        (m.min_depth, m.max_depth) = (min_depth, max_depth);
+        m
+    }
+
+    #[test]
+    fn spawn_height_is_inside_the_altitude_band() {
+        assert_eq!(start_altitude(&band(300, 1200)), 750.0);
+    }
+
+    #[test]
+    fn spawn_height_clears_the_ground_without_a_minalt() {
+        assert!(start_altitude(&band(0, 0)) >= 256.0);
+        assert!(start_altitude(&band(0, 100)) >= 256.0);
+        assert!(start_altitude(&MeeInfo::new(crate::dino::ai::PTERA)) >= 256.0);
     }
 }

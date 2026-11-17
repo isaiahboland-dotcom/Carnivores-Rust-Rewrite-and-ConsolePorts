@@ -118,10 +118,10 @@ impl Herd {
         };
         if let Some(sp) = self.species.get(ctype) {
             c.reset(sp, rng, opt_agres);
-            // A flyer starts at its `minalt` above the ground, as when it
+            // A flyer starts within its altitude band above the ground, as when it
             // is replaced in front of the hunter (`Character::place`).
             if let Some(m) = sp.mee.as_ref().filter(|m| super::mee::is_flyer(m.ai)) {
-                c.pos[1] += m.min_depth as f32;
+                c.pos[1] += super::mee_flyer::start_altitude(m);
             }
         }
         c.home_zone = self.eco_home(&pos);

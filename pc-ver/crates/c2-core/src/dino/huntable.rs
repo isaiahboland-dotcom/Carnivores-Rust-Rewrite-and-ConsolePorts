@@ -1236,8 +1236,8 @@ mod tests {
         assert!(dist(c, &h) > 4096.0, "{}", dist(c, &h));
     }
 
-    /// A flyer spawned through `Herd::spawn` starts `minalt` above the
-    /// ground, not on it.
+    /// A flyer spawned through `Herd::spawn` starts inside its altitude
+    /// band above the ground, not on it.
     #[test]
     fn a_spawned_flyer_starts_at_its_minimum_altitude() {
         let area = Area::flat(10);
@@ -1251,7 +1251,7 @@ mod tests {
         let mut rng = MsRand::new(1);
         assert!(herd.spawn(0, [x, area.land_height(x, z), z], &mut rng, 128));
         let c = &herd.chars[0];
-        assert!(c.pos[1] >= area.land_height(x, z) + 300.0, "{:?}", c.pos);
+        assert!(c.pos[1] >= area.land_height(x, z) + 750.0, "{:?}", c.pos);
     }
 
     #[test]

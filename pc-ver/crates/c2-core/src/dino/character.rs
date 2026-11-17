@@ -532,7 +532,7 @@ impl Character {
             self.pos[1] = up - (up - land) / 2.0;
         }
         if let Some(m) = sp.mee.as_ref().filter(|m| mee::is_flyer(m.ai)) {
-            self.pos[1] += m.min_depth as f32;
+            self.pos[1] += super::mee_flyer::start_altitude(m);
         }
         true
     }
