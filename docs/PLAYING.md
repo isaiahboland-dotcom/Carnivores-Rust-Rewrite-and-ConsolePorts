@@ -210,15 +210,26 @@ Nintendo ports keep their own mappings.
   hunter** opens it from the terminal. **Classic menu** returns to the original menu until the game restarts. **DHC OS CRT
   effects** adds scanlines, a vignette and noise (off by default; `dhc_crt_layers` in `c2rs.cfg` picks
   them: 1 scanlines, 2 vignette, 4 noise). **DHC OS sounds** (on by default) are the terminal's beeps.
-  The terminal's **Field manual** is the specimen database: every animal the hunt setup offers, with
-  its picture; Enter opens its file after a short retrieval sequence. A file lists its diet, length,
-  estimated height and weight (the range of sizes the hunt gives it), permit price and kill score,
-  the areas it is restricted to (only when it is), the areas where it may turn up without a permit,
-  and the hunter's records for it: kills, the largest and the highest-scoring kill, kept after the
-  trophy leaves the room (kills from before this release have no size on record). On the hunt
-  setup's TARGETS tab, **V** (the pad's X) opens the focused animal's file. **DHC OS 3D specimens**
-  (off by default) shows the animal's model, turning, instead of its picture: drag to turn it, the
-  wheel to zoom, the pad's right stick turns it. Leave it off on slower machines. A
+  The terminal's **Field manual** is a database of the hunt setup's areas, animals and weapons, in
+  three lists (Left/Right, 1-3 or a click switch them), each with its picture; Enter opens a file
+  after a short retrieval sequence. An animal's file lists its diet, length, estimated height and
+  weight (the range of sizes the hunt gives it), permit price and kill score, the areas it is
+  restricted to (only when it is), the areas where it may turn up without a permit, and the
+  hunter's records for it: kills, the largest and the highest-scoring kill, kept after the trophy
+  leaves the room (kills from before this release have no size on record). An area's survey lists
+  its description, permit, times of day (when the island limits them), the animals and weapons its
+  island issues (ALL when it restricts none), how many animals may turn up there that have no
+  permit in the hunt setup ("total dinosaurs unknown"), and the hunts completed there (left alive;
+  counted from this release). A weapon's file lists its rounds, magazine, pellets and scope, its
+  price, its restrictions (no tranquilizer darts, kills not kept as trophies), the areas that issue
+  it (only when some don't), and the kills made with it and the longest of them. In a survey or a
+  weapon's file the listed animals, weapons and areas are links: hover or the arrows focus one,
+  a click or Enter opens its file, and Esc goes back to the file before. On the hunt setup's
+  AREA, TARGETS and ARMS tabs, **V** (the pad's X) opens the focused item's file. **DHC OS 3D
+  specimens** (off by default) shows the model, turning, instead of the picture: the animal
+  (animated), the weapon (at rest) or the area's terrain (cut to the island, without its trees and
+  rocks): drag to turn it, the wheel to zoom, the pad's right stick turns it. Leave it off on
+  slower machines. A
   recipe can restrict what each island issues ([MODDING.md](MODDING.md#dhc-os-terminal-rules)); the
   original menus follow the same rules. The launcher recommends the terminal once per instance whose
   recipe has advanced settings, without turning it on.

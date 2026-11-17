@@ -65,6 +65,7 @@ impl Menu {
                 out.push((g.deploy(), Hit::Deploy));
             }
             TScreen::Specimens => out.extend(self.index_hits(v)),
+            TScreen::Specimen => out.extend(self.file_hits(v)),
             _ => {}
         }
         out
@@ -116,28 +117,37 @@ impl Menu {
             TScreen::Survival => self.draw_term_survival(out, t),
         }
         let pad = self.pad_used;
-        let targets = t.tab == Tab::Targets;
+        let files = t.specimen_db && t.tab != Tab::Gear;
+        let links = t.screen == TScreen::Specimen && !t.links().is_empty();
         let hints = match (t.screen, pad) {
             (TScreen::Boot, _) => "ANY KEY: SKIP",
             (TScreen::Main, false) => "[ESC] LOG OFF   UP/DOWN  ENTER  1-9",
             (TScreen::Main, true) => "[B] LOG OFF   D-PAD MOVE   [A] SELECT",
             (TScreen::Survival, false) => "[ESC] BACK   UP/DOWN  ENTER  1-3",
             (TScreen::Survival, true) => "[B] BACK   D-PAD MOVE   [A] SELECT",
-            (TScreen::Setup, false) if targets => {
+            (TScreen::Setup, false) if files => {
                 "[ESC] BACK  L/R 1-4 TABS  ENTER PICK  V FILE  T TIME  F DEPLOY"
             }
             (TScreen::Setup, false) => "[ESC] BACK  L/R 1-4 TABS  ENTER PICK  T TIME  F DEPLOY",
-            (TScreen::Setup, true) if targets => {
+            (TScreen::Setup, true) if files => {
                 "[B] BACK  [L]/[R] TABS  [A] PICK  [X] FILE  [Y] OBSERVER  [START] DEPLOY"
             }
             (TScreen::Setup, true) => {
                 "[B] BACK  [L]/[R] TABS  [A] PICK  [X] TIME  [Y] OBSERVER  [START] DEPLOY"
             }
-            (TScreen::Manual | TScreen::Specimens, false) => {
-                "[ESC] BACK   UP/DOWN or wheel  ENTER OPEN FILE"
+            (TScreen::Manual, false) => "[ESC] BACK   UP/DOWN or wheel  ENTER OPEN FILE",
+            (TScreen::Manual, true) => "[B] BACK   D-PAD MOVE   [A] OPEN FILE",
+            (TScreen::Specimens, false) => {
+                "[ESC] BACK   L/R 1-3 LISTS   UP/DOWN or wheel   ENTER OPEN FILE"
             }
-            (TScreen::Manual | TScreen::Specimens, true) => "[B] BACK   D-PAD MOVE   [A] OPEN FILE",
+            (TScreen::Specimens, true) => "[B] BACK   [L]/[R] LISTS   D-PAD MOVE   [A] OPEN FILE",
             (TScreen::Specimen, _) if t.retrieving() => "ANY KEY: SKIP",
+            (TScreen::Specimen, false) if links => {
+                "[ESC] CLOSE FILE   UP/DOWN LINKS   ENTER OPEN   wheel SCROLL"
+            }
+            (TScreen::Specimen, true) if links => {
+                "[B] CLOSE FILE   D-PAD LINKS   [A] OPEN   RIGHT STICK TURN"
+            }
             (TScreen::Specimen, false) => "[ESC] CLOSE FILE   UP/DOWN or wheel  SCROLL",
             (TScreen::Specimen, true) => "[B] CLOSE FILE   D-PAD SCROLL   RIGHT STICK TURN",
             (TScreen::Deploy, false) => "ANY KEY: SKIP   [ESC] ABORT",

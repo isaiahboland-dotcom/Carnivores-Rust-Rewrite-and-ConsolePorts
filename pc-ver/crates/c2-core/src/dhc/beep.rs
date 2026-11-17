@@ -66,7 +66,10 @@ impl Beep {
 #[derive(PartialEq)]
 struct Seen {
     screen: Screen,
-    focus: (super::Tab, [usize; 4], usize, usize, usize),
+    focus: (super::Tab, [usize; 4], usize, usize, super::Tab, usize),
+    /// The open files (list and item), and the shown one's focused link.
+    files: Vec<(super::Tab, usize)>,
+    link: Option<usize>,
     loadout: super::Loadout,
     refusals: u32,
 }
@@ -79,8 +82,11 @@ fn seen(t: &Terminal) -> Seen {
             t.rows,
             t.main_row,
             t.survival_row(),
-            t.specimen_row(),
+            t.index_tab(),
+            t.index_row(),
         ),
+        files: t.files().iter().map(|f| (f.kind, f.i)).collect(),
+        link: t.file_link(),
         loadout: t.loadout(),
         refusals: t.refusals(),
     }
@@ -109,10 +115,19 @@ impl Terminal {
                 _ => Beep::Select,
             });
         }
+        // A file opened from a link, or closed back to the one before.
+        if after.files != before.files {
+            return Some(if after.files.len() < before.files.len() {
+                Beep::Back
+            } else {
+                Beep::Select
+            });
+        }
         if self.has_outcome() && !had_outcome || after.loadout != before.loadout {
             return Some(Beep::Select);
         }
-        if after.focus != before.focus && !matches!(a, Action::Focus(_)) {
+        let moved = after.focus != before.focus || after.link != before.link;
+        if moved && !matches!(a, Action::Focus(_)) {
             return Some(Beep::Tick);
         }
         None

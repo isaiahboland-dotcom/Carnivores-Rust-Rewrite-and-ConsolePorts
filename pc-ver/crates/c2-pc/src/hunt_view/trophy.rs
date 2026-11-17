@@ -50,12 +50,16 @@ impl HuntView {
         }
     }
 
-    /// This hunt's kills into the hunter's record (`trophy0N.rec`).
-    pub(super) fn record_kills(&mut self) {
-        use c2_core::record::{Kill, Mode};
+    /// This hunt's kills into the hunter's record (`trophy0N.rec`), and
+    /// for `completed` (left alive) the hunt itself, by its map: a regular
+    /// or hardcore hunt, not survival, an observer's or the trophy room.
+    pub(super) fn record_kills(&mut self, completed: bool) {
+        use c2_core::record::{HuntDone, Kill, Mode};
         let kills = std::mem::take(&mut self.hunt.kills);
         let wave = self.hunt.wave();
-        if kills.is_empty() && wave == 0 {
+        let o = &self.hunt.opts;
+        let hunted = completed && self.hunt.survival.is_none() && !o.trophy && !o.observer;
+        if kills.is_empty() && wave == 0 && !hunted {
             return;
         }
         let mode = if self.hunt.survival.is_some() {
@@ -67,6 +71,17 @@ impl HuntView {
         let mut r = crate::save::load_record(reg);
         let area = crate::save::area_title(&self.setup.game_dir, self.hunt.area_no);
         let (y, mo, d, _, _) = self.hunt.clock;
+        if hunted {
+            r.hunts.push(HuntDone {
+                map: self
+                    .setup
+                    .map
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                date: (y << 20) + (mo << 10) + d,
+            });
+        }
         for k in kills {
             r.kills.push(Kill {
                 mode,

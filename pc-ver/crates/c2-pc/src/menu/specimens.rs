@@ -1,8 +1,13 @@
-//! The field manual's specimen files on the PC and Android
-//! (`c2_core::dhc::specimen`): each huntable's facts, read with the menu's
-//! lists, and its model's height, measured when its file first opens.
+//! The field manual's files on the PC and Android: each huntable's facts
+//! (`c2_core::dhc::specimen`), read with the menu's lists, and its model's
+//! height, measured when its file first opens; each weapon's
+//! (`c2_core::dhc::armoury`); and per area, the animals that may turn up
+//! there without a permit (`c2_core::dhc::survey`). The models a file
+//! shows are read when it opens.
 
+use c2_core::dhc::armoury::Arm;
 use c2_core::dhc::specimen::{height_ratio, unpermitted, used_points, Specimen};
+use c2_core::game::WeaponInfo;
 use c2_formats::res_txt::ResData;
 
 use super::*;
@@ -16,8 +21,20 @@ pub(super) struct Specimens {
     /// Its description as the game's files give it (`DINOn.TXM`, `.TXU`).
     pub(super) texts: Vec<Vec<String>>,
     pub(super) texts_us: Vec<Vec<String>>,
+    /// Each area's and weapon's description as its file gives it
+    /// (`AREAn.TXT`, `WEAPONn.TXT`), by the column's item.
+    pub(super) area_texts: Vec<Vec<String>>,
+    pub(super) arm_texts: Vec<Vec<String>>,
     /// Whether its model's height was measured yet.
     measured: Vec<bool>,
+    /// Each weapon's facts and model (`WEAPONS/`), by the arms column's
+    /// item.
+    pub(super) arms: Vec<Arm>,
+    arm_models: Vec<Option<String>>,
+    /// Per area (the area column's item), the animals that may turn up
+    /// there unpicked: those the game places without a permit, and the
+    /// instance's secret animals (`_RULES.TXT`).
+    pub(super) appear: Vec<Vec<String>>,
 }
 
 /// What the facts are read from (the menu's lists as loaded).
@@ -35,6 +52,8 @@ pub(super) struct Sources<'a> {
     pub(super) areas: &'a [PathBuf],
     pub(super) texts: Vec<Vec<String>>,
     pub(super) texts_us: Vec<Vec<String>>,
+    pub(super) area_texts: Vec<Vec<String>>,
+    pub(super) arm_texts: Vec<Vec<String>>,
 }
 
 impl Specimens {
@@ -50,6 +69,8 @@ impl Specimens {
             areas,
             texts,
             texts_us,
+            area_texts,
+            arm_texts,
         } = src;
         let predation = find_file(
             huntdat,
@@ -135,27 +156,87 @@ impl Specimens {
             });
             models.push(def.and_then(|d| d.file.clone()));
         }
+        let (arms, arm_models) = menu
+            .weapons
+            .iter()
+            .enumerate()
+            .map(|(k, w)| {
+                // By name; else the entry in the same place.
+                let def = data
+                    .weapons
+                    .iter()
+                    .find(|d| {
+                        d.name
+                            .as_deref()
+                            .is_some_and(|n| n.trim().eq_ignore_ascii_case(w.name.trim()))
+                    })
+                    .or_else(|| data.weapons.get(k));
+                let Some(info) = def.map(WeaponInfo::from_def) else {
+                    return (Arm::default(), None);
+                };
+                let arm = Arm {
+                    rounds: info.shots,
+                    magazine: info.reload,
+                    pellets: info.trace_c + 1,
+                    scope: info.optic,
+                    harpoon: info.mee.as_ref().is_some_and(|m| m.harpoon),
+                    tranq: info.allow_tranq,
+                    trophy: info.allow_trophy,
+                };
+                let file = (!info.file.trim().is_empty()).then_some(info.file);
+                (arm, file)
+            })
+            .unzip();
+        let rules = crate::instance_rules::get();
+        let appear = areas
+            .iter()
+            .enumerate()
+            .map(|(a, path)| {
+                let stem = path
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let free = facts
+                    .iter()
+                    .filter(|f| f.appears.contains(&a))
+                    .map(|f| f.name.clone());
+                // `Raptor #2` is a Raptor.
+                let secret = rules.secrets_on(&stem).map(|s| {
+                    let n = s.name.trim();
+                    match n.rsplit_once(" #") {
+                        Some((name, k)) if k.parse::<usize>().is_ok() => name.trim().to_string(),
+                        _ => n.to_string(),
+                    }
+                });
+                free.chain(secret).collect()
+            })
+            .collect();
         Specimens {
             measured: vec![false; facts.len()],
             facts,
             models,
             texts,
             texts_us,
+            area_texts,
+            arm_texts,
+            arms,
+            arm_models,
+            appear,
         }
+    }
+
+    /// Weapon `k`'s model (none: no model, or a broken one).
+    pub(super) fn arm_model(&self, huntdat: &Path, k: usize) -> Option<c2_formats::car::Car> {
+        let file = self.arm_models.get(k)?.as_deref()?;
+        let dir = find_file(huntdat, "WEAPONS")?;
+        read_car_file(&find_file(&dir, file)?)
     }
 
     /// Huntable `k`'s model, read from the game (none: no model, or a
     /// broken one).
     pub(super) fn model(&self, huntdat: &Path, k: usize) -> Option<c2_formats::car::Car> {
         let file = self.models.get(k)?.as_deref()?;
-        let path = find_file(huntdat, file)?;
-        match c2_formats::car::parse(&std::fs::read(&path).ok()?) {
-            Ok(c) => Some(c),
-            Err(e) => {
-                tracing::warn!("{}: {e}", path.display());
-                None
-            }
-        }
+        read_car_file(&find_file(huntdat, file)?)
     }
 
     /// Measures huntable `k`'s height from `car` (its first animation's
@@ -180,4 +261,29 @@ impl Specimens {
     pub(super) fn unmeasured(&self, k: usize) -> bool {
         self.measured.get(k).is_some_and(|m| !m)
     }
+}
+
+/// A `.CAR` file, or none (unreadable: logged).
+fn read_car_file(path: &Path) -> Option<c2_formats::car::Car> {
+    match c2_formats::car::parse(&std::fs::read(path).ok()?) {
+        Ok(c) => Some(c),
+        Err(e) => {
+            tracing::warn!("{}: {e}", path.display());
+            None
+        }
+    }
+}
+
+/// Area `map`'s relief for its survey's 3D view (none: its `.MAP` or
+/// `.RSC` can't be read; logged).
+pub(super) fn relief(map: &Path) -> Option<c2_core::model::PreparedModel> {
+    let read = || -> anyhow::Result<_> {
+        let rsc = crate::area_view::sibling(map, "rsc")?;
+        let m = c2_formats::map::parse_lean(&std::fs::read(map)?, Some(0))?;
+        let r = c2_formats::rsc::parse(&std::fs::read(&rsc)?)?;
+        Ok(super::terminal::relief::model(&m, &r))
+    };
+    read()
+        .map_err(|e| tracing::warn!("{}: {e:#}", map.display()))
+        .ok()
 }

@@ -1,14 +1,16 @@
 //! A hunter's record, beside the save (`trophy0N.rec`; the original's save
-//! has no room for it): every kill, in hunts and in survival, and the best
-//! survival wave. Statistics are worked out from it: the longest shot, the
-//! highest-scoring kill, kills per mode, and per species the biggest and
-//! the best-scoring kill (the DHC OS field manual's records, kept when the
-//! trophy is removed from the room).
+//! has no room for it): every kill, in hunts and in survival, the hunts
+//! completed on each map, and the best survival wave. Statistics are worked
+//! out from it: the longest shot, the highest-scoring kill, kills per mode,
+//! per species the biggest and the best-scoring kill, and per map the hunts
+//! (the DHC OS field manual's records, kept when the trophy is removed from
+//! the room).
 //!
 //! Plain text, a line each: `kill<TAB>mode<TAB>animal<TAB>score<TAB>range
 //! <TAB>weapon<TAB>area<TAB>date[<TAB>scale]` (range in metres, date as the
 //! trophies keep it, scale as the animal's `scale`; records written before
-//! it was kept have no scale) and `best_wave<TAB>n`. Unknown lines are
+//! it was kept have no scale), `hunt<TAB>map<TAB>date` (a hunt left alive,
+//! by the map's file stem) and `best_wave<TAB>n`. Unknown lines are
 //! skipped.
 
 #[cfg(not(feature = "std"))]
@@ -58,9 +60,18 @@ impl Kill {
     }
 }
 
+/// A hunt completed: left alive, by the map's file stem (`AREA1`).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct HuntDone {
+    pub map: String,
+    /// As [`Kill::date`].
+    pub date: i32,
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Record {
     pub kills: Vec<Kill>,
+    pub hunts: Vec<HuntDone>,
     pub best_wave: u32,
 }
 
@@ -97,6 +108,10 @@ impl Record {
                             .unwrap_or(0.0),
                     })
                 }
+                ["hunt", map, date] if !map.trim().is_empty() => r.hunts.push(HuntDone {
+                    map: map.to_string(),
+                    date: date.parse().unwrap_or(0),
+                }),
                 ["best_wave", n] => r.best_wave = n.parse().unwrap_or(0),
                 _ => {}
             }
@@ -106,6 +121,9 @@ impl Record {
 
     pub fn write(&self) -> String {
         let mut s = format!("best_wave\t{}\n", self.best_wave);
+        for h in &self.hunts {
+            s.push_str(&format!("hunt\t{}\t{}\n", clean(&h.map), h.date));
+        }
         for k in &self.kills {
             s.push_str(&format!(
                 "kill\t{}\t{}\t{}\t{:.1}\t{}\t{}\t{}\t{:.3}\n",
@@ -165,6 +183,23 @@ impl Record {
                 _ => Some(k),
             })
     }
+
+    /// Hunts completed on the map with file stem `map` (case ignored).
+    pub fn hunts_on(&self, map: &str) -> usize {
+        let map = map.trim();
+        self.hunts
+            .iter()
+            .filter(|h| h.map.trim().eq_ignore_ascii_case(map))
+            .count()
+    }
+
+    /// Kills made with the weapon called `weapon` (case ignored).
+    pub fn kills_with<'a>(&'a self, weapon: &'a str) -> impl Iterator<Item = &'a Kill> + 'a {
+        let weapon = weapon.trim();
+        self.kills
+            .iter()
+            .filter(move |k| k.weapon.trim().eq_ignore_ascii_case(weapon))
+    }
 }
 
 #[cfg(test)]
@@ -190,6 +225,7 @@ mod tests {
                 k(Mode::Survival, "Raptor", 6, 120.0),
                 k(Mode::Hunt, "Stego", 3, 12.0),
             ],
+            hunts: Vec::new(),
             best_wave: 9,
         };
         let back = Record::parse(&r.write());
@@ -226,5 +262,22 @@ mod tests {
         assert!(Record::parse("kill\thunt\tA\t5\t1\tW\tX\t1\t1\tz\n")
             .kills
             .is_empty());
+    }
+
+    #[test]
+    fn hunts_are_counted_per_map_and_weapons_per_kill() {
+        let text = "best_wave\t0\nhunt\tAREA1\t7\nhunt\tarea1 \t8\nhunt\tAREA2\t9\n\
+                    hunt\t\t9\nhunt\tAREA3\n\
+                    kill\thunt\tRaptor\t12\t9.0\tRifle\tArea\t9\t1.900\n\
+                    kill\thunt\tRaptor\t12\t30.0\tshotgun\tArea\t9\t1.900\n";
+        let r = Record::parse(text);
+        assert_eq!(r.hunts.len(), 3, "blank map and short lines skipped");
+        assert_eq!((r.hunts_on("Area1"), r.hunts_on("AREA2")), (2, 1));
+        assert_eq!(r.hunts_on("AREA9"), 0);
+        assert_eq!(r.kills_with("SHOTGUN").count(), 1);
+        let back = Record::parse(&r.write());
+        assert_eq!(back, r);
+        // A record from before hunts were kept reads as none.
+        assert!(Record::parse("best_wave\t3\n").hunts.is_empty());
     }
 }

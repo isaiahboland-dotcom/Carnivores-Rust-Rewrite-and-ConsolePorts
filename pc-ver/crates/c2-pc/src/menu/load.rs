@@ -260,7 +260,7 @@ impl Menu {
                 })
                 .collect(),
             texts: area_texts.clone(),
-            texts_us: area_texts,
+            texts_us: area_texts.clone(),
         });
         // Huntables by menu slot (slot n = `DINOn+1.TGA` unless `pic` says).
         let dinos: Vec<String> = menu.huntables.iter().map(|d| d.name.clone()).collect();
@@ -299,7 +299,7 @@ impl Menu {
                 .map(|n| view(format!("WEAPON{n}.TGA")))
                 .collect(),
             texts: wtexts.clone(),
-            texts_us: wtexts,
+            texts_us: wtexts.clone(),
             names: weapons,
         });
         let etexts: Vec<Vec<String>> = EQUIPMENT
@@ -432,6 +432,8 @@ impl Menu {
             areas: &areas,
             texts: dino_texts_m,
             texts_us: dino_texts_us,
+            area_texts,
+            arm_texts: wtexts,
         });
         // Rows by price (stable, so equal prices keep their order); the
         // equipment keeps its fixed order.

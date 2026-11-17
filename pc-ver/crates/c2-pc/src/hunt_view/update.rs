@@ -512,7 +512,7 @@ impl HuntView {
                 if let Err(e) = crate::save::store(&self.hunt.room) {
                     tracing::error!("{e:#}");
                 }
-                self.record_kills();
+                self.record_kills(true);
                 self.audio.stop_all();
                 self.done = true;
             }
@@ -520,7 +520,7 @@ impl HuntView {
             // From the menu, go back to it; otherwise start over. A
             // survival ends this way: its kills and wave are recorded.
             Some(Outcome::Died) if !self.done => {
-                self.record_kills();
+                self.record_kills(false);
                 if self.setup.from_menu {
                     self.audio.stop_all();
                     self.done = true;

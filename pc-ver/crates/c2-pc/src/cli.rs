@@ -11,7 +11,7 @@ use c2_core::game::SurvivalKind;
 const USAGE: &str = "usage:
   c2-pc play  <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR... [--accept-base] [--classic]] [--balance FILE] [--offer-survival]
               [--screen main|stats|hunt|options|credits|register|quit|loading|terminal|terminal-hunt|terminal-login|terminal-waiver|terminal-delete|terminal-options|terminal-quit|terminal-manual|terminal-manual-3d]
-              [--script 'X,Y;'TEXT;enter;esc'] [--shot out.png]
+              [--script 'X,Y;'TEXT;enter;esc;up;down;left;right'] [--shot out.png]
   c2-pc menu-parity <GAME_DIR> --data DIR [--out FILE.json]   (the DHC OS terminal and the original hunt setup start the same hunts)
   c2-pc balance <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]...   (prints prices and scores as a balance file)
   c2-pc mobile <APK> --base <GAME_DIR> [--overlay DIR]... --out <DIR>   (the mobile game's animals as add-ons)

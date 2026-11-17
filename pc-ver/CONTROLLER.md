@@ -20,9 +20,12 @@ for a player's custom Steam Input profile.
 | Start / Select | Pause / exit prompt |
 
 Menus use A to confirm and B to cancel. In the DHC OS terminal's hunt setup,
-X changes the time of day and Y switches observer mode; on the TARGETS tab, X
-opens the focused animal's field manual file instead. In a file, the D-pad
-scrolls and the right stick turns the 3D specimen. In the weapon picker, B swaps
+X changes the time of day and Y switches observer mode; on the AREA, TARGETS
+and ARMS tabs, X opens the focused item's field manual file instead (the time
+of day stays on X on the GEAR tab). In the field manual, the shoulders switch
+between the areas, animals and weapons. In a file, the D-pad scrolls (or, in an
+area's survey or a weapon's file, moves between its links; A opens one, B goes
+back) and the right stick turns the 3D model. In the weapon picker, B swaps
 lethal/tranquilizer ammo when the hunt has split ammunition. In the call
 picker, right-stick click changes the purchased flashlight's beam between
 wide/short and narrow/far. These actions leave the picker open and consume

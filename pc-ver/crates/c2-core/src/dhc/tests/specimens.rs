@@ -12,13 +12,13 @@ use super::super::*;
 use super::{catalog, rules};
 use crate::record::{Kill, Mode, Record};
 
-fn db() -> Terminal {
+pub(super) fn db() -> Terminal {
     let mut t = Terminal::new(catalog(), rules(), 100, false);
     t.specimen_db = true;
     t
 }
 
-fn open_manual(t: &mut Terminal) {
+pub(super) fn open_manual(t: &mut Terminal) {
     let i = t
         .main_items()
         .iter()
@@ -38,7 +38,7 @@ fn the_field_manual_is_the_index_where_the_platform_offers_it() {
     t.act(Action::Down);
     t.act(Action::Down);
     t.act(Action::Down);
-    assert_eq!(t.specimen_row(), 2, "stays on the last");
+    assert_eq!(t.index_row(), 2, "stays on the last");
     t.act(Action::Up);
     t.act(Action::Back);
     assert_eq!(t.screen, Screen::Main);
@@ -64,7 +64,7 @@ fn a_file_is_retrieved_then_shown_and_goes_back_to_the_index() {
     t.step(RETRIEVE_S);
     assert!(!t.retrieving());
     t.act(Action::Back);
-    assert_eq!((t.screen, t.specimen_row()), (Screen::Specimens, 1));
+    assert_eq!((t.screen, t.index_row()), (Screen::Specimens, 1));
     // A click skips the retrieval; the next closes the file.
     t.specimen_models = true;
     t.act(Action::Pick(2));
@@ -81,8 +81,9 @@ fn a_file_is_retrieved_then_shown_and_goes_back_to_the_index() {
 fn the_setup_opens_the_focused_targets_file_and_keeps_its_picks() {
     let mut t = db();
     t.act(Action::Confirm); // HUNT SETUP
+    t.act(Action::Tab(Tab::Gear));
     t.act(Action::Inspect);
-    assert_eq!(t.screen, Screen::Setup, "only on the targets tab");
+    assert_eq!(t.screen, Screen::Setup, "gear has no files");
     t.act(Action::Tab(Tab::Targets));
     t.act(Action::Pick(0));
     t.act(Action::Down);
@@ -160,13 +161,14 @@ fn kill(score: i32, scale: f32) -> Kill {
     }
 }
 
-fn text(lines: &[Line]) -> Vec<String> {
+pub(super) fn text(lines: &[Line]) -> Vec<String> {
     lines
         .iter()
         .map(|l| match l {
             Line::Head(h) => h.to_string(),
             Line::Fact(k, v) => alloc::format!("{k} {v}"),
             Line::Item(s) => s.clone(),
+            Line::Link(k, s) => alloc::format!("{k}> {s}"),
             Line::Blank => String::new(),
         })
         .collect()
@@ -225,6 +227,7 @@ fn a_file_remembers_the_biggest_and_best_kills() {
         .any(|l| l == "NO KILLS ON FILE"));
     let rec = Record {
         kills: vec![kill(25, 1.1), kill(40, 1.0), kill(30, 0.0)],
+        hunts: Vec::new(),
         best_wave: 0,
     };
     let t = text(&s.lines(&areas, None, Some(&rec), false));
@@ -236,6 +239,7 @@ fn a_file_remembers_the_biggest_and_best_kills() {
     // Kills from before sizes were kept still count, without a size.
     let old = Record {
         kills: vec![kill(25, 0.0)],
+        hunts: Vec::new(),
         best_wave: 0,
     };
     let t = text(&s.lines(&areas, None, Some(&old), false));

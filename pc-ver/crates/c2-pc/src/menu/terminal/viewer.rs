@@ -1,9 +1,10 @@
-//! The field manual's 3D specimen ("DHC OS 3D specimens", off by
-//! default): the animal's model on a turntable in its file's picture
+//! The field manual's 3D models ("DHC OS 3D specimens", off by default):
+//! an animal's model (its first animation playing), a weapon's (at rest)
+//! or an area's relief (`relief.rs`) on a turntable in its file's picture
 //! panel, drawn in the menu's own pass through a viewport, as the model
-//! viewer draws it (`model_view.rs`: unlit, its first animation playing).
-//! Drag to turn it, the wheel to zoom; the pad's right stick turns it.
-//! It is made when a file shows and dropped when the file closes.
+//! viewer draws it (`model_view.rs`: unlit). Drag to turn it, the wheel to
+//! zoom; the pad's right stick turns it. It is made when a file shows and
+//! dropped when the file closes.
 
 use c2_core::model::{car_anim_duration_ms, pose_car, PreparedModel};
 use c2_formats::car::Car;
@@ -22,8 +23,19 @@ const REST_S: f32 = 2.0;
 /// perspective, so the near end of a long animal doesn't loom.
 const LENS: f32 = 2.4;
 
+/// What a file's model shows.
+pub(in crate::menu) enum Subject {
+    /// An animal: its first animation plays.
+    Animal(Car),
+    /// A weapon: its model at rest.
+    Weapon(Car),
+    /// An area's relief, seen from higher up.
+    Terrain(PreparedModel),
+}
+
 pub(in crate::menu) struct Viewer {
-    car: Car,
+    /// The animation played (animals only).
+    anim: Option<Car>,
     prepared: PreparedModel,
     gpu_model: GpuModel,
     renderer: ModelRenderer,
@@ -37,8 +49,14 @@ pub(in crate::menu) struct Viewer {
 }
 
 impl Viewer {
-    pub(in crate::menu) fn new(gpu: &Gpu, car: Car) -> Self {
-        let prepared = PreparedModel::from_mesh(&car.mesh);
+    pub(in crate::menu) fn new(gpu: &Gpu, subject: Subject) -> Self {
+        // An area is seen from higher up, and framed closer: its square's
+        // corners are what the diagonal measures, not its outline.
+        let (prepared, anim, pitch, frame) = match subject {
+            Subject::Animal(car) => (PreparedModel::from_mesh(&car.mesh), Some(car), 0.25, 0.6),
+            Subject::Weapon(car) => (PreparedModel::from_mesh(&car.mesh), None, 0.25, 0.6),
+            Subject::Terrain(p) => (p, None, 0.6, 0.45),
+        };
         let globals = Globals::new(gpu);
         // Characters are unlit, as in the hunt (`model_view.rs`).
         let gpu_model = GpuModel::new(gpu, &prepared, Vec::new());
@@ -49,23 +67,25 @@ impl Viewer {
             &globals,
             &[&prepared.texture_rgba, &prepared.texture_rgba],
         );
-        let posed = car
-            .animations
-            .first()
-            .and_then(|a| pose_car(a, car.mesh.vertices.len(), 0))
+        let posed = anim
+            .as_ref()
+            .and_then(|c| pose_car(c.animations.first()?, c.mesh.vertices.len(), 0))
             .unwrap_or_else(|| prepared.positions.clone());
+        // Framed on the points a face uses (stray vertices would stretch it).
         let (mut lo, mut hi) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
-        for p in &c2_core::dhc::specimen::used_points(&posed, &car.mesh.faces) {
-            lo = lo.min(Vec3::from(*p));
-            hi = hi.max(Vec3::from(*p));
+        for f in &prepared.faces {
+            for p in f.v.iter().filter_map(|&v| posed.get(v as usize)) {
+                lo = lo.min(Vec3::from(*p));
+                hi = hi.max(Vec3::from(*p));
+            }
         }
         let (target, dist) = if lo.x <= hi.x {
-            ((lo + hi) * 0.5, (hi - lo).length().max(50.0) * 0.6 * LENS)
+            ((lo + hi) * 0.5, (hi - lo).length().max(50.0) * frame * LENS)
         } else {
             (Vec3::ZERO, 1000.0)
         };
         Viewer {
-            car,
+            anim,
             prepared,
             gpu_model,
             renderer,
@@ -74,7 +94,7 @@ impl Viewer {
                 target,
                 dist,
                 yaw: 0.8,
-                pitch: 0.25,
+                pitch,
             },
             home: dist,
             time_ms: 0.0,
@@ -98,10 +118,11 @@ impl Viewer {
                 self.cam.yaw += TURN * dt;
             }
         }
+        let Some(car) = &self.anim else { return };
         self.time_ms += dt * 1000.0;
-        let pose = self.car.animations.first().and_then(|a| {
+        let pose = car.animations.first().and_then(|a| {
             let d = car_anim_duration_ms(a).max(1) as f32;
-            pose_car(a, self.car.mesh.vertices.len(), (self.time_ms % d) as u32)
+            pose_car(a, car.mesh.vertices.len(), (self.time_ms % d) as u32)
         });
         match pose {
             Some(p) => self.gpu_model.set_pose(gpu, &p),

@@ -1,5 +1,86 @@
 # Decisions and deviations
 
+## 2026-11-17 — DHC OS: field manual files for areas and weapons (PC, Android)
+
+The field manual's database now has three lists, the hunt setup's areas,
+animals and weapons, each with files in the same form as the animals'
+(phase 3, below). The 3DS keeps its text manual; the Wii U is unaffected.
+
+- **Index.** Tabs `1 AREAS`, `2 ANIMALS`, `3 ARMOURY` (Left/Right, the
+  number keys, a click, the pad's shoulders); each list keeps its own row
+  and scroll. The animals' list opens first, as before
+  (`Terminal::index_tab`, `dhc::terminal::INDEX_TABS`).
+- **Files form a stack** (`Terminal::files`). An area's survey links to the
+  animals and weapons its island issues; a weapon's file links to the
+  areas that issue it. A link (`specimen::Line::Link`, in
+  `Terminal::links` order) opens its file after the retrieval sequence;
+  Back closes it and shows the file before at once, with its link still
+  focused; Back on the first returns where it was opened (the index or the
+  hunt setup). A link to a file already open goes back to it instead of
+  opening it twice, and at most 8 files are kept. In a file with links,
+  the arrows (D-pad) move between them and Enter (A) opens one; in a file
+  without, they scroll as before and Enter closes it.
+- **From the hunt setup**, V (the pad's X) opens the focused item's file on
+  the AREA, TARGETS and ARMS tabs. The pad's X therefore no longer changes
+  the time of day on the AREA and ARMS tabs; it still does on GEAR, and T
+  or a click on the time still work everywhere.
+- **What a survey says** (`dhc::survey::lines`): permit; times of day when
+  the island limits them; LICENSED SPECIMENS and AUTHORISED ARMS, each
+  "ALL" when the island restricts none, else the list (links), or "NONE
+  AUTHORISED"; "TOTAL DINOSAURS UNKNOWN: n"; hunts completed.
+  - *Unknown* animals are those that may turn up on the area but have no
+    row in the hunt setup's TARGETS (`survey::unknown`): the instance's
+    `secret` animals for the map (`_RULES.TXT`, `X #2` counted as `X`) and
+    the animals the game places there without a permit (phase 3's "may
+    appear on"), counted once by name, less those the catalog lists.
+    Animals the instance hides (`hide`) and roaming add-ons with "All dinos
+    huntable" off are not listed, so they count. In the stock game, every
+    animal placed without a permit is also on the menu, so the count is 0.
+    Phase 4 (discovery) will license them; until then the count is all
+    the survey says about them.
+- **Hunts completed** are a new record line, `hunt<TAB>map<TAB>date`, by
+  the map's file stem (`record::HuntDone`, `Record::hunts_on`), written
+  when the hunter leaves a hunt alive (`Outcome::Exited`). Not counted:
+  deaths, survival, observer hunts (nothing is hunted) and the trophy room.
+  Records from before have no hunt lines and read as 0. A build from
+  before this change reading the file skips the lines and drops them if it
+  writes the file again. PC and Android write them; the 3DS and Wii U do
+  not yet (they have no surveys).
+- **What a weapon's file says** (`dhc::armoury::Arm::lines`):
+  specifications from `_RES.TXT` as the hunt reads them (`WeaponInfo`):
+  rounds, magazine, pellets (when over 1), scope, and "fires below the
+  surface" for a Modder's Edition `harpoon`; price; RESTRICTIONS:
+  `c2rs_allow_tranq 0` ("darts not permitted") and `c2rs_allow_trophy 0`
+  ("kills are not kept"), else NONE; AUTHORISED AREAS from the island
+  rules, listed only when some area doesn't issue it; the hunter's kills
+  with it and the longest. There is no water-only weapon property in the
+  data or the engine (the original holsters every weapon under water; a
+  harpoon fires both above and below), so none is shown.
+- **3D models** (the existing "DHC OS 3D specimens" option): a weapon's
+  `WEAPONS/*.CAR` at rest (no animation). These are first-person models,
+  so the hunter's hands and sleeves show with the gun. An area's relief
+  (`menu/terminal/relief.rs`): the `.MAP` heights every 8 cells (128
+  squares a side), water cells at their surface, heights ×2.5, textured
+  with the map screen's overview picture shaded by the day light map,
+  standing on a dark plinth. It is cut to the land plus 4 squares of
+  shore, as a square, so an island isn't lost in its sea; each square is
+  judged by its middle cell because the original maps leave their last row
+  and column of cells dry. Objects (trees, rocks) are left out. The model
+  is built when the survey opens (the map and RSC are read then) and
+  dropped when it closes. Off, a file shows the menu picture, as before.
+- **Notes** come from the game's text files (`AREAn.TXT`, `WEAPONn.TXT`,
+  `DINOn.TXM`). Their lines were broken for the original menu's panel, so
+  a line of 30 or more characters runs on into the next (one paragraph,
+  wrapped to the notes panel), except `Name : value` header fields, which
+  keep their lines.
+- `c2-pc play --script` gains `up`, `down`, `left` and `right` steps for
+  screenshots of the lists.
+
+Tests: `dhc::tests::files` (the index's lists, opening from the setup,
+links and Back, surveys and armoury files, unknown species), `record`
+hunts per map, `menu::terminal::relief` (heights, water, plinth, island
+crop), `menu::terminal::file_view` (paragraphs).
+
 ## 2026-11-17 — DHC OS phase 3: the field manual is the specimen database (PC, Android)
 
 The terminal's FIELD MANUAL on PC and Android is now the specimen database,

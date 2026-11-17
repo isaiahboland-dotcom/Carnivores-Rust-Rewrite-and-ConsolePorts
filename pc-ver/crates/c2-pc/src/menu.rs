@@ -349,19 +349,24 @@ impl Menu {
     }
 
     /// Plays scripted input (screenshots, testing), steps separated by `;`:
-    /// `X,Y` clicks that canvas point, `'text` types, `enter` / `esc` press keys.
+    /// `X,Y` clicks that canvas point, `'text` types, `enter` / `esc` /
+    /// `up` / `down` / `left` / `right` press keys.
     pub fn script(&mut self, gpu: &Gpu, steps: &str) -> Result<()> {
         for step in steps.split(';').map(str::trim).filter(|s| !s.is_empty()) {
             let (s, ox, oy) = self.canvas();
             let mut input = Input::default();
+            let key = match step {
+                "enter" => Some(KeyCode::Enter),
+                "esc" => Some(KeyCode::Escape),
+                "up" => Some(KeyCode::ArrowUp),
+                "down" => Some(KeyCode::ArrowDown),
+                "left" => Some(KeyCode::ArrowLeft),
+                "right" => Some(KeyCode::ArrowRight),
+                _ => None,
+            };
             if let Some(t) = step.strip_prefix('\'') {
                 input.typed = t.to_string();
-            } else if step == "enter" || step == "esc" {
-                let k = if step == "enter" {
-                    KeyCode::Enter
-                } else {
-                    KeyCode::Escape
-                };
+            } else if let Some(k) = key {
                 input.key(k, true);
             } else {
                 let v: Vec<f32> = step

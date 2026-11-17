@@ -18,10 +18,12 @@ use super::*;
 pub(super) mod beeps;
 pub(super) mod crt;
 mod draw;
+mod file_view;
 mod files;
 mod geom;
 mod login;
 mod options;
+pub(super) mod relief;
 pub(super) mod viewer;
 pub(super) use options::term_layout;
 pub(crate) mod palette;
@@ -41,9 +43,9 @@ pub(super) struct TermView {
     /// Per tab: the list's first shown row (the wheel scrolls it without
     /// moving the focus).
     pub(super) first: [usize; 4],
-    /// The specimen index's first shown row, and the open file's first
-    /// shown line.
-    pub(super) index_first: usize,
+    /// Per index list (by tab): the field manual index's first shown row;
+    /// and the open file's first shown line.
+    pub(super) index_first: [usize; 4],
     pub(super) file_scroll: usize,
 }
 
@@ -240,15 +242,16 @@ impl Menu {
             map,
             last_cursor: None,
             first: [0; 4],
-            index_first: 0,
+            index_first: [0; 4],
             file_scroll: 0,
         }
     }
 
     /// Opens the terminal for a screenshot: `terminal` (main menu),
     /// `terminal-boot`, `terminal-hunt` (the setup's targets, two picks),
-    /// `terminal-manual` (the specimen index; `--script 'enter;enter'`
-    /// opens the first file), `terminal-manual-3d` (with 3D specimens).
+    /// `terminal-manual` (the field manual's index of animals;
+    /// `--script 'enter;enter'` opens the first file, `left` / `right`
+    /// change the list), `terminal-manual-3d` (with 3D models).
     pub(super) fn show_terminal(&mut self, which: &str) {
         self.pc.dhc_terminal = 1;
         if which == "terminal-manual-3d" {
@@ -319,12 +322,15 @@ impl Menu {
         t.step(dt);
         let mut acts = Vec::new();
         let key = |k| input.pressed(k);
-        // The pad's X opens the focused target's file (else it is the time).
+        // The pad's X opens the focused area's, target's or weapon's file
+        // (on the gear tab it is the time).
         let pad_file = input.pad.pressed(c2_pad::Action::Call)
             && t.specimen_db
             && t.screen == TScreen::Setup
-            && t.tab == Tab::Targets;
+            && t.tab != Tab::Gear;
         let file_open = t.screen == TScreen::Specimen && !t.retrieving();
+        // A file with links takes the arrows to move between them.
+        let links = if file_open { t.links().len() } else { 0 };
         if matches!(t.screen, TScreen::Boot | TScreen::Deploy)
             || t.screen == TScreen::Specimen && t.retrieving()
         {
@@ -352,8 +358,10 @@ impl Menu {
                 (KeyCode::KeyF, Action::Deploy),
                 (KeyCode::F5, Action::Deploy),
             ] {
-                // The file scrolls with the arrows (`file_scroll`).
-                let scrolls = file_open && matches!(k, KeyCode::ArrowUp | KeyCode::ArrowDown);
+                // A file without links scrolls with the arrows
+                // (`file_scroll`).
+                let scrolls =
+                    file_open && links == 0 && matches!(k, KeyCode::ArrowUp | KeyCode::ArrowDown);
                 if key(k) && !scrolls && !(pad_file && k == KeyCode::KeyT) {
                     acts.push(a);
                 }
@@ -365,7 +373,8 @@ impl Menu {
                 let back = input.held(KeyCode::ShiftLeft) || input.held(KeyCode::ShiftRight);
                 acts.push(if back { Action::Left } else { Action::Right });
             }
-            if t.screen == TScreen::Setup {
+            // The setup's tabs, and the field manual's lists (1-3).
+            if matches!(t.screen, TScreen::Setup | TScreen::Specimens) {
                 for (i, &k) in TAB_KEYS.iter().enumerate() {
                     if key(k) {
                         acts.push(Action::Tab(Tab::ALL[i]));
@@ -407,7 +416,8 @@ impl Menu {
             }
         }
         let (tab, before) = (t.tab.index(), t.rows[t.tab.index()]);
-        let (screen_before, file_before, index_before) = (t.screen, t.file(), t.specimen_row());
+        let (screen_before, index_before) = (t.screen, (t.index_tab(), t.index_row()));
+        let (file_before, link_before) = (t.open_file_ref(), t.file_link());
         // One beep a frame: the last action's that made one.
         let mut beep = None;
         for a in acts {
@@ -429,9 +439,10 @@ impl Menu {
             *first = (*first).min(n.saturating_sub(vis));
         }
         if t.screen == TScreen::Specimens {
-            let (vis, n, row) = (files::index_rows(), t.cat.animals.len(), t.specimen_row());
-            let first = &mut v.index_first;
-            if row != index_before || screen_before != TScreen::Specimens {
+            let it = t.index_tab();
+            let (vis, n, row) = (files::index_rows(), t.cat.list(it).len(), t.index_row());
+            let first = &mut v.index_first[it.index()];
+            if (it, row) != index_before || screen_before != TScreen::Specimens {
                 *first = (*first).clamp((row + 1).saturating_sub(vis), row);
             }
             if input.scroll > 0.0 {
@@ -441,15 +452,19 @@ impl Menu {
             }
             *first = (*first).min(n.saturating_sub(vis));
         }
-        // A file opened (from the index or the setup): its model is read.
-        let opened = t.screen == TScreen::Specimen
-            && (screen_before != TScreen::Specimen || file_before != t.file());
-        let file = (t.screen == TScreen::Specimen)
-            .then(|| v.map[1].get(t.file()).copied())
-            .flatten();
+        // A file opened (from the index, the setup or a link, or back to
+        // the one before): its model is read.
+        let shown = (t.screen == TScreen::Specimen)
+            .then(|| t.open_file_ref())
+            .flatten()
+            .map(|f| (f.kind, f.i));
+        let opened = shown.is_some()
+            && (screen_before != TScreen::Specimen || file_before.map(|f| (f.kind, f.i)) != shown);
+        let file = shown.and_then(|(kind, i)| Some((kind, *v.map[kind.index()].get(i)?)));
         if opened {
             v.file_scroll = 0;
         }
+        let link_moved = !opened && t.file_link() != link_before;
         if file_open {
             // A wheel notch scrolls a line; the pad's right stick (a little
             // scroll every frame) turns the model instead, the D-pad scrolls.
@@ -469,14 +484,17 @@ impl Menu {
             self.terminal_outcome(o);
         }
         self.beep(beep);
-        // The record behind the files' kills, read when the database opens.
+        // The record behind the files' kills and hunts, read when the
+        // database opens.
         if fresh_index || opened && screen_before == TScreen::Setup {
             if let Some(reg) = self.me().map(|p| p.reg_number) {
                 self.record = save::load_record(reg);
             }
         }
-        // Scrolling stops at the file's ends.
-        if let Some(first) = self.term.as_ref().map(|v| self.file_first(v)) {
+        // Scrolling stops at the file's ends, and keeps a link the keys
+        // moved to in view.
+        if let Some(v) = &self.term {
+            let first = self.file_first(v, link_moved);
             if let Some(v) = &mut self.term {
                 v.file_scroll = first;
             }
@@ -484,34 +502,46 @@ impl Menu {
         self.update_file_view(gpu, dt, input, file, opened, retrieving, over_model);
     }
 
-    /// The open file's model: read when it opens (its height measured,
-    /// and the 3D specimen made when that option is on), turned while the
-    /// file shows, dropped when it closes.
+    /// The open file's model: read when it opens (an animal's height
+    /// measured, and the 3D model made when that option is on), turned
+    /// while the file shows, dropped when it closes. `file`: the shown
+    /// file's list and its column's item.
     #[allow(clippy::too_many_arguments)]
     fn update_file_view(
         &mut self,
         gpu: &Gpu,
         dt: f32,
         input: &Input,
-        file: Option<usize>,
+        file: Option<(Tab, usize)>,
         opened: bool,
         retrieving: bool,
         over: bool,
     ) {
-        let Some(k) = file else {
+        let Some((kind, k)) = file else {
             self.viewer = None;
             return;
         };
         if opened {
             self.viewer = None;
             let models = self.pc.dhc_models != 0;
-            if models || self.specimens.unmeasured(k) {
-                let car = self.specimens.model(&self.huntdat, k);
-                self.specimens.measure(k, car.as_ref());
-                if models {
-                    self.viewer = car.map(|c| viewer::Viewer::new(gpu, c));
+            let subject = match kind {
+                Tab::Targets if models || self.specimens.unmeasured(k) => {
+                    let car = self.specimens.model(&self.huntdat, k);
+                    self.specimens.measure(k, car.as_ref());
+                    car.filter(|_| models).map(viewer::Subject::Animal)
                 }
-            }
+                Tab::Arms if models => self
+                    .specimens
+                    .arm_model(&self.huntdat, k)
+                    .map(viewer::Subject::Weapon),
+                Tab::Area if models => self
+                    .areas
+                    .get(k)
+                    .and_then(|m| specimens::relief(m))
+                    .map(viewer::Subject::Terrain),
+                _ => None,
+            };
+            self.viewer = subject.map(|s| viewer::Viewer::new(gpu, s));
         }
         if let Some(w) = self.viewer.as_mut().filter(|_| !retrieving) {
             w.update(gpu, dt, input, over);

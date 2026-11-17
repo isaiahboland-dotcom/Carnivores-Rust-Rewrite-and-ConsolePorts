@@ -52,6 +52,9 @@ pub enum Line {
     Fact(&'static str, String),
     /// A list entry or a remark.
     Item(String),
+    /// A list entry that opens another file: link `i` of the open file's
+    /// links (`Terminal::links`), and what it says.
+    Link(usize, String),
     Blank,
 }
 
@@ -75,12 +78,34 @@ pub fn native_areas(
     animal: usize,
     homes: Option<&[usize]>,
 ) -> Option<Vec<usize>> {
-    let name = cat.animals.get(animal).map_or("", |a| a.name.as_str());
+    areas_allowing(cat, rules, Tab::Targets, animal, homes)
+}
+
+/// The areas whose island rules issue item `i` of `tab` (and, given
+/// `homes`, among them). None when that is every area.
+pub fn areas_allowing(
+    cat: &Catalog,
+    rules: &Rules,
+    tab: Tab,
+    i: usize,
+    homes: Option<&[usize]>,
+) -> Option<Vec<usize>> {
+    let name = cat.list(tab).get(i).map_or("", |a| a.name.as_str());
     let v: Vec<usize> = (0..cat.areas.len())
-        .filter(|&a| island_allows(rules.island(cat, a), Tab::Targets, name))
+        .filter(|&a| island_allows(rules.island(cat, a), tab, name))
         .filter(|a| homes.is_none_or(|h| h.contains(a)))
         .collect();
     (v.len() != cat.areas.len()).then_some(v)
+}
+
+/// The items of `tab` area `area`'s island issues. None when that is all
+/// of them.
+pub fn issued_on(cat: &Catalog, rules: &Rules, area: usize, tab: Tab) -> Option<Vec<usize>> {
+    let n = cat.list(tab).len();
+    let v: Vec<usize> = (0..n)
+        .filter(|&i| rules.allows(cat, area, tab, i))
+        .collect();
+    (v.len() != n).then_some(v)
 }
 
 /// The points some face of the model uses: a model's stray vertices
@@ -123,18 +148,32 @@ pub fn height_ratio(points: &[[f32; 3]]) -> Option<f32> {
     (h.is_finite() && len.is_finite() && h > 0.0 && len > 0.0).then(|| h / len)
 }
 
-/// The retrieval sequence's log for the file of `name`; `model`: a 3D
-/// specimen is reconstructed (else the photograph is retrieved).
-pub fn retrieve_log(name: &str, model: bool) -> Vec<String> {
+/// The field manual's archive for files of `kind` (an area's survey, an
+/// animal's specimen file, a weapon's armoury file).
+pub fn archive(kind: Tab) -> &'static str {
+    match kind {
+        Tab::Area => "DHC SURVEY ARCHIVE",
+        Tab::Arms => "DHC ARMOURY",
+        _ => "DHC SPECIMEN DATABASE",
+    }
+}
+
+/// The retrieval sequence's log for the file of `name`, of `kind`;
+/// `model`: a 3D model is made (else the photograph is retrieved).
+pub fn retrieve_log(kind: Tab, name: &str, model: bool) -> Vec<String> {
+    let (notes, model) = match (kind, model) {
+        (Tab::Area, true) => ("SURVEY NOTES", "RENDERING TERRAIN MODEL"),
+        (Tab::Area, false) => ("SURVEY NOTES", "RETRIEVING AERIAL PHOTOGRAPH"),
+        (Tab::Arms, true) => ("ARMOURY LICENCES", "RENDERING 3D SCHEMATIC"),
+        (Tab::Arms, false) => ("ARMOURY LICENCES", "RETRIEVING PHOTOGRAPH"),
+        (_, true) => ("FIELD NOTES", "RECONSTRUCTING 3D SPECIMEN"),
+        (_, false) => ("FIELD NOTES", "RETRIEVING PHOTOGRAPH"),
+    };
     vec![
-        "> QUERYING DHC SPECIMEN DATABASE...".into(),
+        format!("> QUERYING {}...", archive(kind)),
         format!("> FILE LOCATED: {}", name.trim().to_uppercase()),
-        "> DECRYPTING FIELD NOTES...".into(),
-        if model {
-            "> RECONSTRUCTING 3D SPECIMEN...".into()
-        } else {
-            "> RETRIEVING PHOTOGRAPH...".into()
-        },
+        format!("> DECRYPTING {notes}..."),
+        format!("> {model}..."),
         "> CROSS-CHECKING HUNTER RECORDS...".into(),
         "> ACCESS GRANTED".into(),
     ]
@@ -147,7 +186,7 @@ pub fn retrieve_shown(log_len: usize, t: f32) -> usize {
 }
 
 /// A length in metres, or feet for `us` (the trophy plaque's units).
-fn length(m: f32, us: bool) -> String {
+pub(super) fn length(m: f32, us: bool) -> String {
     if us {
         format!("{:.1} ft", m * 3.281)
     } else {

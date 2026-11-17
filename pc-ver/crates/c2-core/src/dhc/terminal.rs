@@ -13,6 +13,8 @@ use super::{earnings_factor, Catalog, Limits, Loadout, Rules, Tab};
 
 mod specimens;
 
+pub use specimens::INDEX_TABS;
+
 /// Seconds between boot log lines, and the pause after the last.
 pub const BOOT_LINE_S: f32 = 0.12;
 pub const BOOT_HOLD_S: f32 = 0.5;
@@ -29,9 +31,11 @@ pub enum Screen {
     Deploy,
     /// The survival modes the platform offers.
     Survival,
-    /// The field manual as the specimen database: one row per animal.
+    /// The field manual as the database: an index of the areas, the
+    /// animals or the weapons ([`Terminal::index_tab`]).
     Specimens,
-    /// One animal's file: its retrieval sequence, then the file.
+    /// One area's, animal's or weapon's file: its retrieval sequence, then
+    /// the file.
     Specimen,
 }
 
@@ -94,7 +98,8 @@ pub enum Action {
     ToggleObserver,
     /// Skip the boot log, the deploy sequence or a file's retrieval.
     Skip,
-    /// Setup, on the targets tab: open the focused animal's file.
+    /// Setup, on the area, targets or arms tab: open the focused item's
+    /// file.
     Inspect,
 }
 
@@ -156,6 +161,15 @@ pub const MANUAL: [&str; 12] = [
     "Unlisted items are marked RESTRICTED.",
 ];
 
+/// An open file of the field manual: an item of the catalog's list `kind`
+/// (area, animal or weapon), and its focused link.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FileRef {
+    pub kind: Tab,
+    pub i: usize,
+    pub link: Option<usize>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Terminal {
     pub cat: Catalog,
@@ -175,15 +189,19 @@ pub struct Terminal {
     survival_row: usize,
     /// Observer mode: the picks cost nothing and no arms are needed.
     pub observer: bool,
-    /// The platform offers the specimen database (PC and Android): the
-    /// field manual lists the animals and the setup can open their files.
+    /// The platform offers the field manual's database (PC and Android):
+    /// it lists the areas, animals and weapons, and the setup can open
+    /// their files.
     pub specimen_db: bool,
-    /// Files show a 3D specimen (the platform's option), as their
-    /// retrieval log says.
+    /// Files show a 3D model (the platform's option), as their retrieval
+    /// log says.
     pub specimen_models: bool,
-    specimen_row: usize,
-    /// The open file's animal (catalog index), and the screen it returns to.
-    file: usize,
+    /// The index's list, and its focused row per list.
+    index_tab: Tab,
+    index_rows: [usize; 4],
+    /// The open files, the one shown last (a file opened from another's
+    /// link goes back to it), and the screen the first returns to.
+    files: Vec<FileRef>,
     file_from: Screen,
     pub screen: Screen,
     pub tab: Tab,
@@ -225,8 +243,9 @@ impl Terminal {
             observer: false,
             specimen_db: false,
             specimen_models: false,
-            specimen_row: 0,
-            file: 0,
+            index_tab: Tab::Targets,
+            index_rows: [0; 4],
+            files: Vec::new(),
             file_from: Screen::Specimens,
             screen: if boot { Screen::Boot } else { Screen::Main },
             tab: Tab::Area,
@@ -458,9 +477,9 @@ impl Terminal {
             Action::ToggleTranq => self.outcome = Some(Outcome::ToggleTranq),
             Action::ToggleObserver => self.toggle_observer(),
             Action::SetTime(t) if self.rules.allows_time(&self.cat, self.area, t) => self.time = t,
-            Action::Inspect if self.specimen_db && self.tab == Tab::Targets && *row < len => {
-                let i = *row;
-                self.open_file(i, Screen::Setup);
+            Action::Inspect if self.specimen_db && self.tab != Tab::Gear && *row < len => {
+                let (tab, i) = (self.tab, *row);
+                self.open_file(tab, i, Screen::Setup);
             }
             Action::Deploy => match self.deploy_problem() {
                 None => self.go(Screen::Deploy),

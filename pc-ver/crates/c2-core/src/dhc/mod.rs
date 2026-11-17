@@ -1,9 +1,11 @@
 //! The DinoHunt Corp terminal ("DHC OS"): an optional in-universe front end
 //! for the hunt setup. This is its shared model, the same on every
 //! platform: what the pack offers ([`Catalog`]), what the recipe's rules
-//! allow on each island ([`Rules`], from `_DHC.TXT`), and the terminal's
-//! screens and actions ([`terminal::Terminal`]). No rendering, no I/O: each
-//! platform draws the state and turns its input into [`terminal::Action`]s.
+//! allow on each island ([`Rules`], from `_DHC.TXT`), the terminal's
+//! screens and actions ([`terminal::Terminal`]) and what the field
+//! manual's files say (`specimen`, `survey`, `armoury`). No rendering, no
+//! I/O: each platform draws the state and turns its input into
+//! [`terminal::Action`]s.
 //!
 //! Without `_DHC.TXT` the terminal offers what the original menu offers.
 
@@ -12,8 +14,10 @@ use alloc::vec::Vec;
 
 pub use c2_formats::dhc::{Dhc, Discovery, Island};
 
+pub mod armoury;
 pub mod beep;
 pub mod specimen;
+pub mod survey;
 pub mod terminal;
 
 #[cfg(test)]
