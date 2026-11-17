@@ -24,6 +24,7 @@ fn westmost_aim(area: &Area, m: MeeInfo, bounded: bool) -> f32 {
     if bounded {
         herd.flee = Some(Box::new(FleeTable {
             per_species: vec![FleeLimits::default()],
+            ..Default::default()
         }));
     }
     let i = add(&mut herd, 0, area, x, z);

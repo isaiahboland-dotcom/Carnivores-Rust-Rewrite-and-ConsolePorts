@@ -105,7 +105,9 @@ Each capability is a small state with an entry condition, a target and an
 exit. None plays a clip the species lacks; missing clips fall back to walk
 or idle.
 
-- **Flee:** as the original, through bounded fleeing when that option is on.
+- **Flee:** as the original, through bounded fleeing when that option is on. With it on, an
+  animal that still sees or smells the hunter when a flight ends waits out a lockout before
+  another (see `DECISIONS.md`, 2026-11-17).
 - **Cautious investigation:** a herbivore that half-notices something (a
   sense value below the alarm threshold) turns toward it, approaches up to
   a set distance, and flees on full alarm or returns to wandering after a

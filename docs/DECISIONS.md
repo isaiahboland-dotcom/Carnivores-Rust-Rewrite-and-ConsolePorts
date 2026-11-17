@@ -1,5 +1,38 @@
 # Decisions and deviations
 
+## 2026-11-17 — Bounded fleeing: a lockout before sight or smell starts another flight
+
+- An animal that has fled and still sees or smells the hunter does not start
+  another flight until its lockout has run out. The lockout is measured in
+  calm time since the flight ended and is re-read from the hunter's movement
+  on every tick the animal is calm, so it follows how he responds. On PC, Wii
+  U and VR (`Lockout::Soft`), the lockout is:
+  - **Running at the animal** (his velocity towards it over 500 units/s; a run
+    is 700, a walk 300): none. A new flight starts at once.
+  - **Walking at it, or beside it**, or moving slowly: 15 s.
+  - **Standing still** (under 30 units/s): 25 s.
+  - **Moving away** (over 150 units/s away from it): 45 s.
+- On 3DS (`Lockout::Hard`), the lockout is 15 s whatever the hunter does
+  (`flee::HARD_LOCK_MS`, the middle of the 10-20 s range, and the soft
+  lockout's walking value). The 3DS sets it where it turns bounded fleeing on
+  (`c2-3ds` hunt setup). A fixed wait needs no movement tracking and gives
+  the 3DS a predictable wait; the two modes differ by a few multiplications
+  per calm animal.
+- Scope: sight and smell only. Shots and calls keep their own noise lockout
+  (`retrigger_lockout`, 4 s by default), so they still alarm at once. The
+  first flight of an animal is never held, and a predator chasing another
+  animal (predation) is not held either.
+- Cost: the hunter's movement is measured once a second for the whole herd
+  (one subtraction), and the lockout is a few multiplications per calm animal
+  that has fled. A held animal with awareness off skips its sight and smell
+  test, which is the most expensive per-animal check, so the soft lockout is
+  no heavier than before. With awareness on, the senses are still tested and
+  feed awareness; only the alarm waits.
+- Off by default and unchanged while bounded fleeing is off: no lockout is
+  read, and no hunter movement is measured.
+- Replaces the open question in the 2026-11-16 entry above. Hardware checks
+  are in testing-needed.md (FLEE-BOUNDS).
+
 ## 2026-11-16 — Survival is a launcher switch (off by default); standalone survival on the last area
 
 - **Off unless offered.** Survival is not in the original PC game; the menus now offer it only
@@ -6689,8 +6722,8 @@ Tests: `render::fog_tests::original_underwater_fog_takes_the_waters_colour_by_de
   still sees or smells the hunter when its flight ends is alarmed again by
   `check_afraid` in the same tick and starts another, so on open ground
   with the hunter in view it keeps moving off in 24-cell legs. Each leg is
-  edge-aware, which fixes the reported pile-up; whether sight and smell
-  should also wait out a lockout is open.
+  edge-aware, which fixes the reported pile-up. Sight and smell now wait out
+  a lockout (decided 2026-11-17, above).
 
 ## 2026-11-16 — Awareness: states between calm and alarmed (ADV-WORLD phase 6)
 

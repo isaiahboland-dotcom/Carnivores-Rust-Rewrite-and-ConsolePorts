@@ -217,6 +217,7 @@ fn run_bounded(herd: &mut Herd, area: &Area, hunter: HunterView, ms: i32) {
 fn table(limits: FleeLimits) -> Option<Box<FleeTable>> {
     Some(Box::new(FleeTable {
         per_species: vec![limits],
+        ..Default::default()
     }))
 }
 
@@ -483,4 +484,76 @@ fn a_flight_keeps_to_what_the_animal_moves_through() {
         None,
     );
     assert!(!wet(t), "land brachiosaur: {t:?}");
+}
+
+/// A hunter who moves at `vel` units per second from (0, 2000), measured
+/// over one second: the pace, and where he now stands.
+fn paced(vel: [f32; 2]) -> (flee::Pace, [f32; 2]) {
+    let mut pace = flee::Pace::default();
+    pace.tick(0.0, 2000.0, 0);
+    let now = [vel[0], 2000.0 + vel[1]];
+    pace.tick(now[0], now[1], 1000);
+    (pace, now)
+}
+
+#[test]
+fn the_soft_lockout_follows_how_the_hunter_moves() {
+    let animal = [0.0, 0.0];
+    let cases = [
+        ("standing still", [0.0, 0.0], flee::LOCK_STILL_MS),
+        ("running at it", [0.0, -700.0], 0),
+        ("walking at it", [0.0, -300.0], flee::LOCK_WALK_MS),
+        ("walking beside it", [300.0, 0.0], flee::LOCK_WALK_MS),
+        ("moving away", [0.0, 300.0], flee::LOCK_AWAY_MS),
+    ];
+    for (what, vel, want) in cases {
+        let (pace, now) = paced(vel);
+        let got = pace.lockout_ms(flee::Lockout::Soft, animal, now);
+        assert_eq!(got, want, "{what}");
+    }
+}
+
+#[test]
+fn the_hard_lockout_ignores_the_hunter() {
+    let hard = flee::Lockout::Hard {
+        ms: flee::HARD_LOCK_MS,
+    };
+    for vel in [[0.0, 0.0], [0.0, -700.0], [0.0, 300.0]] {
+        let (pace, now) = paced(vel);
+        assert_eq!(pace.lockout_ms(hard, [0.0, 0.0], now), flee::HARD_LOCK_MS);
+    }
+}
+
+#[test]
+fn a_flight_locks_sight_until_its_lockout_has_run() {
+    let (pace, now) = paced([0.0, 0.0]);
+    let (animal, soft) = ([0.0, 0.0], flee::Lockout::Soft);
+    let mut f = flee::Flight::default();
+    assert!(
+        !f.locked(soft, &pace, animal, now),
+        "an animal that never fled is not held"
+    );
+    // Still in its flight, it counts as just calm.
+    f.fled = true;
+    f.active = true;
+    assert!(f.locked(soft, &pace, animal, now));
+    f.end();
+    f.calm = flee::LOCK_STILL_MS - 10;
+    assert!(f.locked(soft, &pace, animal, now));
+    f.calm = flee::LOCK_STILL_MS;
+    assert!(!f.locked(soft, &pace, animal, now));
+}
+
+#[test]
+fn a_hunter_running_at_the_animal_clears_the_soft_lockout() {
+    let (pace, now) = paced([0.0, -700.0]);
+    let f = flee::Flight {
+        fled: true,
+        ..flee::Flight::default()
+    };
+    assert!(!f.locked(flee::Lockout::Soft, &pace, [0.0, 0.0], now));
+    let hard = flee::Lockout::Hard {
+        ms: flee::HARD_LOCK_MS,
+    };
+    assert!(f.locked(hard, &pace, [0.0, 0.0], now));
 }

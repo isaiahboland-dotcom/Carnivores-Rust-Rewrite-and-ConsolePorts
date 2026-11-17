@@ -194,12 +194,27 @@ impl Hunt {
             if c.health == 0 {
                 continue;
             }
+            // Bounded fleeing's lockout: a calm animal that has fled ignores a
+            // sight or smell of the hunter until its lockout runs out (a
+            // predator chasing another animal is not held). Without awareness
+            // nothing reads the senses meanwhile, so they are not tested.
+            let locked = self.herd.flee.as_deref().is_some_and(|t| {
+                c.state == 0
+                    && !matches!(c.predation.goal, crate::dino::predation::Goal::Hunt(_))
+                    && c.flight.locked(
+                        t.lockout,
+                        &self.herd.pace,
+                        [c.pos[0], c.pos[2]],
+                        [hunter.0, hunter.1],
+                    )
+            });
+            let skip = skip || (locked && self.herd.awareness.is_none());
             let noticed = if skip {
                 None
             } else {
                 self.notice(area, i, false)
             };
-            if let Some((k_res, k_look, k_smell)) = noticed.filter(|n| n.0 < 1.0) {
+            if let Some((k_res, k_look, k_smell)) = noticed.filter(|n| n.0 < 1.0 && !locked) {
                 let c = &mut self.herd.chars[i];
                 if !mee && matches!(c.predation.goal, crate::dino::predation::Goal::Hunt(_)) {
                     // Noticed while chasing an animal: predation decides.

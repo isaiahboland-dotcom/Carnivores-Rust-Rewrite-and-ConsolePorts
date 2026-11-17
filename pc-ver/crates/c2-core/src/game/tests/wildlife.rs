@@ -1,7 +1,8 @@
 use super::support::setup;
 use crate::area::Area;
 use crate::dino::ai;
-use crate::game::{GameEvent, HuntInput};
+use crate::dino::flee::{self, FleeTable, Lockout};
+use crate::game::{GameEvent, Hunt, HuntInput};
 #[cfg(not(feature = "std"))]
 use alloc::{boxed::Box, format, vec, vec::Vec};
 use c2_formats::bits::Bits;
@@ -206,4 +207,71 @@ fn notice_range_by(notice_k: f32, stealth: bool, crouched: bool, smell: f32) -> 
         }
     }
     last
+}
+
+/// A herbivore that has just fled, 2000 units off and facing the hunter,
+/// with bounded fleeing on under `lockout`. `run`: the hunter has just run
+/// at it (a second's measure, so the pace is known).
+fn just_fled(lockout: Lockout, run: bool) -> (Area, Hunt) {
+    let (area, mut hunt, _) = setup(false);
+    hunt.wind.speed = 0.0;
+    hunt.herd.flee = Some(Box::new(FleeTable {
+        lockout,
+        ..Default::default()
+    }));
+    let c = &mut hunt.herd.chars[0];
+    c.pos = [hunt.player.x, c.pos[1], hunt.player.z - 2000.0];
+    (c.lookx, c.lookz) = (0.0, 1.0);
+    (c.state, c.afraid_time) = (0, 0);
+    c.flight.fled = true;
+    c.flight.end();
+    if run {
+        let (x, z) = (hunt.player.x, hunt.player.z);
+        hunt.herd.pace.tick(x, z, 0);
+        hunt.player.z -= 700.0;
+        hunt.herd.pace.tick(x, z - 700.0, 1000);
+    }
+    (area, hunt)
+}
+
+/// `ms` of calm time, with the animal's flee clock and the senses checked
+/// each 10 ms as the game does.
+fn calm_for(hunt: &mut Hunt, area: &Area, ms: i32) {
+    for _ in 0..ms / 10 {
+        hunt.herd.chars[0].flee_tick(10);
+        hunt.check_afraid(area, 10);
+    }
+}
+
+/// Standing still, the hunter in view: the animal stays calm for its soft
+/// lockout (25 s), then sight alarms it again and it flees.
+#[test]
+fn a_fled_animal_waits_out_its_lockout_before_sight_starts_another_flight() {
+    let (area, mut hunt) = just_fled(Lockout::Soft, false);
+    calm_for(&mut hunt, &area, flee::LOCK_STILL_MS - 100);
+    assert_eq!(hunt.herd.chars[0].state, 0, "still locked");
+    calm_for(&mut hunt, &area, 100);
+    assert_ne!(hunt.herd.chars[0].state, 0, "alarmed once the lockout ends");
+}
+
+/// The hunter runs at the animal: a soft lockout ends at once.
+#[test]
+fn a_hunter_running_at_a_fled_animal_alarms_it_at_once() {
+    let (area, mut hunt) = just_fled(Lockout::Soft, true);
+    calm_for(&mut hunt, &area, 10);
+    assert_ne!(hunt.herd.chars[0].state, 0);
+}
+
+/// The 3DS's hard lockout holds the animal for its full time, even while
+/// the hunter runs at it.
+#[test]
+fn a_hard_lockout_holds_whatever_the_hunter_does() {
+    let lockout = Lockout::Hard {
+        ms: flee::HARD_LOCK_MS,
+    };
+    let (area, mut hunt) = just_fled(lockout, true);
+    calm_for(&mut hunt, &area, flee::HARD_LOCK_MS - 100);
+    assert_eq!(hunt.herd.chars[0].state, 0, "still locked");
+    calm_for(&mut hunt, &area, 100);
+    assert_ne!(hunt.herd.chars[0].state, 0, "alarmed once the lockout ends");
 }

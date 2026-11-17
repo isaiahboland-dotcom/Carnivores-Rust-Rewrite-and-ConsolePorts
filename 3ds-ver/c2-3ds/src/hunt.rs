@@ -600,7 +600,12 @@ impl Game {
             hunt.herd.predation = load::predation(vfs, &hunt.herd.species);
         }
         if setup.bounded_flee {
-            hunt.herd.flee = Some(load::flee(vfs, &hunt.herd.species));
+            // A fixed lockout after each flight: no hunter movement to track.
+            let mut table = load::flee(vfs, &hunt.herd.species);
+            table.lockout = c2_core::dino::flee::Lockout::Hard {
+                ms: c2_core::dino::flee::HARD_LOCK_MS,
+            };
+            hunt.herd.flee = Some(table);
         }
         // A dialect game's tables can place a dozen ambients or more:
         // the plan's cap (the setting's, or fewer), as the original's

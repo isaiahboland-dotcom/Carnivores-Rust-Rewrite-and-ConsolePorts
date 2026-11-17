@@ -527,6 +527,9 @@ not part of the original game. **Bounded fleeing** itself is a switch in the
 game's options (off by default); the recipe only sets the limits it uses.
 Without a `[settings.flee]` section the built-in limits apply when a player
 turns the option on. Experimental on 3DS and Wii U; PC is the tested platform.
+After a flight, sight and smell of the hunter wait out a lockout that the
+recipe does not set: it depends on the hunter's movement (soft, on PC, Wii U
+and VR) or is 15 s (3DS).
 ```toml
 [settings.flee]
 enabled = true

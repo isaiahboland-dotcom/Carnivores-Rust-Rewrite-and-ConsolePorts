@@ -11,7 +11,9 @@
 //!   ([`pick_target`]);
 //! - ends a flight at a distance or duration cap, unless the hunter is still
 //!   closing in, and then only by a bounded extension ([`step`]);
-//! - stops repeated noises from re-arming fear ([`Character::scare`]).
+//! - stops repeated noises from re-arming fear ([`Character::scare`]);
+//! - holds an animal that has just fled to its [`Lockout`] before a sight or
+//!   smell of the hunter can start another flight ([`Flight::locked`]).
 //!
 //! With the setting off none of this runs and behaviour is the original's.
 //! Limits come from `HUNTDAT/_FLEE.TXT` ([`c2_formats::flee`]) or the
@@ -59,6 +61,23 @@ const CLOSING: f32 = 128.0;
 /// Alert range inside which a hunter can pursue (the AI's own).
 const PURSUIT_RANGE: f32 = PROXIMITY_UNITS;
 
+/// The soft lockout (ms) for a hunter who walks at or beside the animal,
+/// stands still, or moves away from it.
+pub const LOCK_WALK_MS: i32 = 15_000;
+pub const LOCK_STILL_MS: i32 = 25_000;
+pub const LOCK_AWAY_MS: i32 = 45_000;
+/// The 3DS's fixed lockout (ms), whatever the hunter does: mid-range of its
+/// 10-20 s, and the soft lockout's walking value.
+pub const HARD_LOCK_MS: i32 = LOCK_WALK_MS;
+/// Hunter speeds, units per second (a walk is 300, a run 700): running at
+/// the animal starts a flight at once, moving away at least `AWAY` counts
+/// as moving away, and under `STILL` as standing still.
+const RUN_TOWARD: f32 = 500.0;
+const AWAY: f32 = 150.0;
+const STILL: f32 = 30.0;
+/// The hunter's movement is measured over this long (ms).
+const PACE_MS: i32 = 1000;
+
 /// One animal's limits, in engine units.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FleeLimits {
@@ -90,10 +109,83 @@ impl Default for FleeLimits {
     }
 }
 
+/// How long an animal that has fled waits before a sight or smell of the
+/// hunter starts another flight.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Lockout {
+    /// Set by the hunter's movement, measured by [`Pace`]: running at the
+    /// animal starts a flight at once; walking at it or beside it waits
+    /// [`LOCK_WALK_MS`], standing still [`LOCK_STILL_MS`], moving away
+    /// [`LOCK_AWAY_MS`].
+    #[default]
+    Soft,
+    /// `ms`, whatever the hunter does (the 3DS: no movement to track).
+    Hard { ms: i32 },
+}
+
+/// The hunter's movement, measured once a second for the lockouts. Only
+/// kept while bounded fleeing is on.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Pace {
+    /// Where he was at the last measure (`None` until the first).
+    pos: Option<[f32; 2]>,
+    /// His velocity over the last measure, units per second.
+    vel: [f32; 2],
+    /// Ms since the last measure.
+    clock: i32,
+}
+
+impl Pace {
+    /// Advances the measure by `dt` ms, with the hunter at (`x`, `z`).
+    pub fn tick(&mut self, x: f32, z: f32, dt: i32) {
+        let Some(prev) = self.pos else {
+            self.pos = Some([x, z]);
+            return;
+        };
+        self.clock += dt;
+        if self.clock < PACE_MS {
+            return;
+        }
+        let secs = self.clock as f32 / 1000.0;
+        self.vel = [(x - prev[0]) / secs, (z - prev[1]) / secs];
+        self.pos = Some([x, z]);
+        self.clock = 0;
+    }
+
+    /// The lockout for an animal at `animal` (x, z) while the hunter stands
+    /// at `hunter` (x, z), in ms.
+    pub fn lockout_ms(&self, lockout: Lockout, animal: [f32; 2], hunter: [f32; 2]) -> i32 {
+        match lockout {
+            Lockout::Hard { ms } => ms,
+            Lockout::Soft => soft_ms(self.vel, animal, hunter),
+        }
+    }
+}
+
+/// The soft lockout: from the hunter's velocity towards the animal.
+fn soft_ms(vel: [f32; 2], animal: [f32; 2], hunter: [f32; 2]) -> i32 {
+    let (dx, dz) = (animal[0] - hunter[0], animal[1] - hunter[1]);
+    let d = (dx * dx + dz * dz).sqrt().max(1e-3);
+    // Positive when he moves towards the animal.
+    let toward = (vel[0] * dx + vel[1] * dz) / d;
+    let speed = (vel[0] * vel[0] + vel[1] * vel[1]).sqrt();
+    if toward > RUN_TOWARD {
+        0
+    } else if toward < -AWAY {
+        LOCK_AWAY_MS
+    } else if speed < STILL {
+        LOCK_STILL_MS
+    } else {
+        LOCK_WALK_MS
+    }
+}
+
 /// The limits of every species (index = `Character::ctype`).
 #[derive(Debug, Clone, Default)]
 pub struct FleeTable {
     pub per_species: Vec<FleeLimits>,
+    /// The lockout after a flight (the platform's; soft unless set).
+    pub lockout: Lockout,
 }
 
 impl FleeTable {
@@ -105,6 +197,7 @@ impl FleeTable {
                 .iter()
                 .map(|s| FleeLimits::from_resolved(file.for_animal(&s.info.name)))
                 .collect(),
+            lockout: Lockout::Soft,
         })
     }
 
@@ -132,12 +225,41 @@ pub struct Flight {
     pub closing: bool,
     /// A noise cannot re-arm fear for this many more ms.
     pub lock: i32,
+    /// The animal has had a flight (the lockout applies from its end).
+    pub fled: bool,
+    /// Ms calm since the last flight ended.
+    pub calm: i32,
 }
 
 impl Flight {
     /// Whether the hunter is still after the animal.
     pub fn pursued(&self, aware: bool, pdist: f32) -> bool {
         aware && pdist < PURSUIT_RANGE && self.closing
+    }
+
+    /// The flight is over: the animal is calm and its lockout starts now.
+    pub fn end(&mut self) {
+        self.active = false;
+        self.calm = 0;
+    }
+
+    /// Whether a sight or smell of the hunter must not start a flight yet:
+    /// the animal fled and has been calm for less than its lockout, which
+    /// `pace` and the hunter's place at `hunter` give. Only meaningful while
+    /// the animal is calm. An animal still in its flight counts as just
+    /// calm, so the check agrees with the tick the flight ends on.
+    pub fn locked(
+        &self,
+        lockout: Lockout,
+        pace: &Pace,
+        animal: [f32; 2],
+        hunter: [f32; 2],
+    ) -> bool {
+        if !self.fled {
+            return false;
+        }
+        let calm = if self.active { 0 } else { self.calm };
+        calm < pace.lockout_ms(lockout, animal, hunter)
     }
 }
 
@@ -158,12 +280,17 @@ impl Character {
         true
     }
 
-    /// Time passing outside a flight: the lockout runs down, and a calm
-    /// animal is not in flight.
+    /// Time passing outside a flight: the noise lockout runs down, and a
+    /// calm animal is not in flight (its flight, if any, ends here, and the
+    /// calm time since counts towards its lockout).
     pub fn flee_tick(&mut self, dt: i32) {
         self.flight.lock = (self.flight.lock - dt).max(0);
         if self.state == 0 {
-            self.flight.active = false;
+            if self.flight.active {
+                self.flight.end();
+            } else {
+                self.flight.calm = self.flight.calm.saturating_add(dt);
+            }
         }
     }
 }
@@ -395,6 +522,7 @@ pub fn step(
             probe_dist: pdist,
             probe_in: 1000,
             lock: c.flight.lock,
+            fled: true,
             ..Flight::default()
         };
         let first = if ctx.rng.r_rand(2) == 0 { 1.0 } else { -1.0 };
@@ -423,7 +551,7 @@ pub fn step(
         if f.pursued(aware, pdist) && f.extended < limits.chase_extension {
             f.extended += dt;
         } else {
-            f.active = false;
+            f.end();
             return None;
         }
     }
@@ -434,7 +562,7 @@ pub fn step(
         c.no_way_cnt = 0;
         c.flight.stalls += 1;
         if c.flight.stalls > MAX_STALLS {
-            c.flight.active = false;
+            c.flight.end();
             return None;
         }
     }

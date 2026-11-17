@@ -54,6 +54,8 @@ pub struct Herd {
     pub predation: Option<Box<predation::run::Predators>>,
     /// Bounded fleeing, when the player turns it on (`None`: the original's).
     pub flee: Option<Box<flee::FleeTable>>,
+    /// The hunter's movement, for the lockouts of bounded fleeing.
+    pub pace: flee::Pace,
     /// The spawn ecosystem, when the game has rules for this map (`None`:
     /// the original's placement and roaming).
     pub eco: Option<eco::State>,
@@ -142,6 +144,9 @@ impl Herd {
         let hunter = ctx.hunter;
         let base_dt = ctx.dt;
         let base_run_k = ctx.run_k;
+        if self.flee.is_some() {
+            self.pace.tick(hunter.x, hunter.z, base_dt);
+        }
         if let Some(h) = self.hesitation.as_deref_mut() {
             h.begin(&self.chars, base_dt);
         }

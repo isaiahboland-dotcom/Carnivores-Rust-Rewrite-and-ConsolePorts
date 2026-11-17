@@ -950,6 +950,10 @@ Automated, no game data (`cargo test -p c2-core --lib flee`,
 - **Timers**: ten repeated noises arm fear once and lengthen nothing, and the
   lockout expires; a flight ends at its duration or distance cap, and a hunter
   closing in extends it by exactly the chase extension, then it ends.
+- **Lockout** (`dino/flee_tests.rs`, `game/tests/wildlife.rs`): after a flight,
+  sight holds an animal for 25 s standing still, 15 s walking at it, 45 s
+  walking away, and not at all while the hunter runs at it; the 3DS's hard
+  lockout holds 15 s whatever he does; an animal that never fled is not held.
 - **Sweep**: each fleeing AI family, re-frightened every second for a minute
   at an edge and a corner, stays inside the walkable square while fleeing.
 - **Other AIs**: a retreating stock carnivore, and the dialect's ambient
