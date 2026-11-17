@@ -40,12 +40,15 @@ mod main_menu;
 mod mobile;
 mod option_scroll;
 mod options;
+mod parity;
 mod register;
 mod roster;
 mod scene;
 mod setup;
 mod terminal;
 mod tranq_ask;
+pub(crate) use parity::run as run_parity;
+pub(crate) use terminal::crt::ALL_LAYERS as CRT_ALL_LAYERS;
 pub(crate) use terminal::{palette, terminal_look};
 
 use board::*;
@@ -94,6 +97,9 @@ struct Choice {
     /// The list (1 animals, 2 weapons) whose last pick was refused for
     /// being at `--max-picks`; shown until the next pick.
     full: Option<usize>,
+    /// The last pick was refused by the area's island rules (`_DHC.TXT`);
+    /// shown until the next pick.
+    barred: bool,
 }
 
 /// Accessories in the equipment list, with their picture and description.
@@ -264,6 +270,16 @@ pub struct Menu {
     tranq_ask: bool,
     /// The terminal, once opened.
     term: Option<terminal::TermView>,
+    /// The recipe's `_DHC.TXT` (none in Play Vanilla): its island rules
+    /// apply to the original menus as well as the terminal.
+    dhc: Option<c2_core::dhc::Dhc>,
+    /// The terminal's beeps' sound output, once one has played; closed
+    /// when a hunt starts.
+    beeper: Option<terminal::beeps::Beeper>,
+    /// The terminal's CRT pass, once drawn, and whether this frame's
+    /// screen is one of the terminal's (its status bar was drawn).
+    crt: Option<terminal::crt::Crt>,
+    crt_frame: std::cell::Cell<bool>,
 }
 
 /// Menu style (`--menu-art`): a game folder whose menu frames, hit maps

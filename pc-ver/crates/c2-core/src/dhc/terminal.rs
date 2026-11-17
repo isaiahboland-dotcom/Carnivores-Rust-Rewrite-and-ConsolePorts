@@ -176,6 +176,8 @@ pub struct Terminal {
     /// 0 dawn, 1 day, 2 night.
     pub time: usize,
     pub notice: Option<Notice>,
+    /// Notices shown so far (a repeated refusal counts again).
+    refusals: u32,
     pub boot_lines: Vec<String>,
     clock: f32,
     outcome: Option<Outcome>,
@@ -209,6 +211,7 @@ impl Terminal {
             picks,
             time: 1,
             notice: None,
+            refusals: 0,
             boot_lines,
             clock: 0.0,
             outcome: None,
@@ -234,6 +237,22 @@ impl Terminal {
 
     pub fn take_outcome(&mut self) -> Option<Outcome> {
         self.outcome.take()
+    }
+
+    /// Shows notice `n`: a pick or the deploy was refused.
+    fn refuse(&mut self, n: Notice) {
+        self.notice = Some(n);
+        self.refusals = self.refusals.wrapping_add(1);
+    }
+
+    /// How many refusals there have been (a beep each).
+    pub fn refusals(&self) -> u32 {
+        self.refusals
+    }
+
+    /// Whether an outcome waits for the platform.
+    pub fn has_outcome(&self) -> bool {
+        self.outcome.is_some()
     }
 
     /// Offers the hardcore hunt below the regular one, with its own
@@ -413,7 +432,7 @@ impl Terminal {
             Action::SetTime(t) if self.rules.allows_time(&self.cat, self.area, t) => self.time = t,
             Action::Deploy => match self.deploy_problem() {
                 None => self.go(Screen::Deploy),
-                Some(n) => self.notice = Some(n),
+                Some(n) => self.refuse(n),
             },
             _ => {}
         }
@@ -492,11 +511,11 @@ impl Terminal {
     fn toggle(&mut self, tab: Tab, i: usize) {
         self.notice = None;
         if !self.allowed(tab, i) {
-            self.notice = Some(Notice::NotAuthorised);
+            self.refuse(Notice::NotAuthorised);
             return;
         }
         if !self.affordable(tab, i) {
-            self.notice = Some(Notice::Funds);
+            self.refuse(Notice::Funds);
             return;
         }
         if tab == Tab::Area {
@@ -513,7 +532,7 @@ impl Terminal {
         };
         if let Some(n @ (Notice::LimitAnimals(c) | Notice::LimitWeapons(c))) = cap {
             if adding && count >= c {
-                self.notice = Some(n);
+                self.refuse(n);
                 return;
             }
         }

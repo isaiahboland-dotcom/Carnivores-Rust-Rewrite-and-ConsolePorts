@@ -2,7 +2,6 @@ use alloc::vec;
 
 use super::terminal::*;
 use super::*;
-use c2_formats::dhc::Island;
 
 fn area(name: &str, stem: &str, price: i32) -> Item {
     Item {
@@ -461,4 +460,121 @@ fn survival_lists_the_platforms_modes_and_hands_one_back() {
     assert_eq!(t.take_outcome(), None, "out of range is ignored");
     t.act(Action::Back);
     assert_eq!(t.screen, Screen::Main);
+}
+
+#[test]
+fn original_menus_filter_by_name_like_the_terminal() {
+    let r = rules();
+    let dhc = r.dhc.as_ref();
+    // Found by stem, then by the menu's name; an unnamed map is open.
+    let isl = island_for(dhc, "area2", "Ravan");
+    assert!(isl.is_some());
+    assert_eq!(island_for(dhc, "", "Ravan"), None);
+    assert_eq!(island_for(dhc, "AREA1", "Fern Valley"), None);
+    assert_eq!(island_for(None, "AREA2", "Ravan"), None);
+    // The filter table, as the terminal's catalog sees it.
+    let cat = catalog();
+    for (tab, list) in [
+        (Tab::Targets, &cat.animals),
+        (Tab::Arms, &cat.weapons),
+        (Tab::Gear, &cat.equipment),
+    ] {
+        for (i, it) in list.iter().enumerate() {
+            assert_eq!(
+                island_allows(isl, tab, &it.name),
+                r.allows(&cat, 1, tab, i),
+                "{} on AREA2",
+                it.name
+            );
+            assert!(island_allows(None, tab, &it.name));
+        }
+    }
+    assert!(island_allows(isl, Tab::Targets, " velociraptor "));
+    assert!(!island_allows(isl, Tab::Targets, "Tyrannosaurus"));
+    // An island with empty lists is the original menu.
+    let open = Island {
+        area: "AREA1".into(),
+        ..Island::default()
+    };
+    assert!(island_allows(Some(&open), Tab::Gear, "Radar"));
+    assert!(!island_forbids(
+        Some(&open),
+        &["Tyrannosaurus"],
+        &["Pistol"],
+        &["Radar"],
+        0
+    ));
+}
+
+#[test]
+fn a_forbidden_hunt_start_is_refused() {
+    let r = rules();
+    let isl = island_for(r.dhc.as_ref(), "AREA2", "Ravan");
+    let ok = |a: &[&str], w: &[&str], e: &[&str], t| !island_forbids(isl, a, w, e, t);
+    assert!(ok(&["Velociraptor"], &["Shotgun"], &["Camouflage"], 2));
+    assert!(ok(&[], &[], &[], 2), "an observer with no picks");
+    assert!(
+        !ok(&["Velociraptor"], &["Shotgun"], &[], 1),
+        "day is not offered"
+    );
+    assert!(!ok(&["Tyrannosaurus"], &["Shotgun"], &[], 2));
+    assert!(!ok(&["Velociraptor"], &["Pistol"], &[], 2));
+    assert!(!ok(&["Velociraptor"], &["Shotgun"], &["Radar"], 2));
+    // No rules, or an unrestricted map: nothing is refused.
+    assert!(!island_forbids(
+        None,
+        &["Tyrannosaurus"],
+        &["Pistol"],
+        &["Radar"],
+        1
+    ));
+}
+
+#[test]
+fn beeps_follow_what_an_action_did() {
+    use super::beep::Beep;
+    let mut t = Terminal::new(catalog(), rules(), 1000, false);
+    assert_eq!(t.act_beep(Action::Down), Some(Beep::Tick));
+    assert_eq!(t.act_beep(Action::Focus(0)), None, "hover is silent");
+    assert_eq!(t.act_beep(Action::Up), None, "nothing moved");
+    assert_eq!(
+        t.act_beep(Action::Confirm),
+        Some(Beep::Select),
+        "setup opens"
+    );
+    assert_eq!(t.act_beep(Action::Right), Some(Beep::Tick), "next tab");
+    assert_eq!(t.act_beep(Action::Confirm), Some(Beep::Select), "a target");
+    // Ravan (AREA2) has no Parasaurolophus: refused.
+    t.act(Action::Tab(Tab::Area));
+    t.act(Action::Pick(1));
+    t.act(Action::Tab(Tab::Targets));
+    assert_eq!(t.act_beep(Action::Pick(0)), Some(Beep::Refuse));
+    assert_eq!(
+        t.act_beep(Action::Deploy),
+        Some(Beep::Refuse),
+        "no arms yet"
+    );
+    t.act(Action::Pick(1));
+    t.act(Action::Tab(Tab::Arms));
+    t.act(Action::Pick(1));
+    assert_eq!(t.act_beep(Action::Deploy), Some(Beep::Deploy));
+    assert_eq!(
+        t.act_beep(Action::Back),
+        Some(Beep::Back),
+        "deploy called off"
+    );
+    assert_eq!(
+        t.act_beep(Action::Back),
+        Some(Beep::Back),
+        "to the main menu"
+    );
+    assert_eq!(
+        t.act_beep(Action::Back),
+        Some(Beep::Select),
+        "the quit prompt"
+    );
+    assert!(
+        t.take_outcome().is_some(),
+        "the outcome is still the platform's"
+    );
 }

@@ -294,6 +294,9 @@ pub struct Install {
     pub inst: c2_formats::rules::Rules,
     pub weapons: Vec<String>,
     pub trophy_room: bool,
+    /// The recipe's DHC OS rules (`_DHC.TXT`): the island rules the hunt
+    /// menu applies per area.
+    pub dhc: Option<c2_formats::dhc::Dhc>,
 }
 
 /// The first non-empty line of `HUNTDAT/MENU/TXT/<file>`.
@@ -390,7 +393,8 @@ impl Install {
             .map(|(i, w)| menu.weapons.get(i).map(|m| m.name.clone()).filter(|n| !n.is_empty()).or_else(|| w.name.clone()).unwrap_or_else(|| format!("Weapon {}", i + 1)))
             .take(MAX_WEAPONS)
             .collect();
-        Some(Install { classic_survival, vfs, rules, info, areas, animals, menu_animals, hidden, inst, weapons, trophy_room })
+        let dhc = vfs.read(c2_formats::dhc::PATH).ok().map(|b| c2_formats::dhc::Dhc::parse(&b));
+        Some(Install { classic_survival, vfs, rules, info, areas, animals, menu_animals, hidden, inst, weapons, trophy_room, dhc })
     }
 
     /// The picked animals (bits by position in `animals`) as hunt targets
@@ -412,6 +416,12 @@ impl Install {
 }
 
 impl Install {
+    /// The island rules of area `i` (none: the area is unrestricted).
+    pub fn island(&self, i: usize) -> Option<&c2_formats::dhc::Island> {
+        let a = self.areas.get(i)?;
+        c2_core::dhc::island_for(self.dhc.as_ref(), &a.file, &a.name)
+    }
+
     /// Survival is offered: the instance's `survival` rule (the launcher's
     /// switch, `c2-cook --offer-survival`). Without it the menus show none.
     pub fn survival_offered(&self) -> bool {

@@ -111,7 +111,9 @@ Tranquilizer and Observer; with Multi ammo, **A** answers Half tranq and
 **Y** Full tranq. A short boot log plays once a run (any button skips). The
 Settings take the terminal's colours too, and in a hunt START's exit prompt
 is a terminal panel (A leave, Y restart, B resume). The title, Hunter, the
-hunt options and Survival keep their look.
+hunt options and Survival keep their look. With DHC off, the hexagon menu
+follows the same island rules: barred items are dimmed and can't be picked,
+a barred time of day is not shown, and a hunt with a barred pick is refused.
 
 Each hexagon shows its price; picks can't cost more than your score, as in
 the original. Leaving a hunt saves your score and trophies to

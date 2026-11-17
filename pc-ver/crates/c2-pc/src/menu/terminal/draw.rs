@@ -157,18 +157,8 @@ impl Menu {
         };
         self.term_text(out, g.l, 576.0, SMALL, hc, hints, g.w - w - 16.0);
         self.text(out, g.right() - w, 576.0, SMALL, MD, right);
-        if self.pc.dhc_crt != 0 {
-            self.draw_scanlines(out);
-        }
-    }
-
-    fn draw_scanlines(&self, out: &mut Vec<Sprite>) {
-        let r = self.cover();
-        let mut y = r.1;
-        while y < r.1 + r.3 {
-            self.fill(out, (r.0, y, r.2, 1.0), [0.0, 0.0, 0.0, 0.22]);
-            y += 3.0;
-        }
+        // The CRT layers go over everything, after the sprites (`crt.rs`).
+        self.crt_frame.set(true);
     }
 
     pub(super) fn draw_term_boot(&self, out: &mut Vec<Sprite>, t: &Terminal) {

@@ -114,8 +114,21 @@ impl Launcher {
                 self.ui.note = Some((format!("Not changed: {err}"), theme::red()));
             }
         }
+        // The DHC OS terminal recommended (once per instance).
+        let hint = self.dhc_hint_for(path);
+        if hint {
+            ui.separator();
+            if let Some(on) = Self::dhc_hint_ui(ui, "Turn on DHC OS", "") {
+                self.dhc_hint_answer(path, on);
+            }
+        }
         let close = ui.button("Done").clicked();
         let empty = Recipe::load(path).is_ok_and(|r| advanced_summary(&r).is_empty());
-        close || (empty && edit.is_some())
+        let done = close || (empty && edit.is_some());
+        // Seen and closed without turning it on: not asked again.
+        if done && hint && self.dhc_hint_for(path) {
+            self.dhc_hint_answer(path, false);
+        }
+        done
     }
 }

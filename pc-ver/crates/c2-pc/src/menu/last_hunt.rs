@@ -105,5 +105,7 @@ impl Menu {
             self.choice.dinos = Bits::NONE;
             self.choice.weapons = 0;
         }
+        // An area whose island rules changed since keeps what it allows.
+        self.prune_island();
     }
 }

@@ -47,6 +47,8 @@ struct Bases {
 }
 
 const EQUIPMENT: [&str; 6] = ["Camouflage", "Radar", "Cover scent", "Double ammo", "Night vision (150)", "Flashlight (15)"];
+/// The gear as the island rules (`_DHC.TXT`) name it: the PC menu's names.
+const EQUIPMENT_NAMES: [&str; 6] = ["Camouflage", "Radar", "Cover Scent", "Double Ammo", "Night vision", "Flashlight"];
 const TIMES: [&str; 3] = ["Dawn", "Day", "Night"];
 const SURVIVALS: [&str; 2] = ["Classic", "Modded"];
 const SURVIVAL_HELP: [&str; 2] = [
@@ -413,6 +415,8 @@ impl Menu {
         if let Some(i) = &self.install {
             crate::hunt_setup::apply_locks(c, &i.inst);
         }
+        // The area's island rules.
+        self.prune_island();
     }
 
     /// The instance rules in force (empty without an install).
@@ -577,7 +581,7 @@ impl Menu {
                 }
                 for i in 0..3 {
                     // Only the times of day the instance offers.
-                    if self.inst().is_some_and(|r| !r.time_allowed(i)) {
+                    if !self.time_offered(i) {
                         continue;
                     }
                     v.push((Id::Time(i), rect(74.0 + i as f32 * 228.0, 516.0, 212.0, 100.0)));
@@ -834,6 +838,8 @@ impl Menu {
             }
         } else if c.animals == 0 {
             Some("Pick at least one animal to hunt")
+        } else if self.island_forbids() {
+            Some("Not allowed on this island")
         } else if c.weapons == 0 && c.observer == 0 {
             Some("Pick a weapon, or Observer mode")
         } else {
@@ -847,12 +853,101 @@ impl Menu {
         let c = &self.choice;
         let survival = self.survival();
         let observer = c.observer != 0 && !survival;
+        let island = self.island_allows(id) || self.picked(id);
         match id {
-            Id::Animal(_) => !survival,
-            Id::Weapon(_) | Id::Tranq => !observer && !(survival && id == Id::Tranq),
-            Id::Equip(i) => !observer || i == 1,
+            Id::Animal(_) => !survival && island,
+            Id::Weapon(_) | Id::Tranq => !observer && !(survival && id == Id::Tranq) && island,
+            Id::Equip(i) => (!observer || i == 1) && island,
             Id::Observer => !survival,
             _ => true,
+        }
+    }
+
+    /// The island rules (`_DHC.TXT`) of the area picked; none in a
+    /// survival or the trophy room, or for an unrestricted area.
+    fn island(&self) -> Option<&c2_formats::dhc::Island> {
+        if self.choice.mode != MODE_HUNT {
+            return None;
+        }
+        self.install.as_ref()?.island(self.choice.area as usize)
+    }
+
+    /// The name the island rules know item `id` by, and its list.
+    fn island_name(&self, id: Id) -> Option<(c2_core::dhc::Tab, &str)> {
+        use c2_core::dhc::Tab;
+        let n = self.install.as_ref()?;
+        Some(match id {
+            Id::Animal(i) => (Tab::Targets, n.animals.get(i)?.name.as_str()),
+            Id::Weapon(i) => (Tab::Arms, n.weapons.get(i)?.as_str()),
+            Id::Equip(i) => (Tab::Gear, *EQUIPMENT_NAMES.get(i)?),
+            _ => return None,
+        })
+    }
+
+    /// Whether the area's island lets item `id` be picked.
+    fn island_allows(&self, id: Id) -> bool {
+        self.island_name(id).is_none_or(|(tab, name)| c2_core::dhc::island_allows(self.island(), tab, name))
+    }
+
+    /// Whether item `id` is picked now.
+    fn picked(&self, id: Id) -> bool {
+        let c = &self.choice;
+        match id {
+            Id::Animal(i) => i < 64 && c.animals & (1 << i) != 0,
+            Id::Weapon(i) => i < 32 && c.weapons & (1 << i) != 0,
+            Id::Equip(i) => [c.camo, c.radar, c.scent, c.double_ammo, c.night_vision, c.flashlight].get(i).is_some_and(|&v| v != 0),
+            _ => false,
+        }
+    }
+
+    /// Whether time `t` is offered: by the instance and the area's island.
+    fn time_offered(&self, t: usize) -> bool {
+        self.inst().is_none_or(|r| r.time_allowed(t)) && self.island().is_none_or(|i| i.allows_time(t))
+    }
+
+    /// The items picked, as `Id`s (the tranquilizer and observer aside).
+    fn picked_ids(&self) -> Vec<Id> {
+        let animals = (0..self.animal_count().min(64)).map(Id::Animal);
+        let weapons = (0..self.weapon_count().min(32)).map(Id::Weapon);
+        animals.chain(weapons).chain((0..EQUIPMENT_NAMES.len()).map(Id::Equip)).filter(|&id| self.picked(id)).collect()
+    }
+
+    /// Whether the picks break the area's island rules (picks kept from
+    /// another area, or settings edited by hand): the hunt is refused. An
+    /// observer carries no weapons.
+    fn island_forbids(&self) -> bool {
+        let Some(isl) = self.island() else { return false };
+        let observer = self.choice.observer != 0;
+        !isl.allows_time(self.choice.time as usize)
+            || self.picked_ids().into_iter().any(|id| !(observer && matches!(id, Id::Weapon(_))) && !self.island_allows(id))
+    }
+
+    /// Drops the picks the area's island doesn't allow and moves the time
+    /// to one it offers (day first), as the terminal does.
+    fn prune_island(&mut self) {
+        if self.island().is_none() {
+            return;
+        }
+        for id in self.picked_ids() {
+            if self.island_allows(id) {
+                continue;
+            }
+            let c = &mut self.choice;
+            match id {
+                Id::Animal(i) => c.animals &= !(1 << i),
+                Id::Weapon(i) => c.weapons &= !(1 << i),
+                Id::Equip(i) => {
+                    if let Some(v) = [&mut c.camo, &mut c.radar, &mut c.scent, &mut c.double_ammo, &mut c.night_vision, &mut c.flashlight].into_iter().nth(i) {
+                        *v = 0;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if !self.time_offered(self.choice.time as usize) {
+            if let Some(t) = [1, 0, 2].into_iter().find(|&t| self.time_offered(t)) {
+                self.choice.time = t as u32;
+            }
         }
     }
 
@@ -919,7 +1014,10 @@ impl Menu {
             },
             Id::Settings => self.go(Page::Settings),
             Id::Exit => self.action = Action::Exit,
-            Id::Area(i) => c.area = i as u32,
+            Id::Area(i) => {
+                c.area = i as u32;
+                self.prune_island();
+            }
             Id::Time(i) => c.time = i as u32,
             Id::Animal(i) => c.animals ^= 1 << i,
             Id::Weapon(i) => c.weapons ^= 1 << i,

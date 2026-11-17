@@ -1,5 +1,71 @@
 # Decisions and deviations
 
+## 2026-11-17 — DHC OS phases 1 and 2: island rules in the original menus, recommendation, beeps, CRT pass, menu parity
+
+Phase 1 (island restrictions) and the rest of phase 2 (PC) of the DHC OS
+plan. Supersedes "the hexagon menu does not apply island rules yet" in the
+2026-11-13 entry and the Wii U row of the platform table.
+
+- **The original menus apply `_DHC.TXT`'s island rules** (PC, Android, 3DS
+  hexagon menu, Wii U), through the same test as the terminal
+  (`c2_core::dhc::{island_for, island_allows, island_forbids}`, by name and
+  map stem, so a menu that lists items by name needs no catalog). An item
+  the area's island does not issue is drawn dimmed, like one the account
+  cannot pay for, and its pick is refused with "Not allowed on <area>" (PC)
+  or "Not allowed on this island" (3DS, Wii U); a time of day it does not
+  offer is not offered (unlit on the PC board, hidden on the 3DS and Wii U,
+  refused on the phone pages). Items are dimmed, not hidden, so lists,
+  hexagon grids and saves keep their order and indices.
+- **Changing the area prunes** the picks the new island does not issue and
+  moves the time to one it offers (day first), as the terminal does on
+  arrival. Picks kept by "Remember last hunt", the Wii U's saved settings
+  or a save edited by hand are pruned when loaded.
+- **A forbidden hunt start is refused** in each original menu
+  (`can_hunt` / `problem`), whatever put the picks there. An observer
+  carries no weapons, so only their animals, gear and time count. A
+  survival and the trophy room have no island.
+- **Wii U gear names**: the island lists name gear as the PC menu does
+  (Camouflage, Radar, Cover Scent, Double Ammo, Night vision, Flashlight);
+  the Wii U matches its gear buttons to those names. The Wii U build's
+  `settings.dhc` warning now says only the island rules apply there.
+- **Recommend once, in the launcher.** A recipe with any advanced setting
+  (`advanced_summary` non-empty) recommends the terminal once per instance,
+  while it is off: in the review shown when such a recipe is imported, else
+  in a prompt before the instance's first Play ("Turn on and play" / "Play
+  as it is"). It is never switched on without that click. The game's own
+  first launch is not used for it: `c2rs.cfg` is shared by every instance
+  and the game has no notion of instances, while the launcher does
+  (`Config::dhc_recommended`, by recipe path).
+- **UI beeps are synthesized** (`c2_core::dhc::beep`, `no_std`): tick
+  (focus moved by keys or pad; hovering is silent), select, back, refuse
+  (every refusal, counted by `Terminal::refusals`, so a repeated one beeps
+  again) and deploy. A sine with its third harmonic and 4 ms edges; no game
+  file. The classification compares the terminal's public state around
+  `act` (`Terminal::act_beep`), so `act` is unchanged. On PC the menu had
+  no sound output: one is opened on the first beep and closed when a hunt
+  starts. "DHC OS sounds" (on by default, `dhc_beeps`) turns them off; the
+  GAME tab still fits without scrolling (layout test).
+- **CRT layers are a shader pass** (`menu/terminal/crt.rs`,
+  `shaders/crt.wgsl`) over the menu's sprites instead of sprite rows:
+  scanlines (one canvas row in three, as before), a vignette and noise. The
+  options row stays one switch ("DHC OS CRT effects", off by default);
+  `dhc_crt_layers` in `c2rs.cfg` picks layers (1 scanlines, 2 vignette,
+  4 noise; all by default). No new row: a per-layer choice is rare and the
+  GAME tab is full.
+- **Menu parity is a `c2-pc` command run by `c2-regress`**, not a hunt
+  scenario: the comparison is of menus, which live in `c2-pc`, and a
+  scenario file describes a hunt. `c2-pc menu-parity` plays nine cases
+  through the terminal's actions and through the original menu's picks on
+  one loaded menu and compares the hunts they start (map, time, targets,
+  weapons, double ammo, lights, observer, hardcore, accessory bits), the
+  last four with island rules made up for one area; both refusing counts as
+  agreeing. It writes the hunter's save, so it takes `--data DIR` (a
+  process-wide override of the data folder, `save::DATA_DIR`);
+  `c2-regress menu-parity` runs it in a fresh run folder. The comparison
+  runs with the terminal look on for both sides, because the original
+  menu applies an instance's hardcore ruleset to every hunt only without
+  the terminal (2026-11-15).
+
 ## 2026-11-17 — Bounded fleeing: a lockout before sight or smell starts another flight
 
 - An animal that has fled and still sees or smells the hunter does not start

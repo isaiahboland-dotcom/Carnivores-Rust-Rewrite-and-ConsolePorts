@@ -12,6 +12,7 @@ const USAGE: &str = "usage:
   c2-pc play  <GAME_DIR> [--overlay DIR]... [--standalone GAME_DIR]... [--mod MOD_DIR]... [--recipe RECIPE.toml --mods DIR... [--accept-base] [--classic]] [--balance FILE] [--offer-survival]
               [--screen main|stats|hunt|options|credits|register|quit|loading|terminal|terminal-hunt|terminal-login|terminal-waiver|terminal-delete|terminal-options|terminal-quit]
               [--script 'X,Y;'TEXT;enter;esc'] [--shot out.png]
+  c2-pc menu-parity <GAME_DIR> --data DIR [--out FILE.json]   (the DHC OS terminal and the original hunt setup start the same hunts)
   c2-pc balance <GAME_DIR> [--overlay DIR]... [--mod MOD_DIR]...   (prints prices and scores as a balance file)
   c2-pc mobile <APK> --base <GAME_DIR> [--overlay DIR]... --out <DIR>   (the mobile game's animals as add-ons)
   c2-pc mobile <APK> --values                                         (its tuning values)
@@ -74,6 +75,7 @@ const VALUE_FLAGS: &[&str] = &[
     "mod",
     "base",
     "out",
+    "data",
     "recipe",
     "mods",
     "id",
@@ -212,6 +214,22 @@ pub fn run(arguments: Vec<String>) -> Result<()> {
             "Instance ID must be 1–100 bytes"
         );
         let _ = save::INSTANCE.set(id);
+    }
+    if cmd == "menu-parity" {
+        let game = o
+            .positional
+            .first()
+            .context("c2-pc menu-parity <GAME_DIR> --data DIR [--out FILE.json]")?;
+        // The hunt starts store the hunter's save: never the player's own.
+        let data = o
+            .value("data")
+            .context("--data DIR: a scratch folder for the hunter's save and settings")?;
+        std::fs::create_dir_all(data)?;
+        let _ = save::DATA_DIR.set(PathBuf::from(data));
+        return crate::menu::run_parity(
+            std::path::Path::new(game),
+            o.value("out").map(std::path::Path::new),
+        );
     }
     if cmd == "balance" {
         let mods: Vec<PathBuf> = o

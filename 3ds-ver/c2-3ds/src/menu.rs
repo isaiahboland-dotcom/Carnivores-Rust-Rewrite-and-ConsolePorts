@@ -768,6 +768,9 @@ impl Menu {
         if self.remaining() < 0 {
             return Err("Not enough points");
         }
+        if self.island_forbids() {
+            return Err("Not allowed on this island");
+        }
         if !self.memory().fits {
             return Err("Too much for this console");
         }
@@ -1007,6 +1010,12 @@ impl Menu {
             (_, false) => (self.weapons[i].name.clone(), self.weapons[i].price),
             (_, true) => (self.equip[i].name.clone(), self.equip[i].price),
         };
+        // The area's island rules (`_DHC.TXT`): a barred item can't be
+        // picked; one picked elsewhere can still be dropped.
+        if !self.island_offers(which, i, gear) {
+            self.message = Some("Not allowed on this island".into());
+            return format!("{name}  {price} pts");
+        }
         let mask = match (which, gear) {
             (Step::Animals, _) => &mut self.picked_dinos,
             (_, false) => &mut self.picked_weapons,
@@ -1035,6 +1044,18 @@ impl Menu {
             self.message = Some("Not enough points".into());
         }
         format!("{name}  {price} pts")
+    }
+
+    /// Whether item `i` may be picked (or is picked already) on the area:
+    /// the island rules, which a survival doesn't have.
+    fn island_offers(&self, which: Step, i: usize, gear: bool) -> bool {
+        use c2_core::dhc::Tab;
+        let (tab, on) = match (which, gear) {
+            (Step::Animals, _) => (Tab::Targets, self.picked_dinos.has(i)),
+            (_, false) => (Tab::Arms, self.picked_weapons.has(i)),
+            (_, true) => (Tab::Gear, self.picked_equip.has(i)),
+        };
+        on || self.survival.is_some() || self.island_allows(tab, i)
     }
 
     fn area_cells(&self) -> Vec<Cell> {
@@ -1212,11 +1233,10 @@ impl Menu {
             Step::Area => {
                 if let Some(i) = hit(&self.area_cells()) {
                     self.area = i;
+                    self.prune_island();
                     let a = &self.areas[i].1;
                     self.focus = Some(format!("{}  {} pts", a.name, a.price));
-                } else if let Some(t) = hit(&Self::time_cells())
-                    .filter(|&t| crate::instance_rules::get().time_allowed(t))
-                {
+                } else if let Some(t) = hit(&Self::time_cells()).filter(|&t| self.time_offered(t)) {
                     self.time = t;
                 }
             }
@@ -1677,10 +1697,10 @@ impl Menu {
                     let afford = it.price <= self.points();
                     Self::draw_hex_item(&mut c, gpu, cell, it, i == self.area, afford);
                 }
-                let rules = crate::instance_rules::get();
                 for (i, cell) in Self::time_cells().into_iter().enumerate() {
-                    // A time of day the instance doesn't offer isn't shown.
-                    if !rules.time_allowed(i) {
+                    // A time of day the instance or the area's island
+                    // doesn't offer isn't shown.
+                    if !self.time_offered(i) {
                         continue;
                     }
                     let (cx, cy, r) = cell;
@@ -1700,7 +1720,8 @@ impl Menu {
                     if matches!(pick, Pick::Roamer(_)) && !on {
                         c.hex(cell.0, cell.1, cell.2 + 2.0, [60, 120, 230, 255]);
                     }
-                    Self::draw_hex_item(&mut c, gpu, cell, item, on, item.price <= left);
+                    let offered = self.island_offers(Step::Animals, i, false);
+                    Self::draw_hex_item(&mut c, gpu, cell, item, on, item.price <= left && offered);
                 }
             }
             Step::Options => self.draw_options(&mut c, gpu),
@@ -1716,7 +1737,12 @@ impl Menu {
                     } else {
                         (&self.equip[i - nw], self.picked_equip.has(i - nw))
                     };
-                    Self::draw_hex_item(&mut c, gpu, cell, it, on, it.price <= left);
+                    let offered = if i < nw {
+                        self.island_offers(Step::Gear, i, false)
+                    } else {
+                        self.island_offers(Step::Gear, i - nw, true)
+                    };
+                    Self::draw_hex_item(&mut c, gpu, cell, it, on, it.price <= left && offered);
                 }
                 let tranq = self.save.options.tranq != 0;
                 let toggles = match self.survival {

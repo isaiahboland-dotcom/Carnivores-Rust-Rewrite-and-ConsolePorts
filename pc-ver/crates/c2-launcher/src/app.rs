@@ -14,6 +14,7 @@ use crate::{find_tool, Mode};
 
 mod android;
 mod builds;
+mod dhc_hint;
 mod edit;
 mod home;
 mod menu;

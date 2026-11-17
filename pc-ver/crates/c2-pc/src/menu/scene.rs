@@ -89,6 +89,7 @@ impl Scene for Menu {
 
     fn draw(&mut self, gpu: &Gpu, pass: &mut wgpu::RenderPass<'_>, screen: (u32, u32)) {
         self.screen_size = screen;
+        self.crt_frame.set(false);
         let mut out = Vec::new();
         let p = self.cursor;
         match self.screen {
@@ -130,6 +131,12 @@ impl Scene for Menu {
             self.draw_tranq_ask(&mut out);
         }
         self.hud.draw(gpu, pass, screen, &out);
+        if self.crt_frame.get() && self.pc.dhc_crt != 0 {
+            let scale = self.canvas().0;
+            let layers = self.pc.dhc_crt_layers;
+            let crt = self.crt.get_or_insert_with(|| terminal::crt::Crt::new(gpu));
+            crt.draw(gpu, pass, screen, scale, layers);
+        }
     }
 
     fn handles_escape(&self) -> bool {

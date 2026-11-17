@@ -14,6 +14,9 @@ pub(super) enum Dialog {
     Delete(PathBuf),
     /// An imported recipe's advanced sections, to keep or take out.
     Review(PathBuf),
+    /// The DHC OS terminal recommended before the instance's first Play
+    /// (`dhc_hint.rs`); the game starts after the answer.
+    Dhc(PathBuf),
 }
 
 /// Where Fix missing is.
@@ -226,6 +229,13 @@ impl Launcher {
             ui.set_width(420.0);
             match &mut d {
                 Dialog::Review(_) => done = true,
+                Dialog::Dhc(p) => {
+                    if let Some(on) = Self::dhc_hint_ui(ui, "Turn on and play", "Play as it is") {
+                        let p = p.clone();
+                        self.dhc_hint_answer(&p, on);
+                        done = true;
+                    }
+                }
                 Dialog::New(name) | Dialog::Clone(_, name) => {
                     ui.label(RichText::new("Instance name").color(theme::sand()).strong());
                     let r = ui.text_edit_singleline(name);
@@ -302,6 +312,7 @@ impl Launcher {
             Dialog::New(name) => self.new_instance(&name),
             Dialog::Clone(from, name) => self.clone_recipe(&from, &name),
             Dialog::Delete(p) if !p.as_os_str().is_empty() => self.delete_instance(&p),
+            Dialog::Dhc(_) => self.launch_game(false),
             Dialog::Delete(_) | Dialog::Review(_) => {}
         }
     }

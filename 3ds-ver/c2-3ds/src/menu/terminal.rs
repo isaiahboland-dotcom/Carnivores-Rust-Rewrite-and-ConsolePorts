@@ -216,9 +216,29 @@ impl Menu {
         self.term.rules.allows_time(&self.term.cat, self.area, t)
     }
 
+    /// Whether the picks break the area's island rules (picks kept from
+    /// another area): the hexagon menu refuses that hunt start as the
+    /// terminal does. An observer carries no weapons; a survival and the
+    /// trophy room have no island.
+    pub(super) fn island_forbids(&self) -> bool {
+        let Some(isl) = self.term.rules.island(&self.term.cat, self.area) else {
+            return false;
+        };
+        if self.survival.is_some() {
+            return false;
+        }
+        let barred = |tab: Tab, mask: &c2_formats::bits::Bits| {
+            mask.iter().any(|i| !self.island_allows(tab, i))
+        };
+        !isl.allows_time(self.time)
+            || barred(Tab::Targets, &self.picked_dinos)
+            || (!self.observer && barred(Tab::Arms, &self.picked_weapons))
+            || barred(Tab::Gear, &self.picked_equip)
+    }
+
     /// Drops the picks the area's island does not allow; keeps the time
     /// offered.
-    fn prune_island(&mut self) {
+    pub(super) fn prune_island(&mut self) {
         for i in 0..self.dinos.len() {
             if self.picked_dinos.has(i) && !self.island_allows(Tab::Targets, i) {
                 self.picked_dinos.clear(i);

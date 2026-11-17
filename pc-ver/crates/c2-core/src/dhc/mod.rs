@@ -10,8 +10,9 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-pub use c2_formats::dhc::{Dhc, Discovery};
+pub use c2_formats::dhc::{Dhc, Discovery, Island};
 
+pub mod beep;
 pub mod terminal;
 
 #[cfg(test)]
@@ -96,6 +97,49 @@ pub struct Limits {
     pub barred_equipment: Vec<usize>,
 }
 
+/// The island the rules name for a map, by its file stem (`AREA1`) or,
+/// failing that, its menu name. None: the map is unrestricted.
+pub fn island_for<'a>(dhc: Option<&'a Dhc>, stem: &str, name: &str) -> Option<&'a Island> {
+    let dhc = dhc?;
+    dhc.island(stem).or_else(|| dhc.island(name))
+}
+
+/// Whether the item called `name` from list `tab` may be picked on
+/// `island`. The original menus (which list items by name, not through a
+/// [`Catalog`]) and the terminal share this test.
+pub fn island_allows(island: Option<&Island>, tab: Tab, name: &str) -> bool {
+    match (tab, island) {
+        (Tab::Area, _) | (_, None) => true,
+        (Tab::Targets, Some(isl)) => isl.allows_animal(name),
+        (Tab::Arms, Some(isl)) => isl.allows_weapon(name),
+        (Tab::Gear, Some(isl)) => isl.allows_equipment(name),
+    }
+}
+
+/// Whether a hunt start breaks `island`'s rules: an animal, weapon or
+/// piece of gear it does not list, or a time it does not offer. The
+/// original menus refuse such a start (picks kept from another area, or a
+/// save edited by hand).
+pub fn island_forbids(
+    island: Option<&Island>,
+    animals: &[&str],
+    weapons: &[&str],
+    equipment: &[&str],
+    time: usize,
+) -> bool {
+    let Some(isl) = island else {
+        return false;
+    };
+    !isl.allows_time(time)
+        || [
+            (Tab::Targets, animals),
+            (Tab::Arms, weapons),
+            (Tab::Gear, equipment),
+        ]
+        .into_iter()
+        .any(|(tab, names)| names.iter().any(|n| !island_allows(Some(isl), tab, n)))
+}
+
 /// The rules in force: the recipe's `_DHC.TXT`, if any, over the catalog.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Rules {
@@ -112,14 +156,7 @@ impl Rules {
         if tab == Tab::Gear && self.limits.barred_equipment.contains(&i) {
             return false;
         }
-        let island = self.island(cat, area);
-        match (tab, island) {
-            (Tab::Area, _) => true,
-            (_, None) => true,
-            (Tab::Targets, Some(isl)) => isl.allows_animal(&item.name),
-            (Tab::Arms, Some(isl)) => isl.allows_weapon(&item.name),
-            (Tab::Gear, Some(isl)) => isl.allows_equipment(&item.name),
-        }
+        island_allows(self.island(cat, area), tab, &item.name)
     }
 
     /// Whether time `t` (0 dawn, 1 day, 2 night) is offered on `area`.
@@ -129,10 +166,9 @@ impl Rules {
     }
 
     /// The island of area `area`, when the rules name one.
-    pub fn island(&self, cat: &Catalog, area: usize) -> Option<&c2_formats::dhc::Island> {
+    pub fn island(&self, cat: &Catalog, area: usize) -> Option<&Island> {
         let a = cat.areas.get(area)?;
-        let dhc = self.dhc.as_ref()?;
-        dhc.island(&a.stem).or_else(|| dhc.island(&a.name))
+        island_for(self.dhc.as_ref(), &a.stem, &a.name)
     }
 }
 

@@ -17,7 +17,7 @@ pub(super) enum Opt {
     Header(&'static str),
 }
 
-pub(super) const GAME_OPTS: [Opt; 22] = [
+pub(super) const GAME_OPTS: [Opt; 23] = [
     Opt::Slider("Aggressiveness", |s| &mut s.options.agres),
     Opt::Slider("Density", |s| &mut s.options.dens),
     Opt::Slider("Sensitivity", |s| &mut s.options.sens),
@@ -42,6 +42,7 @@ pub(super) const GAME_OPTS: [Opt; 22] = [
     Opt::PcToggle("Pause weapon / call pickers", |p| &mut p.pause_pickers),
     Opt::PcToggle(DHC_TERMINAL, |p| &mut p.dhc_terminal),
     Opt::PcToggle("DHC OS CRT effects", |p| &mut p.dhc_crt),
+    Opt::PcToggle("DHC OS sounds", |p| &mut p.dhc_beeps),
     Opt::PcToggle("Remember last hunt", |p| &mut p.remember_hunt),
     Opt::ClearTrophies,
 ];

@@ -834,7 +834,9 @@ times = ["dawn", "day"]      # empty: every time the instance offers
 - `discovery` and `licence_cost` are read and validated now; secret-animal
   discovery and licences are a later phase and change nothing yet. Licences
   will cost the original score points, never a second currency.
-- The built game gets `HUNTDAT/_DHC.TXT` (areas by map name, `AREA1`). PC
-  and 3DS (`c2-cook` packs it; the 3DS applies the island rules in its
-  terminal look only, not in the hexagon menu yet). Wii U and VR keep the
-  original menu, and the build warns.
+- The built game gets `HUNTDAT/_DHC.TXT` (areas by map name, `AREA1`). PC,
+  Android, 3DS (`c2-cook` packs it) and Wii U apply the island rules in the
+  original menus too: a barred item is dimmed and can't be picked, changing
+  the area drops what the new one doesn't issue, and a hunt with a barred
+  pick or time is refused. Wii U and VR have no terminal; VR ignores the
+  rules, and the build warns for both.

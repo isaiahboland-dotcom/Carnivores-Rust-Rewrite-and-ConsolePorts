@@ -1118,9 +1118,32 @@ original's earnings multipliers, and the same actions giving the same state).
 The terminal is a menu: it never touches the simulation, so hunts started
 from it carry the same state hashes as the same hunt picked in the original
 menu, and every existing baseline is unaffected. Builds without
-`[settings.dhc]` write no `_DHC.TXT`. A `c2-regress` scenario that drives the
-terminal to a hunt and compares the resulting `HuntSetup` with the original
-menu's is still to be written.
+`[settings.dhc]` write no `_DHC.TXT`.
+
+`cargo test -p c2-core --lib dhc` also covers the original menus' island
+filter by name (`original_menus_filter_by_name_like_the_terminal`,
+`a_forbidden_hunt_start_is_refused`) and which beep each action makes
+(`beeps_follow_what_an_action_did`; `dhc::beep::tests` for the sounds).
+`cargo test -p c2-launcher dhc` covers the once-per-instance recommendation
+and its dialog.
+
+**Terminal vs original menu** (needs your own game files; offscreen GPU):
+
+```sh
+cargo build --release -p c2-pc -p c2-regress
+./target/release/c2-regress menu-parity --game <GAME_DIR> --game-id <ID> [--out ROOT]
+```
+
+It runs `c2-pc menu-parity` in a fresh run folder (its `data/` holds a
+scratch hunter's save, never yours) and writes `menu_parity.json`. Nine
+cases go through the terminal's actions and through the original hunt
+setup's picks: one pick of each, two animals and two weapons with gear at
+night, an observer at dawn, nothing to hunt, no weapon, and four on an area
+given made-up island rules (allowed picks; a barred animal; barred gear; a
+barred time). Each must start the same hunt from both (map, time, targets,
+weapons, double ammo, lights, observer, hardcore, accessories) or be
+refused by both. Exit 1 when any differ. It caught a disabled island check
+in the original menu (2 of 9 cases differ) when tried on purpose.
 
 ## 3DS memory plan
 

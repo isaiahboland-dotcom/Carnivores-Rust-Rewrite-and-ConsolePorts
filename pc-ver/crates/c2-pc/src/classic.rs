@@ -110,6 +110,8 @@ mod tests {
                 let v = match v.as_str() {
                     "0" => "1",
                     "1" => "0",
+                    // A mask whose default is every bit (`dhc_crt_layers`).
+                    "7" => "3",
                     _ => "7",
                 };
                 format!("{k} = {v}\n")

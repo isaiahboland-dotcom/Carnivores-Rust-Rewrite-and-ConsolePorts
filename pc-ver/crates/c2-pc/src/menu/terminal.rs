@@ -15,6 +15,8 @@ use c2_core::dhc::{Catalog, Dhc, Item, Limits, Loadout, Rules, Tab};
 
 use super::*;
 
+pub(super) mod beeps;
+pub(super) mod crt;
 mod draw;
 mod geom;
 mod login;
@@ -39,8 +41,11 @@ pub(super) struct TermView {
     pub(super) first: [usize; 4],
 }
 
-/// The game's `_DHC.TXT`, when the recipe has one.
-fn read_rules(huntdat: &Path) -> Option<Dhc> {
+/// The game's `_DHC.TXT`, when the recipe has one (never in Play Vanilla).
+pub(super) fn read_rules(huntdat: &Path) -> Option<Dhc> {
+    if crate::classic::on() {
+        return None;
+    }
     find_file(
         huntdat,
         c2_formats::dhc::PATH.trim_start_matches("HUNTDAT/"),
@@ -125,7 +130,7 @@ impl Menu {
         self.screen = Screen::Terminal;
     }
 
-    fn build_terminal(&self, boot: bool) -> TermView {
+    pub(super) fn build_terminal(&self, boot: bool) -> TermView {
         let mut map: [Vec<usize>; 4] = Default::default();
         let mut lists: [Vec<Item>; 4] = Default::default();
         for (ci, col) in self.columns.iter().enumerate().take(4) {
@@ -176,7 +181,7 @@ impl Menu {
         // hunt's entry adds the ruleset's (and exists only when the
         // recipe turned the ruleset on).
         let rules = Rules {
-            dhc: read_rules(&self.huntdat),
+            dhc: self.dhc.clone(),
             limits: Limits {
                 times,
                 max_animals: cap,
@@ -358,8 +363,10 @@ impl Menu {
             }
         }
         let (tab, before) = (t.tab.index(), t.rows[t.tab.index()]);
+        // One beep a frame: the last action's that made one.
+        let mut beep = None;
         for a in acts {
-            t.act(a);
+            beep = t.act_beep(a).or(beep);
         }
         // Keep a focus the keys moved in view; the wheel scrolls apart.
         if t.screen == TScreen::Setup {
@@ -379,6 +386,7 @@ impl Menu {
         if let Some(o) = t.take_outcome() {
             self.terminal_outcome(o);
         }
+        self.beep(beep);
     }
 
     fn terminal_outcome(&mut self, o: Outcome) {
@@ -444,7 +452,7 @@ impl Menu {
     }
 
     /// Starts the hunt `l` describes, through the original menu's start.
-    fn deploy(&mut self, l: &Loadout) {
+    pub(super) fn deploy(&mut self, l: &Loadout) {
         let Some(v) = &self.term else { return };
         let v_log = v.term.deploy_log();
         let col = |tab: usize, i: usize| v.map[tab].get(i).copied();
@@ -473,6 +481,7 @@ impl Menu {
             }
         } else {
             tracing::warn!("terminal loadout refused by the hunt setup's checks");
+            self.beep(Some(c2_core::dhc::beep::Beep::Refuse));
         }
     }
 }

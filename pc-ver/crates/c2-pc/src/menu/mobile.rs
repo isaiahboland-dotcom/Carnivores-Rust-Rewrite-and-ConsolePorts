@@ -387,7 +387,13 @@ impl Menu {
         let hit = self.side_rects().into_iter().position(|r| inside(p, r));
         let times = offered_times();
         match (self.mobile_page, hit) {
-            (0, Some(t)) if t < times.len() => self.choice.time = times[t],
+            // A time the area's island doesn't offer stays unpicked.
+            (0, Some(t)) if t < times.len() => {
+                self.choice.barred = !self.time_offered(times[t]);
+                if !self.choice.barred {
+                    self.choice.time = times[t];
+                }
+            }
             (0, Some(t)) if t == times.len() => self.toggle_observer(),
             (2, Some(b)) => match self.gear_buttons().get(b) {
                 Some(&TRANQ_BUTTON) => self.toggle_tranq(),
@@ -495,7 +501,10 @@ impl Menu {
         for (i, cx, cy, w, h) in self.mobile_cells() {
             let r = (cx - w / 2.0, cy - h / 2.0, w, h);
             let on = mask.has(i);
-            let afford = on || c.prices.get(i).is_some_and(|&p| p <= left) || self.choice.observer;
+            // Out of reach: too dear, or barred by the area's island rules.
+            let afford = on
+                || self.island_allows(col, i)
+                    && (c.prices.get(i).is_some_and(|&p| p <= left) || self.choice.observer);
             let dim = if afford {
                 [1.0; 4]
             } else {
@@ -549,7 +558,11 @@ impl Menu {
             self.mobile_button(out, r, &label, Some(on));
         }
         // What the cursor is on, and the way on.
-        if let Some((fc, fi)) = self.choice.focus.filter(|f| f.0 == col) {
+        if self.choice.barred {
+            let t = self.island_note();
+            let tw = self.text_width(16.0, &t);
+            self.text(out, CW / 2.0 - tw / 2.0, 560.0, 16.0, DIM, &t);
+        } else if let Some((fc, fi)) = self.choice.focus.filter(|f| f.0 == col) {
             let c = &self.columns[fc];
             if let Some(name) = c.names.get(fi) {
                 let t = format!("{name}  {} pts", c.prices.get(fi).copied().unwrap_or(0));
@@ -663,7 +676,10 @@ impl Menu {
         for (i, cx, cy, w, h) in self.mobile_cells() {
             let r = (cx - w / 2.0, cy - h / 2.0, w, h);
             let on = mask.has(i);
-            let afford = on || c.prices.get(i).is_some_and(|&p| p <= left) || self.choice.observer;
+            // Out of reach: too dear, or barred by the area's island rules.
+            let afford = on
+                || self.island_allows(col, i)
+                    && (c.prices.get(i).is_some_and(|&p| p <= left) || self.choice.observer);
             let lit = if self.choice.focus == Some((col, i)) {
                 [1.2, 1.2, 1.15, 1.0]
             } else {
@@ -921,8 +937,9 @@ impl Menu {
         for (i, cx, cy, w, h) in self.mobile_cells() {
             let selected = mask.has(i);
             let affordable = selected
-                || c.prices.get(i).is_some_and(|&p| p <= self.remaining())
-                || self.choice.observer;
+                || self.island_allows(col, i)
+                    && (c.prices.get(i).is_some_and(|&p| p <= self.remaining())
+                        || self.choice.observer);
             let focused = self.choice.focus == Some((col, i));
             let border = if selected {
                 RED

@@ -297,6 +297,9 @@ pub struct Config {
     pub tuning: Tuning,
     /// Seconds each instance (by recipe path) was played from the launcher.
     pub playtime: BTreeMap<PathBuf, u64>,
+    /// Instances (by recipe path) that have had the DHC OS terminal
+    /// recommended (`app/dhc_hint.rs`): it is asked once each.
+    pub dhc_recommended: std::collections::BTreeSet<PathBuf>,
 }
 
 /// Platform output choices last used for one saved instance.

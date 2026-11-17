@@ -31,6 +31,10 @@ usage:
   c2-regress pdf     --out FILE RUN_DIR [RUN_DIR...]
   c2-regress publish RUN_DIR --hash-list recipes/bases/BASE.toml [--to DIR] [--replace]
                      --replace: overwrite an existing baseline (the changes are listed)
+  c2-regress menu-parity --game DIR [--game-id ID] [--out ROOT] [--label TEXT] [--c2-pc PATH]
+                     the DHC OS terminal and the original hunt setup, given the
+                     same picks (island rules too), start the same hunts
+                     (`c2-pc menu-parity`, offscreen); exit 1 when any differ
   c2-regress original-profile OUT.SAV [--name NAME] [--score N] [--res 0-7]
                      a hunter in the original's save format (trophy00.sav), with
                      the original's default options, for original-engine runs
@@ -442,6 +446,41 @@ fn compare_cmd(a: &Args) -> Result<ExitCode> {
     Ok(ExitCode::from(code))
 }
 
+/// `menu-parity`: `c2-pc menu-parity` in a fresh run folder, whose `data/`
+/// holds the hunter's save (never the player's own) and `menu_parity.json`
+/// the cases.
+fn menu_parity(a: &Args) -> Result<ExitCode> {
+    let game = a.need("--game")?;
+    let exe =
+        c2_pc_path(a).context("c2-pc not found beside c2-regress: build it, or give --c2-pc")?;
+    let root = a
+        .get("--out")
+        .map_or_else(output::default_root, PathBuf::from);
+    let dir = output::run_dir(
+        &root,
+        "menu_parity",
+        a.get("--game-id").unwrap_or("game"),
+        &format!("pc-{}", std::env::consts::OS),
+        a.get("--label").unwrap_or(""),
+    );
+    std::fs::create_dir_all(&dir)?;
+    let status = Command::new(&exe)
+        .arg("menu-parity")
+        .arg(game)
+        .arg("--data")
+        .arg(dir.join("data"))
+        .arg("--out")
+        .arg(dir.join("menu_parity.json"))
+        .status()
+        .with_context(|| format!("starting {}", exe.display()))?;
+    println!("{}", dir.display());
+    Ok(if status.success() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    })
+}
+
 fn original_profile(a: &Args) -> Result<ExitCode> {
     let [out] = a.words.as_slice() else {
         bail!("original-profile takes OUT.SAV\n\n{USAGE}");
@@ -534,6 +573,7 @@ fn main() -> ExitCode {
         }),
         "publish" => publish_cmd(&a),
         "original-profile" => original_profile(&a),
+        "menu-parity" => menu_parity(&a),
         _ => Err(anyhow::anyhow!("unknown command {cmd:?}\n\n{USAGE}")),
     };
     r.unwrap_or_else(|e| {

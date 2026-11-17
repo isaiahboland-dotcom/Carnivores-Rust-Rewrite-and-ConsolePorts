@@ -10,9 +10,16 @@ use c2_formats::sav::{self, Save};
 /// Save slots (`trophy0%d.sav` has room for one digit).
 pub const MAX_PLAYERS: i32 = 10;
 
+/// A data directory for this run in place of the user's (`menu-parity`
+/// writes saves into a scratch folder).
+pub static DATA_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
 /// Per-user data directory: `$XDG_DATA_HOME/c2rs` (`~/.local/share/c2rs`),
 /// `%APPDATA%\c2rs` on Windows, `~/Library/Application Support/c2rs` on macOS.
 pub fn data_dir() -> PathBuf {
+    if let Some(d) = DATA_DIR.get() {
+        return d.clone();
+    }
     let env = |k: &str| {
         std::env::var_os(k)
             .filter(|v| !v.is_empty())

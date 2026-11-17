@@ -466,16 +466,18 @@ fn dhc_values(r: &Recipe, warn: &mut impl FnMut(String, String)) {
 
 fn platform_support(r: &Recipe, p: Platform, warn: &mut impl FnMut(String, String)) {
     // The DHC terminal is in the PC game (and the Android build of it) and
-    // on the 3DS.
+    // on the 3DS. The Wii U's original menu applies the island rules.
     if r.settings.dhc.as_ref().is_some_and(|d| d.enabled)
         && matches!(p, Platform::WiiU | Platform::Vr)
     {
+        let used = if p == Platform::WiiU {
+            "its original menu applies the island rules only"
+        } else {
+            "its menu is used and these rules are unused"
+        };
         warn(
             "settings.dhc".into(),
-            format!(
-                "{} has no DHC OS terminal yet; its original menu is used and these rules are unused",
-                p.name()
-            ),
+            format!("{} has no DHC OS terminal yet; {used}", p.name()),
         );
     }
     // Missions are listed by the DHC terminal only.

@@ -119,8 +119,13 @@ pub struct PcSettings {
     /// The DinoHunt Corp terminal as the main menu and hunt setup (1 = on;
     /// off by default, not in the original). Never in Play Vanilla.
     pub dhc_terminal: i32,
-    /// The terminal's CRT scanlines (1 = on; off by default, for reading).
+    /// The terminal's CRT effects (1 = on; off by default, for reading).
     pub dhc_crt: i32,
+    /// Which CRT layers the effects draw: 1 scanlines, 2 vignette,
+    /// 4 noise (all by default; set in the file only).
+    pub dhc_crt_layers: i32,
+    /// The terminal's synthesized UI beeps (1 = on, the default).
+    pub dhc_beeps: i32,
     /// The hunt setup starts from the last hunt's picks (1 = on; off by
     /// default, not in the original).
     pub remember_hunt: i32,
@@ -200,6 +205,8 @@ impl Default for PcSettings {
             render_scale: 255,
             dhc_terminal: 0,
             dhc_crt: 0,
+            dhc_crt_layers: crate::menu::CRT_ALL_LAYERS,
+            dhc_beeps: 1,
             remember_hunt: 0,
             modern_waves: 0,
             modern_water_tint: 0,
@@ -288,6 +295,8 @@ impl PcSettings {
                 "all_huntable" => s.all_huntable = i32::from(v != 0),
                 "dhc_terminal" => s.dhc_terminal = i32::from(v != 0),
                 "dhc_crt" => s.dhc_crt = i32::from(v != 0),
+                "dhc_beeps" => s.dhc_beeps = i32::from(v != 0),
+                "dhc_crt_layers" => s.dhc_crt_layers = v.clamp(0, crate::menu::CRT_ALL_LAYERS),
                 "remember_hunt" => s.remember_hunt = i32::from(v != 0),
                 "modern_waves" => s.modern_waves = i32::from(v != 0),
                 "modern_water_tint" => s.modern_water_tint = i32::from(v != 0),
@@ -335,7 +344,7 @@ impl PcSettings {
         let s = self;
         format!(
             "render_distance = {}\nfog = {}\nblood = {}\ndeath_animation = {}\nmodel_distance = {}\n\
-             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\nfire_reloads_empty = {}\npause_pickers = {}\nradar_water = {}\npretty_underwater = {}\nclassic_filter = {}\nbounded_flee = {}\ndhc_terminal = {}\ndhc_crt = {}\nmodern_waves = {}\nmodern_water_tint = {}\nmodern_sky_glow = {}\nmodern_reflections = {}\nmodern_fog_glow = {}\ndesaturated_night = {}\npitch_black_night = {}\noriginal_underwater_fog = {}\nmodern_underwater = {}\nremember_hunt = {}\n",
+             map_heading = {}\nmap_mobile = {}\nmap_zoom = {}\nteleport = {}\nbutton_hints = {}\nall_huntable = {}\nsecret_dinos = {}\ndynamic_time = {}\nnarrow_flashlight = {}\nmulti_ammo = {}\nhalf_tranq = {}\nadvanced_observer = {}\nsurvival_budget = {}\nhardcore_survival = {}\nmap_holsters = {}\nhigh_end_view = {}\nrender_scale = {}\nfire_reloads_empty = {}\npause_pickers = {}\nradar_water = {}\npretty_underwater = {}\nclassic_filter = {}\nbounded_flee = {}\ndhc_terminal = {}\ndhc_crt = {}\ndhc_crt_layers = {}\ndhc_beeps = {}\nmodern_waves = {}\nmodern_water_tint = {}\nmodern_sky_glow = {}\nmodern_reflections = {}\nmodern_fog_glow = {}\ndesaturated_night = {}\npitch_black_night = {}\noriginal_underwater_fog = {}\nmodern_underwater = {}\nremember_hunt = {}\n",
             s.render,
             s.fog,
             s.blood,
@@ -366,6 +375,8 @@ impl PcSettings {
             s.bounded_flee,
             s.dhc_terminal,
             s.dhc_crt,
+            s.dhc_crt_layers,
+            s.dhc_beeps,
             s.modern_waves,
             s.modern_water_tint,
             s.modern_sky_glow,

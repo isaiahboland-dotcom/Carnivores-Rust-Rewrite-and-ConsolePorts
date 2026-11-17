@@ -376,4 +376,22 @@ mod play_vanilla {
         assert!(matches!(app.ui.dialog, Some(home::Dialog::Review(_))));
         assert_eq!(std::fs::read_to_string(&path).unwrap(), ADVANCED);
     }
+
+    #[test]
+    fn the_dhc_recommendation_renders_and_waits_for_an_answer() {
+        let t = crate::publish::tests::Temp::new();
+        let path = instance(&t);
+        let mut app = launcher();
+        app.ui.dialog = Some(home::Dialog::Dhc(path.clone()));
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            egui::CentralPanel::default().show(ui, |_| {});
+            app.dialogs(ui.ctx());
+        });
+        output.textures_delta.clear();
+        // Nothing clicked: still asked, nothing recorded, no game started.
+        assert!(matches!(app.ui.dialog, Some(home::Dialog::Dhc(_))));
+        assert!(app.cfg.dhc_recommended.is_empty());
+        assert!(!app.busy());
+    }
 }

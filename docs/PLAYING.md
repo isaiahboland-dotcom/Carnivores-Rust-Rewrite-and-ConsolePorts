@@ -208,8 +208,11 @@ Nintendo ports keep their own mappings.
   picked. The hunter list (log in, register with the waiver, delete), the options screen, the quit
   prompt and the hunt's exit prompt (Esc) are in the same look; **Change
   hunter** opens it from the terminal. **Classic menu** returns to the original menu until the game restarts. **DHC OS CRT
-  effects** adds scanlines. A recipe can restrict what each island issues
-  ([MODDING.md](MODDING.md#dhc-os-terminal-rules)).
+  effects** adds scanlines, a vignette and noise (off by default; `dhc_crt_layers` in `c2rs.cfg` picks
+  them: 1 scanlines, 2 vignette, 4 noise). **DHC OS sounds** (on by default) are the terminal's beeps. A
+  recipe can restrict what each island issues ([MODDING.md](MODDING.md#dhc-os-terminal-rules)); the
+  original menus follow the same rules. The launcher recommends the terminal once per instance whose
+  recipe has advanced settings, without turning it on.
 
 ### Survival
 

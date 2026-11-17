@@ -103,7 +103,9 @@ below says **Off**.
 | `dynamic_time` | 0 | day/night cycle, night vision, flashlight | **Off** |
 | `map_zoom` | 0 | map zoom and panning | **Off** |
 | `dhc_terminal` | 0 | the DHC OS terminal as main menu and hunt setup | **Off** (row hidden) |
-| `dhc_crt` | 0 | the terminal's CRT scanlines | Kept (no effect: no terminal) |
+| `dhc_crt` | 0 | the terminal's CRT effects | Kept (no effect: no terminal) |
+| `dhc_crt_layers` | 7 | which CRT layers: 1 scanlines, 2 vignette, 4 noise | Kept (no effect: no terminal) |
+| `dhc_beeps` | 1 | the terminal's beeps | Kept (no effect: no terminal) |
 
 The classic session applies these as an in-memory override, the way instance
 locks already apply (`c2-pc/src/instance_rules.rs`). The override is never
@@ -169,7 +171,7 @@ target lacks (`c2_mods::validate`).
 | Times, hidden animals, locks, spawn rules (`_RULES.TXT`) | Yes | Yes (the PC game) | Yes | Yes | No |
 | Hardcore hunt (`hunt` lines in `_RULES.TXT`) | Yes | Yes (the PC game; no touch buttons) | No: regular hunts | No: regular hunts | No: regular hunts |
 | Variants | Yes | Yes (the PC game) | No: the cooker refuses them | No: refused at install | Not checked |
-| DHC OS terminal (`_DHC.TXT`) | Yes, with its option on | Untested (the PC game; no touch layout yet) | Yes, with Settings > DHC on (hunt setup pages; untested on hardware) | No: original menu | No |
+| DHC OS terminal (`_DHC.TXT`) | Yes, with its option on; island rules in the original menu too | Untested (the PC game; no touch layout yet); island rules in the phone pages | Yes, with Settings > DHC on (hunt setup pages); island rules in the hexagon menu too (untested on hardware) | No terminal; island rules in the original menu (untested) | No |
 | World zones (`_WORLD.TXT`) | Used by the spawn ecosystem; starts and extraction points are data only | As PC | Data only (copied into the pack) | Not shipped | Not used |
 | Spawn ecosystem (`eco` lines in `_WORLD.TXT`) | Yes (not in survival or the trophy room) | Yes (the PC game) | Not yet: validator warns | Not yet: validator warns | Not yet: validator warns |
 | Missions (`mission` entries in `_WORLD.TXT`) | Data only: not listed or played yet (planned in the DHC OS terminal) | Data only | Data only | Hidden: no terminal | Hidden: no terminal |

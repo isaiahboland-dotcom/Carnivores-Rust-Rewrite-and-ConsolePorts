@@ -3,6 +3,14 @@ use super::*;
 
 impl Launcher {
     pub(super) fn play(&mut self) {
+        // An instance with advanced settings: the DHC OS terminal is
+        // recommended once, before it starts.
+        if !self.busy() {
+            if let Some(p) = self.dhc_hint_due() {
+                self.ui.dialog = Some(home::Dialog::Dhc(p));
+                return;
+            }
+        }
         self.launch_game(false);
     }
 

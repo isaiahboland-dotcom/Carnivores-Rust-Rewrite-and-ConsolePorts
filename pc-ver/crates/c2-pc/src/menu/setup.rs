@@ -47,6 +47,99 @@ impl Menu {
                     && self.choice.weapons != 0)
             && self.remaining() >= 0
             && self.within_picks()
+            && !self.island_forbids()
+    }
+
+    /// The island rules (`_DHC.TXT`) of the area picked; none: the area
+    /// is unrestricted, as in the original menu.
+    fn island(&self) -> Option<&c2_core::dhc::Island> {
+        let a = self.choice.area;
+        let stem = self
+            .areas
+            .get(a)
+            .and_then(|p| p.file_stem())
+            .map(|s| s.to_string_lossy())
+            .unwrap_or_default();
+        let name = self.columns[0].names.get(a).map_or("", String::as_str);
+        c2_core::dhc::island_for(self.dhc.as_ref(), &stem, name)
+    }
+
+    /// Whether item `r` of list `col` may be picked on the area picked.
+    /// A survival brings its own area and animals, so nothing is barred.
+    pub(super) fn island_allows(&self, col: usize, r: usize) -> bool {
+        if col == 0 || self.choice.survival.is_some() {
+            return true;
+        }
+        let Some(name) = self.columns.get(col).and_then(|c| c.names.get(r)) else {
+            return true;
+        };
+        c2_core::dhc::island_allows(self.island(), c2_core::dhc::Tab::ALL[col.min(3)], name)
+    }
+
+    /// Whether time of day `t` (0 dawn, 1 day, 2 night) is offered: by
+    /// the instance and by the area's island.
+    pub(super) fn time_offered(&self, t: usize) -> bool {
+        crate::instance_rules::get().time_allowed(t)
+            && (self.choice.survival.is_some() || self.island().is_none_or(|i| i.allows_time(t)))
+    }
+
+    /// Whether the picks break the area's island rules (picks kept from
+    /// another area or an earlier hunt, or a save edited by hand). An
+    /// observer carries no weapons, so only their animals, gear and time
+    /// count.
+    pub(super) fn island_forbids(&self) -> bool {
+        if self.choice.survival.is_some() {
+            return false;
+        }
+        let names = |col: usize| -> Vec<&str> {
+            let mask = self.picked_mask(col);
+            let skip = col == 2 && self.choice.observer;
+            self.columns[col]
+                .names
+                .iter()
+                .enumerate()
+                .filter(|&(i, _)| !skip && mask.has(i))
+                .map(|(_, n)| n.as_str())
+                .collect()
+        };
+        c2_core::dhc::island_forbids(
+            self.island(),
+            &names(1),
+            &names(2),
+            &names(3),
+            self.choice.time,
+        )
+    }
+
+    /// Drops the picks the area's island does not allow and moves the
+    /// time of day to one it offers (day first), as the terminal does on
+    /// arrival at an island.
+    pub(super) fn prune_island(&mut self) {
+        if self.island().is_none() {
+            return;
+        }
+        for i in 0..self.columns[1].names.len() {
+            if !self.island_allows(1, i) {
+                self.choice.dinos.clear(i);
+            }
+        }
+        for col in [2, 3] {
+            for i in 0..self.columns[col].names.len().min(128) {
+                if !self.island_allows(col, i) {
+                    let bit = 1u128 << i;
+                    if col == 2 {
+                        self.choice.weapons &= !bit;
+                    } else {
+                        self.choice.equip &= !(bit as u32);
+                    }
+                }
+            }
+        }
+        if !self.time_offered(self.choice.time) {
+            if let Some(t) = [1, 0, 2].into_iter().find(|&t| self.time_offered(t)) {
+                self.choice.time = t;
+            }
+        }
     }
 
     /// The picks are within `--max-picks` (a survival brings its own
@@ -121,7 +214,7 @@ impl Menu {
             return;
         }
         match region {
-            1..=3 if crate::instance_rules::get().time_allowed(region as usize - 1) => {
+            1..=3 if self.time_offered(region as usize - 1) => {
                 self.choice.time = region as usize - 1
             }
             4 => {
@@ -174,6 +267,14 @@ impl Menu {
         }
         let bit = 1u128.checked_shl(r as u32).unwrap_or(0);
         self.choice.full = None;
+        self.choice.barred = false;
+        // The area's island rules (`_DHC.TXT`): a barred item can't be
+        // picked (one picked elsewhere can still be dropped).
+        if !self.island_allows(col, r) && !self.picked_mask(col).has(r) {
+            self.choice.focus = Some((col, r));
+            self.choice.barred = true;
+            return;
+        }
         // A full list takes no more (dropping a pick is always allowed).
         let adding = match col {
             1 => !self.choice.dinos.has(r),
@@ -227,6 +328,18 @@ impl Menu {
                 ..old
             };
         }
+        if col == 0 {
+            self.prune_island();
+        }
+    }
+
+    /// The note for a pick or start the island rules refuse.
+    pub(super) fn island_note(&self) -> String {
+        let area = self.columns[0].names.get(self.choice.area);
+        format!(
+            "Not allowed on {}",
+            area.map_or("this area", String::as_str)
+        )
     }
 
     /// Starts the hunt the choices describe.
@@ -369,13 +482,14 @@ impl Menu {
         self.shown_loading = false;
         self.term_loading = None;
         self.screen = Screen::Loading;
+        // The hunt opens its own sound output.
+        self.beeper = None;
     }
 
     pub(super) fn draw_setup(&self, out: &mut Vec<Sprite>, region: u8) {
         let on_mode = inside(self.cursor, MODE_RECT) && self.choice.survival.is_some();
         // A time of day the instance doesn't offer doesn't light up.
-        let barred = (1..=3).contains(&region)
-            && !crate::instance_rules::get().time_allowed(region as usize - 1);
+        let barred = (1..=3).contains(&region) && !self.time_offered(region as usize - 1);
         let region = if on_mode || barred { 0 } else { region };
         let c = &self.choice;
         let mut lit = vec![region, c.time as u8 + 1];
@@ -434,7 +548,7 @@ impl Menu {
                 let affordable = c.observer || picked || left - price >= 0;
                 let color = if picked {
                     PICKED
-                } else if !affordable {
+                } else if !affordable || !self.island_allows(ci, i) {
                     DIM
                 } else if hover_row == Some(i) {
                     HOVER
@@ -516,12 +630,16 @@ impl Menu {
         if !self.can_hunt() && region == 8 {
             let why = if !self.within_picks() {
                 format!("At most {cap} animals and {cap} weapons")
+            } else if self.island_forbids() {
+                self.island_note()
             } else if self.choice.dinos.is_empty() && self.choice.survival.is_none() {
                 "Choose dinosaurs to hunt".into()
             } else {
                 "Choose a weapon".into()
             };
             self.text(out, 420.0, 566.0, 12.0, HOVER, &why);
+        } else if c.barred {
+            self.text(out, 420.0, 566.0, 12.0, HOVER, &self.island_note());
         } else if let Some(col) = c.full {
             let what = if col == 1 { "animals" } else { "weapons" };
             let hc = crate::instance_rules::get().hunt.max_firearms;
