@@ -154,3 +154,36 @@ fn no_death_camera_prompts_at_once() {
     hunt.opts.death_anim = false;
     assert!(hunt.show_exit());
 }
+
+/// `Hunt2.cpp`: a poisonous fog zone caps health at 100000 and drains 64
+/// per ms (net 60 with the 4 per ms recovery), then kills; a harmless zone,
+/// or a poisonous one whose top is below the eye, does nothing.
+#[test]
+fn poisonous_fog_drains_health_and_kills() {
+    use crate::game::{HuntInput, MAX_HEALTH};
+    use c2_formats::rsc::Fog;
+    let fog = |y_begin: f32, mortal: i32| Fog {
+        rgb: 0,
+        y_begin,
+        mortal,
+        transp: 512.0,
+        f_limit: 200.0,
+    };
+    let run = |zone: u8, top: f32, ticks: usize| {
+        let (mut area, mut hunt, _) = setup(false);
+        area.rsc.fogs = [fog(255.0, 0), fog(top, 1)].into();
+        area.map.fogs.fill(zone);
+        let mut out = Vec::new();
+        for _ in 0..ticks {
+            hunt.tick(&area, &[], &HuntInput::default(), 10, &mut out);
+        }
+        (hunt.health, hunt.death.is_some())
+    };
+    // 100000 - 640, then -600 per tick: dead on tick 167.
+    assert_eq!(run(2, 255.0, 166), (360, false));
+    let (health, dead) = run(2, 255.0, 167);
+    assert!(health <= 0 && dead);
+    assert_eq!(run(1, 255.0, 200), (MAX_HEALTH, false), "harmless zone");
+    // Flat ground at 10 (640 units); the eye is above a top of 5 (320).
+    assert_eq!(run(2, 5.0, 200), (MAX_HEALTH, false), "below the eye");
+}

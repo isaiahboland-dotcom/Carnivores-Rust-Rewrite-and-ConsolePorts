@@ -115,6 +115,12 @@ impl<'a> Zones<'a> {
         self.fogs.get(usize::from(zone).checked_sub(1)?)
     }
 
+    /// Whether `zone` is poisonous (`TFogEntity.Mortal`, AREA5's volcanic
+    /// gas).
+    pub fn is_mortal(&self, zone: u8) -> bool {
+        self.fog(zone).is_some_and(|f| f.mortal != 0)
+    }
+
     /// `Hunt2.cpp: CameraFogI` / `CAMERAINFOG`: the zone the camera is in,
     /// when it is below that zone's top.
     pub fn camera_zone(&self, eye: [f32; 3]) -> Option<u8> {

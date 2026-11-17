@@ -258,3 +258,29 @@ fn original_pistol_and_animals_load_and_simulate() {
     );
     assert_eq!(hunt.weapons.shots_left[0], 15);
 }
+
+/// AREA5's zone 2 is the poisonous volcanic gas (`TFogEntity.Mortal`), the
+/// only mortal zone in the vanilla areas, and the map uses it.
+#[test]
+fn original_area5_volcanic_gas_is_the_mortal_zone() {
+    let Ok(root) = std::env::var("C2_ORIGINAL_HUNTDAT") else {
+        return;
+    };
+    let read = |p: &str| std::fs::read(std::path::Path::new(&root).join(p)).unwrap();
+    for n in 1..=5 {
+        let area = Area::new(
+            map::parse(&read(&format!("AREAS/AREA{n}.MAP"))).unwrap(),
+            rsc::parse(&read(&format!("AREAS/AREA{n}.RSC"))).unwrap(),
+            TimeOfDay::Day,
+        );
+        let zones = c2_core::fog::Zones::new(&area.map, &area.rsc.fogs);
+        let mortal: Vec<u8> = (1..=area.rsc.fogs.len() as u8)
+            .filter(|&z| zones.is_mortal(z))
+            .collect();
+        let want: &[u8] = if n == 5 { &[2] } else { &[] };
+        assert_eq!(mortal, want, "AREA{n}");
+        for z in mortal {
+            assert!(area.map.fogs.contains(&z), "AREA{n} zone {z} on the map");
+        }
+    }
+}

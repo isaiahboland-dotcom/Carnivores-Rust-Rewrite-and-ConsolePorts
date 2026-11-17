@@ -80,6 +80,7 @@ fn shared_herbivore_ai_flees_a_nearby_hunter() {
             render_r: 74,
             run_k: 1.0,
             flee: None,
+            eco: None,
             events: &mut events,
         });
     }

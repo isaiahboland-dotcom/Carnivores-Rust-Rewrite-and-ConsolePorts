@@ -6729,3 +6729,26 @@ Tests: `render::fog_tests::original_underwater_fog_takes_the_waters_colour_by_de
   3DS, Wii U and VR; a scenario (the headless runner does not load the
   file). An alarmed dialect animal still has its fear renewed by the
   original check, with the crouch counted, as before.
+
+## 2026-11-17 — Poisonous fog (original behaviour, always on)
+
+`Hunt2.cpp`: while the camera is inside a fog zone whose `TFogEntity.Mortal`
+is set (below the zone's top, and not under water, where the camera's zone
+is the non-mortal 127), health is capped at 100000 and drains `TimeDt * 64`;
+at zero the hunter dies as `HUNT_EAT` (the scream plays). With the
+4-per-ms recovery that is about 1.7 s from entering at full health. Among
+the vanilla areas only AREA5's zone 2, the volcanic gas, is mortal.
+
+- `Hunt::poison_fog` (`game/update.rs`) runs after drowning in the tick, as
+  the original checks it after `UNDERWATER`. It uses
+  `c2_core::fog::Zones::camera_zone` with the player's eye and the new
+  `Zones::is_mortal`.
+- Gameplay, so it does not depend on Options > Video drawing the fog zones.
+  It is in `c2-core`, so the 3DS, Wii U and VR hunts get it too, although
+  the 3DS does not yet draw the zones it now kills in.
+- Tests: `poisonous_fog_drains_health_and_kills` (the drain to the tick, a
+  harmless zone, a mortal zone below the eye);
+  `original_area5_volcanic_gas_is_the_mortal_zone` (with
+  `C2_ORIGINAL_HUNTDAT`: AREA5 zone 2 is the only mortal zone in AREA1-5
+  and is on the map). No regression scenario hunts on AREA5, so the
+  existing baselines are not affected.

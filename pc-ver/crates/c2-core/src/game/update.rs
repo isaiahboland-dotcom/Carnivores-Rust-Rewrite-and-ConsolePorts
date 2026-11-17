@@ -85,6 +85,7 @@ impl Hunt {
                     self.kill_hunter(area, None, hunt::BREATH, true, out);
                 }
             }
+            self.poison_fog(area, dt, out);
             self.weapon_input(area, cars, input, out);
             #[cfg(feature = "hunt-diagnostics")]
             self.prof.mark(0);
@@ -274,6 +275,27 @@ impl Hunt {
     }
 
     /// Ripples from the hunter: wading, diving in or out, swimming.
+    /// `Hunt2.cpp`: with the camera in a poisonous fog zone (above water),
+    /// health is capped at 100000 and drains 64 per ms; death is
+    /// `HUNT_EAT`, with the scream. Gameplay, so independent of whether the
+    /// renderer draws the zones.
+    pub(super) fn poison_fog(&mut self, area: &Area, dt: i32, out: &mut Vec<GameEvent>) {
+        if self.health <= 0 || self.player.underwater {
+            return;
+        }
+        let zones = crate::fog::Zones::new(&area.map, &area.rsc.fogs);
+        let Some(zone) = zones.camera_zone(self.player.eye()) else {
+            return;
+        };
+        if !zones.is_mortal(zone) {
+            return;
+        }
+        self.health = self.health.min(100_000) - dt * 64;
+        if self.health <= 0 {
+            self.kill_hunter(area, None, hunt::EAT, true, out);
+        }
+    }
+
     fn player_effects(&mut self, area: &Area, events: &[PlayerEvent]) {
         let [cx, _, cz] = self.player.eye();
         for e in events {
