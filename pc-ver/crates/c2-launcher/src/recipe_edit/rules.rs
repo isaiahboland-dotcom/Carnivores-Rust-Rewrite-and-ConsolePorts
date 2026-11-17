@@ -2,8 +2,8 @@
 //! (`[settings.rules]`, `c2_mods::rules`): the times of day offered,
 //! settings fixed by the instance (and hidden from the in-game settings),
 //! and spawn rules: at most so many picked animals per area, extra
-//! unpicked animals on chosen areas, and animals kept off the hunt menu.
-//! Nothing set: the game is as it was.
+//! unpicked animals on chosen areas, and animals kept off the hunt menu;
+//! and extra equipment (scuba gear). Nothing set: the game is as it was.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -158,6 +158,25 @@ pub(super) fn locks_ui(ui: &mut egui::Ui, r: &mut Rules) {
                 ui.end_row();
             }
         });
+}
+
+/// Extra equipment the gear page offers (not in the original): off, the
+/// game is as it was.
+pub(super) fn gear_ui(ui: &mut egui::Ui, r: &mut Rules) {
+    ui.label(
+        RichText::new("Extra equipment")
+            .color(theme::sand())
+            .strong(),
+    );
+    help(
+        ui,
+        "Equipment that is not in the original game, offered on the hunt menu's gear list. \
+         PC and Android; Play Vanilla leaves it out.",
+    );
+    ui.checkbox(&mut r.scuba_gear, "Scuba gear").on_hover_text(
+        "30 points: dive and swim faster, see twice as far under water, and an oxygen \
+             tank that makes drowning take twice as long. Kills score 15% less.",
+    );
 }
 
 /// `names` with any of `kept` it lacks (marked as not in this game).

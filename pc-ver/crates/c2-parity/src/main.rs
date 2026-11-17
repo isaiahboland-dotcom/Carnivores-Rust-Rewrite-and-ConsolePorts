@@ -682,6 +682,7 @@ fn tick_bench(game: &Path, area_n: u32) -> Result<()> {
         dynamic_night: None,
         night_vision_active: false,
         advanced_binoculars: false,
+        scuba: false,
     };
     // The first weapon, drawn and aimed at the animal: real hits (blood
     // trail, hit reactions) rather than a scripted kill.

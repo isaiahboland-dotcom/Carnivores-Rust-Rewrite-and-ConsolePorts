@@ -168,6 +168,7 @@ impl Menu {
         if r >= max
             || (col == 3 && matches!(r, 4 | 5) && self.pc.dynamic_time == 0)
             || (col == 3 && r == 6 && !OFFERS_ADVANCED_BINOCULARS)
+            || (col == 3 && r == 7 && !scuba_offered())
         {
             return;
         }
@@ -363,6 +364,7 @@ impl Menu {
             flashlight,
             advanced_binoculars: OFFERS_ADVANCED_BINOCULARS
                 && self.choice.equip & ADVANCED_BINOCULARS != 0,
+            scuba: scuba_offered() && self.choice.equip & SCUBA != 0,
         });
         self.shown_loading = false;
         self.term_loading = None;

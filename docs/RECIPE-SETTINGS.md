@@ -37,6 +37,7 @@ Treatments:
 | `[[settings.weapon_restrictions]]` | per-weapon ammo and trophy eligibility | Kept |
 | `[settings.rules] times` | times of day offered | Kept |
 | `[settings.rules] hidden` | animals kept off the hunt menu | Kept |
+| `[settings.rules] scuba_gear` | scuba gear offered on the gear list (new equipment) | **Off** (no `scuba` line) |
 | `[settings.predation]` | Advanced Dinosaur Behavior and AI: carnivores hunt herbivores | **Off** (no `_PREDATION.TXT`) |
 | `[settings.flee]` | custom bounded-flee limits | **Off** (no `_FLEE.TXT`) |
 | `[settings.behavior]` | Advanced Dinosaur Behavior and AI: awareness ([MODDING.md](MODDING.md#awareness-suspicion-investigating-searching)) | **Off** (no `_BEHAVIOR.TXT`) |

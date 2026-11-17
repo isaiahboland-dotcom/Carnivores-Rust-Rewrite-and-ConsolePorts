@@ -42,7 +42,7 @@ impl Hunt {
         self.takt = self.takt.wrapping_add(1);
         // ProcessSyncro: health recovers 4 per ms while alive.
         if self.health > 0 {
-            self.health = (self.health + dt * 4).min(MAX_HEALTH);
+            self.health = (self.health + dt * super::scuba::HEALTH_REGEN).min(MAX_HEALTH);
         }
 
         if let Some(d) = self.death {
@@ -67,6 +67,8 @@ impl Hunt {
             let mut controls = input.controls;
             controls.run &= self.weapons.state == WeaponState::Hidden
                 || self.weapons.mee().is_some_and(|m| m.can_run);
+            // Kept on the hunter across teleports and respawns.
+            self.player.scuba = self.opts.scuba;
             if !self.fly_step(area, input, dt) {
                 self.player.tick(area, &controls, dt as u32, &mut pev);
             }
@@ -79,8 +81,8 @@ impl Hunt {
             #[cfg(feature = "hunt-diagnostics")]
             self.prof.mark(0);
             if self.player.underwater && self.health > 0 {
-                // Drowning.
-                self.health -= dt * 12;
+                // Drowning (slower with scuba gear's oxygen tank).
+                self.health -= dt * self.drown_rate();
                 if self.health <= 0 {
                     self.kill_hunter(area, None, hunt::BREATH, true, out);
                 }

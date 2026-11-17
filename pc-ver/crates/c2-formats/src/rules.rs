@@ -111,6 +111,9 @@ pub struct Rules {
     /// Survival is offered in the menus (the `survival` line, the
     /// launcher's switch; off without it).
     pub survival: bool,
+    /// The scuba gear is offered on the gear page (the `scuba` line, the
+    /// recipe's `scuba_gear`; hidden without it).
+    pub scuba: bool,
 }
 
 /// Whether map `stem` is one of `areas` (empty: every area).
@@ -256,6 +259,7 @@ impl Rules {
                 }
                 "hunt" => r.hunt.parse_line(words),
                 "survival" => r.survival = true,
+                "scuba" => r.scuba = true,
                 _ => {}
             }
         }
@@ -294,6 +298,9 @@ impl Rules {
         if self.survival {
             s += "survival\n";
         }
+        if self.scuba {
+            s += "scuba\n";
+        }
         s
     }
 }
@@ -321,6 +328,7 @@ mod tests {
             ],
             hidden: vec!["Raptor #2".into(), "Rex".into()],
             survival: true,
+            scuba: true,
             ..Rules::default()
         }
     }

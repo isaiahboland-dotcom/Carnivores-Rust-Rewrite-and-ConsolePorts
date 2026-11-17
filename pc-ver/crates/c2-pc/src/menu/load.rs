@@ -332,6 +332,11 @@ impl Menu {
                 ADVANCED_BINOCULARS_PRICE,
                 "Costs 40 points. Through the binoculars, animals show a green outline, red once they are after you. Kills score 40% less.",
             ),
+            (
+                "Scuba gear",
+                SCUBA_PRICE,
+                "Costs 30 points. Dive and swim faster, see twice as far under water, and the oxygen tank makes drowning take twice as long. Kills score 15% less.",
+            ),
         ] {
             let gear = &mut cols[3];
             gear.names.push(name.into());
@@ -564,9 +569,13 @@ impl Menu {
     pub(super) fn offer_animals(&mut self) {
         // The times of day the instance offers.
         self.choice.time = crate::instance_rules::get().allowed_time(self.choice.time);
-        self.columns[3].order = gear_order(self.pc.dynamic_time != 0);
+        let scuba = scuba_offered();
+        self.columns[3].order = gear_order(self.pc.dynamic_time != 0, scuba);
         if self.pc.dynamic_time == 0 {
             self.choice.equip &= NO_LIGHTS;
+        }
+        if !scuba {
+            self.choice.equip &= !SCUBA;
         }
         let all = self.pc.all_huntable != 0;
         let first = self.menu_animals;

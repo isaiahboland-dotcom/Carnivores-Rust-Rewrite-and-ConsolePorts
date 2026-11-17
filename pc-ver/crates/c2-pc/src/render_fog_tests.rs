@@ -51,6 +51,8 @@ struct Run {
     sun: Vec3,
     /// The original's underwater fog: its colour and top.
     underwater: Option<([f32; 3], f32)>,
+    /// That fog's reach (scuba gear: `SCUBA_VIEW_K`).
+    underwater_reach: f32,
     /// Desaturated night's strength.
     night_grey: f32,
 }
@@ -62,6 +64,7 @@ impl Default for Run {
             glow: 0.0,
             sun: Vec3::Y,
             underwater: None,
+            underwater_reach: 1.0,
             night_grey: 0.0,
         }
     }
@@ -120,6 +123,7 @@ impl Scene for Hollow {
                 on: self.run.zones_on,
                 glow: self.run.glow,
                 underwater: self.run.underwater,
+                underwater_reach: self.run.underwater_reach,
             },
         );
         let frustum = Frustum::new(proj * view);
@@ -253,8 +257,9 @@ fn original_underwater_fog_takes_the_waters_colour_by_depth() -> anyhow::Result<
     let green = [0.0, 1.0, 0.0];
     let dir = Vec3::new(0.0, PITCH.sin(), -PITCH.cos());
     let p = eye() + dir * (EYE_UP / -PITCH.sin());
-    let a = c2_core::fog::underwater_level(eye().to_array(), p.to_array(), level) / 255.0;
-    assert!(a > 0.2 && a < 0.8, "test amount {a}");
+    let amount = |reach| {
+        c2_core::fog::underwater_level(eye().to_array(), p.to_array(), level, reach) / 255.0
+    };
     let none = Run {
         zones_on: false,
         ..Run::default()
@@ -263,19 +268,34 @@ fn original_underwater_fog_takes_the_waters_colour_by_depth() -> anyhow::Result<
         underwater: Some((green, level)),
         ..none
     };
-    let [clear, fogged] = render_runs(foggy(0), [none, under])?;
-    // Models cap at 250, the ground does not.
-    let want = [
-        clear[0] * (1.0 - a),
-        clear[1] * (1.0 - a) + 255.0 * a,
-        clear[2] * (1.0 - a),
-    ];
-    for c in 0..3 {
-        assert!(
-            (fogged[c] - want[c]).abs() < 10.0,
-            "fogged {fogged:?}, expected about {want:?} (amount {a})"
-        );
+    // Scuba gear: the same water, its fog reaching twice as far.
+    let scuba = Run {
+        underwater_reach: c2_core::fog::SCUBA_VIEW_K,
+        ..under
+    };
+    let [clear, fogged, geared] = render_runs(foggy(0), [none, under, scuba])?;
+    for (got, a) in [
+        (fogged, amount(1.0)),
+        (geared, amount(c2_core::fog::SCUBA_VIEW_K)),
+    ] {
+        assert!(a > 0.1 && a < 0.8, "test amount {a}");
+        // Models cap at 250, the ground does not.
+        let want = [
+            clear[0] * (1.0 - a),
+            clear[1] * (1.0 - a) + 255.0 * a,
+            clear[2] * (1.0 - a),
+        ];
+        for c in 0..3 {
+            assert!(
+                (got[c] - want[c]).abs() < 10.0,
+                "fogged {got:?}, expected about {want:?} (amount {a})"
+            );
+        }
     }
+    assert!(
+        geared[0] > fogged[0],
+        "scuba gear thins the fog: {geared:?} vs {fogged:?}"
+    );
     Ok(())
 }
 

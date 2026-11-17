@@ -51,11 +51,18 @@ pub fn fill_floor(map: &mut Map, fogs: &[Fog]) {
 pub const UNDERWATER_TRANSP: f32 = 460.0;
 pub const UNDERWATER_LIMIT: f32 = 200.0;
 
+/// Scuba gear (not in the original): the underwater view reaches this many
+/// times as far. Backends scale their underwater fog's distance by it (the
+/// PC's fog end, and the original fog's `Transp`).
+pub const SCUBA_VIEW_K: f32 = 2.0;
+
 /// `Hunt2.cpp: CalcFogLevel` under water (`cf = 127`, `CAMERAINFOG`): the
 /// fog between `eye` and `p`, both under water whose top is `level` (world
 /// units), 0..`FLimit` of 255. The deeper both ends and the farther apart,
-/// the thicker.
-pub fn underwater_level(eye: [f32; 3], p: [f32; 3], level: f32) -> f32 {
+/// the thicker. `reach` scales `Transp` (1 in the original;
+/// [`SCUBA_VIEW_K`] with scuba gear).
+pub fn underwater_level(eye: [f32; 3], p: [f32; 3], level: f32, reach: f32) -> f32 {
+    let transp = UNDERWATER_TRANSP * reach;
     let (dx, dy, dz) = (p[0] - eye[0], p[1] - eye[1], p[2] - eye[2]);
     let mut d = (dx * dx + dy * dy + dz * dz).sqrt();
     let mut fla = (level - p[1]) / H_SCALE;
@@ -67,7 +74,7 @@ pub fn underwater_level(eye: [f32; 3], p: [f32; 3], level: f32) -> f32 {
         d *= flb / (flb - fla);
         fla = 0.0;
     }
-    let fl = (fla + flb) * (d + UNDERWATER_TRANSP / 2.0) / UNDERWATER_TRANSP;
+    let fl = (fla + flb) * (d + transp / 2.0) / transp;
     fl.min(UNDERWATER_LIMIT)
 }
 
@@ -330,14 +337,30 @@ mod tests {
         let level = 6400.0;
         let eye = [0.0, level - 640.0, 0.0];
         // 10 deep each, 460 apart: 20 * (460 + 230) / 460 = 30.
-        let l = underwater_level(eye, [460.0, level - 640.0, 0.0], level);
+        let l = underwater_level(eye, [460.0, level - 640.0, 0.0], level, 1.0);
         assert!((l - 30.0).abs() < 1e-3, "{l}");
-        let deeper = underwater_level(eye, [460.0, level - 1280.0, 0.0], level);
+        let deeper = underwater_level(eye, [460.0, level - 1280.0, 0.0], level, 1.0);
         assert!(deeper > l);
-        assert_eq!(underwater_level(eye, [99999.0, 0.0, 0.0], level), 200.0);
+        assert_eq!(
+            underwater_level(eye, [99999.0, 0.0, 0.0], level, 1.0),
+            200.0
+        );
         // Above the surface: only the part under it.
-        let up = underwater_level(eye, [0.0, level + 640.0, 0.0], level);
+        let up = underwater_level(eye, [0.0, level + 640.0, 0.0], level, 1.0);
         assert!((up - 10.0 * (640.0 + 230.0) / 460.0).abs() < 1e-3, "{up}");
+    }
+
+    #[test]
+    fn scuba_gear_thins_the_underwater_fog() {
+        let level = 6400.0;
+        let eye = [0.0, level - 640.0, 0.0];
+        let far = [1840.0, level - 640.0, 0.0];
+        let plain = underwater_level(eye, far, level, 1.0);
+        let scuba = underwater_level(eye, far, level, SCUBA_VIEW_K);
+        assert!(scuba < plain, "{scuba} vs {plain}");
+        // The same fog lies twice as far away.
+        let twice = underwater_level(eye, [3680.0, level - 640.0, 0.0], level, SCUBA_VIEW_K);
+        assert!((twice - plain).abs() < 1e-3, "{twice} vs {plain}");
     }
 
     #[test]

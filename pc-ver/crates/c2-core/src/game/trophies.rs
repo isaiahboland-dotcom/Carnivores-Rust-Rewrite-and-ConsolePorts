@@ -135,6 +135,7 @@ impl Hunt {
                 self.opts.advanced_binoculars,
                 super::ADVANCED_BINOCULARS_SCORE,
             ),
+            (self.opts.scuba, super::SCUBA_SCORE),
         ] {
             if on {
                 score *= k;

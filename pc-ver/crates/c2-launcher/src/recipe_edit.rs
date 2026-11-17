@@ -445,7 +445,7 @@ impl Editor {
             ui.label("perfect for the modded dinosaurs that includes dinosaur summaries in the artwork png's!");
             ui.small("Keeps full artwork, daylight and equipment options. Rebuild the Android package to apply.");
         });
-        for section in [rules::times_ui, rules::locks_ui] {
+        for section in [rules::times_ui, rules::locks_ui, rules::gear_ui] {
             ui.add_space(6.0);
             panel(ui, |ui| section(ui, &mut r.settings.rules));
         }

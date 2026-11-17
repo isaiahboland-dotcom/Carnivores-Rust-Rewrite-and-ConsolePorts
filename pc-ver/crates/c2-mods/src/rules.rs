@@ -27,6 +27,7 @@
 //!
 //! [settings.rules]
 //! hidden = ["Tyrannosaurus Rex"]  # not in the hunt menu; still a secret
+//! scuba_gear = true               # the gear page offers scuba gear
 //! ```
 
 use serde::{Deserialize, Serialize};
@@ -51,6 +52,10 @@ pub struct Rules {
     /// Animals kept off the hunt menu (they can still spawn as secrets).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub hidden: Vec<String>,
+    /// The gear page offers scuba gear (not in the original; hidden
+    /// unless set).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub scuba_gear: bool,
 }
 
 /// Settings fixed by the instance; `None`: the player's own.
@@ -181,6 +186,7 @@ impl Rules {
                 .collect(),
             hunt: Default::default(),
             survival: false,
+            scuba: self.scuba_gear,
         }
     }
 
@@ -242,6 +248,7 @@ mod tests {
         let r: Rules = toml::from_str(
             r#"
             times = ["night", "dawn"]
+            scuba_gear = true
             [locks]
             dynamic_time = false
             secret_dinos = 4
@@ -268,6 +275,7 @@ mod tests {
         let maps = [("Ravan".to_string(), "area2".to_string())];
         let f = r.to_format(&maps);
         assert_eq!(f.times, 0b101);
+        assert!(f.scuba, "scuba_gear offers the gear");
         assert_eq!(f.locks, [(Lock::DynamicTime, 0), (Lock::SecretDinos, 4)]);
         assert_eq!(f.huntable, [("area2".to_string(), 3)]);
         assert_eq!(f.secrets.len(), 2, "a secret only on gone areas is dropped");

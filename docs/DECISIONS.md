@@ -6793,6 +6793,66 @@ factors (`AddScore`) and in the DHC terminal's earnings.
   for seven (`kit_gear_rects`); the card strip splits into two rows past
   six (`card_controls`).
 
+## 2026-11-17 — Scuba gear (new gear, PC)
+
+Equipment that is not in the original: the hunter dives and swims faster,
+sees farther under water and drowns half as fast; kills score 15% less. Hidden
+unless the instance offers it.
+
+- **Speed** (`player.rs: SCUBA_DIVE_SPEED`, `SCUBA_SWIM_SPEED`): under water
+  the top speed is 0.5 units/ms instead of 0.3 (the crouched walk the
+  original caps divers at, since `HeadY` is forced down under water);
+  swimming at the surface (jump held in deep water) 0.4 instead of 0.25.
+  Acceleration is unchanged, and walking (0.3) and running (0.7) on land
+  are untouched, so running stays the fastest way to move. The hunt copies
+  the option onto `Player::scuba` each tick, so teleports and respawns
+  keep it.
+- **View** (`fog.rs: SCUBA_VIEW_K` = 2): the underwater fog lies twice as
+  far away. The PC's fog reaches full strength at 0.70 of the view
+  distance instead of 0.35 (`area_view.rs: UNDERWATER_FOG_END`, scaled by
+  `AreaView::scuba`); with Original underwater fog on, its `Transp`
+  doubles (460 to 920 in `underwater_level` and the shader's zone 127),
+  which puts any given fog strength at exactly twice the distance. The
+  half-strength water wash over the screen stays, as do the slowed weapon
+  animations.
+- **Oxygen tank** (`game/scuba.rs: drown_rate`): drowning takes twice as
+  long. Health regains 4 a millisecond at all times (`ProcessSyncro`), under
+  water too, and drowning takes 12, so the original nets 8 a millisecond (16
+  s from full health). Halving the 12 would net 2 (four times as long), so
+  the tank takes 8 instead: a net 4, 32 s. The breath bar follows health and
+  needs no change.
+- **Underwater fog follows the hunt's view range** (changes the look without
+  the gear too): the modern underwater fog's end was 0.35 of the *drawn*
+  distance, so a long render distance (up to 1024 cells with High-end
+  view) pushed it out to hundreds of cells and left the water nearly
+  clear, with nothing for the gear to improve. It is now 0.35 of the hunt's
+  `view_r` (`area_view.rs: underwater_fog_end`, `AreaView::underwater_cells`),
+  never past what is drawn. At the default render distance (drawn =
+  `view_r`) nothing changes; the area viewer keeps the drawn distance.
+- **Scoring:** kills score ×0.85 (`SCUBA_SCORE`), applied like the
+  original's accessory factors (`AddScore`) and in the DHC terminal's
+  earnings (`earnings_factor`, "scuba gear").
+- **Offered per instance, hidden by default:** the recipe's
+  `[settings.rules] scuba_gear = true` (launcher: the instance's Advanced
+  page, "Extra equipment") writes a `scuba` line into `_RULES.TXT`
+  (`c2_formats::rules::Rules::scuba`); without it the gear page does not
+  list it and a stale pick is dropped (`menu.rs: scuba_offered`). Play
+  Vanilla leaves it out (`classic.rs: Advanced::ScubaGear`), and an
+  imported recipe's review lists it among the advanced sections. Consoles
+  ignore the line for now.
+- **Menu:** gear item 7 (`equip` bit 128), 30 points, listed with or without
+  dynamic time, after the advanced binoculars (`menu.rs: gear_extras`, also
+  the phone pages' `gear_buttons`). Not kept in the save (as the lights) and
+  not offered in survival. Observers may carry it. Android lists it too
+  (it needs no renderer feature Android lacks). `c2-pc hunt --scuba`
+  turns it on without the menu or the rule (testing).
+- **Phone-style setup pages:** "Scuba gear" button. With eight buttons the
+  plain layout's side column closes up (`mobile.rs: side`) to stay above
+  the back and next buttons; the APK-art grid uses its four rows of 34 and
+  the card strip two rows of four.
+- **Not yet:** no 3DS, Wii U or VR menu entry (their `HuntOptions` leave it
+  off).
+
 ## Launcher: survival is per instance, colours of the DHC look
 
 - **Survival:** the switch is the instance's, not the launcher's. It is the

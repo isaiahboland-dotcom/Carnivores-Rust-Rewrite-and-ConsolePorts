@@ -100,6 +100,7 @@ pub fn run(a: &Args) -> Result<()> {
         night_vision: false,
         flashlight: false,
         advanced_binoculars: false,
+        scuba: false,
         observer: false,
         survival: None,
         hardcore: false,

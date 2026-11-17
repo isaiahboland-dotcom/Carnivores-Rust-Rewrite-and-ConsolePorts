@@ -20,6 +20,12 @@ mod fly;
 pub const HEAD_STAND: f32 = 220.0;
 pub const HEAD_CROUCH: f32 = 110.0;
 
+/// Scuba gear (not in the original): the top speed diving under water
+/// (0.3 without it, as crouched) and swimming at the surface (0.25), in
+/// units per millisecond. Running on land (0.7) stays the fastest.
+pub const SCUBA_DIVE_SPEED: f32 = 0.5;
+pub const SCUBA_SWIM_SPEED: f32 = 0.4;
+
 /// One tick's controls, already mapped from keys/mouse.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Controls {
@@ -77,6 +83,9 @@ pub struct Player {
     jump_held: bool,
     pub underwater: bool,
     pub on_water: bool,
+    /// Wears scuba gear ([`SCUBA_DIVE_SPEED`], [`SCUBA_SWIM_SPEED`]); set
+    /// by the hunt from its options each tick.
+    pub scuba: bool,
     /// Milliseconds since the hunt started (`RealTime`).
     pub time_ms: u32,
     /// Extra round obstacles `(x, z, radius)`: the trophy room's animals.
@@ -110,6 +119,7 @@ impl Player {
             jump_held: false,
             underwater: false,
             on_water: false,
+            scuba: false,
             time_ms: 0,
             obstacles: Vec::new(),
         }
@@ -185,7 +195,13 @@ impl Player {
         push(&mut self.sspeed, c.strafe_right, c.strafe_left);
 
         let max = if self.swim {
-            0.25
+            if self.scuba {
+                SCUBA_SWIM_SPEED
+            } else {
+                0.25
+            }
+        } else if self.underwater && self.scuba {
+            SCUBA_DIVE_SPEED
         } else if c.run && self.head_y == HEAD_STAND {
             0.7
         } else {
@@ -531,5 +547,72 @@ mod tests {
         run(&mut p, &area, &Controls::default(), 100);
         let ev = run(&mut p, &area, &held, 100);
         assert!(ev.contains(&PlayerEvent::Jump), "a new press jumps again");
+    }
+
+    /// A flat area whose cells around the landing are under deep water.
+    fn lake() -> Area {
+        use c2_formats::map::MAP_SIZE;
+        let mut area = Area::flat(2);
+        area.rsc.waters = vec![c2_formats::rsc::Water {
+            texture_index: 0,
+            level: 40,
+            transp: 1.0,
+            fog_rgb: 0,
+        }];
+        for cz in 480..=520 {
+            for cx in 480..=520 {
+                let i = cz * MAP_SIZE + cx;
+                area.map.flags[i] |= crate::area::cell_flags::WATER;
+                area.map.water[i] = 0;
+            }
+        }
+        area
+    }
+
+    #[test]
+    fn scuba_gear_dives_and_swims_faster() {
+        let area = lake();
+        let forward = Controls {
+            forward: true,
+            ..Default::default()
+        };
+        for (scuba, dive) in [(false, 0.3), (true, SCUBA_DIVE_SPEED)] {
+            let mut p = Player::new(&area, (500, 500));
+            p.scuba = scuba;
+            run(&mut p, &area, &forward, 2000);
+            assert!(p.underwater, "scuba {scuba}");
+            assert!(
+                (p.vspeed - dive).abs() < 1e-6,
+                "scuba {scuba}: {}",
+                p.vspeed
+            );
+        }
+        let swim = Controls {
+            jump: true,
+            ..forward
+        };
+        for (scuba, cap) in [(false, 0.25), (true, SCUBA_SWIM_SPEED)] {
+            let mut p = Player::new(&area, (500, 500));
+            p.scuba = scuba;
+            run(&mut p, &area, &swim, 2000);
+            assert!(p.swim && !p.underwater, "scuba {scuba}");
+            assert!((p.vspeed - cap).abs() < 1e-6, "scuba {scuba}: {}", p.vspeed);
+        }
+    }
+
+    #[test]
+    fn scuba_gear_leaves_walking_and_running_alone() {
+        let area = Area::flat(10);
+        let mut p = Player::new(&area, (500, 500));
+        p.scuba = true;
+        let walk = Controls {
+            forward: true,
+            ..Default::default()
+        };
+        run(&mut p, &area, &walk, 2000);
+        assert!((p.vspeed - 0.3).abs() < 1e-6, "walk cap");
+        let sprint = Controls { run: true, ..walk };
+        run(&mut p, &area, &sprint, 2000);
+        assert!((p.vspeed - 0.7).abs() < 1e-6, "run cap");
     }
 }

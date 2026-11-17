@@ -96,6 +96,9 @@ pub struct HuntSetup {
     /// The advanced binoculars (gear page, `equip` bit 64): outlines
     /// through the binoculars, kills score 40% less.
     pub advanced_binoculars: bool,
+    /// Scuba gear (gear page, `equip` bit 128): faster under water, and
+    /// the underwater fog farther away.
+    pub scuba: bool,
     pub observer: bool,
     /// A survival instead of a hunt (README M13).
     pub survival: Option<SurvivalKind>,

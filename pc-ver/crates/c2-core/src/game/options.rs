@@ -82,6 +82,11 @@ pub struct HuntOptions {
     /// [`Hunt::binocular_outline`]: crate::game::Hunt::binocular_outline
     /// [`ADVANCED_BINOCULARS_SCORE`]: crate::game::ADVANCED_BINOCULARS_SCORE
     pub advanced_binoculars: bool,
+    /// Scuba gear (gear, not in the original): faster diving and swimming
+    /// ([`crate::player::SCUBA_DIVE_SPEED`]), a longer underwater view
+    /// ([`crate::fog::SCUBA_VIEW_K`]), drowning at half the rate; kills
+    /// score [`crate::game::SCUBA_SCORE`].
+    pub scuba: bool,
 }
 
 impl Default for HuntOptions {
@@ -114,6 +119,7 @@ impl Default for HuntOptions {
             dynamic_night: None,
             night_vision_active: false,
             advanced_binoculars: false,
+            scuba: false,
             teleport: false,
         }
     }

@@ -158,6 +158,13 @@ pub struct AreaView {
     /// Underwater fog colour (the water texture's mean, 0..1 RGB): the
     /// whole scene fades into it. Set by the hunt each frame.
     pub underwater_fog: Option<[f32; 3]>,
+    /// The hunter wears scuba gear: the underwater fog lies
+    /// [`c2_core::fog::SCUBA_VIEW_K`] times as far away.
+    pub scuba: bool,
+    /// The view range the underwater fog is measured against, in cells:
+    /// the hunt's `view_r`, so a longer render distance does not clear the
+    /// water. `None`: the drawn `radius`.
+    pub underwater_cells: Option<u32>,
     /// How deep the camera is in that water, 0..1 (`water_tint`), with the
     /// depth tint on: the ground loses colour by it. 0: no tint.
     pub water_depth: f32,
@@ -171,7 +178,51 @@ pub struct AreaView {
 /// distance (the original's value is in its fog table, not reproduced).
 const UNDERWATER_FOG_END: f32 = 0.35;
 
+/// Where the modern underwater fog reaches full strength, in world units:
+/// [`UNDERWATER_FOG_END`] of the view range (`view_cells`, else the drawn
+/// `radius`), times `reach`, never past what is drawn.
+fn underwater_fog_end(radius: u32, view_cells: Option<u32>, reach: f32) -> f32 {
+    let far = radius as f32 * CELL;
+    let view = view_cells.map_or(far, |c| c as f32 * CELL);
+    (view.min(far) * UNDERWATER_FOG_END * reach).min(far)
+}
+
+#[cfg(test)]
+mod underwater_tests {
+    use super::*;
+
+    #[test]
+    fn underwater_fog_follows_the_hunts_view_range_not_the_render_distance() {
+        let at_74 = underwater_fog_end(74, Some(74), 1.0);
+        assert_eq!(at_74, 74.0 * CELL * UNDERWATER_FOG_END);
+        // A longer render distance leaves the water as murky.
+        assert_eq!(underwater_fog_end(1024, Some(74), 1.0), at_74);
+        // The area viewer (no hunt) uses what is drawn.
+        assert_eq!(underwater_fog_end(74, None, 1.0), at_74);
+        // Scuba gear: twice as far, never past what is drawn.
+        let scuba = c2_core::fog::SCUBA_VIEW_K;
+        assert_eq!(underwater_fog_end(1024, Some(74), scuba), 2.0 * at_74);
+        assert_eq!(underwater_fog_end(10, Some(74), 10.0), 10.0 * CELL);
+    }
+}
+
 impl AreaView {
+    /// How far the underwater fog reaches, as a multiple of the usual
+    /// (scuba gear's [`c2_core::fog::SCUBA_VIEW_K`], otherwise 1).
+    fn underwater_reach(&self) -> f32 {
+        if self.scuba {
+            c2_core::fog::SCUBA_VIEW_K
+        } else {
+            1.0
+        }
+    }
+
+    /// Where the (modern) underwater fog reaches full strength, in world
+    /// units ([`underwater_fog_end`]).
+    fn underwater_fog_end(&self) -> f32 {
+        underwater_fog_end(self.radius, self.underwater_cells, self.underwater_reach())
+    }
+
     pub fn load(gpu: &Gpu, map_path: &Path, time: TimeOfDay) -> Result<Self> {
         let rsc_path = sibling(map_path, "rsc")?;
         let mut m = map::parse(
@@ -376,6 +427,8 @@ impl AreaView {
             fog_start: 0.6,
             fog_zones,
             underwater_fog: None,
+            scuba: false,
+            underwater_cells: None,
             water_depth: 0.0,
             brightness: 1.0,
             start: Instant::now(),

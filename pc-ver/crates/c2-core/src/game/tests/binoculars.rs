@@ -94,7 +94,7 @@ fn an_observer_is_never_hunted() {
 }
 
 /// A 1000-point dialect kill (no non-target halving, no other factor).
-fn kill_score(area: &mut Area, h: &mut Hunt) -> i32 {
+pub(super) fn kill_score(area: &mut Area, h: &mut Hunt) -> i32 {
     h.opts.radar = false;
     h.opts.scent = false;
     h.opts.camo = false;

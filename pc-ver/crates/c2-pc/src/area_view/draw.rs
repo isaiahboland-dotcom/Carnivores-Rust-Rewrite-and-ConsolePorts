@@ -184,7 +184,7 @@ impl AreaView {
                 eye: shot.eye,
                 fog_rgb: self.clear_color().map(|c| c as f32),
                 fog: if self.underwater_fog.is_some() && !self.original_underwater_fog {
-                    (0.0, far * UNDERWATER_FOG_END)
+                    (0.0, self.underwater_fog_end())
                 } else {
                     (far * self.fog_start, far)
                 },
@@ -249,6 +249,7 @@ impl AreaView {
                 on: zones_on,
                 glow,
                 underwater,
+                underwater_reach: self.underwater_reach(),
             },
         );
         self.sky.draw(

@@ -369,6 +369,7 @@ Nothing set: the game plays as it was.
 [settings.rules]
 times = ["day", "night"]         # times of day the hunt menu offers; empty: all three
 hidden = ["T-Rex"]               # in the game, but not in the hunt menu
+scuba_gear = true                # offer scuba gear on the gear list (hidden by default)
 
 [settings.rules.locks]           # fixed, and removed from the in-game settings
 dynamic_time = false

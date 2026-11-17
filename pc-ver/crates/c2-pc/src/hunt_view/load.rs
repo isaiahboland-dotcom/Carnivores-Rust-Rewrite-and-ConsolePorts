@@ -422,6 +422,8 @@ fn fit_view(view: &mut AreaView, hunt: &Hunt, setup: &HuntSetup) {
     view.desaturated_night = setup.pc.desaturated_night != 0;
     view.pitch_black_night = setup.pc.pitch_black_night != 0;
     view.original_underwater_fog = setup.pc.original_underwater_fog != 0;
+    view.scuba = hunt.opts.scuba;
+    view.underwater_cells = Some(hunt.opts.view_r.max(1) as u32);
     // Past the original range, fog only softens the far edge.
     if hunt.opts.render_r > hunt.opts.view_r {
         view.fog_start = 0.85;

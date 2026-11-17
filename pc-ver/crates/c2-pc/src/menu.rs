@@ -112,19 +112,39 @@ const ADVANCED_BINOCULARS_PRICE: i32 = 40;
 /// applies them.
 const OFFERS_ADVANCED_BINOCULARS: bool = !cfg!(target_os = "android");
 
+/// The gear page's scuba gear: `equip` bit, and price in points (not in
+/// the original; offered with or without dynamic time, Android too, only
+/// where the instance's rules list it: [`scuba_offered`]).
+const SCUBA: u32 = 1 << 7;
+const SCUBA_PRICE: i32 = 30;
+
+/// Whether the game in force offers scuba gear (`_RULES.TXT`'s `scuba`
+/// line, the launcher's Advanced page; hidden by default).
+fn scuba_offered() -> bool {
+    crate::instance_rules::get().scuba
+}
+
 /// The gear page's extras, after the accessories: night vision and the
-/// flashlight (dynamic time only), then the advanced binoculars (not on
-/// Android).
-fn gear_order(dynamic_time: bool) -> Vec<usize> {
+/// flashlight (dynamic time only), the advanced binoculars (not on
+/// Android), then the scuba gear (where offered).
+fn gear_order(dynamic_time: bool, scuba: bool) -> Vec<usize> {
+    (0..4).chain(gear_extras(dynamic_time, scuba)).collect()
+}
+
+/// The gear list items past the four accessories, in page order.
+fn gear_extras(dynamic_time: bool, scuba: bool) -> Vec<usize> {
     let lights: &[usize] = if dynamic_time { &[4, 5] } else { &[] };
     let binoculars: &[usize] = if OFFERS_ADVANCED_BINOCULARS {
         &[6]
     } else {
         &[]
     };
-    (0..4)
-        .chain(lights.iter().copied())
-        .chain(binoculars.iter().copied())
+    let scuba: &[usize] = if scuba { &[7] } else { &[] };
+    lights
+        .iter()
+        .chain(binoculars)
+        .chain(scuba)
+        .copied()
         .collect()
 }
 
@@ -389,22 +409,28 @@ impl Menu {
 
 #[cfg(test)]
 mod gear_tests {
-    use super::{gear_order, ADVANCED_BINOCULARS, NO_LIGHTS};
+    use super::{gear_order, ADVANCED_BINOCULARS, NO_LIGHTS, SCUBA};
 
     #[test]
     #[cfg(not(target_os = "android"))]
-    fn advanced_binoculars_are_offered_with_or_without_dynamic_time() {
-        assert_eq!(gear_order(false), [0, 1, 2, 3, 6]);
-        assert_eq!(gear_order(true), [0, 1, 2, 3, 4, 5, 6]);
+    fn advanced_binoculars_and_scuba_are_offered_with_or_without_dynamic_time() {
+        assert_eq!(gear_order(false, true), [0, 1, 2, 3, 6, 7]);
+        assert_eq!(gear_order(true, true), [0, 1, 2, 3, 4, 5, 6, 7]);
+        // Scuba gear only where the instance offers it.
+        assert_eq!(gear_order(false, false), [0, 1, 2, 3, 6]);
+        assert_eq!(gear_order(true, false), [0, 1, 2, 3, 4, 5, 6]);
         assert_eq!(ADVANCED_BINOCULARS, 1 << 6);
-        // Turning dynamic time off drops the lights, not the binoculars.
-        assert_eq!((0b111_1111 & NO_LIGHTS), 0b100_1111);
+        assert_eq!(SCUBA, 1 << 7);
+        // Turning dynamic time off drops the lights, not the binoculars or
+        // the scuba gear.
+        assert_eq!((0b1111_1111 & NO_LIGHTS), 0b1100_1111);
     }
 
     #[test]
     #[cfg(target_os = "android")]
-    fn android_does_not_offer_advanced_binoculars() {
-        assert_eq!(gear_order(false), [0, 1, 2, 3]);
-        assert_eq!(gear_order(true), [0, 1, 2, 3, 4, 5]);
+    fn android_offers_scuba_but_not_advanced_binoculars() {
+        assert_eq!(gear_order(false, true), [0, 1, 2, 3, 7]);
+        assert_eq!(gear_order(true, true), [0, 1, 2, 3, 4, 5, 7]);
+        assert_eq!(gear_order(false, false), [0, 1, 2, 3]);
     }
 }

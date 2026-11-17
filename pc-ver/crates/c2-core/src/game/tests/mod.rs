@@ -8,6 +8,7 @@ mod combat;
 mod death;
 mod ecosystem;
 mod hardcore;
+mod scuba;
 mod session;
 mod spawn_rules;
 mod support;

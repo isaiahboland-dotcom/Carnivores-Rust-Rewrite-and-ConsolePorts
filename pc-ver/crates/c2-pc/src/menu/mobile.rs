@@ -180,9 +180,13 @@ fn kit_gear_rects(n: usize) -> Vec<Rect> {
 }
 
 /// The side buttons' rects, top to bottom.
+/// Seven at the usual spacing; more close up to stay above the back and
+/// next buttons.
 fn side(n: usize) -> Vec<Rect> {
+    let room = (BACK_BTN.1 - 4.0 - 96.0 - BTN_H) / n.saturating_sub(1).max(1) as f32;
+    let step = room.min(60.0);
     (0..n)
-        .map(|i| (SIDE_X, 96.0 + i as f32 * 60.0, SIDE_W, BTN_H))
+        .map(|i| (SIDE_X, 96.0 + i as f32 * step, SIDE_W, BTN_H))
         .collect()
 }
 
@@ -283,23 +287,13 @@ impl Menu {
 
     /// The gear page's buttons in order, as gear list items (`columns[3]`
     /// indices): the phone's tranquilizer ([`TRANQ_BUTTON`]), radar, cover
-    /// scent, camouflage; then night vision and the flashlight (dynamic
-    /// time) and the advanced binoculars (not on Android).
+    /// scent, camouflage; then the extras as the list's ([`gear_extras`]):
+    /// night vision and the flashlight (dynamic time), the advanced
+    /// binoculars (not on Android) and the scuba gear (where offered).
     fn gear_buttons(&self) -> Vec<usize> {
-        let lights: &[usize] = if self.pc.dynamic_time != 0 {
-            &[4, 5]
-        } else {
-            &[]
-        };
-        let binoculars: &[usize] = if OFFERS_ADVANCED_BINOCULARS {
-            &[6]
-        } else {
-            &[]
-        };
         [TRANQ_BUTTON, 1, 2, 0]
             .into_iter()
-            .chain(lights.iter().copied())
-            .chain(binoculars.iter().copied())
+            .chain(gear_extras(self.pc.dynamic_time != 0, scuba_offered()))
             .collect()
     }
 
@@ -336,7 +330,8 @@ impl Menu {
                         2 => (named(2, "Cover Scent"), on(2)),
                         4 => ("Night vision".into(), on(4)),
                         5 => ("Flash light".into(), on(5)),
-                        _ => ("Binoculars+".into(), on(i)),
+                        6 => ("Binoculars+".into(), on(6)),
+                        _ => ("Scuba gear".into(), on(i)),
                     })
                     .collect()
             }
@@ -1491,7 +1486,7 @@ mod card_tests {
 
     #[test]
     fn daylight_and_all_six_equipment_controls_fit_above_navigation() {
-        for n in [0, 2, 3, 4, 5, 6, 7] {
+        for n in [0, 2, 3, 4, 5, 6, 7, 8] {
             let buttons = card_controls(n);
             assert_eq!(buttons.len(), n);
             for &(x, y, w, h) in &buttons {
@@ -1521,7 +1516,7 @@ mod card_tests {
         let six = kit_gear_rects(6);
         assert_eq!(six[0], (510.0, 400.0, 124.0, 40.0), "tranquilizer");
         assert_eq!(six[5], (654.0, 448.0, 124.0, 40.0), "flashlight");
-        for n in [5, 6, 7] {
+        for n in [5, 6, 7, 8] {
             let r = kit_gear_rects(n);
             assert_eq!(r.len(), n);
             for &(x, y, w, h) in &r {
@@ -1534,9 +1529,14 @@ mod card_tests {
     }
 
     #[test]
-    fn plain_side_buttons_fit_seven_above_back() {
-        let r = side(7);
-        assert!(r.iter().all(|b| b.1 + b.3 < BACK_BTN.1));
-        assert_no_overlap(&r);
+    fn plain_side_buttons_fit_eight_above_back() {
+        // Up to seven keep the usual spacing.
+        assert_eq!(side(7)[6].1, 96.0 + 6.0 * 60.0);
+        for n in [1, 4, 7, 8] {
+            let r = side(n);
+            assert!(r.iter().all(|b| b.1 + b.3 < BACK_BTN.1), "{n}");
+            assert!(r.iter().all(|b| b.1 + b.3 < NEXT_BTN.1), "{n}");
+            assert_no_overlap(&r);
+        }
     }
 }

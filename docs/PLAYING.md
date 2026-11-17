@@ -154,6 +154,10 @@ Nintendo ports keep their own mappings.
   alerted or hunting carnivore, or a charging Chasmosaurus). Kills score 40% less. Desktop-only for
   now (not on Android); the phone-style setup pages call it
   "Binoculars+".
+- **Scuba gear** (Equipment, 30 points, not in the original; only in instances that turn it on
+  under the launcher's Advanced page > Extra equipment): under water you move about two thirds
+  faster and swim faster at the surface, the underwater fog lies twice as far away, and the oxygen
+  tank makes drowning take twice as long. Kills score 15% less. PC and Android for now.
 - **Night vision in fixed-time Night hunts** is free and starts on, as in the original; **N** (or the
   right stick click) switches it off. Scoring is unchanged.
 - **Pitch black night** (Options > Game, on by default): with night vision off at night, the world

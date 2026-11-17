@@ -37,6 +37,8 @@ pub enum Advanced {
     AreaCaps,
     /// `[[settings.rules.secrets]]` that spawn something.
     Secrets,
+    /// `[settings.rules] scuba_gear` (new equipment).
+    ScubaGear,
     /// `[settings.rules.locks]` forcing this feature on.
     ForcedOn(Lock),
 }
@@ -53,6 +55,7 @@ impl Advanced {
             Advanced::World => "settings.world".into(),
             Advanced::AreaCaps => "settings.rules.areas".into(),
             Advanced::Secrets => "settings.rules.secrets".into(),
+            Advanced::ScubaGear => "settings.rules.scuba_gear".into(),
             Advanced::ForcedOn(l) => format!("settings.rules.locks.{}", l.key()),
         }
     }
@@ -77,6 +80,7 @@ impl Advanced {
             }
             Advanced::AreaCaps => "Huntable animals capped per area".into(),
             Advanced::Secrets => "Secret animals per area".into(),
+            Advanced::ScubaGear => "Scuba gear (equipment)".into(),
             Advanced::ForcedOn(l) => format!("Forces on: {}", lock_label(l)),
         }
     }
@@ -102,6 +106,7 @@ pub fn remove(r: &mut Recipe, a: Advanced) {
         Advanced::World => s.world = None,
         Advanced::AreaCaps => s.rules.areas.clear(),
         Advanced::Secrets => s.rules.secrets.clear(),
+        Advanced::ScubaGear => s.rules.scuba_gear = false,
         Advanced::ForcedOn(l) => match s.rules.locks.field(l) {
             crate::rules::LockValue::Switch(v) => *v = None,
             crate::rules::LockValue::Number(v) => *v = None,
@@ -176,6 +181,9 @@ pub fn advanced_summary(r: &Recipe) -> Vec<Advanced> {
     if s.rules.secrets.iter().any(spawns) {
         out.push(Advanced::Secrets);
     }
+    if s.rules.scuba_gear {
+        out.push(Advanced::ScubaGear);
+    }
     let locks = s.rules.locks.list();
     for l in FORCING_LOCKS {
         if locks.iter().any(|&(k, v)| k == l && v != 0) {
@@ -187,7 +195,7 @@ pub fn advanced_summary(r: &Recipe) -> Vec<Advanced> {
 
 /// The recipe a classic build uses: `r` without predation, custom flee
 /// limits, advanced behavior, the hardcore hunt ruleset, the DHC terminal's rules, world zones,
-/// spawn rules and locks. Everything else, `times` and `hidden`
+/// spawn rules, scuba gear and locks. Everything else, `times` and `hidden`
 /// included, is kept, so the classic `_RULES.TXT` holds only those.
 pub fn classic_recipe(r: &Recipe) -> Recipe {
     let mut c = r.clone();
@@ -200,6 +208,7 @@ pub fn classic_recipe(r: &Recipe) -> Recipe {
     s.world = None;
     s.rules.areas.clear();
     s.rules.secrets.clear();
+    s.rules.scuba_gear = false;
     s.rules.locks = Default::default();
     c
 }
@@ -246,6 +255,7 @@ mod tests {
              [settings.dhc]\nenabled = true\n\
              [settings.world]\nenabled = true\n\
              [[settings.world.spawns]]\nid = \"s\"\narea = \"Vengar Peninsula\"\nat = [9.0, 9.0]\n\
+             [settings.rules]\nscuba_gear = true\n\
              [settings.rules.locks]\ndynamic_time = true\nteleport = true\nmulti_ammo = false\n\
              [[settings.rules.areas]]\narea = \"Vengar Peninsula\"\nmax_huntable = 3\n\
              [[settings.rules.secrets]]\nanimal = \"Tyrannosaurus Rex\"\ncount = 2\n",
@@ -261,6 +271,7 @@ mod tests {
                 Advanced::World,
                 Advanced::AreaCaps,
                 Advanced::Secrets,
+                Advanced::ScubaGear,
                 Advanced::ForcedOn(Lock::DynamicTime),
                 Advanced::ForcedOn(Lock::Teleport),
             ]
@@ -285,7 +296,7 @@ mod tests {
              [settings.dhc]\nenabled = true\nlicence_cost = 50\n\
              [settings.world]\nenabled = true\n\
              [[settings.world.spawns]]\nid = \"s\"\narea = \"Vengar Peninsula\"\nat = [9.0, 9.0]\n\
-             [settings.rules]\ntimes = [\"day\"]\nhidden = [\"Velociraptor\"]\n\
+             [settings.rules]\ntimes = [\"day\"]\nhidden = [\"Velociraptor\"]\nscuba_gear = true\n\
              [settings.rules.locks]\nteleport = true\nsecret_dinos = 4\n\
              [[settings.rules.areas]]\narea = \"Vengar Peninsula\"\nmax_huntable = 3\n\
              [[settings.rules.secrets]]\nanimal = \"Tyrannosaurus Rex\"\ncount = 2\n",
@@ -313,6 +324,7 @@ mod tests {
         assert_eq!(f.times, 0b010);
         assert_eq!(f.hidden, ["Velociraptor"]);
         assert!(f.locks.is_empty() && f.huntable.is_empty() && f.secrets.is_empty());
+        assert!(!f.scuba, "classic offers no scuba gear");
     }
 
     const ALL: &str = "[settings.balance]\nstart = 200\n\
@@ -323,7 +335,7 @@ mod tests {
          [settings.dhc]\nenabled = true\ndiscovery = \"kill\"\n\
          [settings.world]\nenabled = true\n\
          [[settings.world.spawns]]\nid = \"s\"\narea = \"Vengar Peninsula\"\nat = [9.0, 9.0]\n\
-         [settings.rules]\ntimes = [\"day\"]\n\
+         [settings.rules]\ntimes = [\"day\"]\nscuba_gear = true\n\
          [settings.rules.locks]\nteleport = true\nsecret_dinos = 4\n\
          [[settings.rules.areas]]\narea = \"Vengar Peninsula\"\nmax_huntable = 3\n\
          [[settings.rules.secrets]]\nanimal = \"Tyrannosaurus Rex\"\ncount = 2\n";
@@ -350,6 +362,7 @@ mod tests {
                 Advanced::World => s.world = r.settings.world.clone(),
                 Advanced::AreaCaps => s.rules.areas = r.settings.rules.areas.clone(),
                 Advanced::Secrets => s.rules.secrets = r.settings.rules.secrets.clone(),
+                Advanced::ScubaGear => s.rules.scuba_gear = true,
                 Advanced::ForcedOn(_) => s.rules.locks.teleport = Some(true),
             }
             assert_eq!(x, r, "{a:?}");

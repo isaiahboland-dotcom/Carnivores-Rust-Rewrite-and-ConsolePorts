@@ -174,7 +174,7 @@ impl Globals {
             let vec4 = std::mem::size_of::<[f32; 4]>() as u64;
             let colour = [r, g, b, level];
             let shape = [
-                c2_core::fog::UNDERWATER_TRANSP,
+                c2_core::fog::UNDERWATER_TRANSP * f.underwater_reach,
                 c2_core::fog::UNDERWATER_LIMIT,
                 1.0,
                 0.0,
@@ -243,6 +243,9 @@ pub struct FogFrame {
     /// camera is under water whose fog has this colour (0..1 RGB) and top
     /// (world units). Every point is then in that fog (`Hunt2.cpp`: zone 127).
     pub underwater: Option<([f32; 3], f32)>,
+    /// Scales that fog's `Transp` (1; [`c2_core::fog::SCUBA_VIEW_K`] with
+    /// scuba gear).
+    pub underwater_reach: f32,
 }
 
 /// `FogZones` in `fog_zones.wgsl`, off: the frame's vec4, then per zone its
