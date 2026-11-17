@@ -160,7 +160,7 @@ fn art_picker(
         ui.label(format!("{label} ({}x{} PNG):", size.0, size.1));
         match slot.as_ref() {
             Some(p) => {
-                ui.label(RichText::new(p.display().to_string()).color(theme::sand()));
+                ui.label(RichText::new(p.display().to_string()).color(theme::path()));
                 match crate::cia::png_size(p) {
                     Some(s) if s == size => {}
                     Some((w, h)) => {

@@ -6752,3 +6752,17 @@ the vanilla areas only AREA5's zone 2, the volcanic gas, is mortal.
   `C2_ORIGINAL_HUNTDAT`: AREA5 zone 2 is the only mortal zone in AREA1-5
   and is on the map). No regression scenario hunts on AREA5, so the
   existing baselines are not affected.
+
+## Launcher: survival is per instance, colours of the DHC look
+
+- **Survival:** the switch is the instance's, not the launcher's. It is the
+  recipe's `[settings] offer_survival` (off unless set), edited on the
+  instance editor's Base game page and taken in or written out with the
+  other settings (`Config::apply` / `Config::settings`), so an instance
+  never inherits another's choice. The old global `survival` key in the
+  launcher's config is ignored; an instance that had it on needs the box
+  ticked once. (`settings.survival` is a retired recipe key some old
+  recipes still carry, so the new key has another name.)
+- **Look:** instance boxes have a yellow border and a yellow Play button in
+  both looks (`theme::yellow`); folder and file paths are white
+  (`theme::path`) so they stand apart from the green text.

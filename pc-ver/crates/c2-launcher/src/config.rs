@@ -242,8 +242,9 @@ pub struct Config {
     /// The instance editor's Advanced tab shown (Settings; off by
     /// default).
     pub show_advanced: bool,
-    /// Survival offered in the games' menus (Settings; off by default).
-    /// A game built from the APK always offers it.
+    /// Survival offered in the games' menus: the instance in use's choice
+    /// (its recipe's `[settings]`; off by default). A game built from the
+    /// APK always offers it.
     pub survival: bool,
     /// The launcher's colours and shapes (Settings > Look): the DHC OS
     /// terminal's look, or Legacy, the launcher's earlier olive panels.
@@ -549,6 +550,8 @@ impl Config {
             "n3ds" => self.three_ds.target = Target::New,
             _ => {}
         }
+        // Always taken, so one instance's survival never carries to another.
+        self.survival = s.offer_survival;
         if let Some(t) = s.ice_age_title {
             self.three_ds.ice_age_title = t;
         }
@@ -571,6 +574,7 @@ impl Config {
             },
             three_ds_target: self.three_ds.target.arg().into(),
             ice_age_title: Some(self.three_ds.ice_age_title),
+            offer_survival: self.survival,
             pictures: self.pictures,
             tuning: self.tuning,
             ..old.clone()
@@ -664,15 +668,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn survival_is_off_by_default() {
-        assert!(!Config::default().survival);
-        let old: Config = toml::from_str("show_advanced = true\n").unwrap_or_default();
-        assert!(
-            !old.survival,
-            "a config from before the switch keeps it off"
-        );
-        let on: Config = toml::from_str("survival = true\n").unwrap_or_default();
-        assert!(on.survival);
+    fn survival_is_per_instance_and_off_by_default() {
+        let mut c = Config::default();
+        assert!(!c.survival);
+        let on = Settings {
+            offer_survival: true,
+            ..Default::default()
+        };
+        c.apply(&on);
+        assert!(c.survival);
+        assert!(c.settings(&Settings::default()).offer_survival);
+        // Another instance without it does not inherit it.
+        c.apply(&Settings::default());
+        assert!(!c.survival);
+        assert!(!c.settings(&on).offer_survival);
+        let text = toml::to_string(&on).unwrap();
+        assert!(text.contains("offer_survival = true"));
+        assert!(!toml::to_string(&Settings::default())
+            .unwrap()
+            .contains("offer_survival"));
     }
 
     #[test]

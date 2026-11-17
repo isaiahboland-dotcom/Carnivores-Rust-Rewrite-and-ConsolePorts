@@ -143,6 +143,17 @@ pub mod theme {
         )
     }
 
+    /// Instance borders and the Play button: yellow in both looks.
+    pub fn yellow() -> Color32 {
+        Color32::from_rgb(255, 214, 64)
+    }
+
+    /// Folder and file paths: white, so they stand out from the green
+    /// text around them.
+    pub fn path() -> Color32 {
+        Color32::from_rgb(255, 255, 255)
+    }
+
     /// Warnings, such as an instance's missing files: yellow in Legacy,
     /// the terminal's red under DHC OS.
     pub fn warn() -> Color32 {

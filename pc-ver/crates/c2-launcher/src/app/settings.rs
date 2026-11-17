@@ -47,7 +47,7 @@ impl Launcher {
                     .map_or("beside the launcher".to_string(), |p| {
                         p.display().to_string()
                     });
-                ui.label(RichText::new(shown).color(theme::sand()));
+                ui.label(RichText::new(shown).color(theme::path()));
                 if ui.button("Browse...").clicked() {
                     if let Some(p) = rfd::FileDialog::new().pick_folder() {
                         self.cfg.tools = Some(p);
@@ -77,7 +77,7 @@ impl Launcher {
                 }
                 let found = find_tool(tool, self.cfg.tools.as_deref());
                 let (text, col) = match &found {
-                    Some(p) => (format!("{tool}: {}", p.display()), theme::text()),
+                    Some(p) => (format!("{tool}: {}", p.display()), theme::path()),
                     None => (format!("{tool}: not found"), theme::red()),
                 };
                 ui.label(RichText::new(text).color(col));
@@ -85,10 +85,6 @@ impl Launcher {
         });
         ui.add_space(8.0);
         self.search_dirs_ui(ui);
-        ui.add_space(8.0);
-        if panel(ui, |ui| self.survival_ui(ui)) {
-            self.save();
-        }
         ui.add_space(8.0);
         if panel(ui, |ui| {
             ui.label(RichText::new("Advanced").color(theme::gold()));
@@ -112,7 +108,7 @@ impl Launcher {
 
     /// The survival switch: whether the games' menus (the original menus
     /// and the DHC OS terminal) offer survival. True when it changed.
-    fn survival_ui(&mut self, ui: &mut egui::Ui) -> bool {
+    pub(super) fn survival_ui(&mut self, ui: &mut egui::Ui) -> bool {
         ui.label(RichText::new("Game modes").color(theme::gold()));
         let phone = self.has_phone_base();
         let changed = if phone {
@@ -128,7 +124,7 @@ impl Launcher {
         };
         help(
             ui,
-            "Off by default. On, the games' menus offer survival (the main menu and the DHC OS \
+            "Off by default; each instance has its own. On, the game's menus offer survival (the main menu and the DHC OS \
              terminal) on PC, Windows packages, the 3DS and the Wii U. Rebuild console packs \
              after changing it. A standalone game without Mount Ravan or the shotgun holds its \
              survival on its last area with its third weapon. A game built from your APK always \
@@ -163,7 +159,7 @@ impl Launcher {
             let mut remove = None;
             for (i, d) in self.cfg.search_dirs().iter().enumerate() {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(d.display().to_string()).color(theme::sand()));
+                    ui.label(RichText::new(d.display().to_string()).color(theme::path()));
                     if !self.cfg.mod_dirs.is_empty() && ui.small_button("Remove").clicked() {
                         remove = Some(i);
                     }

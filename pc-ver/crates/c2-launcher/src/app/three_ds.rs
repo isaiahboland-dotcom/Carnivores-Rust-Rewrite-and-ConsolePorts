@@ -39,7 +39,7 @@ impl Launcher {
                     .out
                     .as_ref()
                     .map_or("not set".to_string(), |p| p.display().to_string());
-                ui.label(RichText::new(shown).color(theme::sand()));
+                ui.label(RichText::new(shown).color(theme::path()));
                 if ui.button("Browse...").clicked() {
                     if let Some(p) = rfd::FileDialog::new().pick_folder() {
                         t.out = Some(p);
@@ -181,7 +181,7 @@ impl Launcher {
                     ui.label(format!("{label} ({want}):"));
                     match slot.as_ref() {
                         Some(p) => {
-                            ui.label(RichText::new(p.display().to_string()).color(theme::sand()));
+                            ui.label(RichText::new(p.display().to_string()).color(theme::path()));
                             if let Some(want) = size {
                                 match png_size(p) {
                                     Some(s) if s == want => {}

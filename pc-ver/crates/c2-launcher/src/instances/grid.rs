@@ -32,16 +32,12 @@ pub(super) fn show(
                 let using = items
                     .get(i)
                     .is_some_and(|it| Some(it.path.as_path()) == in_use);
-                let stroke = if using {
-                    theme::gold()
-                } else {
-                    theme::panel_hi()
-                };
+                let width = if using { 2.5 } else { 1.5 };
                 ui.painter().rect(
                     rect,
                     6.0,
                     theme::panel(),
-                    egui::Stroke::new(1.5, stroke),
+                    egui::Stroke::new(width, theme::yellow()),
                     egui::StrokeKind::Inside,
                 );
                 let mut inner = ui.new_child(
@@ -123,8 +119,8 @@ fn instance_box(
             && ui
                 .add_enabled(
                     !busy,
-                    egui::Button::new(RichText::new("Play").color(theme::gold()).strong())
-                        .fill(theme::green()),
+                    egui::Button::new(RichText::new("Play").color(theme::bg()).strong())
+                        .fill(theme::yellow()),
                 )
                 .clicked()
         {

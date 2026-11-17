@@ -221,7 +221,7 @@ impl Launcher {
                 .ice_age
                 .as_deref()
                 .is_some_and(|p| describe_game(p).is_some());
-            ui.label(RichText::new(shown).color(if ok { theme::sand() } else { theme::red() }));
+            ui.label(RichText::new(shown).color(if ok { theme::path() } else { theme::red() }));
             if ui.button("Browse...").clicked() {
                 if let Some(p) = rfd::FileDialog::new().pick_folder() {
                     self.cfg.ice_age = Some(p);

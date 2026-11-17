@@ -88,6 +88,11 @@ pub struct Settings {
     /// PC menu: `mod`, `original`, `ice-age` or `mobile`.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub menu: String,
+    /// Survival offered in the game's menus (the original menus and the
+    /// DHC OS terminal). Off unless set; a game built from the APK always
+    /// offers it.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub offer_survival: bool,
     /// Preserve full map, dinosaur and weapon pictures in a six-card mobile grid.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub mobile_card_layout: bool,

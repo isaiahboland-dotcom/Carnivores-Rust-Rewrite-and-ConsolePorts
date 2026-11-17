@@ -112,6 +112,10 @@ impl Launcher {
                 }) {
                     self.save();
                 }
+                ui.add_space(6.0);
+                if panel(ui, |ui| self.survival_ui(ui)) {
+                    self.save();
+                }
                 if let BaseAsk::ChooseApk = ask {
                     if let Some(apk) = rfd::FileDialog::new()
                         .add_filter("Android app", &["apk"])

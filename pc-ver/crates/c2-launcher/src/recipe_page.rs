@@ -514,7 +514,7 @@ impl Page {
                     Some(g) => g.display().to_string(),
                     None => "none yet".into(),
                 };
-                ui.label(RichText::new(shown).color(theme::sand()));
+                ui.label(RichText::new(shown).color(theme::path()));
                 self.base_status.show(ui);
             });
             if self.base_error.is_some() {
@@ -612,7 +612,7 @@ impl Page {
                                             |n| n.to_string_lossy().into_owned(),
                                         )
                                     });
-                                    let l = ui.label(RichText::new(folder).color(theme::sand()));
+                                    let l = ui.label(RichText::new(folder).color(theme::path()));
                                     if let Some(f) = &row.folder {
                                         l.on_hover_text(f.display().to_string());
                                     }
