@@ -650,7 +650,7 @@ dependencies = [
  "c2-regress",
  "c2-vfs",
  "font8x8",
- "glam",
+ "glam 0.34.3",
  "kira",
  "png",
  "pollster 1.0.1",
@@ -706,7 +706,7 @@ dependencies = [
  "c2-mods",
  "c2-pad",
  "font8x8",
- "glam",
+ "glam 0.34.3",
  "naga",
  "openxr",
 ]
@@ -1625,8 +1625,16 @@ version = "0.33.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37bfe73dc8ec21f54d181e5a60554327ec3f1c600c455a75ccbfc65d2106a6c4"
 dependencies = [
- "bytemuck",
  "mint",
+]
+
+[[package]]
+name = "glam"
+version = "0.34.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "627003914c6057c9c8f0832ee4f870b5a4f599d0cfa83f4072675114860cd0ff"
+dependencies = [
+ "bytemuck",
 ]
 
 [[package]]
@@ -2079,7 +2087,7 @@ checksum = "aae7115ef1161313b8f71f49487702a662ab333bd2a47bf69af410b69112a519"
 dependencies = [
  "atomic-arena",
  "cpal",
- "glam",
+ "glam 0.33.12",
  "mint",
  "pastey",
  "rtrb",

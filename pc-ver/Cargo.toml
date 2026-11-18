@@ -20,7 +20,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 wgpu = "30.0.1"
 winit = "0.30.13"
-glam = { version = "0.33", features = ["bytemuck"] }
+glam = { version = "0.34", features = ["bytemuck"] }
 bytemuck = { version = "1.25", features = ["derive"] }
 pollster = "1.0.1"
 font8x8 = { version = "0.3.1", default-features = false, features = ["unicode"] }
