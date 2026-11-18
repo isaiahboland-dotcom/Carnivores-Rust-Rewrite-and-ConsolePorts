@@ -137,6 +137,12 @@ impl Scene for Menu {
                 w.draw(gpu, pass, r, screen);
             }
         }
+        // The Advanced DHC OS UI's map preview, in the carousel's centre.
+        if let Some(r) = self.prep_view_rect() {
+            if let Some(w) = self.term.as_mut().and_then(|v| v.previews.viewer()) {
+                w.draw(gpu, pass, r, screen);
+            }
+        }
         if self.crt_frame.get() && self.pc.dhc_crt != 0 {
             let scale = self.canvas().0;
             let layers = self.pc.dhc_crt_layers;

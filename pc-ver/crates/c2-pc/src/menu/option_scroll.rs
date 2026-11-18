@@ -27,15 +27,22 @@ impl Scroll {
     }
 }
 /// `opts` without the rows whose setting the instance fixes
-/// (`crate::instance_rules`).
-pub(super) fn shown(opts: &[Opt]) -> Vec<Opt> {
+/// (`crate::instance_rules`), and without the Advanced DHC OS UI's while
+/// the terminal is off (`pc`: the settings as they stand).
+pub(super) fn shown(opts: &[Opt], pc: &PcSettings) -> Vec<Opt> {
+    shown_in(opts, pc, crate::classic::on())
+}
+
+/// [`shown`] for a Play Vanilla session (`classic`) or not.
+pub(super) fn shown_in(opts: &[Opt], pc: &PcSettings, classic: bool) -> Vec<Opt> {
     opts.iter()
         .copied()
         .filter(|o| match o {
             Opt::PcToggle(n, _) | Opt::PcSlider(n, _) => {
                 !crate::instance_rules::hides(n)
-                    && !crate::classic::hides(n)
-                    && !(crate::classic::on() && n.starts_with("DHC OS"))
+                    && !(classic && crate::classic::hides(n))
+                    && !(classic && is_dhc_row(n))
+                    && !(*n == ADVANCED_DHC_UI && pc.dhc_terminal == 0)
             }
             _ => true,
         })
@@ -57,10 +64,10 @@ impl Panel {
         }
     }
 
-    fn opts(self) -> Vec<Opt> {
+    fn opts(self, pc: &PcSettings) -> Vec<Opt> {
         match self {
-            Panel::Game => shown(&GAME_OPTS),
-            Panel::Video => shown(&VIDEO_OPTS),
+            Panel::Game => shown(&GAME_OPTS, pc),
+            Panel::Video => shown(&VIDEO_OPTS, pc),
         }
     }
 }
@@ -125,7 +132,7 @@ impl Menu {
         } else {
             which.rect()
         };
-        let opts = which.opts();
+        let opts = which.opts(&self.pc);
         let max = if mobile {
             opts.len().saturating_sub(9)
         } else {
@@ -231,9 +238,18 @@ mod tests {
             })
             .unwrap();
         let bottom = visible_rows(&GAME_OPTS, GAME_PANEL, last_start);
-        assert!(bottom
-            .iter()
-            .any(|(o, _)| matches!(o, Opt::PcToggle("Fire reloads when empty", _))));
+        // Every row shows on some scroll position.
+        for o in &GAME_OPTS {
+            let seen = (0..=last_start).any(|f| {
+                visible_rows(&GAME_OPTS, GAME_PANEL, f)
+                    .iter()
+                    .any(|(r, _)| {
+                        std::mem::discriminant(r) == std::mem::discriminant(o)
+                            && opt_name(r) == opt_name(o)
+                    })
+            });
+            assert!(seen, "{:?} never shows", opt_name(o));
+        }
         assert!(matches!(bottom.last().unwrap().0, Opt::ClearTrophies));
         assert!(bottom
             .iter()
@@ -294,5 +310,16 @@ mod tests {
         assert_eq!(s.first, 0);
         s.wheel(-1.0, 3);
         assert_eq!(s.first, 1);
+    }
+
+    fn opt_name(o: &Opt) -> &'static str {
+        match o {
+            Opt::Slider(n, _)
+            | Opt::Toggle(n, _, _)
+            | Opt::PcSlider(n, _)
+            | Opt::PcToggle(n, _)
+            | Opt::Header(n) => n,
+            Opt::ClearTrophies => "clear trophies",
+        }
     }
 }

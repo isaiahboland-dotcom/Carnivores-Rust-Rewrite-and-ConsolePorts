@@ -18,6 +18,7 @@
 //! hide Tyrannosaurus         ; in the game, but not in the hunt menu
 //! hunt max_firearms 2        ; the hardcore hunt ruleset ([`crate::hardcore`])
 //! survival                   ; survival offered (the launcher's switch)
+//! advanced_dhc_ui            ; the Advanced DHC OS UI always on (presentation only)
 //! ```
 //!
 //! Survival is offered only with the `survival` line (or a game built from
@@ -114,6 +115,11 @@ pub struct Rules {
     /// The scuba gear is offered on the gear page (the `scuba` line, the
     /// recipe's `scuba_gear`; hidden without it).
     pub scuba: bool,
+    /// The Advanced DHC OS UI is always on while DHC OS is (the
+    /// `advanced_dhc_ui` line, the launcher's "Always On" lock): the
+    /// in-game switch is fixed and hidden. Presentation only: no lock, no
+    /// rule, nothing in the hunt follows from it.
+    pub advanced_dhc_ui: bool,
 }
 
 /// Whether map `stem` is one of `areas` (empty: every area).
@@ -260,6 +266,7 @@ impl Rules {
                 "hunt" => r.hunt.parse_line(words),
                 "survival" => r.survival = true,
                 "scuba" => r.scuba = true,
+                "advanced_dhc_ui" => r.advanced_dhc_ui = true,
                 _ => {}
             }
         }
@@ -301,6 +308,9 @@ impl Rules {
         if self.scuba {
             s += "scuba\n";
         }
+        if self.advanced_dhc_ui {
+            s += "advanced_dhc_ui\n";
+        }
         s
     }
 }
@@ -329,6 +339,7 @@ mod tests {
             hidden: vec!["Raptor #2".into(), "Rex".into()],
             survival: true,
             scuba: true,
+            advanced_dhc_ui: true,
             ..Rules::default()
         }
     }
@@ -373,6 +384,14 @@ mod tests {
             .to_vec();
         let hidden: Vec<usize> = (0..5).filter(|&i| r.hides(&names, i)).collect();
         assert_eq!(hidden, [1, 2]);
+    }
+
+    #[test]
+    fn the_advanced_ui_lock_is_its_own_line_and_locks_nothing() {
+        let r = Rules::parse(b"advanced_dhc_ui ; the launcher's Always On\n");
+        assert!(r.advanced_dhc_ui && !r.is_empty());
+        assert!(r.locks.is_empty() && !r.survival && !r.scuba && r.hunt.is_empty());
+        assert!(!Rules::parse(b"times day\n").advanced_dhc_ui);
     }
 
     #[test]

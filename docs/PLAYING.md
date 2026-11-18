@@ -209,7 +209,16 @@ Nintendo ports keep their own mappings.
   prompt and the hunt's exit prompt (Esc) are in the same look; **Change
   hunter** opens it from the terminal. **Classic menu** returns to the original menu until the game restarts. **DHC OS CRT
   effects** adds scanlines, a vignette and noise (off by default; `dhc_crt_layers` in `c2rs.cfg` picks
-  them: 1 scanlines, 2 vignette, 4 noise). **DHC OS sounds** (on by default) are the terminal's beeps.
+  them: 1 scanlines, 2 vignette, 4 noise). **DHC OS sounds** (on by default) are the terminal's beeps. In the terminal's look these rows are on the
+  options' fourth tab, **DHC OS**. **Advanced DHC OS UI** (off by default; shown only while the terminal is on)
+  turns the hunt setup into a preparation screen: the loadout record at the left, a carousel of the areas in
+  the middle with the highlighted area's relief turning in 3D, and its survey at the right (picture,
+  description, the dinosaurs and weapons issued there, and how many dinosaurs on it are undiscovered).
+  Left/Right, the wheel or the arrows browse without choosing; Enter, Space, the pad's A or R, or a click on
+  the area or **USE THIS MAP** chooses it. The dinosaur, gun and equipment stages are the terminal's setup
+  tabs for now; Esc returns to the area carousel. The launcher's instance editor can force it on for an
+  instance ("Advanced DHC OS UI: Always On", shown while the terminal is on), which fixes the in-game switch
+  and changes nothing else.
   The terminal's **Field manual** is a database of the hunt setup's areas, animals and weapons, in
   three lists (Left/Right, 1-3 or a click switch them), each with its picture; Enter opens a file
   after a short retrieval sequence. An animal's file lists its diet, length, estimated height and

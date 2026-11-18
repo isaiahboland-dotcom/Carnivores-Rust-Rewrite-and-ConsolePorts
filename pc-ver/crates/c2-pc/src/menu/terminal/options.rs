@@ -1,8 +1,10 @@
 //! The options screen in the terminal's look: the same rows, sliders and
 //! key bindings as the original screen (`options.rs` handles them), split
-//! over three tabs (GAME, VIDEO, CONTROLS) instead of three panels over
-//! the original's board. GAME and VIDEO are one full-width column with the
-//! values on the right; CONTROLS has the keys left and the mouse right.
+//! over four tabs (GAME, VIDEO, CONTROLS, DHC OS) instead of three panels
+//! over the original's board. GAME, VIDEO and DHC OS are one full-width
+//! column with the values on the right; CONTROLS has the keys left and the
+//! mouse right. The DHC OS rows have a tab of their own so GAME fits above
+//! the status bar.
 
 use super::draw::PX;
 use super::geom::Geom;
@@ -10,9 +12,14 @@ use super::palette::*;
 use super::*;
 
 /// The tabs' titles, in order (`Menu::term_opt_tab`).
-const TABS: [&str; 3] = ["GAME", "VIDEO", "CONTROLS"];
-/// The tab keys, `1`..`3`.
-const TAB_KEYS: [KeyCode; 3] = [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3];
+const TABS: [&str; 4] = ["GAME", "VIDEO", "CONTROLS", "DHC OS"];
+/// The tab keys, `1`..`4`.
+const TAB_KEYS: [KeyCode; 4] = [
+    KeyCode::Digit1,
+    KeyCode::Digit2,
+    KeyCode::Digit3,
+    KeyCode::Digit4,
+];
 
 /// A row's height (the original's key rows' 20, so GAME fits one column).
 const ROW: f32 = 20.0;
@@ -43,16 +50,49 @@ fn stack(opts: &[Opt], col: Rect) -> Vec<(Opt, Rect)> {
 /// Key-binding rows: an index into `ACTIONS` and its rectangle.
 type KeyRows = Vec<(usize, Rect)>;
 
+/// The GAME rows (`dhc`: false) or the DHC OS tab's (true), in a Play
+/// Vanilla session (`classic`) or not.
+fn game_rows(pc: &PcSettings, dhc: bool, classic: bool) -> Vec<Opt> {
+    option_scroll::shown_in(&GAME_OPTS, pc, classic)
+        .into_iter()
+        .filter(|o| match o {
+            Opt::PcToggle(n, _) | Opt::PcSlider(n, _) => is_dhc_row(n) == dhc,
+            _ => !dhc,
+        })
+        .collect()
+}
+
 /// Tab `tab`'s option rows and key-binding rows (index into `ACTIONS`),
-/// with their rectangles.
-pub(in crate::menu) fn term_layout(g: Geom, tab: usize) -> (Vec<(Opt, Rect)>, KeyRows) {
+/// with their rectangles (`pc`: the settings, which decide the rows shown).
+pub(in crate::menu) fn term_layout(
+    g: Geom,
+    tab: usize,
+    pc: &PcSettings,
+) -> (Vec<(Opt, Rect)>, KeyRows) {
+    term_layout_in(g, tab, pc, crate::classic::on())
+}
+
+/// [`term_layout`] for a Play Vanilla session (`classic`) or not.
+fn term_layout_in(
+    g: Geom,
+    tab: usize,
+    pc: &PcSettings,
+    classic: bool,
+) -> (Vec<(Opt, Rect)>, KeyRows) {
     match tab {
         0 => (
-            stack(&option_scroll::shown(&GAME_OPTS), g.opt_wide()),
+            stack(&game_rows(pc, false, classic), g.opt_wide()),
             Vec::new(),
         ),
         1 => (
-            stack(&option_scroll::shown(&VIDEO_OPTS), g.opt_wide()),
+            stack(
+                &option_scroll::shown_in(&VIDEO_OPTS, pc, classic),
+                g.opt_wide(),
+            ),
+            Vec::new(),
+        ),
+        3 => (
+            stack(&game_rows(pc, true, classic), g.opt_wide()),
             Vec::new(),
         ),
         _ => {
@@ -112,7 +152,7 @@ impl Menu {
         let hints = if self.pad_used {
             "[B] BACK   [L]/[R] SWITCH TAB   D-PAD MOVE   [A] CHANGE"
         } else {
-            "[ESC] BACK   1-3 / TAB: SWITCH TAB   CLICK A ROW TO CHANGE IT"
+            "[ESC] BACK   1-4 / TAB: SWITCH TAB   CLICK A ROW TO CHANGE IT"
         };
         self.term_status(out, hints, "");
     }
@@ -155,12 +195,21 @@ mod tests {
         }
     }
 
+    /// DHC OS on (the terminal's look), so every row shows.
+    fn dhc_on() -> PcSettings {
+        PcSettings {
+            dhc_terminal: 1,
+            ..PcSettings::default()
+        }
+    }
+
     fn check_layout(g: Geom) {
+        let pc = dhc_on();
         let panel = g.opt_panel();
         let mut names = Vec::new();
         let mut keys = Vec::new();
         for tab in 0..TABS.len() {
-            let (rows, key_rows) = term_layout(g, tab);
+            let (rows, key_rows) = term_layout_in(g, tab, &pc, false);
             let mut rects: Vec<Rect> = rows.iter().map(|(_, r)| *r).collect();
             rects.extend(key_rows.iter().map(|(_, r)| *r));
             for r in &rects {
@@ -180,13 +229,46 @@ mod tests {
             names.extend(rows.iter().map(|(o, _)| name(o)));
             keys.extend(key_rows.iter().map(|(i, _)| *i));
         }
-        let want: Vec<&str> = option_scroll::shown(&GAME_OPTS)
+        let want: Vec<&str> = game_rows(&pc, false, false)
             .iter()
-            .chain(&option_scroll::shown(&VIDEO_OPTS))
+            .chain(&option_scroll::shown_in(&VIDEO_OPTS, &pc, false))
             .chain(&MOUSE_OPTS)
+            .chain(&game_rows(&pc, true, false))
             .map(name)
             .collect();
         assert_eq!(names, want);
+        let mut every: Vec<&str> = option_scroll::shown_in(&GAME_OPTS, &pc, false)
+            .iter()
+            .chain(&option_scroll::shown_in(&VIDEO_OPTS, &pc, false))
+            .chain(&MOUSE_OPTS)
+            .map(name)
+            .collect();
+        let mut got = names.clone();
+        every.sort_unstable();
+        got.sort_unstable();
+        assert_eq!(got, every, "each row on exactly one tab");
         assert_eq!(keys, (0..ACTIONS.len()).collect::<Vec<_>>());
+    }
+
+    /// The Advanced DHC OS UI's row is on the DHC OS tab while the
+    /// terminal is on, and nowhere while it is off.
+    #[test]
+    fn the_advanced_row_shows_only_with_dhc_os() {
+        let g = Geom::for_width(800.0);
+        let has = |pc: &PcSettings, tab: usize| {
+            term_layout_in(g, tab, pc, false)
+                .0
+                .iter()
+                .any(|(o, _)| name(o) == ADVANCED_DHC_UI)
+        };
+        let on = dhc_on();
+        assert!(has(&on, 3) && !has(&on, 0));
+        let off = PcSettings::default();
+        assert!((0..TABS.len()).all(|t| !has(&off, t)));
+        assert!(!option_scroll::shown_in(&GAME_OPTS, &off, false)
+            .iter()
+            .any(|o| name(o) == ADVANCED_DHC_UI));
+        // Play Vanilla shows no DHC OS rows at all.
+        assert!(term_layout_in(g, 3, &on, true).0.is_empty());
     }
 }

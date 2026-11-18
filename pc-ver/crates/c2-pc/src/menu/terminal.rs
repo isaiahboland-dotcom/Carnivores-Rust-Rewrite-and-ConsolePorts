@@ -6,10 +6,13 @@
 //!
 //! Off (the default), in Play Vanilla, or after "Classic menu" this
 //! session, the original menu shows. On, it also takes over from the phone
-//! (APK) menus; the hunt keeps the phone's touch prompts.
+//! (APK) menus; the hunt keeps the phone's touch prompts. With the
+//! "Advanced DHC OS UI" on as well, the hunt setup is the advanced
+//! preparation (`prep.rs`).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use c2_core::dhc::prep::{Prep, PrepAction};
 use c2_core::dhc::terminal::{Action, MainItem, Outcome, Screen as TScreen, Terminal};
 use c2_core::dhc::{Catalog, Dhc, Item, Limits, Loadout, Rules, Tab};
 
@@ -23,6 +26,9 @@ mod files;
 mod geom;
 mod login;
 mod options;
+mod prep;
+mod prep_draw;
+mod previews;
 pub(super) mod relief;
 pub(super) mod viewer;
 pub(super) use options::term_layout;
@@ -47,6 +53,9 @@ pub(super) struct TermView {
     /// and the open file's first shown line.
     pub(super) index_first: [usize; 4],
     pub(super) file_scroll: usize,
+    /// The Advanced DHC OS UI's stage and carousels, and its map previews.
+    pub(super) prep: Prep,
+    pub(super) previews: previews::Previews,
 }
 
 /// The game's `_DHC.TXT`, when the recipe has one (never in Play Vanilla).
@@ -67,6 +76,13 @@ pub(super) fn read_rules(huntdat: &Path) -> Option<Dhc> {
 /// prompt follows it too.
 pub(crate) fn terminal_look(pc: &crate::settings::PcSettings) -> bool {
     pc.dhc_terminal != 0 && !crate::classic::on() && !CLASSIC_THIS_RUN.load(Ordering::Relaxed)
+}
+
+/// Whether the Advanced DHC OS UI presents the hunt setup with settings
+/// `pc`: its switch on (or the instance's Always On, applied into `pc` by
+/// `instance_rules`), and only while the terminal's look is in use.
+pub(crate) fn advanced_ui_look(pc: &crate::settings::PcSettings) -> bool {
+    terminal_look(pc) && pc.dhc_advanced != 0
 }
 
 /// The menu screen's key for each tab, `1`..`4`.
@@ -244,6 +260,8 @@ impl Menu {
             first: [0; 4],
             index_first: [0; 4],
             file_scroll: 0,
+            prep: Prep::default(),
+            previews: Default::default(),
         }
     }
 
@@ -254,6 +272,9 @@ impl Menu {
     /// change the list), `terminal-manual-3d` (with 3D models).
     pub(super) fn show_terminal(&mut self, which: &str) {
         self.pc.dhc_terminal = 1;
+        if which == "terminal-prep" {
+            self.pc.dhc_advanced = 1;
+        }
         if which == "terminal-manual-3d" {
             self.pc.dhc_models = 1;
         }
@@ -289,6 +310,14 @@ impl Menu {
                 self.record = save::load_record(reg);
             }
         }
+        if which == "terminal-prep" {
+            if let Some(v) = &mut self.term {
+                v.term.step(1.0);
+                v.term.act(Action::Pick(0));
+                v.prep.enter(&mut v.term);
+                v.previews.inline = true;
+            }
+        }
         if which == "terminal-hunt" {
             if let Some(v) = &mut self.term {
                 let t = &mut v.term;
@@ -307,6 +336,15 @@ impl Menu {
     }
 
     pub(super) fn update_terminal(&mut self, gpu: &Gpu, dt: f32, input: &Input) {
+        if self.prep_shown() {
+            self.update_prep(gpu, dt, input);
+            return;
+        }
+        let advanced = self.advanced_ui();
+        if let Some(v) = &mut self.term {
+            // Off the map stage, nothing is previewed.
+            v.previews.update(gpu, dt, None, &[]);
+        }
         let tranq = self.tranq();
         let hits = self.terminal_hits();
         let over_model = inside(self.cursor, self.geom().file_pic());
@@ -421,7 +459,20 @@ impl Menu {
         // One beep a frame: the last action's that made one.
         let mut beep = None;
         for a in acts {
-            beep = t.act_beep(a).or(beep);
+            // The advanced preparation: Back goes to the stage before.
+            beep = if advanced && t.screen == TScreen::Setup && a == Action::Back {
+                v.prep.act(t, PrepAction::Back)
+            } else {
+                t.act_beep(a)
+            }
+            .or(beep);
+        }
+        if advanced && t.screen == TScreen::Setup {
+            if screen_before == TScreen::Main {
+                v.prep.enter(t);
+            } else {
+                v.prep.follow(t);
+            }
         }
         // Keep a focus the keys moved in view; the wheel scrolls apart.
         if t.screen == TScreen::Setup {

@@ -130,6 +130,18 @@ impl Viewer {
         }
     }
 
+    /// Frames it from `k` times further back (a carousel's smaller box).
+    pub(in crate::menu) fn back_off(&mut self, k: f32) {
+        self.cam.dist *= k;
+        self.home *= k;
+    }
+
+    /// Turns it slowly, with no input (the Advanced DHC OS UI's carousel:
+    /// free rotation belongs in the field manual).
+    pub(in crate::menu) fn spin(&mut self, dt: f32) {
+        self.cam.yaw += TURN * 0.5 * dt;
+    }
+
     /// Draws it into `rect` (window pixels: x, y, w, h), then gives the
     /// pass its whole `screen` back.
     pub(in crate::menu) fn draw(

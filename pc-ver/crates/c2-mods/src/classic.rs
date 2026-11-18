@@ -229,6 +229,15 @@ mod tests {
         assert!(advanced_summary(&parse("")).is_empty());
     }
 
+    /// The launcher's "Advanced DHC OS UI: Always On" is presentation: it
+    /// is no advanced setting (no recommendation, Play Vanilla unchanged).
+    #[test]
+    fn the_advanced_ui_lock_is_not_an_advanced_setting() {
+        let r = parse("[settings.rules]\nadvanced_dhc_ui = true\n");
+        assert!(r.settings.rules.advanced_dhc_ui);
+        assert!(advanced_summary(&r).is_empty());
+    }
+
     #[test]
     fn game_defining_sections_are_never_listed() {
         let r = parse(

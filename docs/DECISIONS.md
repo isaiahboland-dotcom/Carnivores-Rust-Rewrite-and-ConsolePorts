@@ -1,5 +1,99 @@
 # Decisions and deviations
 
+## 2026-11-17 — Advanced DHC OS UI: name, platforms, field guide, worlds (proposal, no code yet)
+
+Decisions for the proposed high-end hunt preparation UI (`screenshots/new-vision-dhcos/ADVANCEDDHCOS.md`).
+The spec's own names and platform list are superseded where they differ.
+
+- **Name.** "Advanced DHC OS UI" is the settings label and the name used in docs. "DHCOS" and "High-End View
+  Mode" are retired. The name "High-end view" stays with the existing graphics option.
+- **Platforms.** PC and Android only. The original DHC OS terminal stays on the 3DS and Wii U; neither gets
+  the advanced UI. Hardware tests for it are on PC and Android.
+- **Visibility.** The "Advanced DHC OS UI" option appears only when DHC OS is enabled. With DHC OS off, the
+  player sees no advanced option at all. Enabling DHC OS reveals it in the DHC OS settings, off by default.
+  With the option off, PC and Android keep the original DHC OS terminal.
+- **Field guide.** The advanced UI's detailed-stats screen is the Field Guide. It is the same screen as the
+  hunt manual (spec §4, §6) and the terminal's field manual. It also keeps the per-map, per-dinosaur and
+  per-gun metrics, so the name is Field Guide on PC and Android. The field manual's specimen database and 3D
+  specimen viewer carry over.
+- **Worlds.** A world is a named group of maps, usually one modpack's maps. It is distinct from a map and not
+  yet built. A map belongs to one world. A custom world can collect similar maps from different mods. Dinosaurs
+  and guns can be made exclusive to the maps they came with, so one game can hold many mods, each segmented.
+  Worlds are set up in the c2-launcher instance manager, in `recipe.toml`, or both; the user decides. The
+  advanced UI shows worlds as its first stage (spec §3, "worlds"). In code the feature is a **map group**
+  (`map_group`), because `world` already names the per-map `_WORLD.TXT` data (`c2_formats::world`, ADV-WORLD).
+  The user-facing name stays World. CLAUDE.md "Terminology" holds the rule.
+- **Secret species.** Killing one by hand (hunting it) identifies it, as do being killed or eaten by it and a
+  binocular identification (spec §3 plus the closing notes).
+- **VR.** Not part of this menu for now.
+- **Spelling.** "DHC OS", not "DHCOS".
+
+## 2026-11-17 — Advanced DHC OS UI phases A and B: the switch, Always On, shared preparation state, the map carousel (PC, Android)
+
+Phases A and B of `screenshots/new-vision-dhcos/ADVANCEDDHCOS.md` (TODO ADV-A, ADV-B). The original
+hunt menu and the DHC OS terminal are unchanged while the option is off.
+
+- **The switch.** Options > DHC OS > "Advanced DHC OS UI" (`dhc_advanced` in `c2rs.cfg`, off by
+  default). The row is shown only while the DHC OS terminal is on (`option_scroll::shown` now takes the
+  settings), never in Play Vanilla, and is hidden when the instance fixes it. The advanced UI is in use
+  only while the terminal's look is (`advanced_ui_look` = `terminal_look` and the switch), so DHC OS off,
+  Play Vanilla or "Classic menu" this run all show the menus as before.
+- **The options get a DHC OS tab.** In the terminal's look the DHC OS rows (terminal, CRT effects,
+  sounds, 3D specimens, Advanced DHC OS UI) move from GAME to a fourth tab, DHC OS (key 4). The spec puts
+  the option "in the DHC OS settings", and GAME already ran under the status bar when no instance
+  lock hid a row (`tabs_show_every_row_once_inside_the_panel` failed when run alone, at HEAD too). The
+  original board and the phone pages keep one GAME list.
+- **Always On is not a lock.** The launcher's instance editor shows "Advanced DHC OS UI: Always On" under
+  the DHC OS terminal switch, only while that switch is on. It is stored per instance as
+  `[settings.rules] advanced_dhc_ui = true` and written to `_RULES.TXT` as its own `advanced_dhc_ui`
+  line, not as a `lock` entry: a lock counts as an advanced setting (`advanced_summary`: the DHC OS
+  recommendation, Play Vanilla's differences) and the 3DS and Wii U map every lock onto their settings.
+  The file is the only channel that reaches Android packages, which take no arguments. In game,
+  `instance_rules::apply` sets `dhc_advanced` and nothing else, `unapply` stores the player's own value,
+  and the row is hidden. It changes no rule, lock, RNG or simulation state; with DHC OS off it shows
+  nothing.
+- **Shared preparation state** is `c2_core::dhc::prep::Prep`: the stage (map, dinosaurs, guns,
+  equipment; worlds are not built yet) and each stage's carousel scroll, eased onto its highlight the
+  short way round (`ring_delta`). Everything else stays the terminal's: a stage's highlight is the
+  terminal's focused row of that list, every pick and removal goes through `Terminal::act`, so the
+  rules, prices, caps and refusals are the terminal's and the preparation starts the hunts the terminal
+  starts (test `the_preparation_starts_what_the_terminal_starts`). Going back to a stage restores its
+  highlight and scroll. Entering the hunt setup from the main menu opens the map stage on the committed
+  map; returning from a file or an aborted deploy keeps the stage.
+- **The map stage** (`menu/terminal/prep.rs`, `prep_draw.rs`, layout after ref1): the loadout record at
+  the left (map and equipment in white and green, dinosaurs in blue, guns in white, "Pending" when
+  empty), a circular carousel of the areas in the middle, and the highlighted area's survey at the
+  right: the original menu picture, name and permit, status, description (four lines), the dinosaurs
+  issued there (or ALL REGULAR SPECIES), "Undiscovered dinosaurs on this map: N" (`survey::unknown`,
+  as the field manual counts them; names are never shown), the weapons issued there (or ALL WEAPONS)
+  and the red USE THIS MAP button. The account is TOTAL POINTS in yellow at the top; POINTS REMAINING
+  at the bottom goes from orange to red linearly in the share of the account left (the spec's default
+  for the open curve; the share is `prep::points_left`, for the later stages too). Arrows, the wheel (a notch, so the pad's right stick does not spin it) and the
+  chevrons browse without committing; a click on a neighbour highlights it; Enter, Space, the pad's A
+  or R (Tab), a click on the centred map or the button commits it; Esc, the pad's B or L goes back.
+  No V shortcut here: inspection stays in the field manual.
+- **Previews are built on first use and kept for the session** (the spec's default; `previews.rs`).
+  The centred area is the field manual's relief (`relief.rs`: heights every 8 cells, no objects, never
+  the full map geometry), built on a worker thread once the carousel rests on it, then its two
+  neighbours, one at a time; up to 8 reliefs are kept while the game runs. Only the centred one is
+  drawn in 3D, turning slowly with no input; neighbours are their menu pictures, cut at the panel's
+  edges so only their inner 30% shows, and dimmed. A map whose relief can't be read keeps its picture.
+  The previews are always 3D in this UI ("DHC OS 3D specimens" stays the field manual's switch), as
+  the UI is itself the opt-in to the heavier look. Nothing is baked by `c2-cook`; nothing is written
+  to disk.
+- **Stages not built yet.** Until phases C to E, the dinosaur, gun and equipment stages are the
+  terminal's own setup tabs. Using a map opens TARGETS; Esc there returns to the map carousel (not the
+  main menu); picking the AREA tab returns to it too; F still deploys from the tabs.
+- `c2-pc play --screen terminal-prep` opens the map stage for screenshots.
+
+Tests: `c2-core` `dhc::tests::prep` (9: browsing, refusal, back restores highlight and scroll, easing
+the short way, add and remove through the terminal, same hunt as the terminal, entering and following,
+the points share),
+`c2-formats` and `c2-mods` rules (the line round-trips, writes only itself, is no advanced setting),
+`c2-pc` `instance_rules` (the lock overrides the toggle and enables nothing else), options layout (the
+DHC OS tab, the row only with DHC OS on), `prep_draw` (points colour, panels, neighbours peeking),
+`c2-launcher` config (per instance, kept with the other rules).
+
 ## 2026-11-17 — Weapon hands: a shared mask, exact rig detection first, overrides by content
 
 Gun-only views (the DHC OS armoury file's model; guns held in VR) leave out

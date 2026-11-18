@@ -246,6 +246,11 @@ pub struct Config {
     /// (its recipe's `[settings]`; off by default). A game built from the
     /// APK always offers it.
     pub survival: bool,
+    /// "Advanced DHC OS UI: Always On": the instance in use's choice (its
+    /// recipe's `[settings.rules] advanced_dhc_ui`; off by default). It
+    /// forces the game's Advanced DHC OS UI on and fixes its switch, only
+    /// while DHC OS is on, and turns on nothing else.
+    pub advanced_dhc_ui: bool,
     /// The launcher's colours and shapes (Settings > Look): the DHC OS
     /// terminal's look, or Legacy, the launcher's earlier olive panels.
     pub look: crate::theme::Look,
@@ -555,6 +560,7 @@ impl Config {
         }
         // Always taken, so one instance's survival never carries to another.
         self.survival = s.offer_survival;
+        self.advanced_dhc_ui = s.rules.advanced_dhc_ui;
         if let Some(t) = s.ice_age_title {
             self.three_ds.ice_age_title = t;
         }
@@ -578,6 +584,10 @@ impl Config {
             three_ds_target: self.three_ds.target.arg().into(),
             ice_age_title: Some(self.three_ds.ice_age_title),
             offer_survival: self.survival,
+            rules: c2_mods::rules::Rules {
+                advanced_dhc_ui: self.advanced_dhc_ui,
+                ..old.rules.clone()
+            },
             pictures: self.pictures,
             tuning: self.tuning,
             ..old.clone()
@@ -690,6 +700,26 @@ mod tests {
         assert!(!toml::to_string(&Settings::default())
             .unwrap()
             .contains("offer_survival"));
+    }
+
+    /// Always On is the instance's own, like survival, and is written
+    /// into the recipe's rules beside the rest of them.
+    #[test]
+    fn the_advanced_ui_lock_is_per_instance_and_kept_with_the_rules() {
+        let mut c = Config::default();
+        assert!(!c.advanced_dhc_ui, "off by default");
+        let mut on = Settings::default();
+        on.rules.advanced_dhc_ui = true;
+        on.rules.scuba_gear = true;
+        c.apply(&on);
+        assert!(c.advanced_dhc_ui);
+        let back = c.settings(&on);
+        assert!(back.rules.advanced_dhc_ui && back.rules.scuba_gear);
+        assert!(!back.offer_survival, "it turns on nothing else");
+        c.apply(&Settings::default());
+        assert!(!c.advanced_dhc_ui, "another instance does not inherit it");
+        assert!(!c.settings(&on).rules.advanced_dhc_ui);
+        assert!(c.settings(&on).rules.scuba_gear, "the other rules are kept");
     }
 
     #[test]

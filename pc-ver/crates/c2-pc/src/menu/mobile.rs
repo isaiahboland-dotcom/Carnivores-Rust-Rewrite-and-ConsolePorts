@@ -1075,7 +1075,7 @@ impl Menu {
 
     fn kit_all_rows(&self) -> Vec<KitRow> {
         match self.opt_tab {
-            0 => option_scroll::shown(&GAME_OPTS)
+            0 => option_scroll::shown(&GAME_OPTS, &self.pc)
                 .into_iter()
                 .map(KitRow::Opt)
                 .collect(),
@@ -1084,7 +1084,7 @@ impl Menu {
                 .map(|&o| KitRow::Opt(o))
                 .chain((0..ACTIONS.len()).map(KitRow::Key))
                 .collect(),
-            _ => option_scroll::shown(&VIDEO_OPTS)
+            _ => option_scroll::shown(&VIDEO_OPTS, &self.pc)
                 .into_iter()
                 .map(KitRow::Opt)
                 .collect(),

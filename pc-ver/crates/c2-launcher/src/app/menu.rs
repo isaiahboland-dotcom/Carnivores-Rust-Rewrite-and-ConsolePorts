@@ -137,7 +137,32 @@ impl Launcher {
         }
         if !three_ds {
             self.dhc_terminal_ui(ui);
+            changed |= self.advanced_dhc_ui(ui);
         }
+        changed
+    }
+
+    /// "Advanced DHC OS UI: Always On", for this instance: shown only while
+    /// the DHC OS terminal is on (the game ignores it otherwise). True when
+    /// it changed.
+    fn advanced_dhc_ui(&mut self, ui: &mut egui::Ui) -> bool {
+        use crate::game_cfg::{flag, DHC_TERMINAL};
+        if !flag(DHC_TERMINAL) {
+            return false;
+        }
+        let changed = ui
+            .checkbox(
+                &mut self.cfg.advanced_dhc_ui,
+                "Advanced DHC OS UI: Always On",
+            )
+            .changed();
+        help(
+            ui,
+            "Forces the game's Advanced DHC OS UI on for this instance and fixes its in-game \
+             switch (Options > DHC OS). The look only: it turns on no advanced AI, hardcore hunt, \
+             mission or other rule. Applies only while the DHC OS terminal is on. PC and \
+             Android; Windows and Android packages keep it.",
+        );
         changed
     }
 

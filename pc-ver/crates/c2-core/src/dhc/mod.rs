@@ -3,7 +3,8 @@
 //! platform: what the pack offers ([`Catalog`]), what the recipe's rules
 //! allow on each island ([`Rules`], from `_DHC.TXT`), the terminal's
 //! screens and actions ([`terminal::Terminal`]) and what the field
-//! manual's files say (`specimen`, `survey`, `armoury`). No rendering, no
+//! manual's files say (`specimen`, `survey`, `armoury`), and the Advanced
+//! DHC OS UI's preparation over the terminal (`prep`). No rendering, no
 //! I/O: each platform draws the state and turns its input into
 //! [`terminal::Action`]s.
 //!
@@ -16,6 +17,7 @@ pub use c2_formats::dhc::{Dhc, Discovery, Island};
 
 pub mod armoury;
 pub mod beep;
+pub mod prep;
 pub mod specimen;
 pub mod survey;
 pub mod terminal;

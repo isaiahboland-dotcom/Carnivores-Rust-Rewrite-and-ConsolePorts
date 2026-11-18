@@ -28,6 +28,7 @@
 //! [settings.rules]
 //! hidden = ["Tyrannosaurus Rex"]  # not in the hunt menu; still a secret
 //! scuba_gear = true               # the gear page offers scuba gear
+//! advanced_dhc_ui = true          # the launcher's "Advanced DHC OS UI: Always On"
 //! ```
 
 use serde::{Deserialize, Serialize};
@@ -56,6 +57,11 @@ pub struct Rules {
     /// unless set).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub scuba_gear: bool,
+    /// The Advanced DHC OS UI forced on, its in-game switch fixed (the
+    /// launcher's "Always On"; it applies only while DHC OS is on).
+    /// Presentation only: it is not a lock and turns on no rule.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub advanced_dhc_ui: bool,
 }
 
 /// Settings fixed by the instance; `None`: the player's own.
@@ -187,6 +193,7 @@ impl Rules {
             hunt: Default::default(),
             survival: false,
             scuba: self.scuba_gear,
+            advanced_dhc_ui: self.advanced_dhc_ui,
         }
     }
 
@@ -285,6 +292,22 @@ mod tests {
             toml::from_str::<Rules>(&toml::to_string(&r).unwrap_or_default()).ok(),
             Some(r)
         );
+    }
+
+    /// The Always On lock writes its own line and nothing else: no lock,
+    /// no rule.
+    #[test]
+    fn the_advanced_ui_lock_writes_only_its_line() {
+        let r: Rules = toml::from_str("advanced_dhc_ui = true").unwrap_or_else(|e| panic!("{e}"));
+        let f = r.to_format(&[]);
+        assert_eq!(
+            f,
+            fmt::Rules {
+                advanced_dhc_ui: true,
+                ..fmt::Rules::default()
+            }
+        );
+        assert!(!r.is_empty(), "the file is written");
     }
 
     #[test]

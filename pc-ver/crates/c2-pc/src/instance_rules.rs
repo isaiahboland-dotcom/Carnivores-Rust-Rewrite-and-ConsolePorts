@@ -5,6 +5,10 @@
 //!
 //! The settings file (`c2rs.cfg`) is shared by every game, so a locked
 //! setting never overwrites the player's own value there.
+//!
+//! The launcher's "Advanced DHC OS UI: Always On" (`advanced_dhc_ui`) is
+//! applied the same way but is not a [`Lock`]: it fixes that one
+//! presentation switch and nothing else.
 
 use std::path::Path;
 use std::sync::RwLock;
@@ -66,8 +70,14 @@ fn field(s: &mut PcSettings, l: Lock) -> &mut i32 {
     }
 }
 
+/// The options row the Always On lock fixes.
+pub const ADVANCED_DHC_UI: &str = "Advanced DHC OS UI";
+
 /// `s` with the locked settings at their instance values.
 pub fn apply(mut s: PcSettings, r: &Rules) -> PcSettings {
+    if r.advanced_dhc_ui {
+        s.dhc_advanced = 1;
+    }
     for &(l, v) in &r.locks {
         *field(&mut s, l) = match l {
             Lock::SecretDinos => v.clamp(0, 255),
@@ -82,6 +92,9 @@ pub fn apply(mut s: PcSettings, r: &Rules) -> PcSettings {
 /// settings file has them): what is stored.
 pub fn unapply(mut s: PcSettings, own: &PcSettings, r: &Rules) -> PcSettings {
     let mut own = *own;
+    if r.advanced_dhc_ui {
+        s.dhc_advanced = own.dhc_advanced;
+    }
     for &(l, _) in &r.locks {
         *field(&mut s, l) = *field(&mut own, l);
     }
@@ -105,6 +118,9 @@ pub fn lock_of(label: &str) -> Option<Lock> {
 
 /// Whether the options row labelled `label` is hidden (its setting fixed).
 pub fn hides(label: &str) -> bool {
+    if label == ADVANCED_DHC_UI {
+        return get().advanced_dhc_ui;
+    }
     lock_of(label).is_some_and(|l| get().is_locked(l))
 }
 
@@ -127,6 +143,40 @@ mod tests {
         assert_eq!(stored.teleport, own.teleport);
         assert_eq!(stored.dynamic_time, 1);
         assert_eq!(stored.blood, 0, "unlocked changes are kept");
+    }
+
+    /// The launcher's Always On fixes the Advanced DHC OS UI on (over the
+    /// player's off), turns on nothing else, and stores the player's own.
+    #[test]
+    fn the_advanced_ui_lock_overrides_the_toggle_and_enables_nothing_else() {
+        let r = Rules::parse(b"advanced_dhc_ui\n");
+        let own = PcSettings {
+            dhc_terminal: 1,
+            ..PcSettings::default()
+        };
+        let s = apply(own, &r);
+        assert_eq!(s.dhc_advanced, 1, "the lock overrides the toggle");
+        assert_eq!(
+            PcSettings {
+                dhc_advanced: own.dhc_advanced,
+                ..s
+            },
+            own,
+            "nothing else changes: no advanced AI, hardcore, observer or other rule"
+        );
+        assert_eq!(
+            unapply(s, &own, &r).dhc_advanced,
+            0,
+            "the player's own is stored"
+        );
+        // Without DHC OS it shows nothing: the terminal's look decides.
+        let off = apply(PcSettings::default(), &r);
+        assert!(!crate::menu::advanced_ui_look(&off));
+        assert_eq!(
+            crate::menu::advanced_ui_look(&s),
+            crate::menu::terminal_look(&s)
+        );
+        assert!(!crate::menu::advanced_ui_look(&own), "off by default");
     }
 
     #[test]

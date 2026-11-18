@@ -102,6 +102,10 @@ impl Menu {
     }
 
     pub(in crate::menu) fn draw_terminal(&self, out: &mut Vec<Sprite>) {
+        if self.prep_shown() {
+            self.draw_prep(out);
+            return;
+        }
         let Some(v) = &self.term else { return };
         let t = &v.term;
         self.term_frame(out);

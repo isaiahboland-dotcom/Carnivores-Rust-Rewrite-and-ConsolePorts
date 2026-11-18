@@ -17,7 +17,7 @@ pub(super) enum Opt {
     Header(&'static str),
 }
 
-pub(super) const GAME_OPTS: [Opt; 24] = [
+pub(super) const GAME_OPTS: [Opt; 25] = [
     Opt::Slider("Aggressiveness", |s| &mut s.options.agres),
     Opt::Slider("Density", |s| &mut s.options.dens),
     Opt::Slider("Sensitivity", |s| &mut s.options.sens),
@@ -44,6 +44,7 @@ pub(super) const GAME_OPTS: [Opt; 24] = [
     Opt::PcToggle("DHC OS CRT effects", |p| &mut p.dhc_crt),
     Opt::PcToggle("DHC OS sounds", |p| &mut p.dhc_beeps),
     Opt::PcToggle(DHC_MODELS, |p| &mut p.dhc_models),
+    Opt::PcToggle(ADVANCED_DHC_UI, |p| &mut p.dhc_advanced),
     Opt::PcToggle("Remember last hunt", |p| &mut p.remember_hunt),
     Opt::ClearTrophies,
 ];
@@ -53,6 +54,16 @@ pub(super) const DHC_TERMINAL: &str = "DHC OS terminal";
 
 /// The field manual's 3D specimens (off: the pictures).
 pub(super) const DHC_MODELS: &str = "DHC OS 3D specimens";
+
+/// The Advanced DHC OS UI's switch: shown only while the terminal is on,
+/// and hidden when the instance fixes it on (the launcher's Always On).
+pub(super) const ADVANCED_DHC_UI: &str = crate::instance_rules::ADVANCED_DHC_UI;
+
+/// Whether row `name` belongs to the DHC OS settings (their own tab in
+/// the terminal's look).
+pub(super) fn is_dhc_row(name: &str) -> bool {
+    name.starts_with("DHC OS") || name == ADVANCED_DHC_UI
+}
 
 /// Experimental on Android: phones vary far more than PCs.
 pub(super) const HIGH_END_VIEW: &str = if cfg!(target_os = "android") {
@@ -159,12 +170,12 @@ impl Menu {
     /// The option rows of each panel with their rectangles.
     pub(super) fn option_rows(&self) -> Vec<(Opt, Rect)> {
         if self.terminal_style() {
-            return terminal::term_layout(self.geom(), self.term_opt_tab).0;
+            return terminal::term_layout(self.geom(), self.term_opt_tab, &self.pc).0;
         }
         let mut out = Vec::new();
         let (game, video) = (
-            option_scroll::shown(&GAME_OPTS),
-            option_scroll::shown(&VIDEO_OPTS),
+            option_scroll::shown(&GAME_OPTS, &self.pc),
+            option_scroll::shown(&VIDEO_OPTS, &self.pc),
         );
         for (panel, opts) in [(GAME_PANEL, &game[..]), (VIDEO_PANEL, &video[..])] {
             let first = if panel == GAME_PANEL {
@@ -188,7 +199,7 @@ impl Menu {
     /// the CONTROLS tab's in the terminal's look, else the keys panel.
     pub(super) fn key_rows(&self) -> Vec<(usize, Rect)> {
         if self.terminal_style() {
-            return terminal::term_layout(self.geom(), self.term_opt_tab).1;
+            return terminal::term_layout(self.geom(), self.term_opt_tab, &self.pc).1;
         }
         (0..ACTIONS.len())
             .map(|i| {

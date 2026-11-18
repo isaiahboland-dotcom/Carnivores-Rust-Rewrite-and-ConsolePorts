@@ -49,6 +49,8 @@ mod specimens;
 mod terminal;
 mod tranq_ask;
 pub(crate) use parity::run as run_parity;
+#[cfg(test)]
+pub(crate) use terminal::advanced_ui_look;
 pub(crate) use terminal::crt::ALL_LAYERS as CRT_ALL_LAYERS;
 pub(crate) use terminal::{palette, terminal_look};
 
@@ -337,7 +339,7 @@ impl Menu {
             "loading" => Screen::Loading,
             "quit" => Screen::Quit,
             // The terminal, on for this run only (not stored).
-            "terminal" | "terminal-hunt" | "terminal-boot" | "terminal-login"
+            "terminal" | "terminal-hunt" | "terminal-prep" | "terminal-boot" | "terminal-login"
             | "terminal-waiver" | "terminal-delete" | "terminal-options" | "terminal-quit"
             | "terminal-manual" | "terminal-manual-3d" => {
                 self.show_terminal(screen);
