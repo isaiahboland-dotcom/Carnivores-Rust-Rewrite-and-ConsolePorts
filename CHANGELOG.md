@@ -1,5 +1,99 @@
 # Changelog
 
+## 0.7.0 — 2026-11-17
+
+Survival switch, poisonous fog, scuba gear, advanced binoculars, bounded
+fleeing and flyer spawns, and the DHC OS field manual, island rules and CRT
+pass. Notes: `docs/releases/v0.7.0.md`. Hardware and by-eye checks are
+listed in `testing-needed.md` and remain pending.
+
+### Survival
+
+- Survival is offered only when the game asks for it: a `survival` line in
+  `_RULES.TXT`, `c2-pc play --offer-survival`, or a game built from the APK
+  (always on). Without it, the original menu's Survival button, the DHC OS
+  SURVIVAL entry and the Wii U title entry are hidden.
+- Launcher: Survival mode is set on the instance editor's Base game page (off
+  by default), saved with the instance's settings. `c2-cook --offer-survival`
+  writes the rules line into 3DS and Wii U packs.
+- Survival starts on Mount Ravan when the stock animals are present, else on
+  the last listed area (standalone games included), with the shotgun or else
+  the third weapon (`survival_area`, `survival_weapon`).
+- The arena is fitted to each map at survival start: the ravine where it fits,
+  else one found on the map. Genesis Redux, Fallen Kings and JPHL had no waves
+  before this, as their ravine was off their land.
+- Wave movement routes round objects; Stegosaurus waves no longer stall among
+  trees.
+- `c2-cook --check` follows the menus' survival pick and skips survival when a
+  pack does not offer it.
+
+### Poisonous fog and gear
+
+- Mortal fog zones (AREA5's volcanic gas in the vanilla game) drain health and
+  kill the hunter while the eye is under the zone's top and above water. This
+  applies whether or not fog zones are drawn.
+- Advanced binoculars (new gear, 40 points, PC only): each living huntable
+  animal gets a green outline through the binoculars, red while it is after
+  the hunter. Kill score is 60% in the hunt and the DHC terminal. Command line:
+  `c2-pc hunt --advanced-binoculars`.
+- Scuba gear (new gear, 30 points): offered only when a recipe sets
+  `[settings.rules] scuba_gear` (launcher: the instance's Advanced page, Extra
+  equipment). Diving is faster (top speed 0.5 instead of 0.3, surface swimming
+  0.4 instead of 0.25), the underwater fog reaches twice as far and the oxygen
+  tank makes drowning take twice as long. Kill score is 85%. Command line:
+  `c2-pc hunt --scuba`.
+- The modern underwater fog now ends at a fraction of the hunt's view range
+  rather than the drawn distance, so at long render distances water no longer
+  looks nearly clear. The default render distance is unchanged.
+- Launcher instance boxes have a yellow border and a yellow Play button, and
+  paths are white.
+
+### Animals
+
+- APK-based games: an animal past the PC's AI range (AI 21, running as a PC
+  kind) keeps its original-engine AI when a dialect add-on joins it. The
+  nightmare-run copy's Oviraptor stood still before this fix.
+- Bounded fleeing: a scared animal that has fled and still sees or smells the
+  hunter waits out a lockout before fleeing again: 15 s when walking beside it,
+  25 s standing still, 45 s moving away, and at once when running at it (PC,
+  Wii U and VR). On 3DS the lockout is a fixed 15 s. Shots and calls keep their
+  noise lockout. See `docs/DECISIONS.md` (2026-11-17).
+- Flyers spawn halfway through their altitude band, at least 256 above the
+  ground, and never on the ground.
+
+### DHC OS
+
+- Advanced DHC OS UI (PC, experimental): a launcher switch in the instance
+  editor, "Advanced DHC OS UI: Always On". HUNT SETUP opens a map carousel
+  with the map's relief, a survey panel (permit, status, issued animals and
+  weapons), the hunter's record and the points. Off by default; with it off
+  the terminal and original menus are as before.
+- Island rules from `_DHC.TXT` apply in the original menus (PC, Android, the
+  3DS hexagon menu, Wii U): barred items are dimmed and refused, picks are
+  pruned on an area change, and a forbidden hunt start is refused.
+- PC launcher: DHC OS is recommended once per instance with advanced settings
+  (at import review, or before the first Play).
+- UI beeps (the "DHC OS sounds" option) and a CRT pass (scanlines, vignette,
+  noise; `dhc_crt_layers`).
+- Field manual (PC, Android): lists every animal of the hunt setup with its
+  picture. A file gives its diet, size, estimated height and weight, permit
+  price, kill score, the areas it is restricted to, and the hunter's kills and
+  largest kill for it. The "DHC OS 3D specimens" option (off by default) turns
+  the model instead of the picture.
+- Field manual areas and armoury: an area's survey (permit, times, issued
+  animals and weapons, TOTAL DINOSAURS UNKNOWN, hunts completed there), a
+  weapon's file (rounds, restrictions, kills and its longest) and 3D models of
+  the area's terrain and of each weapon. Listed names link to their files.
+- Kill records keep each kill's size (older records still load), and hunts
+  left alive are counted per map.
+- Weapon hands: the first-person weapon models in the armoury lose their
+  arms. The hand rig is recognised only by its full signature. A mod can
+  override it with `HUNTDAT/_HANDS.TXT`. 149 of 842 local weapon files are
+  recognised and none is emptied. Hunts draw weapons as before.
+- PC VR: the four original guns are prepared as holdable. Guns are not drawn in
+  VR yet.
+- File notes read as paragraphs.
+
 ## 0.6.0 — 2026-11-16
 
 Spawn ecosystem and awareness rules, bounded fleeing, the DHC OS terminal and

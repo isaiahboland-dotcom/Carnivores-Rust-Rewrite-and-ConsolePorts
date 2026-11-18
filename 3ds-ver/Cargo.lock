@@ -77,7 +77,7 @@ dependencies = [
 
 [[package]]
 name = "c2-3ds"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "c2-core",
@@ -92,7 +92,7 @@ dependencies = [
 
 [[package]]
 name = "c2-cook"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "c2-core",
@@ -106,7 +106,7 @@ dependencies = [
 
 [[package]]
 name = "c2-core"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "c2-formats",
  "c2-platform",
@@ -118,7 +118,7 @@ dependencies = [
 
 [[package]]
 name = "c2-formats"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "libm",
  "thiserror",
@@ -126,7 +126,7 @@ dependencies = [
 
 [[package]]
 name = "c2-mods"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "c2-formats",
  "c2-vfs",
@@ -141,11 +141,11 @@ dependencies = [
 
 [[package]]
 name = "c2-platform"
-version = "0.6.0"
+version = "0.7.0"
 
 [[package]]
 name = "c2-vfs"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "c2-formats",
  "thiserror",
