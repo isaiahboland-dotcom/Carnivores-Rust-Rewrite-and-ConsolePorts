@@ -420,6 +420,7 @@ fn path_clear(
 /// hunter than the animal stands. `skip` rejects headings near an angle (a
 /// blocked one). A cornered animal gets the clear candidate that gains most
 /// distance from the hunter, or stays put.
+#[allow(clippy::too_many_arguments)]
 pub fn pick_target(
     c: &Character,
     area: &Area,
@@ -572,7 +573,7 @@ pub fn step(
         c.flight.repick_in = REPICK_MS;
         let left = (limits.max_distance as f32 - travelled).max(CELL * 2.0);
         let first = if ctx.rng.r_rand(2) == 0 { 1.0 } else { -1.0 };
-        let skip = stalled.then(|| c.alpha);
+        let skip = stalled.then_some(c.alpha);
         (c.tgx, c.tgz) = pick_target_kept(
             c,
             ctx.area,
