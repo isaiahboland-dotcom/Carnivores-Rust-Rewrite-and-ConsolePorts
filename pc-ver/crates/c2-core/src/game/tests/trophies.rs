@@ -17,8 +17,7 @@ fn variants_share_call_target_and_trophy_spots_but_save_their_own_model() {
     use crate::dino::variants::Variant;
     let (area, mut hunt, _) = setup(false);
     hunt.herd.species.push(hunt.herd.species[1].clone());
-    for i in 1..=2 {
-        let sp = &mut hunt.herd.species[i];
+    for (i, sp) in hunt.herd.species.iter_mut().enumerate().skip(1).take(2) {
         sp.info.base_score = 100.0;
         sp.tuning.menu_slot = Some(0);
         sp.variant = Some(Variant {

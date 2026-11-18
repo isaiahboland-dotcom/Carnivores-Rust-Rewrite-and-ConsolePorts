@@ -6,9 +6,9 @@ fn variant_herd(probabilities: [f64; 2]) -> Herd {
         species: vec![species(0, 1), species(ai::PARA, 8), species(ai::STEGO, 8)],
         ..Default::default()
     };
-    for i in 1..=2 {
-        herd.species[i].tuning.menu_slot = Some(0);
-        herd.species[i].variant = Some(variants::Variant {
+    for (i, sp) in herd.species.iter_mut().enumerate().skip(1).take(2) {
+        sp.tuning.menu_slot = Some(0);
+        sp.variant = Some(variants::Variant {
             owner: 1,
             token: 100 + i as u64,
             choices: if i == 1 {

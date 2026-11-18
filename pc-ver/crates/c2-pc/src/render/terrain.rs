@@ -105,9 +105,9 @@ impl Blocks {
         let mut top = vec![0.0f32; BLOCKS * BLOCKS];
         let mut water = vec![None; BLOCKS * BLOCKS];
         let size = c2_formats::map::MAP_SIZE;
-        for i in 0..m.height.len().min(size * size) {
+        for (i, &h) in m.height.iter().take(size * size).enumerate() {
             let b = (i / size / BLOCK) * BLOCKS + (i % size) / BLOCK;
-            top[b] = top[b].max(f32::from(m.height[i]) * c2_core::H_SCALE);
+            top[b] = top[b].max(f32::from(h) * c2_core::H_SCALE);
             // The water lies above its bed: a chunk whose ground is all
             // below the view can still show its surface.
             if let Some(level) = area.water_level(i % size, i / size) {
