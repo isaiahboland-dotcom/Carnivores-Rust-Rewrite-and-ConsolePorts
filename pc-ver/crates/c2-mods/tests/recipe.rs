@@ -261,7 +261,10 @@ fn the_repository_recipes_write_out_unchanged() {
         // Saved unchanged over its own file, a recipe keeps every byte:
         // comments, layout and the keys its author left out. (Keys this
         // build does not read, reported as warnings, are not kept.)
-        let text = std::fs::read_to_string(&p).expect("reads");
+        // A Windows checkout may hold CRLF line endings; the writer uses LF.
+        let text = std::fs::read_to_string(&p)
+            .expect("reads")
+            .replace("\r\n", "\n");
         if warnings.is_empty() {
             assert_eq!(r.to_toml_over(&text), text, "{}", p.display());
         }

@@ -602,8 +602,9 @@ fn night_equipment_is_only_offered_for_dynamic_time() {
         (restored.choice.night_vision, restored.choice.flashlight),
         (1, 1)
     );
-    // Multi ammo and advanced observer follow (tests/hunt_choice_test.c).
-    assert_eq!(std::mem::size_of::<hunt_setup::HuntChoice>(), 112);
+    // Multi ammo, advanced observer and bounded fleeing follow
+    // (wiiu-ver/perf-probe/tests/hunt_choice_test.c checks the same layout).
+    assert_eq!(std::mem::size_of::<hunt_setup::HuntChoice>(), 120);
     assert_eq!(
         std::mem::offset_of!(hunt_setup::HuntChoice, multi_ammo),
         100
