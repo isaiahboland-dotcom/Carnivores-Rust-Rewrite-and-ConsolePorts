@@ -660,6 +660,35 @@ fn mobile_style_add_on_beside_original_data_preserves_the_base_menu_and_ai() {
     }
 }
 
+/// An APK base's extra animal (AI 21 running as a kind of the PC's) lost its
+/// gait once a dialect add-on joined it: the dialect's AI 21 has no animation
+/// keys or speeds there (the nightmare-run copy's Oviraptor stood still).
+#[test]
+fn an_apk_base_animal_past_the_pc_ais_keeps_its_original_engine_ai_beside_a_dialect_add_on() {
+    let base = tmp("apk-extra-base");
+    let addon = tmp("apk-extra-addon");
+    let res = RES.replace(
+        "{\n name = 'Spinosaurus'",
+        "{\n name = 'Oviraptor'\n file = 'ovi.car'\n ai = 21\n runsAs = 10\n}\n{\n name = 'Spinosaurus'\n runAnim = 0",
+    );
+    write(&base, &[("HUNTDAT/_RES.TXT", res.as_bytes())]);
+    write(&addon, &[("mobile.car", b"mobile"), ("entry.txt", b"{\n name = 'Mobile animal'\n file = 'mobile.car'\n ai = 10\n runAnim = 0\n walkAnim = 1\n}\n")]);
+    let bases = [base.clone()];
+    let v = vanilla(&bases).expect("base");
+    let pack = build(&bases, vec![load_mod(&v, &addon).expect("mod")]).expect("pack");
+    let res = c2_formats::res_txt::ResTxt::parse(&String::from_utf8_lossy(
+        &pack.vfs.read("HUNTDAT/_RES.TXT").expect("file"),
+    ))
+    .expect("parse");
+    let ovi = (res.section("characters").expect("chars").blocks.iter())
+        .find(|b| b.get(&["name"]) == Some("'Oviraptor'"))
+        .expect("character");
+    assert_eq!(ovi.get(&["nativeAI"]), Some("TRUE"));
+    for d in [base, addon] {
+        let _ = std::fs::remove_dir_all(d);
+    }
+}
+
 #[test]
 fn an_import_without_a_picture_keeps_its_menu_entry_and_own_calls() {
     let base = tmp("calls-base");

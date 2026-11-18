@@ -1123,7 +1123,11 @@ pub fn build_with(
                 let original_ai = b
                     .get(&["ai"])
                     .and_then(|v| v.trim().parse::<i32>().ok())
-                    .is_some_and(|ai| (1..=18).contains(&ai));
+                    .is_some_and(|ai| (1..=18).contains(&ai))
+                    // An APK base's extra animal: an AI number past the PC's
+                    // (19..), the kind it plays as in `runsAs`. The dialect
+                    // reads that number as one of its own, with no gait.
+                    || b.get(&["runsAs"]).is_some() && !crate::loose::has_anims(b);
                 let marked = b
                     .entries
                     .iter()
