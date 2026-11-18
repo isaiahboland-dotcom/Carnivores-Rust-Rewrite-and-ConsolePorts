@@ -32,12 +32,14 @@ mod plan;
 mod settings_ui;
 mod terminal;
 mod terminal_draw;
+mod title_layout;
 mod tranq;
 
 use crate::settings::Settings;
 use crate::ui::load;
 use plan::{MemKey, Memory, O_SECRET};
 pub use terminal::Keys;
+use title_layout::TitleButton;
 
 /// Accessories (`EQUIPn.TGA`), in `prices.acces` order. The original's
 /// fourth, Double Ammo, isn't offered on the 3DS: the extra ammo gear takes
@@ -58,18 +60,10 @@ const TIMES: [(TimeOfDay, &str); 3] = [
 /// on kill scores) for x1, x2, x3.
 const EXTRA_AMMO: [(i32, u32, f32); 3] = [(10, 1, 0.95), (50, 2, 0.95), (150, 3, 1.0)];
 
-/// Title screen buttons.
-const PLAY: [f32; 4] = [60.0, 6.0, 200.0, 30.0];
-const SURVIVAL: [f32; 4] = [60.0, 42.0, 200.0, 30.0];
 /// The survival chooser's `i`-th button (more than one survival offered).
 fn pick_rect(i: usize) -> [f32; 4] {
     [60.0, 42.0 + 36.0 * i as f32, 200.0, 30.0]
 }
-const HUNTER: [f32; 4] = [60.0, 78.0, 200.0, 30.0];
-const TROPHIES: [f32; 4] = [60.0, 114.0, 200.0, 30.0];
-const SETTINGS: [f32; 4] = [60.0, 150.0, 200.0, 30.0];
-const QUIT: [f32; 4] = [60.0, 186.0, 200.0, 30.0];
-
 /// The hunters list: row `i`.
 fn hunter_row(i: usize) -> [f32; 4] {
     [40.0, 8.0 + i as f32 * 30.0, 240.0, 26.0]
@@ -908,6 +902,17 @@ impl Menu {
 
     /// APK-independent modes; Classic needs stock animal identities. None
     /// unless the pack offers survival, so the menus show none.
+    /// The title page's buttons as drawn and tapped (`title_layout.rs`).
+    fn title_layout(&self) -> Vec<(TitleButton, [f32; 4])> {
+        title_layout::title_layout(!self.survival_modes().is_empty())
+    }
+
+    /// Whether a title button can be used: the trophy room only when the
+    /// pack has its area.
+    fn title_enabled(&self, b: TitleButton) -> bool {
+        b != TitleButton::Trophies || self.trophy_room
+    }
+
     fn survival_modes(&self) -> Vec<(SurvivalKind, &'static str)> {
         let mut v = Vec::new();
         if !self.survival_offered {
@@ -1202,23 +1207,21 @@ impl Menu {
                     return self.start_survival(kind);
                 }
             }
-            Step::Title => {
-                if inside(PLAY, x, y) {
+            Step::Title => match title_layout::hit(&self.title_layout(), x, y) {
+                Some(TitleButton::Play) => {
                     self.survival = None;
                     self.extra_dinos = Bits::NONE;
                     self.step = Step::Area;
-                } else if inside(SURVIVAL, x, y) && !self.survival_modes().is_empty() {
-                    self.survival_pick = true;
-                } else if inside(TROPHIES, x, y) && self.trophy_room {
-                    return Some(self.trophy_setup());
-                } else if inside(SETTINGS, x, y) {
-                    self.step = Step::Settings;
-                } else if inside(HUNTER, x, y) {
-                    self.step = Step::Hunters;
-                } else if inside(QUIT, x, y) {
-                    self.quit = true;
                 }
-            }
+                Some(TitleButton::Survival) => self.survival_pick = true,
+                Some(TitleButton::Trophies) if self.trophy_room => {
+                    return Some(self.trophy_setup());
+                }
+                Some(TitleButton::Settings) => self.step = Step::Settings,
+                Some(TitleButton::Profile) => self.step = Step::Hunters,
+                Some(TitleButton::Quit) => self.quit = true,
+                Some(TitleButton::Trophies) | None => {}
+            },
             Step::Hunters => {
                 let list = crate::save::hunters();
                 if let Some(i) = (0..list.len() + 1).find(|&i| inside(hunter_row(i), x, y)) {
@@ -1605,16 +1608,21 @@ impl Menu {
                 c.text_c(gpu, 160.0, 220.0, 1.0, DIMMED, "Tap elsewhere to go back");
             }
             Step::Title => {
-                let mut buttons = vec![(PLAY, "PLAY", true)];
-                if !self.survival_modes().is_empty() {
-                    buttons.push((SURVIVAL, "SURVIVAL", true));
-                }
-                buttons.extend([
-                    (TROPHIES, "TROPHIES", self.trophy_room),
-                    (SETTINGS, "SETTINGS", true),
-                    (QUIT, "QUIT", true),
-                    (HUNTER, "PROFILE", true),
-                ]);
+                let buttons: Vec<_> = self
+                    .title_layout()
+                    .into_iter()
+                    .map(|(b, r)| {
+                        let label = match b {
+                            TitleButton::Play => "PLAY",
+                            TitleButton::Survival => "SURVIVAL",
+                            TitleButton::Trophies => "TROPHIES",
+                            TitleButton::Settings => "SETTINGS",
+                            TitleButton::Quit => "QUIT",
+                            TitleButton::Profile => "PROFILE",
+                        };
+                        (r, label, self.title_enabled(b))
+                    })
+                    .collect();
                 for &(r, _, on) in &buttons {
                     c.rect(
                         [r[0] - 2.0, r[1] - 2.0, r[2] + 4.0, r[3] + 4.0],
@@ -1922,7 +1930,7 @@ impl Menu {
         toggles.push((O_FRIENDLY, s.friendly, "3DS friendly"));
         toggles.push((O_STEALTH, s.stealth, "Stealth"));
         toggles.push((O_SPRITES, s.tree_sprites, "Sprites"));
-        toggles.push((O_FLEE, s.bounded_flee, "Bounded fleeing (experimental)"));
+        toggles.push((O_FLEE, s.bounded_flee, "Bounded fleeing (exp)"));
         for (r, on, _) in &toggles {
             boxed(c, *r, if *on { on_fill } else { pal.panel });
         }

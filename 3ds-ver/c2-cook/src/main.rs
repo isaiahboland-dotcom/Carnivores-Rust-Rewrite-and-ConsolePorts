@@ -42,6 +42,10 @@ mod plan_report;
 #[path = "../../c2-3ds/src/rules.rs"]
 #[allow(dead_code)]
 mod rules;
+/// The 3DS title page's layout, tested here on the host.
+#[cfg(test)]
+#[path = "../../c2-3ds/src/menu/title_layout.rs"]
+mod title_layout;
 mod wiiu;
 
 const USAGE: &str = "usage:

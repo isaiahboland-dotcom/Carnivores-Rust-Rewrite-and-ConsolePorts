@@ -3,8 +3,7 @@
 //! classic pages (`menu.rs`), drawn as framed terminal rows over a plain
 //! dark background.
 
-use super::{hunter_row, pick_rect, Menu, Step, BACK, BAR_Y, HUNTER, PLAY, QUIT};
-use super::{SETTINGS, SURVIVAL, TROPHIES};
+use super::{hunter_row, pick_rect, Menu, Step, TitleButton, BACK, BAR_Y};
 use crate::dhc_look::*;
 use crate::draw2d::Canvas;
 use crate::gpu::{Gpu, TOP_W};
@@ -93,20 +92,16 @@ impl Menu {
     }
 
     fn dhc_title(&mut self, c: &mut Canvas, gpu: &mut Gpu) {
-        c.text(gpu, 4.0, 4.0, 1.0, HI, "MAIN MENU");
-        c.rect([0.0, 15.0, 320.0, 1.0], LINE);
-        let mut buttons = vec![("> PLAY", PLAY, true)];
-        if !self.survival_modes().is_empty() {
-            buttons.push(("> SURVIVAL", SURVIVAL, true));
-        }
-        buttons.extend([
-            ("> TROPHY ROOM", TROPHIES, self.trophy_room),
-            ("> SETTINGS", SETTINGS, true),
-            ("> QUIT", QUIT, true),
-            ("> PROFILE", HUNTER, true),
-        ]);
-        for (label, r, on) in buttons {
-            Self::dhc_button(c, gpu, r, label, on, false);
+        for (b, r) in self.title_layout() {
+            let label = match b {
+                TitleButton::Play => "> PLAY",
+                TitleButton::Survival => "> SURVIVAL",
+                TitleButton::Trophies => "> TROPHY ROOM",
+                TitleButton::Settings => "> SETTINGS",
+                TitleButton::Quit => "> QUIT",
+                TitleButton::Profile => "> PROFILE",
+            };
+            Self::dhc_button(c, gpu, r, label, self.title_enabled(b), false);
         }
         if let Some(m) = &self.message {
             let m: String = m.chars().take(38).collect();

@@ -39,10 +39,11 @@ share it (docs/DEVELOPMENT.md §2).
 
 ## The menu
 The title screen shows the original's main menu art with your hunter's
-record; the bottom screen has **Play**, **Survival**, **Hunter**,
-**Trophies** (the trophy room), **Settings** and **Quit**. **Survival** is there only
-when the pack offers it (the launcher's Survival mode switch, `c2-cook
---offer-survival`; [PLAYING.md](PLAYING.md#survival)).
+record; the bottom screen lists **Play**, **Survival**, **Trophies** (the trophy
+room), **Settings**, **Quit** and **Profile**, centred in one column.
+**Survival** is there only when the pack offers it (the launcher's Survival mode
+switch, `c2-cook --offer-survival`; [PLAYING.md](PLAYING.md#survival)); the rest
+close up without it. **Trophies** is dimmed on a pack with no trophy room.
 
 **Survival** is free and shows only the gun screen: the button where Tranq /
 Observe usually are switches Survival / Hardcore (1–3 mods' animals join each

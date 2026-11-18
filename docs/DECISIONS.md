@@ -1,5 +1,21 @@
 # Decisions and deviations
 
+## 2026-11-17 — 3DS title page: one layout for drawing and taps
+
+- The title buttons are placed by `3ds-ver/c2-3ds/src/menu/title_layout.rs`, used by the classic
+  draw, the DHC OS terminal draw and the tap handling, so a tap always resolves against what was
+  drawn. Before this, fixed rectangles left a gap when Survival was not offered and placed Profile
+  out of its listed order.
+- Order: Play, Survival (only when offered), Trophies, Settings, Quit, Profile. One column 200 px
+  wide at x 60, 30 px buttons on a 36 px pitch, centred in y 0–216 (the message line at y 224 stays).
+  More than six buttons split into two 144 px columns, the left holding the extra one.
+- The DHC title's "MAIN MENU" header is removed: the first button's frame overlapped it.
+- Trophies stays dimmed on a pack with no `TROPHY` area. Entering it would fail: `load::area_with`
+  finds no `HUNTDAT/AREAS/TROPHY.MAP` and the menu returns with that error. Whether such packs get a
+  fallback room or a message on tap is open (TODO 3DS-TROPHY-GATE).
+- The hunt options label is shortened to "Bounded fleeing (exp)": the full label filled the 240 px
+  box with no padding.
+
 ## 2026-11-17 — Advanced DHC OS UI: name, platforms, field guide, worlds (proposal, no code yet)
 
 Decisions for the proposed high-end hunt preparation UI (`screenshots/new-vision-dhcos/ADVANCEDDHCOS.md`).
