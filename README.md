@@ -12,7 +12,7 @@ A fan-made, ground-up Rust rewrite of **Carnivores 2** (Action Forms, 1999), wit
 
 You need your own copy of Carnivores 2. This project contains **no game files and no mod files**: only code, documentation and recipes (credits, download links and file hashes).
 
-**v0.5.3:** [Download Windows ZIP or Linux TAR](https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/releases/tag/v0.5.3) · [Release notes](docs/releases/v0.5.3.md) · [Changelog](CHANGELOG.md) · [Roadmap](docs/ROADMAP.md)
+**v0.7.1:** [Download Windows ZIP or Linux TAR](https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/releases/tag/v0.7.1) · [Release notes](docs/releases/v0.7.1.md) · [Changelog](CHANGELOG.md) · [Roadmap](docs/ROADMAP.md)
 
 ---
 
@@ -94,9 +94,9 @@ Mobile conversion and mixed-mod compatibility still need gameplay testing. See t
 ## Get started on PC
 
 1. Download the bundle for your system from the
-   [v0.5.3 release](https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/releases/tag/v0.5.3):
-   [Windows (64-bit)](https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/releases/download/v0.5.3/windows.zip)
-   or [Linux (x86-64)](https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/releases/download/v0.5.3/linux.tar).
+   [v0.7.1 release](https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/releases/tag/v0.7.1):
+   [Windows (64-bit)](https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/releases/download/v0.7.1/windows.zip)
+   or [Linux (x86-64)](https://github.com/isaiahboland-dotcom/Carnivores-Rust-Rewrite-and-ConsolePorts/releases/download/v0.7.1/linux.tar).
 2. Extract the **whole archive** into a writable folder and keep its files together.
 3. Open `c2-launcher.exe` (Windows) or run `./c2-launcher` (Linux).
 4. Choose **New instance**, select your own game folder (the one that contains `HUNTDAT/`), save, then press **Play**.

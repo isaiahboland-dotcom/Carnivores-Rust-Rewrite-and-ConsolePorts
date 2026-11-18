@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.7.1 — 2026-11-17
+
+Fixes for the 0.7.0 build: the Wii U hunt setup's shared structure, the
+3DS title page layout, and CI on the current stable toolchain. Notes:
+`docs/releases/v0.7.1.md`. Hardware checks are listed in
+`testing-needed.md` and remain pending.
+
+### Fixed
+
+- Wii U: the C header mirroring `HuntChoice` lacked the bounded fleeing
+  field added in 0.7.0, so the C and Rust sides disagreed on its layout.
+  Both now have it (120 bytes, `bounded_flee` at offset 112), and the
+  layout checks on each side expect that.
+- 3DS title page: the buttons close up when Survival is not offered (0.7.0
+  left a gap) and are listed in order: Play, Survival, Trophies, Settings,
+  Quit, Profile, centred in one column. Drawing and taps use the same
+  layout (`menu/title_layout.rs`), so a tap always hits the button drawn.
+  More than six buttons would split into two columns.
+- 3DS DHC OS title: the "MAIN MENU" header is removed; the first button's
+  frame overlapped it.
+- 3DS hunt options: the label is now "Bounded fleeing (exp)" so it fits
+  its box.
+- `dump_texels` reports a usage message on missing arguments instead of
+  panicking.
+
+### Internal
+
+- Clippy on the current stable toolchain is clean (`needless_range_loop`,
+  `unnecessary_lazy_evaluations`, `too_many_arguments`).
+- The recipe round-trip test normalises line endings, so it passes on a
+  Windows checkout with CRLF files.
+- New host tests for the 3DS title layout (`c2-cook`).
+
 ## 0.7.0 — 2026-11-17
 
 Survival switch, poisonous fog, scuba gear, advanced binoculars, bounded

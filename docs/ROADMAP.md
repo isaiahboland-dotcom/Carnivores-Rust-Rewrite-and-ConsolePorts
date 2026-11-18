@@ -5,9 +5,19 @@ build instructions and milestone definitions live in [DEVELOPMENT.md](DEVELOPMEN
 Implementation does not imply that every platform or combination of mods has been
 validated. Game and mod assets must come from the player's own copies.
 
-## Current milestone: v0.5.3
+## Current milestone: v0.7.1
 
-v0.5.3 prepares Windows/Linux desktop bundles and exact-tag release automation,
+v0.7.1 fixes the Wii U hunt setup's shared structure and the 3DS title page
+layout, and brings CI back to green on the current stable toolchain
+([v0.7.1 notes](releases/v0.7.1.md)). v0.7.0 added the survival switch,
+poisonous fog, scuba gear, advanced binoculars and the DHC OS field manual,
+island rules and CRT pass ([v0.7.0 notes](releases/v0.7.0.md)). v0.6.0 brought
+spawn ecosystem and awareness rules, bounded fleeing, the DHC OS terminal and
+launcher look, memory-planned 3DS hunts and Play Vanilla
+([v0.6.0 notes](releases/v0.6.0.md)). Hardware checks for these releases remain
+pending on 3DS and Wii U.
+
+v0.5.3 prepared Windows/Linux desktop bundles and exact-tag release automation,
 adds PC map object side files, and extends MEE regression coverage
 ([v0.5.3 notes](releases/v0.5.3.md)). The Windows test launcher opens in a VM;
 bundle hunt acceptance, clean-machine checks and physical Windows performance
