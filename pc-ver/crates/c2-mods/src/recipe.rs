@@ -994,6 +994,19 @@ mod tests {
     }
 
     #[test]
+    fn sha256_file_hashes_every_chunk_it_reads() {
+        // Longer than sha256_file's 1 MiB read buffer, so the second read is checked too.
+        let data = vec![0x5a_u8; (1 << 20) + 17];
+        let dir = std::env::temp_dir().join(format!("c2rs-sha256-file-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+        let path = dir.join("big.bin");
+        std::fs::write(&path, &data).unwrap_or_else(|e| panic!("{e}"));
+        let got = sha256_file(&path);
+        std::fs::remove_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(got.unwrap_or_else(|e| panic!("{e}")), sha256(&data));
+    }
+
+    #[test]
     fn game_folder_checked_with_the_downloads_wrapper_in_its_paths() {
         let dir = std::env::temp_dir().join(format!("c2rs-check-above-{}", std::process::id()));
         let game = dir.join("Bilewaters_1.1/bilewaters here");
