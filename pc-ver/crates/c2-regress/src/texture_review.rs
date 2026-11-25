@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use std::{collections::BTreeSet, path::PathBuf};
 
 pub fn sha(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    c2_mods::recipe::hex_lower(&Sha256::digest(bytes))
 }
 
 /// Some death/hidden clips deliberately collapse the source mesh to a point.

@@ -96,7 +96,7 @@ pub struct Game {
 }
 
 fn sha(data: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(data))
+    c2_mods::recipe::hex_lower(&Sha256::digest(data))
 }
 
 /// The hunt's characters and weapons. A Modder's Edition `_RES.TXT` is
@@ -174,7 +174,7 @@ impl Game {
             cars,
             weapons,
             files,
-            content_hash: format!("{:x}", all.finalize()),
+            content_hash: c2_mods::recipe::hex_lower(&all.finalize()),
             sources: Vec::new(),
             dialect: tables.is_some(),
         })
