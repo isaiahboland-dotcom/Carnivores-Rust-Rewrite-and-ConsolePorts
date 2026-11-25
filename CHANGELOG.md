@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+Dependency fixes for the Dependabot pull requests and the audit failure on
+main. The version and release notes are set when this is tagged.
+
+### Fixed
+
+- `url` is 2.5.9 in pc-ver, which fixes RUSTSEC-2026-0592 (stack overflow in
+  `Url::origin()` on nested `blob:` URLs). The scheduled Audit workflow failed
+  on main without it.
+
+### Changed
+
+- Dependencies: `zip` 9.8.2, `rfd` 0.18.0, `toml` 1.2.1, `toml_edit` 0.25.20
+  and `sha2` 0.11 (pc-ver). The 3DS and Android lockfiles are synced to the
+  new `sha2` version.
+- Digests are written as hex by `c2_mods::recipe::hex_lower`; sha2 0.11 output
+  no longer implements `{:x}`. The produced values are unchanged.
+
 ## 0.7.1 — 2026-11-17
 
 Fixes for the 0.7.0 build: the Wii U hunt setup's shared structure, the

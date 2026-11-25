@@ -370,6 +370,15 @@ pub fn sha256(data: &[u8]) -> String {
     s
 }
 
+/// Lower-case hex of a digest's bytes (sha2 0.11 outputs have no `{:x}` format).
+pub fn hex_lower(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
 /// How one recipe mod matched a folder.
 #[derive(Debug, Clone, Default)]
 pub struct Located {
@@ -973,6 +982,29 @@ pub fn prepare(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hex_lower_writes_a_digest_as_lower_case_hex() {
+        use sha2::{Digest, Sha256};
+        // FIPS 180-2 vector for "abc": the digest and `sha256:` id are unchanged by the sha2 0.11 move.
+        let d = Sha256::digest(b"abc");
+        let want = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        assert_eq!(hex_lower(&d), want);
+        assert_eq!(sha256(b"abc"), format!("sha256:{want}"));
+    }
+
+    #[test]
+    fn sha256_file_hashes_every_chunk_it_reads() {
+        // Longer than sha256_file's 1 MiB read buffer, so the second read is checked too.
+        let data = vec![0x5a_u8; (1 << 20) + 17];
+        let dir = std::env::temp_dir().join(format!("c2rs-sha256-file-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+        let path = dir.join("big.bin");
+        std::fs::write(&path, &data).unwrap_or_else(|e| panic!("{e}"));
+        let got = sha256_file(&path);
+        std::fs::remove_dir_all(&dir).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(got.unwrap_or_else(|e| panic!("{e}")), sha256(&data));
+    }
 
     #[test]
     fn game_folder_checked_with_the_downloads_wrapper_in_its_paths() {

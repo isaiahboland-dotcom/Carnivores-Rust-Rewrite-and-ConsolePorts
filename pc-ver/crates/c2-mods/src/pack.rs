@@ -1352,7 +1352,7 @@ fn pack_key(pack: &Pack) -> Result<String, ModError> {
         }
     }
     h.update(pack.report().as_bytes());
-    Ok(format!("{:x}", h.finalize()))
+    Ok(crate::recipe::hex_lower(&h.finalize()))
 }
 
 /// Where a pack is written before it replaces `out`: beside it.

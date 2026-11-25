@@ -156,7 +156,7 @@ impl ScenarioFile {
         if raw.scenario.script == ScriptName::Behaviours && raw.behaviours.is_none() {
             bail!("script = \"behaviours\" needs a [behaviours] section");
         }
-        let hash = format!("{:x}", Sha256::digest(text.replace("\r\n", "\n")));
+        let hash = c2_mods::recipe::hex_lower(&Sha256::digest(text.replace("\r\n", "\n")));
         Ok(Self { raw, hash })
     }
 
@@ -332,7 +332,7 @@ mod tests {
         let lf = ScenarioFile::parse(&lf_text).unwrap().hash;
         assert_eq!(ScenarioFile::parse(&crlf).unwrap().hash, lf);
         assert_eq!(ScenarioFile::parse(FILE).unwrap().hash, lf);
-        let plain = format!("{:x}", Sha256::digest(lf_text.as_bytes()));
+        let plain = c2_mods::recipe::hex_lower(&Sha256::digest(lf_text.as_bytes()));
         assert_eq!(lf, plain, "an LF file keeps its published hash");
     }
 

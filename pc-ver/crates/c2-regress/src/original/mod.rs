@@ -61,7 +61,10 @@ pub(super) fn event(
 }
 
 pub(super) fn sha_file(p: &Path) -> String {
-    std::fs::read(p).map_or_else(|_| "missing".into(), |d| format!("{:x}", Sha256::digest(d)))
+    std::fs::read(p).map_or_else(
+        |_| "missing".into(),
+        |d| c2_mods::recipe::hex_lower(&Sha256::digest(d)),
+    )
 }
 
 /// Runs the hunt `repeat` times into `dir`; returns whether it passed.

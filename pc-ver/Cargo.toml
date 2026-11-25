@@ -29,10 +29,10 @@ serde = { version = "1.0.219", features = ["derive"] }
 toml = "1.1.8"
 serde_ignored = "0.1.14"
 toml_edit = "0.25.17"
-sha2 = "0.10.9"
+sha2 = "0.11.1"
 zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 eframe = "0.37.0"
-rfd = "0.17.2"
+rfd = "0.18.0"
 png = "0.18.1"
 # Gamepads for the PC and VR frontends (docs/DEVELOPMENT.md §4: `gilrs`).
 gilrs = "0.11.2"
